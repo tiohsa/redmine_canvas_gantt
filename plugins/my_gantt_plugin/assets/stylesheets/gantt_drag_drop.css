@@ -68,3 +68,37 @@
   stroke-width: 2;
   stroke-dasharray: 4;
 }
+
+/* Context Menu */
+#gantt-context-menu {
+  position: absolute;
+  background: white;
+  border: 1px solid #ccc;
+  box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
+  z-index: 10000;
+  min-width: 200px;
+  font-size: 12px;
+  font-family: sans-serif;
+}
+
+#gantt-context-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#gantt-context-menu li {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  color: #333;
+}
+
+#gantt-context-menu li:last-child {
+  border-bottom: none;
+}
+
+#gantt-context-menu li:hover {
+  background-color: #f0f0f0;
+  color: #000;
+}

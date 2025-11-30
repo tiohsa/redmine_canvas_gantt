@@ -267,4 +267,85 @@ $(function() {
       });
     });
   });
+
+  // Context Menu Logic
+  function deleteRelation(relationId) {
+    if (!confirm('Are you sure you want to delete this dependency?')) return;
+
+    var csrfToken = $('meta[name="csrf-token"]').attr('content');
+
+    $.ajax({
+      url: '/relations/' + relationId + '.json',
+      type: 'DELETE',
+      xhrFields: {
+        withCredentials: true
+      },
+      headers: {
+        'X-CSRF-Token': csrfToken,
+        'X-Redmine-API-Key': window.redmineApiKey
+      },
+      success: function() {
+        console.log('Relation ' + relationId + ' deleted.');
+        location.reload();
+      },
+      error: function(xhr) {
+        console.error('Failed to delete relation', xhr);
+        alert('Failed to delete relation.');
+      }
+    });
+  }
+
+  function showContextMenu(x, y, relations, currentIssueId) {
+    $('#gantt-context-menu').remove();
+
+    var $menu = $('<div id="gantt-context-menu"><ul></ul></div>');
+    var $ul = $menu.find('ul');
+
+    if (!relations || relations.length === 0) {
+      $ul.append('<li>No dependencies</li>');
+    } else {
+      relations.forEach(function(rel) {
+        var otherId = (rel.issue_id == currentIssueId) ? rel.issue_to_id : rel.issue_id;
+        var type = rel.relation_type;
+        // Label: Delete relation: precedes -> #123
+        var arrow = (rel.issue_id == currentIssueId) ? '->' : '<-';
+        var label = 'Delete relation: ' + type + ' ' + arrow + ' #' + otherId;
+
+        var $li = $('<li>' + label + '</li>');
+        $li.on('click', function() {
+          deleteRelation(rel.id);
+        });
+        $ul.append($li);
+      });
+    }
+
+    $('body').append($menu);
+    $menu.css({ top: y, left: x }).show();
+  }
+
+  $(document).on('contextmenu', '.task_todo', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    var issueId = getIssueId(this);
+    if (!issueId) return;
+
+    $.ajax({
+      url: '/issues/' + issueId + '.json?include=relations',
+      type: 'GET',
+      headers: {
+          'X-Redmine-API-Key': window.redmineApiKey
+      },
+      success: function(data) {
+        showContextMenu(e.pageX, e.pageY, data.issue.relations, issueId);
+      },
+      error: function() {
+          alert('Failed to fetch issue details.');
+      }
+    });
+  });
+
+  $(document).on('click', function() {
+    $('#gantt-context-menu').remove();
+  });
 });
