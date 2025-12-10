@@ -1,17 +1,15 @@
 class CanvasGanttsController < ApplicationController
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'vite_asset_helper').to_s
+
+  helper RedmineCanvasGantt::ViteAssetHelper
+  accept_api_auth :data, :update
+
   before_action :find_project_by_project_id
-  before_action :authorize
+  before_action :ensure_view_permission, only: [:index, :data]
+  before_action :ensure_edit_permission, only: [:update]
 
   # GET /projects/:project_id/canvas_gantt
   def index
-    # Passes initial permissions to the frontend via data attributes or similar
-    @permissions = {
-      editable: User.current.allowed_to?(:edit_canvas_gantt, @project),
-      viewable: User.current.allowed_to?(:view_canvas_gantt, @project)
-    @permissions = {
-      editable: User.current.allowed_to?(:edit_canvas_gantt, @project),
-      viewable: User.current.allowed_to?(:view_canvas_gantt, @project)
-    }
     @i18n = {
       label_start_date: l(:label_start_date),
       label_due_date: l(:label_due_date),
@@ -25,6 +23,9 @@ class CanvasGanttsController < ApplicationController
   # GET /projects/:project_id/canvas_gantt/data.json
   def data
     begin
+      # Ensure permissions mirror index action for JSON responses
+      set_permissions
+
       # Fetch issues, relations, and versions
       # This is a simplified fetch logic. Real implementation needs recursive query or similar for subtasks.
       issues = @project.issues.visible.includes(:relations_to, :relations_from, :status, :tracker, :assigned_to).all
@@ -98,5 +99,32 @@ class CanvasGanttsController < ApplicationController
     render json: { error: 'Conflict: This task has been updated by another user. Please reload.' }, status: :conflict
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Task not found' }, status: :not_found
+  end
+
+  private
+
+  def ensure_view_permission
+    set_permissions
+    return if @permissions[:viewable]
+
+    respond_to do |format|
+      format.json { render json: { error: 'Permission denied' }, status: :forbidden }
+      format.any { deny_access }
+    end
+    false
+  end
+
+  def ensure_edit_permission
+    unless User.current.allowed_to?(:edit_canvas_gantt, @project)
+      render json: { error: 'Permission denied' }, status: :forbidden
+      return false
+    end
+  end
+
+  def set_permissions
+    @permissions ||= {
+      editable: User.current.allowed_to?(:edit_canvas_gantt, @project),
+      viewable: User.current.allowed_to?(:view_canvas_gantt, @project)
+    }
   end
 end

@@ -15,3 +15,19 @@ Redmine::Plugin.register :redmine_canvas_gantt do
 
   menu :project_menu, :canvas_gantt, { controller: 'canvas_gantts', action: 'index' }, caption: 'Canvas Gantt', after: :gantt, param: :project_id
 end
+
+# Ensure built frontend assets are available under public/plugin_assets/.
+# In production Redmine serves /plugin_assets from public/, so we symlink the
+# Vite build output there if it is missing.
+begin
+  require 'fileutils'
+  plugin_build_dir = Rails.root.join('plugins', 'redmine_canvas_gantt', 'assets', 'build')
+  public_build_dir = Rails.root.join('public', 'plugin_assets', 'redmine_canvas_gantt', 'build')
+
+  if File.directory?(plugin_build_dir)
+    FileUtils.mkdir_p(public_build_dir.parent)
+    FileUtils.ln_sf(plugin_build_dir, public_build_dir)
+  end
+rescue => e
+  Rails.logger.warn("redmine_canvas_gantt: failed to link plugin assets: #{e.message}") if defined?(Rails)
+end

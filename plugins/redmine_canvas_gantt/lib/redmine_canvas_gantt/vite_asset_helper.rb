@@ -1,18 +1,23 @@
 module RedmineCanvasGantt
   module ViteAssetHelper
-    def vite_asset_path(path)
+    def vite_javascript_path(entry)
       if Rails.env.development?
-        "http://localhost:5173/#{path}"
+        "http://localhost:5173/#{entry}"
       else
         manifest = vite_manifest
-        return "" unless manifest
-        # Normalize path to match manifest keys (usually starting with src/)
-        # If input is 'main.tsx', we look for 'src/main.tsx' if that's the entry
-        # But let's assume the user passes 'src/main.tsx'
-        entry = manifest[path]
-        return "" unless entry
-        
-        "/plugin_assets/redmine_canvas_gantt/build/#{entry['file']}"
+        return "" unless manifest && manifest[entry]
+        "/plugin_assets/redmine_canvas_gantt/build/#{manifest[entry]['file']}"
+      end
+    end
+
+    def vite_stylesheet_path(entry)
+      if Rails.env.development?
+        nil # Vite injects CSS via JS in dev mode
+      else
+        manifest = vite_manifest
+        return nil unless manifest && manifest[entry] && manifest[entry]['css']
+        css_files = manifest[entry]['css']
+        css_files.map { |f| "/plugin_assets/redmine_canvas_gantt/build/#{f}" }
       end
     end
 

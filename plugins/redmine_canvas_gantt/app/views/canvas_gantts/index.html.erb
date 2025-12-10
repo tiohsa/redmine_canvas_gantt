@@ -4,9 +4,6 @@
       projectId: <%= @project.id %>,
       apiBase: '<%= project_path(@project) %>/canvas_gantt',
       authToken: '<%= form_authenticity_token %>',
-      projectId: <%= @project.id %>,
-      apiBase: '<%= project_path(@project) %>/canvas_gantt',
-      authToken: '<%= form_authenticity_token %>',
       apiKey: '<%= User.current.api_key %>',
       i18n: <%= @i18n.to_json.html_safe %>
     };
@@ -18,8 +15,10 @@
     <%= javascript_include_tag "http://localhost:5173/src/main.tsx", type: "module" %>
   <% else %>
     <!-- Production assets will be injected here via manifest -->
-    <%= stylesheet_link_tag vite_asset_path("src/main.tsx"), plugin: "redmine_canvas_gantt" %>
-    <%= javascript_include_tag vite_asset_path("src/main.tsx"), type: "module", plugin: "redmine_canvas_gantt" %>
+    <% vite_stylesheet_path("src/main.tsx")&.each do |css_path| %>
+      <%= stylesheet_link_tag css_path %>
+    <% end %>
+    <%= javascript_include_tag vite_javascript_path("src/main.tsx"), type: "module" %>
   <% end %>
 <% end %>
 
