@@ -23,7 +23,7 @@ const DEFAULT_VIEWPORT: Viewport = {
     startDate: new Date().setHours(0, 0, 0, 0),
     scrollX: 0,
     scrollY: 0,
-    scale: 0.1, // Example default
+    scale: 0.0000005787, // ~50px per day
     width: 800,
     height: 600,
     rowHeight: 40

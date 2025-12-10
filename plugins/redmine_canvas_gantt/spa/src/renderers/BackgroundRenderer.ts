@@ -16,12 +16,26 @@ export class BackgroundRenderer {
         ctx.fillStyle = '#f5f5f5';
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Grid
-        ctx.strokeStyle = '#ddd';
+        // Grid (Day lines)
+        ctx.strokeStyle = '#e0e0e0';
         ctx.beginPath();
-        for (let i = 0; i < this.canvas.width; i += 100) {
-            ctx.moveTo(i - (viewport.scrollX % 100), 0);
-            ctx.lineTo(i - (viewport.scrollX % 100), this.canvas.height);
+
+        const ONE_DAY = 24 * 60 * 60 * 1000;
+        // Calculate visible time range
+        const startOffsetTime = viewport.scrollX / viewport.scale;
+        const visibleStartTime = viewport.startDate + startOffsetTime;
+        const visibleEndTime = visibleStartTime + (this.canvas.width / viewport.scale);
+
+        // Align to start of day
+        let currentTime = Math.floor(visibleStartTime / ONE_DAY) * ONE_DAY;
+
+        while (currentTime <= visibleEndTime) {
+            const x = (currentTime - viewport.startDate) * viewport.scale - viewport.scrollX;
+            if (x >= 0 && x <= this.canvas.width) {
+                ctx.moveTo(Math.floor(x) + 0.5, 0);
+                ctx.lineTo(Math.floor(x) + 0.5, this.canvas.height);
+            }
+            currentTime += ONE_DAY;
         }
         ctx.stroke();
     }

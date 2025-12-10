@@ -10,10 +10,10 @@
 
 ## Build, Test, and Development Commands
 - Start stack: `docker compose up -d` (from repo root). Load default data if needed: `docker compose exec -e REDMINE_LANG=ja redmine bundle exec rake redmine:load_default_data`.
-- Frontend setup (once): `cd plugins/redmine_canvas_gantt/assets/spa && npm install`.
-- Frontend dev server: `npm run dev` (serves on `localhost:5173`, auto-injected when `RAILS_ENV=development`).
-- Frontend production bundle: `npm run build` (writes manifest + assets to `assets/build/`).
-- Lint: `npm run lint`; Unit/UI tests: `npm run test` (Vitest + Testing Library).
+- Frontend setup (once): `cd plugins/redmine_canvas_gantt/assets/spa && pnpm install`.
+- Frontend dev server: `pnpm run dev` (serves on `localhost:5173`, auto-injected when `RAILS_ENV=development`).
+- Frontend production bundle: `pnpm run build` (writes manifest + assets to `assets/build/`).
+- Lint: `pnpm run lint`; Unit/UI tests: `pnpm run test` (Vitest + Testing Library).
 - If you add Ruby-side DB changes, run migrations in container: `docker compose exec redmine bundle exec rake redmine:plugins:migrate`.
 
 ## Coding Style & Naming Conventions
@@ -28,4 +28,4 @@
 
 ## Commit & Pull Request Guidelines
 - Commit history mixes Japanese summaries and conventional prefixes (`feat:`). Favor a short prefix (`feat`, `fix`, `chore`, `refactor`) plus concise subject; keep scope small.
-- PRs should describe the problem, the change, and test evidence (`npm run test`/`lint`, manual steps, screenshots for UI). Link related Redmine issues and note any DB or asset build steps (`npm run build`) needed after merge.
+- PRs should describe the problem, the change, and test evidence (`pnpm run test`/`lint`, manual steps, screenshots for UI). Link related Redmine issues and note any DB or asset build steps (`pnpm run build`) needed after merge.

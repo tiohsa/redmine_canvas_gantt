@@ -25,7 +25,8 @@
 /log/mongrel_debug
 /plugins/*
 !/plugins/README
-!/plugins/redmine_canvas_gantt
+!/plugins/redmine_canvas_gantt/
+
 /public/assets/*
 /public/dispatch.*
 /public/plugin_assets/*
@@ -47,7 +48,3 @@
 
 /node_modules
 yarn-error.log
-
-# Plugin build artifacts
-/plugins/redmine_canvas_gantt/assets/build
-/plugins/redmine_canvas_gantt/spa/node_modules

@@ -3,7 +3,7 @@ services:
     image: redmine:latest
     container_name: redmine-dev
     ports:
-      - "8080:3000"
+      - "3000:3000"
     environment:
       AILS_ENV: development
       REDMINE_DB_MYSQL: db
