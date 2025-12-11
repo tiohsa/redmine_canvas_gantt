@@ -6,9 +6,14 @@ import { TaskRenderer } from '../renderers/TaskRenderer';
 import { OverlayRenderer } from '../renderers/OverlayRenderer';
 import { A11yLayer } from './A11yLayer';
 import { HtmlOverlay } from './HtmlOverlay';
+import { UiSidebar } from './UiSidebar';
 
 export const GanttContainer: React.FC = () => {
+    // containerRef is the root flex container
     const containerRef = useRef<HTMLDivElement>(null);
+    // mainPaneRef is the right side (timeline) where canvases live
+    const mainPaneRef = useRef<HTMLDivElement>(null);
+
     const bgCanvasRef = useRef<HTMLCanvasElement>(null);
     const taskCanvasRef = useRef<HTMLCanvasElement>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -35,10 +40,12 @@ export const GanttContainer: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        if (!containerRef.current || !bgCanvasRef.current || !taskCanvasRef.current || !overlayCanvasRef.current) return;
+        // We attach interaction engine to the MAIN PANE (timeline), not the whole container
+        // because dragging/panning is relative to timeline coordinates.
+        if (!mainPaneRef.current || !bgCanvasRef.current || !taskCanvasRef.current || !overlayCanvasRef.current) return;
 
         // Initialize Engines
-        engines.current.interaction = new InteractionEngine(overlayCanvasRef.current); // Interaction on top layer
+        engines.current.interaction = new InteractionEngine(mainPaneRef.current);
         engines.current.bg = new BackgroundRenderer(bgCanvasRef.current);
         engines.current.task = new TaskRenderer(taskCanvasRef.current);
         engines.current.overlay = new OverlayRenderer(overlayCanvasRef.current);
@@ -48,9 +55,9 @@ export const GanttContainer: React.FC = () => {
         };
     }, []);
 
-    // Responsive Canvas Size
+    // Responsive Canvas Size - Observe the mainPaneRef
     useEffect(() => {
-        if (!containerRef.current) return;
+        if (!mainPaneRef.current) return;
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
                 const { width, height } = entry.contentRect;
@@ -63,12 +70,11 @@ export const GanttContainer: React.FC = () => {
                 useTaskStore.getState().updateViewport({ width, height });
             }
         });
-        resizeObserver.observe(containerRef.current);
+        resizeObserver.observe(mainPaneRef.current);
         return () => resizeObserver.disconnect();
     }, []);
 
-    // Render Loop (Reactively triggered by viewport/tasks change for now)
-    // Optimization: In Transient Updates, we might subscribe manually or use requestAnimationFrame
+    // Render Loop
     useEffect(() => {
         if (engines.current.bg) engines.current.bg.render(viewport);
         if (engines.current.task) engines.current.task.render(viewport, tasks);
@@ -76,12 +82,17 @@ export const GanttContainer: React.FC = () => {
     }, [viewport, tasks]);
 
     return (
-        <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-            <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
-            <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
-            <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
-            <HtmlOverlay />
-            <A11yLayer />
+        <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
+            <UiSidebar />
+
+            {/* Timeline Pane */}
+            <div ref={mainPaneRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+                <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
+                <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
+                <HtmlOverlay />
+                <A11yLayer />
+            </div>
         </div>
     );
 };
