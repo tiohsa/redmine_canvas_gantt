@@ -1,11 +1,20 @@
 {
+  "src/api/client.ts": {
+    "file": "assets/client-CRZ1NSql.js",
+    "name": "client",
+    "src": "src/api/client.ts",
+    "isDynamicEntry": true
+  },
   "src/main.tsx": {
-    "file": "assets/main-D0iszdWv.js",
+    "file": "assets/main-BSM1VNOL.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
+    "dynamicImports": [
+      "src/api/client.ts"
+    ],
     "css": [
-      "assets/main-CHuu3ESE.css"
+      "assets/main-DQ3P1g1z.css"
     ]
   }
 }
