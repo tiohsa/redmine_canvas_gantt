@@ -3,7 +3,6 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 
 export class TaskRenderer {
     private canvas: HTMLCanvasElement;
-    private HEADER_HEIGHT = 50;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -22,14 +21,11 @@ export class TaskRenderer {
 
         visibleTasks.forEach(task => {
             const bounds = LayoutEngine.getTaskBounds(task, viewport);
-            // Offset y by HEADER_HEIGHT
-            const y = bounds.y + this.HEADER_HEIGHT;
-
             ctx.fillStyle = '#4a90e2';
-            ctx.fillRect(bounds.x, y, bounds.width, bounds.height);
+            ctx.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
 
             ctx.fillStyle = '#000';
-            ctx.fillText(task.subject, bounds.x + 5, y + 12);
+            ctx.fillText(task.subject, bounds.x + 5, bounds.y + 12);
         });
     }
 }
