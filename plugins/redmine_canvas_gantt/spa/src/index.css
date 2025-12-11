@@ -5,7 +5,7 @@
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  background-color: transparent;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -22,13 +22,10 @@ a:hover {
   color: #535bf2;
 }
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
+/* 
+   Removed global body styles that conflict with Redmine layout.
+   (margin, display:flex, place-items, min-width, min-height)
+*/
 
 h1 {
   font-size: 3.2em;
@@ -57,7 +54,7 @@ button:focus-visible {
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
-    background-color: #ffffff;
+    background-color: transparent; 
   }
   a:hover {
     color: #747bff;

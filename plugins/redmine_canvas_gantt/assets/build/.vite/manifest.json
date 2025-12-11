@@ -6,7 +6,7 @@
     "isDynamicEntry": true
   },
   "src/main.tsx": {
-    "file": "assets/main-GHgKtJA_.js",
+    "file": "assets/main-DdsSEkK7.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
@@ -14,7 +14,7 @@
       "src/api/client.ts"
     ],
     "css": [
-      "assets/main-DQ3P1g1z.css"
+      "assets/main-Q2C9lwHy.css"
     ]
   }
 }
