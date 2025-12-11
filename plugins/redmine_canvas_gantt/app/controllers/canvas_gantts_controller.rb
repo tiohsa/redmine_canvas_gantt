@@ -11,11 +11,12 @@ class CanvasGanttsController < ApplicationController
   # GET /projects/:project_id/canvas_gantt
   def index
     @i18n = {
-      label_start_date: l(:label_start_date),
-      label_due_date: l(:label_due_date),
+      field_start_date: l(:field_start_date),
+      field_due_date: l(:field_due_date),
       button_save: l(:button_save),
       button_cancel: l(:button_cancel),
       field_subject: l(:field_subject),
+      field_status: l(:field_status),
       label_day_plural: l(:label_day_plural)
     }
   end

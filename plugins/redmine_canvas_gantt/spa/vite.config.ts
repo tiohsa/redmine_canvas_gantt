@@ -1,13 +1,14 @@
-import { defineConfig } from 'vite'
+/// <reference types="vitest" />
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: process.env.NODE_ENV === 'production' ? '/plugin_assets/redmine_canvas_gantt/build/' : '/',
+  base: './', // Ensure relative paths for assets
   build: {
     manifest: true,
-    outDir: '../assets/build', // Output to plugins/redmine_canvas_gantt/assets/build
+    outDir: '../assets/build',
     emptyOutDir: true,
     rollupOptions: {
       input: 'src/main.tsx',
@@ -16,5 +17,10 @@ export default defineConfig({
   server: {
     origin: 'http://localhost:5173',
     cors: true,
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/setupTests.ts',
   },
 })

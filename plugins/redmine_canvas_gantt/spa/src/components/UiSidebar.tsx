@@ -24,8 +24,8 @@ export const UiSidebar: React.FC = () => {
     const columns = [
         { key: 'id', title: '#', width: 50 },
         { key: 'subject', title: i18n.t('field_subject'), width: 200 },
-        { key: 'startDate', title: i18n.t('label_start_date'), width: 90, format: (t: any) => new Date(t.startDate).toLocaleDateString() },
-        { key: 'dueDate', title: i18n.t('label_due_date'), width: 90, format: (t: any) => new Date(t.dueDate).toLocaleDateString() },
+        { key: 'startDate', title: i18n.t('field_start_date'), width: 90, format: (t: any) => new Date(t.startDate).toLocaleDateString() },
+        { key: 'dueDate', title: i18n.t('field_due_date'), width: 90, format: (t: any) => new Date(t.dueDate).toLocaleDateString() },
         { key: 'statusId', title: i18n.t('field_status'), width: 60 }, // Need status name map... using ID for now
         { key: 'ratioDone', title: '%', width: 50, format: (t: any) => `${t.ratioDone}%` },
     ];

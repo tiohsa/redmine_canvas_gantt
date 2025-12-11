@@ -5,7 +5,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      AILS_ENV: development
+      RAILS_ENV: production
       REDMINE_DB_MYSQL: db
       REDMINE_DB_PASSWORD: password
       REDMINE_SECRET_KEY_BASE: supersecretkey
