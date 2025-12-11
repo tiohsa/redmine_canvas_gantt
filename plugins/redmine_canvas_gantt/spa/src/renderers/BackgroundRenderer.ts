@@ -18,25 +18,42 @@ export class BackgroundRenderer {
 
         // Grid (Day lines)
         ctx.strokeStyle = '#e0e0e0';
+        ctx.lineWidth = 1;
         ctx.beginPath();
 
         const ONE_DAY = 24 * 60 * 60 * 1000;
-        // Calculate visible time range
         const startOffsetTime = viewport.scrollX / viewport.scale;
         const visibleStartTime = viewport.startDate + startOffsetTime;
         const visibleEndTime = visibleStartTime + (this.canvas.width / viewport.scale);
 
-        // Align to start of day
         let currentTime = Math.floor(visibleStartTime / ONE_DAY) * ONE_DAY;
 
         while (currentTime <= visibleEndTime) {
             const x = (currentTime - viewport.startDate) * viewport.scale - viewport.scrollX;
             if (x >= 0 && x <= this.canvas.width) {
+                // Dashed line for grid
+                ctx.setLineDash([4, 4]);
                 ctx.moveTo(Math.floor(x) + 0.5, 0);
                 ctx.lineTo(Math.floor(x) + 0.5, this.canvas.height);
             }
             currentTime += ONE_DAY;
         }
         ctx.stroke();
+        ctx.setLineDash([]); // Reset dash
+
+        // Draw "Today" line
+        const now = Date.now();
+        const todayX = (now - viewport.startDate) * viewport.scale - viewport.scrollX;
+
+        if (todayX >= 0 && todayX <= this.canvas.width) {
+            ctx.strokeStyle = '#ff5252';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(todayX, 0);
+            ctx.lineTo(todayX, this.canvas.height);
+            ctx.stroke();
+
+            // Tag moved to TimelineHeader
+        }
     }
 }

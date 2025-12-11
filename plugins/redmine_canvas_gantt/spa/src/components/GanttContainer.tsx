@@ -7,6 +7,7 @@ import { OverlayRenderer } from '../renderers/OverlayRenderer';
 import { A11yLayer } from './A11yLayer';
 import { HtmlOverlay } from './HtmlOverlay';
 import { UiSidebar } from './UiSidebar';
+import { TimelineHeader } from './TimelineHeader';
 
 export const GanttContainer: React.FC = () => {
     // containerRef is the root flex container
@@ -85,13 +86,16 @@ export const GanttContainer: React.FC = () => {
         <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
             <UiSidebar />
 
-            {/* Timeline Pane */}
-            <div ref={mainPaneRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-                <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
-                <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
-                <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
-                <HtmlOverlay />
-                <A11yLayer />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <TimelineHeader />
+                {/* Timeline Pane */}
+                <div ref={mainPaneRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                    <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+                    <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
+                    <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
+                    <HtmlOverlay />
+                    <A11yLayer />
+                </div>
             </div>
         </div>
     );
