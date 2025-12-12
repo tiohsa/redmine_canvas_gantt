@@ -32,6 +32,12 @@ export const apiClient = {
             throw new Error("Configuration not found");
         }
 
+        const parseDate = (value: string | null | undefined): number | null => {
+            if (!value) return null;
+            const ts = new Date(value).getTime();
+            return Number.isFinite(ts) ? ts : null;
+        };
+
         const response = await fetch(`${config.apiBase}/data.json`, {
             headers: {
                 'X-Redmine-API-Key': config.apiKey,
@@ -46,20 +52,30 @@ export const apiClient = {
         const data = await response.json();
 
         // Transform API tasks to internal Task model
-        const tasks = data.tasks.map((t: any, index: number) => ({
-            id: String(t.id),
-            subject: t.subject,
-            startDate: new Date(t.start_date).getTime(),
-            dueDate: new Date(t.due_date).getTime(),
-            ratioDone: t.ratio_done,
-            statusId: t.status_id,
-            assignedToId: t.assigned_to_id,
-            assignedToName: t.assigned_to_name,
-            parentId: t.parent_id,
-            lockVersion: t.lock_version,
-            editable: t.editable,
-            rowIndex: index // Simplify for now: default order
-        }));
+        const tasks = data.tasks.map((t: any, index: number) => {
+            const start = parseDate(t.start_date);
+            const due = parseDate(t.due_date);
+
+            // Fallbacks to keep rendering even when dates are missing/invalid
+            const safeStart = start ?? due ?? new Date().setHours(0, 0, 0, 0);
+            const safeDue = due ?? start ?? safeStart;
+            const normalizedDue = safeDue < safeStart ? safeStart : safeDue;
+
+            return {
+                id: String(t.id),
+                subject: t.subject,
+                startDate: safeStart,
+                dueDate: normalizedDue,
+                ratioDone: t.ratio_done ?? 0,
+                statusId: t.status_id,
+                assignedToId: t.assigned_to_id,
+                assignedToName: t.assigned_to_name,
+                parentId: t.parent_id,
+                lockVersion: t.lock_version,
+                editable: t.editable,
+                rowIndex: index // Simplify for now: default order
+            };
+        });
 
         return { ...data, tasks };
     },

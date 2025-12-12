@@ -21,6 +21,8 @@ export class TaskRenderer {
         const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
 
         visibleTasks.forEach(task => {
+            if (!Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) return;
+
             const bounds = LayoutEngine.getTaskBounds(task, viewport);
             const style = getStatusColor(task.statusId);
 

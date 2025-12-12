@@ -81,20 +81,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ viewMode, onViewMode
                     })}
                 </div>
 
-                <button
-                    style={{
-                        backgroundColor: '#0066cc',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        padding: '8px 16px',
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                    }}
-                >
-                    Add Task
-                </button>
+
             </div>
         </div>
     );
