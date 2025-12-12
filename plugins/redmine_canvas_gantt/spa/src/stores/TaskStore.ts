@@ -26,7 +26,7 @@ const DEFAULT_VIEWPORT: Viewport = {
     scale: 0.0000005787, // ~50px per day
     width: 800,
     height: 600,
-    rowHeight: 40
+    rowHeight: 44
 };
 
 export const useTaskStore = create<TaskState>((set) => ({

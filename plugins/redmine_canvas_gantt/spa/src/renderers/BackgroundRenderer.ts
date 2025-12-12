@@ -13,11 +13,11 @@ export class BackgroundRenderer {
 
         // Clear
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        ctx.fillStyle = '#f5f5f5';
+        ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Grid (Day lines)
-        ctx.strokeStyle = '#e0e0e0';
+        ctx.strokeStyle = '#e5e8ef';
         ctx.lineWidth = 1;
         ctx.beginPath();
 
@@ -32,7 +32,7 @@ export class BackgroundRenderer {
             const x = (currentTime - viewport.startDate) * viewport.scale - viewport.scrollX;
             if (x >= 0 && x <= this.canvas.width) {
                 // Dashed line for grid
-                ctx.setLineDash([4, 4]);
+                ctx.setLineDash([2, 8]);
                 ctx.moveTo(Math.floor(x) + 0.5, 0);
                 ctx.lineTo(Math.floor(x) + 0.5, this.canvas.height);
             }
@@ -40,6 +40,20 @@ export class BackgroundRenderer {
         }
         ctx.stroke();
         ctx.setLineDash([]); // Reset dash
+
+        // Horizontal separators per row
+        const { rowHeight, scrollY, height } = viewport;
+        const startRow = Math.floor(scrollY / rowHeight);
+        const endRow = Math.ceil((scrollY + height) / rowHeight);
+
+        ctx.strokeStyle = '#f0f2f7';
+        ctx.beginPath();
+        for (let row = startRow; row <= endRow; row++) {
+            const y = row * rowHeight - scrollY;
+            ctx.moveTo(0, Math.floor(y) + 0.5);
+            ctx.lineTo(this.canvas.width, Math.floor(y) + 0.5);
+        }
+        ctx.stroke();
 
         // Draw "Today" line
         const now = Date.now();

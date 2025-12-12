@@ -7,10 +7,12 @@ function App() {
   const [viewMode, setViewMode] = useState<'Day' | 'Week' | 'Month' | 'Quarter'>('Week');
 
   return (
-    <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
-      <GanttToolbar viewMode={viewMode} onViewModeChange={setViewMode} />
-      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-        <GanttContainer />
+    <div className="app-shell">
+      <div className="gantt-card">
+        <GanttToolbar viewMode={viewMode} onViewModeChange={setViewMode} />
+        <div className="gantt-body">
+          <GanttContainer />
+        </div>
       </div>
     </div>
   );

@@ -24,9 +24,10 @@ export class LayoutEngine {
         const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
         // Ensure width is at least something visible (e.g., 2px) even if duration is 0
         const width = Math.max(2, (task.dueDate - task.startDate) * viewport.scale);
-        const height = viewport.rowHeight - 10; // Padding
+        const innerHeight = Math.min(viewport.rowHeight - 14, 26);
+        const offsetY = (viewport.rowHeight - innerHeight) / 2;
 
-        return { x, y: y + 5, width, height }; // Centered in row
+        return { x, y: y + offsetY, width, height: innerHeight }; // Centered in row
     }
 
     /**

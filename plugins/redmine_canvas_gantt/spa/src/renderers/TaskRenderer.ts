@@ -25,22 +25,47 @@ export class TaskRenderer {
             const style = getStatusColor(task.statusId);
 
             // Draw Bar Background (lighter or main color)
-            this.drawRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, 6, style.bar);
+            ctx.save();
+            ctx.shadowColor = style.shadow || 'rgba(0,0,0,0.08)';
+            ctx.shadowBlur = 12;
+            ctx.shadowOffsetY = 6;
+            this.drawRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, 8, style.bar);
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+
+            // Stroke outline for crispness
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.restore();
 
             // Draw Progress
             if (task.ratioDone > 0) {
                 const progressWidth = (bounds.width * task.ratioDone) / 100;
                 // Clip progress to rounded rect
                 ctx.save();
-                this.clipRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, 6);
+                this.clipRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, 8);
 
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Darken overlay
+                ctx.fillStyle = style.progress || 'rgba(255,255,255,0.35)';
+                ctx.globalAlpha = 0.3;
                 ctx.fillRect(bounds.x, bounds.y, progressWidth, bounds.height);
+                ctx.globalAlpha = 1;
+                ctx.restore();
+            }
+
+            // Label inside bar
+            if (bounds.width > 80) {
+                ctx.save();
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '600 12px "Inter", sans-serif';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(style.label, bounds.x + 12, bounds.y + bounds.height / 2);
                 ctx.restore();
             }
 
             // Draw Label (optional, maybe to the right side if it fits or outside)
-            // For now, let's keep it simple or remove if Sidebar has it. 
+            // For now, let's keep it simple or remove if Sidebar has it.
             // The image shows labels primarily in the sidebar, or maybe distinct bar types.
             // Let's not draw text on bar for now to match the clean look in the image (Sidebar has names).
         });

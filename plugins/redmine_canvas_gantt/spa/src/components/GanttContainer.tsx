@@ -83,10 +83,10 @@ export const GanttContainer: React.FC = () => {
     }, [viewport, tasks]);
 
     return (
-        <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
+        <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden', background: '#f9fafc' }}>
             <UiSidebar />
 
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: '#ffffff' }}>
                 <TimelineHeader />
                 {/* Timeline Pane */}
                 <div ref={mainPaneRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>

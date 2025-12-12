@@ -1,46 +1,39 @@
-#root {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  text-align: left;
+.app-shell {
+  width: 100vw;
+  height: 100vh;
+  padding: 20px 24px;
+  box-sizing: border-box;
+  background: radial-gradient(circle at 20% 20%, #f8fbff 0, #f0f3f9 32%, #e7ebf5 55%, #e7ebf5 100%);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
+.gantt-card {
+  flex: 1;
+  max-width: 1400px;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 18px 38px rgba(0, 39, 99, 0.08);
+  border: 1px solid #e7ebf3;
+  overflow: hidden;
 }
 
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
+.gantt-body {
+  flex: 1;
+  display: flex;
+  background: #f9fafc;
+  border-top: 1px solid #eef1f6;
 }
 
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+@media (max-width: 1200px) {
+  .app-shell {
+    padding: 12px;
   }
 
-  to {
-    transform: rotate(360deg);
+  .gantt-card {
+    max-width: 100%;
   }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
 }

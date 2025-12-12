@@ -38,7 +38,7 @@ export class OverlayRenderer {
         tasks: Task[],
         relations: Relation[]
     ) {
-        ctx.strokeStyle = '#888';
+        ctx.strokeStyle = '#c1c9d6';
         ctx.lineWidth = 1.5;
 
         for (const rel of relations) {
@@ -82,7 +82,7 @@ export class OverlayRenderer {
             ctx.lineTo(x + size, y + size / 2);
         }
         ctx.closePath();
-        ctx.fillStyle = '#888';
+        ctx.fillStyle = '#c1c9d6';
         ctx.fill();
     }
 

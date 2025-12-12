@@ -16,9 +16,9 @@ export const TimelineHeader: React.FC = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Header Background
-            ctx.fillStyle = '#f8f9fa';
+            ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.strokeStyle = '#e0e0e0';
+            ctx.strokeStyle = '#e6e9f1';
             ctx.beginPath();
             ctx.moveTo(0, canvas.height - 0.5);
             ctx.lineTo(canvas.width, canvas.height - 0.5);
@@ -33,8 +33,8 @@ export const TimelineHeader: React.FC = () => {
 
             let currentTime = Math.floor(visibleStartTime / ONE_DAY) * ONE_DAY;
 
-            ctx.fillStyle = '#666';
-            ctx.font = '500 12px sans-serif';
+            ctx.fillStyle = '#4a5365';
+            ctx.font = '600 12px "Inter", sans-serif';
             ctx.textAlign = 'center';
 
             while (currentTime <= visibleEndTime) {
@@ -52,9 +52,9 @@ export const TimelineHeader: React.FC = () => {
                 if (x + dayWidth >= 0 && x <= canvas.width) {
                     // Draw tick
                     ctx.beginPath();
-                    ctx.moveTo(Math.floor(x) + 0.5, canvas.height - 10);
+                    ctx.moveTo(Math.floor(x) + 0.5, canvas.height - 12);
                     ctx.lineTo(Math.floor(x) + 0.5, canvas.height);
-                    ctx.strokeStyle = '#ccc';
+                    ctx.strokeStyle = '#d9dde6';
                     ctx.stroke();
 
                     // Draw Text (e.g., "12 Mon")
@@ -65,9 +65,9 @@ export const TimelineHeader: React.FC = () => {
                     // If zoomed out, maybe only show day number or less texts. 
                     // For now assume standard zoom.
 
-                    if (dayWidth > 30) {
+                    if (dayWidth > 28) {
                         const centerX = x + dayWidth / 2;
-                        ctx.fillText(dayStr, centerX, canvas.height - 14);
+                        ctx.fillText(dayStr, centerX, canvas.height - 18);
                     }
                 }
                 currentTime += ONE_DAY;
@@ -79,18 +79,18 @@ export const TimelineHeader: React.FC = () => {
 
             if (todayX >= 0 && todayX <= canvas.width) {
                 // Tag style
-                ctx.fillStyle = '#ff5252';
-                const tagWidth = 50;
-                const tagHeight = 20;
+                ctx.fillStyle = '#de5148';
+                const tagWidth = 58;
+                const tagHeight = 22;
                 const tagX = todayX - tagWidth / 2;
-                const tagY = 10; // Vertically centered roughly
+                const tagY = 12; // Vertically centered roughly
 
                 ctx.beginPath();
                 ctx.roundRect(tagX, tagY, tagWidth, tagHeight, 4);
                 ctx.fill();
 
                 ctx.fillStyle = 'white';
-                ctx.font = 'bold 11px sans-serif';
+                ctx.font = '700 11px "Inter", sans-serif';
                 ctx.textAlign = 'center';
                 ctx.fillText('Today', todayX, tagY + 14);
             }
@@ -108,7 +108,7 @@ export const TimelineHeader: React.FC = () => {
             const entry = entries[0];
             if (canvasRef.current) {
                 canvasRef.current.width = entry.contentRect.width;
-                canvasRef.current.height = 48; // Fixed height
+                canvasRef.current.height = 56; // Fixed height
                 // Trigger re-render by updating state? or just call helper?
                 // The viewport dependency above will handle redraw if viewport update triggers it.
                 // But changing width might not trigger viewport update immediately if not synced.
@@ -120,8 +120,8 @@ export const TimelineHeader: React.FC = () => {
     }, []);
 
     return (
-        <div style={{ height: 48, backgroundColor: '#f8f9fa', borderBottom: '1px solid #e0e0e0', overflow: 'hidden' }}>
-            <canvas ref={canvasRef} height={48} style={{ display: 'block' }} />
+        <div style={{ height: 56, backgroundColor: '#ffffff', borderBottom: '1px solid #e6e9f1', overflow: 'hidden' }}>
+            <canvas ref={canvasRef} height={56} style={{ display: 'block' }} />
         </div>
     );
 };
