@@ -100,41 +100,7 @@ export const TimelineHeader: React.FC = () => {
             });
 
 
-            // Draw "Today" Marker
-            // Only show line on bottom half or full? User screenshot implies full or specific.
-            // Let's draw full line marker in header
-            const now = Date.now();
-            const todayX = (now - viewport.startDate) * viewport.scale - viewport.scrollX;
 
-            if (todayX >= 0 && todayX <= canvas.width) {
-                // Dashed red line
-                ctx.strokeStyle = '#ff0000';
-                ctx.setLineDash([4, 4]);
-                ctx.beginPath();
-                ctx.moveTo(todayX, 0);
-                ctx.lineTo(todayX, headerHeight);
-                ctx.stroke();
-                ctx.setLineDash([]);
-
-                // Tag
-                /*
-               // Tag style
-               ctx.fillStyle = '#ff5252';
-               const tagWidth = 40;
-               const tagHeight = 16;
-               const tagX = todayX - tagWidth / 2;
-               const tagY = 0;
-
-               ctx.beginPath();
-               ctx.rect(tagX, tagY, tagWidth, tagHeight);
-               ctx.fill();
-
-               ctx.fillStyle = 'white';
-               ctx.font = 'bold 10px sans-serif';
-               ctx.textAlign = 'center';
-               ctx.fillText('Today', todayX, tagY + 11);
-               */
-            }
         };
 
         render();

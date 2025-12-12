@@ -110,10 +110,12 @@ export class OverlayRenderer {
         if (x >= 0 && x <= this.canvas.width) {
             ctx.strokeStyle = '#e53935';
             ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]);
             ctx.beginPath();
             ctx.moveTo(x, 0);
             ctx.lineTo(x, this.canvas.height);
             ctx.stroke();
+            ctx.setLineDash([]);
         }
     }
 }

@@ -39,19 +39,6 @@ export class BackgroundRenderer {
 
         ctx.stroke();
 
-        // Draw "Today" line
-        const now = Date.now();
-        const todayX = (now - viewport.startDate) * viewport.scale - viewport.scrollX;
 
-        if (todayX >= 0 && todayX <= this.canvas.width) {
-            ctx.strokeStyle = '#ff5252';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(todayX, 0);
-            ctx.lineTo(todayX, this.canvas.height);
-            ctx.stroke();
-
-            // Tag moved to TimelineHeader
-        }
     }
 }
