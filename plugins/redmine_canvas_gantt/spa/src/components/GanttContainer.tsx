@@ -71,8 +71,18 @@ export const GanttContainer: React.FC = () => {
                     const start = t.startDate;
                     return acc === null ? start : Math.min(acc, start);
                 }, null);
-                const startDate = minStart ?? new Date().setHours(0, 0, 0, 0);
-                updateViewport({ startDate });
+                const oneYearAgo = new Date();
+                oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+                oneYearAgo.setHours(0, 0, 0, 0);
+
+                const startDate = Math.min(minStart ?? oneYearAgo.getTime(), oneYearAgo.getTime());
+
+                // Calculate scroll position to center "today" (or start at today with some padding)
+                const currentViewport = useTaskStore.getState().viewport;
+                const now = new Date().setHours(0, 0, 0, 0);
+                const scrollX = Math.max(0, (now - startDate) * currentViewport.scale - 100);
+
+                updateViewport({ startDate, scrollX });
             }).catch(err => console.error("Failed to load Gantt data", err));
         });
     }, []);

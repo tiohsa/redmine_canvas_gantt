@@ -23,7 +23,7 @@ interface TaskState {
 }
 
 const DEFAULT_VIEWPORT: Viewport = {
-    startDate: new Date().setHours(0, 0, 0, 0),
+    startDate: new Date().setFullYear(new Date().getFullYear() - 1),
     scrollX: 0,
     scrollY: 0,
     scale: 0.0000005787, // ~50px per day

@@ -1,12 +1,24 @@
 import React from 'react';
 
 import type { ViewMode } from '../types';
+import { useTaskStore } from '../stores/TaskStore';
+
 interface GanttToolbarProps {
     viewMode: ViewMode;
     onViewModeChange: (mode: ViewMode) => void;
 }
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ viewMode, onViewModeChange }) => {
+    const { viewport, updateViewport } = useTaskStore();
+
+    const handleTodayClick = () => {
+        const now = Date.now();
+        const todayX = (now - viewport.startDate) * viewport.scale;
+        // Center the view (assuming width is available in viewport, otherwise guess)
+        const centeredX = Math.max(0, todayX - (viewport.width / 2));
+        updateViewport({ scrollX: centeredX });
+    };
+
     return (
         <div style={{
             display: 'flex',
@@ -46,6 +58,22 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ viewMode, onViewMode
 
             {/* Right: View Mode & Add Task */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <button
+                    onClick={handleTodayClick}
+                    style={{
+                        padding: '8px 16px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: '#fff',
+                        color: '#333',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        cursor: 'pointer'
+                    }}
+                >
+                    Today
+                </button>
+
                 <div style={{
                     display: 'flex',
                     backgroundColor: '#e9ecef',
