@@ -27,7 +27,10 @@ declare global {
 export const apiClient = {
     fetchData: async (): Promise<ApiData> => {
         const config = window.RedmineCanvasGantt;
-        if (!config) throw new Error("Plugin configuration not found");
+
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
 
         const response = await fetch(`${config.apiBase}/data.json`, {
             headers: {
@@ -63,7 +66,9 @@ export const apiClient = {
 
     updateTask: async (task: Task): Promise<UpdateTaskResult> => {
         const config = window.RedmineCanvasGantt;
-        if (!config) throw new Error("Plugin configuration not found");
+        if (!config) {
+             throw new Error("Configuration not found");
+        }
 
         const response = await fetch(`${config.apiBase}/tasks/${task.id}.json`, {
             method: 'PATCH',

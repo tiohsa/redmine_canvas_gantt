@@ -17,7 +17,7 @@ export class BackgroundRenderer {
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Grid (Day lines)
-        ctx.strokeStyle = '#e0e0e0';
+        ctx.strokeStyle = '#f0f0f0';
         ctx.lineWidth = 1;
         ctx.beginPath();
 
@@ -31,15 +31,22 @@ export class BackgroundRenderer {
         while (currentTime <= visibleEndTime) {
             const x = (currentTime - viewport.startDate) * viewport.scale - viewport.scrollX;
             if (x >= 0 && x <= this.canvas.width) {
-                // Dashed line for grid
-                ctx.setLineDash([4, 4]);
+                // Solid line for grid
                 ctx.moveTo(Math.floor(x) + 0.5, 0);
                 ctx.lineTo(Math.floor(x) + 0.5, this.canvas.height);
             }
             currentTime += ONE_DAY;
         }
+
+        // Horizontal lines
+        let y = -viewport.scrollY % viewport.rowHeight;
+        while (y < this.canvas.height) {
+            ctx.moveTo(0, Math.floor(y) + 0.5);
+            ctx.lineTo(this.canvas.width, Math.floor(y) + 0.5);
+            y += viewport.rowHeight;
+        }
+
         ctx.stroke();
-        ctx.setLineDash([]); // Reset dash
 
         // Draw "Today" line
         const now = Date.now();

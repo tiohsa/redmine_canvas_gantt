@@ -49,19 +49,26 @@ export class OverlayRenderer {
             const fromBounds = LayoutEngine.getTaskBounds(fromTask, viewport);
             const toBounds = LayoutEngine.getTaskBounds(toTask, viewport);
 
-            // Manhattan-style path: right edge of 'from' -> left edge of 'to'
+            // S-curve path (Bezier)
             const startX = fromBounds.x + fromBounds.width;
             const startY = fromBounds.y + fromBounds.height / 2;
             const endX = toBounds.x;
             const endY = toBounds.y + toBounds.height / 2;
 
-            const midX = (startX + endX) / 2;
+            // Improved control point calculation for nicer S-curves
+            const deltaX = endX - startX;
+            // Use midpoint for control points to get a smooth S-curve
+            // Ensure a minimum curve width even if tasks are close
+            const curveWidth = Math.max(deltaX / 2, 40);
+
+            const cp1x = startX + curveWidth;
+            const cp1y = startY;
+            const cp2x = endX - curveWidth;
+            const cp2y = endY;
 
             ctx.beginPath();
             ctx.moveTo(startX, startY);
-            ctx.lineTo(midX, startY);
-            ctx.lineTo(midX, endY);
-            ctx.lineTo(endX, endY);
+            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
             ctx.stroke();
 
             // Arrow head
