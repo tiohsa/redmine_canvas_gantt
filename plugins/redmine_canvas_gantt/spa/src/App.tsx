@@ -1,17 +1,19 @@
-import { useState } from 'react';
+import { useTaskStore } from './stores/TaskStore';
 import { GanttContainer } from './components/GanttContainer';
 import { GanttToolbar } from './components/GanttToolbar';
+import Toast from './components/Toast';
 import './App.css';
 
 function App() {
-  const [viewMode, setViewMode] = useState<'Day' | 'Week' | 'Month' | 'Quarter'>('Week');
+  const { viewMode, setViewMode } = useTaskStore();
 
   return (
-    <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
+    <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
       <GanttToolbar viewMode={viewMode} onViewModeChange={setViewMode} />
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         <GanttContainer />
       </div>
+      <Toast />
     </div>
   );
 }

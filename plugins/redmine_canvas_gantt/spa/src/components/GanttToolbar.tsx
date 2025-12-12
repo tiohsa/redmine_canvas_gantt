@@ -1,11 +1,24 @@
 import React from 'react';
 
+import type { ViewMode } from '../types';
+import { useTaskStore } from '../stores/TaskStore';
+
 interface GanttToolbarProps {
-    viewMode: 'Day' | 'Week' | 'Month' | 'Quarter';
-    onViewModeChange: (mode: 'Day' | 'Week' | 'Month' | 'Quarter') => void;
+    viewMode: ViewMode;
+    onViewModeChange: (mode: ViewMode) => void;
 }
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ viewMode, onViewModeChange }) => {
+    const { viewport, updateViewport } = useTaskStore();
+
+    const handleTodayClick = () => {
+        const now = Date.now();
+        const todayX = (now - viewport.startDate) * viewport.scale;
+        // Center the view (assuming width is available in viewport, otherwise guess)
+        const centeredX = Math.max(0, todayX - (viewport.width / 2));
+        updateViewport({ scrollX: centeredX });
+    };
+
     return (
         <div style={{
             display: 'flex',
@@ -45,49 +58,58 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ viewMode, onViewMode
 
             {/* Right: View Mode & Add Task */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <div style={{
-                    display: 'flex',
-                    backgroundColor: '#f1f3f5',
-                    borderRadius: '8px',
-                    padding: '4px',
-                    gap: '4px'
-                }}>
-                    {(['Day', 'Week', 'Month', 'Quarter'] as const).map((mode) => (
-                        <button
-                            key={mode}
-                            onClick={() => onViewModeChange(mode)}
-                            style={{
-                                border: 'none',
-                                background: viewMode === mode ? '#fff' : 'transparent',
-                                color: viewMode === mode ? '#333' : '#666',
-                                padding: '6px 12px',
-                                borderRadius: '6px',
-                                fontSize: '13px',
-                                fontWeight: 500,
-                                cursor: 'pointer',
-                                boxShadow: viewMode === mode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            {mode}
-                        </button>
-                    ))}
-                </div>
-
                 <button
+                    onClick={handleTodayClick}
                     style={{
-                        backgroundColor: '#0066cc',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
                         padding: '8px 16px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: '#fff',
+                        color: '#333',
                         fontSize: '14px',
-                        fontWeight: 600,
+                        fontWeight: 500,
                         cursor: 'pointer'
                     }}
                 >
-                    Add Task
+                    Today
                 </button>
+
+                <div style={{
+                    display: 'flex',
+                    backgroundColor: '#e9ecef',
+                    borderRadius: '8px',
+                    padding: '3px',
+                    gap: '2px',
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)'
+                }}>
+                    {(['Day', 'Week', 'Month'] as const).map((mode) => {
+                        const isActive = viewMode === mode;
+                        return (
+                            <button
+                                key={mode}
+                                onClick={() => onViewModeChange(mode)}
+                                style={{
+                                    border: 'none',
+                                    background: isActive ? '#fff' : 'transparent',
+                                    color: isActive ? '#1a1a1a' : '#6c757d',
+                                    padding: '6px 16px',
+                                    borderRadius: '6px',
+                                    fontSize: '13px',
+                                    fontWeight: isActive ? 600 : 500,
+                                    cursor: 'pointer',
+                                    boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                                    transition: 'all 0.2s ease',
+                                    outline: 'none',
+                                    minWidth: '60px'
+                                }}
+                            >
+                                {mode}
+                            </button>
+                        );
+                    })}
+                </div>
+
+
             </div>
         </div>
     );

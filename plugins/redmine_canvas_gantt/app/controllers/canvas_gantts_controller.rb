@@ -5,6 +5,7 @@ class CanvasGanttsController < ApplicationController
   accept_api_auth :data, :update
 
   before_action :find_project_by_project_id
+  before_action :set_permissions
   before_action :ensure_view_permission, only: [:index, :data]
   before_action :ensure_edit_permission, only: [:update]
 
@@ -24,9 +25,6 @@ class CanvasGanttsController < ApplicationController
   # GET /projects/:project_id/canvas_gantt/data.json
   def data
     begin
-      # Ensure permissions mirror index action for JSON responses
-      set_permissions
-
       # Fetch issues, relations, and versions
       # This is a simplified fetch logic. Real implementation needs recursive query or similar for subtasks.
       issues = @project.issues.visible.includes(:relations_to, :relations_from, :status, :tracker, :assigned_to).all
@@ -43,7 +41,7 @@ class CanvasGanttsController < ApplicationController
           assigned_to_name: issue.assigned_to&.name,
           parent_id: issue.parent_id,
           lock_version: issue.lock_version, # Critical for Optimistic Locking
-          editable: User.current.allowed_to?(:edit_issues, @project) && issue.editable?
+          editable: @permissions[:editable] && issue.editable?
         }
       end
 
@@ -82,7 +80,7 @@ class CanvasGanttsController < ApplicationController
       return
     end
 
-    unless User.current.allowed_to?(:edit_issues, @project) && issue.editable?
+    unless @permissions[:editable] && issue.editable?
       render json: { error: 'Permission denied' }, status: :forbidden
       return
     end
@@ -105,7 +103,6 @@ class CanvasGanttsController < ApplicationController
   private
 
   def ensure_view_permission
-    set_permissions
     return if @permissions[:viewable]
 
     respond_to do |format|
@@ -116,7 +113,7 @@ class CanvasGanttsController < ApplicationController
   end
 
   def ensure_edit_permission
-    unless User.current.allowed_to?(:edit_canvas_gantt, @project)
+    unless @permissions[:editable]
       render json: { error: 'Permission denied' }, status: :forbidden
       return false
     end
@@ -124,7 +121,7 @@ class CanvasGanttsController < ApplicationController
 
   def set_permissions
     @permissions ||= {
-      editable: User.current.allowed_to?(:edit_canvas_gantt, @project),
+      editable: User.current.allowed_to?(:edit_issues, @project),
       viewable: User.current.allowed_to?(:view_canvas_gantt, @project)
     }
   end

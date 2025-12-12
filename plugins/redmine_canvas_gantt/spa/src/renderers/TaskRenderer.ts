@@ -21,18 +21,22 @@ export class TaskRenderer {
         const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
 
         visibleTasks.forEach(task => {
+            if (!Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) return;
+
             const bounds = LayoutEngine.getTaskBounds(task, viewport);
             const style = getStatusColor(task.statusId);
 
             // Draw Bar Background (lighter or main color)
-            this.drawRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, 6, style.bar);
+            // Use pill shape (radius = height / 2)
+            const radius = bounds.height / 2;
+            this.drawRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius, style.bar);
 
             // Draw Progress
             if (task.ratioDone > 0) {
                 const progressWidth = (bounds.width * task.ratioDone) / 100;
                 // Clip progress to rounded rect
                 ctx.save();
-                this.clipRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, 6);
+                this.clipRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius);
 
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Darken overlay
                 ctx.fillRect(bounds.x, bounds.y, progressWidth, bounds.height);

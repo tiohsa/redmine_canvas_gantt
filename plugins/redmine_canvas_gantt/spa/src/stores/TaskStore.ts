@@ -1,10 +1,12 @@
 import { create } from 'zustand';
-import type { Task, Relation, Viewport } from '../types';
+import type { Task, Relation, Viewport, ViewMode } from '../types';
+import { SCALES } from '../utils/grid';
 
 interface TaskState {
     tasks: Task[];
     relations: Relation[];
     viewport: Viewport;
+    viewMode: ViewMode;
     selectedTaskId: string | null;
     hoveredTaskId: string | null;
     contextMenu: { x: number; y: number; taskId: string } | null;
@@ -17,10 +19,11 @@ interface TaskState {
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
     updateTask: (id: string, updates: Partial<Task>) => void;
     updateViewport: (updates: Partial<Viewport>) => void;
+    setViewMode: (mode: ViewMode) => void;
 }
 
 const DEFAULT_VIEWPORT: Viewport = {
-    startDate: new Date().setHours(0, 0, 0, 0),
+    startDate: new Date().setFullYear(new Date().getFullYear() - 1),
     scrollX: 0,
     scrollY: 0,
     scale: 0.0000005787, // ~50px per day
@@ -33,6 +36,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     tasks: [],
     relations: [],
     viewport: DEFAULT_VIEWPORT,
+    viewMode: 'Day',
     selectedTaskId: null,
     hoveredTaskId: null,
     contextMenu: null,
@@ -49,5 +53,26 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     updateViewport: (updates) => set((state) => ({
         viewport: { ...state.viewport, ...updates }
-    }))
+    })),
+
+
+
+    setViewMode: (mode) => set((state) => {
+        let scale = state.viewport.scale;
+        switch (mode) {
+            case 'Day':
+                scale = SCALES.Day;
+                break;
+            case 'Week':
+                scale = SCALES.Week;
+                break;
+            case 'Month':
+                scale = SCALES.Month;
+                break;
+        }
+        return {
+            viewMode: mode,
+            viewport: { ...state.viewport, scale }
+        };
+    })
 }));

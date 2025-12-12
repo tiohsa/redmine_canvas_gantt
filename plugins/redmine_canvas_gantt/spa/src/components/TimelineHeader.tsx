@@ -1,9 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
+import { getGridScales } from '../utils/grid';
 
 export const TimelineHeader: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const viewport = useTaskStore(state => state.viewport);
+    const { viewport, viewMode } = useTaskStore();
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -26,78 +27,84 @@ export const TimelineHeader: React.FC = () => {
 
             // Draw Dates
             // Logic similar to BackgroundRenderer but drawing texts
-            const ONE_DAY = 24 * 60 * 60 * 1000;
-            const startOffsetTime = viewport.scrollX / viewport.scale;
-            const visibleStartTime = viewport.startDate + startOffsetTime;
-            const visibleEndTime = visibleStartTime + (canvas.width / viewport.scale);
+            // Draw Dates
+            const scales = getGridScales(viewport, viewMode);
+            const headerHeight = canvas.height;
+            const rowHeight = headerHeight / 2;
 
-            let currentTime = Math.floor(visibleStartTime / ONE_DAY) * ONE_DAY;
+            // Draw Top Scale
+            ctx.fillStyle = '#f1f3f5';
+            ctx.fillRect(0, 0, canvas.width, rowHeight);
 
-            ctx.fillStyle = '#666';
+            ctx.strokeStyle = '#dee2e6';
+            ctx.beginPath();
+            ctx.moveTo(0, rowHeight);
+            ctx.lineTo(canvas.width, rowHeight);
+            ctx.stroke();
+
+            ctx.fillStyle = '#495057';
             ctx.font = '500 12px sans-serif';
+            ctx.textAlign = 'left';
+
+            scales.top.forEach((tick, i) => {
+                ctx.beginPath();
+                ctx.moveTo(Math.floor(tick.x) + 0.5, 0);
+                ctx.lineTo(Math.floor(tick.x) + 0.5, rowHeight);
+                ctx.stroke();
+
+                // Sticky Label Logic
+                // Find visible range for this tick
+                let nextX = canvas.width;
+                if (i < scales.top.length - 1) {
+                    nextX = scales.top[i + 1].x;
+                }
+
+                // Draw text at max(tick.x, 0) + padding
+                const textX = Math.max(tick.x, 0) + 8;
+
+                // Only draw if it fits within the interval (before nextX)
+                // Use approximate text width check if needed, or just boundary
+                if (textX < nextX - 20) {
+                    ctx.fillStyle = '#0066cc';
+                    ctx.fillText(tick.label, textX, rowHeight - 7);
+                }
+            });
+
+            // Draw Bottom Scale
+            ctx.fillStyle = '#fff'; // or transparent?
+            // ctx.fillRect(0, rowHeight, canvas.width, rowHeight); // already bg?
+
+            ctx.fillStyle = '#333';
             ctx.textAlign = 'center';
 
-            while (currentTime <= visibleEndTime) {
-                const x = (currentTime - viewport.startDate) * viewport.scale - viewport.scrollX;
-
-                // Center of the day cell
-                // Assuming cell width is 1 day * scale? 
-                // Actually LayoutEngine doesn't enforce cell width, but background draws lines at day boundaries.
-                // So we label the day in the middle of the interval [x, x + dayWidth]?
-                // Or typically Gantt charts label the start of the interval.
-
-                // Let's verify scale. viewport.scale is px/ms.
-                const dayWidth = ONE_DAY * viewport.scale;
-
-                if (x + dayWidth >= 0 && x <= canvas.width) {
-                    // Draw tick
-                    ctx.beginPath();
-                    ctx.moveTo(Math.floor(x) + 0.5, canvas.height - 10);
-                    ctx.lineTo(Math.floor(x) + 0.5, canvas.height);
-                    ctx.strokeStyle = '#ccc';
-                    ctx.stroke();
-
-                    // Draw Text (e.g., "12 Mon")
-                    const date = new Date(currentTime);
-                    const dayStr = date.getDate().toString();
-                    // const weekday = date.toLocaleDateString('en-US', { weekday: 'short' }); // "Mon"
-
-                    // If zoomed out, maybe only show day number or less texts. 
-                    // For now assume standard zoom.
-
-                    if (dayWidth > 30) {
-                        const centerX = x + dayWidth / 2;
-                        ctx.fillText(dayStr, centerX, canvas.height - 14);
-                    }
-                }
-                currentTime += ONE_DAY;
-            }
-
-            // Draw "Today" Marker
-            const now = Date.now();
-            const todayX = (now - viewport.startDate) * viewport.scale - viewport.scrollX;
-
-            if (todayX >= 0 && todayX <= canvas.width) {
-                // Tag style
-                ctx.fillStyle = '#ff5252';
-                const tagWidth = 50;
-                const tagHeight = 20;
-                const tagX = todayX - tagWidth / 2;
-                const tagY = 10; // Vertically centered roughly
+            scales.bottom.forEach((tick, i) => {
+                const x = tick.x;
 
                 ctx.beginPath();
-                ctx.roundRect(tagX, tagY, tagWidth, tagHeight, 4);
-                ctx.fill();
+                ctx.moveTo(Math.floor(x) + 0.5, rowHeight);
+                ctx.lineTo(Math.floor(x) + 0.5, headerHeight);
+                ctx.strokeStyle = '#e0e0e0';
+                ctx.stroke();
 
-                ctx.fillStyle = 'white';
-                ctx.font = 'bold 11px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('Today', todayX, tagY + 14);
-            }
+                // Calculate center for text
+                let width = 50; // default guess
+                if (i < scales.bottom.length - 1) {
+                    width = scales.bottom[i + 1].x - x;
+                } else {
+                    // estimation
+                    width = (1000 * 60 * 60 * 24 * viewport.scale); // 1 day sized? depends on scale
+                }
+
+                const textX = x + width / 2;
+                ctx.fillText(tick.label, textX, headerHeight - 7);
+            });
+
+
+
         };
 
         render();
-    }, [viewport]);
+    }, [viewport, viewMode]);
 
     // Resize Observer to match width
     useEffect(() => {
@@ -125,3 +132,5 @@ export const TimelineHeader: React.FC = () => {
         </div>
     );
 };
+
+

@@ -1,4 +1,5 @@
 import { useTaskStore } from '../stores/TaskStore';
+import { useUIStore } from '../stores/UIStore';
 import { LayoutEngine } from './LayoutEngine';
 import type { Task } from '../types';
 
@@ -75,6 +76,14 @@ export class InteractionEngine {
         const hit = this.hitTest(x, y);
 
         if (hit.task && hit.task.editable) {
+            // Check if parent task
+            if (hit.task.hasChildren) {
+                useTaskStore.getState().selectTask(hit.task.id);
+                // Show warning and return
+                useUIStore.getState().addNotification('Cannot move parent task. Move child tasks instead.', 'warning');
+                return;
+            }
+
             useTaskStore.getState().selectTask(hit.task.id);
             if (hit.region === 'body') {
                 this.drag = {
@@ -195,15 +204,28 @@ export class InteractionEngine {
                 if (result.status === 'ok' && result.lockVersion !== undefined) {
                     // Update lockVersion in store
                     updateTask(draggedTaskId, { lockVersion: result.lockVersion });
-                } else if (result.status === 'conflict') {
-                    alert(result.error || 'Conflict detected. Please reload.');
-                    // Optionally: Reload data
-                } else if (result.status === 'error') {
-                    alert('Failed to save: ' + (result.error || 'Unknown error'));
+                } else {
+                    const errorMsg = result.status === 'conflict'
+                        ? (result.error || 'Conflict detected. Please reload.')
+                        : ('Failed to save: ' + (result.error || 'Unknown error'));
+
+                    useUIStore.getState().addNotification(errorMsg, 'warning');
+
+                    // Revert changes
+                    updateTask(draggedTaskId, {
+                        startDate: this.drag.originalStartDate,
+                        dueDate: this.drag.originalDueDate
+                    });
                 }
             } catch (err) {
                 console.error('API error:', err);
-                alert('Failed to save task changes.');
+                useUIStore.getState().addNotification('Failed to save task changes.', 'error');
+
+                // Revert changes
+                updateTask(draggedTaskId, {
+                    startDate: this.drag.originalStartDate,
+                    dueDate: this.drag.originalDueDate
+                });
             }
         }
     };

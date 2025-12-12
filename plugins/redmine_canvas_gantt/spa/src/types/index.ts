@@ -13,6 +13,7 @@ export interface Task {
 
     // Computed for layout (cached)
     rowIndex: number;
+    hasChildren: boolean;
 }
 
 export interface Relation {
@@ -45,3 +46,5 @@ export interface Bounds {
     width: number;
     height: number;
 }
+
+export type ViewMode = 'Day' | 'Week' | 'Month' | 'Quarter';

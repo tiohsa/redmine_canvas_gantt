@@ -19,7 +19,37 @@ export const GanttContainer: React.FC = () => {
     const taskCanvasRef = useRef<HTMLCanvasElement>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    const { viewport, tasks, setTasks, setRelations } = useTaskStore();
+    const { viewport, tasks, setTasks, setRelations, updateViewport, viewMode } = useTaskStore();
+
+    const [sidebarWidth, setSidebarWidth] = React.useState(400);
+    const isResizing = useRef(false);
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizing.current) return;
+            // Constrain width
+            const newWidth = Math.max(200, Math.min(800, e.clientX)); // Simple clientX mapping assuming sidebar starts at 0
+            setSidebarWidth(newWidth);
+        };
+
+        const handleMouseUp = () => {
+            isResizing.current = false;
+            document.body.style.cursor = 'default';
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, []);
+
+    const startResize = () => {
+        isResizing.current = true;
+        document.body.style.cursor = 'grabbing';
+    };
 
     // Refs for engines to persist across renders
     const engines = useRef<{
@@ -35,7 +65,24 @@ export const GanttContainer: React.FC = () => {
             apiClient.fetchData().then(data => {
                 setTasks(data.tasks);
                 setRelations(data.relations);
-                // Maybe fit viewport to project duration
+
+                // Fit timeline start to the earliest available date so tasks are visible
+                const minStart = data.tasks.reduce<number | null>((acc, t) => {
+                    const start = t.startDate;
+                    return acc === null ? start : Math.min(acc, start);
+                }, null);
+                const oneYearAgo = new Date();
+                oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+                oneYearAgo.setHours(0, 0, 0, 0);
+
+                const startDate = Math.min(minStart ?? oneYearAgo.getTime(), oneYearAgo.getTime());
+
+                // Calculate scroll position to center "today" (or start at today with some padding)
+                const currentViewport = useTaskStore.getState().viewport;
+                const now = new Date().setHours(0, 0, 0, 0);
+                const scrollX = Math.max(0, (now - startDate) * currentViewport.scale - 100);
+
+                updateViewport({ startDate, scrollX });
             }).catch(err => console.error("Failed to load Gantt data", err));
         });
     }, []);
@@ -77,14 +124,30 @@ export const GanttContainer: React.FC = () => {
 
     // Render Loop
     useEffect(() => {
-        if (engines.current.bg) engines.current.bg.render(viewport);
+        if (engines.current.bg) engines.current.bg.render(viewport, viewMode);
         if (engines.current.task) engines.current.task.render(viewport, tasks);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
-    }, [viewport, tasks]);
+    }, [viewport, tasks, viewMode]);
 
     return (
         <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
-            <UiSidebar />
+            {/* Resizable Sidebar Wrapper */}
+            <div style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
+                <UiSidebar />
+            </div>
+
+            {/* Resize Handle */}
+            <div
+                onMouseDown={startResize}
+                style={{
+                    width: 4,
+                    cursor: 'grab',
+                    backgroundColor: '#f0f0f0',
+                    borderRight: '1px solid #e0e0e0',
+                    borderLeft: '1px solid #e0e0e0',
+                    zIndex: 10
+                }}
+            />
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                 <TimelineHeader />

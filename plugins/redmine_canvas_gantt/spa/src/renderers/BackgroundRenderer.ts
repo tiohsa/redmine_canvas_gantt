@@ -1,4 +1,5 @@
-import type { Viewport } from '../types';
+import type { Viewport, ViewMode } from '../types';
+import { getGridScales } from '../utils/grid';
 
 export class BackgroundRenderer {
     private canvas: HTMLCanvasElement;
@@ -7,7 +8,7 @@ export class BackgroundRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport) {
+    render(viewport: Viewport, viewMode: ViewMode) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -17,43 +18,27 @@ export class BackgroundRenderer {
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Grid (Day lines)
-        ctx.strokeStyle = '#e0e0e0';
+        ctx.strokeStyle = '#f0f0f0';
         ctx.lineWidth = 1;
         ctx.beginPath();
 
-        const ONE_DAY = 24 * 60 * 60 * 1000;
-        const startOffsetTime = viewport.scrollX / viewport.scale;
-        const visibleStartTime = viewport.startDate + startOffsetTime;
-        const visibleEndTime = visibleStartTime + (this.canvas.width / viewport.scale);
+        const scales = getGridScales(viewport, viewMode);
 
-        let currentTime = Math.floor(visibleStartTime / ONE_DAY) * ONE_DAY;
+        scales.bottom.forEach(tick => {
+            ctx.moveTo(Math.floor(tick.x) + 0.5, 0);
+            ctx.lineTo(Math.floor(tick.x) + 0.5, this.canvas.height);
+        });
 
-        while (currentTime <= visibleEndTime) {
-            const x = (currentTime - viewport.startDate) * viewport.scale - viewport.scrollX;
-            if (x >= 0 && x <= this.canvas.width) {
-                // Dashed line for grid
-                ctx.setLineDash([4, 4]);
-                ctx.moveTo(Math.floor(x) + 0.5, 0);
-                ctx.lineTo(Math.floor(x) + 0.5, this.canvas.height);
-            }
-            currentTime += ONE_DAY;
+        // Horizontal lines
+        let y = -viewport.scrollY % viewport.rowHeight;
+        while (y < this.canvas.height) {
+            ctx.moveTo(0, Math.floor(y) + 0.5);
+            ctx.lineTo(this.canvas.width, Math.floor(y) + 0.5);
+            y += viewport.rowHeight;
         }
+
         ctx.stroke();
-        ctx.setLineDash([]); // Reset dash
 
-        // Draw "Today" line
-        const now = Date.now();
-        const todayX = (now - viewport.startDate) * viewport.scale - viewport.scrollX;
 
-        if (todayX >= 0 && todayX <= this.canvas.width) {
-            ctx.strokeStyle = '#ff5252';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(todayX, 0);
-            ctx.lineTo(todayX, this.canvas.height);
-            ctx.stroke();
-
-            // Tag moved to TimelineHeader
-        }
     }
 }

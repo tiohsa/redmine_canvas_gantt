@@ -27,7 +27,16 @@ declare global {
 export const apiClient = {
     fetchData: async (): Promise<ApiData> => {
         const config = window.RedmineCanvasGantt;
-        if (!config) throw new Error("Plugin configuration not found");
+
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        const parseDate = (value: string | null | undefined): number | null => {
+            if (!value) return null;
+            const ts = new Date(value).getTime();
+            return Number.isFinite(ts) ? ts : null;
+        };
 
         const response = await fetch(`${config.apiBase}/data.json`, {
             headers: {
@@ -43,27 +52,48 @@ export const apiClient = {
         const data = await response.json();
 
         // Transform API tasks to internal Task model
-        const tasks = data.tasks.map((t: any, index: number) => ({
-            id: String(t.id),
-            subject: t.subject,
-            startDate: new Date(t.start_date).getTime(),
-            dueDate: new Date(t.due_date).getTime(),
-            ratioDone: t.ratio_done,
-            statusId: t.status_id,
-            assignedToId: t.assigned_to_id,
-            assignedToName: t.assigned_to_name,
-            parentId: t.parent_id,
-            lockVersion: t.lock_version,
-            editable: t.editable,
-            rowIndex: index // Simplify for now: default order
-        }));
+        const tasks: Task[] = data.tasks.map((t: any, index: number): Task => {
+            const start = parseDate(t.start_date);
+            const due = parseDate(t.due_date);
+
+            // Fallbacks to keep rendering even when dates are missing/invalid
+            const safeStart = start ?? due ?? new Date().setHours(0, 0, 0, 0);
+            const safeDue = due ?? start ?? safeStart;
+            const normalizedDue = safeDue < safeStart ? safeStart : safeDue;
+
+            return {
+                id: String(t.id),
+                subject: t.subject,
+                startDate: safeStart,
+                dueDate: normalizedDue,
+                ratioDone: t.ratio_done ?? 0,
+                statusId: t.status_id,
+                assignedToId: t.assigned_to_id,
+                assignedToName: t.assigned_to_name,
+                parentId: t.parent_id ? String(t.parent_id) : undefined,
+                lockVersion: t.lock_version,
+                editable: t.editable,
+                rowIndex: index, // Simplify for now: default order
+                hasChildren: false // Will be updated below
+            };
+        });
+
+        // Compute hasChildren efficiently
+        const parentIds = new Set(tasks.filter(t => t.parentId).map(t => t.parentId));
+        tasks.forEach(t => {
+            if (parentIds.has(t.id)) {
+                t.hasChildren = true;
+            }
+        });
 
         return { ...data, tasks };
     },
 
     updateTask: async (task: Task): Promise<UpdateTaskResult> => {
         const config = window.RedmineCanvasGantt;
-        if (!config) throw new Error("Plugin configuration not found");
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
 
         const response = await fetch(`${config.apiBase}/tasks/${task.id}.json`, {
             method: 'PATCH',
