@@ -26,21 +26,26 @@ export class TaskRenderer {
             const bounds = LayoutEngine.getTaskBounds(task, viewport);
             const style = getStatusColor(task.statusId);
 
-            // Draw Bar Background (lighter or main color)
-            // Use pill shape (radius = height / 2)
-            const radius = bounds.height / 2;
-            this.drawRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius, style.bar);
+            // Requirement 6.1: Parent tasks drawn as summary task (bracket style or different shape)
+            if (task.hasChildren) {
+                this.drawSummaryTask(ctx, bounds.x, bounds.y, bounds.width, bounds.height, style.bar);
+            } else {
+                // Regular leaf task
+                // Use pill shape (radius = height / 2)
+                const radius = bounds.height / 2;
+                this.drawRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius, style.bar);
 
-            // Draw Progress
-            if (task.ratioDone > 0) {
-                const progressWidth = (bounds.width * task.ratioDone) / 100;
-                // Clip progress to rounded rect
-                ctx.save();
-                this.clipRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius);
+                // Draw Progress
+                if (task.ratioDone > 0) {
+                    const progressWidth = (bounds.width * task.ratioDone) / 100;
+                    // Clip progress to rounded rect
+                    ctx.save();
+                    this.clipRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius);
 
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Darken overlay
-                ctx.fillRect(bounds.x, bounds.y, progressWidth, bounds.height);
-                ctx.restore();
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Darken overlay
+                    ctx.fillRect(bounds.x, bounds.y, progressWidth, bounds.height);
+                    ctx.restore();
+                }
             }
 
             // Draw Label (optional, maybe to the right side if it fits or outside)
@@ -79,5 +84,45 @@ export class TaskRenderer {
         ctx.quadraticCurveTo(x, y, x + radius, y);
         ctx.closePath();
         ctx.clip();
+    }
+
+    private drawSummaryTask(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, color: string) {
+        // Draw bracket-style summary task
+        //  __________
+        // |          |
+        // v          v (points down)
+
+        const bracketHeight = height / 2;
+        const thickness = height / 3;
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        // Top bar
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + width, y);
+        ctx.lineTo(x + width, y + bracketHeight);
+        ctx.lineTo(x + width - thickness/2, y + bracketHeight); // Taper end
+        ctx.lineTo(x + width, y + height); // Point
+        ctx.lineTo(x + width - thickness, y + bracketHeight);
+
+        // Go to left side
+        ctx.lineTo(x + thickness, y + bracketHeight);
+        ctx.lineTo(x, y + height); // Point
+        ctx.lineTo(x + thickness/2, y + bracketHeight); // Taper end
+        ctx.lineTo(x, y + bracketHeight);
+        ctx.closePath();
+
+        // Simplified block summary for now as points are complex to get right without variables
+        // Let's do a simple black bar with down-pointing ends
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + width, y);
+        ctx.lineTo(x + width, y + height);
+        ctx.lineTo(x + width - 10, y + height * 0.6); // Cutout
+        ctx.lineTo(x + 10, y + height * 0.6); // Cutout
+        ctx.lineTo(x, y + height);
+        ctx.closePath();
+        ctx.fill();
     }
 }

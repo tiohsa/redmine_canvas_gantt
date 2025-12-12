@@ -21,6 +21,7 @@ export interface Relation {
     from: string;
     to: string;
     type: string; // "precedes" etc.
+    delay?: number; // Delay in days (Redmine supports this)
 }
 
 export interface Project {
