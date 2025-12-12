@@ -13,6 +13,7 @@ export interface Task {
 
     // Computed for layout (cached)
     rowIndex: number;
+    hasChildren: boolean;
 }
 
 export interface Relation {

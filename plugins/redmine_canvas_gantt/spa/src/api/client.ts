@@ -52,7 +52,7 @@ export const apiClient = {
         const data = await response.json();
 
         // Transform API tasks to internal Task model
-        const tasks = data.tasks.map((t: any, index: number) => {
+        const tasks: Task[] = data.tasks.map((t: any, index: number): Task => {
             const start = parseDate(t.start_date);
             const due = parseDate(t.due_date);
 
@@ -70,11 +70,20 @@ export const apiClient = {
                 statusId: t.status_id,
                 assignedToId: t.assigned_to_id,
                 assignedToName: t.assigned_to_name,
-                parentId: t.parent_id,
+                parentId: t.parent_id ? String(t.parent_id) : undefined,
                 lockVersion: t.lock_version,
                 editable: t.editable,
-                rowIndex: index // Simplify for now: default order
+                rowIndex: index, // Simplify for now: default order
+                hasChildren: false // Will be updated below
             };
+        });
+
+        // Compute hasChildren efficiently
+        const parentIds = new Set(tasks.filter(t => t.parentId).map(t => t.parentId));
+        tasks.forEach(t => {
+            if (parentIds.has(t.id)) {
+                t.hasChildren = true;
+            }
         });
 
         return { ...data, tasks };
@@ -83,7 +92,7 @@ export const apiClient = {
     updateTask: async (task: Task): Promise<UpdateTaskResult> => {
         const config = window.RedmineCanvasGantt;
         if (!config) {
-             throw new Error("Configuration not found");
+            throw new Error("Configuration not found");
         }
 
         const response = await fetch(`${config.apiBase}/tasks/${task.id}.json`, {

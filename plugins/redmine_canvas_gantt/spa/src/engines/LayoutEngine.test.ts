@@ -30,7 +30,8 @@ describe('LayoutEngine', () => {
             ratioDone: 0,
             statusId: 1,
             lockVersion: 0,
-            editable: true
+            editable: true,
+            hasChildren: false
         };
 
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport);

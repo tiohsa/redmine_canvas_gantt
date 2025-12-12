@@ -1,6 +1,7 @@
 import { useTaskStore } from './stores/TaskStore';
 import { GanttContainer } from './components/GanttContainer';
 import { GanttToolbar } from './components/GanttToolbar';
+import Toast from './components/Toast';
 import './App.css';
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         <GanttContainer />
       </div>
+      <Toast />
     </div>
   );
 }
