@@ -45,3 +45,5 @@ export interface Bounds {
     width: number;
     height: number;
 }
+
+export type ViewMode = 'Day' | 'Week' | 'Month' | 'Quarter';

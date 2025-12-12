@@ -1,9 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
+import { getGridTicks } from '../utils/grid';
 
 export const TimelineHeader: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const viewport = useTaskStore(state => state.viewport);
+    const { viewport, viewMode } = useTaskStore();
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -26,52 +27,26 @@ export const TimelineHeader: React.FC = () => {
 
             // Draw Dates
             // Logic similar to BackgroundRenderer but drawing texts
-            const ONE_DAY = 24 * 60 * 60 * 1000;
-            const startOffsetTime = viewport.scrollX / viewport.scale;
-            const visibleStartTime = viewport.startDate + startOffsetTime;
-            const visibleEndTime = visibleStartTime + (canvas.width / viewport.scale);
-
-            let currentTime = Math.floor(visibleStartTime / ONE_DAY) * ONE_DAY;
+            const ticks = getGridTicks(viewport, viewMode);
 
             ctx.fillStyle = '#666';
             ctx.font = '500 12px sans-serif';
-            ctx.textAlign = 'center';
+            ctx.textAlign = 'left';
 
-            while (currentTime <= visibleEndTime) {
-                const x = (currentTime - viewport.startDate) * viewport.scale - viewport.scrollX;
+            ticks.forEach(tick => {
+                // Draw Tick
+                ctx.beginPath();
+                ctx.moveTo(Math.floor(tick.x) + 0.5, canvas.height - 10);
+                ctx.lineTo(Math.floor(tick.x) + 0.5, canvas.height);
+                ctx.strokeStyle = '#ccc';
+                ctx.stroke();
 
-                // Center of the day cell
-                // Assuming cell width is 1 day * scale? 
-                // Actually LayoutEngine doesn't enforce cell width, but background draws lines at day boundaries.
-                // So we label the day in the middle of the interval [x, x + dayWidth]?
-                // Or typically Gantt charts label the start of the interval.
-
-                // Let's verify scale. viewport.scale is px/ms.
-                const dayWidth = ONE_DAY * viewport.scale;
-
-                if (x + dayWidth >= 0 && x <= canvas.width) {
-                    // Draw tick
-                    ctx.beginPath();
-                    ctx.moveTo(Math.floor(x) + 0.5, canvas.height - 10);
-                    ctx.lineTo(Math.floor(x) + 0.5, canvas.height);
-                    ctx.strokeStyle = '#ccc';
-                    ctx.stroke();
-
-                    // Draw Text (e.g., "12 Mon")
-                    const date = new Date(currentTime);
-                    const dayStr = date.getDate().toString();
-                    // const weekday = date.toLocaleDateString('en-US', { weekday: 'short' }); // "Mon"
-
-                    // If zoomed out, maybe only show day number or less texts. 
-                    // For now assume standard zoom.
-
-                    if (dayWidth > 30) {
-                        const centerX = x + dayWidth / 2;
-                        ctx.fillText(dayStr, centerX, canvas.height - 14);
-                    }
-                }
-                currentTime += ONE_DAY;
-            }
+                // Draw Text
+                // Check local collision or just draw?
+                // For simplicity, drawn shifted to right slightly
+                const textX = tick.x + 5;
+                ctx.fillText(tick.label, textX, canvas.height - 14);
+            });
 
             // Draw "Today" Marker
             const now = Date.now();
@@ -83,7 +58,7 @@ export const TimelineHeader: React.FC = () => {
                 const tagWidth = 50;
                 const tagHeight = 20;
                 const tagX = todayX - tagWidth / 2;
-                const tagY = 10; // Vertically centered roughly
+                const tagY = 10;
 
                 ctx.beginPath();
                 ctx.roundRect(tagX, tagY, tagWidth, tagHeight, 4);
@@ -97,7 +72,7 @@ export const TimelineHeader: React.FC = () => {
         };
 
         render();
-    }, [viewport]);
+    }, [viewport, viewMode]);
 
     // Resize Observer to match width
     useEffect(() => {
@@ -125,3 +100,5 @@ export const TimelineHeader: React.FC = () => {
         </div>
     );
 };
+
+

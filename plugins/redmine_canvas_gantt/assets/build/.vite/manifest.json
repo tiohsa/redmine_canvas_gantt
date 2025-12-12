@@ -1,12 +1,12 @@
 {
   "src/api/client.ts": {
-    "file": "assets/client-CW8xVNXE.js",
+    "file": "assets/client-PzfYdYoq.js",
     "name": "client",
     "src": "src/api/client.ts",
     "isDynamicEntry": true
   },
   "src/main.tsx": {
-    "file": "assets/main-DXu6KkD2.js",
+    "file": "assets/main-BW300Yif.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
@@ -15,7 +15,7 @@
       "src/api/client.ts"
     ],
     "css": [
-      "assets/main-Dtv44gNW.css"
+      "assets/main-CKg_7RGm.css"
     ]
   }
 }

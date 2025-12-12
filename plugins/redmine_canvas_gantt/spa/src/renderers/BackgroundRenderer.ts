@@ -1,4 +1,5 @@
-import type { Viewport } from '../types';
+import type { Viewport, ViewMode } from '../types';
+import { getGridTicks } from '../utils/grid';
 
 export class BackgroundRenderer {
     private canvas: HTMLCanvasElement;
@@ -7,7 +8,7 @@ export class BackgroundRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport) {
+    render(viewport: Viewport, viewMode: ViewMode) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -21,22 +22,18 @@ export class BackgroundRenderer {
         ctx.lineWidth = 1;
         ctx.beginPath();
 
-        const ONE_DAY = 24 * 60 * 60 * 1000;
-        const startOffsetTime = viewport.scrollX / viewport.scale;
-        const visibleStartTime = viewport.startDate + startOffsetTime;
-        const visibleEndTime = visibleStartTime + (this.canvas.width / viewport.scale);
+        const ticks = getGridTicks(viewport, viewMode);
 
-        let currentTime = Math.floor(visibleStartTime / ONE_DAY) * ONE_DAY;
+        ticks.forEach(tick => {
+            // For Week view, maybe we want lines for days too? 
+            // Requirement says: "Day is day unit display".
+            // If viewMode is Week, getGridTicks returns ticks for start of week.
+            // If we strictly follow the requested logic in previous step, Week mode showed lines every week.
+            // Let's stick to drawing lines at ticks returned by getGridTicks.
 
-        while (currentTime <= visibleEndTime) {
-            const x = (currentTime - viewport.startDate) * viewport.scale - viewport.scrollX;
-            if (x >= 0 && x <= this.canvas.width) {
-                // Solid line for grid
-                ctx.moveTo(Math.floor(x) + 0.5, 0);
-                ctx.lineTo(Math.floor(x) + 0.5, this.canvas.height);
-            }
-            currentTime += ONE_DAY;
-        }
+            ctx.moveTo(Math.floor(tick.x) + 0.5, 0);
+            ctx.lineTo(Math.floor(tick.x) + 0.5, this.canvas.height);
+        });
 
         // Horizontal lines
         let y = -viewport.scrollY % viewport.rowHeight;

@@ -13,12 +13,15 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-body {
-  margin: 0;
-  padding: 0;
-  width: 100vw;
-  height: 100vh;
+/* Remove global body overrides that break Redmine layout */
+/* body { ... } - Deleted */
+
+#redmine-canvas-gantt-root {
+  width: 100%;
+  height: 100%;
   overflow: hidden;
+  /* Ensure content stays within the provided box */
+  background-color: #f4f5f7;
 }
 
 #root {
