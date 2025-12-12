@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
-import { getGridTicks } from '../utils/grid';
+import { getGridScales } from '../utils/grid';
 
 export const TimelineHeader: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -27,47 +27,113 @@ export const TimelineHeader: React.FC = () => {
 
             // Draw Dates
             // Logic similar to BackgroundRenderer but drawing texts
-            const ticks = getGridTicks(viewport, viewMode);
+            // Draw Dates
+            const scales = getGridScales(viewport, viewMode);
+            const headerHeight = canvas.height;
+            const rowHeight = headerHeight / 2;
 
-            ctx.fillStyle = '#666';
+            // Draw Top Scale
+            ctx.fillStyle = '#f1f3f5';
+            ctx.fillRect(0, 0, canvas.width, rowHeight);
+
+            ctx.strokeStyle = '#dee2e6';
+            ctx.beginPath();
+            ctx.moveTo(0, rowHeight);
+            ctx.lineTo(canvas.width, rowHeight);
+            ctx.stroke();
+
+            ctx.fillStyle = '#495057';
             ctx.font = '500 12px sans-serif';
             ctx.textAlign = 'left';
 
-            ticks.forEach(tick => {
-                // Draw Tick
+            scales.top.forEach((tick, i) => {
                 ctx.beginPath();
-                ctx.moveTo(Math.floor(tick.x) + 0.5, canvas.height - 10);
-                ctx.lineTo(Math.floor(tick.x) + 0.5, canvas.height);
-                ctx.strokeStyle = '#ccc';
+                ctx.moveTo(Math.floor(tick.x) + 0.5, 0);
+                ctx.lineTo(Math.floor(tick.x) + 0.5, rowHeight);
                 ctx.stroke();
 
-                // Draw Text
-                // Check local collision or just draw?
-                // For simplicity, drawn shifted to right slightly
-                const textX = tick.x + 5;
-                ctx.fillText(tick.label, textX, canvas.height - 14);
+                // Sticky Label Logic
+                // Find visible range for this tick
+                let nextX = canvas.width;
+                if (i < scales.top.length - 1) {
+                    nextX = scales.top[i + 1].x;
+                }
+
+                // Draw text at max(tick.x, 0) + padding
+                const textX = Math.max(tick.x, 0) + 8;
+
+                // Only draw if it fits within the interval (before nextX)
+                // Use approximate text width check if needed, or just boundary
+                if (textX < nextX - 20) {
+                    ctx.fillStyle = '#0066cc';
+                    ctx.fillText(tick.label, textX, rowHeight - 7);
+                }
             });
 
+            // Draw Bottom Scale
+            ctx.fillStyle = '#fff'; // or transparent?
+            // ctx.fillRect(0, rowHeight, canvas.width, rowHeight); // already bg?
+
+            ctx.fillStyle = '#333';
+            ctx.textAlign = 'center';
+
+            scales.bottom.forEach((tick, i) => {
+                const x = tick.x;
+
+                ctx.beginPath();
+                ctx.moveTo(Math.floor(x) + 0.5, rowHeight);
+                ctx.lineTo(Math.floor(x) + 0.5, headerHeight);
+                ctx.strokeStyle = '#e0e0e0';
+                ctx.stroke();
+
+                // Calculate center for text
+                let width = 50; // default guess
+                if (i < scales.bottom.length - 1) {
+                    width = scales.bottom[i + 1].x - x;
+                } else {
+                    // estimation
+                    width = (1000 * 60 * 60 * 24 * viewport.scale); // 1 day sized? depends on scale
+                }
+
+                const textX = x + width / 2;
+                ctx.fillText(tick.label, textX, headerHeight - 7);
+            });
+
+
             // Draw "Today" Marker
+            // Only show line on bottom half or full? User screenshot implies full or specific.
+            // Let's draw full line marker in header
             const now = Date.now();
             const todayX = (now - viewport.startDate) * viewport.scale - viewport.scrollX;
 
             if (todayX >= 0 && todayX <= canvas.width) {
-                // Tag style
-                ctx.fillStyle = '#ff5252';
-                const tagWidth = 50;
-                const tagHeight = 20;
-                const tagX = todayX - tagWidth / 2;
-                const tagY = 10;
-
+                // Dashed red line
+                ctx.strokeStyle = '#ff0000';
+                ctx.setLineDash([4, 4]);
                 ctx.beginPath();
-                ctx.roundRect(tagX, tagY, tagWidth, tagHeight, 4);
-                ctx.fill();
+                ctx.moveTo(todayX, 0);
+                ctx.lineTo(todayX, headerHeight);
+                ctx.stroke();
+                ctx.setLineDash([]);
 
-                ctx.fillStyle = 'white';
-                ctx.font = 'bold 11px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('Today', todayX, tagY + 14);
+                // Tag
+                /*
+               // Tag style
+               ctx.fillStyle = '#ff5252';
+               const tagWidth = 40;
+               const tagHeight = 16;
+               const tagX = todayX - tagWidth / 2;
+               const tagY = 0;
+
+               ctx.beginPath();
+               ctx.rect(tagX, tagY, tagWidth, tagHeight);
+               ctx.fill();
+
+               ctx.fillStyle = 'white';
+               ctx.font = 'bold 10px sans-serif';
+               ctx.textAlign = 'center';
+               ctx.fillText('Today', todayX, tagY + 11);
+               */
             }
         };
 

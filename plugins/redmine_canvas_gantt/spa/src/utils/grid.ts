@@ -10,77 +10,197 @@ export interface GridTick {
     time: number;
     x: number;
     label: string;
-    isMajor: boolean;
+}
+
+export interface GridScales {
+    top: GridTick[];
+    bottom: GridTick[];
 }
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 const ONE_WEEK = 7 * ONE_DAY;
 
-export function getGridTicks(viewport: Viewport, viewMode: ViewMode): GridTick[] {
-    const ticks: GridTick[] = [];
+function getWeekNumber(d: Date) {
+    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    var weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    return weekNo;
+}
+
+export function getGridScales(viewport: Viewport, viewMode: ViewMode): GridScales {
+    const scales: GridScales = { top: [], bottom: [] };
     const { startDate, scrollX, scale, width } = viewport;
 
     const startOffsetTime = scrollX / scale;
     const visibleStartTime = startDate + startOffsetTime;
     const visibleEndTime = visibleStartTime + (width / scale);
 
+    // Padding for smooth scrolling - increased for top scales to ensure covering interval is included
+    const PAD = 10000;
+
+    const getX = (t: number) => (t - startDate) * scale - scrollX;
+
     if (viewMode === 'Month') {
-        const start = new Date(visibleStartTime);
-        start.setDate(1);
-        start.setHours(0, 0, 0, 0);
-        let currentTime = start.getTime();
+        // Bottom: Months
+        // Top: Years
 
-        while (currentTime <= visibleEndTime) {
-            const x = (currentTime - startDate) * scale - scrollX;
-            // Only add if visible (with some buffer for text)
-            if (x >= -100 && x <= width + 100) {
-                const date = new Date(currentTime);
-                const label = date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }); // e.g. "Dec 2025"
-                ticks.push({ time: currentTime, x, label, isMajor: true });
+        // Generate Bottom (Months)
+        {
+            const start = new Date(visibleStartTime);
+            start.setDate(1);
+            start.setHours(0, 0, 0, 0);
+            let t = start.getTime();
+
+            while (t <= visibleEndTime) {
+                const x = getX(t);
+                if (x >= -PAD && x <= width + PAD) {
+                    const d = new Date(t);
+                    scales.bottom.push({
+                        time: t,
+                        x,
+                        label: (d.getMonth() + 1).toString()
+                    });
+                }
+                const d = new Date(t);
+                d.setMonth(d.getMonth() + 1);
+                t = d.getTime();
             }
+        }
 
-            // Advance Month
-            // Use date object to correctly handle month lengths
-            const d = new Date(currentTime);
-            d.setMonth(d.getMonth() + 1);
-            currentTime = d.getTime();
+        // Generate Top (Years)
+        {
+            const start = new Date(visibleStartTime);
+            start.setMonth(0, 1); // Jan 1
+            start.setHours(0, 0, 0, 0);
+            let t = start.getTime();
+
+            // We might need to go back one year to ensure label is visible if start is mid-year?
+            // Actually, we usually label at the start tick. 
+            // If the year started before visible area, we might want to know that.
+            // For now, simpler logic: iterate years.
+
+            // Adjust start to be safe
+            start.setFullYear(start.getFullYear() - 1);
+            t = start.getTime();
+
+            while (t <= visibleEndTime) {
+                const x = getX(t);
+                // Allow wider range for top labels to appear even if tick is slightly off screen?
+                // Or just standard range. 
+                if (x >= -PAD && x <= width + PAD) {
+                    const d = new Date(t);
+                    scales.top.push({
+                        time: t,
+                        x,
+                        label: d.getFullYear().toString()
+                    });
+                }
+                const d = new Date(t);
+                d.setFullYear(d.getFullYear() + 1);
+                t = d.getTime();
+            }
         }
 
     } else if (viewMode === 'Week') {
-        const start = new Date(visibleStartTime);
-        const day = start.getDay();
-        const diff = start.getDate() - day + (day === 0 ? -6 : 1); // Monday start
-        start.setDate(diff);
-        start.setHours(0, 0, 0, 0);
-        let currentTime = start.getTime();
+        // Bottom: Weeks
+        // Top: Months
 
-        while (currentTime <= visibleEndTime) {
-            const x = (currentTime - startDate) * scale - scrollX;
-            if (x >= -100 && x <= width + 100) {
-                const date = new Date(currentTime);
-                const label = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); // e.g. "Dec 12"
-                ticks.push({ time: currentTime, x, label, isMajor: true });
+        // Generate Bottom (Weeks)
+        {
+            const start = new Date(visibleStartTime);
+            const day = start.getDay();
+            const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+            start.setDate(diff);
+            start.setHours(0, 0, 0, 0);
+            let t = start.getTime();
+
+            while (t <= visibleEndTime) {
+                const x = getX(t);
+                if (x >= -PAD && x <= width + PAD) {
+                    const d = new Date(t);
+                    scales.bottom.push({
+                        time: t,
+                        x,
+                        label: getWeekNumber(d).toString()
+                    });
+                }
+                t += ONE_WEEK;
             }
-            currentTime += ONE_WEEK;
+        }
+
+        // Generate Top (Months)
+        {
+            const start = new Date(visibleStartTime);
+            start.setDate(1);
+            start.setHours(0, 0, 0, 0);
+            // Safety back one month
+            start.setMonth(start.getMonth() - 1);
+            let t = start.getTime();
+
+            while (t <= visibleEndTime) {
+                const x = getX(t);
+                if (x >= -PAD && x <= width + PAD) {
+                    const d = new Date(t);
+                    scales.top.push({
+                        time: t,
+                        x,
+                        label: `${d.getFullYear()}-${d.getMonth() + 1}`
+                    });
+                }
+                const d = new Date(t);
+                d.setMonth(d.getMonth() + 1);
+                t = d.getTime();
+            }
         }
 
     } else {
         // Day View
-        // Per expert review: avoid excessive Date creation if possible, but Day view needs Date for labels mostly.
-        // We can optimize by calculating day #.
-        let currentTime = Math.floor(visibleStartTime / ONE_DAY) * ONE_DAY;
+        // Bottom: Days
+        // Top: Months
 
-        while (currentTime <= visibleEndTime) {
-            const x = (currentTime - startDate) * scale - scrollX;
-            if (x >= -100 && x <= width + 100) {
-                // Optimization: Only create Date for label
-                const date = new Date(currentTime);
-                const label = date.getDate().toString();
-                ticks.push({ time: currentTime, x, label, isMajor: false });
+        // Bottom (Days)
+        {
+            const startT = Math.floor(visibleStartTime / ONE_DAY) * ONE_DAY;
+            let t = startT;
+            while (t <= visibleEndTime) {
+                const x = getX(t);
+                if (x >= -PAD && x <= width + PAD) {
+                    const d = new Date(t);
+                    scales.bottom.push({
+                        time: t,
+                        x,
+                        label: d.getDate().toString()
+                    });
+                }
+                t += ONE_DAY;
             }
-            currentTime += ONE_DAY;
+        }
+
+        // Top (Months)
+        {
+            const start = new Date(visibleStartTime);
+            start.setDate(1);
+            start.setHours(0, 0, 0, 0);
+            start.setMonth(start.getMonth() - 1);
+            let t = start.getTime();
+
+            while (t <= visibleEndTime) {
+                const x = getX(t);
+                if (x >= -PAD && x <= width + PAD) {
+                    const d = new Date(t);
+                    scales.top.push({
+                        time: t,
+                        x,
+                        label: `${d.getFullYear()}-${d.getMonth() + 1}`
+                    });
+                }
+                const d = new Date(t);
+                d.setMonth(d.getMonth() + 1);
+                t = d.getTime();
+            }
         }
     }
 
-    return ticks;
+    return scales;
 }

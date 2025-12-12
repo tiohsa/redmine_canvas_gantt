@@ -1,5 +1,5 @@
 import type { Viewport, ViewMode } from '../types';
-import { getGridTicks } from '../utils/grid';
+import { getGridScales } from '../utils/grid';
 
 export class BackgroundRenderer {
     private canvas: HTMLCanvasElement;
@@ -22,15 +22,9 @@ export class BackgroundRenderer {
         ctx.lineWidth = 1;
         ctx.beginPath();
 
-        const ticks = getGridTicks(viewport, viewMode);
+        const scales = getGridScales(viewport, viewMode);
 
-        ticks.forEach(tick => {
-            // For Week view, maybe we want lines for days too? 
-            // Requirement says: "Day is day unit display".
-            // If viewMode is Week, getGridTicks returns ticks for start of week.
-            // If we strictly follow the requested logic in previous step, Week mode showed lines every week.
-            // Let's stick to drawing lines at ticks returned by getGridTicks.
-
+        scales.bottom.forEach(tick => {
             ctx.moveTo(Math.floor(tick.x) + 0.5, 0);
             ctx.lineTo(Math.floor(tick.x) + 0.5, this.canvas.height);
         });
