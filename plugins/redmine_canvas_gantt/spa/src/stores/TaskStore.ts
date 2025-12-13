@@ -122,34 +122,54 @@ export const useTaskStore = create<TaskState>((set) => ({
     })),
 
     setViewMode: (mode) => set((state) => {
-        // Deprecated or mapped to zoom?
-        // Let's keep it working for now but mapped loosely
         let zoom = state.zoomLevel;
         if (mode === 'Month') zoom = 0;
         if (mode === 'Week') zoom = 1;
         if (mode === 'Day') zoom = 2;
 
-        const scale = ZOOM_SCALES[zoom];
+        const { viewport } = state;
+        const newScale = ZOOM_SCALES[zoom];
+
+        // Preserve Center Logic (shared)
+        const width = viewport.width || 800;
+        const centerOffsetPixels = viewport.scrollX + (width / 2);
+        const centerTimeOffset = centerOffsetPixels / viewport.scale;
+
+        let newScrollX = (centerTimeOffset * newScale) - (width / 2);
+        if (newScrollX < 0) newScrollX = 0;
+
         return {
             viewMode: mode,
             zoomLevel: zoom,
-            viewport: { ...state.viewport, scale }
+            viewport: { ...state.viewport, scale: newScale, scrollX: newScrollX }
         };
     }),
 
     setZoomLevel: (level) => set((state) => {
-        const scale = ZOOM_SCALES[level];
+        const { viewport } = state;
+        const newScale = ZOOM_SCALES[level];
+
+        // Preserve Center Logic
+        const width = viewport.width || 800;
+        // Current center relative to start
+        const centerOffsetPixels = viewport.scrollX + (width / 2);
+        const centerTimeOffset = centerOffsetPixels / viewport.scale;
+
+        // New scrollX
+        let newScrollX = (centerTimeOffset * newScale) - (width / 2);
+        if (newScrollX < 0) newScrollX = 0;
+
         // Reverse map to viewMode for compatibility if needed
         let mode: ViewMode = 'Week';
         if (level === 0) mode = 'Month';
         if (level === 1) mode = 'Week';
         if (level === 2) mode = 'Day';
-        if (level === 3) mode = 'Day'; // No Hour viewMode yet
+        if (level === 3) mode = 'Day';
 
         return {
             zoomLevel: level,
             viewMode: mode,
-            viewport: { ...state.viewport, scale }
+            viewport: { ...state.viewport, scale: newScale, scrollX: newScrollX }
         };
     })
 }));
