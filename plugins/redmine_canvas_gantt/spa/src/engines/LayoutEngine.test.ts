@@ -37,6 +37,26 @@ describe('LayoutEngine', () => {
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport);
         expect(bounds.x).toBe(0);
         expect(bounds.width).toBe(86400000);
-        expect(bounds.y).toBe(5); // rowHeight * 0 + 5 padding
+        expect(bounds.y).toBe(13); // centered half-height bar in 40px row
+        expect(bounds.height).toBe(15);
+    });
+
+    it('getTaskBounds(kind=hit) uses full row height for interactions', () => {
+        const task: Task = {
+            id: '1',
+            subject: 'Test',
+            startDate: new Date('2024-01-01').getTime(),
+            dueDate: new Date('2024-01-02').getTime(),
+            rowIndex: 2,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            hasChildren: false
+        };
+
+        const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'hit');
+        expect(bounds.y).toBe(80);
+        expect(bounds.height).toBe(40);
     });
 });

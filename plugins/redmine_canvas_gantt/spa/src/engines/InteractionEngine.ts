@@ -53,7 +53,7 @@ export class InteractionEngine {
         const RESIZE_HANDLE_WIDTH = 8;
 
         for (const t of tasks) {
-            const bounds = LayoutEngine.getTaskBounds(t, viewport);
+            const bounds = LayoutEngine.getTaskBounds(t, viewport, 'hit');
             if (x >= bounds.x && x <= bounds.x + bounds.width &&
                 y >= bounds.y && y <= bounds.y + bounds.height) {
                 // Determine which part was clicked

@@ -19,14 +19,22 @@ export class LayoutEngine {
     /**
      * Returns the screen bounding box for a task bar.
      */
-    static getTaskBounds(task: Task, viewport: Viewport): Bounds {
+    static getTaskBounds(task: Task, viewport: Viewport, kind: 'bar' | 'hit' = 'bar'): Bounds {
         const x = this.dateToX(task.startDate, viewport) - viewport.scrollX;
         const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
         // Ensure width is at least something visible (e.g., 2px) even if duration is 0
         const width = Math.max(2, (task.dueDate - task.startDate) * viewport.scale);
-        const height = viewport.rowHeight - 10; // Padding
 
-        return { x, y: y + 5, width, height }; // Centered in row
+        if (kind === 'hit') {
+            return { x, y, width, height: viewport.rowHeight };
+        }
+
+        // Half-height task bar (visually) while keeping rowHeight unchanged.
+        // Old: height = rowHeight - 10 (padding 5 top/bottom).
+        const height = Math.max(2, Math.round((viewport.rowHeight - 10) / 2));
+        const yOffset = Math.round((viewport.rowHeight - height) / 2);
+
+        return { x, y: y + yOffset, width, height };
     }
 
     /**
