@@ -19,14 +19,23 @@ end
 # Ensure built frontend assets are available under public/plugin_assets/.
 # In production Redmine serves /plugin_assets from public/, so we symlink the
 # Vite build output there if it is missing.
+# Falls back to copying files if symlink fails (e.g., in Docker with volume mounts).
 begin
   require 'fileutils'
   plugin_build_dir = Rails.root.join('plugins', 'redmine_canvas_gantt', 'assets', 'build')
   public_build_dir = Rails.root.join('public', 'plugin_assets', 'redmine_canvas_gantt', 'build')
 
   if File.directory?(plugin_build_dir)
-    FileUtils.mkdir_p(public_build_dir.parent)
-    FileUtils.ln_sf(plugin_build_dir, public_build_dir)
+    # Skip if already linked or copied
+    unless File.exist?(public_build_dir) || File.symlink?(public_build_dir)
+      FileUtils.mkdir_p(public_build_dir.parent)
+      begin
+        FileUtils.ln_sf(plugin_build_dir, public_build_dir)
+      rescue Errno::EPERM, Errno::EACCES
+        # Symlink failed (e.g., Docker volume), fall back to copying
+        FileUtils.cp_r(plugin_build_dir, public_build_dir)
+      end
+    end
   end
 rescue => e
   Rails.logger.warn("redmine_canvas_gantt: failed to link plugin assets: #{e.message}") if defined?(Rails)

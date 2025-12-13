@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Task, Relation, Viewport, ViewMode } from '../types';
 import { SCALES } from '../utils/grid';
+import { TaskLogicService } from '../services/TaskLogicService';
 
 interface TaskState {
     tasks: Task[];
@@ -47,9 +48,71 @@ export const useTaskStore = create<TaskState>((set) => ({
     setHoveredTask: (id) => set({ hoveredTaskId: id }),
     setContextMenu: (menu) => set({ contextMenu: menu }),
 
-    updateTask: (id, updates) => set((state) => ({
-        tasks: state.tasks.map(t => t.id === id ? { ...t, ...updates } : t)
-    })),
+    updateTask: (id, updates) => set((state) => {
+        const task = state.tasks.find(t => t.id === id);
+        if (!task) return state;
+
+        // 1. Check editability
+        if (!TaskLogicService.canEditTask(task)) {
+            console.warn('Task is not editable');
+            return state;
+        }
+
+        // 2. Prepare new state for this task
+        const updatedTask = { ...task, ...updates };
+
+        // 3. Validate dates (basic check)
+        // For now logging warnings, but we could prevent update if invalid
+        TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
+
+        let currentTasks = state.tasks.map(t => t.id === id ? updatedTask : t);
+        const pendingUpdates = new Map<string, Partial<Task>>();
+
+        // 4. Check dependencies (snap successors)
+        if (updates.startDate || updates.dueDate) {
+            const depUpdates = TaskLogicService.checkDependencies(
+                currentTasks,
+                state.relations,
+                id,
+                updatedTask.startDate,
+                updatedTask.dueDate
+            );
+            depUpdates.forEach((v, k) => pendingUpdates.set(k, v));
+        }
+
+        // Apply dependency updates to currentTasks to prepare for parent calc
+        if (pendingUpdates.size > 0) {
+            currentTasks = currentTasks.map(t => {
+                if (pendingUpdates.has(t.id)) {
+                    return { ...t, ...pendingUpdates.get(t.id) };
+                }
+                return t;
+            });
+        }
+
+        // 5. Recalculate parent dates
+        // We need to check the parent of the moved task, and parents of any moved successors
+        const tasksToCheckParents = [id, ...pendingUpdates.keys()];
+        const processedParents = new Set<string>();
+
+        tasksToCheckParents.forEach(taskId => {
+            const t = currentTasks.find(ct => ct.id === taskId);
+            if (t && t.parentId && !processedParents.has(t.parentId)) {
+                processedParents.add(t.parentId);
+                const parentUpdates = TaskLogicService.recalculateParentDates(currentTasks, t.parentId);
+                parentUpdates.forEach((v, k) => pendingUpdates.set(k, v));
+            }
+        });
+
+        // Final application of all updates
+        const finalTasks = state.tasks.map(t => {
+            if (t.id === id) return updatedTask;
+            if (pendingUpdates.has(t.id)) return { ...t, ...pendingUpdates.get(t.id) };
+            return t;
+        });
+
+        return { tasks: finalTasks };
+    }),
 
     updateViewport: (updates) => set((state) => ({
         viewport: { ...state.viewport, ...updates }
