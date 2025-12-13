@@ -36,7 +36,7 @@ export const TimelineHeader: React.FC = () => {
 
             let currentY = 0;
 
-            const drawRow = (ticks: typeof scales.top, bgColor: string, txtColor: string) => {
+            const drawRow = (ticks: typeof scales.top, bgColor: string, txtColor: string, align: 'left' | 'center' = 'left') => {
                 if (ticks.length === 0) return;
 
                 const y = currentY;
@@ -55,7 +55,7 @@ export const TimelineHeader: React.FC = () => {
 
                 ctx.fillStyle = txtColor;
                 ctx.font = '500 12px sans-serif';
-                ctx.textAlign = 'left';
+                ctx.textAlign = align;
 
                 ticks.forEach((tick, i) => {
                     // Vertical Separator
@@ -66,23 +66,24 @@ export const TimelineHeader: React.FC = () => {
                     ctx.stroke();
 
                     // Text
-                    // Determine meaningful width
                     let nextX = canvas.width;
                     if (i < ticks.length - 1) {
                         nextX = ticks[i + 1].x;
                     }
 
-
-
-                    // Simple sticky-like label or centered?
-                    // Spec seems to imply left-aligned ("Month label occupies interval", "Week W1")
-                    // If dense (Day/Hour), maybe center?
-                    // Let's stick to Left + Padding for Top/Middle usually, but Center for Day numbers?
-
-                    const textX = Math.max(tick.x, 0) + 4;
+                    const width = nextX - tick.x;
                     const textY = y + h / 2 + 4; // Vertically center approx
 
-                    if (tick.x < canvas.width && textX < nextX - 10) {
+                    let textX = tick.x;
+                    if (align === 'center') {
+                        textX = tick.x + width / 2;
+                        // For center, we assume width is controlled. 
+                    } else {
+                        // Sticky-like or Left Padding
+                        textX = Math.max(tick.x, 0) + 4;
+                    }
+
+                    if (tick.x < canvas.width && (align === 'center' ? tick.x + width > 0 : textX < nextX - 10)) {
                         ctx.fillText(tick.label, textX, textY);
                     }
                 });
@@ -90,16 +91,17 @@ export const TimelineHeader: React.FC = () => {
                 currentY += h;
             };
 
-            // Customize colors per row "level" (Top/Middle/Bottom conceptually)
-            // Note: If Bottom is empty, Middle becomes second row.
+            // Customize colors per row "level"
 
             if (hasTop) drawRow(scales.top, '#f1f3f5', '#495057');
-            if (hasMiddle) drawRow(scales.middle, '#ffffff', '#333333');
-            if (hasBottom) {
-                // Special handling for Weekend BG if needed? 
-                // Grid scalers don't carry weekend info easily unless I check 'tick.time'
-                // Re-implement weekend BG for bottom row?
 
+            // Middle Row
+            // Zoom 3 Middle is Hours -> Center?
+            // Zoom 1/2 Middle is Weeks -> Left?
+            const middleAlign = zoomLevel === 3 ? 'center' : 'left';
+            if (hasMiddle) drawRow(scales.middle, '#ffffff', '#333333', middleAlign);
+
+            if (hasBottom) {
                 const y = currentY;
                 const h = rowHeight;
 
@@ -125,22 +127,22 @@ export const TimelineHeader: React.FC = () => {
                 // Draw Ticks/Text
                 ctx.fillStyle = '#333';
                 ctx.font = '500 12px sans-serif';
-                ctx.textAlign = 'left';
+                ctx.textAlign = 'center'; // Always center bottom (Days)
 
-                scales.bottom.forEach(tick => {
+                scales.bottom.forEach((tick, i) => {
                     ctx.beginPath();
                     ctx.moveTo(Math.floor(tick.x) + 0.5, y);
                     ctx.lineTo(Math.floor(tick.x) + 0.5, y + h);
                     ctx.strokeStyle = '#e0e0e0';
                     ctx.stroke();
 
-                    const textX = tick.x + 4;
-                    const textY = y + h / 2 + 4;
+                    // Width for centering
+                    let nextX = canvas.width;
+                    if (i < scales.bottom.length - 1) nextX = scales.bottom[i + 1].x;
+                    const width = nextX - tick.x;
 
-                    // For days, maybe center?
-                    // "1 2 3"
-                    // If zoom level 2 (Day), width is ~40px. Center implies textX + width/2.
-                    // But left + 4 works cleanly too.
+                    const textX = tick.x + width / 2;
+                    const textY = y + h / 2 + 4;
 
                     ctx.fillText(tick.label, textX, textY);
                 });

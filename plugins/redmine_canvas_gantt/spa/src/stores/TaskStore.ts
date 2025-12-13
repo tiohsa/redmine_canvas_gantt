@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Task, Relation, Viewport, ViewMode, ZoomLevel } from '../types';
-import { SCALES, ZOOM_SCALES } from '../utils/grid';
+import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 
 interface TaskState {

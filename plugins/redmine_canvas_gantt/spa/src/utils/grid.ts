@@ -98,28 +98,9 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
 
     // --- ZOOM LEVEL 0 (Month View) ---
     if (zoomLevel === 0) {
-        // Top: Year (only when changes? Or always show current year on left?)
-        // Spec 5.1: "2025年 | 1月 2月..."
-        // Let's put Month in Middle (main row) and Year in Top?
+        // Top: Empty/Removed
+        // Middle: Month (YYYY-MM)
 
-        // Top: Year
-        iterate(
-            (t) => {
-                const d = new Date(t);
-                d.setMonth(0, 1);
-                d.setHours(0, 0, 0, 0);
-                return d.getTime();
-            },
-            (t) => {
-                const d = new Date(t);
-                d.setFullYear(d.getFullYear() + 1);
-                return d.getTime();
-            },
-            (t) => `${new Date(t).getFullYear()}`,
-            scales.top
-        );
-
-        // Middle: Month
         iterate(
             (t) => {
                 const d = new Date(t);
@@ -132,7 +113,10 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
                 d.setMonth(d.getMonth() + 1);
                 return d.getTime();
             },
-            (t) => `${new Date(t).getMonth() + 1}月`, // Simple month label
+            (t) => {
+                const d = new Date(t);
+                return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+            },
             scales.middle
         );
     }
