@@ -1,6 +1,7 @@
 import type { Viewport, Task, Relation } from '../types';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { useTaskStore } from '../stores/TaskStore';
+import { useUIStore } from '../stores/UIStore';
 
 export class OverlayRenderer {
     private canvas: HTMLCanvasElement;
@@ -28,8 +29,56 @@ export class OverlayRenderer {
             }
         }
 
+        // Draw Inazuma line (Progress Line)
+        this.drawProgressLine(ctx, viewport);
+
         // Draw "Today" line
         this.drawTodayLine(ctx, viewport);
+    }
+
+    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport) {
+        const { showProgressLine } = useUIStore.getState();
+        if (!showProgressLine) return;
+
+        const { tasks } = useTaskStore.getState();
+
+        // Filter valid tasks and sort by visual order (row index)
+        const sortedTasks = [...tasks]
+            .filter(t => t.startDate && t.dueDate && typeof t.ratioDone === 'number')
+            .sort((a, b) => a.rowIndex - b.rowIndex);
+
+        if (sortedTasks.length === 0) return;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = '#e53935'; // Red solid line
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+
+        let firstPoint = true;
+
+        sortedTasks.forEach(task => {
+            const bounds = LayoutEngine.getTaskBounds(task, viewport);
+
+            // X position based on progress
+            // bounds.x is start, bounds.width is total width
+            const ratio = Math.max(0, Math.min(100, task.ratioDone));
+            const pointX = bounds.x + bounds.width * (ratio / 100);
+
+            // Y position: vertically centered in the task row
+            const pointY = bounds.y + bounds.height / 2;
+
+            if (firstPoint) {
+                ctx.moveTo(pointX, pointY);
+                firstPoint = false;
+            } else {
+                ctx.lineTo(pointX, pointY);
+            }
+        });
+
+        ctx.stroke();
+        ctx.restore();
     }
 
     private drawDependencies(

@@ -10,12 +10,15 @@ interface Notification {
 
 interface UIState {
     notifications: Notification[];
+    showProgressLine: boolean;
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
+    toggleProgressLine: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
     notifications: [],
+    showProgressLine: false,
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
@@ -32,5 +35,6 @@ export const useUIStore = create<UIState>((set) => ({
     removeNotification: (id) =>
         set((state) => ({
             notifications: state.notifications.filter((n) => n.id !== id)
-        }))
+        })),
+    toggleProgressLine: () => set((state) => ({ showProgressLine: !state.showProgressLine }))
 }));

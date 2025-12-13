@@ -2,6 +2,7 @@ import React from 'react';
 
 import type { ZoomLevel } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
+import { useUIStore } from '../stores/UIStore';
 
 interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
@@ -10,6 +11,7 @@ interface GanttToolbarProps {
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const { viewport, updateViewport } = useTaskStore();
+    const { showProgressLine, toggleProgressLine } = useUIStore();
 
     const handleTodayClick = () => {
         const now = Date.now();
@@ -36,8 +38,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             height: '60px',
             boxSizing: 'border-box'
         }}>
-            {/* Left: Filter */}
-            <div style={{ display: 'flex', gap: '10px' }}>
+            {/* Left: Filter & Options */}
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <button
                     style={{
                         display: 'flex',
@@ -60,6 +62,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     </svg>
                     Filter
                 </button>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#555', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                        type="checkbox"
+                        checked={showProgressLine}
+                        onChange={toggleProgressLine}
+                        style={{ cursor: 'pointer' }}
+                    />
+                    Progress Line
+                </label>
             </div>
 
             {/* Right: Zoom Level & Today */}

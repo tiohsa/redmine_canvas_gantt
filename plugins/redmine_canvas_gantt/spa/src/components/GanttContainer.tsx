@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
+import { useUIStore } from '../stores/UIStore';
 import { InteractionEngine } from '../engines/InteractionEngine';
 import { BackgroundRenderer } from '../renderers/BackgroundRenderer';
 import { TaskRenderer } from '../renderers/TaskRenderer';
@@ -20,6 +21,7 @@ export const GanttContainer: React.FC = () => {
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const { viewport, tasks, setTasks, setRelations, updateViewport, zoomLevel } = useTaskStore();
+    const { showProgressLine } = useUIStore();
 
     const [sidebarWidth, setSidebarWidth] = React.useState(400);
     const isResizing = useRef(false);
@@ -127,7 +129,7 @@ export const GanttContainer: React.FC = () => {
         if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel);
         if (engines.current.task) engines.current.task.render(viewport, tasks);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
-    }, [viewport, tasks, zoomLevel]);
+    }, [viewport, tasks, zoomLevel, showProgressLine]);
 
     return (
         <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
