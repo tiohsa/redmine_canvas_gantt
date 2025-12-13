@@ -30,9 +30,9 @@ export const TimelineHeader: React.FC = () => {
             // Draw Dates
             const scales = getGridScales(viewport, viewMode);
             const headerHeight = canvas.height;
-            const rowHeight = headerHeight / 2;
+            const rowHeight = headerHeight / 3;
 
-            // Draw Top Scale
+            // Draw Top Scale (Year-Month)
             ctx.fillStyle = '#f1f3f5';
             ctx.fillRect(0, 0, canvas.width, rowHeight);
 
@@ -70,32 +70,63 @@ export const TimelineHeader: React.FC = () => {
                 }
             });
 
-            // Draw Bottom Scale
-            ctx.fillStyle = '#fff'; // or transparent?
-            // ctx.fillRect(0, rowHeight, canvas.width, rowHeight); // already bg?
+            // Draw Middle Scale (Week number)
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, rowHeight, canvas.width, rowHeight);
 
-            ctx.fillStyle = '#333';
             ctx.textAlign = 'center';
+            ctx.font = '500 12px sans-serif';
 
-            scales.bottom.forEach((tick, i) => {
+            scales.middle.forEach((tick, i) => {
                 const x = tick.x;
 
                 ctx.beginPath();
                 ctx.moveTo(Math.floor(x) + 0.5, rowHeight);
+                ctx.lineTo(Math.floor(x) + 0.5, rowHeight * 2);
+                ctx.strokeStyle = '#e0e0e0';
+                ctx.stroke();
+
+                let width = 50;
+                if (i < scales.middle.length - 1) {
+                    width = scales.middle[i + 1].x - x;
+                } else {
+                    width = (1000 * 60 * 60 * 24 * viewport.scale);
+                }
+
+                const textX = x + width / 2;
+                ctx.fillStyle = '#333';
+                ctx.fillText(tick.label, textX, rowHeight * 2 - 7);
+            });
+
+            // Draw Bottom Scale (Day + weekday) with weekend background
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, rowHeight * 2, canvas.width, rowHeight);
+
+            scales.bottom.forEach((tick, i) => {
+                const x = tick.x;
+                let width = 50;
+                if (i < scales.bottom.length - 1) {
+                    width = scales.bottom[i + 1].x - x;
+                } else {
+                    width = (1000 * 60 * 60 * 24 * viewport.scale);
+                }
+
+                // Weekend background
+                const d = new Date(tick.time);
+                const dow = d.getDay();
+                if (dow === 0 || dow === 6) {
+                    ctx.fillStyle = '#eeeeee';
+                    ctx.fillRect(Math.floor(x), rowHeight * 2, Math.ceil(width), rowHeight);
+                }
+
+                ctx.beginPath();
+                ctx.moveTo(Math.floor(x) + 0.5, rowHeight * 2);
                 ctx.lineTo(Math.floor(x) + 0.5, headerHeight);
                 ctx.strokeStyle = '#e0e0e0';
                 ctx.stroke();
 
-                // Calculate center for text
-                let width = 50; // default guess
-                if (i < scales.bottom.length - 1) {
-                    width = scales.bottom[i + 1].x - x;
-                } else {
-                    // estimation
-                    width = (1000 * 60 * 60 * 24 * viewport.scale); // 1 day sized? depends on scale
-                }
-
                 const textX = x + width / 2;
+                ctx.fillStyle = '#333';
                 ctx.fillText(tick.label, textX, headerHeight - 7);
             });
 
@@ -132,5 +163,4 @@ export const TimelineHeader: React.FC = () => {
         </div>
     );
 };
-
 

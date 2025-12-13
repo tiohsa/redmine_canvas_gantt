@@ -5,6 +5,13 @@ import { getStatusColor } from '../utils/styles';
 export class TaskRenderer {
     private canvas: HTMLCanvasElement;
 
+    // Redmine standard-like bar colors
+    private static readonly DONE_GREEN = '#50c878';
+    private static readonly DELAY_RED = '#ff6b6b';
+    private static readonly PLAN_GRAY = '#dddddd';
+    private static readonly SUMMARY_STROKE = '#333333';
+    private static readonly LABEL_COLOR = '#aaaaaa';
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
     }
@@ -20,33 +27,28 @@ export class TaskRenderer {
         // Filter visible tasks
         const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
 
+        const ONE_DAY = 24 * 60 * 60 * 1000;
+        const todayTs = new Date().setHours(0, 0, 0, 0);
+        const todayLineTs = todayTs + ONE_DAY;
+        const xTodayLine = LayoutEngine.dateToX(todayLineTs, viewport) - viewport.scrollX;
+
         visibleTasks.forEach(task => {
             if (!Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) return;
 
             const bounds = LayoutEngine.getTaskBounds(task, viewport);
-            const style = getStatusColor(task.statusId);
+            const { doneWidth, delayWidth, remainingWidth } = this.computeBarSegments(task, bounds.x, bounds.width, xTodayLine, todayLineTs);
 
             // Requirement 6.1: Parent tasks drawn as summary task (bracket style or different shape)
             if (task.hasChildren) {
-                this.drawSummaryTask(ctx, bounds.x, bounds.y, bounds.width, bounds.height, style.bar);
+                this.drawSummaryBracket(ctx, bounds.x, bounds.y, bounds.width, bounds.height);
+                this.drawSummaryProgress(ctx, bounds.x, bounds.y, bounds.width, bounds.height, doneWidth);
             } else {
-                // Regular leaf task
-                // Use pill shape (radius = height / 2)
-                const radius = bounds.height / 2;
-                this.drawRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius, style.bar);
-
-                // Draw Progress
-                if (task.ratioDone > 0) {
-                    const progressWidth = (bounds.width * task.ratioDone) / 100;
-                    // Clip progress to rounded rect
-                    ctx.save();
-                    this.clipRoundedRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius);
-
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Darken overlay
-                    ctx.fillRect(bounds.x, bounds.y, progressWidth, bounds.height);
-                    ctx.restore();
-                }
+                // Leaf task: rectangle (no rounded corners)
+                this.drawLeafBar(ctx, bounds.x, bounds.y, bounds.height, doneWidth, delayWidth, remainingWidth);
             }
+
+            // Label to the right of bar: "[status] [ratio]%"
+            this.drawLabel(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
 
             // Draw Label (optional, maybe to the right side if it fits or outside)
             // For now, let's keep it simple or remove if Sidebar has it. 
@@ -55,74 +57,117 @@ export class TaskRenderer {
         });
     }
 
-    private drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number, fillStyle: string) {
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
-        ctx.fillStyle = fillStyle;
-        ctx.fill();
+    private computeBarSegments(
+        task: Task,
+        barX: number,
+        totalWidth: number,
+        xTodayLine: number,
+        todayLineTs: number
+    ): { doneWidth: number; delayWidth: number; remainingWidth: number } {
+        const ratio = Math.max(0, Math.min(100, task.ratioDone)) / 100;
+        const doneWidth = totalWidth * ratio;
+
+        let expectedWidth = 0;
+        if (todayLineTs > task.startDate) {
+            expectedWidth = xTodayLine - barX;
+        }
+
+        expectedWidth = Math.max(0, Math.min(totalWidth, expectedWidth));
+
+        const delayWidth = Math.max(0, expectedWidth - doneWidth);
+        const remainingWidth = Math.max(0, totalWidth - doneWidth - delayWidth);
+
+        return {
+            doneWidth: Math.max(0, Math.min(totalWidth, doneWidth)),
+            delayWidth: Math.max(0, Math.min(totalWidth, delayWidth)),
+            remainingWidth: Math.max(0, Math.min(totalWidth, remainingWidth))
+        };
     }
 
-    private clipRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
-        ctx.clip();
+    private drawLeafBar(
+        ctx: CanvasRenderingContext2D,
+        x: number,
+        y: number,
+        height: number,
+        doneWidth: number,
+        delayWidth: number,
+        remainingWidth: number
+    ) {
+        // Done: solid green from left
+        if (doneWidth > 0) {
+            ctx.fillStyle = TaskRenderer.DONE_GREEN;
+            ctx.fillRect(x, y, doneWidth, height);
+        }
+
+        // Delay: red from end of done to today line (clamped)
+        if (delayWidth > 0) {
+            ctx.fillStyle = TaskRenderer.DELAY_RED;
+            ctx.fillRect(x + doneWidth, y, delayWidth, height);
+        }
+
+        // Planned/remaining: gray to the end
+        if (remainingWidth > 0) {
+            ctx.fillStyle = TaskRenderer.PLAN_GRAY;
+            ctx.fillRect(x + doneWidth + delayWidth, y, remainingWidth, height);
+        }
     }
 
-    private drawSummaryTask(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, color: string) {
-        // Draw bracket-style summary task
-        //  __________
-        // |          |
-        // v          v (points down)
+    private drawSummaryBracket(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+        const pad = 1;
+        const topY = y + pad;
+        const leftX = x + pad;
+        const rightX = x + width - pad;
+        const bottomY = y + height - pad;
 
-        const bracketHeight = height / 2;
-        const thickness = height / 3;
-
-        ctx.fillStyle = color;
+        ctx.save();
+        ctx.strokeStyle = TaskRenderer.SUMMARY_STROKE;
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        // Top bar
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + width, y);
-        ctx.lineTo(x + width, y + bracketHeight);
-        ctx.lineTo(x + width - thickness/2, y + bracketHeight); // Taper end
-        ctx.lineTo(x + width, y + height); // Point
-        ctx.lineTo(x + width - thickness, y + bracketHeight);
 
-        // Go to left side
-        ctx.lineTo(x + thickness, y + bracketHeight);
-        ctx.lineTo(x, y + height); // Point
-        ctx.lineTo(x + thickness/2, y + bracketHeight); // Taper end
-        ctx.lineTo(x, y + bracketHeight);
-        ctx.closePath();
+        // Left bracket
+        ctx.moveTo(leftX, topY);
+        ctx.lineTo(leftX, bottomY);
+        ctx.lineTo(leftX + 6, bottomY);
 
-        // Simplified block summary for now as points are complex to get right without variables
-        // Let's do a simple black bar with down-pointing ends
+        // Top line
+        ctx.moveTo(leftX, topY);
+        ctx.lineTo(rightX, topY);
 
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + width, y);
-        ctx.lineTo(x + width, y + height);
-        ctx.lineTo(x + width - 10, y + height * 0.6); // Cutout
-        ctx.lineTo(x + 10, y + height * 0.6); // Cutout
-        ctx.lineTo(x, y + height);
-        ctx.closePath();
-        ctx.fill();
+        // Right bracket
+        ctx.moveTo(rightX, topY);
+        ctx.lineTo(rightX, bottomY);
+        ctx.lineTo(rightX - 6, bottomY);
+
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    private drawSummaryProgress(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, doneWidth: number) {
+        const barHeight = 3;
+        const barY = y + height - barHeight;
+
+        ctx.save();
+        ctx.fillStyle = TaskRenderer.PLAN_GRAY;
+        ctx.fillRect(x, barY, width, barHeight);
+
+        if (doneWidth > 0) {
+            ctx.fillStyle = TaskRenderer.DONE_GREEN;
+            ctx.fillRect(x, barY, Math.min(width, doneWidth), barHeight);
+        }
+        ctx.restore();
+    }
+
+    private drawLabel(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number) {
+        const label = `${getStatusColor(task.statusId).label} ${Math.max(0, Math.min(100, task.ratioDone))}%`;
+        const textX = x + width + 6;
+        const textY = y + height / 2 + 4;
+
+        ctx.save();
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = TaskRenderer.LABEL_COLOR;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, textX, textY);
+        ctx.restore();
     }
 }

@@ -146,7 +146,9 @@ export class OverlayRenderer {
 
     private drawTodayLine(ctx: CanvasRenderingContext2D, viewport: Viewport) {
         const today = new Date().setHours(0, 0, 0, 0);
-        const x = LayoutEngine.dateToX(today, viewport) - viewport.scrollX;
+        const ONE_DAY = 24 * 60 * 60 * 1000;
+        // Redmine standard: draw at the right edge of "today" column.
+        const x = LayoutEngine.dateToX(today + ONE_DAY, viewport) - viewport.scrollX;
 
         if (x >= 0 && x <= this.canvas.width) {
             ctx.strokeStyle = '#e53935';
