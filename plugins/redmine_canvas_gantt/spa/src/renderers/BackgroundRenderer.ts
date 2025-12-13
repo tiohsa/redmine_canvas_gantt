@@ -4,7 +4,6 @@ import { getGridScales } from '../utils/grid';
 export class BackgroundRenderer {
     private canvas: HTMLCanvasElement;
     private static readonly WEEKEND_BG = '#eeeeee';
-    private static readonly ONE_DAY = 24 * 60 * 60 * 1000;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -22,38 +21,25 @@ export class BackgroundRenderer {
         const scales = getGridScales(viewport, zoomLevel);
 
         // Weekend background
-        // Logic: if zoomLevel shows days (level 2 or 3)
-        // Zoom 2: Bottom is Days.
-        // Zoom 3: Top is Days?
-        // Let's rely on checking day-like intervals in scales.middle or scales.bottom or scales.top
-        // Or simpler: iterate days if scale is small enough to see them.
-
-        const pixelsPerDay = (24 * 60 * 60 * 1000) * viewport.scale;
-
-        if (pixelsPerDay > 10) { // arbitrary threshold for visibility
-            // Calculate visible range
-            const startT = viewport.startDate + (viewport.scrollX / viewport.scale);
-            const endT = startT + (viewport.width / viewport.scale);
-
-            // Align to day
-            let t = Math.floor(startT / BackgroundRenderer.ONE_DAY) * BackgroundRenderer.ONE_DAY;
-
-            while (t < endT) {
-                const d = new Date(t);
+        // Use scales to align perfectly with the header and grid lines (Local time support)
+        if (zoomLevel === 2) {
+            const ticks = scales.bottom;
+            ticks.forEach((tick, i) => {
+                const d = new Date(tick.time);
                 const dow = d.getDay();
-
-                // If weekend
                 if (dow === 0 || dow === 6) {
-                    const x = (t - viewport.startDate) * viewport.scale - viewport.scrollX;
-                    const w = pixelsPerDay;
-                    // Draw strip
-                    if (x + w > 0 && x < this.canvas.width) {
+                    // Calculate width to next tick or default to one day width
+                    let w = (i < ticks.length - 1)
+                        ? ticks[i + 1].x - tick.x
+                        : (24 * 60 * 60 * 1000) * viewport.scale;
+
+                    // Only draw if within canvas
+                    if (tick.x + w > 0 && tick.x < this.canvas.width) {
                         ctx.fillStyle = BackgroundRenderer.WEEKEND_BG;
-                        ctx.fillRect(Math.floor(x), 0, Math.ceil(w), this.canvas.height);
+                        ctx.fillRect(Math.floor(tick.x), 0, Math.ceil(w), this.canvas.height);
                     }
                 }
-                t += BackgroundRenderer.ONE_DAY;
-            }
+            });
         }
 
         // Grid (vertical lines)
