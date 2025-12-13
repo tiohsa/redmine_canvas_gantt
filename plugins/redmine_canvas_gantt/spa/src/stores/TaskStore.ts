@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Task, Relation, Viewport, ViewMode } from '../types';
-import { SCALES } from '../utils/grid';
+import type { Task, Relation, Viewport, ViewMode, ZoomLevel } from '../types';
+import { SCALES, ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 
 interface TaskState {
@@ -8,6 +8,7 @@ interface TaskState {
     relations: Relation[];
     viewport: Viewport;
     viewMode: ViewMode;
+    zoomLevel: ZoomLevel;
     selectedTaskId: string | null;
     hoveredTaskId: string | null;
     contextMenu: { x: number; y: number; taskId: string } | null;
@@ -21,13 +22,14 @@ interface TaskState {
     updateTask: (id: string, updates: Partial<Task>) => void;
     updateViewport: (updates: Partial<Viewport>) => void;
     setViewMode: (mode: ViewMode) => void;
+    setZoomLevel: (level: ZoomLevel) => void;
 }
 
 const DEFAULT_VIEWPORT: Viewport = {
     startDate: new Date().setFullYear(new Date().getFullYear() - 1),
     scrollX: 0,
     scrollY: 0,
-    scale: 0.0000005787, // ~50px per day
+    scale: ZOOM_SCALES[1], // Default to Zoom 1 (Week)
     width: 800,
     height: 600,
     rowHeight: 40
@@ -37,7 +39,8 @@ export const useTaskStore = create<TaskState>((set) => ({
     tasks: [],
     relations: [],
     viewport: DEFAULT_VIEWPORT,
-    viewMode: 'Day',
+    viewMode: 'Week',
+    zoomLevel: 1,
     selectedTaskId: null,
     hoveredTaskId: null,
     contextMenu: null,
@@ -118,22 +121,33 @@ export const useTaskStore = create<TaskState>((set) => ({
         viewport: { ...state.viewport, ...updates }
     })),
 
-
-
     setViewMode: (mode) => set((state) => {
-        let scale = state.viewport.scale;
-        switch (mode) {
-            case 'Day':
-                scale = SCALES.Day;
-                break;
-            case 'Week':
-                scale = SCALES.Week;
-                break;
-            case 'Month':
-                scale = SCALES.Month;
-                break;
-        }
+        // Deprecated or mapped to zoom?
+        // Let's keep it working for now but mapped loosely
+        let zoom = state.zoomLevel;
+        if (mode === 'Month') zoom = 0;
+        if (mode === 'Week') zoom = 1;
+        if (mode === 'Day') zoom = 2;
+
+        const scale = ZOOM_SCALES[zoom];
         return {
+            viewMode: mode,
+            zoomLevel: zoom,
+            viewport: { ...state.viewport, scale }
+        };
+    }),
+
+    setZoomLevel: (level) => set((state) => {
+        const scale = ZOOM_SCALES[level];
+        // Reverse map to viewMode for compatibility if needed
+        let mode: ViewMode = 'Week';
+        if (level === 0) mode = 'Month';
+        if (level === 1) mode = 'Week';
+        if (level === 2) mode = 'Day';
+        if (level === 3) mode = 'Day'; // No Hour viewMode yet
+
+        return {
+            zoomLevel: level,
             viewMode: mode,
             viewport: { ...state.viewport, scale }
         };

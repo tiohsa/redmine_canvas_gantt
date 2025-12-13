@@ -1,14 +1,14 @@
 import React from 'react';
 
-import type { ViewMode } from '../types';
+import type { ZoomLevel } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
 
 interface GanttToolbarProps {
-    viewMode: ViewMode;
-    onViewModeChange: (mode: ViewMode) => void;
+    zoomLevel: ZoomLevel;
+    onZoomChange: (level: ZoomLevel) => void;
 }
 
-export const GanttToolbar: React.FC<GanttToolbarProps> = ({ viewMode, onViewModeChange }) => {
+export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const { viewport, updateViewport } = useTaskStore();
 
     const handleTodayClick = () => {
@@ -18,6 +18,13 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ viewMode, onViewMode
         const centeredX = Math.max(0, todayX - (viewport.width / 2));
         updateViewport({ scrollX: centeredX });
     };
+
+    const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
+        { level: 0, label: 'Month' },
+        { level: 1, label: 'Week' },
+        { level: 2, label: 'Day' },
+        { level: 3, label: 'Hour' }
+    ];
 
     return (
         <div style={{
@@ -56,7 +63,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ viewMode, onViewMode
                 </button>
             </div>
 
-            {/* Right: View Mode & Add Task */}
+            {/* Right: Zoom Level & Add Task */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <button
                     onClick={handleTodayClick}
@@ -82,12 +89,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ viewMode, onViewMode
                     gap: '2px',
                     boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)'
                 }}>
-                    {(['Day', 'Week', 'Month'] as const).map((mode) => {
-                        const isActive = viewMode === mode;
+                    {ZOOM_OPTIONS.map((option) => {
+                        const isActive = zoomLevel === option.level;
                         return (
                             <button
-                                key={mode}
-                                onClick={() => onViewModeChange(mode)}
+                                key={option.level}
+                                onClick={() => onZoomChange(option.level)}
                                 style={{
                                     border: 'none',
                                     background: isActive ? '#fff' : 'transparent',
@@ -103,13 +110,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ viewMode, onViewMode
                                     minWidth: '60px'
                                 }}
                             >
-                                {mode}
+                                {option.label}
                             </button>
                         );
                     })}
                 </div>
-
-
             </div>
         </div>
     );

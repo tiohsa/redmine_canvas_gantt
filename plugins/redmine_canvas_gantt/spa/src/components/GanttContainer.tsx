@@ -19,7 +19,7 @@ export const GanttContainer: React.FC = () => {
     const taskCanvasRef = useRef<HTMLCanvasElement>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    const { viewport, tasks, setTasks, setRelations, updateViewport, viewMode } = useTaskStore();
+    const { viewport, tasks, setTasks, setRelations, updateViewport, zoomLevel } = useTaskStore();
 
     const [sidebarWidth, setSidebarWidth] = React.useState(400);
     const isResizing = useRef(false);
@@ -124,10 +124,10 @@ export const GanttContainer: React.FC = () => {
 
     // Render Loop
     useEffect(() => {
-        if (engines.current.bg) engines.current.bg.render(viewport, viewMode);
+        if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel);
         if (engines.current.task) engines.current.task.render(viewport, tasks);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
-    }, [viewport, tasks, viewMode]);
+    }, [viewport, tasks, zoomLevel]);
 
     return (
         <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>

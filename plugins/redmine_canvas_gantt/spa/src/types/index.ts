@@ -48,4 +48,5 @@ export interface Bounds {
     height: number;
 }
 
-export type ViewMode = 'Day' | 'Week' | 'Month' | 'Quarter';
+export type ZoomLevel = 0 | 1 | 2 | 3;
+export type ViewMode = 'Day' | 'Week' | 'Month' | 'Quarter'; // Keeping for potential backward compact, but aim to use ZoomLevel

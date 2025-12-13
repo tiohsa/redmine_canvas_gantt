@@ -5,11 +5,11 @@ import Toast from './components/Toast';
 import './App.css';
 
 function App() {
-  const { viewMode, setViewMode } = useTaskStore();
+  const { zoomLevel, setZoomLevel } = useTaskStore();
 
   return (
     <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-      <GanttToolbar viewMode={viewMode} onViewModeChange={setViewMode} />
+      <GanttToolbar zoomLevel={zoomLevel} onZoomChange={setZoomLevel} />
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         <GanttContainer />
       </div>

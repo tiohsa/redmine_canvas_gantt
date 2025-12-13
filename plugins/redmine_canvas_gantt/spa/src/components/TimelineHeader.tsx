@@ -4,7 +4,7 @@ import { getGridScales } from '../utils/grid';
 
 export const TimelineHeader: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const { viewport, viewMode } = useTaskStore();
+    const { viewport, zoomLevel } = useTaskStore();
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -14,130 +14,146 @@ export const TimelineHeader: React.FC = () => {
             const ctx = canvas.getContext('2d');
             if (!ctx) return;
 
+            // Clear
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Header Background
             ctx.fillStyle = '#f8f9fa';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.strokeStyle = '#e0e0e0';
-            ctx.beginPath();
-            ctx.moveTo(0, canvas.height - 0.5);
-            ctx.lineTo(canvas.width, canvas.height - 0.5);
-            ctx.stroke();
+            ctx.strokeRect(0, 0, canvas.width, canvas.height);
 
-            // Draw Dates
-            // Logic similar to BackgroundRenderer but drawing texts
-            // Draw Dates
-            const scales = getGridScales(viewport, viewMode);
-            const headerHeight = canvas.height;
-            const rowHeight = headerHeight / 3;
+            // Calculate Scales
+            const scales = getGridScales(viewport, zoomLevel);
 
-            // Draw Top Scale (Year-Month)
-            ctx.fillStyle = '#f1f3f5';
-            ctx.fillRect(0, 0, canvas.width, rowHeight);
+            // Determine active rows
+            const hasTop = scales.top.length > 0;
+            const hasMiddle = scales.middle.length > 0;
+            const hasBottom = scales.bottom.length > 0;
 
-            ctx.strokeStyle = '#dee2e6';
-            ctx.beginPath();
-            ctx.moveTo(0, rowHeight);
-            ctx.lineTo(canvas.width, rowHeight);
-            ctx.stroke();
+            const activeRows = [hasTop, hasMiddle, hasBottom].filter(Boolean).length;
+            const rowHeight = activeRows > 0 ? canvas.height / activeRows : canvas.height;
 
-            ctx.fillStyle = '#495057';
-            ctx.font = '500 12px sans-serif';
-            ctx.textAlign = 'left';
+            let currentY = 0;
 
-            scales.top.forEach((tick, i) => {
+            const drawRow = (ticks: typeof scales.top, bgColor: string, txtColor: string) => {
+                if (ticks.length === 0) return;
+
+                const y = currentY;
+                const h = rowHeight;
+
+                // Background
+                ctx.fillStyle = bgColor;
+                ctx.fillRect(0, y, canvas.width, h);
+
+                // Bottom border
+                ctx.strokeStyle = '#dee2e6';
                 ctx.beginPath();
-                ctx.moveTo(Math.floor(tick.x) + 0.5, 0);
-                ctx.lineTo(Math.floor(tick.x) + 0.5, rowHeight);
+                ctx.moveTo(0, y + h);
+                ctx.lineTo(canvas.width, y + h);
                 ctx.stroke();
 
-                // Sticky Label Logic
-                // Find visible range for this tick
-                let nextX = canvas.width;
-                if (i < scales.top.length - 1) {
-                    nextX = scales.top[i + 1].x;
+                ctx.fillStyle = txtColor;
+                ctx.font = '500 12px sans-serif';
+                ctx.textAlign = 'left';
+
+                ticks.forEach((tick, i) => {
+                    // Vertical Separator
+                    ctx.beginPath();
+                    ctx.moveTo(Math.floor(tick.x) + 0.5, y);
+                    ctx.lineTo(Math.floor(tick.x) + 0.5, y + h);
+                    ctx.strokeStyle = '#dee2e6'; // Subtle separator
+                    ctx.stroke();
+
+                    // Text
+                    // Determine meaningful width
+                    let nextX = canvas.width;
+                    if (i < ticks.length - 1) {
+                        nextX = ticks[i + 1].x;
+                    }
+
+
+
+                    // Simple sticky-like label or centered?
+                    // Spec seems to imply left-aligned ("Month label occupies interval", "Week W1")
+                    // If dense (Day/Hour), maybe center?
+                    // Let's stick to Left + Padding for Top/Middle usually, but Center for Day numbers?
+
+                    const textX = Math.max(tick.x, 0) + 4;
+                    const textY = y + h / 2 + 4; // Vertically center approx
+
+                    if (tick.x < canvas.width && textX < nextX - 10) {
+                        ctx.fillText(tick.label, textX, textY);
+                    }
+                });
+
+                currentY += h;
+            };
+
+            // Customize colors per row "level" (Top/Middle/Bottom conceptually)
+            // Note: If Bottom is empty, Middle becomes second row.
+
+            if (hasTop) drawRow(scales.top, '#f1f3f5', '#495057');
+            if (hasMiddle) drawRow(scales.middle, '#ffffff', '#333333');
+            if (hasBottom) {
+                // Special handling for Weekend BG if needed? 
+                // Grid scalers don't carry weekend info easily unless I check 'tick.time'
+                // Re-implement weekend BG for bottom row?
+
+                const y = currentY;
+                const h = rowHeight;
+
+                // Background (base)
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, y, canvas.width, h);
+
+                // Weekends
+                if (zoomLevel === 2) { // Day View mainly
+                    scales.bottom.forEach((tick, i) => {
+                        const d = new Date(tick.time);
+                        if (d.getDay() === 0 || d.getDay() === 6) {
+                            let w = 50; // default
+                            if (i < scales.bottom.length - 1) w = scales.bottom[i + 1].x - tick.x;
+                            else w = (24 * 3600 * 1000 * viewport.scale);
+
+                            ctx.fillStyle = '#eeeeee';
+                            ctx.fillRect(tick.x, y, w, h);
+                        }
+                    });
                 }
 
-                // Draw text at max(tick.x, 0) + padding
-                const textX = Math.max(tick.x, 0) + 8;
-
-                // Only draw if it fits within the interval (before nextX)
-                // Use approximate text width check if needed, or just boundary
-                if (textX < nextX - 20) {
-                    ctx.fillStyle = '#0066cc';
-                    ctx.fillText(tick.label, textX, rowHeight - 7);
-                }
-            });
-
-            // Draw Middle Scale (Week number)
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(0, rowHeight, canvas.width, rowHeight);
-
-            ctx.textAlign = 'center';
-            ctx.font = '500 12px sans-serif';
-
-            scales.middle.forEach((tick, i) => {
-                const x = tick.x;
-
-                ctx.beginPath();
-                ctx.moveTo(Math.floor(x) + 0.5, rowHeight);
-                ctx.lineTo(Math.floor(x) + 0.5, rowHeight * 2);
-                ctx.strokeStyle = '#e0e0e0';
-                ctx.stroke();
-
-                let width = 50;
-                if (i < scales.middle.length - 1) {
-                    width = scales.middle[i + 1].x - x;
-                } else {
-                    width = (1000 * 60 * 60 * 24 * viewport.scale);
-                }
-
-                const textX = x + width / 2;
+                // Draw Ticks/Text
                 ctx.fillStyle = '#333';
-                ctx.fillText(tick.label, textX, rowHeight * 2 - 7);
-            });
+                ctx.font = '500 12px sans-serif';
+                ctx.textAlign = 'left';
 
-            // Draw Bottom Scale (Day + weekday) with weekend background
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(0, rowHeight * 2, canvas.width, rowHeight);
+                scales.bottom.forEach(tick => {
+                    ctx.beginPath();
+                    ctx.moveTo(Math.floor(tick.x) + 0.5, y);
+                    ctx.lineTo(Math.floor(tick.x) + 0.5, y + h);
+                    ctx.strokeStyle = '#e0e0e0';
+                    ctx.stroke();
 
-            scales.bottom.forEach((tick, i) => {
-                const x = tick.x;
-                let width = 50;
-                if (i < scales.bottom.length - 1) {
-                    width = scales.bottom[i + 1].x - x;
-                } else {
-                    width = (1000 * 60 * 60 * 24 * viewport.scale);
-                }
+                    const textX = tick.x + 4;
+                    const textY = y + h / 2 + 4;
 
-                // Weekend background
-                const d = new Date(tick.time);
-                const dow = d.getDay();
-                if (dow === 0 || dow === 6) {
-                    ctx.fillStyle = '#eeeeee';
-                    ctx.fillRect(Math.floor(x), rowHeight * 2, Math.ceil(width), rowHeight);
-                }
+                    // For days, maybe center?
+                    // "1 2 3"
+                    // If zoom level 2 (Day), width is ~40px. Center implies textX + width/2.
+                    // But left + 4 works cleanly too.
 
-                ctx.beginPath();
-                ctx.moveTo(Math.floor(x) + 0.5, rowHeight * 2);
-                ctx.lineTo(Math.floor(x) + 0.5, headerHeight);
-                ctx.strokeStyle = '#e0e0e0';
-                ctx.stroke();
+                    ctx.fillText(tick.label, textX, textY);
+                });
 
-                const textX = x + width / 2;
-                ctx.fillStyle = '#333';
-                ctx.fillText(tick.label, textX, headerHeight - 7);
-            });
-
-
+                currentY += h;
+            }
 
         };
 
         render();
-    }, [viewport, viewMode]);
+    }, [viewport, zoomLevel]);
 
-    // Resize Observer to match width
+    // Resize Observer
     useEffect(() => {
         const parent = canvasRef.current?.parentElement;
         if (!parent) return;
@@ -146,11 +162,8 @@ export const TimelineHeader: React.FC = () => {
             const entry = entries[0];
             if (canvasRef.current) {
                 canvasRef.current.width = entry.contentRect.width;
-                canvasRef.current.height = 48; // Fixed height
-                // Trigger re-render by updating state? or just call helper?
-                // The viewport dependency above will handle redraw if viewport update triggers it.
-                // But changing width might not trigger viewport update immediately if not synced.
-                // However, GanttContainer manages viewport width.
+                canvasRef.current.height = 48; // Keep fixed height container
+                // Trigger re-render... handled by deps
             }
         });
         observer.observe(parent);
