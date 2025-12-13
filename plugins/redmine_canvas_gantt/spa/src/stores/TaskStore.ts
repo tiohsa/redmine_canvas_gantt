@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Task, Relation, Viewport, ViewMode } from '../types';
 import { SCALES } from '../utils/grid';
+import { applyHierarchyRules } from '../utils/constraints';
 
 interface TaskState {
     tasks: Task[];
@@ -41,14 +42,16 @@ export const useTaskStore = create<TaskState>((set) => ({
     hoveredTaskId: null,
     contextMenu: null,
 
-    setTasks: (tasks) => set({ tasks }),
+    setTasks: (tasks) => set({ tasks: applyHierarchyRules(tasks) }),
     setRelations: (relations) => set({ relations }),
     selectTask: (id) => set({ selectedTaskId: id }),
     setHoveredTask: (id) => set({ hoveredTaskId: id }),
     setContextMenu: (menu) => set({ contextMenu: menu }),
 
     updateTask: (id, updates) => set((state) => ({
-        tasks: state.tasks.map(t => t.id === id ? { ...t, ...updates } : t)
+        tasks: applyHierarchyRules(
+            state.tasks.map(t => t.id === id ? { ...t, ...updates } : t)
+        )
     })),
 
     updateViewport: (updates) => set((state) => ({

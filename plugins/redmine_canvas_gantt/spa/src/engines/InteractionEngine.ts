@@ -2,6 +2,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { LayoutEngine } from './LayoutEngine';
 import type { Task } from '../types';
+import { enforceDependencyConstraints } from '../utils/constraints';
 
 type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
 
@@ -24,6 +25,7 @@ export class InteractionEngine {
         originalStartDate: 0,
         originalDueDate: 0
     };
+    private lastConstraintWarning: string | null = null;
 
     constructor(container: HTMLElement) {
         this.container = container;
@@ -131,7 +133,7 @@ export class InteractionEngine {
     };
 
     private handleMouseMove = (e: MouseEvent) => {
-        const { viewport, updateViewport, updateTask, setHoveredTask } = useTaskStore.getState();
+        const { viewport, updateViewport, updateTask, setHoveredTask, tasks, relations } = useTaskStore.getState();
 
         // Hover logic
         const rect = this.container.getBoundingClientRect();
@@ -165,21 +167,29 @@ export class InteractionEngine {
             this.drag.startY = e.clientY;
         } else if (this.drag.mode === 'task-move' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
+            const candidateStart = this.drag.originalStartDate + timeDelta;
+            const candidateDue = this.drag.originalDueDate + timeDelta;
+            const constrained = enforceDependencyConstraints(this.drag.taskId, candidateStart, candidateDue, tasks, relations);
             updateTask(this.drag.taskId, {
-                startDate: this.drag.originalStartDate + timeDelta,
-                dueDate: this.drag.originalDueDate + timeDelta
+                startDate: constrained.startDate,
+                dueDate: constrained.dueDate
             });
+            this.notifyConstraint(constrained.warning);
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
             const newStart = this.drag.originalStartDate + timeDelta;
             if (newStart < this.drag.originalDueDate) {
-                updateTask(this.drag.taskId, { startDate: newStart });
+                const constrained = enforceDependencyConstraints(this.drag.taskId, newStart, this.drag.originalDueDate, tasks, relations);
+                updateTask(this.drag.taskId, { startDate: constrained.startDate });
+                this.notifyConstraint(constrained.warning);
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
             const newEnd = this.drag.originalDueDate + timeDelta;
             if (newEnd > this.drag.originalStartDate) {
-                updateTask(this.drag.taskId, { dueDate: newEnd });
+                const constrained = enforceDependencyConstraints(this.drag.taskId, this.drag.originalStartDate, newEnd, tasks, relations);
+                updateTask(this.drag.taskId, { dueDate: constrained.dueDate });
+                this.notifyConstraint(constrained.warning);
             }
         }
     };
@@ -187,9 +197,12 @@ export class InteractionEngine {
     private handleMouseUp = async () => {
         const draggedTaskId = this.drag.taskId;
         const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && draggedTaskId;
+        const originalStartDate = this.drag.originalStartDate;
+        const originalDueDate = this.drag.originalDueDate;
 
         this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: 0, originalDueDate: 0 };
         this.container.style.cursor = 'default';
+        this.lastConstraintWarning = null;
 
         if (wasDragging && draggedTaskId) {
             // Persist the change to backend
@@ -213,8 +226,8 @@ export class InteractionEngine {
 
                     // Revert changes
                     updateTask(draggedTaskId, {
-                        startDate: this.drag.originalStartDate,
-                        dueDate: this.drag.originalDueDate
+                        startDate: originalStartDate,
+                        dueDate: originalDueDate
                     });
                 }
             } catch (err) {
@@ -223,12 +236,24 @@ export class InteractionEngine {
 
                 // Revert changes
                 updateTask(draggedTaskId, {
-                    startDate: this.drag.originalStartDate,
-                    dueDate: this.drag.originalDueDate
+                    startDate: originalStartDate,
+                    dueDate: originalDueDate
                 });
             }
         }
     };
+
+    private notifyConstraint(warning: string | null) {
+        if (!warning) {
+            this.lastConstraintWarning = null;
+            return;
+        }
+
+        if (this.lastConstraintWarning === warning) return;
+
+        this.lastConstraintWarning = warning;
+        useUIStore.getState().addNotification(warning, 'warning');
+    }
 
     private handleContextMenu = (e: MouseEvent) => {
         e.preventDefault();

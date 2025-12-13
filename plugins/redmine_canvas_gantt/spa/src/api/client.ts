@@ -1,10 +1,12 @@
 import type { Relation, Project, Task } from '../types';
+import { buildDateWarnings, normalizeStatusRules } from '../utils/constraints';
 
 interface ApiData {
     tasks: any[];
     relations: Relation[];
     project: Project;
     permissions: { editable: boolean; viewable: boolean };
+    warnings: string[];
 }
 
 interface UpdateTaskResult {
@@ -50,18 +52,26 @@ export const apiClient = {
         }
 
         const data = await response.json();
+        const warnings: string[] = [];
 
         // Transform API tasks to internal Task model
         const tasks: Task[] = data.tasks.map((t: any, index: number): Task => {
             const start = parseDate(t.start_date);
             const due = parseDate(t.due_date);
 
+            if (!start) warnings.push(`チケット#${t.id} に開始日が設定されていないため補完しました。`);
+            if (!due) warnings.push(`チケット#${t.id} に期限日が設定されていないため補完しました。`);
+
             // Fallbacks to keep rendering even when dates are missing/invalid
             const safeStart = start ?? due ?? new Date().setHours(0, 0, 0, 0);
             const safeDue = due ?? start ?? safeStart;
             const normalizedDue = safeDue < safeStart ? safeStart : safeDue;
 
-            return {
+            if (safeDue < safeStart) {
+                warnings.push(`チケット#${t.id} の開始日/期限日が逆転していたため補正しました。`);
+            }
+
+            return normalizeStatusRules({
                 id: String(t.id),
                 subject: t.subject,
                 startDate: safeStart,
@@ -75,7 +85,7 @@ export const apiClient = {
                 editable: t.editable,
                 rowIndex: index, // Simplify for now: default order
                 hasChildren: false // Will be updated below
-            };
+            });
         });
 
         // Compute hasChildren efficiently
@@ -86,7 +96,7 @@ export const apiClient = {
             }
         });
 
-        return { ...data, tasks };
+        return { ...data, tasks, warnings: [...warnings, ...buildDateWarnings(tasks)] };
     },
 
     updateTask: async (task: Task): Promise<UpdateTaskResult> => {

@@ -8,6 +8,7 @@ import { A11yLayer } from './A11yLayer';
 import { HtmlOverlay } from './HtmlOverlay';
 import { UiSidebar } from './UiSidebar';
 import { TimelineHeader } from './TimelineHeader';
+import { useUIStore } from '../stores/UIStore';
 
 export const GanttContainer: React.FC = () => {
     // containerRef is the root flex container
@@ -20,6 +21,7 @@ export const GanttContainer: React.FC = () => {
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const { viewport, tasks, setTasks, setRelations, updateViewport, viewMode } = useTaskStore();
+    const addNotification = useUIStore(state => state.addNotification);
 
     const [sidebarWidth, setSidebarWidth] = React.useState(400);
     const isResizing = useRef(false);
@@ -44,7 +46,7 @@ export const GanttContainer: React.FC = () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, []);
+    }, [addNotification, setRelations, setTasks, updateViewport]);
 
     const startResize = () => {
         isResizing.current = true;
@@ -65,6 +67,8 @@ export const GanttContainer: React.FC = () => {
             apiClient.fetchData().then(data => {
                 setTasks(data.tasks);
                 setRelations(data.relations);
+
+                data.warnings?.forEach(message => addNotification(message, 'warning'));
 
                 // Fit timeline start to the earliest available date so tasks are visible
                 const minStart = data.tasks.reduce<number | null>((acc, t) => {
