@@ -2,6 +2,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { LayoutEngine } from './LayoutEngine';
 import type { Task } from '../types';
+import { snapToUtcDay } from '../utils/time';
 
 type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
 
@@ -66,6 +67,10 @@ export class InteractionEngine {
             }
         }
         return { task: null, region: 'body' };
+    }
+
+    private snapToDate(timestamp: number): number {
+        return snapToUtcDay(timestamp);
     }
 
     private handleMouseDown = (e: MouseEvent) => {
@@ -165,20 +170,33 @@ export class InteractionEngine {
             this.drag.startY = e.clientY;
         } else if (this.drag.mode === 'task-move' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
-            updateTask(this.drag.taskId, {
-                startDate: this.drag.originalStartDate + timeDelta,
-                dueDate: this.drag.originalDueDate + timeDelta
-            });
+            const newStart = this.snapToDate(this.drag.originalStartDate + timeDelta);
+            const duration = this.drag.originalDueDate - this.drag.originalStartDate;
+
+            // Only update if changed to avoid thrashing
+            const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
+            if (currentTask && currentTask.startDate !== newStart) {
+                updateTask(this.drag.taskId, {
+                    startDate: newStart,
+                    dueDate: newStart + duration
+                });
+            }
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
-            const newStart = this.drag.originalStartDate + timeDelta;
-            if (newStart < this.drag.originalDueDate) {
+            const newStart = this.snapToDate(this.drag.originalStartDate + timeDelta);
+
+            const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
+
+            if (currentTask && newStart < this.drag.originalDueDate && currentTask.startDate !== newStart) {
                 updateTask(this.drag.taskId, { startDate: newStart });
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
-            const newEnd = this.drag.originalDueDate + timeDelta;
-            if (newEnd > this.drag.originalStartDate) {
+            const newEnd = this.snapToDate(this.drag.originalDueDate + timeDelta);
+
+            const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
+
+            if (currentTask && newEnd > this.drag.originalStartDate && currentTask.dueDate !== newEnd) {
                 updateTask(this.drag.taskId, { dueDate: newEnd });
             }
         }
