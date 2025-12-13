@@ -96,10 +96,10 @@ export const TimelineHeader: React.FC = () => {
             if (hasTop) drawRow(scales.top, '#f1f3f5', '#495057');
 
             // Middle Row
-            // Zoom 3 Middle is Hours -> Center?
-            // Zoom 1/2 Middle is Weeks -> Left?
-            const middleAlign = zoomLevel === 3 ? 'center' : 'left';
-            if (hasMiddle) drawRow(scales.middle, '#ffffff', '#333333', middleAlign);
+            const middleAlign: 'left' | 'center' = 'left';
+            const middleBg = zoomLevel === 0 ? '#f1f3f5' : '#ffffff';
+            const middleTxt = zoomLevel === 0 ? '#495057' : '#333333';
+            if (hasMiddle) drawRow(scales.middle, middleBg, middleTxt, middleAlign);
 
             if (hasBottom) {
                 const y = currentY;
@@ -178,4 +178,3 @@ export const TimelineHeader: React.FC = () => {
         </div>
     );
 };
-

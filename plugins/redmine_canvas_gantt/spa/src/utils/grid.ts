@@ -18,7 +18,7 @@ export const ZOOM_SCALES: Record<ZoomLevel, number> = {
     0: 2 / ONE_DAY,
     1: 10 / ONE_DAY,
     2: 40 / ONE_DAY,
-    3: 50 / ONE_HOUR // ~1200 / day
+
 };
 
 // Legacy SCALES for backward compatibility if needed, but we try to route through ZoomLevel
@@ -218,54 +218,7 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
         );
     }
 
-    // --- ZOOM LEVEL 3 (Month + Week + Day + Hour) ---
-    // Spec 8.4: Top=Date, Bottom=Hour
-    else if (zoomLevel === 3) {
-        // Top: Day (YYYY/MM/DD)
-        // We put this in "Top" or "Middle"? 
-        // If we strictly follow layout rows:
-        // Top: Day
-        // Middle: Hour
-        // Bottom: ...?
-        // Or Top: Month, Middle: Day, Bottom: Hour?
-        // The spec example showed 2 rows. 
-        // Let's use Top and Middle for now, or Middle and Bottom?
-        // Standard is Top/Middle/(Bottom).
 
-        // Let's do:
-        // Top: Day
-        iterate(
-            (t) => {
-                const d = new Date(t);
-                d.setHours(0, 0, 0, 0);
-                return d.getTime();
-            },
-            (t) => t + ONE_DAY,
-            (t) => {
-                const d = new Date(t);
-                return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
-            },
-            scales.top
-        );
-
-        // Middle: Hour
-        iterate(
-            (t) => {
-                const d = new Date(t);
-                d.setMinutes(0, 0, 0);
-                return d.getTime();
-            },
-            (t) => t + ONE_HOUR,
-            (t) => {
-                const d = new Date(t);
-                return String(d.getHours()).padStart(2, '0');
-            },
-            scales.middle // Using Middle for hours so it's prominent
-        );
-
-        // Bottom: Optional 15min? Spec: "Time labels... 1h/15m/30m configurable"
-        // For now, just Hour in Middle.
-    }
 
     return scales;
 }

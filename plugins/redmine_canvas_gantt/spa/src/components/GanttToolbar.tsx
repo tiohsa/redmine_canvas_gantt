@@ -22,8 +22,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
         { level: 0, label: 'Month' },
         { level: 1, label: 'Week' },
-        { level: 2, label: 'Day' },
-        { level: 3, label: 'Hour' }
+        { level: 2, label: 'Day' }
     ];
 
     return (
@@ -63,19 +62,27 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 </button>
             </div>
 
-            {/* Right: Zoom Level & Add Task */}
+            {/* Right: Zoom Level & Today */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+
+                {/* Final Decision: Put Today in a similar container OR just style it to match the segmented control's HEIGHT/FONT/LOOK but standalone. */}
+
                 <button
                     onClick={handleTodayClick}
                     style={{
-                        padding: '8px 16px',
+                        padding: '6px 16px',
                         borderRadius: '6px',
-                        border: '1px solid #e0e0e0',
+                        border: '1px solid #e0e0e0', // Keep border if outside, or remove to match flat look?
+                        // "Day" button (inside group) has no border, just bg.
+                        // Let's give Today a similar look to the segmented control container but clickable?
                         backgroundColor: '#fff',
                         color: '#333',
-                        fontSize: '14px',
+                        fontSize: '13px',
                         fontWeight: 500,
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        height: '32px', // Match standard height of the checks
+                        display: 'flex',
+                        alignItems: 'center'
                     }}
                 >
                     Today

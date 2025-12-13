@@ -164,7 +164,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         if (level === 0) mode = 'Month';
         if (level === 1) mode = 'Week';
         if (level === 2) mode = 'Day';
-        if (level === 3) mode = 'Day';
+
 
         return {
             zoomLevel: level,
