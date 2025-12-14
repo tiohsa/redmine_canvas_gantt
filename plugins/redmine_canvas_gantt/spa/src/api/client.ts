@@ -1,7 +1,10 @@
 import type { Relation, Project, Task } from '../types';
 
+type ApiTask = Record<string, unknown>;
+type ApiRelation = Record<string, unknown>;
+
 interface ApiData {
-    tasks: any[];
+    tasks: Task[];
     relations: Relation[];
     project: Project;
     permissions: { editable: boolean; viewable: boolean };
@@ -52,9 +55,9 @@ export const apiClient = {
         const data = await response.json();
 
         // Transform API tasks to internal Task model
-        const tasks: Task[] = data.tasks.map((t: any, index: number): Task => {
-            const start = parseDate(t.start_date);
-            const due = parseDate(t.due_date);
+        const tasks: Task[] = (data.tasks as ApiTask[]).map((t, index: number): Task => {
+            const start = parseDate(typeof t.start_date === 'string' ? t.start_date : null);
+            const due = parseDate(typeof t.due_date === 'string' ? t.due_date : null);
 
             // Fallbacks to keep rendering even when dates are missing/invalid
             const safeStart = start ?? due ?? new Date().setHours(0, 0, 0, 0);
@@ -63,19 +66,19 @@ export const apiClient = {
 
             return {
                 id: String(t.id),
-                subject: t.subject,
+                subject: String(t.subject ?? ''),
                 projectId: t.project_id ? String(t.project_id) : undefined,
-                projectName: t.project_name,
-                displayOrder: t.display_order ?? index,
+                projectName: typeof t.project_name === 'string' ? t.project_name : undefined,
+                displayOrder: typeof t.display_order === 'number' ? t.display_order : index,
                 startDate: safeStart,
                 dueDate: normalizedDue,
-                ratioDone: t.ratio_done ?? 0,
-                statusId: t.status_id,
-                assignedToId: t.assigned_to_id,
-                assignedToName: t.assigned_to_name,
+                ratioDone: typeof t.ratio_done === 'number' ? t.ratio_done : 0,
+                statusId: typeof t.status_id === 'number' ? t.status_id : 0,
+                assignedToId: typeof t.assigned_to_id === 'number' ? t.assigned_to_id : undefined,
+                assignedToName: typeof t.assigned_to_name === 'string' ? t.assigned_to_name : undefined,
                 parentId: t.parent_id ? String(t.parent_id) : undefined,
-                lockVersion: t.lock_version,
-                editable: t.editable,
+                lockVersion: typeof t.lock_version === 'number' ? t.lock_version : 0,
+                editable: Boolean(t.editable),
                 rowIndex: index, // Simplify for now: default order
                 hasChildren: false // Will be updated below
             };
@@ -89,7 +92,15 @@ export const apiClient = {
             }
         });
 
-        return { ...data, tasks };
+        const relations: Relation[] = (data.relations as ApiRelation[]).map((r): Relation => ({
+            id: String(r.id ?? ''),
+            from: String(r.from ?? r.issue_from_id ?? ''),
+            to: String(r.to ?? r.issue_to_id ?? ''),
+            type: String(r.type ?? r.relation_type ?? ''),
+            delay: typeof r.delay === 'number' ? r.delay : undefined
+        })).filter(r => r.id !== '' && r.from !== '' && r.to !== '' && r.type !== '');
+
+        return { ...data, tasks, relations };
     },
 
     updateTask: async (task: Task): Promise<UpdateTaskResult> => {
@@ -161,5 +172,26 @@ export const apiClient = {
             type: relation.relation_type || type,
             delay: relation.delay
         };
+    },
+
+    deleteRelation: async (relationId: string): Promise<void> => {
+        const config = window.RedmineCanvasGantt;
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        const response = await fetch(`${config.apiBase}/relations/${relationId}.json`, {
+            method: 'DELETE',
+            headers: {
+                'X-Redmine-API-Key': config.apiKey,
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': config.authToken
+            }
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || response.statusText);
+        }
     }
 };

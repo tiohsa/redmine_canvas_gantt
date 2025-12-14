@@ -22,6 +22,7 @@ interface TaskState {
     setTasks: (tasks: Task[]) => void;
     setRelations: (relations: Relation[]) => void;
     addRelation: (relation: Relation) => void;
+    removeRelation: (relationId: string) => void;
     selectTask: (id: string | null) => void;
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
@@ -110,6 +111,9 @@ export const useTaskStore = create<TaskState>((set) => ({
         if (exists) return state;
         return { relations: [...state.relations, relation] };
     }),
+    removeRelation: (relationId) => set((state) => ({
+        relations: state.relations.filter(r => r.id !== relationId)
+    })),
     selectTask: (id) => set({ selectedTaskId: id }),
     setHoveredTask: (id) => set({ hoveredTaskId: id }),
     setContextMenu: (menu) => set({ contextMenu: menu }),

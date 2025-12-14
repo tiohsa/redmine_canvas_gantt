@@ -74,6 +74,11 @@ export class InteractionEngine {
     }
 
     private handleMouseDown = (e: MouseEvent) => {
+        // Ignore events from dependency handles (let/leave them for the Overlay handler)
+        if ((e.target as HTMLElement).closest('.dependency-handle')) {
+            return;
+        }
+
         const rect = this.container.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;

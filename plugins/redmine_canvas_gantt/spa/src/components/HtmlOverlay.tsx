@@ -10,90 +10,105 @@ export const HtmlOverlay: React.FC = () => {
     const hoveredTaskId = useTaskStore(state => state.hoveredTaskId);
     const contextMenu = useTaskStore(state => state.contextMenu);
     const tasks = useTaskStore(state => state.tasks);
+    const relations = useTaskStore(state => state.relations);
     const setContextMenu = useTaskStore(state => state.setContextMenu);
     const viewport = useTaskStore(state => state.viewport);
     const rowCount = useTaskStore(state => state.rowCount);
-    const addRelation = useTaskStore(state => state.addRelation);
-    const { addNotification } = useUIStore();
 
     const overlayRef = React.useRef<HTMLDivElement>(null);
     const [draft, setDraft] = React.useState<{ fromId: string; start: { x: number; y: number }; pointer: { x: number; y: number }; targetId?: string } | null>(null);
+    const draftRef = React.useRef<typeof draft>(null);
 
     const hoveredTask = hoveredTaskId ? tasks.find(t => t.id === hoveredTaskId) : null;
 
     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
     const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
 
-    const toLocalPoint = (clientX: number, clientY: number) => {
+    const setDraftState = React.useCallback((next: typeof draft) => {
+        draftRef.current = next;
+        setDraft(next);
+    }, []);
+
+    const toLocalPoint = React.useCallback((clientX: number, clientY: number) => {
         const rect = overlayRef.current?.getBoundingClientRect();
         if (!rect) return { x: clientX, y: clientY };
         return { x: clientX - rect.left, y: clientY - rect.top };
-    };
+    }, []);
 
-    const hitTestTask = (x: number, y: number) => {
-        for (const task of tasks) {
-            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit');
+    const hitTestTask = React.useCallback((x: number, y: number) => {
+        const { tasks: currentTasks, viewport: currentViewport } = useTaskStore.getState();
+        for (const task of currentTasks) {
+            const bounds = LayoutEngine.getTaskBounds(task, currentViewport, 'hit');
             if (x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height) {
                 return task;
             }
         }
         return null;
-    };
+    }, []);
 
-    const handleMouseMove = (e: MouseEvent) => {
-        if (!draft) return;
+    const handleMouseMove = React.useCallback((e: MouseEvent) => {
+        const currentDraft = draftRef.current;
+        if (!currentDraft) return;
         const point = toLocalPoint(e.clientX, e.clientY);
         const targetTask = hitTestTask(point.x, point.y);
-        setDraft({ ...draft, pointer: point, targetId: targetTask ? targetTask.id : undefined });
-    };
+        setDraftState({ ...currentDraft, pointer: point, targetId: targetTask ? targetTask.id : undefined });
+    }, [hitTestTask, setDraftState, toLocalPoint]);
 
-    const handleMouseUp = async () => {
-        if (!draft) return;
+    const handleMouseUp = React.useCallback(async () => {
+        const currentDraft = draftRef.current;
+        if (!currentDraft) return;
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
 
-        const { fromId, targetId } = draft;
+        draftRef.current = null;
         setDraft(null);
 
+        const { fromId, targetId } = currentDraft;
         if (!targetId || targetId === fromId) return;
 
-        const alreadyLinked = useTaskStore.getState().relations.some(r => r.from === fromId && r.to === targetId && r.type === RelationType.Precedes);
+        const { relations, addRelation } = useTaskStore.getState();
+        const alreadyLinked = relations.some(r => r.from === fromId && r.to === targetId && r.type === RelationType.Precedes);
         if (alreadyLinked) {
-            addNotification(i18n.t('label_relation_already_exists') || 'Relation already exists', 'info');
+            useUIStore.getState().addNotification(i18n.t('label_relation_already_exists') || 'Relation already exists', 'info');
             return;
         }
 
         try {
             const relation = await apiClient.createRelation(fromId, targetId, RelationType.Precedes);
             addRelation(relation);
-            addNotification(i18n.t('label_relation_added') || 'Dependency created', 'success');
+            useUIStore.getState().addNotification(i18n.t('label_relation_added') || 'Dependency created', 'success');
         } catch (error: any) {
-            addNotification(error?.message || 'Failed to create relation', 'error');
+            useUIStore.getState().addNotification(error?.message || 'Failed to create relation', 'error');
         }
-    };
+    }, [handleMouseMove]);
 
-    const startDraft = (taskId: string, x: number, y: number) => {
+    const startDraft = React.useCallback((taskId: string, x: number, y: number) => {
         const startPoint = { x, y };
-        setDraft({ fromId: taskId, start: startPoint, pointer: startPoint });
+        setDraftState({ fromId: taskId, start: startPoint, pointer: startPoint });
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
-    };
+    }, [handleMouseMove, handleMouseUp, setDraftState]);
 
-    React.useEffect(() => {
-        const overlay = overlayRef.current;
-        if (!overlay) return;
+    React.useEffect(() => () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+    }, [handleMouseMove, handleMouseUp]);
 
-        const handleNativeMouseDown = (e: MouseEvent) => {
-            const target = e.target as HTMLElement;
-            if (target && target.classList.contains('dependency-handle')) {
-                e.stopPropagation();
-            }
-        };
+    const relatedRelations = React.useMemo(() => {
+        if (!contextMenu) return [];
+        return relations.filter(r => r.from === contextMenu.taskId || r.to === contextMenu.taskId);
+    }, [contextMenu, relations]);
 
-        overlay.addEventListener('mousedown', handleNativeMouseDown);
-        return () => {
-            overlay.removeEventListener('mousedown', handleNativeMouseDown);
-        };
+    const handleRemoveRelation = React.useCallback(async (relationId: string) => {
+        try {
+            await apiClient.deleteRelation(relationId);
+            useTaskStore.getState().removeRelation(relationId);
+            useUIStore.getState().addNotification(i18n.t('label_relation_removed') || 'Dependency removed', 'success');
+        } catch (error: any) {
+            useUIStore.getState().addNotification(error?.message || (i18n.t('label_relation_remove_failed') || 'Failed to remove relation'), 'error');
+        } finally {
+            useTaskStore.getState().setContextMenu(null);
+        }
     }, []);
 
     return (
@@ -192,8 +207,18 @@ export const HtmlOverlay: React.FC = () => {
                     onMouseLeave={() => setContextMenu(null)}
                 >
                     <ul style={{ listStyle: 'none', margin: 0, padding: '4px' }}>
-                        <li style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onClick={() => alert('Edit task ' + contextMenu.taskId)}>{i18n.t('button_edit')}</li>
-                        <li style={{ padding: '8px 12px', cursor: 'pointer', color: 'red' }} onClick={() => alert('Delete task ' + contextMenu.taskId)}>{i18n.t('button_delete')}</li>
+                        <li style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onClick={() => setContextMenu(null)}>{i18n.t('button_edit')}</li>
+                        <li style={{ padding: '8px 12px', cursor: 'pointer', color: 'red', borderBottom: relatedRelations.length > 0 ? '1px solid #eee' : undefined }} onClick={() => setContextMenu(null)}>{i18n.t('button_delete')}</li>
+                        {relatedRelations.map((rel) => (
+                            <li
+                                key={rel.id}
+                                data-testid={`remove-relation-${rel.id}`}
+                                style={{ padding: '8px 12px', cursor: 'pointer', color: '#d32f2f' }}
+                                onClick={() => handleRemoveRelation(rel.id)}
+                            >
+                                {i18n.t('label_relation_remove') || 'Remove dependency'} ({rel.from} → {rel.to})
+                            </li>
+                        ))}
                     </ul>
                 </div>
             )}
