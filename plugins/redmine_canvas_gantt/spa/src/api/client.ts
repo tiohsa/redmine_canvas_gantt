@@ -1,4 +1,5 @@
 import type { Relation, Project, Task } from '../types';
+import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption } from '../types/editMeta';
 
 type ApiTask = Record<string, unknown>;
 type ApiRelation = Record<string, unknown>;
@@ -51,9 +52,68 @@ declare global {
             apiBase: string;
             authToken: string;
             apiKey: string;
+            settings?: InlineEditSettings;
+            i18n?: Record<string, string>;
         };
     }
 }
+
+const parseErrorMessage = async (response: Response): Promise<string> => {
+    const payload = await response.json().catch(() => ({} as UnknownRecord));
+    const record = asRecord(payload) ?? {};
+    const errorValue = record.error;
+    if (typeof errorValue === 'string' && errorValue) return errorValue;
+
+    const errorsValue = record.errors;
+    if (Array.isArray(errorsValue) && errorsValue.every(e => typeof e === 'string')) {
+        return errorsValue.join(', ');
+    }
+
+    return response.statusText;
+};
+
+const parseEditOption = (value: unknown): EditOption | null => {
+    const record = asRecord(value);
+    if (!record) return null;
+    const id = record.id;
+    const name = record.name;
+    if (typeof id !== 'number' || typeof name !== 'string') return null;
+    return { id, name };
+};
+
+const parseCustomFieldMeta = (value: unknown): CustomFieldMeta | null => {
+    const record = asRecord(value);
+    if (!record) return null;
+    const id = record.id;
+    const name = record.name;
+    const fieldFormat = record.field_format;
+    const isRequired = record.is_required;
+
+    if (typeof id !== 'number' || typeof name !== 'string') return null;
+    if (typeof fieldFormat !== 'string') return null;
+    if (typeof isRequired !== 'boolean') return null;
+
+    const regexp = typeof record.regexp === 'string' ? record.regexp : null;
+    const minLength = typeof record.min_length === 'number' ? record.min_length : null;
+    const maxLength = typeof record.max_length === 'number' ? record.max_length : null;
+
+    const possibleValuesRaw = record.possible_values;
+    const possibleValues =
+        Array.isArray(possibleValuesRaw) && possibleValuesRaw.every(v => typeof v === 'string')
+            ? possibleValuesRaw
+            : null;
+
+    return {
+        id,
+        name,
+        fieldFormat: fieldFormat as CustomFieldMeta['fieldFormat'],
+        isRequired,
+        regexp,
+        minLength,
+        maxLength,
+        possibleValues
+    };
+};
 
 export const apiClient = {
     fetchData: async (): Promise<ApiData> => {
@@ -133,6 +193,98 @@ export const apiClient = {
         return { ...data, tasks, relations };
     },
 
+    fetchEditMeta: async (taskId: string): Promise<TaskEditMeta> => {
+        const config = window.RedmineCanvasGantt;
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        const response = await fetch(`${config.apiBase}/tasks/${taskId}/edit_meta.json`, {
+            headers: {
+                'X-Redmine-API-Key': config.apiKey,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(await parseErrorMessage(response));
+        }
+
+        const payload = await response.json();
+        const root = asRecord(payload);
+        if (!root) throw new Error('Invalid response');
+
+        const task = asRecord(root.task);
+        const editable = asRecord(root.editable);
+        const options = asRecord(root.options);
+        const customFieldValuesRecord = asRecord(root.custom_field_values) ?? {};
+
+        if (!task || !editable || !options) throw new Error('Invalid response');
+
+        const taskIdValue = task.id;
+        const subjectValue = task.subject;
+        const assignedToIdValue = task.assigned_to_id;
+        const statusIdValue = task.status_id;
+        const doneRatioValue = task.done_ratio;
+        const dueDateValue = task.due_date;
+        const lockVersionValue = task.lock_version;
+
+        if (taskIdValue === undefined || subjectValue === undefined || statusIdValue === undefined || doneRatioValue === undefined || lockVersionValue === undefined) {
+            throw new Error('Invalid response');
+        }
+
+        const editableSubject = editable.subject;
+        const editableAssignedToId = editable.assigned_to_id;
+        const editableStatusId = editable.status_id;
+        const editableDoneRatio = editable.done_ratio;
+        const editableDueDate = editable.due_date;
+        const editableCustomFieldValues = editable.custom_field_values;
+
+        if (![editableSubject, editableAssignedToId, editableStatusId, editableDoneRatio, editableDueDate, editableCustomFieldValues].every(v => typeof v === 'boolean')) {
+            throw new Error('Invalid response');
+        }
+
+        const statusesRaw = Array.isArray(options.statuses) ? options.statuses : [];
+        const assigneesRaw = Array.isArray(options.assignees) ? options.assignees : [];
+        const customFieldsRaw = Array.isArray(options.custom_fields) ? options.custom_fields : [];
+
+        const statuses = statusesRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
+        const assignees = assigneesRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
+        const customFields = customFieldsRaw.map(parseCustomFieldMeta).filter((v): v is CustomFieldMeta => Boolean(v));
+
+        const customFieldValues: Record<string, string | null> = {};
+        Object.entries(customFieldValuesRecord).forEach(([key, value]) => {
+            if (typeof value === 'string') customFieldValues[key] = value;
+            else if (value === null) customFieldValues[key] = null;
+        });
+
+        return {
+            task: {
+                id: String(taskIdValue),
+                subject: String(subjectValue),
+                assignedToId: typeof assignedToIdValue === 'number' ? assignedToIdValue : null,
+                statusId: typeof statusIdValue === 'number' ? statusIdValue : Number(statusIdValue),
+                doneRatio: typeof doneRatioValue === 'number' ? doneRatioValue : Number(doneRatioValue),
+                dueDate: typeof dueDateValue === 'string' ? dueDateValue : null,
+                lockVersion: typeof lockVersionValue === 'number' ? lockVersionValue : Number(lockVersionValue)
+            },
+            editable: {
+                subject: editableSubject as boolean,
+                assignedToId: editableAssignedToId as boolean,
+                statusId: editableStatusId as boolean,
+                doneRatio: editableDoneRatio as boolean,
+                dueDate: editableDueDate as boolean,
+                customFieldValues: editableCustomFieldValues as boolean
+            },
+            options: {
+                statuses,
+                assignees,
+                customFields
+            },
+            customFieldValues
+        };
+    },
+
     updateTask: async (task: Task): Promise<UpdateTaskResult> => {
         const config = window.RedmineCanvasGantt;
         if (!config) {
@@ -160,8 +312,35 @@ export const apiClient = {
         }
 
         if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            return { status: 'error', error: errData.error || response.statusText };
+            return { status: 'error', error: await parseErrorMessage(response) };
+        }
+
+        const data = await response.json();
+        return { status: 'ok', lockVersion: data.lock_version };
+    },
+
+    updateTaskFields: async (taskId: string, fields: Record<string, unknown>): Promise<UpdateTaskResult> => {
+        const config = window.RedmineCanvasGantt;
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        const response = await fetch(`${config.apiBase}/tasks/${taskId}.json`, {
+            method: 'PATCH',
+            headers: {
+                'X-Redmine-API-Key': config.apiKey,
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': config.authToken
+            },
+            body: JSON.stringify({ task: fields })
+        });
+
+        if (response.status === 409) {
+            return { status: 'conflict', error: 'This task was updated by another user. Please reload.' };
+        }
+
+        if (!response.ok) {
+            return { status: 'error', error: await parseErrorMessage(response) };
         }
 
         const data = await response.json();

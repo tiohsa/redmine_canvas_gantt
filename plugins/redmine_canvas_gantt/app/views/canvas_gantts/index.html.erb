@@ -5,7 +5,8 @@
       apiBase: '<%= project_path(@project) %>/canvas_gantt',
       authToken: '<%= form_authenticity_token %>',
       apiKey: '<%= User.current.api_key %>',
-      i18n: <%= @i18n.to_json.html_safe %>
+      i18n: <%= @i18n.to_json.html_safe %>,
+      settings: <%= (@settings || {}).to_json.html_safe %>
     };
   <% end %>
   <!-- In development, we use the Vite dev server. In production, we use the manifest. -->

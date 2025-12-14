@@ -1,0 +1,33 @@
+<fieldset class="box tabular">
+  <legend>Canvas Gantt - Inline Quick Edit (Level 2+)</legend>
+
+  <p>
+    <label><%= l(:field_subject) %></label>
+    <%= check_box_tag 'settings[inline_edit_subject]', '1', settings['inline_edit_subject'].to_s == '1' %>
+  </p>
+
+  <p>
+    <label><%= l(:field_assigned_to) %></label>
+    <%= check_box_tag 'settings[inline_edit_assigned_to]', '1', settings['inline_edit_assigned_to'].to_s == '1' %>
+  </p>
+
+  <p>
+    <label><%= l(:field_status) %></label>
+    <%= check_box_tag 'settings[inline_edit_status]', '1', settings['inline_edit_status'].to_s == '1' %>
+  </p>
+
+  <p>
+    <label><%= l(:field_done_ratio) %></label>
+    <%= check_box_tag 'settings[inline_edit_done_ratio]', '1', settings['inline_edit_done_ratio'].to_s == '1' %>
+  </p>
+
+  <p>
+    <label><%= l(:field_due_date) %></label>
+    <%= check_box_tag 'settings[inline_edit_due_date]', '1', settings['inline_edit_due_date'].to_s == '1' %>
+  </p>
+
+  <p>
+    <label><%= l(:label_custom_field_plural) %> (default OFF)</label>
+    <%= check_box_tag 'settings[inline_edit_custom_fields]', '1', settings['inline_edit_custom_fields'].to_s == '1' %>
+  </p>
+</fieldset>
