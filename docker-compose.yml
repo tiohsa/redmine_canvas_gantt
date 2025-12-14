@@ -3,7 +3,7 @@ services:
     image: redmine:latest
     container_name: redmine-dev
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       RAILS_ENV: production
       REDMINE_DB_MYSQL: db

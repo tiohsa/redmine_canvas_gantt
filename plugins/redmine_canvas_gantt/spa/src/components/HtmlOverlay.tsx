@@ -79,9 +79,21 @@ export const HtmlOverlay: React.FC = () => {
         window.addEventListener('mouseup', handleMouseUp);
     };
 
-    React.useEffect(() => () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
+    React.useEffect(() => {
+        const overlay = overlayRef.current;
+        if (!overlay) return;
+
+        const handleNativeMouseDown = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (target && target.classList.contains('dependency-handle')) {
+                e.stopPropagation();
+            }
+        };
+
+        overlay.addEventListener('mousedown', handleNativeMouseDown);
+        return () => {
+            overlay.removeEventListener('mousedown', handleNativeMouseDown);
+        };
     }, []);
 
     return (
@@ -90,34 +102,39 @@ export const HtmlOverlay: React.FC = () => {
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
         >
             {visibleTasks.map(task => {
+                if (task.id !== hoveredTaskId) return null;
+
                 const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit');
                 const centerY = bounds.y + bounds.height / 2;
                 const baseStyle: React.CSSProperties = {
                     position: 'absolute',
-                    top: centerY - 6,
-                    width: 12,
-                    height: 12,
+                    top: centerY - 5,
+                    width: 10,
+                    height: 10,
                     borderRadius: '50%',
                     backgroundColor: '#1a73e8',
                     border: '2px solid #fff',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
                     pointerEvents: 'auto',
-                    cursor: 'crosshair'
+                    cursor: 'crosshair',
+                    zIndex: 100 // Ensure above other things
                 };
 
                 return (
                     <React.Fragment key={`handles-${task.id}`}>
                         <div
-                            style={{ ...baseStyle, left: bounds.x - 6 }}
-                            onMouseDown={(e) => {
-                                e.stopPropagation();
+                            className="dependency-handle"
+                            style={{ ...baseStyle, left: bounds.x - 5 }}
+                            onMouseDown={() => {
+                                // e.stopPropagation(); // React synthetic - not enough, handled by native listener
                                 startDraft(task.id, bounds.x, centerY);
                             }}
                         />
                         <div
-                            style={{ ...baseStyle, left: bounds.x + bounds.width - 6 }}
-                            onMouseDown={(e) => {
-                                e.stopPropagation();
+                            className="dependency-handle"
+                            style={{ ...baseStyle, left: bounds.x + bounds.width - 5 }}
+                            onMouseDown={() => {
+                                // e.stopPropagation();
                                 startDraft(task.id, bounds.x + bounds.width, centerY);
                             }}
                         />

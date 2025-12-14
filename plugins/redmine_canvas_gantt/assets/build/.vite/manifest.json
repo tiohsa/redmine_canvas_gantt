@@ -1,19 +1,9 @@
 {
-  "src/api/client.ts": {
-    "file": "assets/client-DAeJrGmm.js",
-    "name": "client",
-    "src": "src/api/client.ts",
-    "isDynamicEntry": true
-  },
   "src/main.tsx": {
-    "file": "assets/main-Yccq2Z1V.js",
+    "file": "assets/main-D2sERFRN.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
-    "dynamicImports": [
-      "src/api/client.ts",
-      "src/api/client.ts"
-    ],
     "css": [
       "assets/main-CKg_7RGm.css"
     ]
