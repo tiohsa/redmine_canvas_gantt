@@ -50,6 +50,7 @@ declare global {
         RedmineCanvasGantt?: {
             projectId: number;
             apiBase: string;
+            redmineBase: string;
             authToken: string;
             apiKey: string;
             settings?: InlineEditSettings;
@@ -424,7 +425,8 @@ export const apiClient = {
             due_date: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : undefined,
         };
 
-        const response = await fetch(`${config.apiBase}/issues.json`, {
+        const redmineBase = config.redmineBase || '';
+        const response = await fetch(`${redmineBase}/issues.json`, {
             method: 'POST',
             headers: {
                 'X-Redmine-API-Key': config.apiKey,
@@ -459,5 +461,28 @@ export const apiClient = {
             rowIndex: 0,
             hasChildren: false
         } as Task;
+    },
+
+    deleteTask: async (taskId: string): Promise<void> => {
+        const config = window.RedmineCanvasGantt;
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        const redmineBase = config.redmineBase || '';
+        // Redmine API DELETE /issues/:id.json
+        const response = await fetch(`${redmineBase}/issues/${taskId}.json`, {
+            method: 'DELETE',
+            headers: {
+                'X-Redmine-API-Key': config.apiKey,
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': config.authToken
+            }
+        });
+
+        if (!response.ok) {
+            const err = await parseErrorMessage(response);
+            throw new Error(err);
+        }
     }
 };

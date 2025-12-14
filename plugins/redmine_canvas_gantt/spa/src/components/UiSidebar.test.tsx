@@ -51,6 +51,7 @@ describe('UiSidebar', () => {
         window.RedmineCanvasGantt = {
             projectId: 1,
             apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
             authToken: 'token',
             apiKey: 'key',
             i18n: { button_edit: 'Edit', field_subject: 'Subject', field_assigned_to: 'Assignee', field_status: 'Status', field_done_ratio: 'Done', field_due_date: 'Due', label_none: 'Unassigned' },

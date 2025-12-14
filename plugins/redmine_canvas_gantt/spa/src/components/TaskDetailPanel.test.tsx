@@ -51,6 +51,7 @@ describe('TaskDetailPanel', () => {
         window.RedmineCanvasGantt = {
             projectId: 1,
             apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
             authToken: 't',
             apiKey: 'k',
             settings: { inline_edit_subject: '1' },
@@ -123,6 +124,7 @@ describe('TaskDetailPanel', () => {
         window.RedmineCanvasGantt = {
             projectId: 1,
             apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
             authToken: 't',
             apiKey: 'k',
             settings: { inline_edit_subject: '1' },

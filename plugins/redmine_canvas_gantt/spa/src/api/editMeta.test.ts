@@ -6,6 +6,7 @@ describe('apiClient.fetchEditMeta', () => {
         window.RedmineCanvasGantt = {
             projectId: 1,
             apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
             authToken: 'token',
             apiKey: 'key'
         };

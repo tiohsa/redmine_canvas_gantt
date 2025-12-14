@@ -5,15 +5,15 @@ import { InlineEditService } from '../services/InlineEditService';
 
 export interface BatchEditState {
     originalTasks: Task[];
-    updates: Record<string, Partial<Task>>;
-    newTasks: Partial<Task>[]; // Temporary new tasks
+    updates: Record<string, Partial<Task> & Record<string, any>>;
+    newTasks: (Partial<Task> & Record<string, any>)[]; // Temporary new tasks
+    deletedTaskIds: string[];
     status: 'idle' | 'saving' | 'error';
     error: string | null;
 
     initialize: (tasks: Task[]) => void;
     updateTask: (taskId: string, field: keyof Task | string, value: any) => void;
-    // New tasks currently handled by just editing existing ones for MVP, or we can add specific new task logic.
-    // Spec says: hovering row -> add icon -> insert new row.
+    deleteTask: (taskId: string) => void;
     addNewTask: (parentId: string | null, afterTaskId?: string) => void;
 
     save: () => Promise<void>;
@@ -24,6 +24,7 @@ export const useBatchEditStore = create<BatchEditState>((set, get) => ({
     originalTasks: [],
     updates: {},
     newTasks: [],
+    deletedTaskIds: [],
     status: 'idle',
     error: null,
 
@@ -32,6 +33,7 @@ export const useBatchEditStore = create<BatchEditState>((set, get) => ({
             originalTasks: tasks,
             updates: {},
             newTasks: [],
+            deletedTaskIds: [],
             status: 'idle',
             error: null
         });
@@ -45,6 +47,24 @@ export const useBatchEditStore = create<BatchEditState>((set, get) => ({
                     ...state.updates,
                     [taskId]: { ...currentUpdates, [field]: value }
                 }
+            };
+        });
+    },
+
+    deleteTask: (taskId: string) => {
+        set(state => {
+            // Check if it is a new task (temp ID)
+            const isNew = state.newTasks.find(t => t.id === taskId);
+            if (isNew) {
+                const { [taskId]: _removed, ...remainingUpdates } = state.updates;
+                return {
+                    newTasks: state.newTasks.filter(t => t.id !== taskId),
+                    updates: remainingUpdates
+                };
+            }
+            // Existing task
+            return {
+                deletedTaskIds: [...state.deletedTaskIds, taskId]
             };
         });
     },
@@ -72,21 +92,31 @@ export const useBatchEditStore = create<BatchEditState>((set, get) => ({
     },
 
     save: async () => {
-        const { updates, originalTasks, newTasks } = get();
+        const { updates, originalTasks, newTasks, deletedTaskIds } = get();
         set({ status: 'saving', error: null });
 
         try {
-            // MVP: Iterate and save individually.
-            // Ideally should be a batch endpoint.
+            // We dynamic import to allow using new methods without circular dep issues if any
+            const { apiClient } = await import('../api/client');
 
-            // 1. Update modified tasks
-            const updatePromises = Object.entries(updates).map(async ([taskId, changes]) => {
+            // 1. Process deletions FIRST
+            if (deletedTaskIds.length > 0) {
+                const deletePromises = deletedTaskIds.map(id => apiClient.deleteTask(id));
+                await Promise.all(deletePromises);
+            }
+
+            // 2. Update modified tasks
+            // Filter out deleted tasks from updates? 
+            // If user updated then deleted, we just delete. The updates are ignored essentially if we process deletions first.
+            // But we should iterate updates and check if they are in deleted list.
+            const updatesToProcess = Object.entries(updates).filter(([id]) => !deletedTaskIds.includes(id));
+
+            const updatePromises = updatesToProcess.map(async ([taskId, changes]) => {
                 const original = originalTasks.find(t => t.id === taskId);
                 if (!original) return;
 
                 // Separate custom fields from standard fields if needed, 
                 // but InlineEditService.saveTaskFields handles that mapping if we pass correct structure.
-
                 // We need to map our flat 'updates' to the structure expected by InlineEditService
                 // which distinguishes optimistic, rollback, and API fields.
 
@@ -121,12 +151,8 @@ export const useBatchEditStore = create<BatchEditState>((set, get) => ({
                 });
             });
 
-            // 2. Create new tasks
-            // We need to dynamically import client to avoid circular deps if any (though client is standalone)
-            // or just import at top. Let's import at top if possible, but store often used in components. 
-            // Dynamic import is safer in stores.
+            // 3. Create new tasks
             if (newTasks.length > 0) {
-                const { apiClient } = await import('../api/client');
                 const createPromises = newTasks.map(async (t: Partial<Task>) => {
                     // We need to merge with updates if the user edited the new task immediately!
                     // The 'updates' map is keyed by ID. The new task has a temp ID.
@@ -145,7 +171,7 @@ export const useBatchEditStore = create<BatchEditState>((set, get) => ({
             // Triggering a reload in TaskStore would be ideal.
             // For now, we assume simple success.
 
-            set({ status: 'idle', updates: {}, newTasks: [] });
+            set({ status: 'idle', updates: {}, newTasks: [], deletedTaskIds: [] });
 
             // Close mode? Spec says "Dialog closes and Gantt redraws" on success.
             // We'll let the component call setBatchEditMode(false) after successful save.
@@ -162,6 +188,7 @@ export const useBatchEditStore = create<BatchEditState>((set, get) => ({
             originalTasks: [],
             updates: {},
             newTasks: [],
+            deletedTaskIds: [],
             status: 'idle',
             error: null
         });
