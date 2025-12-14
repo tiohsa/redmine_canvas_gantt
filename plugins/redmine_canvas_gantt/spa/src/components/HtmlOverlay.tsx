@@ -1,24 +1,149 @@
 import React from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
+import { LayoutEngine } from '../engines/LayoutEngine';
+import { apiClient } from '../api/client';
+import { RelationType } from '../types/constraints';
+import { useUIStore } from '../stores/UIStore';
 
 export const HtmlOverlay: React.FC = () => {
     const hoveredTaskId = useTaskStore(state => state.hoveredTaskId);
     const contextMenu = useTaskStore(state => state.contextMenu);
     const tasks = useTaskStore(state => state.tasks);
     const setContextMenu = useTaskStore(state => state.setContextMenu);
+    const viewport = useTaskStore(state => state.viewport);
+    const rowCount = useTaskStore(state => state.rowCount);
+    const addRelation = useTaskStore(state => state.addRelation);
+    const { addNotification } = useUIStore();
+
+    const overlayRef = React.useRef<HTMLDivElement>(null);
+    const [draft, setDraft] = React.useState<{ fromId: string; start: { x: number; y: number }; pointer: { x: number; y: number }; targetId?: string } | null>(null);
 
     const hoveredTask = hoveredTaskId ? tasks.find(t => t.id === hoveredTaskId) : null;
 
-    // Simple cursor follower for tooltip (could be improved)
-    // For now, we don't have mouse position in store, so we might need it from InteractionEngine?
-    // Actually, standard is to put tooltip near the task bar or cursor.
-    // Let's assume fixed position bottom-left or use mouse tracking if we had it.
-    // Simpler: CSS based tooltip on a transparent div over the task?
-    // Or: Just show it at a fixed place or use InteractionEngine to update mouse pos in store.
+    const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
+    const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
+
+    const toLocalPoint = (clientX: number, clientY: number) => {
+        const rect = overlayRef.current?.getBoundingClientRect();
+        if (!rect) return { x: clientX, y: clientY };
+        return { x: clientX - rect.left, y: clientY - rect.top };
+    };
+
+    const hitTestTask = (x: number, y: number) => {
+        for (const task of tasks) {
+            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit');
+            if (x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height) {
+                return task;
+            }
+        }
+        return null;
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+        if (!draft) return;
+        const point = toLocalPoint(e.clientX, e.clientY);
+        const targetTask = hitTestTask(point.x, point.y);
+        setDraft({ ...draft, pointer: point, targetId: targetTask ? targetTask.id : undefined });
+    };
+
+    const handleMouseUp = async () => {
+        if (!draft) return;
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+
+        const { fromId, targetId } = draft;
+        setDraft(null);
+
+        if (!targetId || targetId === fromId) return;
+
+        const alreadyLinked = useTaskStore.getState().relations.some(r => r.from === fromId && r.to === targetId && r.type === RelationType.Precedes);
+        if (alreadyLinked) {
+            addNotification(i18n.t('label_relation_already_exists') || 'Relation already exists', 'info');
+            return;
+        }
+
+        try {
+            const relation = await apiClient.createRelation(fromId, targetId, RelationType.Precedes);
+            addRelation(relation);
+            addNotification(i18n.t('label_relation_added') || 'Dependency created', 'success');
+        } catch (error: any) {
+            addNotification(error?.message || 'Failed to create relation', 'error');
+        }
+    };
+
+    const startDraft = (taskId: string, x: number, y: number) => {
+        const startPoint = { x, y };
+        setDraft({ fromId: taskId, start: startPoint, pointer: startPoint });
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+    };
+
+    React.useEffect(() => () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+    }, []);
 
     return (
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
+        <div
+            ref={overlayRef}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+        >
+            {visibleTasks.map(task => {
+                const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit');
+                const centerY = bounds.y + bounds.height / 2;
+                const baseStyle: React.CSSProperties = {
+                    position: 'absolute',
+                    top: centerY - 6,
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    backgroundColor: '#1a73e8',
+                    border: '2px solid #fff',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                    pointerEvents: 'auto',
+                    cursor: 'crosshair'
+                };
+
+                return (
+                    <React.Fragment key={`handles-${task.id}`}>
+                        <div
+                            style={{ ...baseStyle, left: bounds.x - 6 }}
+                            onMouseDown={(e) => {
+                                e.stopPropagation();
+                                startDraft(task.id, bounds.x, centerY);
+                            }}
+                        />
+                        <div
+                            style={{ ...baseStyle, left: bounds.x + bounds.width - 6 }}
+                            onMouseDown={(e) => {
+                                e.stopPropagation();
+                                startDraft(task.id, bounds.x + bounds.width, centerY);
+                            }}
+                        />
+                    </React.Fragment>
+                );
+            })}
+
+            {draft && (
+                <svg width="100%" height="100%" style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+                    <defs>
+                        <marker id="draft-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+                            <path d="M0,0 L0,6 L6,3 z" fill="#1a73e8" />
+                        </marker>
+                    </defs>
+                    <line
+                        x1={draft.start.x}
+                        y1={draft.start.y}
+                        x2={draft.pointer.x}
+                        y2={draft.pointer.y}
+                        stroke="#1a73e8"
+                        strokeWidth={2}
+                        markerEnd="url(#draft-arrow)"
+                    />
+                </svg>
+            )}
+
             {hoveredTask && (
                 <div style={{
                     position: 'fixed',

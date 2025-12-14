@@ -1,4 +1,8 @@
 import { create } from 'zustand';
+import { loadPreferences } from '../utils/preferences';
+
+export const DEFAULT_COLUMNS = ['status', 'assignee', 'startDate', 'dueDate', 'ratioDone'];
+const preferences = loadPreferences();
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
 
@@ -11,14 +15,17 @@ interface Notification {
 interface UIState {
     notifications: Notification[];
     showProgressLine: boolean;
+    visibleColumns: string[];
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
+    setVisibleColumns: (cols: string[]) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
     notifications: [],
-    showProgressLine: false,
+    showProgressLine: preferences.showProgressLine ?? false,
+    visibleColumns: preferences.visibleColumns ?? DEFAULT_COLUMNS,
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
@@ -36,5 +43,6 @@ export const useUIStore = create<UIState>((set) => ({
         set((state) => ({
             notifications: state.notifications.filter((n) => n.id !== id)
         })),
-    toggleProgressLine: () => set((state) => ({ showProgressLine: !state.showProgressLine }))
+    toggleProgressLine: () => set((state) => ({ showProgressLine: !state.showProgressLine })),
+    setVisibleColumns: (cols) => set(() => ({ visibleColumns: cols }))
 }));

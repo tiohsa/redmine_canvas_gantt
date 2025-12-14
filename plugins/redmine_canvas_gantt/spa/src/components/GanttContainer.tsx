@@ -20,7 +20,7 @@ export const GanttContainer: React.FC = () => {
     const taskCanvasRef = useRef<HTMLCanvasElement>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    const { viewport, tasks, setTasks, setRelations, updateViewport, zoomLevel } = useTaskStore();
+    const { viewport, tasks, relations, setTasks, setRelations, updateViewport, zoomLevel, rowCount, viewportFromStorage } = useTaskStore();
     const { showProgressLine } = useUIStore();
 
     const [sidebarWidth, setSidebarWidth] = React.useState(400);
@@ -46,7 +46,7 @@ export const GanttContainer: React.FC = () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, []);
+    }, [viewportFromStorage]);
 
     const startResize = () => {
         isResizing.current = true;
@@ -68,23 +68,25 @@ export const GanttContainer: React.FC = () => {
                 setTasks(data.tasks);
                 setRelations(data.relations);
 
-                // Fit timeline start to the earliest available date so tasks are visible
-                const minStart = data.tasks.reduce<number | null>((acc, t) => {
-                    const start = t.startDate;
-                    return acc === null ? start : Math.min(acc, start);
-                }, null);
-                const oneYearAgo = new Date();
-                oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-                oneYearAgo.setHours(0, 0, 0, 0);
+                if (!viewportFromStorage) {
+                    // Fit timeline start to the earliest available date so tasks are visible
+                    const minStart = data.tasks.reduce<number | null>((acc, t) => {
+                        const start = t.startDate;
+                        return acc === null ? start : Math.min(acc, start);
+                    }, null);
+                    const oneYearAgo = new Date();
+                    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+                    oneYearAgo.setHours(0, 0, 0, 0);
 
-                const startDate = Math.min(minStart ?? oneYearAgo.getTime(), oneYearAgo.getTime());
+                    const startDate = Math.min(minStart ?? oneYearAgo.getTime(), oneYearAgo.getTime());
 
-                // Calculate scroll position to center "today" (or start at today with some padding)
-                const currentViewport = useTaskStore.getState().viewport;
-                const now = new Date().setHours(0, 0, 0, 0);
-                const scrollX = Math.max(0, (now - startDate) * currentViewport.scale - 100);
+                    // Calculate scroll position to center "today" (or start at today with some padding)
+                    const currentViewport = useTaskStore.getState().viewport;
+                    const now = new Date().setHours(0, 0, 0, 0);
+                    const scrollX = Math.max(0, (now - startDate) * currentViewport.scale - 100);
 
-                updateViewport({ startDate, scrollX });
+                    updateViewport({ startDate, scrollX });
+                }
             }).catch(err => console.error("Failed to load Gantt data", err));
         });
     }, []);
@@ -127,9 +129,9 @@ export const GanttContainer: React.FC = () => {
     // Render Loop
     useEffect(() => {
         if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel);
-        if (engines.current.task) engines.current.task.render(viewport, tasks);
+        if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
-    }, [viewport, tasks, zoomLevel, showProgressLine]);
+    }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations]);
 
     return (
         <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>

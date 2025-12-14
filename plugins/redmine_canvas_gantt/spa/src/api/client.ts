@@ -64,6 +64,9 @@ export const apiClient = {
             return {
                 id: String(t.id),
                 subject: t.subject,
+                projectId: t.project_id ? String(t.project_id) : undefined,
+                projectName: t.project_name,
+                displayOrder: t.display_order ?? index,
                 startDate: safeStart,
                 dueDate: normalizedDue,
                 ratioDone: t.ratio_done ?? 0,
@@ -122,5 +125,41 @@ export const apiClient = {
 
         const data = await response.json();
         return { status: 'ok', lockVersion: data.lock_version };
+    },
+
+    createRelation: async (fromId: string, toId: string, type: string): Promise<Relation> => {
+        const config = window.RedmineCanvasGantt;
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        const response = await fetch(`/issues/${fromId}/relations.json`, {
+            method: 'POST',
+            headers: {
+                'X-Redmine-API-Key': config.apiKey,
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': config.authToken
+            },
+            body: JSON.stringify({
+                relation: {
+                    issue_to_id: toId,
+                    relation_type: type
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || response.statusText);
+        }
+
+        const relation = await response.json();
+        return {
+            id: String(relation.id),
+            from: String(relation.issue_id || fromId),
+            to: String(relation.issue_to_id || toId),
+            type: relation.relation_type || type,
+            delay: relation.delay
+        };
     }
 };

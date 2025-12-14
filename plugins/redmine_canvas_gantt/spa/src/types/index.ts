@@ -1,6 +1,9 @@
 export interface Task {
     id: string; // Redmine ID is usually int, but using string for safety in JS
     subject: string;
+    projectId?: string;
+    projectName?: string;
+    displayOrder?: number;
     startDate: number; // Timestamp
     dueDate: number; // Timestamp
     ratioDone: number;
@@ -47,6 +50,10 @@ export interface Bounds {
     width: number;
     height: number;
 }
+
+export type LayoutRow =
+    | { type: 'header'; projectId: string; projectName?: string; rowIndex: number }
+    | { type: 'task'; taskId: string; rowIndex: number };
 
 export type ZoomLevel = 0 | 1 | 2;
 export type ViewMode = 'Day' | 'Week' | 'Month' | 'Quarter'; // Keeping for potential backward compact, but aim to use ZoomLevel

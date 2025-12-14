@@ -29,10 +29,13 @@ class CanvasGanttsController < ApplicationController
       # This is a simplified fetch logic. Real implementation needs recursive query or similar for subtasks.
       issues = @project.issues.visible.includes(:relations_to, :relations_from, :status, :tracker, :assigned_to).all
       
-      tasks = issues.map do |issue|
+      tasks = issues.each_with_index.map do |issue, idx|
         {
           id: issue.id,
           subject: issue.subject,
+          project_id: issue.project_id,
+          project_name: issue.project.name,
+          display_order: idx,
           start_date: issue.start_date,
           due_date: issue.due_date,
           ratio_done: issue.done_ratio,
