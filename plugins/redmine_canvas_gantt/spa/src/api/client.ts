@@ -107,6 +107,8 @@ export const apiClient = {
                 parentId: t.parent_id ? String(t.parent_id) : undefined,
                 lockVersion: typeof t.lock_version === 'number' ? t.lock_version : 0,
                 editable: Boolean(t.editable),
+                trackerId: typeof t.tracker_id === 'number' ? t.tracker_id : undefined,
+                trackerName: typeof t.tracker_name === 'string' ? t.tracker_name : undefined,
                 rowIndex: index, // Simplify for now: default order
                 hasChildren: false // Will be updated below
             };

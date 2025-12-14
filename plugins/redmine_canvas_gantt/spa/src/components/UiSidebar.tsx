@@ -30,6 +30,69 @@ const ProgressCircle = ({ ratio, statusId }: { ratio: number, statusId: number }
     );
 };
 
+const ProjectIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d61b3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+        <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+    </svg>
+);
+
+const TrackerIcon = ({ name }: { name?: string }) => {
+    const lowerName = name?.toLowerCase() || '';
+
+    // Bug icon - 🐞
+    if (lowerName.includes('bug') || lowerName.includes('バグ')) {
+        return (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d32f2f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                {name && <title>{name}</title>}
+                <rect x="8" y="6" width="8" height="14" rx="4" fill="#d32f2f" fillOpacity="0.1" />
+                <line x1="4" y1="10" x2="8" y2="10"></line>
+                <line x1="16" y1="10" x2="20" y2="10"></line>
+                <line x1="4" y1="14" x2="8" y2="14"></line>
+                <line x1="16" y1="14" x2="20" y2="14"></line>
+                <path d="M10 6 L8 4 M14 6 L16 4"></path>
+                <circle cx="10" cy="10" r="1" fill="#d32f2f" />
+                <circle cx="14" cy="10" r="1" fill="#d32f2f" />
+            </svg>
+        );
+    }
+
+    // Feature icon - ⭐
+    if (lowerName.includes('feature') || lowerName.includes('機能')) {
+        return (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f57c00" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                {name && <title>{name}</title>}
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="#f57c00" fillOpacity="0.2"></polygon>
+            </svg>
+        );
+    }
+
+    // Support icon - ❓
+    if (lowerName.includes('support') || lowerName.includes('サポート')) {
+        return (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1976d2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                {name && <title>{name}</title>}
+                <circle cx="12" cy="12" r="10" fill="#1976d2" fillOpacity="0.1"></circle>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                <circle cx="12" cy="17" r="0.5" fill="#1976d2"></circle>
+            </svg>
+        );
+    }
+
+    // Task icon (default) - 📄
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d61b3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            {name && <title>{name}</title>}
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+    );
+};
+
 export const UiSidebar: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
     const layoutRows = useTaskStore(state => state.layoutRows);
@@ -114,6 +177,9 @@ export const UiSidebar: React.FC = () => {
                     ) : (
                         <span style={{ display: 'inline-block', width: 18 }} />
                     )}
+                    <div style={{ marginRight: 6, display: 'flex', alignItems: 'center' }}>
+                        <TrackerIcon name={t.trackerName} />
+                    </div>
                     <a
                         href={`/issues/${t.id}/edit`}
                         target="_blank"
@@ -282,6 +348,9 @@ export const UiSidebar: React.FC = () => {
                                     >
                                         {expanded ? '▼' : '▶'}
                                     </span>
+                                    <div style={{ marginRight: 6, display: 'flex', alignItems: 'center' }}>
+                                        <ProjectIcon />
+                                    </div>
                                     {row.projectName || 'Project'}
                                 </div>
                             );

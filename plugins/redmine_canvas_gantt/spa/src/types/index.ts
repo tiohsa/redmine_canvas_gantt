@@ -13,6 +13,8 @@ export interface Task {
     parentId?: string;
     lockVersion: number;
     editable: boolean;
+    trackerId?: number;
+    trackerName?: string;
 
     // Computed for layout (cached)
     rowIndex: number;

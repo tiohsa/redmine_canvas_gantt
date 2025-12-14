@@ -53,7 +53,9 @@ class CanvasGanttsController < ApplicationController
           assigned_to_name: issue.assigned_to&.name,
           parent_id: issue.parent_id,
           lock_version: issue.lock_version, # Critical for Optimistic Locking
-          editable: @permissions[:editable] && issue.editable?
+          editable: @permissions[:editable] && issue.editable?,
+          tracker_id: issue.tracker_id,
+          tracker_name: issue.tracker&.name
         }
       end
 
