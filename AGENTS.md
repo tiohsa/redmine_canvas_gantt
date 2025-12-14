@@ -147,6 +147,8 @@ docker compose exec redmine bundle exec rake redmine:plugins:migrate
 ```
 redmine-gantt/
 ├── docker-compose.yml          # 開発用 Docker 設定
+├── AGENTS.md                   # このファイル（AIエージェント向けガイド）
+├── SETUP.md                    # セットアップ手順
 ├── plugins/
 │   └── redmine_canvas_gantt/
 │       ├── init.rb             # プラグイン登録・権限定義
@@ -161,11 +163,41 @@ redmine-gantt/
 │       │   └── build/          # ビルド成果物
 │       └── spa/                # React SPA
 │           ├── src/
-│           │   ├── api/        # API クライアント
+│           │   ├── api/        # API クライアント (client.ts)
 │           │   ├── components/ # React コンポーネント
+│           │   │   ├── GanttContainer.tsx   # メインコンテナ
+│           │   │   ├── GanttToolbar.tsx     # ツールバー（ズーム、Today等）
+│           │   │   ├── HtmlOverlay.tsx      # HTMLオーバーレイ
+│           │   │   ├── TaskDetailPanel.tsx  # タスク詳細パネル
+│           │   │   ├── TimelineHeader.tsx   # タイムラインヘッダー
+│           │   │   ├── UiSidebar.tsx        # サイドバー（タスクリスト）
+│           │   │   ├── Toast.tsx            # 通知トースト
+│           │   │   └── A11yLayer.tsx        # アクセシビリティ層
 │           │   ├── engines/    # ビジネスロジック
-│           │   ├── renderers/  # 描画ロジック
-│           │   └── stores/     # Zustand ストア
+│           │   │   ├── InteractionEngine.ts # マウス・キーボード操作
+│           │   │   └── LayoutEngine.ts      # レイアウト計算
+│           │   ├── renderers/  # Canvas 描画ロジック
+│           │   │   ├── TaskRenderer.ts      # タスクバー描画
+│           │   │   ├── DependencyRenderer.ts # 依存関係線描画
+│           │   │   ├── BackgroundRenderer.ts # 背景グリッド描画
+│           │   │   └── OverlayRenderer.ts   # オーバーレイ描画
+│           │   ├── stores/     # Zustand ストア
+│           │   │   ├── TaskStore.ts         # タスクデータ管理
+│           │   │   ├── UIStore.ts           # UI状態管理
+│           │   │   └── EditMetaStore.ts     # 編集メタデータ
+│           │   ├── services/   # ビジネスサービス
+│           │   │   ├── TaskLogicService.ts  # タスクロジック
+│           │   │   └── InlineEditService.ts # インライン編集
+│           │   ├── types/      # TypeScript型定義
+│           │   │   ├── index.ts             # 共通型
+│           │   │   ├── editMeta.ts          # 編集メタ型
+│           │   │   └── constraints.ts       # 制約型
+│           │   └── utils/      # ユーティリティ
+│           │       ├── grid.ts              # グリッド計算
+│           │       ├── time.ts              # 日時計算
+│           │       ├── styles.ts            # スタイル定数
+│           │       ├── preferences.ts       # ユーザー設定
+│           │       └── i18n.ts              # 国際化
 │           └── package.json
 └── themes/                     # Redmine テーマ
 ```
@@ -185,8 +217,13 @@ redmine-gantt/
 
 ### フロントエンド
 - **パッケージマネージャ**: pnpm（npm/yarn は禁止）
-- **ビルドツール**: Vite
-- **主要ライブラリ**: React 19, Zustand, classnames
+- **ビルドツール**: Vite 7.x
+- **主要ライブラリ**:
+  - React 19.2.x + React DOM 19.2.x
+  - Zustand 5.x（状態管理）
+  - classnames（CSS クラス結合）
+- **テスト**: Vitest 4.x + Testing Library
+- **言語**: TypeScript 5.9.x（strict モード）
 
 ### バックエンド
 - **Redmine**: 公式 Docker イメージ
@@ -196,6 +233,7 @@ redmine-gantt/
 - jQuery（React との混在を避ける）
 - moment.js（代わりに native Date または dayjs）
 - lodash 全体インポート（必要な関数のみ個別インポート可）
+- TailwindCSS（Vanilla CSS を使用）
 
 ---
 
@@ -292,12 +330,18 @@ redmine-gantt/
 - Docker ボリュームでシンボリックリンクが失敗する → `FileUtils.cp_r` にフォールバック
 - アセットマニフェストの JSON パースエラー → ビルド成果物の整合性を確認
 - iframe 内の SPA と親ページ間の CORS 問題 → 同一オリジンまたは postMessage を使用
+- 依存関係ハンドルのドラッグ中にガントチャートの日付が動く → InteractionEngine で適切にイベント処理を分離
+- ドラッグ＆ドロップでの日付変更失敗時のリバート処理 → 楽観的更新後にAPIエラー時は元の位置に戻す
+- プラグインアセットのリンク失敗（Permission denied） → `FileUtils.cp_r` を使用
 
 ### AIが特に注意すべき点
 - Vite の base path 設定：`/plugin_assets/redmine_canvas_gantt/build/`
 - Redmine の権限システム：`init.rb` で定義された権限を使用
 - 楽観的ロック：チケット更新時の競合処理
 - 日本語対応：i18n キーを使用し、ハードコードした日本語を避ける
+- ズームレベル：月・週・日の3段階（時間表示は削除済み）
+- 親タスクの描画：Redmine スタイルのサマリーバー（両端にエンドキャップ）
+- カラム幅の自動調整：初期表示時にヘッダーとデータから最適幅を計算
 
 ---
 
