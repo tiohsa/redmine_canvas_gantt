@@ -17,7 +17,9 @@ const persistSelections = () => {
         },
         showProgressLine: uiState.showProgressLine,
         visibleColumns: uiState.visibleColumns,
-        groupByProject: taskState.groupByProject
+        groupByProject: taskState.groupByProject,
+        columnWidths: uiState.columnWidths,
+        sidebarWidth: uiState.sidebarWidth
     });
 };
 

@@ -17,12 +17,14 @@ interface UIState {
     showProgressLine: boolean;
     visibleColumns: string[];
     columnWidths: Record<string, number>;
+    sidebarWidth: number;
     activeInlineEdit: { taskId: string; field: string; source?: 'cell' | 'panel' } | null;
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
     setVisibleColumns: (cols: string[]) => void;
     setColumnWidth: (key: string, width: number) => void;
+    setSidebarWidth: (width: number) => void;
     setActiveInlineEdit: (value: { taskId: string; field: string; source?: 'cell' | 'panel' } | null) => void;
 }
 
@@ -32,7 +34,7 @@ export const useUIStore = create<UIState>((set) => ({
     visibleColumns: preferences.visibleColumns
         ? Array.from(new Set([...preferences.visibleColumns, 'id']))
         : ['id', ...DEFAULT_COLUMNS],
-    columnWidths: {
+    columnWidths: preferences.columnWidths ?? {
         id: 72,
         subject: 280,
         status: 100,
@@ -41,6 +43,7 @@ export const useUIStore = create<UIState>((set) => ({
         dueDate: 90,
         ratioDone: 80
     },
+    sidebarWidth: preferences.sidebarWidth ?? 400,
     activeInlineEdit: null,
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
@@ -62,5 +65,6 @@ export const useUIStore = create<UIState>((set) => ({
     toggleProgressLine: () => set((state) => ({ showProgressLine: !state.showProgressLine })),
     setVisibleColumns: (cols) => set(() => ({ visibleColumns: cols })),
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),
+    setSidebarWidth: (width) => set(() => ({ sidebarWidth: width })),
     setActiveInlineEdit: (value) => set(() => ({ activeInlineEdit: value }))
 }));

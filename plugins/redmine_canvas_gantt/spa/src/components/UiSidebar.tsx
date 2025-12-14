@@ -4,6 +4,7 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Task } from '../types';
 import { getStatusColor } from '../utils/styles';
 import { useUIStore } from '../stores/UIStore';
+import { loadPreferences } from '../utils/preferences';
 
 import { DoneRatioEditor, DueDateEditor, SelectEditor, SubjectEditor } from './TaskDetailPanel';
 import { useEditMetaStore } from '../stores/EditMetaStore';
@@ -143,10 +144,12 @@ export const UiSidebar: React.FC = () => {
         };
     }, [setColumnWidth]);
 
-    // Auto-size columns on load
+    // Auto-size columns on load (skip if user has saved column widths)
     const calculatedRef = React.useRef(false);
     React.useEffect(() => {
-        if (calculatedRef.current || tasks.length === 0) return;
+        const savedPrefs = loadPreferences();
+        // Skip auto-sizing if user has previously saved column widths
+        if (calculatedRef.current || tasks.length === 0 || savedPrefs.columnWidths) return;
 
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');

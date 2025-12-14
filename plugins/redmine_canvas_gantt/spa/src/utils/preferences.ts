@@ -9,6 +9,8 @@ export interface StoredPreferences {
     showProgressLine?: boolean;
     visibleColumns?: string[];
     groupByProject?: boolean;
+    columnWidths?: Record<string, number>;
+    sidebarWidth?: number;
 }
 
 const STORAGE_KEY = 'canvasGantt:preferences';

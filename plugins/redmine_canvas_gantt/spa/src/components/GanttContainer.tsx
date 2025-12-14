@@ -21,9 +21,8 @@ export const GanttContainer: React.FC = () => {
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const { viewport, tasks, relations, setTasks, setRelations, updateViewport, zoomLevel, rowCount, viewportFromStorage } = useTaskStore();
-    const { showProgressLine } = useUIStore();
+    const { showProgressLine, sidebarWidth, setSidebarWidth } = useUIStore();
 
-    const [sidebarWidth, setSidebarWidth] = React.useState(400);
     const isResizing = useRef(false);
 
     useEffect(() => {
@@ -50,7 +49,7 @@ export const GanttContainer: React.FC = () => {
 
     const startResize = () => {
         isResizing.current = true;
-        document.body.style.cursor = 'grabbing';
+        document.body.style.cursor = 'col-resize';
     };
 
     // Refs for engines to persist across renders
@@ -145,7 +144,7 @@ export const GanttContainer: React.FC = () => {
                 onMouseDown={startResize}
                 style={{
                     width: 4,
-                    cursor: 'grab',
+                    cursor: 'col-resize',
                     backgroundColor: '#f0f0f0',
                     borderRight: '1px solid #e0e0e0',
                     borderLeft: '1px solid #e0e0e0',
