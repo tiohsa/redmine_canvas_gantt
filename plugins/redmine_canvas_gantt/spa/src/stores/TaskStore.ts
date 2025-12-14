@@ -36,6 +36,8 @@ interface TaskState {
     setGroupByProject: (grouped: boolean) => void;
     toggleProjectExpansion: (projectId: string) => void;
     toggleTaskExpansion: (taskId: string) => void;
+    isBatchEditMode: boolean;
+    setBatchEditMode: (enabled: boolean) => void;
 }
 
 const preferences = loadPreferences();
@@ -342,7 +344,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         };
     }),
 
-    toggleTaskExpansion: (taskId) => set((state) => {
+    toggleTaskExpansion: (taskId: string) => set((state) => {
         const taskExpansion = { ...state.taskExpansion, [taskId]: !(state.taskExpansion[taskId] ?? true) };
         const layout = buildLayout(state.allTasks, state.groupByProject, state.projectExpansion, taskExpansion);
         return {
@@ -351,5 +353,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
         };
-    })
+    }),
+    isBatchEditMode: false,
+    setBatchEditMode: (enabled) => set({ isBatchEditMode: enabled })
 }));

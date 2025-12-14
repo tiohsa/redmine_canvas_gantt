@@ -248,7 +248,7 @@ export const UiSidebar: React.FC = () => {
         });
     };
 
-    const renderEditableCell = (t: Task, field: string, content: React.ReactNode) => {
+    const renderEditableCell = (_t: Task, _field: string, content: React.ReactNode) => {
         return (
             <div
                 className="task-cell-editable"
@@ -263,37 +263,6 @@ export const UiSidebar: React.FC = () => {
                 <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {content}
                 </div>
-                <button
-                    className="edit-icon"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        void startCellEdit(t, field);
-                    }}
-                    style={{
-                        marginLeft: 4,
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        opacity: 0,
-                        color: '#999',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: 2,
-                        flexShrink: 0
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                    onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
-                >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                    </svg>
-                </button>
-                <style>{`
-                    .task-cell-editable:hover .edit-icon { opacity: 1 !important; }
-                `}</style>
             </div>
         );
     };
@@ -370,35 +339,6 @@ export const UiSidebar: React.FC = () => {
                     >
                         {t.subject}
                     </a>
-                    <button
-                        className="edit-icon"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            void startCellEdit(t, 'subject');
-                        }}
-                        style={{
-                            marginLeft: 4,
-                            background: 'transparent',
-                            border: 'none',
-                            cursor: 'pointer',
-                            opacity: 0,
-                            color: '#999',
-                            display: 'flex',
-                            alignItems: 'center',
-                            padding: 2
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                        onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                        </svg>
-                    </button>
-                    <style>{`
-                        .task-subject-cell:hover .edit-icon { opacity: 1 !important; }
-                    `}</style>
                 </div>
             )
         },

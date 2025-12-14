@@ -404,5 +404,60 @@ export const apiClient = {
             const errData = await response.json().catch(() => ({}));
             throw new Error(errData.error || response.statusText);
         }
+    },
+
+    createTask: async (task: Partial<Task>): Promise<Task> => {
+        const config = window.RedmineCanvasGantt;
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        const body: Record<string, any> = {
+            subject: task.subject,
+            project_id: task.projectId ? Number(task.projectId) : config.projectId,
+            tracker_id: task.trackerId,
+            status_id: task.statusId,
+            assigned_to_id: task.assignedToId,
+            done_ratio: task.ratioDone,
+            parent_issue_id: task.parentId,
+            start_date: task.startDate ? new Date(task.startDate).toISOString().split('T')[0] : undefined,
+            due_date: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : undefined,
+        };
+
+        const response = await fetch(`${config.apiBase}/issues.json`, {
+            method: 'POST',
+            headers: {
+                'X-Redmine-API-Key': config.apiKey,
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': config.authToken
+            },
+            body: JSON.stringify({ issue: body })
+        });
+
+        if (!response.ok) {
+            const err = await parseErrorMessage(response);
+            throw new Error(err);
+        }
+
+        const data = await response.json();
+        const t = data.issue;
+
+        // Return a partial Task object sufficient for UI update or reload
+        return {
+            id: String(t.id),
+            subject: t.subject,
+            projectId: String(t.project.id),
+            startDate: new Date(t.start_date).getTime(),
+            dueDate: new Date(t.due_date).getTime(),
+            ratioDone: t.done_ratio,
+            statusId: t.status.id,
+            assignedToId: t.assigned_to?.id,
+            assignedToName: t.assigned_to?.name,
+            parentId: t.parent?.id ? String(t.parent.id) : undefined,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        } as Task;
     }
 };
