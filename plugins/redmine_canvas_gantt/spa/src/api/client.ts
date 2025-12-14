@@ -146,8 +146,12 @@ export const apiClient = {
             },
             body: JSON.stringify({
                 task: {
+                    subject: task.subject,
+                    status_id: task.statusId,
+                    done_ratio: task.ratioDone,
                     start_date: new Date(task.startDate).toISOString().split('T')[0],
                     due_date: new Date(task.dueDate).toISOString().split('T')[0],
+                    assigned_to_id: task.assignedToId,
                     lock_version: task.lockVersion
                 }
             })
@@ -164,6 +168,72 @@ export const apiClient = {
 
         const data = await response.json();
         return { status: 'ok', lockVersion: data.lock_version };
+    },
+
+    createTask: async (task: Partial<Task> & { projectId: string }): Promise<Task> => {
+        const config = window.RedmineCanvasGantt;
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        const payload: Record<string, any> = {
+            project_id: task.projectId,
+            subject: task.subject,
+            start_date: task.startDate ? new Date(task.startDate).toISOString().split('T')[0] : undefined,
+            due_date: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : undefined,
+            done_ratio: task.ratioDone,
+            status_id: task.statusId,
+            assigned_to_id: task.assignedToId
+        };
+        if (task.parentId) {
+            payload.parent_issue_id = task.parentId;
+        }
+
+        const response = await fetch(`${config.apiBase}/tasks.json`, {
+            method: 'POST',
+            headers: {
+                'X-Redmine-API-Key': config.apiKey,
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': config.authToken
+            },
+            body: JSON.stringify({
+                task: payload
+            })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || response.statusText);
+        }
+
+        const data = await response.json();
+        const t = data.task;
+
+        const parseDate = (value: string | null | undefined): number | null => {
+            if (!value) return null;
+            const ts = new Date(value).getTime();
+            return Number.isFinite(ts) ? ts : null;
+        };
+
+        // Return a normalized Task
+        return {
+            id: String(t.id),
+            subject: String(t.subject ?? ''),
+            projectId: t.project_id ? String(t.project_id) : undefined,
+            projectName: typeof t.project_name === 'string' ? t.project_name : undefined,
+            displayOrder: 0, // Will be handled by store
+            startDate: parseDate(t.start_date) || Date.now(),
+            dueDate: parseDate(t.due_date) || Date.now(),
+            ratioDone: typeof t.done_ratio === 'number' ? t.done_ratio : 0,
+            statusId: typeof t.status_id === 'number' ? t.status_id : 0,
+            assignedToId: typeof t.assigned_to_id === 'number' ? t.assigned_to_id : undefined,
+            assignedToName: typeof t.assigned_to_name === 'string' ? t.assigned_to_name : undefined,
+            parentId: t.parent_id ? String(t.parent_id) : undefined,
+            lockVersion: typeof t.lock_version === 'number' ? t.lock_version : 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
     },
 
     createRelation: async (fromId: string, toId: string, type: string): Promise<Relation> => {

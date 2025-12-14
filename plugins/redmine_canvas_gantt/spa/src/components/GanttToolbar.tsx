@@ -10,8 +10,8 @@ interface GanttToolbarProps {
 }
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
-    const { viewport, updateViewport, groupByProject, setGroupByProject } = useTaskStore();
-    const { showProgressLine, toggleProgressLine, visibleColumns, setVisibleColumns } = useUIStore();
+    const { viewport, updateViewport, groupByProject, setGroupByProject, permissions } = useTaskStore();
+    const { showProgressLine, toggleProgressLine, visibleColumns, setVisibleColumns, setEditMode } = useUIStore();
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
 
     const handleTodayClick = () => {
@@ -65,6 +65,27 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         }}>
             {/* Left: Filter & Options */}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+                {permissions.editable && (
+                    <button
+                        onClick={() => setEditMode(true)}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px 16px',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: '#1a73e8',
+                            color: '#fff',
+                            fontSize: '14px',
+                            fontWeight: 500,
+                            cursor: 'pointer'
+                        }}
+                    >
+                        Edit
+                    </button>
+                )}
+
                 <button
                     style={{
                         display: 'flex',

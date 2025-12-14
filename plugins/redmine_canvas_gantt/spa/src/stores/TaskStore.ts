@@ -17,9 +17,11 @@ interface TaskState {
     selectedTaskId: string | null;
     hoveredTaskId: string | null;
     contextMenu: { x: number; y: number; taskId: string } | null;
+    permissions: { editable: boolean; viewable: boolean };
 
     // Actions
     setTasks: (tasks: Task[]) => void;
+    setPermissions: (permissions: { editable: boolean; viewable: boolean }) => void;
     setRelations: (relations: Relation[]) => void;
     addRelation: (relation: Relation) => void;
     removeRelation: (relationId: string) => void;
@@ -103,8 +105,10 @@ export const useTaskStore = create<TaskState>((set) => ({
     selectedTaskId: null,
     hoveredTaskId: null,
     contextMenu: null,
+    permissions: { editable: false, viewable: true },
 
     setTasks: (tasks) => set((state) => buildLayout(tasks, state.groupByProject)),
+    setPermissions: (permissions) => set({ permissions }),
     setRelations: (relations) => set({ relations }),
     addRelation: (relation) => set((state) => {
         const exists = state.relations.some(r => r.from === relation.from && r.to === relation.to && r.type === relation.type);

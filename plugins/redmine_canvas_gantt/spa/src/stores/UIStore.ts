@@ -16,10 +16,14 @@ interface UIState {
     notifications: Notification[];
     showProgressLine: boolean;
     visibleColumns: string[];
+    isEditing: boolean;
+    editModeState: 'idle' | 'editing' | 'saving' | 'error';
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
     setVisibleColumns: (cols: string[]) => void;
+    setEditMode: (isEditing: boolean) => void;
+    setEditModeState: (state: 'idle' | 'editing' | 'saving' | 'error') => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -28,6 +32,8 @@ export const useUIStore = create<UIState>((set) => ({
     visibleColumns: preferences.visibleColumns
         ? Array.from(new Set([...preferences.visibleColumns, 'id']))
         : ['id', ...DEFAULT_COLUMNS],
+    isEditing: false,
+    editModeState: 'idle',
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
@@ -46,5 +52,7 @@ export const useUIStore = create<UIState>((set) => ({
             notifications: state.notifications.filter((n) => n.id !== id)
         })),
     toggleProgressLine: () => set((state) => ({ showProgressLine: !state.showProgressLine })),
-    setVisibleColumns: (cols) => set(() => ({ visibleColumns: cols }))
+    setVisibleColumns: (cols) => set(() => ({ visibleColumns: cols })),
+    setEditMode: (isEditing) => set(() => ({ isEditing, editModeState: isEditing ? 'editing' : 'idle' })),
+    setEditModeState: (editModeState) => set(() => ({ editModeState }))
 }));
