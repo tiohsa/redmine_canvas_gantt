@@ -2,6 +2,34 @@ import type { Relation, Project, Task } from '../types';
 
 type ApiTask = Record<string, unknown>;
 type ApiRelation = Record<string, unknown>;
+type UnknownRecord = Record<string, unknown>;
+
+const asRecord = (value: unknown): UnknownRecord | null => {
+    if (!value || typeof value !== 'object') return null;
+    return value as UnknownRecord;
+};
+
+const normalizeRelation = (raw: unknown, fallback: { fromId: string; toId: string; type: string }): Relation => {
+    const root = asRecord(raw);
+    const candidate = root?.relation && asRecord(root.relation) ? asRecord(root.relation) : root;
+    const nested = candidate?.relation && asRecord(candidate.relation) ? asRecord(candidate.relation) : null;
+    const rel = nested ?? candidate ?? {};
+
+    const idValue = rel.id;
+    const fromValue = rel.issue_id ?? rel.issue_from_id ?? rel.from ?? fallback.fromId;
+    const toValue = rel.issue_to_id ?? rel.issue_to ?? rel.to ?? fallback.toId;
+    const typeValue = rel.relation_type ?? rel.type ?? fallback.type;
+    const delayValue = rel.delay;
+
+    const id = String(idValue ?? '');
+    return {
+        id,
+        from: String(fromValue ?? fallback.fromId),
+        to: String(toValue ?? fallback.toId),
+        type: String(typeValue ?? fallback.type),
+        delay: typeof delayValue === 'number' ? delayValue : undefined
+    };
+};
 
 interface ApiData {
     tasks: Task[];
@@ -164,14 +192,16 @@ export const apiClient = {
             throw new Error(errData.error || response.statusText);
         }
 
-        const relation = await response.json();
-        return {
-            id: String(relation.id),
-            from: String(relation.issue_id || fromId),
-            to: String(relation.issue_to_id || toId),
-            type: relation.relation_type || type,
-            delay: relation.delay
-        };
+        const payload = await response.json();
+        const relation = normalizeRelation(payload, { fromId, toId, type });
+
+        // If we can't obtain a usable id, deletion will fail later.
+        // Prefer failing fast so the UI can surface the error.
+        if (!relation.id || relation.id === 'undefined' || relation.id === 'null') {
+            throw new Error('Invalid relation response');
+        }
+
+        return relation;
     },
 
     deleteRelation: async (relationId: string): Promise<void> => {

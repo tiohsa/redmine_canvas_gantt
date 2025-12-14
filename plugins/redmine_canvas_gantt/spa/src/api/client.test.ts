@@ -64,3 +64,48 @@ describe('apiClient.fetchData', () => {
         expect(data.relations).toEqual([{ id: '99', from: '10', to: '11', type: 'precedes', delay: undefined }]);
     });
 });
+
+describe('apiClient.createRelation', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        delete (window as any).RedmineCanvasGantt;
+    });
+
+    it('parses relation id when API returns {relation: {...}}', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            authToken: 'token',
+            apiKey: 'key'
+        };
+
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                relation: { id: 1, issue_id: 10, issue_to_id: 11, relation_type: 'precedes', delay: null }
+            })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        const rel = await apiClient.createRelation('10', '11', 'precedes');
+        expect(rel).toEqual({ id: '1', from: '10', to: '11', type: 'precedes', delay: undefined });
+    });
+
+    it('parses relation id when API returns plain object', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            authToken: 'token',
+            apiKey: 'key'
+        };
+
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ id: 2, issue_id: 10, issue_to_id: 11, relation_type: 'precedes', delay: 0 })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        const rel = await apiClient.createRelation('10', '11', 'precedes');
+        expect(rel).toEqual({ id: '2', from: '10', to: '11', type: 'precedes', delay: 0 });
+    });
+});

@@ -14,6 +14,8 @@ class CanvasGanttsController < ApplicationController
     @i18n = {
       field_start_date: l(:field_start_date),
       field_due_date: l(:field_due_date),
+      button_edit: l(:button_edit),
+      button_delete: l(:button_delete),
       button_save: l(:button_save),
       button_cancel: l(:button_cancel),
       field_subject: l(:field_subject),
