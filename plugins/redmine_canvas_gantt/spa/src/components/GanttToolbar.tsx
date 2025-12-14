@@ -181,11 +181,17 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <button
                         onClick={() => navigateMonth(-1)}
                         style={{
-                            padding: '6px 10px',
+                            padding: '6px 16px',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: '#fff',
-                            cursor: 'pointer'
+                            color: '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center'
                         }}
                     >
                         ◀ Prev Month
@@ -193,11 +199,17 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <button
                         onClick={() => navigateMonth(1)}
                         style={{
-                            padding: '6px 10px',
+                            padding: '6px 16px',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: '#fff',
-                            cursor: 'pointer'
+                            color: '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center'
                         }}
                     >
                         Next Month ▶
