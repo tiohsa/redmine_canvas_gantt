@@ -18,6 +18,7 @@ export const HtmlOverlay: React.FC = () => {
     const overlayRef = React.useRef<HTMLDivElement>(null);
     const [draft, setDraft] = React.useState<{ fromId: string; start: { x: number; y: number }; pointer: { x: number; y: number }; targetId?: string } | null>(null);
     const draftRef = React.useRef<typeof draft>(null);
+    const [tooltipPosition, setTooltipPosition] = React.useState<{ x: number; y: number } | null>(null);
 
     const hoveredTask = hoveredTaskId ? tasks.find(t => t.id === hoveredTaskId) : null;
     const contextTask = contextMenu ? tasks.find(t => t.id === contextMenu.taskId) : null;
@@ -95,6 +96,20 @@ export const HtmlOverlay: React.FC = () => {
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
     }, [handleMouseMove, handleMouseUp]);
+
+    React.useEffect(() => {
+        if (!hoveredTask) {
+            setTooltipPosition(null);
+            return;
+        }
+
+        const onMouseMove = (e: MouseEvent) => {
+            setTooltipPosition({ x: e.clientX, y: e.clientY });
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        return () => window.removeEventListener('mousemove', onMouseMove);
+    }, [hoveredTask]);
 
     const relatedRelations = React.useMemo(() => {
         if (!contextMenu) return [];
@@ -193,16 +208,17 @@ export const HtmlOverlay: React.FC = () => {
                 </svg>
             )}
 
-            {hoveredTask && (
+            {hoveredTask && tooltipPosition && (
                 <div style={{
                     position: 'fixed',
-                    bottom: 20,
-                    left: 20,
+                    top: tooltipPosition.y + 15,
+                    left: tooltipPosition.x + 15,
                     background: 'rgba(0,0,0,0.8)',
                     color: 'white',
                     padding: '8px',
                     borderRadius: '4px',
-                    pointerEvents: 'none'
+                    pointerEvents: 'none',
+                    zIndex: 1000
                 }}>
                     <div><strong>{hoveredTask.subject}</strong></div>
                     <div>{new Date(hoveredTask.startDate).toLocaleDateString()} - {new Date(hoveredTask.dueDate).toLocaleDateString()}</div>

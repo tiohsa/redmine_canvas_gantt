@@ -11,7 +11,7 @@ interface GanttToolbarProps {
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const { viewport, updateViewport, groupByProject, setGroupByProject } = useTaskStore();
-    const { showProgressLine, toggleProgressLine, visibleColumns, setVisibleColumns } = useUIStore();
+    const { showProgressLine, toggleProgressLine, visibleColumns, setVisibleColumns, leftPaneVisible, toggleLeftPane } = useUIStore();
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
 
     const handleTodayClick = () => {
@@ -65,6 +65,31 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         }}>
             {/* Left: Filter & Options */}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+                <button
+                    onClick={toggleLeftPane}
+                    title={leftPaneVisible ? "Hide List" : "Show List"}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '8px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: '#fff',
+                        color: '#333',
+                        cursor: 'pointer',
+                        width: '36px',
+                        height: '36px'
+                    }}
+                >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <line x1="9" y1="3" x2="9" y2="21" />
+                    </svg>
+                </button>
+
+                <div style={{ width: 1, height: 24, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
+
                 <button
                     onClick={() => useTaskStore.getState().setBatchEditMode(true)}
                     style={{
