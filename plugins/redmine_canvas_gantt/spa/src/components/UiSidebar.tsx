@@ -143,6 +143,74 @@ export const UiSidebar: React.FC = () => {
         };
     }, [setColumnWidth]);
 
+    // Auto-size columns on load
+    const calculatedRef = React.useRef(false);
+    React.useEffect(() => {
+        if (calculatedRef.current || tasks.length === 0) return;
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) return;
+
+        context.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'; // ID font
+        const idWidth = Math.max(
+            context.measureText('ID').width,
+            ...tasks.slice(0, 50).map(t => context.measureText(String(t.id)).width)
+        ) + 24; // padding
+
+        context.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'; // Body font
+
+        const measure = (text: string) => context.measureText(text).width;
+
+        const getColWidth = (title: string, accessor: (t: Task) => string) => {
+            const headerWidth = measure(title) + 24; // Padding + sort/resizer space
+            const contentWidth = Math.max(...tasks.slice(0, 50).map(t => measure(accessor(t))));
+            return Math.ceil(Math.max(headerWidth, contentWidth + 20)); // Content padding
+        };
+
+        const newWidths: Record<string, number> = {};
+        newWidths['id'] = Math.ceil(idWidth);
+
+        // Subject typically takes remaining space or has a min width, but user asked for "exact".
+        // Subject has indentation and icons.
+        // base 8px + indent * 16 + 18 (expander) + 6 (gap) + 16 (tracker) + text + 20 (edit icon) + padding
+        const getSubjectWidth = (t: Task) => {
+            const indent = 8 + (t.indentLevel ?? 0) * 16;
+            const icons = (t.hasChildren ? 18 : 18) + 6 + 16; // Expander + gap + tracker
+            const text = measure(t.subject);
+            const editIcon = 24;
+            return indent + icons + text + editIcon + 12;
+        };
+        const subjectWidth = Math.max(measure('Task Name') + 24, ...tasks.slice(0, 50).map(getSubjectWidth));
+        newWidths['subject'] = Math.ceil(Math.min(600, subjectWidth)); // Cap at 600 to prevent explosion
+
+        newWidths['status'] = getColWidth('Status', (t: Task) => {
+            const s = getStatusColor(t.statusId);
+            return s.label; // Padded pill
+        }) + 16; // Pill padding
+
+        newWidths['assignee'] = Math.max(measure('Assignee') + 24, ...tasks.slice(0, 50).map(t => {
+            if (!t.assignedToName) return 0;
+            // Icon 24 + gap 4 + text
+            return 24 + 4 + measure(t.assignedToName) + 12;
+        }));
+
+        newWidths['startDate'] = getColWidth('Start Date', (t: Task) => Number.isFinite(t.startDate) ? new Date(t.startDate).toLocaleDateString() : '-');
+        newWidths['dueDate'] = getColWidth('Due Date', (t: Task) => Number.isFinite(t.dueDate) ? new Date(t.dueDate).toLocaleDateString() : '-');
+
+        newWidths['ratioDone'] = Math.max(measure('Progress') + 24, ...tasks.slice(0, 50).map(t => {
+            // Icon 20 + gap 6 + text
+            return 20 + 6 + measure(String(t.ratioDone) + '%') + 12;
+        }));
+
+        // Apply
+        Object.keys(newWidths).forEach(key => {
+            setColumnWidth(key, newWidths[key]);
+        });
+
+        calculatedRef.current = true;
+    }, [tasks, setColumnWidth]);
+
     const handleResizeStart = (e: React.MouseEvent, key: string, currentWidth: number) => {
         e.preventDefault();
         e.stopPropagation();
