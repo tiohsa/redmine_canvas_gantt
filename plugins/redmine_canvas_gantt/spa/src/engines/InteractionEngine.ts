@@ -4,7 +4,7 @@ import { LayoutEngine } from './LayoutEngine';
 import type { Task } from '../types';
 import { snapToUtcDay } from '../utils/time';
 
-type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
+type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end' | 'dependency-create';
 
 interface DragState {
     mode: DragMode;
@@ -13,6 +13,10 @@ interface DragState {
     taskId: string | null;
     originalStartDate: number;
     originalDueDate: number;
+    // For dependency creation
+    depStartTaskId: string | null;
+    currentX?: number;
+    currentY?: number;
 }
 
 export class InteractionEngine {
@@ -23,7 +27,8 @@ export class InteractionEngine {
         startY: 0,
         taskId: null,
         originalStartDate: 0,
-        originalDueDate: 0
+        originalDueDate: 0,
+        depStartTaskId: null
     };
 
     constructor(container: HTMLElement) {
@@ -49,12 +54,32 @@ export class InteractionEngine {
         window.removeEventListener('keydown', this.handleKeyDown);
     }
 
-    private hitTest(x: number, y: number): { task: Task | null; region: 'body' | 'start' | 'end' } {
-        const { tasks, viewport } = useTaskStore.getState();
+    private hitTest(x: number, y: number): { task: Task | null; region: 'body' | 'start' | 'end' | 'dep-handle-start' | 'dep-handle-end' } {
+        const { tasks, viewport, hoveredTaskId } = useTaskStore.getState();
         const RESIZE_HANDLE_WIDTH = 8;
+        const DEP_HANDLE_RADIUS = 8; // generous hit area
 
         for (const t of tasks) {
+            // Optimization: Skip off-screen tasks (rough)
+            // const yPos = t.rowIndex * viewport.rowHeight - viewport.scrollY;
+            // if (yPos < -50 || yPos > viewport.height + 50) continue;
+
             const bounds = LayoutEngine.getTaskBounds(t, viewport, 'hit');
+
+            // Check Dependency Handles first (only if task is hovered or active)
+            // Or just check geometry.
+            if (t.editable) { // Only editable tasks have handles
+                const cy = bounds.y + bounds.height / 2;
+                // Start handle
+                if (Math.abs(y - cy) <= DEP_HANDLE_RADIUS && Math.abs(x - (bounds.x - 2)) <= DEP_HANDLE_RADIUS) {
+                    return { task: t, region: 'dep-handle-start' };
+                }
+                // End handle
+                if (Math.abs(y - cy) <= DEP_HANDLE_RADIUS && Math.abs(x - (bounds.x + bounds.width + 2)) <= DEP_HANDLE_RADIUS) {
+                    return { task: t, region: 'dep-handle-end' };
+                }
+            }
+
             if (x >= bounds.x && x <= bounds.x + bounds.width &&
                 y >= bounds.y && y <= bounds.y + bounds.height) {
                 // Determine which part was clicked
@@ -82,22 +107,41 @@ export class InteractionEngine {
 
         if (hit.task && hit.task.editable) {
             // Check if parent task
-            if (hit.task.hasChildren) {
+            if (hit.task.hasChildren && hit.region === 'body') { // Allow selecting but maybe warn on move
                 useTaskStore.getState().selectTask(hit.task.id);
-                // Show warning and return
-                useUIStore.getState().addNotification('Cannot move parent task. Move child tasks instead.', 'warning');
-                return;
+                 // If body click on parent, maybe prevent move
+                if (hit.region === 'body') {
+                    // Standard Redmine doesn't usually allow moving parent bars directly (computed)
+                     useUIStore.getState().addNotification('Cannot move parent task. Move child tasks instead.', 'warning');
+                     return;
+                }
             }
 
             useTaskStore.getState().selectTask(hit.task.id);
-            if (hit.region === 'body') {
+
+            if (hit.region === 'dep-handle-start' || hit.region === 'dep-handle-end') {
+                // Start creating dependency
+                this.drag = {
+                    mode: 'dependency-create',
+                    startX: x,
+                    startY: y,
+                    taskId: null,
+                    originalStartDate: 0,
+                    originalDueDate: 0,
+                    depStartTaskId: hit.task.id,
+                    currentX: x,
+                    currentY: y
+                };
+                // We use setHoveredTask(null) to maybe clear UI or something? No.
+            } else if (hit.region === 'body') {
                 this.drag = {
                     mode: 'task-move',
                     startX: e.clientX,
                     startY: e.clientY,
                     taskId: hit.task.id,
                     originalStartDate: hit.task.startDate,
-                    originalDueDate: hit.task.dueDate
+                    originalDueDate: hit.task.dueDate,
+                    depStartTaskId: null
                 };
             } else if (hit.region === 'start') {
                 this.drag = {
@@ -106,7 +150,8 @@ export class InteractionEngine {
                     startY: e.clientY,
                     taskId: hit.task.id,
                     originalStartDate: hit.task.startDate,
-                    originalDueDate: hit.task.dueDate
+                    originalDueDate: hit.task.dueDate,
+                    depStartTaskId: null
                 };
             } else if (hit.region === 'end') {
                 this.drag = {
@@ -115,7 +160,8 @@ export class InteractionEngine {
                     startY: e.clientY,
                     taskId: hit.task.id,
                     originalStartDate: hit.task.startDate,
-                    originalDueDate: hit.task.dueDate
+                    originalDueDate: hit.task.dueDate,
+                    depStartTaskId: null
                 };
             }
         } else if (hit.task) {
@@ -130,7 +176,8 @@ export class InteractionEngine {
                 startY: e.clientY,
                 taskId: null,
                 originalStartDate: 0,
-                originalDueDate: 0
+                originalDueDate: 0,
+                depStartTaskId: null
             };
         }
     };
@@ -138,25 +185,43 @@ export class InteractionEngine {
     private handleMouseMove = (e: MouseEvent) => {
         const { viewport, updateViewport, updateTask, setHoveredTask } = useTaskStore.getState();
 
-        // Hover logic
         const rect = this.container.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const hit = this.hitTest(x, y);
-        setHoveredTask(hit.task ? hit.task.id : null);
 
-        // Update cursor based on hit region
-        if (hit.task && hit.task.editable) {
-            if (hit.region === 'start' || hit.region === 'end') {
-                this.container.style.cursor = 'ew-resize';
+        // Update hovered task if not dragging something else
+        if (this.drag.mode === 'none' || this.drag.mode === 'dependency-create') {
+            const hit = this.hitTest(x, y);
+            setHoveredTask(hit.task ? hit.task.id : null);
+
+            // Cursor
+            if (hit.task && hit.task.editable) {
+                 if (hit.region.startsWith('dep-handle')) {
+                     this.container.style.cursor = 'crosshair';
+                 } else if (hit.region === 'start' || hit.region === 'end') {
+                    this.container.style.cursor = 'ew-resize';
+                } else {
+                    this.container.style.cursor = 'grab';
+                }
+            } else if (this.drag.mode === 'dependency-create') {
+                this.container.style.cursor = 'crosshair';
             } else {
-                this.container.style.cursor = 'grab';
+                this.container.style.cursor = 'default';
             }
-        } else {
-            this.container.style.cursor = 'default';
         }
 
         if (this.drag.mode === 'none') return;
+
+        if (this.drag.mode === 'dependency-create') {
+            this.drag.currentX = x;
+            this.drag.currentY = y;
+            useTaskStore.getState().setTempDependency({
+                startX: this.drag.startX,
+                startY: this.drag.startY,
+                currentX: x,
+                currentY: y
+            });
+        }
 
         const dx = e.clientX - this.drag.startX;
         const dy = e.clientY - this.drag.startY;
@@ -173,7 +238,6 @@ export class InteractionEngine {
             const newStart = this.snapToDate(this.drag.originalStartDate + timeDelta);
             const duration = this.drag.originalDueDate - this.drag.originalStartDate;
 
-            // Only update if changed to avoid thrashing
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
             if (currentTask && currentTask.startDate !== newStart) {
                 updateTask(this.drag.taskId, {
@@ -184,32 +248,63 @@ export class InteractionEngine {
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
             const newStart = this.snapToDate(this.drag.originalStartDate + timeDelta);
-
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
-
             if (currentTask && newStart < this.drag.originalDueDate && currentTask.startDate !== newStart) {
                 updateTask(this.drag.taskId, { startDate: newStart });
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
             const newEnd = this.snapToDate(this.drag.originalDueDate + timeDelta);
-
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
-
             if (currentTask && newEnd > this.drag.originalStartDate && currentTask.dueDate !== newEnd) {
                 updateTask(this.drag.taskId, { dueDate: newEnd });
             }
         }
     };
 
-    private handleMouseUp = async () => {
+    private handleMouseUp = async (e: MouseEvent) => {
         const draggedTaskId = this.drag.taskId;
-        const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && draggedTaskId;
+        const mode = this.drag.mode;
 
-        this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: 0, originalDueDate: 0 };
+        // Clear drag state
+        const oldStart = this.drag.originalStartDate;
+        const oldDue = this.drag.originalDueDate;
+        const depStart = this.drag.depStartTaskId;
+
+        // Clear visual line
+        if (mode === 'dependency-create') {
+            useTaskStore.getState().setTempDependency(null);
+        }
+
+        this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: 0, originalDueDate: 0, depStartTaskId: null };
         this.container.style.cursor = 'default';
 
-        if (wasDragging && draggedTaskId) {
+        if (mode === 'dependency-create' && depStart) {
+            // Check hit on drop
+            const rect = this.container.getBoundingClientRect();
+            const hit = this.hitTest(e.clientX - rect.left, e.clientY - rect.top);
+
+            if (hit.task && hit.task.id !== depStart) {
+                // Create dependency: depStart -> hit.task
+                // Requirement: check for cycles? API will handle it.
+                try {
+                    const { apiClient } = await import('../api/client');
+                    const res = await apiClient.createRelation(depStart, hit.task.id, 'precedes');
+                    if (res.status === 'ok' && res.relation) {
+                         const { relations, setRelations } = useTaskStore.getState();
+                         setRelations([...relations, res.relation]);
+                         useUIStore.getState().addNotification('Dependency created', 'success');
+                    } else {
+                        useUIStore.getState().addNotification('Failed to create dependency: ' + res.error, 'error');
+                    }
+                } catch (err) {
+                    useUIStore.getState().addNotification('Error creating dependency', 'error');
+                }
+            }
+            return;
+        }
+
+        if ((mode === 'task-move' || mode === 'task-resize-start' || mode === 'task-resize-end') && draggedTaskId) {
             // Persist the change to backend
             const { tasks, updateTask } = useTaskStore.getState();
             const task = tasks.find(t => t.id === draggedTaskId);
@@ -220,7 +315,6 @@ export class InteractionEngine {
                 const result = await apiClient.updateTask(task);
 
                 if (result.status === 'ok' && result.lockVersion !== undefined) {
-                    // Update lockVersion in store
                     updateTask(draggedTaskId, { lockVersion: result.lockVersion });
                 } else {
                     const errorMsg = result.status === 'conflict'
@@ -229,20 +323,17 @@ export class InteractionEngine {
 
                     useUIStore.getState().addNotification(errorMsg, 'warning');
 
-                    // Revert changes
                     updateTask(draggedTaskId, {
-                        startDate: this.drag.originalStartDate,
-                        dueDate: this.drag.originalDueDate
+                        startDate: oldStart,
+                        dueDate: oldDue
                     });
                 }
             } catch (err) {
                 console.error('API error:', err);
                 useUIStore.getState().addNotification('Failed to save task changes.', 'error');
-
-                // Revert changes
                 updateTask(draggedTaskId, {
-                    startDate: this.drag.originalStartDate,
-                    dueDate: this.drag.originalDueDate
+                    startDate: oldStart,
+                    dueDate: oldDue
                 });
             }
         }
@@ -259,13 +350,11 @@ export class InteractionEngine {
     private handleWheel = (e: WheelEvent) => {
         const { viewport, updateViewport } = useTaskStore.getState();
         if (e.ctrlKey || e.metaKey) {
-            // Zoom
             e.preventDefault();
             const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
             const newScale = Math.max(0.00000001, Math.min(0.001, viewport.scale * zoomFactor));
             updateViewport({ scale: newScale });
         } else {
-            // Scroll
             updateViewport({
                 scrollX: Math.max(0, viewport.scrollX + e.deltaX),
                 scrollY: Math.max(0, viewport.scrollY + e.deltaY)
@@ -282,7 +371,6 @@ export class InteractionEngine {
         }
 
         if (!selectedTaskId) {
-            // If nothing selected, arrow down selects first visible task
             if (e.key === 'ArrowDown' && tasks.length > 0) {
                 selectTask(tasks[0].id);
             }

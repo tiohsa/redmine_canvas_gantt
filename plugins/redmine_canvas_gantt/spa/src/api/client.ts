@@ -13,6 +13,12 @@ interface UpdateTaskResult {
     error?: string;
 }
 
+interface CreateRelationResult {
+    status: 'ok' | 'error';
+    relation?: Relation;
+    error?: string;
+}
+
 declare global {
     interface Window {
         RedmineCanvasGantt?: {
@@ -71,6 +77,8 @@ export const apiClient = {
                 assignedToId: t.assigned_to_id,
                 assignedToName: t.assigned_to_name,
                 parentId: t.parent_id ? String(t.parent_id) : undefined,
+                projectId: t.project_id,
+                projectName: t.project_name,
                 lockVersion: t.lock_version,
                 editable: t.editable,
                 rowIndex: index, // Simplify for now: default order
@@ -122,5 +130,49 @@ export const apiClient = {
 
         const data = await response.json();
         return { status: 'ok', lockVersion: data.lock_version };
+    },
+
+    createRelation: async (fromTaskId: string, toTaskId: string, type: string = 'precedes'): Promise<CreateRelationResult> => {
+        const config = window.RedmineCanvasGantt;
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        // Redmine API: POST /issues/[id]/relations.json
+        const response = await fetch(`${config.apiBase}/issues/${fromTaskId}/relations.json`, {
+            method: 'POST',
+            headers: {
+                'X-Redmine-API-Key': config.apiKey,
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': config.authToken
+            },
+            body: JSON.stringify({
+                relation: {
+                    issue_to_id: toTaskId,
+                    relation_type: type
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            // Redmine errors are often { errors: ["message"] }
+            const msg = errData.errors ? errData.errors.join(', ') : (errData.error || response.statusText);
+            return { status: 'error', error: msg };
+        }
+
+        const data = await response.json();
+        const r = data.relation;
+
+        return {
+            status: 'ok',
+            relation: {
+                id: String(r.id),
+                from: String(r.issue_id),
+                to: String(r.issue_to_id),
+                type: r.relation_type,
+                delay: r.delay
+            }
+        };
     }
 };

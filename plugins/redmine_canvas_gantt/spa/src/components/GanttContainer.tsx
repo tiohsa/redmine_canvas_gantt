@@ -9,11 +9,11 @@ import { A11yLayer } from './A11yLayer';
 import { HtmlOverlay } from './HtmlOverlay';
 import { UiSidebar } from './UiSidebar';
 import { TimelineHeader } from './TimelineHeader';
+import { processTasksForDisplay } from '../utils/taskProcessing';
+import type { Task } from '../types';
 
 export const GanttContainer: React.FC = () => {
-    // containerRef is the root flex container
     const containerRef = useRef<HTMLDivElement>(null);
-    // mainPaneRef is the right side (timeline) where canvases live
     const mainPaneRef = useRef<HTMLDivElement>(null);
 
     const bgCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -21,16 +21,17 @@ export const GanttContainer: React.FC = () => {
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const { viewport, tasks, setTasks, setRelations, updateViewport, zoomLevel } = useTaskStore();
-    const { showProgressLine } = useUIStore();
+    const { showProgressLine, sidebarWidth, setSidebarWidth, groupByProject } = useUIStore();
 
-    const [sidebarWidth, setSidebarWidth] = React.useState(400);
+    // Local state to hold raw loaded tasks before processing
+    const [rawTasks, setRawTasks] = React.useState<Task[]>([]);
+
     const isResizing = useRef(false);
 
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
             if (!isResizing.current) return;
-            // Constrain width
-            const newWidth = Math.max(200, Math.min(800, e.clientX)); // Simple clientX mapping assuming sidebar starts at 0
+            const newWidth = Math.max(200, Math.min(800, e.clientX));
             setSidebarWidth(newWidth);
         };
 
@@ -53,7 +54,6 @@ export const GanttContainer: React.FC = () => {
         document.body.style.cursor = 'grabbing';
     };
 
-    // Refs for engines to persist across renders
     const engines = useRef<{
         interaction?: InteractionEngine;
         bg?: BackgroundRenderer;
@@ -61,14 +61,20 @@ export const GanttContainer: React.FC = () => {
         overlay?: OverlayRenderer;
     }>({});
 
+    // Effect to re-process tasks when grouping changes or raw tasks change
     useEffect(() => {
-        // Initial fetch
+        if (rawTasks.length > 0) {
+            const processed = processTasksForDisplay(rawTasks, groupByProject);
+            setTasks(processed);
+        }
+    }, [rawTasks, groupByProject]);
+
+    useEffect(() => {
         import('../api/client').then(({ apiClient }) => {
             apiClient.fetchData().then(data => {
-                setTasks(data.tasks);
+                setRawTasks(data.tasks); // Store raw
                 setRelations(data.relations);
 
-                // Fit timeline start to the earliest available date so tasks are visible
                 const minStart = data.tasks.reduce<number | null>((acc, t) => {
                     const start = t.startDate;
                     return acc === null ? start : Math.min(acc, start);
@@ -79,9 +85,19 @@ export const GanttContainer: React.FC = () => {
 
                 const startDate = Math.min(minStart ?? oneYearAgo.getTime(), oneYearAgo.getTime());
 
-                // Calculate scroll position to center "today" (or start at today with some padding)
+                // Calculate scroll position to center "today"
+                // We use the viewport from store which might have been restored from localstorage
+                // If it was restored (scale/viewMode), we respect it.
+                // But start date needs to be set to project start if not set?
+                // Actually, restoring viewport might overwrite this.
+                // Let's rely on stored scrollX if valid, else calculate center.
+                // But startDate changes based on data.
+
                 const currentViewport = useTaskStore.getState().viewport;
                 const now = new Date().setHours(0, 0, 0, 0);
+
+                // If we have saved scrollX, we should probably try to respect the *date* it was pointing to?
+                // Too complex for now. Let's just default center Today.
                 const scrollX = Math.max(0, (now - startDate) * currentViewport.scale - 100);
 
                 updateViewport({ startDate, scrollX });
@@ -90,11 +106,8 @@ export const GanttContainer: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        // We attach interaction engine to the MAIN PANE (timeline), not the whole container
-        // because dragging/panning is relative to timeline coordinates.
         if (!mainPaneRef.current || !bgCanvasRef.current || !taskCanvasRef.current || !overlayCanvasRef.current) return;
 
-        // Initialize Engines
         engines.current.interaction = new InteractionEngine(mainPaneRef.current);
         engines.current.bg = new BackgroundRenderer(bgCanvasRef.current);
         engines.current.task = new TaskRenderer(taskCanvasRef.current);
@@ -105,7 +118,6 @@ export const GanttContainer: React.FC = () => {
         };
     }, []);
 
-    // Responsive Canvas Size - Observe the mainPaneRef
     useEffect(() => {
         if (!mainPaneRef.current) return;
         const resizeObserver = new ResizeObserver((entries) => {
@@ -124,7 +136,6 @@ export const GanttContainer: React.FC = () => {
         return () => resizeObserver.disconnect();
     }, []);
 
-    // Render Loop
     useEffect(() => {
         if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel);
         if (engines.current.task) engines.current.task.render(viewport, tasks);
@@ -133,12 +144,10 @@ export const GanttContainer: React.FC = () => {
 
     return (
         <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
-            {/* Resizable Sidebar Wrapper */}
             <div style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
                 <UiSidebar />
             </div>
 
-            {/* Resize Handle */}
             <div
                 onMouseDown={startResize}
                 style={{
@@ -153,7 +162,6 @@ export const GanttContainer: React.FC = () => {
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                 <TimelineHeader />
-                {/* Timeline Pane */}
                 <div ref={mainPaneRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                     <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
                     <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />

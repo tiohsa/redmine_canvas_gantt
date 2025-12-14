@@ -12,6 +12,7 @@ interface TaskState {
     selectedTaskId: string | null;
     hoveredTaskId: string | null;
     contextMenu: { x: number; y: number; taskId: string } | null;
+    tempDependency: { startX: number; startY: number; currentX: number; currentY: number } | null;
 
     // Actions
     setTasks: (tasks: Task[]) => void;
@@ -19,37 +20,67 @@ interface TaskState {
     selectTask: (id: string | null) => void;
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
+    setTempDependency: (temp: { startX: number; startY: number; currentX: number; currentY: number } | null) => void;
     updateTask: (id: string, updates: Partial<Task>) => void;
     updateViewport: (updates: Partial<Viewport>) => void;
     setViewMode: (mode: ViewMode) => void;
     setZoomLevel: (level: ZoomLevel) => void;
 }
 
+const STORAGE_KEY = 'rcg-view-prefs';
+
+const loadViewPrefs = () => {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            return JSON.parse(stored);
+        }
+    } catch (e) {
+        // ignore
+    }
+    return {};
+};
+
+const saveViewPrefs = (data: any) => {
+    try {
+        const current = loadViewPrefs();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...data }));
+    } catch (e) {
+        // ignore
+    }
+};
+
+const prefs = loadViewPrefs();
+const initialZoomLevel: ZoomLevel = prefs.zoomLevel !== undefined ? prefs.zoomLevel : 1;
+const initialViewMode: ViewMode = prefs.viewMode || 'Week';
+
 const DEFAULT_VIEWPORT: Viewport = {
     startDate: new Date().setFullYear(new Date().getFullYear() - 1),
     scrollX: 0,
     scrollY: 0,
-    scale: ZOOM_SCALES[1], // Default to Zoom 1 (Week)
+    scale: ZOOM_SCALES[initialZoomLevel],
     width: 800,
     height: 600,
-    rowHeight: 40
+    rowHeight: 30 // Requirement 3: Smaller row height (was 40)
 };
 
-export const useTaskStore = create<TaskState>((set) => ({
+export const useTaskStore = create<TaskState>((set, get) => ({
     tasks: [],
     relations: [],
     viewport: DEFAULT_VIEWPORT,
-    viewMode: 'Week',
-    zoomLevel: 1,
+    viewMode: initialViewMode,
+    zoomLevel: initialZoomLevel,
     selectedTaskId: null,
     hoveredTaskId: null,
     contextMenu: null,
+    tempDependency: null,
 
     setTasks: (tasks) => set({ tasks }),
     setRelations: (relations) => set({ relations }),
     selectTask: (id) => set({ selectedTaskId: id }),
     setHoveredTask: (id) => set({ hoveredTaskId: id }),
     setContextMenu: (menu) => set({ contextMenu: menu }),
+    setTempDependency: (temp) => set({ tempDependency: temp }),
 
     updateTask: (id, updates) => set((state) => {
         const task = state.tasks.find(t => t.id === id);
@@ -121,55 +152,57 @@ export const useTaskStore = create<TaskState>((set) => ({
         viewport: { ...state.viewport, ...updates }
     })),
 
-    setViewMode: (mode) => set((state) => {
-        let zoom = state.zoomLevel;
-        if (mode === 'Month') zoom = 0;
-        if (mode === 'Week') zoom = 1;
-        if (mode === 'Day') zoom = 2;
+    setViewMode: (mode) => {
+        set((state) => {
+            let zoom = state.zoomLevel;
+            if (mode === 'Month') zoom = 0;
+            if (mode === 'Week') zoom = 1;
+            if (mode === 'Day') zoom = 2;
 
-        const { viewport } = state;
-        const newScale = ZOOM_SCALES[zoom];
+            const { viewport } = state;
+            const newScale = ZOOM_SCALES[zoom];
 
-        // Preserve Center Logic (shared)
-        const width = viewport.width || 800;
-        const centerOffsetPixels = viewport.scrollX + (width / 2);
-        const centerTimeOffset = centerOffsetPixels / viewport.scale;
+            const width = viewport.width || 800;
+            const centerOffsetPixels = viewport.scrollX + (width / 2);
+            const centerTimeOffset = centerOffsetPixels / viewport.scale;
 
-        let newScrollX = (centerTimeOffset * newScale) - (width / 2);
-        if (newScrollX < 0) newScrollX = 0;
+            let newScrollX = (centerTimeOffset * newScale) - (width / 2);
+            if (newScrollX < 0) newScrollX = 0;
 
-        return {
-            viewMode: mode,
-            zoomLevel: zoom,
-            viewport: { ...state.viewport, scale: newScale, scrollX: newScrollX }
-        };
-    }),
+            saveViewPrefs({ viewMode: mode, zoomLevel: zoom });
 
-    setZoomLevel: (level) => set((state) => {
-        const { viewport } = state;
-        const newScale = ZOOM_SCALES[level];
+            return {
+                viewMode: mode,
+                zoomLevel: zoom,
+                viewport: { ...state.viewport, scale: newScale, scrollX: newScrollX }
+            };
+        });
+    },
 
-        // Preserve Center Logic
-        const width = viewport.width || 800;
-        // Current center relative to start
-        const centerOffsetPixels = viewport.scrollX + (width / 2);
-        const centerTimeOffset = centerOffsetPixels / viewport.scale;
+    setZoomLevel: (level) => {
+        set((state) => {
+            const { viewport } = state;
+            const newScale = ZOOM_SCALES[level];
 
-        // New scrollX
-        let newScrollX = (centerTimeOffset * newScale) - (width / 2);
-        if (newScrollX < 0) newScrollX = 0;
+            const width = viewport.width || 800;
+            const centerOffsetPixels = viewport.scrollX + (width / 2);
+            const centerTimeOffset = centerOffsetPixels / viewport.scale;
 
-        // Reverse map to viewMode for compatibility if needed
-        let mode: ViewMode = 'Week';
-        if (level === 0) mode = 'Month';
-        if (level === 1) mode = 'Week';
-        if (level === 2) mode = 'Day';
+            let newScrollX = (centerTimeOffset * newScale) - (width / 2);
+            if (newScrollX < 0) newScrollX = 0;
 
+            let mode: ViewMode = 'Week';
+            if (level === 0) mode = 'Month';
+            if (level === 1) mode = 'Week';
+            if (level === 2) mode = 'Day';
 
-        return {
-            zoomLevel: level,
-            viewMode: mode,
-            viewport: { ...state.viewport, scale: newScale, scrollX: newScrollX }
-        };
-    })
+            saveViewPrefs({ viewMode: mode, zoomLevel: level });
+
+            return {
+                zoomLevel: level,
+                viewMode: mode,
+                viewport: { ...state.viewport, scale: newScale, scrollX: newScrollX }
+            };
+        });
+    }
 }));

@@ -34,6 +34,23 @@ export class OverlayRenderer {
 
         // Draw "Today" line
         this.drawTodayLine(ctx, viewport);
+
+        // Draw Temporary Dependency Line
+        this.drawTempDependency(ctx);
+    }
+
+    private drawTempDependency(ctx: CanvasRenderingContext2D) {
+        const { tempDependency } = useTaskStore.getState();
+        if (!tempDependency) return;
+
+        ctx.beginPath();
+        ctx.moveTo(tempDependency.startX, tempDependency.startY);
+        ctx.lineTo(tempDependency.currentX, tempDependency.currentY);
+        ctx.strokeStyle = '#2196f3';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
     }
 
     private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport) {

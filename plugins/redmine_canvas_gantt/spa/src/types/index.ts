@@ -11,9 +11,15 @@ export interface Task {
     lockVersion: number;
     editable: boolean;
 
+    // Project info for grouping
+    projectId?: number;
+    projectName?: string;
+
     // Computed for layout (cached)
     rowIndex: number;
     hasChildren: boolean;
+    // For pseudo-headers
+    isGroupHeader?: boolean;
 }
 
 export interface Relation {

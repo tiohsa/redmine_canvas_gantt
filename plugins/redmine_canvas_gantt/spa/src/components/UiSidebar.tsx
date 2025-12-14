@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTaskStore } from '../stores/TaskStore';
+import { useUIStore } from '../stores/UIStore';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Task } from '../types';
 import { getStatusColor } from '../utils/styles';
@@ -15,7 +16,6 @@ const ProgressCircle = ({ ratio, statusId }: { ratio: number, statusId: number }
     const offset = c - (ratio / 100) * c;
 
     const style = getStatusColor(statusId);
-    // Use status color for the circle
     const color = style.text;
 
     return (
@@ -35,6 +35,7 @@ export const UiSidebar: React.FC = () => {
     const updateViewport = useTaskStore(state => state.updateViewport);
     const selectTask = useTaskStore(state => state.selectTask);
     const selectedTaskId = useTaskStore(state => state.selectedTaskId);
+    const visibleColumns = useUIStore(state => state.visibleColumns);
 
     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, tasks.length);
     const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
@@ -45,7 +46,7 @@ export const UiSidebar: React.FC = () => {
         });
     };
 
-    const columns = [
+    const allColumns = [
         {
             key: 'subject',
             title: 'Task Name',
@@ -58,7 +59,17 @@ export const UiSidebar: React.FC = () => {
                             <polyline points="6 9 12 15 18 9"></polyline>
                         </svg>
                     </div>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.subject}</span>
+                    {/* Requirement 2: Link to ticket */}
+                    <a
+                        href={`/issues/${t.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: 'inherit', textDecoration: 'none' }}
+                        onMouseDown={(e) => e.stopPropagation()} // Prevent row selection when clicking link
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <span style={{ cursor: 'pointer', textDecoration: 'underline' }}>{t.subject}</span>
+                    </a>
                 </div>
             )
         },
@@ -104,7 +115,6 @@ export const UiSidebar: React.FC = () => {
                         }}
                             title={t.assignedToName}
                         >
-                            {/* In real app, check for avatar URL */}
                             {getInitials(t.assignedToName)}
                         </div>
                     )}
@@ -131,6 +141,8 @@ export const UiSidebar: React.FC = () => {
         },
     ];
 
+    const columns = allColumns.filter(c => visibleColumns.includes(c.key));
+
     return (
         <div
             style={{
@@ -146,7 +158,7 @@ export const UiSidebar: React.FC = () => {
         >
             {/* Header */}
             < div style={{
-                height: 48, // Taller header
+                height: 48,
                 borderBottom: '1px solid #e0e0e0',
                 display: 'flex',
                 fontWeight: 600,
@@ -176,6 +188,33 @@ export const UiSidebar: React.FC = () => {
                     visibleTasks.map(task => {
                         const top = task.rowIndex * viewport.rowHeight - viewport.scrollY;
                         const isSelected = task.id === selectedTaskId;
+
+                        // Requirement 7: Visual indication of Group Header?
+                        // If we use pseudo-tasks with isGroupHeader, we can style them differently.
+                        if (task.isGroupHeader) {
+                             return (
+                                <div
+                                    key={task.id}
+                                    style={{
+                                        position: 'absolute',
+                                        top: top,
+                                        left: 0,
+                                        height: viewport.rowHeight,
+                                        width: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        borderBottom: '1px solid #f5f5f5',
+                                        backgroundColor: '#eee',
+                                        fontSize: '13px',
+                                        fontWeight: 'bold',
+                                        color: '#333',
+                                        paddingLeft: '8px'
+                                    }}
+                                >
+                                    {task.subject}
+                                </div>
+                             );
+                        }
 
                         return (
                             <div
