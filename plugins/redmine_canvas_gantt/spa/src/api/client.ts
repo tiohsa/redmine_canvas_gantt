@@ -1,7 +1,38 @@
 import type { Relation, Project, Task } from '../types';
 
+type ApiTask = Record<string, unknown>;
+type ApiRelation = Record<string, unknown>;
+type UnknownRecord = Record<string, unknown>;
+
+const asRecord = (value: unknown): UnknownRecord | null => {
+    if (!value || typeof value !== 'object') return null;
+    return value as UnknownRecord;
+};
+
+const normalizeRelation = (raw: unknown, fallback: { fromId: string; toId: string; type: string }): Relation => {
+    const root = asRecord(raw);
+    const candidate = root?.relation && asRecord(root.relation) ? asRecord(root.relation) : root;
+    const nested = candidate?.relation && asRecord(candidate.relation) ? asRecord(candidate.relation) : null;
+    const rel = nested ?? candidate ?? {};
+
+    const idValue = rel.id;
+    const fromValue = rel.issue_id ?? rel.issue_from_id ?? rel.from ?? fallback.fromId;
+    const toValue = rel.issue_to_id ?? rel.issue_to ?? rel.to ?? fallback.toId;
+    const typeValue = rel.relation_type ?? rel.type ?? fallback.type;
+    const delayValue = rel.delay;
+
+    const id = String(idValue ?? '');
+    return {
+        id,
+        from: String(fromValue ?? fallback.fromId),
+        to: String(toValue ?? fallback.toId),
+        type: String(typeValue ?? fallback.type),
+        delay: typeof delayValue === 'number' ? delayValue : undefined
+    };
+};
+
 interface ApiData {
-    tasks: any[];
+    tasks: Task[];
     relations: Relation[];
     project: Project;
     permissions: { editable: boolean; viewable: boolean };
@@ -52,9 +83,9 @@ export const apiClient = {
         const data = await response.json();
 
         // Transform API tasks to internal Task model
-        const tasks: Task[] = data.tasks.map((t: any, index: number): Task => {
-            const start = parseDate(t.start_date);
-            const due = parseDate(t.due_date);
+        const tasks: Task[] = (data.tasks as ApiTask[]).map((t, index: number): Task => {
+            const start = parseDate(typeof t.start_date === 'string' ? t.start_date : null);
+            const due = parseDate(typeof t.due_date === 'string' ? t.due_date : null);
 
             // Fallbacks to keep rendering even when dates are missing/invalid
             const safeStart = start ?? due ?? new Date().setHours(0, 0, 0, 0);
@@ -63,16 +94,19 @@ export const apiClient = {
 
             return {
                 id: String(t.id),
-                subject: t.subject,
+                subject: String(t.subject ?? ''),
+                projectId: t.project_id ? String(t.project_id) : undefined,
+                projectName: typeof t.project_name === 'string' ? t.project_name : undefined,
+                displayOrder: typeof t.display_order === 'number' ? t.display_order : index,
                 startDate: safeStart,
                 dueDate: normalizedDue,
-                ratioDone: t.ratio_done ?? 0,
-                statusId: t.status_id,
-                assignedToId: t.assigned_to_id,
-                assignedToName: t.assigned_to_name,
+                ratioDone: typeof t.ratio_done === 'number' ? t.ratio_done : 0,
+                statusId: typeof t.status_id === 'number' ? t.status_id : 0,
+                assignedToId: typeof t.assigned_to_id === 'number' ? t.assigned_to_id : undefined,
+                assignedToName: typeof t.assigned_to_name === 'string' ? t.assigned_to_name : undefined,
                 parentId: t.parent_id ? String(t.parent_id) : undefined,
-                lockVersion: t.lock_version,
-                editable: t.editable,
+                lockVersion: typeof t.lock_version === 'number' ? t.lock_version : 0,
+                editable: Boolean(t.editable),
                 rowIndex: index, // Simplify for now: default order
                 hasChildren: false // Will be updated below
             };
@@ -86,7 +120,15 @@ export const apiClient = {
             }
         });
 
-        return { ...data, tasks };
+        const relations: Relation[] = (data.relations as ApiRelation[]).map((r): Relation => ({
+            id: String(r.id ?? ''),
+            from: String(r.from ?? r.issue_from_id ?? ''),
+            to: String(r.to ?? r.issue_to_id ?? ''),
+            type: String(r.type ?? r.relation_type ?? ''),
+            delay: typeof r.delay === 'number' ? r.delay : undefined
+        })).filter(r => r.id !== '' && r.from !== '' && r.to !== '' && r.type !== '');
+
+        return { ...data, tasks, relations };
     },
 
     updateTask: async (task: Task): Promise<UpdateTaskResult> => {
@@ -122,5 +164,64 @@ export const apiClient = {
 
         const data = await response.json();
         return { status: 'ok', lockVersion: data.lock_version };
+    },
+
+    createRelation: async (fromId: string, toId: string, type: string): Promise<Relation> => {
+        const config = window.RedmineCanvasGantt;
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        const response = await fetch(`/issues/${fromId}/relations.json`, {
+            method: 'POST',
+            headers: {
+                'X-Redmine-API-Key': config.apiKey,
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': config.authToken
+            },
+            body: JSON.stringify({
+                relation: {
+                    issue_to_id: toId,
+                    relation_type: type
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || response.statusText);
+        }
+
+        const payload = await response.json();
+        const relation = normalizeRelation(payload, { fromId, toId, type });
+
+        // If we can't obtain a usable id, deletion will fail later.
+        // Prefer failing fast so the UI can surface the error.
+        if (!relation.id || relation.id === 'undefined' || relation.id === 'null') {
+            throw new Error('Invalid relation response');
+        }
+
+        return relation;
+    },
+
+    deleteRelation: async (relationId: string): Promise<void> => {
+        const config = window.RedmineCanvasGantt;
+        if (!config) {
+            throw new Error("Configuration not found");
+        }
+
+        const response = await fetch(`${config.apiBase}/relations/${relationId}.json`, {
+            method: 'DELETE',
+            headers: {
+                'X-Redmine-API-Key': config.apiKey,
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': config.authToken
+            }
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || response.statusText);
+        }
     }
 };

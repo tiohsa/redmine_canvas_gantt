@@ -2,7 +2,7 @@ import React from 'react';
 
 import type { ZoomLevel } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
-import { useUIStore } from '../stores/UIStore';
+import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 
 interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
@@ -10,8 +10,9 @@ interface GanttToolbarProps {
 }
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
-    const { viewport, updateViewport } = useTaskStore();
-    const { showProgressLine, toggleProgressLine } = useUIStore();
+    const { viewport, updateViewport, groupByProject, setGroupByProject } = useTaskStore();
+    const { showProgressLine, toggleProgressLine, visibleColumns, setVisibleColumns } = useUIStore();
+    const [showColumnMenu, setShowColumnMenu] = React.useState(false);
 
     const handleTodayClick = () => {
         const now = Date.now();
@@ -20,6 +21,30 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         const centeredX = Math.max(0, todayX - (viewport.width / 2));
         updateViewport({ scrollX: centeredX });
     };
+
+    const navigateMonth = (offset: number) => {
+        const leftDate = new Date(viewport.startDate + viewport.scrollX / viewport.scale);
+        leftDate.setDate(1);
+        leftDate.setMonth(leftDate.getMonth() + offset);
+        leftDate.setHours(0, 0, 0, 0);
+        updateViewport({ startDate: leftDate.getTime(), scrollX: 0 });
+    };
+
+    const toggleColumn = (key: string) => {
+        const next = visibleColumns.includes(key)
+            ? visibleColumns.filter(k => k !== key)
+            : [...visibleColumns, key];
+        setVisibleColumns(next);
+    };
+
+    const columnOptions = [
+        { key: 'id', label: 'ID' },
+        { key: 'status', label: 'Status' },
+        { key: 'assignee', label: 'Assignee' },
+        { key: 'startDate', label: 'Start Date' },
+        { key: 'dueDate', label: 'Due Date' },
+        { key: 'ratioDone', label: 'Progress' }
+    ];
 
     const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
         { level: 0, label: 'Month' },
@@ -39,7 +64,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             boxSizing: 'border-box'
         }}>
             {/* Left: Filter & Options */}
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
                 <button
                     style={{
                         display: 'flex',
@@ -63,6 +88,72 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     Filter
                 </button>
 
+                <button
+                    onClick={() => setShowColumnMenu(prev => !prev)}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 16px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: '#fff',
+                        color: '#333',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        cursor: 'pointer'
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M4 5h16" />
+                        <path d="M7 12h10" />
+                        <path d="M10 19h4" />
+                    </svg>
+                    Columns
+                </button>
+
+                {showColumnMenu && (
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: '48px',
+                            left: 0,
+                            background: '#fff',
+                            border: '1px solid #e0e0e0',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                            padding: '12px',
+                            zIndex: 20,
+                            minWidth: '200px'
+                        }}
+                    >
+                        <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>Columns</div>
+                        {columnOptions.map(option => (
+                            <label key={option.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={visibleColumns.includes(option.key)}
+                                    onChange={() => toggleColumn(option.key)}
+                                />
+                                {option.label}
+                            </label>
+                        ))}
+                        <button
+                            onClick={() => setVisibleColumns(DEFAULT_COLUMNS)}
+                            style={{
+                                marginTop: '8px',
+                                border: 'none',
+                                background: 'transparent',
+                                color: '#1a73e8',
+                                cursor: 'pointer',
+                                padding: 0
+                            }}
+                        >
+                            Reset
+                        </button>
+                    </div>
+                )}
+
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#555', cursor: 'pointer', userSelect: 'none' }}>
                     <input
                         type="checkbox"
@@ -72,10 +163,58 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     />
                     Progress Line
                 </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#555', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                        type="checkbox"
+                        checked={groupByProject}
+                        onChange={(e) => setGroupByProject(e.target.checked)}
+                        style={{ cursor: 'pointer' }}
+                    />
+                    Group by project
+                </label>
             </div>
 
             {/* Right: Zoom Level & Today */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                        onClick={() => navigateMonth(-1)}
+                        style={{
+                            padding: '6px 16px',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: '#fff',
+                            color: '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center'
+                        }}
+                    >
+                        ◀ Prev Month
+                    </button>
+                    <button
+                        onClick={() => navigateMonth(1)}
+                        style={{
+                            padding: '6px 16px',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: '#fff',
+                            color: '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center'
+                        }}
+                    >
+                        Next Month ▶
+                    </button>
+                </div>
 
                 {/* Final Decision: Put Today in a similar container OR just style it to match the segmented control's HEIGHT/FONT/LOOK but standalone. */}
 

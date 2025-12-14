@@ -2,23 +2,32 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'vite_asset_helper').to_s
 
   helper RedmineCanvasGantt::ViteAssetHelper
-  accept_api_auth :data, :update
+  accept_api_auth :data, :update, :destroy_relation
 
   before_action :find_project_by_project_id
   before_action :set_permissions
   before_action :ensure_view_permission, only: [:index, :data]
-  before_action :ensure_edit_permission, only: [:update]
+  before_action :ensure_edit_permission, only: [:update, :destroy_relation]
 
   # GET /projects/:project_id/canvas_gantt
   def index
     @i18n = {
+      field_id: l(:field_id),
       field_start_date: l(:field_start_date),
       field_due_date: l(:field_due_date),
+      button_edit: l(:button_edit),
+      button_delete: l(:button_delete),
       button_save: l(:button_save),
       button_cancel: l(:button_cancel),
       field_subject: l(:field_subject),
       field_status: l(:field_status),
-      label_day_plural: l(:label_day_plural)
+      label_day_plural: l(:label_day_plural),
+      label_relations_remove_heading: l(:label_relations_remove_heading),
+      label_relation_remove: l(:label_relation_remove),
+      label_relation_removed: l(:label_relation_removed),
+      label_relation_remove_failed: l(:label_relation_remove_failed),
+      label_relation_added: l(:label_relation_added),
+      label_relation_already_exists: l(:label_relation_already_exists)
     }
   end
 
@@ -29,10 +38,13 @@ class CanvasGanttsController < ApplicationController
       # This is a simplified fetch logic. Real implementation needs recursive query or similar for subtasks.
       issues = @project.issues.visible.includes(:relations_to, :relations_from, :status, :tracker, :assigned_to).all
       
-      tasks = issues.map do |issue|
+      tasks = issues.each_with_index.map do |issue, idx|
         {
           id: issue.id,
           subject: issue.subject,
+          project_id: issue.project_id,
+          project_name: issue.project.name,
+          display_order: idx,
           start_date: issue.start_date,
           due_date: issue.due_date,
           ratio_done: issue.done_ratio,
@@ -98,6 +110,38 @@ class CanvasGanttsController < ApplicationController
     render json: { error: 'Conflict: This task has been updated by another user. Please reload.' }, status: :conflict
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Task not found' }, status: :not_found
+  end
+
+  # DELETE /projects/:project_id/canvas_gantt/relations/:id.json
+  def destroy_relation
+    relation = IssueRelation.find(params[:id])
+
+    issue_from = relation.issue_from
+    issue_to = relation.issue_to
+
+    if issue_from.nil? || issue_to.nil?
+      render json: { error: 'Relation not found' }, status: :not_found
+      return
+    end
+
+    # Relations can be cross-project. Allow deletion when either side belongs to this project.
+    owned_issue = [issue_from, issue_to].find { |issue| issue.project_id == @project.id }
+    unless owned_issue
+      render json: { error: 'Relation not found in this project' }, status: :not_found
+      return
+    end
+
+    unless @permissions[:editable] && owned_issue.editable?
+      render json: { error: 'Permission denied' }, status: :forbidden
+      return
+    end
+
+    relation.destroy
+    render json: { status: 'ok' }
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: 'Relation not found' }, status: :not_found
+  rescue => e
+    render json: { error: e.message }, status: :internal_server_error
   end
 
   private

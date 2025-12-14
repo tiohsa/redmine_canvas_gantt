@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import type { Task, Relation, Viewport, ViewMode, ZoomLevel } from '../types';
+import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
+import { loadPreferences } from '../utils/preferences';
 
 interface TaskState {
     tasks: Task[];
@@ -9,6 +10,10 @@ interface TaskState {
     viewport: Viewport;
     viewMode: ViewMode;
     zoomLevel: ZoomLevel;
+    layoutRows: LayoutRow[];
+    rowCount: number;
+    groupByProject: boolean;
+    viewportFromStorage: boolean;
     selectedTaskId: string | null;
     hoveredTaskId: string | null;
     contextMenu: { x: number; y: number; taskId: string } | null;
@@ -16,6 +21,8 @@ interface TaskState {
     // Actions
     setTasks: (tasks: Task[]) => void;
     setRelations: (relations: Relation[]) => void;
+    addRelation: (relation: Relation) => void;
+    removeRelation: (relationId: string) => void;
     selectTask: (id: string | null) => void;
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
@@ -23,30 +30,90 @@ interface TaskState {
     updateViewport: (updates: Partial<Viewport>) => void;
     setViewMode: (mode: ViewMode) => void;
     setZoomLevel: (level: ZoomLevel) => void;
+    setGroupByProject: (grouped: boolean) => void;
 }
 
+const preferences = loadPreferences();
+
 const DEFAULT_VIEWPORT: Viewport = {
-    startDate: new Date().setFullYear(new Date().getFullYear() - 1),
-    scrollX: 0,
-    scrollY: 0,
-    scale: ZOOM_SCALES[1], // Default to Zoom 1 (Week)
+    startDate: preferences.viewport?.startDate ?? new Date().setFullYear(new Date().getFullYear() - 1),
+    scrollX: preferences.viewport?.scrollX ?? 0,
+    scrollY: preferences.viewport?.scrollY ?? 0,
+    scale: preferences.viewport?.scale ?? ZOOM_SCALES[preferences.zoomLevel ?? 1],
     width: 800,
     height: 600,
-    rowHeight: 40
+    rowHeight: 32
+};
+
+const buildLayout = (tasks: Task[], groupByProject: boolean): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
+    const groups = new Map<string, { projectId: string; projectName?: string; tasks: Task[]; order: number }>();
+
+    tasks.forEach((task, index) => {
+        const projectId = task.projectId ?? 'default_project';
+        if (!groups.has(projectId)) {
+            groups.set(projectId, {
+                projectId,
+                projectName: task.projectName,
+                tasks: [],
+                order: index
+            });
+        }
+
+        const group = groups.get(projectId);
+        if (group) {
+            group.tasks.push(task);
+            group.projectName = group.projectName || task.projectName;
+        }
+    });
+
+    const orderedGroups = Array.from(groups.values()).sort((a, b) => a.order - b.order);
+
+    let rowIndex = 0;
+    const arrangedTasks: Task[] = [];
+    const layoutRows: LayoutRow[] = [];
+
+    orderedGroups.forEach(group => {
+        if (groupByProject) {
+            layoutRows.push({ type: 'header', projectId: group.projectId, projectName: group.projectName, rowIndex });
+            rowIndex += 1;
+        }
+
+        const sortedTasks = [...group.tasks].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+        sortedTasks.forEach(task => {
+            const taskWithRow = { ...task, rowIndex };
+            arrangedTasks.push(taskWithRow);
+            layoutRows.push({ type: 'task', taskId: task.id, rowIndex });
+            rowIndex += 1;
+        });
+    });
+
+    return { tasks: arrangedTasks, layoutRows, rowCount: rowIndex };
 };
 
 export const useTaskStore = create<TaskState>((set) => ({
     tasks: [],
     relations: [],
     viewport: DEFAULT_VIEWPORT,
-    viewMode: 'Week',
-    zoomLevel: 1,
+    viewMode: preferences.viewMode ?? 'Week',
+    zoomLevel: preferences.zoomLevel ?? 1,
+    layoutRows: [],
+    rowCount: 0,
+    groupByProject: preferences.groupByProject ?? true,
+    viewportFromStorage: Boolean(preferences.viewport),
     selectedTaskId: null,
     hoveredTaskId: null,
     contextMenu: null,
 
-    setTasks: (tasks) => set({ tasks }),
+    setTasks: (tasks) => set((state) => buildLayout(tasks, state.groupByProject)),
     setRelations: (relations) => set({ relations }),
+    addRelation: (relation) => set((state) => {
+        const exists = state.relations.some(r => r.from === relation.from && r.to === relation.to && r.type === relation.type);
+        if (exists) return state;
+        return { relations: [...state.relations, relation] };
+    }),
+    removeRelation: (relationId) => set((state) => ({
+        relations: state.relations.filter(r => r.id !== relationId)
+    })),
     selectTask: (id) => set({ selectedTaskId: id }),
     setHoveredTask: (id) => set({ hoveredTaskId: id }),
     setContextMenu: (menu) => set({ contextMenu: menu }),
@@ -171,5 +238,10 @@ export const useTaskStore = create<TaskState>((set) => ({
             viewMode: mode,
             viewport: { ...state.viewport, scale: newScale, scrollX: newScrollX }
         };
-    })
+    }),
+
+    setGroupByProject: (grouped) => set((state) => ({
+        groupByProject: grouped,
+        ...buildLayout(state.tasks.map(t => ({ ...t })), grouped)
+    }))
 }));

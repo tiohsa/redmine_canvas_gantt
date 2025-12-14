@@ -17,13 +17,13 @@ export class TaskRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, tasks: Task[]) {
+    render(viewport: Viewport, tasks: Task[], rowCount: number) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, tasks.length);
+        const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount);
 
         // Filter visible tasks
         const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
@@ -62,7 +62,7 @@ export class TaskRenderer {
 
 
     // Spec Constants
-    private static readonly BAR_HEIGHT = 14;
+    private static readonly BAR_HEIGHT = 12;
     private static readonly CAP_WIDTH = 4; // Adjusted for visual balance 3-4px
     private static readonly CAP_OVERFLOW = 2; // Spec says 1, but 2 looks better for "End Cap" style
 

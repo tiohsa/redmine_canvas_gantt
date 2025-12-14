@@ -1,0 +1,7 @@
+en:
+  label_relations_remove_heading: "Remove dependency"
+  label_relation_remove: "Remove dependency"
+  label_relation_removed: "Dependency removed"
+  label_relation_remove_failed: "Failed to remove dependency"
+  label_relation_added: "Dependency created"
+  label_relation_already_exists: "Relation already exists"

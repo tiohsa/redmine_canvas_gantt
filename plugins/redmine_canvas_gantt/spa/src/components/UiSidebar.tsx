@@ -3,6 +3,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Task } from '../types';
 import { getStatusColor } from '../utils/styles';
+import { useUIStore } from '../stores/UIStore';
 
 const getInitials = (name?: string) => {
     if (!name) return '?';
@@ -31,13 +32,22 @@ const ProgressCircle = ({ ratio, statusId }: { ratio: number, statusId: number }
 
 export const UiSidebar: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
+    const layoutRows = useTaskStore(state => state.layoutRows);
+    const rowCount = useTaskStore(state => state.rowCount);
     const viewport = useTaskStore(state => state.viewport);
     const updateViewport = useTaskStore(state => state.updateViewport);
     const selectTask = useTaskStore(state => state.selectTask);
     const selectedTaskId = useTaskStore(state => state.selectedTaskId);
+    const visibleColumns = useUIStore(state => state.visibleColumns);
 
-    const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, tasks.length);
-    const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
+    const taskMap = React.useMemo(() => {
+        const map = new Map<string, Task>();
+        tasks.forEach(t => map.set(t.id, t));
+        return map;
+    }, [tasks]);
+
+    const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
+    const visibleRows = layoutRows.filter(row => row.rowIndex >= startRow && row.rowIndex <= endRow);
 
     const handleWheel = (e: React.WheelEvent) => {
         updateViewport({
@@ -46,6 +56,19 @@ export const UiSidebar: React.FC = () => {
     };
 
     const columns = [
+        {
+            key: 'id',
+            title: 'ID',
+            width: 72,
+            render: (t: Task) => (
+                <span
+                    data-testid={`task-id-${t.id}`}
+                    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', color: '#666' }}
+                >
+                    {t.id}
+                </span>
+            )
+        },
         {
             key: 'subject',
             title: 'Task Name',
@@ -58,7 +81,15 @@ export const UiSidebar: React.FC = () => {
                             <polyline points="6 9 12 15 18 9"></polyline>
                         </svg>
                     </div>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.subject}</span>
+                    <a
+                        href={`/issues/${t.id}/edit`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: '#1a73e8', textDecoration: 'none' }}
+                        title={t.subject}
+                    >
+                        {t.subject}
+                    </a>
                 </div>
             )
         },
@@ -131,6 +162,8 @@ export const UiSidebar: React.FC = () => {
         },
     ];
 
+    const activeColumns = columns.filter(col => col.key === 'subject' || visibleColumns.includes(col.key));
+
     return (
         <div
             style={{
@@ -145,8 +178,8 @@ export const UiSidebar: React.FC = () => {
             onWheel={handleWheel}
         >
             {/* Header */}
-            < div style={{
-                height: 48, // Taller header
+            <div style={{
+                height: 48,
                 borderBottom: '1px solid #e0e0e0',
                 display: 'flex',
                 fontWeight: 600,
@@ -155,7 +188,7 @@ export const UiSidebar: React.FC = () => {
                 fontSize: '13px'
             }}>
                 {
-                    columns.map((col, idx) => (
+                    activeColumns.map((col, idx) => (
                         <div key={idx} style={{
                             width: col.width,
                             padding: '0 8px',
@@ -168,13 +201,40 @@ export const UiSidebar: React.FC = () => {
                         </div>
                     ))
                 }
-            </div >
+            </div>
 
             {/* Body */}
-            < div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                 {
-                    visibleTasks.map(task => {
-                        const top = task.rowIndex * viewport.rowHeight - viewport.scrollY;
+                    visibleRows.map(row => {
+                        const top = row.rowIndex * viewport.rowHeight - viewport.scrollY;
+                        if (row.type === 'header') {
+                            return (
+                                <div
+                                    key={`header-${row.projectId}-${row.rowIndex}`}
+                                    style={{
+                                        position: 'absolute',
+                                        top,
+                                        left: 0,
+                                        height: viewport.rowHeight,
+                                        width: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        padding: '0 12px',
+                                        backgroundColor: '#f1f3f5',
+                                        color: '#333',
+                                        fontWeight: 700,
+                                        borderBottom: '1px solid #e0e0e0',
+                                        boxSizing: 'border-box'
+                                    }}
+                                >
+                                    {row.projectName || 'Project'}
+                                </div>
+                            );
+                        }
+
+                        const task = taskMap.get(row.taskId);
+                        if (!task) return null;
                         const isSelected = task.id === selectedTaskId;
 
                         return (
@@ -196,7 +256,7 @@ export const UiSidebar: React.FC = () => {
                                     transition: 'background-color 0.1s'
                                 }}
                             >
-                                {columns.map((col, idx) => (
+                                {activeColumns.map((col, idx) => (
                                     <div key={idx} style={{
                                         width: col.width,
                                         padding: '0 8px',
@@ -213,7 +273,7 @@ export const UiSidebar: React.FC = () => {
                         );
                     })
                 }
-            </div >
-        </div >
+            </div>
+        </div>
     );
 };
