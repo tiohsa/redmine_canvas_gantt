@@ -32,8 +32,20 @@ const BatchEditDialog: React.FC = () => {
     const [metaLoaded, setMetaLoaded] = React.useState(false);
 
     // Merge existing tasks with newTasks for display
+    // Insert newTasks after the task they were added from (afterTaskId)
     const displayTasks = React.useMemo(() => {
-        return [...tasks, ...newTasks as Task[]];
+        const result: Task[] = [];
+        const newTasksWithAfter = newTasks as (Partial<Task> & { afterTaskId?: string })[];
+        tasks.forEach(task => {
+            result.push(task);
+            // Insert newTasks that should appear after this task
+            const newTasksAfterThis = newTasksWithAfter.filter(nt => nt.afterTaskId === task.id);
+            result.push(...newTasksAfterThis as Task[]);
+        });
+        // Add newTasks without afterTaskId at the end
+        const orphanNewTasks = newTasksWithAfter.filter(nt => !nt.afterTaskId);
+        result.push(...orphanNewTasks as Task[]);
+        return result;
     }, [tasks, newTasks]);
 
     const [isSaving, setIsSaving] = React.useState(false);
@@ -128,7 +140,7 @@ const BatchEditDialog: React.FC = () => {
         }
     };
 
-    const handleCancel = () => {
+    const handleCancel = React.useCallback(() => {
         const hasChanges = Object.keys(updates).length > 0 || newTasks.length > 0;
         if (hasChanges) {
             if (!confirm('You have unsaved changes. Discard?')) {
@@ -136,7 +148,7 @@ const BatchEditDialog: React.FC = () => {
             }
         }
         setBatchEditMode(false);
-    };
+    }, [updates, newTasks, setBatchEditMode]);
 
     // Keyboard shortcut for Esc
     React.useEffect(() => {
@@ -145,7 +157,7 @@ const BatchEditDialog: React.FC = () => {
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [updates, newTasks]);
+    }, [handleCancel]);
 
     return (
         <div style={{
@@ -259,7 +271,7 @@ const EditableRow: React.FC<EditableRowProps> = ({ task, columns }) => {
     // Merge original task with updates
     const currentTask = { ...task, ...(updates[task.id] || {}) };
     const changed = Boolean(updates[task.id]);
-    const isDeleted = deletedTaskIds?.includes(task.id);
+    const isDeleted = Array.isArray(deletedTaskIds) && deletedTaskIds.includes(task.id);
 
     const { metaByTaskId, fetchEditMeta } = useEditMetaStore();
     const meta = metaByTaskId[task.id];

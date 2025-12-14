@@ -69,21 +69,21 @@ export const useBatchEditStore = create<BatchEditState>((set, get) => ({
         });
     },
 
-    addNewTask: (parentId, _afterTaskId) => {
+    addNewTask: (parentId, afterTaskId) => {
         // Implementation for adding a placeholder new task
         // We need a temporary ID for it.
         const tempId = `new_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const newTask: Partial<Task> = {
+        const newTask: Partial<Task> & { afterTaskId?: string } = {
             id: tempId,
             subject: '',
             parentId: parentId ?? undefined,
+            afterTaskId: afterTaskId ?? undefined,
             // copying some defaults or inferred values
             startDate: Date.now(),
             dueDate: Date.now() + 86400000,
             ratioDone: 0,
             statusId: 1, // Default New
             editable: true,
-            // We might need to handle 'afterTaskId' for sorting order if we support reordering or strict placement
         };
 
         set(state => ({
