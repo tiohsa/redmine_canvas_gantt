@@ -4,7 +4,7 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Task } from '../types';
 import { getStatusColor } from '../utils/styles';
 import { useUIStore } from '../stores/UIStore';
-import { TaskDetailPanel } from './TaskDetailPanel';
+
 import { DoneRatioEditor, DueDateEditor, SelectEditor, SubjectEditor } from './TaskDetailPanel';
 import { useEditMetaStore } from '../stores/EditMetaStore';
 import type { InlineEditSettings, TaskEditMeta } from '../types/editMeta';
@@ -180,6 +180,56 @@ export const UiSidebar: React.FC = () => {
         });
     };
 
+    const renderEditableCell = (t: Task, field: string, content: React.ReactNode) => {
+        return (
+            <div
+                className="task-cell-editable"
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    width: '100%',
+                    height: '100%',
+                    position: 'relative'
+                }}
+            >
+                <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {content}
+                </div>
+                <button
+                    className="edit-icon"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        void startCellEdit(t, field);
+                    }}
+                    style={{
+                        marginLeft: 4,
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        opacity: 0,
+                        color: '#999',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 2,
+                        flexShrink: 0
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                </button>
+                <style>{`
+                    .task-cell-editable:hover .edit-icon { opacity: 1 !important; }
+                `}</style>
+            </div>
+        );
+    };
+
     const columns = [
         {
             key: 'id',
@@ -247,7 +297,7 @@ export const UiSidebar: React.FC = () => {
                         href={`/issues/${t.id}/edit`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: '#1a73e8', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: '#1a73e8', textDecoration: 'none', whiteSpace: 'nowrap', flex: 1 }}
                         title={t.subject}
                     >
                         {t.subject}
@@ -257,22 +307,14 @@ export const UiSidebar: React.FC = () => {
                         onClick={(e) => {
                             e.stopPropagation();
                             e.preventDefault();
-                            // We need to access startCellEdit here, but we are in columns definition. 
-                            // We can't access startCellEdit directly here efficiently without prop drilling or context.
-                            // OR we can change this render to NOT be inline in the definition but inside the component loop.
-                            // Actually, `startCellEdit` is available in the component scope, but `columns` is defined inside `UiSidebar` component scope.
-                            // So we CAN call `startCellEdit(t, 'subject')`.
                             void startCellEdit(t, 'subject');
                         }}
                         style={{
-                            marginLeft: 'auto',
+                            marginLeft: 4,
                             background: 'transparent',
                             border: 'none',
                             cursor: 'pointer',
-                            opacity: 0, // Hidden by default, shown on hover (handled by CSS or onMouseEnter/Leave state? CSS is better but we are in inline styles). 
-                            // Using opacity 0.5 for now as "always visible" is safer if we can't do hover easily in inline styles without state.
-                            // Or better: Use a simple opacity logic if we can. 
-                            // Let's just make it visible but subtle.
+                            opacity: 0,
                             color: '#999',
                             display: 'flex',
                             alignItems: 'center',
@@ -298,7 +340,7 @@ export const UiSidebar: React.FC = () => {
             width: columnWidths['status'] ?? 100,
             render: (t: Task) => {
                 const style = getStatusColor(t.statusId);
-                return (
+                return renderEditableCell(t, 'statusId', (
                     <span style={{
                         backgroundColor: style.bg,
                         color: style.text,
@@ -311,53 +353,65 @@ export const UiSidebar: React.FC = () => {
                     }}>
                         {style.label}
                     </span>
-                );
+                ));
             }
         },
         {
             key: 'assignee',
             title: 'Assignee',
             width: columnWidths['assignee'] ?? 80,
-            render: (t: Task) => (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+            render: (t: Task) => renderEditableCell(t, 'assignedToId', (
+                <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                     {t.assignedToName && (
-                        <div style={{
-                            width: '24px',
-                            height: '24px',
-                            borderRadius: '50%',
-                            backgroundColor: '#bdbdbd',
-                            display: 'flex',
-                            alignItems: 'center',
-                            color: 'white',
-                            justifyContent: 'center',
-                            fontSize: '10px'
-                        }}
-                            title={t.assignedToName}
-                        >
-                            {/* In real app, check for avatar URL */}
-                            {getInitials(t.assignedToName)}
-                        </div>
+                        <>
+                            <div style={{
+                                width: '24px',
+                                height: '24px',
+                                borderRadius: '50%',
+                                backgroundColor: '#bdbdbd',
+                                display: 'flex',
+                                alignItems: 'center',
+                                color: 'white',
+                                justifyContent: 'center',
+                                fontSize: '10px',
+                                marginRight: 4,
+                                flexShrink: 0
+                            }}
+                                title={t.assignedToName}
+                            >
+                                {getInitials(t.assignedToName)}
+                            </div>
+                            <span style={{ fontSize: 12, color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {t.assignedToName}
+                            </span>
+                        </>
                     )}
                 </div>
-            )
+            ))
         },
         {
             key: 'startDate',
             title: 'Start Date',
             width: columnWidths['startDate'] ?? 90,
-            render: (t: Task) => <span style={{ color: '#666' }}>{Number.isFinite(t.startDate) ? new Date(t.startDate).toLocaleDateString() : '-'}</span>
+            render: (t: Task) => renderEditableCell(t, 'startDate', (
+                <span style={{ color: '#666' }}>{Number.isFinite(t.startDate) ? new Date(t.startDate).toLocaleDateString() : '-'}</span>
+            ))
         },
         {
             key: 'dueDate',
             title: 'Due Date',
             width: columnWidths['dueDate'] ?? 90,
-            render: (t: Task) => <span style={{ color: '#666' }}>{Number.isFinite(t.dueDate) ? new Date(t.dueDate).toLocaleDateString() : '-'}</span>
+            render: (t: Task) => renderEditableCell(t, 'dueDate', (
+                <span style={{ color: '#666' }}>{Number.isFinite(t.dueDate) ? new Date(t.dueDate).toLocaleDateString() : '-'}</span>
+            ))
         },
         {
             key: 'ratioDone',
             title: 'Progress',
             width: columnWidths['ratioDone'] ?? 80,
-            render: (t: Task) => <ProgressCircle ratio={t.ratioDone} statusId={t.statusId} />
+            render: (t: Task) => renderEditableCell(t, 'doneRatio', (
+                <ProgressCircle ratio={t.ratioDone} statusId={t.statusId} />
+            ))
         },
     ];
 
@@ -744,9 +798,7 @@ export const UiSidebar: React.FC = () => {
             </div>
 
             {/* Level 1: Inline detail panel (Level 2+ edits live here) */}
-            <div style={{ flexShrink: 0, maxHeight: 260, overflow: 'auto' }}>
-                <TaskDetailPanel />
-            </div>
+
         </div>
     );
 };
