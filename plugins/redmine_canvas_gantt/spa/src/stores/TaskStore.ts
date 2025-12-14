@@ -5,6 +5,7 @@ import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences } from '../utils/preferences';
 
 interface TaskState {
+    allTasks: Task[];
     tasks: Task[];
     relations: Relation[];
     viewport: Viewport;
@@ -17,6 +18,8 @@ interface TaskState {
     selectedTaskId: string | null;
     hoveredTaskId: string | null;
     contextMenu: { x: number; y: number; taskId: string } | null;
+    projectExpansion: Record<string, boolean>;
+    taskExpansion: Record<string, boolean>;
 
     // Actions
     setTasks: (tasks: Task[]) => void;
@@ -31,6 +34,8 @@ interface TaskState {
     setViewMode: (mode: ViewMode) => void;
     setZoomLevel: (level: ZoomLevel) => void;
     setGroupByProject: (grouped: boolean) => void;
+    toggleProjectExpansion: (projectId: string) => void;
+    toggleTaskExpansion: (taskId: string) => void;
 }
 
 const preferences = loadPreferences();
@@ -45,52 +50,99 @@ const DEFAULT_VIEWPORT: Viewport = {
     rowHeight: 32
 };
 
-const buildLayout = (tasks: Task[], groupByProject: boolean): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
-    const groups = new Map<string, { projectId: string; projectName?: string; tasks: Task[]; order: number }>();
+const buildLayout = (
+    tasks: Task[],
+    groupByProject: boolean,
+    projectExpansion: Record<string, boolean>,
+    taskExpansion: Record<string, boolean>
+): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
+    const normalizedTasks = tasks.map((task) => ({ ...task, hasChildren: false }));
 
-    tasks.forEach((task, index) => {
+    const nodeMap = new Map<string, { task: Task; children: string[] }>();
+    normalizedTasks.forEach((task) => nodeMap.set(task.id, { task, children: [] }));
+
+    const projectOrder = new Map<string, number>();
+    const projectRoots = new Map<string, string[]>();
+
+    normalizedTasks.forEach((task, index) => {
         const projectId = task.projectId ?? 'default_project';
-        if (!groups.has(projectId)) {
-            groups.set(projectId, {
-                projectId,
-                projectName: task.projectName,
-                tasks: [],
-                order: index
-            });
+        if (!projectOrder.has(projectId)) {
+            projectOrder.set(projectId, index);
         }
 
-        const group = groups.get(projectId);
-        if (group) {
-            group.tasks.push(task);
-            group.projectName = group.projectName || task.projectName;
+        if (task.parentId && nodeMap.has(task.parentId)) {
+            const parentNode = nodeMap.get(task.parentId);
+            parentNode?.children.push(task.id);
+            if (parentNode) {
+                parentNode.task.hasChildren = true;
+            }
+        } else {
+            if (!projectRoots.has(projectId)) {
+                projectRoots.set(projectId, []);
+            }
+            projectRoots.get(projectId)?.push(task.id);
         }
     });
 
-    const orderedGroups = Array.from(groups.values()).sort((a, b) => a.order - b.order);
+    // Sort children and root nodes by displayOrder for stable rendering
+    nodeMap.forEach((node) => {
+        node.children.sort((a, b) => {
+            const taskA = nodeMap.get(a)?.task;
+            const taskB = nodeMap.get(b)?.task;
+            return (taskA?.displayOrder ?? 0) - (taskB?.displayOrder ?? 0);
+        });
+    });
+
+    projectRoots.forEach((roots) => {
+        roots.sort((a, b) => {
+            const taskA = nodeMap.get(a)?.task;
+            const taskB = nodeMap.get(b)?.task;
+            return (taskA?.displayOrder ?? 0) - (taskB?.displayOrder ?? 0);
+        });
+    });
+
+    const orderedProjects = Array.from(projectRoots.keys()).sort((a, b) => (projectOrder.get(a) ?? 0) - (projectOrder.get(b) ?? 0));
 
     let rowIndex = 0;
     const arrangedTasks: Task[] = [];
     const layoutRows: LayoutRow[] = [];
 
-    orderedGroups.forEach(group => {
-        if (groupByProject) {
-            layoutRows.push({ type: 'header', projectId: group.projectId, projectName: group.projectName, rowIndex });
+    const traverse = (taskId: string, depth: number, hiddenByAncestor: boolean) => {
+        const node = nodeMap.get(taskId);
+        if (!node) return;
+
+        const isExpanded = taskExpansion[taskId] ?? true;
+        const shouldHideChildren = hiddenByAncestor || !isExpanded;
+
+        if (!hiddenByAncestor) {
+            const taskWithLayout: Task = { ...node.task, indentLevel: depth, rowIndex };
+            arrangedTasks.push(taskWithLayout);
+            layoutRows.push({ type: 'task', taskId: taskWithLayout.id, rowIndex });
             rowIndex += 1;
         }
 
-        const sortedTasks = [...group.tasks].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
-        sortedTasks.forEach(task => {
-            const taskWithRow = { ...task, rowIndex };
-            arrangedTasks.push(taskWithRow);
-            layoutRows.push({ type: 'task', taskId: task.id, rowIndex });
+        node.children.forEach((childId) => traverse(childId, depth + 1, shouldHideChildren));
+    };
+
+    orderedProjects.forEach((projectId) => {
+        const roots = projectRoots.get(projectId) ?? [];
+        const projectName = nodeMap.get(roots[0] ?? '')?.task.projectName;
+        const expanded = projectExpansion[projectId] ?? true;
+
+        if (groupByProject) {
+            layoutRows.push({ type: 'header', projectId, projectName, rowIndex });
             rowIndex += 1;
-        });
+        }
+
+        const hideDescendants = groupByProject ? !expanded : false;
+        roots.forEach((rootId) => traverse(rootId, 0, hideDescendants));
     });
 
     return { tasks: arrangedTasks, layoutRows, rowCount: rowIndex };
 };
 
 export const useTaskStore = create<TaskState>((set) => ({
+    allTasks: [],
     tasks: [],
     relations: [],
     viewport: DEFAULT_VIEWPORT,
@@ -103,8 +155,30 @@ export const useTaskStore = create<TaskState>((set) => ({
     selectedTaskId: null,
     hoveredTaskId: null,
     contextMenu: null,
+    projectExpansion: {},
+    taskExpansion: {},
 
-    setTasks: (tasks) => set((state) => buildLayout(tasks, state.groupByProject)),
+    setTasks: (tasks) => set((state) => {
+        const projectExpansion = { ...state.projectExpansion };
+        const taskExpansion = { ...state.taskExpansion };
+
+        tasks.forEach((task) => {
+            const projectId = task.projectId ?? 'default_project';
+            if (projectExpansion[projectId] === undefined) projectExpansion[projectId] = true;
+            if (taskExpansion[task.id] === undefined) taskExpansion[task.id] = true;
+        });
+
+        const layout = buildLayout(tasks, state.groupByProject, projectExpansion, taskExpansion);
+
+        return {
+            allTasks: tasks,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount,
+            projectExpansion,
+            taskExpansion
+        };
+    }),
     setRelations: (relations) => set({ relations }),
     addRelation: (relation) => set((state) => {
         const exists = state.relations.some(r => r.from === relation.from && r.to === relation.to && r.type === relation.type);
@@ -119,7 +193,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     setContextMenu: (menu) => set({ contextMenu: menu }),
 
     updateTask: (id, updates) => set((state) => {
-        const task = state.tasks.find(t => t.id === id);
+        const task = state.allTasks.find(t => t.id === id);
         if (!task) return state;
 
         // 1. Check editability
@@ -135,7 +209,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         // For now logging warnings, but we could prevent update if invalid
         TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
 
-        let currentTasks = state.tasks.map(t => t.id === id ? updatedTask : t);
+        let currentTasks = state.allTasks.map(t => t.id === id ? updatedTask : t);
         const pendingUpdates = new Map<string, Partial<Task>>();
 
         // 4. Check dependencies (snap successors)
@@ -175,13 +249,20 @@ export const useTaskStore = create<TaskState>((set) => ({
         });
 
         // Final application of all updates
-        const finalTasks = state.tasks.map(t => {
+        const finalTasks = state.allTasks.map(t => {
             if (t.id === id) return updatedTask;
             if (pendingUpdates.has(t.id)) return { ...t, ...pendingUpdates.get(t.id) };
             return t;
         });
 
-        return { tasks: finalTasks };
+        const layout = buildLayout(finalTasks, state.groupByProject, state.projectExpansion, state.taskExpansion);
+
+        return {
+            allTasks: finalTasks,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
     }),
 
     updateViewport: (updates) => set((state) => ({
@@ -240,8 +321,35 @@ export const useTaskStore = create<TaskState>((set) => ({
         };
     }),
 
-    setGroupByProject: (grouped) => set((state) => ({
-        groupByProject: grouped,
-        ...buildLayout(state.tasks.map(t => ({ ...t })), grouped)
-    }))
+    setGroupByProject: (grouped) => set((state) => {
+        const layout = buildLayout(state.allTasks, grouped, state.projectExpansion, state.taskExpansion);
+        return {
+            groupByProject: grouped,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+
+    toggleProjectExpansion: (projectId) => set((state) => {
+        const projectExpansion = { ...state.projectExpansion, [projectId]: !(state.projectExpansion[projectId] ?? true) };
+        const layout = buildLayout(state.allTasks, state.groupByProject, projectExpansion, state.taskExpansion);
+        return {
+            projectExpansion,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+
+    toggleTaskExpansion: (taskId) => set((state) => {
+        const taskExpansion = { ...state.taskExpansion, [taskId]: !(state.taskExpansion[taskId] ?? true) };
+        const layout = buildLayout(state.allTasks, state.groupByProject, state.projectExpansion, taskExpansion);
+        return {
+            taskExpansion,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    })
 }));

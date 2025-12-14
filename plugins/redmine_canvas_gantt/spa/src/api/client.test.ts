@@ -4,7 +4,7 @@ import { apiClient } from './client';
 describe('apiClient.fetchData', () => {
     afterEach(() => {
         vi.restoreAllMocks();
-        delete (window as any).RedmineCanvasGantt;
+        delete window.RedmineCanvasGantt;
     });
 
     it('normalizes relations (from/to/id) to string', async () => {
@@ -68,7 +68,7 @@ describe('apiClient.fetchData', () => {
 describe('apiClient.createRelation', () => {
     afterEach(() => {
         vi.restoreAllMocks();
-        delete (window as any).RedmineCanvasGantt;
+        delete window.RedmineCanvasGantt;
     });
 
     it('parses relation id when API returns {relation: {...}}', async () => {

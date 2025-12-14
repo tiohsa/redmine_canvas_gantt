@@ -2,11 +2,11 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'vite_asset_helper').to_s
 
   helper RedmineCanvasGantt::ViteAssetHelper
-  accept_api_auth :data, :update, :destroy_relation
+  accept_api_auth :data, :edit_meta, :update, :destroy_relation
 
   before_action :find_project_by_project_id
   before_action :set_permissions
-  before_action :ensure_view_permission, only: [:index, :data]
+  before_action :ensure_view_permission, only: [:index, :data, :edit_meta]
   before_action :ensure_edit_permission, only: [:update, :destroy_relation]
 
   # GET /projects/:project_id/canvas_gantt
@@ -15,6 +15,8 @@ class CanvasGanttsController < ApplicationController
       field_id: l(:field_id),
       field_start_date: l(:field_start_date),
       field_due_date: l(:field_due_date),
+      field_assigned_to: l(:field_assigned_to),
+      field_done_ratio: l(:field_done_ratio),
       button_edit: l(:button_edit),
       button_delete: l(:button_delete),
       button_save: l(:button_save),
@@ -27,8 +29,11 @@ class CanvasGanttsController < ApplicationController
       label_relation_removed: l(:label_relation_removed),
       label_relation_remove_failed: l(:label_relation_remove_failed),
       label_relation_added: l(:label_relation_added),
-      label_relation_already_exists: l(:label_relation_already_exists)
+      label_relation_already_exists: l(:label_relation_already_exists),
+      label_unassigned: l(:label_none)
     }
+
+    @settings = Setting.plugin_redmine_canvas_gantt || {}
   end
 
   # GET /projects/:project_id/canvas_gantt/data.json
@@ -53,7 +58,9 @@ class CanvasGanttsController < ApplicationController
           assigned_to_name: issue.assigned_to&.name,
           parent_id: issue.parent_id,
           lock_version: issue.lock_version, # Critical for Optimistic Locking
-          editable: @permissions[:editable] && issue.editable?
+          editable: @permissions[:editable] && issue.editable?,
+          tracker_id: issue.tracker_id,
+          tracker_name: issue.tracker&.name
         }
       end
 
@@ -82,6 +89,87 @@ class CanvasGanttsController < ApplicationController
     end
   end
 
+  # GET /projects/:project_id/canvas_gantt/tasks/:id/edit_meta.json
+  def edit_meta
+    issue = Issue.visible.find(params[:id])
+
+    if issue.project_id != @project.id
+      render json: { error: 'Issue not found in this project' }, status: :not_found
+      return
+    end
+
+    editable = @permissions[:editable] && issue.editable?
+
+    field_editable = {
+      subject: editable && issue.safe_attribute?('subject'),
+      assigned_to_id: editable && issue.safe_attribute?('assigned_to_id'),
+      status_id: editable && issue.safe_attribute?('status_id'),
+      done_ratio: editable && issue.safe_attribute?('done_ratio'),
+      due_date: editable && issue.safe_attribute?('due_date'),
+      custom_field_values: editable && issue.safe_attribute?('custom_field_values')
+    }
+
+    statuses = issue.new_statuses_allowed_to(User.current).to_a
+    statuses << issue.status if issue.status && !statuses.include?(issue.status)
+    statuses = statuses.uniq.sort_by(&:position)
+
+    assignables = issue.assignable_users.to_a
+    assignables = assignables.sort_by { |u| u.name.to_s.downcase }
+
+    settings = Setting.plugin_redmine_canvas_gantt || {}
+    custom_fields_enabled = settings['inline_edit_custom_fields'].to_s == '1'
+
+    custom_fields = []
+    custom_field_values = {}
+
+    if custom_fields_enabled && field_editable[:custom_field_values]
+      issue.custom_field_values.each do |cfv|
+        cf = cfv.custom_field
+        next unless cf
+        next if cf.multiple?
+        next unless %w[string int float list bool date text].include?(cf.field_format.to_s)
+
+        custom_fields << {
+          id: cf.id,
+          name: cf.name,
+          field_format: cf.field_format,
+          is_required: cf.is_required,
+          regexp: cf.regexp,
+          min_length: cf.min_length,
+          max_length: cf.max_length,
+          possible_values: (cf.field_format.to_s == 'list' ? cf.possible_values : nil),
+          text_formatting: (cf.field_format.to_s == 'text' ? (cf.text_formatting rescue nil) : nil)
+        }
+
+        custom_field_values[cf.id.to_s] = cfv.value
+      end
+    end
+
+    render json: {
+      task: {
+        id: issue.id,
+        subject: issue.subject,
+        assigned_to_id: issue.assigned_to_id,
+        status_id: issue.status_id,
+        done_ratio: issue.done_ratio,
+        due_date: issue.due_date,
+        lock_version: issue.lock_version
+      },
+      editable: field_editable,
+      options: {
+        statuses: statuses.map { |s| { id: s.id, name: s.name } },
+        assignees: assignables.map { |u| { id: u.id, name: u.name } },
+        custom_fields: custom_fields
+      },
+      custom_field_values: custom_field_values,
+      permissions: @permissions
+    }
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: 'Task not found' }, status: :not_found
+  rescue => e
+    render json: { error: e.message }, status: :internal_server_error
+  end
+
   # PATCH /projects/:project_id/canvas_gantt/tasks/:id.json
   def update
     issue = Issue.visible.find(params[:id])
@@ -99,7 +187,16 @@ class CanvasGanttsController < ApplicationController
 
     # Optimistic Locking Check handled by ActiveRecord automatically if lock_version is present
     issue.init_journal(User.current)
-    issue.safe_attributes = params.require(:task).permit(:start_date, :due_date, :lock_version)
+    issue.safe_attributes = params.require(:task).permit(
+      :start_date,
+      :due_date,
+      :lock_version,
+      :subject,
+      :assigned_to_id,
+      :status_id,
+      :done_ratio,
+      custom_field_values: {}
+    )
 
     if issue.save
       render json: { status: 'ok', lock_version: issue.lock_version }
