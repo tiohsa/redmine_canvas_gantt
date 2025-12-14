@@ -20,6 +20,7 @@ export const HtmlOverlay: React.FC = () => {
     const draftRef = React.useRef<typeof draft>(null);
 
     const hoveredTask = hoveredTaskId ? tasks.find(t => t.id === hoveredTaskId) : null;
+    const contextTask = contextMenu ? tasks.find(t => t.id === contextMenu.taskId) : null;
 
     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
     const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
@@ -98,6 +99,20 @@ export const HtmlOverlay: React.FC = () => {
         if (!contextMenu) return [];
         return relations.filter(r => r.from === contextMenu.taskId || r.to === contextMenu.taskId);
     }, [contextMenu, relations]);
+
+    const getTaskLabel = React.useCallback((taskId: string) => {
+        const task = tasks.find(t => t.id === taskId);
+        return {
+            id: taskId,
+            subject: task?.subject ? task.subject : taskId
+        };
+    }, [tasks]);
+
+    const formatRelationLabel = React.useCallback((rel: { from: string; to: string }) => {
+        const from = getTaskLabel(rel.from);
+        const to = getTaskLabel(rel.to);
+        return { from, to };
+    }, [getTaskLabel]);
 
     const handleRemoveRelation = React.useCallback(async (relationId: string) => {
         try {
@@ -209,16 +224,53 @@ export const HtmlOverlay: React.FC = () => {
                     <ul style={{ listStyle: 'none', margin: 0, padding: '4px' }}>
                         <li style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onClick={() => setContextMenu(null)}>{i18n.t('button_edit')}</li>
                         <li style={{ padding: '8px 12px', cursor: 'pointer', color: 'red', borderBottom: relatedRelations.length > 0 ? '1px solid #eee' : undefined }} onClick={() => setContextMenu(null)}>{i18n.t('button_delete')}</li>
-                        {relatedRelations.map((rel) => (
-                            <li
-                                key={rel.id}
-                                data-testid={`remove-relation-${rel.id}`}
-                                style={{ padding: '8px 12px', cursor: 'pointer', color: '#d32f2f' }}
-                                onClick={() => handleRemoveRelation(rel.id)}
-                            >
-                                {i18n.t('label_relation_remove') || 'Remove dependency'} ({rel.from} → {rel.to})
+                        {relatedRelations.length > 0 && (
+                            <li style={{
+                                padding: '8px 12px',
+                                fontSize: '12px',
+                                color: '#666',
+                                borderBottom: '1px solid #eee'
+                            }}>
+                                {i18n.t('label_relations_remove_heading') || 'Remove dependency'}
+                                {contextTask ? (
+                                    <span style={{ marginLeft: 8, color: '#999' }}>
+                                        ({contextTask.subject} #{contextTask.id})
+                                    </span>
+                                ) : null}
                             </li>
-                        ))}
+                        )}
+                        {relatedRelations.map((rel) => {
+                            const { from, to } = formatRelationLabel(rel);
+                            const fromIsContext = contextMenu.taskId === from.id;
+                            const toIsContext = contextMenu.taskId === to.id;
+                            const emphasisId = (fromIsContext ? from.id : (toIsContext ? to.id : null));
+                            const direction = fromIsContext ? '→' : '←';
+
+                            return (
+                                <li
+                                    key={rel.id}
+                                    data-testid={`remove-relation-${rel.id}`}
+                                    style={{ padding: '8px 12px', cursor: 'pointer', color: '#d32f2f' }}
+                                    onClick={() => handleRemoveRelation(rel.id)}
+                                >
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 260 }}>
+                                        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                                            <span style={{ fontWeight: 700 }}>{i18n.t('label_relation_remove') || 'Remove dependency'}</span>
+                                            <span style={{ fontSize: 12, color: '#999' }}>#{rel.id}</span>
+                                        </div>
+                                        <div style={{ fontSize: 12, color: '#444', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            <span style={{ fontWeight: emphasisId === from.id ? 700 : 400 }}>
+                                                {from.subject} #{from.id}
+                                            </span>
+                                            <span style={{ margin: '0 6px', color: '#999' }}>{direction}</span>
+                                            <span style={{ fontWeight: emphasisId === to.id ? 700 : 400 }}>
+                                                {to.subject} #{to.id}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </li>
+                            );
+                        })}
                     </ul>
                 </div>
             )}

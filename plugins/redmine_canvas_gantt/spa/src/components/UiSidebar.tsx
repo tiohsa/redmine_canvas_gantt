@@ -57,6 +57,19 @@ export const UiSidebar: React.FC = () => {
 
     const columns = [
         {
+            key: 'id',
+            title: 'ID',
+            width: 72,
+            render: (t: Task) => (
+                <span
+                    data-testid={`task-id-${t.id}`}
+                    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', color: '#666' }}
+                >
+                    {t.id}
+                </span>
+            )
+        },
+        {
             key: 'subject',
             title: 'Task Name',
             width: 280,

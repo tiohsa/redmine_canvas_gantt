@@ -25,7 +25,9 @@ interface UIState {
 export const useUIStore = create<UIState>((set) => ({
     notifications: [],
     showProgressLine: preferences.showProgressLine ?? false,
-    visibleColumns: preferences.visibleColumns ?? DEFAULT_COLUMNS,
+    visibleColumns: preferences.visibleColumns
+        ? Array.from(new Set([...preferences.visibleColumns, 'id']))
+        : ['id', ...DEFAULT_COLUMNS],
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({

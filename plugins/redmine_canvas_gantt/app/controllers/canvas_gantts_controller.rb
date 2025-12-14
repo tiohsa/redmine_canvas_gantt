@@ -12,6 +12,7 @@ class CanvasGanttsController < ApplicationController
   # GET /projects/:project_id/canvas_gantt
   def index
     @i18n = {
+      field_id: l(:field_id),
       field_start_date: l(:field_start_date),
       field_due_date: l(:field_due_date),
       button_edit: l(:button_edit),
@@ -21,6 +22,7 @@ class CanvasGanttsController < ApplicationController
       field_subject: l(:field_subject),
       field_status: l(:field_status),
       label_day_plural: l(:label_day_plural),
+      label_relations_remove_heading: l(:label_relations_remove_heading),
       label_relation_remove: l(:label_relation_remove),
       label_relation_removed: l(:label_relation_removed),
       label_relation_remove_failed: l(:label_relation_remove_failed),

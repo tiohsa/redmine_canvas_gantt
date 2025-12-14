@@ -38,6 +38,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     };
 
     const columnOptions = [
+        { key: 'id', label: 'ID' },
         { key: 'status', label: 'Status' },
         { key: 'assignee', label: 'Assignee' },
         { key: 'startDate', label: 'Start Date' },

@@ -1,7 +1,7 @@
 ja:
+  label_relations_remove_heading: "解除する依存関係"
   label_relation_remove: "依存関係を解除"
   label_relation_removed: "依存関係を解除しました"
   label_relation_remove_failed: "依存関係の解除に失敗しました"
   label_relation_added: "依存関係を追加しました"
   label_relation_already_exists: "依存関係は既に存在します"
-
