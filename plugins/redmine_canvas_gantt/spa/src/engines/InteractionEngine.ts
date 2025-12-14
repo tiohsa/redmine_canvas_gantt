@@ -31,6 +31,43 @@ export class InteractionEngine {
         this.attachEvents();
     }
 
+    private panViewportByPixels(deltaX: number, deltaY: number) {
+        const { viewport, updateViewport } = useTaskStore.getState();
+        const scale = viewport.scale || 0.00000001;
+
+        // Horizontal: keep scrollX >= 0 by shifting startDate when overscrolling to the past.
+        let nextScrollX = viewport.scrollX - deltaX;
+        let nextStartDate = viewport.startDate;
+        if (nextScrollX < 0) {
+            nextStartDate = viewport.startDate + (nextScrollX / scale);
+            nextScrollX = 0;
+        }
+
+        updateViewport({
+            startDate: nextStartDate,
+            scrollX: nextScrollX,
+            scrollY: Math.max(0, viewport.scrollY - deltaY)
+        });
+    }
+
+    private scrollViewportByWheel(deltaX: number, deltaY: number) {
+        const { viewport, updateViewport } = useTaskStore.getState();
+        const scale = viewport.scale || 0.00000001;
+
+        let nextScrollX = viewport.scrollX + deltaX;
+        let nextStartDate = viewport.startDate;
+        if (nextScrollX < 0) {
+            nextStartDate = viewport.startDate + (nextScrollX / scale);
+            nextScrollX = 0;
+        }
+
+        updateViewport({
+            startDate: nextStartDate,
+            scrollX: nextScrollX,
+            scrollY: Math.max(0, viewport.scrollY + deltaY)
+        });
+    }
+
     private attachEvents() {
         this.container.addEventListener('mousedown', this.handleMouseDown);
         window.addEventListener('mousemove', this.handleMouseMove);
@@ -141,7 +178,7 @@ export class InteractionEngine {
     };
 
     private handleMouseMove = (e: MouseEvent) => {
-        const { viewport, updateViewport, updateTask, setHoveredTask } = useTaskStore.getState();
+        const { viewport, updateTask, setHoveredTask } = useTaskStore.getState();
 
         // Hover logic
         const rect = this.container.getBoundingClientRect();
@@ -167,10 +204,7 @@ export class InteractionEngine {
         const dy = e.clientY - this.drag.startY;
 
         if (this.drag.mode === 'pan') {
-            updateViewport({
-                scrollX: Math.max(0, viewport.scrollX - dx),
-                scrollY: Math.max(0, viewport.scrollY - dy)
-            });
+            this.panViewportByPixels(dx, dy);
             this.drag.startX = e.clientX;
             this.drag.startY = e.clientY;
         } else if (this.drag.mode === 'task-move' && this.drag.taskId) {
@@ -271,15 +305,12 @@ export class InteractionEngine {
             updateViewport({ scale: newScale });
         } else {
             // Scroll
-            updateViewport({
-                scrollX: Math.max(0, viewport.scrollX + e.deltaX),
-                scrollY: Math.max(0, viewport.scrollY + e.deltaY)
-            });
+            this.scrollViewportByWheel(e.deltaX, e.deltaY);
         }
     };
 
     private handleKeyDown = (e: KeyboardEvent) => {
-        const { tasks, selectedTaskId, selectTask, viewport, updateViewport } = useTaskStore.getState();
+        const { tasks, selectedTaskId, selectTask } = useTaskStore.getState();
 
         if (e.key === 'Escape') {
             selectTask(null);
@@ -309,10 +340,10 @@ export class InteractionEngine {
                 }
                 break;
             case 'ArrowLeft':
-                updateViewport({ scrollX: Math.max(0, viewport.scrollX - 50) });
+                this.scrollViewportByWheel(-50, 0);
                 break;
             case 'ArrowRight':
-                updateViewport({ scrollX: viewport.scrollX + 50 });
+                this.scrollViewportByWheel(50, 0);
                 break;
         }
     };

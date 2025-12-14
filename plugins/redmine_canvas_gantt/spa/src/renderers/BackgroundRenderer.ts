@@ -29,7 +29,7 @@ export class BackgroundRenderer {
                 const dow = d.getDay();
                 if (dow === 0 || dow === 6) {
                     // Calculate width to next tick or default to one day width
-                    let w = (i < ticks.length - 1)
+                    const w = (i < ticks.length - 1)
                         ? ticks[i + 1].x - tick.x
                         : (24 * 60 * 60 * 1000) * viewport.scale;
 

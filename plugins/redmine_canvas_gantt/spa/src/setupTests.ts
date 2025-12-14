@@ -1,7 +1,12 @@
 import '@testing-library/jest-dom';
 
 if (typeof window !== 'undefined') {
-    const storage = (window as any).localStorage;
+    let storage: Storage | null = null;
+    try {
+        storage = window.localStorage;
+    } catch {
+        storage = null;
+    }
     if (!storage || typeof storage.getItem !== 'function') {
         const store = new Map<string, string>();
         Object.defineProperty(window, 'localStorage', {

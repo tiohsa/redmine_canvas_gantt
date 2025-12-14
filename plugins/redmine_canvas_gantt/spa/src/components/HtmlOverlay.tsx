@@ -78,8 +78,9 @@ export const HtmlOverlay: React.FC = () => {
             const relation = await apiClient.createRelation(fromId, targetId, RelationType.Precedes);
             addRelation(relation);
             useUIStore.getState().addNotification(i18n.t('label_relation_added') || 'Dependency created', 'success');
-        } catch (error: any) {
-            useUIStore.getState().addNotification(error?.message || 'Failed to create relation', 'error');
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : undefined;
+            useUIStore.getState().addNotification(message || 'Failed to create relation', 'error');
         }
     }, [handleMouseMove]);
 
@@ -119,8 +120,9 @@ export const HtmlOverlay: React.FC = () => {
             await apiClient.deleteRelation(relationId);
             useTaskStore.getState().removeRelation(relationId);
             useUIStore.getState().addNotification(i18n.t('label_relation_removed') || 'Dependency removed', 'success');
-        } catch (error: any) {
-            useUIStore.getState().addNotification(error?.message || (i18n.t('label_relation_remove_failed') || 'Failed to remove relation'), 'error');
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : undefined;
+            useUIStore.getState().addNotification(message || (i18n.t('label_relation_remove_failed') || 'Failed to remove relation'), 'error');
         } finally {
             useTaskStore.getState().setContextMenu(null);
         }

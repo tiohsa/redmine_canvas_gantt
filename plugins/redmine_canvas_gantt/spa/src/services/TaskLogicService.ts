@@ -91,8 +91,7 @@ export class TaskLogicService {
         tasks: Task[],
         relations: Relation[],
         movedTaskId: string,
-        // @ts-ignore
-        newStart: number,
+        _newStart: number,
         newDue: number
     ): Map<string, Partial<Task>> {
         const updates = new Map<string, Partial<Task>>();

@@ -116,6 +116,13 @@ export const UiSidebar: React.FC = () => {
     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
     const visibleRows = layoutRows.filter(row => row.rowIndex >= startRow && row.rowIndex <= endRow);
 
+    const renderFallbackCellValue = React.useCallback((task: Task, key: string) => {
+        const value = (task as unknown as Record<string, unknown>)[key];
+        if (typeof value === 'string' || typeof value === 'number') return String(value);
+        if (value instanceof Date) return value.toLocaleDateString();
+        return '';
+    }, []);
+
     const handleWheel = (e: React.WheelEvent) => {
         updateViewport({
             scrollY: Math.max(0, viewport.scrollY + e.deltaY)
@@ -389,7 +396,7 @@ export const UiSidebar: React.FC = () => {
                                         overflow: 'hidden',
                                         whiteSpace: 'nowrap'
                                     }}>
-                                        {col.render ? col.render(task) : (task as any)[col.key]}
+                                        {col.render ? col.render(task) : renderFallbackCellValue(task, col.key)}
                                     </div>
                                 ))}
                             </div>
