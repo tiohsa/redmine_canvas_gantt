@@ -107,6 +107,7 @@ export const UiSidebar: React.FC = () => {
     const viewport = useTaskStore(state => state.viewport);
     const updateViewport = useTaskStore(state => state.updateViewport);
     const selectTask = useTaskStore(state => state.selectTask);
+    const scrollToTask = useTaskStore(state => state.scrollToTask);
     const selectedTaskId = useTaskStore(state => state.selectedTaskId);
     const projectExpansion = useTaskStore(state => state.projectExpansion);
     const taskExpansion = useTaskStore(state => state.taskExpansion);
@@ -615,6 +616,7 @@ export const UiSidebar: React.FC = () => {
                                         setActiveInlineEdit(null);
                                     }
                                     selectTask(task.id);
+                                    scrollToTask(task.id);
                                 }}
                                 style={{
                                     position: 'absolute',

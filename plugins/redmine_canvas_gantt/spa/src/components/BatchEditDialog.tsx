@@ -23,8 +23,8 @@ const BatchEditDialog: React.FC = () => {
     // Dynamic columns state
     const [columns, setColumns] = React.useState<ColumnDef[]>([
         { key: 'subject', label: 'Subject', width: '30%', minWidth: 200, type: 'string' },
-        { key: 'assignedToId', label: 'Assigned To', width: '150px', type: 'list' },
-        { key: 'statusId', label: 'Status', width: '120px', type: 'list' },
+        { key: 'assignedToId', label: 'Assigned To', width: '200px', type: 'list' },
+        { key: 'statusId', label: 'Status', width: '140px', type: 'list' },
         { key: 'ratioDone', label: 'Done %', width: '80px', type: 'number' },
         { key: 'startDate', label: 'Start Date', width: '110px', type: 'date' },
         { key: 'dueDate', label: 'Due Date', width: '110px', type: 'date' },
@@ -83,7 +83,7 @@ const BatchEditDialog: React.FC = () => {
                 newCols.push({
                     key: 'assignedToId',
                     label: 'Assigned To',
-                    width: '150px',
+                    width: '200px',
                     type: 'list',
                     options: meta.options.assignees
                 });
@@ -92,7 +92,7 @@ const BatchEditDialog: React.FC = () => {
                 newCols.push({
                     key: 'statusId',
                     label: 'Status',
-                    width: '120px',
+                    width: '140px',
                     type: 'list',
                     options: meta.options.statuses
                 });
@@ -181,9 +181,11 @@ const BatchEditDialog: React.FC = () => {
                 justifyContent: 'space-between',
                 padding: '0 24px',
                 backgroundColor: '#fff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                zIndex: 20,
                 flexShrink: 0
             }}>
-                <div style={{ fontSize: 18, fontWeight: 600, color: '#333' }}>
+                <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>
                     Batch Edit Mode
                 </div>
                 <div style={{ display: 'flex', gap: 12 }}>
@@ -196,13 +198,17 @@ const BatchEditDialog: React.FC = () => {
                         style={{
                             padding: '8px 16px',
                             border: '1px solid #d0d0d0',
-                            borderRadius: 4,
+                            borderRadius: 6,
                             background: '#fff',
                             cursor: 'pointer',
                             fontSize: 14,
                             color: '#333',
                             transition: 'background-color 0.2s',
-                            fontWeight: 500
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                         }}
                     >
                         Cancel
@@ -215,7 +221,7 @@ const BatchEditDialog: React.FC = () => {
                         style={{
                             padding: '8px 24px',
                             border: 'none',
-                            borderRadius: 4,
+                            borderRadius: 6,
                             background: '#1a73e8',
                             cursor: 'pointer',
                             fontSize: 14,
@@ -223,7 +229,11 @@ const BatchEditDialog: React.FC = () => {
                             fontWeight: 600,
                             opacity: isSaving ? 0.7 : 1,
                             transition: 'background-color 0.2s',
-                            boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                            whiteSpace: 'nowrap',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                         }}
                     >
                         {isSaving ? 'Saving...' : 'Save All Changes'}
@@ -232,19 +242,19 @@ const BatchEditDialog: React.FC = () => {
             </div>
 
             {/* Table Area */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
+            <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px', backgroundColor: '#f9f9f9' }}>
+                <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: 800, background: '#fff', borderRadius: 8, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
                     <thead style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
-                        <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
+                        <tr style={{ borderBottom: '1px solid #e0e0e0' }}>
                             {/* Actions col (Moved to LEFT) */}
-                            <th style={{ width: 40, padding: 8 }}></th>
+                            <th style={{ width: 30, padding: 12, borderBottom: '1px solid #e0e0e0', textAlign: 'center' }}></th>
 
                             {columns.map((c, i) => (
-                                <th key={i} style={{ textAlign: 'left', padding: '12px 8px', width: c.width, minWidth: c.minWidth, color: '#555', fontSize: 13, fontWeight: 600 }}>
+                                <th key={i} style={{ textAlign: 'left', padding: '12px 8px', width: c.width, minWidth: c.minWidth, color: '#666', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', borderBottom: '1px solid #e0e0e0' }}>
                                     {c.label}
                                 </th>
                             ))}
-                            <th style={{ width: 40 }}></th>
+                            <th style={{ width: 40, borderBottom: '1px solid #e0e0e0' }}></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -297,7 +307,7 @@ const EditableRow: React.FC<EditableRowProps> = ({ task, columns }) => {
 
     return (
         <tr
-            style={{ borderBottom: '1px solid #f0f0f0', backgroundColor: changed ? '#fffde7' : undefined }}
+            style={{ borderBottom: '1px solid #f0f0f0', backgroundColor: changed ? '#fefCF0' : undefined }}
             onMouseEnter={() => {
                 setIsHovered(true);
                 setHoveredTask(task.id);
@@ -353,14 +363,18 @@ const EditableRow: React.FC<EditableRowProps> = ({ task, columns }) => {
                                     onChange={(e) => updateTask(task.id, 'subject', e.target.value)}
                                     style={{
                                         width: '100%',
-                                        border: '1px solid #d0d0d0', // VISIBLE BORDER DEFAULT
+                                        border: '1px solid #e0e0e0', // VISIBLE BORDER DEFAULT
                                         background: '#fff',
-                                        padding: '4px',
-                                        borderRadius: 4,
-                                        fontWeight: task.hasChildren ? 600 : 400
+                                        padding: '6px 8px',
+                                        borderRadius: 6,
+                                        fontSize: 14,
+                                        color: '#333',
+                                        fontWeight: task.hasChildren ? 600 : 400,
+                                        transition: 'border-color 0.2s, box-shadow 0.2s',
+                                        height: 34
                                     }}
-                                    onFocus={(e) => e.target.style.borderColor = '#1a73e8'}
-                                    onBlur={(e) => e.target.style.borderColor = '#d0d0d0'}
+                                    onFocus={(e) => { e.target.style.borderColor = '#1a73e8'; e.target.style.boxShadow = '0 0 0 2px rgba(26,115,232,0.1)'; }}
+                                    onBlur={(e) => { e.target.style.borderColor = '#e0e0e0'; e.target.style.boxShadow = 'none'; }}
                                 />
                             </div>
                         </td>
@@ -373,7 +387,7 @@ const EditableRow: React.FC<EditableRowProps> = ({ task, columns }) => {
                             <select
                                 value={currentTask.assignedToId ?? ''}
                                 onChange={(e) => updateTask(task.id, 'assignedToId', e.target.value ? Number(e.target.value) : null)}
-                                style={{ width: '100%', padding: 4, borderRadius: 4, border: '1px solid #ddd' }}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', height: 34 }}
                             >
                                 <option value="">(Unassigned)</option>
                                 {(col.options || meta?.options.assignees)?.map(u => (
@@ -390,7 +404,7 @@ const EditableRow: React.FC<EditableRowProps> = ({ task, columns }) => {
                             <select
                                 value={currentTask.statusId}
                                 onChange={(e) => updateTask(task.id, 'statusId', Number(e.target.value))}
-                                style={{ width: '100%', padding: 4, borderRadius: 4, border: '1px solid #ddd' }}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', height: 34 }}
                             >
                                 {(col.options || meta?.options.statuses)?.map(s => (
                                     <option key={s.id} value={s.id}>{s.name}</option>
@@ -408,7 +422,7 @@ const EditableRow: React.FC<EditableRowProps> = ({ task, columns }) => {
                                 min="0" max="100" step="10"
                                 value={currentTask.ratioDone}
                                 onChange={(e) => updateTask(task.id, 'ratioDone', Number(e.target.value))}
-                                style={{ width: '100%', padding: 4, borderRadius: 4, border: '1px solid #ddd' }}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', height: 34 }}
                             />
                         </td>
                     );
@@ -422,7 +436,7 @@ const EditableRow: React.FC<EditableRowProps> = ({ task, columns }) => {
                                 type="date"
                                 value={val ? new Date(val).toISOString().split('T')[0] : ''}
                                 onChange={(e) => updateTask(task.id, col.key, e.target.valueAsNumber || null)}
-                                style={{ width: '100%', padding: 4, borderRadius: 4, border: '1px solid #ddd', fontSize: 13 }}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e0e0e0', fontSize: 13, background: '#fff' }}
                             />
                         </td>
                     );
@@ -447,7 +461,7 @@ const EditableRow: React.FC<EditableRowProps> = ({ task, columns }) => {
                                 <select
                                     value={val}
                                     onChange={(e) => updateTask(task.id, col.key, e.target.value)}
-                                    style={{ width: '100%', padding: 4, borderRadius: 4, border: '1px solid #ddd' }}
+                                    style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff' }}
                                 >
                                     <option value=""></option>
                                     {col.cfMeta.possibleValues.map(v => (
@@ -458,7 +472,7 @@ const EditableRow: React.FC<EditableRowProps> = ({ task, columns }) => {
                                 <input
                                     value={val}
                                     onChange={(e) => updateTask(task.id, col.key, e.target.value)}
-                                    style={{ width: '100%', padding: 4, borderRadius: 4, border: '1px solid #ddd' }}
+                                    style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff' }}
                                 />
                             )}
                         </td>
