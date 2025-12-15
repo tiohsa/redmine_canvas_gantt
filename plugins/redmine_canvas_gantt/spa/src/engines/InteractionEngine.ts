@@ -6,13 +6,19 @@ import { snapToUtcDay } from '../utils/time';
 
 type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
 
+const CLICK_MOVE_THRESHOLD_PX = 4;
+
 interface DragState {
     mode: DragMode;
     startX: number;
     startY: number;
+    originX: number;
+    originY: number;
     taskId: string | null;
     originalStartDate: number;
     originalDueDate: number;
+    didMove: boolean;
+    clickCandidateTaskId: string | null;
 }
 
 export class InteractionEngine {
@@ -21,9 +27,13 @@ export class InteractionEngine {
         mode: 'none',
         startX: 0,
         startY: 0,
+        originX: 0,
+        originY: 0,
         taskId: null,
         originalStartDate: 0,
-        originalDueDate: 0
+        originalDueDate: 0,
+        didMove: false,
+        clickCandidateTaskId: null
     };
 
     constructor(container: HTMLElement) {
@@ -85,6 +95,11 @@ export class InteractionEngine {
 
         const hit = this.hitTest(x, y);
 
+        this.drag.originX = e.clientX;
+        this.drag.originY = e.clientY;
+        this.drag.didMove = false;
+        this.drag.clickCandidateTaskId = hit.task ? hit.task.id : null;
+
         if (hit.task && hit.task.editable) {
             // Check if parent task
             if (hit.task.hasChildren) {
@@ -97,6 +112,7 @@ export class InteractionEngine {
             useTaskStore.getState().selectTask(hit.task.id);
             if (hit.region === 'body') {
                 this.drag = {
+                    ...this.drag,
                     mode: 'task-move',
                     startX: e.clientX,
                     startY: e.clientY,
@@ -106,6 +122,7 @@ export class InteractionEngine {
                 };
             } else if (hit.region === 'start') {
                 this.drag = {
+                    ...this.drag,
                     mode: 'task-resize-start',
                     startX: e.clientX,
                     startY: e.clientY,
@@ -115,6 +132,7 @@ export class InteractionEngine {
                 };
             } else if (hit.region === 'end') {
                 this.drag = {
+                    ...this.drag,
                     mode: 'task-resize-end',
                     startX: e.clientX,
                     startY: e.clientY,
@@ -130,6 +148,7 @@ export class InteractionEngine {
             // No task hit - start panning
             useTaskStore.getState().selectTask(null);
             this.drag = {
+                ...this.drag,
                 mode: 'pan',
                 startX: e.clientX,
                 startY: e.clientY,
@@ -165,6 +184,11 @@ export class InteractionEngine {
 
         const dx = e.clientX - this.drag.startX;
         const dy = e.clientY - this.drag.startY;
+        const distanceFromOrigin = Math.hypot(e.clientX - this.drag.originX, e.clientY - this.drag.originY);
+        if (distanceFromOrigin > CLICK_MOVE_THRESHOLD_PX) {
+            this.drag.didMove = true;
+            this.drag.clickCandidateTaskId = null;
+        }
 
         if (this.drag.mode === 'pan') {
             updateViewport({
@@ -174,6 +198,7 @@ export class InteractionEngine {
             this.drag.startX = e.clientX;
             this.drag.startY = e.clientY;
         } else if (this.drag.mode === 'task-move' && this.drag.taskId) {
+            if (!this.drag.didMove && distanceFromOrigin <= CLICK_MOVE_THRESHOLD_PX) return;
             const timeDelta = dx / viewport.scale;
             const newStart = this.snapToDate(this.drag.originalStartDate + timeDelta);
             const duration = this.drag.originalDueDate - this.drag.originalStartDate;
@@ -187,6 +212,7 @@ export class InteractionEngine {
                 });
             }
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
+            if (!this.drag.didMove && distanceFromOrigin <= CLICK_MOVE_THRESHOLD_PX) return;
             const timeDelta = dx / viewport.scale;
             const newStart = this.snapToDate(this.drag.originalStartDate + timeDelta);
 
@@ -196,6 +222,7 @@ export class InteractionEngine {
                 updateTask(this.drag.taskId, { startDate: newStart });
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
+            if (!this.drag.didMove && distanceFromOrigin <= CLICK_MOVE_THRESHOLD_PX) return;
             const timeDelta = dx / viewport.scale;
             const newEnd = this.snapToDate(this.drag.originalDueDate + timeDelta);
 
@@ -209,10 +236,29 @@ export class InteractionEngine {
 
     private handleMouseUp = async () => {
         const draggedTaskId = this.drag.taskId;
-        const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && draggedTaskId;
+        const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && draggedTaskId && this.drag.didMove;
+        const clickTarget = !this.drag.didMove ? this.drag.clickCandidateTaskId : null;
+        const originalStartDate = this.drag.originalStartDate;
+        const originalDueDate = this.drag.originalDueDate;
 
-        this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: 0, originalDueDate: 0 };
+        this.drag = {
+            mode: 'none',
+            startX: 0,
+            startY: 0,
+            originX: 0,
+            originY: 0,
+            taskId: null,
+            originalStartDate: 0,
+            originalDueDate: 0,
+            didMove: false,
+            clickCandidateTaskId: null
+        };
         this.container.style.cursor = 'default';
+
+        if (clickTarget) {
+            window.location.href = `/issues/${clickTarget}`;
+            return;
+        }
 
         if (wasDragging && draggedTaskId) {
             // Persist the change to backend
@@ -236,8 +282,8 @@ export class InteractionEngine {
 
                     // Revert changes
                     updateTask(draggedTaskId, {
-                        startDate: this.drag.originalStartDate,
-                        dueDate: this.drag.originalDueDate
+                        startDate: originalStartDate,
+                        dueDate: originalDueDate
                     });
                 }
             } catch (err) {
@@ -246,8 +292,8 @@ export class InteractionEngine {
 
                 // Revert changes
                 updateTask(draggedTaskId, {
-                    startDate: this.drag.originalStartDate,
-                    dueDate: this.drag.originalDueDate
+                    startDate: originalStartDate,
+                    dueDate: originalDueDate
                 });
             }
         }

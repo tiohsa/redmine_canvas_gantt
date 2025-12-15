@@ -17,6 +17,7 @@ export interface Task {
     // Computed for layout (cached)
     rowIndex: number;
     hasChildren: boolean;
+    indentLevel?: number;
 }
 
 export interface Relation {

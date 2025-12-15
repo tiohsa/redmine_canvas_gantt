@@ -38,6 +38,10 @@ export const UiSidebar: React.FC = () => {
     const updateViewport = useTaskStore(state => state.updateViewport);
     const selectTask = useTaskStore(state => state.selectTask);
     const selectedTaskId = useTaskStore(state => state.selectedTaskId);
+    const projectExpansion = useTaskStore(state => state.projectExpansion);
+    const taskExpansion = useTaskStore(state => state.taskExpansion);
+    const toggleProjectExpansion = useTaskStore(state => state.toggleProjectExpansion);
+    const toggleTaskExpansion = useTaskStore(state => state.toggleTaskExpansion);
     const visibleColumns = useUIStore(state => state.visibleColumns);
 
     const taskMap = React.useMemo(() => {
@@ -53,6 +57,10 @@ export const UiSidebar: React.FC = () => {
         updateViewport({
             scrollY: Math.max(0, viewport.scrollY + e.deltaY)
         });
+    };
+
+    const navigateToIssue = (taskId: string) => {
+        window.location.href = `/issues/${taskId}`;
     };
 
     const columns = [
@@ -74,19 +82,51 @@ export const UiSidebar: React.FC = () => {
             title: 'Task Name',
             width: 280,
             render: (t: Task) => (
-                <div style={{ display: 'flex', alignItems: 'center', paddingLeft: t.parentId ? '24px' : '4px', fontWeight: t.parentId ? 400 : 600 }}>
-                    {/* Chevron for parent tasks or roots */}
-                    <div style={{ width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: 4, cursor: 'pointer', visibility: 'visible' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="6 9 12 15 18 9"></polyline>
-                        </svg>
-                    </div>
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        paddingLeft: `${8 + (t.indentLevel ?? 0) * 16}px`,
+                        fontWeight: t.hasChildren ? 700 : 400,
+                        gap: 4
+                    }}
+                >
+                    {t.hasChildren ? (
+                        <button
+                            type="button"
+                            aria-label={taskExpansion[t.id] ?? true ? '折りたたむ' : '展開する'}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                toggleTaskExpansion(t.id);
+                            }}
+                            style={{
+                                width: 18,
+                                height: 18,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '1px solid #d0d0d0',
+                                borderRadius: 4,
+                                background: '#fff',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <span style={{ fontSize: 10, color: '#555', lineHeight: 1 }}>
+                                {(taskExpansion[t.id] ?? true) ? '▼' : '▶'}
+                            </span>
+                        </button>
+                    ) : (
+                        <span style={{ display: 'inline-block', width: 18 }} />
+                    )}
                     <a
-                        href={`/issues/${t.id}/edit`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        href={`/issues/${t.id}`}
                         style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: '#1a73e8', textDecoration: 'none' }}
                         title={t.subject}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            navigateToIssue(t.id);
+                        }}
                     >
                         {t.subject}
                     </a>
@@ -209,6 +249,7 @@ export const UiSidebar: React.FC = () => {
                     visibleRows.map(row => {
                         const top = row.rowIndex * viewport.rowHeight - viewport.scrollY;
                         if (row.type === 'header') {
+                            const expanded = projectExpansion[row.projectId] ?? true;
                             return (
                                 <div
                                     key={`header-${row.projectId}-${row.rowIndex}`}
@@ -227,7 +268,27 @@ export const UiSidebar: React.FC = () => {
                                         borderBottom: '1px solid #e0e0e0',
                                         boxSizing: 'border-box'
                                     }}
+                                    onClick={() => toggleProjectExpansion(row.projectId)}
                                 >
+                                    <span
+                                        aria-label={expanded ? 'プロジェクトを折りたたむ' : 'プロジェクトを展開する'}
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            width: 18,
+                                            height: 18,
+                                            border: '1px solid #d0d0d0',
+                                            borderRadius: 4,
+                                            marginRight: 8,
+                                            background: '#fff',
+                                            cursor: 'pointer',
+                                            fontSize: 10,
+                                            color: '#555'
+                                        }}
+                                    >
+                                        {expanded ? '▼' : '▶'}
+                                    </span>
                                     {row.projectName || 'Project'}
                                 </div>
                             );
@@ -240,7 +301,10 @@ export const UiSidebar: React.FC = () => {
                         return (
                             <div
                                 key={task.id}
-                                onClick={() => selectTask(task.id)}
+                                onClick={() => {
+                                    selectTask(task.id);
+                                    navigateToIssue(task.id);
+                                }}
                                 style={{
                                     position: 'absolute',
                                     top: top,
