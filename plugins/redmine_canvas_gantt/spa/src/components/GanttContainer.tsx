@@ -21,7 +21,7 @@ export const GanttContainer: React.FC = () => {
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const { viewport, tasks, relations, setTasks, setRelations, updateViewport, zoomLevel, rowCount, viewportFromStorage } = useTaskStore();
-    const { showProgressLine, sidebarWidth, setSidebarWidth } = useUIStore();
+    const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
 
     const isResizing = useRef(false);
 
@@ -135,22 +135,26 @@ export const GanttContainer: React.FC = () => {
     return (
         <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
             {/* Resizable Sidebar Wrapper */}
-            <div style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
-                <UiSidebar />
-            </div>
+            {leftPaneVisible && (
+                <>
+                    <div style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
+                        <UiSidebar />
+                    </div>
 
-            {/* Resize Handle */}
-            <div
-                onMouseDown={startResize}
-                style={{
-                    width: 4,
-                    cursor: 'col-resize',
-                    backgroundColor: '#f0f0f0',
-                    borderRight: '1px solid #e0e0e0',
-                    borderLeft: '1px solid #e0e0e0',
-                    zIndex: 10
-                }}
-            />
+                    {/* Resize Handle */}
+                    <div
+                        onMouseDown={startResize}
+                        style={{
+                            width: 4,
+                            cursor: 'col-resize',
+                            backgroundColor: '#f0f0f0',
+                            borderRight: '1px solid #e0e0e0',
+                            borderLeft: '1px solid #e0e0e0',
+                            zIndex: 10
+                        }}
+                    />
+                </>
+            )}
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                 <TimelineHeader />

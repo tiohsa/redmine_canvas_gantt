@@ -5,6 +5,7 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 import { apiClient } from '../api/client';
 import { RelationType } from '../types/constraints';
 import { useUIStore } from '../stores/UIStore';
+import { snapToUtcDay } from '../utils/time';
 
 export const HtmlOverlay: React.FC = () => {
     const hoveredTaskId = useTaskStore(state => state.hoveredTaskId);
@@ -18,6 +19,7 @@ export const HtmlOverlay: React.FC = () => {
     const overlayRef = React.useRef<HTMLDivElement>(null);
     const [draft, setDraft] = React.useState<{ fromId: string; start: { x: number; y: number }; pointer: { x: number; y: number }; targetId?: string } | null>(null);
     const draftRef = React.useRef<typeof draft>(null);
+    const [tooltipPosition, setTooltipPosition] = React.useState<{ x: number; y: number } | null>(null);
 
     const hoveredTask = hoveredTaskId ? tasks.find(t => t.id === hoveredTaskId) : null;
     const contextTask = contextMenu ? tasks.find(t => t.id === contextMenu.taskId) : null;
@@ -95,6 +97,20 @@ export const HtmlOverlay: React.FC = () => {
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
     }, [handleMouseMove, handleMouseUp]);
+
+    React.useEffect(() => {
+        if (!hoveredTask) {
+            setTooltipPosition(null);
+            return;
+        }
+
+        const onMouseMove = (e: MouseEvent) => {
+            setTooltipPosition({ x: e.clientX, y: e.clientY });
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        return () => window.removeEventListener('mousemove', onMouseMove);
+    }, [hoveredTask]);
 
     const relatedRelations = React.useMemo(() => {
         if (!contextMenu) return [];
@@ -193,22 +209,41 @@ export const HtmlOverlay: React.FC = () => {
                 </svg>
             )}
 
-            {hoveredTask && (
-                <div style={{
-                    position: 'fixed',
-                    bottom: 20,
-                    left: 20,
-                    background: 'rgba(0,0,0,0.8)',
-                    color: 'white',
-                    padding: '8px',
-                    borderRadius: '4px',
-                    pointerEvents: 'none'
-                }}>
-                    <div><strong>{hoveredTask.subject}</strong></div>
-                    <div>{new Date(hoveredTask.startDate).toLocaleDateString()} - {new Date(hoveredTask.dueDate).toLocaleDateString()}</div>
-                    <div>{hoveredTask.ratioDone}% {i18n.t('done')}</div>
-                </div>
-            )}
+            {hoveredTask && tooltipPosition && (() => {
+                const rect = overlayRef.current?.getBoundingClientRect();
+                if (!rect) return null;
+
+                const bounds = LayoutEngine.getTaskBounds(hoveredTask, viewport, 'hit');
+
+                // Calculate fixed Y position: Top of overlay + Task Y + Task Height + Padding
+                const fixedTop = rect.top + bounds.y + bounds.height + 10;
+
+                // Horizontal Snapping Logic
+                const localX = tooltipPosition.x - rect.left;
+                const globalX = localX + viewport.scrollX;
+                const rawDate = LayoutEngine.xToDate(globalX, viewport);
+                const snappedDate = snapToUtcDay(rawDate);
+                const snappedGlobalX = LayoutEngine.dateToX(snappedDate, viewport);
+                const finalClientX = (snappedGlobalX - viewport.scrollX) + rect.left;
+
+                return (
+                    <div style={{
+                        position: 'fixed',
+                        top: fixedTop,
+                        left: finalClientX + 15, // Use snapped X
+                        background: 'rgba(0,0,0,0.8)',
+                        color: 'white',
+                        padding: '8px',
+                        borderRadius: '4px',
+                        pointerEvents: 'none',
+                        zIndex: 1000
+                    }}>
+                        <div><strong>{hoveredTask.subject}</strong></div>
+                        <div>{new Date(hoveredTask.startDate).toLocaleDateString()} - {new Date(hoveredTask.dueDate).toLocaleDateString()}</div>
+                        <div>{hoveredTask.ratioDone}% {i18n.t('done')}</div>
+                    </div>
+                );
+            })()}
 
             {contextMenu && (
                 <div

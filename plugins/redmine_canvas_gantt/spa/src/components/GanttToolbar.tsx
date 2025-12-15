@@ -10,9 +10,10 @@ interface GanttToolbarProps {
 }
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
-    const { viewport, updateViewport, groupByProject, setGroupByProject } = useTaskStore();
-    const { showProgressLine, toggleProgressLine, visibleColumns, setVisibleColumns } = useUIStore();
+    const { viewport, updateViewport, groupByProject, setGroupByProject, filterText, setFilterText } = useTaskStore();
+    const { showProgressLine, toggleProgressLine, visibleColumns, setVisibleColumns, leftPaneVisible, toggleLeftPane } = useUIStore();
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
+    const [showFilterMenu, setShowFilterMenu] = React.useState(false);
 
     const handleTodayClick = () => {
         const now = Date.now();
@@ -66,6 +67,31 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             {/* Left: Filter & Options */}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
                 <button
+                    onClick={toggleLeftPane}
+                    title={leftPaneVisible ? "Hide List" : "Show List"}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '8px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: '#fff',
+                        color: '#333',
+                        cursor: 'pointer',
+                        width: '36px',
+                        height: '36px'
+                    }}
+                >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <line x1="9" y1="3" x2="9" y2="21" />
+                    </svg>
+                </button>
+
+                <div style={{ width: 1, height: 24, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
+
+                <button
                     onClick={() => useTaskStore.getState().setBatchEditMode(true)}
                     style={{
                         display: 'flex',
@@ -89,7 +115,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 </button>
 
                 <button
-
+                    onClick={() => setShowFilterMenu(prev => !prev)}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -97,8 +123,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         padding: '8px 16px',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
-                        backgroundColor: '#fff',
-                        color: '#333',
+                        backgroundColor: filterText ? '#e8f0fe' : '#fff',
+                        color: filterText ? '#1a73e8' : '#333',
                         fontSize: '14px',
                         fontWeight: 500,
                         cursor: 'pointer'
@@ -109,8 +135,58 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <line x1="6" y1="12" x2="18" y2="12" />
                         <line x1="8" y1="18" x2="16" y2="18" />
                     </svg>
-                    Filter
+                    Filter {filterText ? '(Active)' : ''}
                 </button>
+
+                {showFilterMenu && (
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: '48px',
+                            left: '120px', // Adjust depending on button position, or calculate dynamically
+                            background: '#fff',
+                            border: '1px solid #e0e0e0',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                            padding: '12px',
+                            zIndex: 20,
+                            minWidth: '220px'
+                        }}
+                    >
+                        <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>Filter Tasks</div>
+                        <input
+                            type="text"
+                            placeholder="Filter by subject..."
+                            value={filterText}
+                            onChange={(e) => setFilterText(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '8px',
+                                border: '1px solid #d0d0d0',
+                                borderRadius: '4px',
+                                outline: 'none',
+                                boxSizing: 'border-box'
+                            }}
+                            autoFocus
+                        />
+                        {filterText && (
+                            <button
+                                onClick={() => setFilterText('')}
+                                style={{
+                                    marginTop: '8px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: '#d32f2f',
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    fontSize: 13
+                                }}
+                            >
+                                Clear Filter
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 <button
                     onClick={() => setShowColumnMenu(prev => !prev)}
@@ -298,6 +374,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     })}
                 </div>
             </div>
-        </div>
+        </div >
     );
 };

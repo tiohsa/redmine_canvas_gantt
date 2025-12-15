@@ -52,11 +52,28 @@ export class TaskRenderer {
             // Label to the right of bar: "[status] [ratio]%"
             this.drawLabel(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
 
-            // Draw Label (optional, maybe to the right side if it fits or outside)
-            // For now, let's keep it simple or remove if Sidebar has it. 
-            // The image shows labels primarily in the sidebar, or maybe distinct bar types.
-            // Let's not draw text on bar for now to match the clean look in the image (Sidebar has names).
+            // Draw Subject BEFORE the bar (to the left)
+            this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
         });
+    }
+
+    private drawSubjectBeforeBar(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number) {
+        // We aren't clipping to width currently, but keeping the signature compatible.
+        void width;
+
+        ctx.save();
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#000000';
+
+        const textX = x - 5; // Left of the bar with padding
+        const textY = y + height / 2;
+
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+
+        ctx.fillText(task.subject, textX, textY);
+
+        ctx.restore();
     }
 
 

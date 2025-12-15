@@ -20,6 +20,7 @@ interface TaskState {
     contextMenu: { x: number; y: number; taskId: string } | null;
     projectExpansion: Record<string, boolean>;
     taskExpansion: Record<string, boolean>;
+    filterText: string;
 
     // Actions
     setTasks: (tasks: Task[]) => void;
@@ -38,6 +39,8 @@ interface TaskState {
     toggleTaskExpansion: (taskId: string) => void;
     isBatchEditMode: boolean;
     setBatchEditMode: (enabled: boolean) => void;
+    setFilterText: (text: string) => void;
+    scrollToTask: (taskId: string) => void;
 }
 
 const preferences = loadPreferences();
@@ -159,10 +162,12 @@ export const useTaskStore = create<TaskState>((set) => ({
     contextMenu: null,
     projectExpansion: {},
     taskExpansion: {},
+    filterText: '',
 
     setTasks: (tasks) => set((state) => {
         const projectExpansion = { ...state.projectExpansion };
         const taskExpansion = { ...state.taskExpansion };
+        const filterText = state.filterText.toLowerCase();
 
         tasks.forEach((task) => {
             const projectId = task.projectId ?? 'default_project';
@@ -170,7 +175,11 @@ export const useTaskStore = create<TaskState>((set) => ({
             if (taskExpansion[task.id] === undefined) taskExpansion[task.id] = true;
         });
 
-        const layout = buildLayout(tasks, state.groupByProject, projectExpansion, taskExpansion);
+        const filteredTasks = filterText
+            ? tasks.filter(t => t.subject.toLowerCase().includes(filterText))
+            : tasks;
+
+        const layout = buildLayout(filteredTasks, state.groupByProject, projectExpansion, taskExpansion);
 
         return {
             allTasks: tasks,
@@ -355,5 +364,43 @@ export const useTaskStore = create<TaskState>((set) => ({
         };
     }),
     isBatchEditMode: false,
-    setBatchEditMode: (enabled) => set({ isBatchEditMode: enabled })
+    setBatchEditMode: (enabled) => set({ isBatchEditMode: enabled }),
+
+    setFilterText: (text) => set((state) => {
+        const filterText = text.toLowerCase();
+        const filteredTasks = filterText
+            ? state.allTasks.filter(t => t.subject.toLowerCase().includes(filterText))
+            : state.allTasks;
+
+        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion);
+        return {
+            filterText: text,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+
+    scrollToTask: (taskId: string) => set((state) => {
+        const task = state.allTasks.find(t => t.id === taskId);
+        if (!task) return state;
+
+        // Determine target date to center on: startDate -> dueDate -> Today
+        let targetMetadata = 0;
+        if (Number.isFinite(task.startDate)) {
+            targetMetadata = task.startDate!;
+        } else if (Number.isFinite(task.dueDate)) {
+            targetMetadata = task.dueDate!;
+        } else {
+            targetMetadata = Date.now();
+        }
+
+        const { viewport } = state;
+        const taskX = (targetMetadata - viewport.startDate) * viewport.scale;
+        const centeredX = Math.max(0, taskX - (viewport.width / 2));
+
+        return {
+            viewport: { ...viewport, scrollX: centeredX }
+        };
+    })
 }));
