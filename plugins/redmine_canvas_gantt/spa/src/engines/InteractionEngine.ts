@@ -13,6 +13,7 @@ interface DragState {
     taskId: string | null;
     originalStartDate: number;
     originalDueDate: number;
+    snapshot: Task[] | null;
 }
 
 export class InteractionEngine {
@@ -23,7 +24,8 @@ export class InteractionEngine {
         startY: 0,
         taskId: null,
         originalStartDate: 0,
-        originalDueDate: 0
+        originalDueDate: 0,
+        snapshot: null
     };
 
     constructor(container: HTMLElement) {
@@ -139,7 +141,8 @@ export class InteractionEngine {
                     startY: e.clientY,
                     taskId: hit.task.id,
                     originalStartDate: hit.task.startDate,
-                    originalDueDate: hit.task.dueDate
+                    originalDueDate: hit.task.dueDate,
+                    snapshot: JSON.parse(JSON.stringify(useTaskStore.getState().allTasks))
                 };
             } else if (hit.region === 'start') {
                 this.drag = {
@@ -148,7 +151,8 @@ export class InteractionEngine {
                     startY: e.clientY,
                     taskId: hit.task.id,
                     originalStartDate: hit.task.startDate,
-                    originalDueDate: hit.task.dueDate
+                    originalDueDate: hit.task.dueDate,
+                    snapshot: JSON.parse(JSON.stringify(useTaskStore.getState().allTasks))
                 };
             } else if (hit.region === 'end') {
                 this.drag = {
@@ -157,7 +161,8 @@ export class InteractionEngine {
                     startY: e.clientY,
                     taskId: hit.task.id,
                     originalStartDate: hit.task.startDate,
-                    originalDueDate: hit.task.dueDate
+                    originalDueDate: hit.task.dueDate,
+                    snapshot: JSON.parse(JSON.stringify(useTaskStore.getState().allTasks))
                 };
             }
         } else if (hit.task) {
@@ -172,7 +177,8 @@ export class InteractionEngine {
                 startY: e.clientY,
                 taskId: null,
                 originalStartDate: 0,
-                originalDueDate: 0
+                originalDueDate: 0,
+                snapshot: null
             };
         }
     };
@@ -244,8 +250,9 @@ export class InteractionEngine {
     private handleMouseUp = async () => {
         const draggedTaskId = this.drag.taskId;
         const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && draggedTaskId;
+        const snapshot = this.drag.snapshot;
 
-        this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: 0, originalDueDate: 0 };
+        this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: 0, originalDueDate: 0, snapshot: null };
         this.container.style.cursor = 'default';
 
         if (wasDragging && draggedTaskId) {
@@ -269,20 +276,18 @@ export class InteractionEngine {
                     useUIStore.getState().addNotification(errorMsg, 'warning');
 
                     // Revert changes
-                    updateTask(draggedTaskId, {
-                        startDate: this.drag.originalStartDate,
-                        dueDate: this.drag.originalDueDate
-                    });
+                    if (snapshot) {
+                        useTaskStore.getState().setTasks(snapshot);
+                    }
                 }
             } catch (err) {
                 console.error('API error:', err);
                 useUIStore.getState().addNotification('Failed to save task changes.', 'error');
 
                 // Revert changes
-                updateTask(draggedTaskId, {
-                    startDate: this.drag.originalStartDate,
-                    dueDate: this.drag.originalDueDate
-                });
+                if (snapshot) {
+                    useTaskStore.getState().setTasks(snapshot);
+                }
             }
         }
     };
