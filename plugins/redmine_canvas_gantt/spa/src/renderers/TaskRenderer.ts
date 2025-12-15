@@ -52,47 +52,24 @@ export class TaskRenderer {
             // Label to the right of bar: "[status] [ratio]%"
             this.drawLabel(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
 
-            // Draw Subject ON the bar
-            this.drawSubjectOnBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
+            // Draw Subject BEFORE the bar (to the left)
+            this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
         });
     }
 
-    private drawSubjectOnBar(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number) {
+    private drawSubjectBeforeBar(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number) {
+        // We aren't clipping to width currently, but keeping the signature compatible.
+        void width;
+
         ctx.save();
         ctx.font = '12px sans-serif';
-        // Choose color based on contrast. Assuming bars are generally light/medium, black is usually safe, or white with shadow.
-        // Given spec colors: Gray #dddddd (Light), Green #50c878 (Medium), Red #ff6b6b (Medium).
-        // Black text works well on #dddddd. On #50c878 and #ff6b6b, Black is also readable.
         ctx.fillStyle = '#000000';
 
-        // If the text is long, clip it?
-        // Let's clip to bar width if it's reasonably wide, else draw partially?
-        // User said "On the bar", which might imply it should be inside.
-        // But if bar is tiny (1 day), text won't fit.
-        // Usually, if bar is small, we draw it anyway and let it overflow or clip.
-        // Let's try to clip to max width if possible, but with a minimum visibility.
+        const textX = x - 5; // Left of the bar with padding
+        const textY = y + height / 2;
 
-        const textX = x + 5;
-        const textY = y + height / 2 + 4; // Center vertically (+4 for approximate baseline centering of 12px font)
-
-        ctx.beginPath();
-        ctx.rect(x, y, Math.max(width, 100), height); // Allow it to spill out if bar is small? No, "On the bar".
-        // If I strictly clip to 'width', short tasks have unreadable text.
-        // If I don't clip, it overlaps other things.
-        // Let's Clip to the viewport or allow overflow?
-        // Standard Redmine draws subject inside if possible.
-        // Let's clip strictly to bar for "On the bar".
-        // Wait, if the bar is 10px wide, you see nothing.
-        // Let's set a clip region that is the bar itself.
-
-        ctx.clip();
-
-        ctx.textAlign = 'left';
+        ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-
-        // Optional: Add a white halo for readability on dark progress bars?
-        // ctx.shadowColor = "white";
-        // ctx.shadowBlur = 2;
 
         ctx.fillText(task.subject, textX, textY);
 
