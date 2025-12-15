@@ -88,14 +88,13 @@ export class TaskRenderer {
         ctx.clip();
 
         ctx.textAlign = 'left';
-        ctx.textBaseline = 'alphabetic'; // Reset to standard to control y manually or use middle
         ctx.textBaseline = 'middle';
 
         // Optional: Add a white halo for readability on dark progress bars?
         // ctx.shadowColor = "white";
         // ctx.shadowBlur = 2;
 
-        ctx.fillText(task.subject, textX, y + height / 2);
+        ctx.fillText(task.subject, textX, textY);
 
         ctx.restore();
     }
