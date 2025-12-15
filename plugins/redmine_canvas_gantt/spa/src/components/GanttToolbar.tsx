@@ -11,7 +11,7 @@ interface GanttToolbarProps {
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const { viewport, updateViewport, groupByProject, setGroupByProject, filterText, setFilterText } = useTaskStore();
-    const { showProgressLine, toggleProgressLine, visibleColumns, setVisibleColumns, leftPaneVisible, toggleLeftPane } = useUIStore();
+    const { showProgressLine, toggleProgressLine, visibleColumns, setVisibleColumns, leftPaneVisible, toggleLeftPane, isFullScreen, toggleFullScreen } = useUIStore();
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
     const [showFilterMenu, setShowFilterMenu] = React.useState(false);
 
@@ -277,6 +277,34 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
             {/* Right: Zoom Level & Today */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <button
+                    onClick={toggleFullScreen}
+                    title={isFullScreen ? "Exit Full Screen" : "Full Screen"}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '8px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: isFullScreen ? '#e8f0fe' : '#fff',
+                        color: isFullScreen ? '#1a73e8' : '#333',
+                        cursor: 'pointer',
+                        width: '36px',
+                        height: '36px'
+                    }}
+                >
+                    {isFullScreen ? (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+                        </svg>
+                    ) : (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                        </svg>
+                    )}
+                </button>
+
                 <div style={{ display: 'flex', gap: '6px' }}>
                     <button
                         onClick={() => navigateMonth(-1)}

@@ -21,7 +21,7 @@ export const GanttContainer: React.FC = () => {
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const { viewport, tasks, relations, setTasks, setRelations, updateViewport, zoomLevel, rowCount, viewportFromStorage } = useTaskStore();
-    const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
+    const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible, isFullScreen } = useUIStore();
 
     const isResizing = useRef(false);
 
@@ -133,7 +133,29 @@ export const GanttContainer: React.FC = () => {
     }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations]);
 
     return (
-        <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
+        <div
+            ref={containerRef}
+            style={
+                isFullScreen
+                    ? {
+                          position: 'fixed',
+                          top: 0,
+                          left: 0,
+                          width: '100vw',
+                          height: '100vh',
+                          zIndex: 9999,
+                          backgroundColor: '#fff',
+                          display: 'flex',
+                          overflow: 'hidden',
+                      }
+                    : {
+                          display: 'flex',
+                          width: '100%',
+                          height: '100%',
+                          overflow: 'hidden',
+                      }
+            }
+        >
             {/* Resizable Sidebar Wrapper */}
             {leftPaneVisible && (
                 <>
