@@ -25,8 +25,7 @@ export class TaskRenderer {
 
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount);
 
-        // Filter visible tasks
-        const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
+        const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
 
         const ONE_DAY = 24 * 60 * 60 * 1000;
         const todayTs = new Date().setHours(0, 0, 0, 0);

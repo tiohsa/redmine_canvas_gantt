@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { InteractionEngine } from '../engines/InteractionEngine';
@@ -10,12 +10,14 @@ import { HtmlOverlay } from './HtmlOverlay';
 import { UiSidebar } from './UiSidebar';
 import { TimelineHeader } from './TimelineHeader';
 import { IssueIframeDialog } from './IssueIframeDialog';
+import { getMaxFiniteDueDate, getMinFiniteStartDate } from '../utils/taskRange';
 
 export const GanttContainer: React.FC = () => {
     // containerRef is the root flex container
     const containerRef = useRef<HTMLDivElement>(null);
     // scrollPaneRef provides the native scrollbar UI (we sync it with viewport.scrollX/Y)
     const scrollPaneRef = useRef<HTMLDivElement>(null);
+    const viewportWrapperRef = useRef<HTMLDivElement>(null);
     // mainPaneRef is the right side (timeline) where canvases live
     const mainPaneRef = useRef<HTMLDivElement>(null);
 
@@ -30,9 +32,10 @@ export const GanttContainer: React.FC = () => {
     const isSyncingScroll = useRef(false);
 
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const MAX_SCROLL_AREA_PX = 10_000_000;
+    const tasksMaxDue = useMemo(() => getMaxFiniteDueDate(tasks), [tasks]);
     const computeScrollContentSize = (): { width: number; height: number } => {
         const scale = viewport.scale || 0.00000001;
-        const tasksMaxDue = tasks.reduce<number | null>((acc, t) => (acc === null ? t.dueDate : Math.max(acc, t.dueDate)), null);
 
         const visibleMs = viewport.width / scale;
         const visibleEnd = viewport.startDate + visibleMs;
@@ -40,13 +43,31 @@ export const GanttContainer: React.FC = () => {
         const paddingMs = 60 * ONE_DAY_MS;
         const rangeEnd = Math.max(tasksMaxDue ?? visibleEnd, visibleEnd) + paddingMs;
 
-        const contentWidth = Math.max(viewport.width, Math.ceil((rangeEnd - viewport.startDate) * scale));
-        const contentHeight = Math.max(viewport.height, Math.ceil(rowCount * viewport.rowHeight));
+        const realWidth = Math.max(viewport.width, Math.ceil((rangeEnd - viewport.startDate) * scale));
+        const realHeight = Math.max(viewport.height, Math.ceil(rowCount * viewport.rowHeight));
+
+        // Browsers have practical limits for scrollable dimensions; cap the DOM scroll area
+        // and map it to the "virtual" viewport scroll offsets.
+        const contentWidth = Math.max(viewport.width, Math.min(realWidth, MAX_SCROLL_AREA_PX));
+        const contentHeight = Math.max(viewport.height, Math.min(realHeight, MAX_SCROLL_AREA_PX));
 
         return { width: contentWidth, height: contentHeight };
     };
 
     const scrollContentSize = computeScrollContentSize();
+    const computeRealContentSize = (): { width: number; height: number } => {
+        const scale = viewport.scale || 0.00000001;
+        const visibleMs = viewport.width / scale;
+        const visibleEnd = viewport.startDate + visibleMs;
+
+        const paddingMs = 60 * ONE_DAY_MS;
+        const rangeEnd = Math.max(tasksMaxDue ?? visibleEnd, visibleEnd) + paddingMs;
+
+        const width = Math.max(viewport.width, Math.ceil((rangeEnd - viewport.startDate) * scale));
+        const height = Math.max(viewport.height, Math.ceil(rowCount * viewport.rowHeight));
+        return { width, height };
+    };
+    const realContentSize = computeRealContentSize();
 
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
@@ -92,10 +113,7 @@ export const GanttContainer: React.FC = () => {
 
                 if (!viewportFromStorage) {
                     // Fit timeline start to the earliest available date so tasks are visible
-                    const minStart = data.tasks.reduce<number | null>((acc, t) => {
-                        const start = t.startDate;
-                        return acc === null ? start : Math.min(acc, start);
-                    }, null);
+                    const minStart = getMinFiniteStartDate(data.tasks);
                     const oneYearAgo = new Date();
                     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
                     oneYearAgo.setHours(0, 0, 0, 0);
@@ -129,9 +147,9 @@ export const GanttContainer: React.FC = () => {
         };
     }, []);
 
-    // Responsive Canvas Size - Observe the mainPaneRef
+    // Responsive Canvas Size - Observe the viewportWrapperRef (the visible scrollport)
     useEffect(() => {
-        if (!mainPaneRef.current) return;
+        if (!viewportWrapperRef.current) return;
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
                 const { width, height } = entry.contentRect;
@@ -144,7 +162,7 @@ export const GanttContainer: React.FC = () => {
                 useTaskStore.getState().updateViewport({ width, height });
             }
         });
-        resizeObserver.observe(mainPaneRef.current);
+        resizeObserver.observe(viewportWrapperRef.current);
         return () => resizeObserver.disconnect();
     }, []);
 
@@ -155,28 +173,57 @@ export const GanttContainer: React.FC = () => {
 
         const onScroll = () => {
             if (isSyncingScroll.current) return;
-            updateViewport({ scrollX: el.scrollLeft, scrollY: el.scrollTop });
+
+            const virtualAvailableX = Math.max(0, scrollContentSize.width - viewport.width);
+            const virtualAvailableY = Math.max(0, scrollContentSize.height - viewport.height);
+            const realAvailableX = Math.max(0, realContentSize.width - viewport.width);
+            const realAvailableY = Math.max(0, realContentSize.height - viewport.height);
+
+            const mappedX = virtualAvailableX === 0 || realAvailableX === 0
+                ? 0
+                : Math.round((el.scrollLeft / virtualAvailableX) * realAvailableX);
+            const mappedY = virtualAvailableY === 0 || realAvailableY === 0
+                ? 0
+                : Math.round((el.scrollTop / virtualAvailableY) * realAvailableY);
+
+            updateViewport({
+                scrollX: Math.max(0, Math.min(realAvailableX, mappedX)),
+                scrollY: Math.max(0, Math.min(realAvailableY, mappedY))
+            });
         };
 
         el.addEventListener('scroll', onScroll, { passive: true });
         return () => el.removeEventListener('scroll', onScroll);
-    }, [updateViewport]);
+    }, [realContentSize.height, realContentSize.width, scrollContentSize.height, scrollContentSize.width, updateViewport, viewport.height, viewport.width]);
 
     // Sync viewport -> native scrollbar (wheel/drag/keys update viewport directly)
     useEffect(() => {
         const el = scrollPaneRef.current;
         if (!el) return;
 
+        const virtualAvailableX = Math.max(0, scrollContentSize.width - viewport.width);
+        const virtualAvailableY = Math.max(0, scrollContentSize.height - viewport.height);
+        const realAvailableX = Math.max(0, realContentSize.width - viewport.width);
+        const realAvailableY = Math.max(0, realContentSize.height - viewport.height);
+
+        const mappedLeft = realAvailableX === 0 || virtualAvailableX === 0
+            ? 0
+            : Math.round((viewport.scrollX / realAvailableX) * virtualAvailableX);
+        const mappedTop = realAvailableY === 0 || virtualAvailableY === 0
+            ? 0
+            : Math.round((viewport.scrollY / realAvailableY) * virtualAvailableY);
+
         isSyncingScroll.current = true;
-        if (el.scrollLeft !== viewport.scrollX) el.scrollLeft = viewport.scrollX;
-        if (el.scrollTop !== viewport.scrollY) el.scrollTop = viewport.scrollY;
+        if (el.scrollLeft !== mappedLeft) el.scrollLeft = mappedLeft;
+        if (el.scrollTop !== mappedTop) el.scrollTop = mappedTop;
         requestAnimationFrame(() => {
             isSyncingScroll.current = false;
         });
-    }, [viewport.scrollX, viewport.scrollY]);
+    }, [realContentSize.height, realContentSize.width, scrollContentSize.height, scrollContentSize.width, viewport.height, viewport.scrollX, viewport.scrollY, viewport.width]);
 
     // Render Loop
     useEffect(() => {
+        // console.log('Render Loop:', { width: viewport.width, height: viewport.height, scrollX: viewport.scrollX, scrollY: viewport.scrollY, rowCount, tasks: tasks.length });
         if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel);
         if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
@@ -210,7 +257,7 @@ export const GanttContainer: React.FC = () => {
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                     <TimelineHeader />
                     {/* Timeline Pane */}
-                    <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                    <div ref={viewportWrapperRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                         <div
                             ref={scrollPaneRef}
                             className="rcg-scroll rcg-gantt-scroll-pane"
@@ -222,7 +269,15 @@ export const GanttContainer: React.FC = () => {
                             <div
                                 ref={mainPaneRef}
                                 className="rcg-gantt-viewport"
-                                style={{ gridArea: '1 / 1', position: 'sticky', top: 0, left: 0, width: '100%', height: '100%', overflow: 'hidden' }}
+                                style={{
+                                    gridArea: '1 / 1',
+                                    position: 'sticky',
+                                    top: 0,
+                                    left: 0,
+                                    width: viewport.width,   // Explicitly set size to match viewport
+                                    height: viewport.height, // preventing it from stretching to content size
+                                    overflow: 'hidden'
+                                }}
                             >
                                 <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
                                 <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />

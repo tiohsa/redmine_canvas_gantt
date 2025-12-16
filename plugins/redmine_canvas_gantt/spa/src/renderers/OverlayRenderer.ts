@@ -5,6 +5,7 @@ import { useUIStore } from '../stores/UIStore';
 
 export class OverlayRenderer {
     private canvas: HTMLCanvasElement;
+    private static readonly DEPENDENCY_ROW_BUFFER = 50;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -16,38 +17,42 @@ export class OverlayRenderer {
 
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        const { tasks, relations, selectedTaskId } = useTaskStore.getState();
+        const { tasks, relations, selectedTaskId, rowCount } = useTaskStore.getState();
+        const totalRows = rowCount || tasks.length;
+        const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, totalRows);
+
+        const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
+        const bufferedTasks = LayoutEngine.sliceTasksInRowRange(
+            tasks,
+            Math.max(0, startRow - OverlayRenderer.DEPENDENCY_ROW_BUFFER),
+            Math.min(totalRows - 1, endRow + OverlayRenderer.DEPENDENCY_ROW_BUFFER)
+        );
 
         // Draw dependency lines
-        this.drawDependencies(ctx, viewport, tasks, relations);
+        this.drawDependencies(ctx, viewport, bufferedTasks, relations);
 
         // Draw selection highlight
         if (selectedTaskId) {
-            const selectedTask = tasks.find(t => t.id === selectedTaskId);
+            const selectedTask = visibleTasks.find(t => t.id === selectedTaskId);
             if (selectedTask) {
                 this.drawSelectionHighlight(ctx, viewport, selectedTask);
             }
         }
 
         // Draw Inazuma line (Progress Line)
-        this.drawProgressLine(ctx, viewport);
+        this.drawProgressLine(ctx, viewport, visibleTasks);
 
         // Draw "Today" line
         this.drawTodayLine(ctx, viewport);
     }
 
-    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport) {
+    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[]) {
         const { showProgressLine } = useUIStore.getState();
         if (!showProgressLine) return;
 
-        const { tasks } = useTaskStore.getState();
-
-        // Filter valid tasks and sort by visual order (row index)
-        const sortedTasks = [...tasks]
-            .filter(t => t.startDate && t.dueDate && typeof t.ratioDone === 'number')
-            .sort((a, b) => a.rowIndex - b.rowIndex);
-
-        if (sortedTasks.length === 0) return;
+        // Tasks are already ordered by rowIndex (TaskStore layout).
+        const drawableTasks = tasks.filter(t => Number.isFinite(t.startDate) && Number.isFinite(t.dueDate) && Number.isFinite(t.ratioDone));
+        if (drawableTasks.length === 0) return;
 
         ctx.save();
         ctx.beginPath();
@@ -58,7 +63,7 @@ export class OverlayRenderer {
 
         let firstPoint = true;
 
-        sortedTasks.forEach(task => {
+        drawableTasks.forEach(task => {
             const bounds = LayoutEngine.getTaskBounds(task, viewport);
 
             // X position based on progress
@@ -90,9 +95,10 @@ export class OverlayRenderer {
         ctx.strokeStyle = '#888';
         ctx.lineWidth = 1.5;
 
+        const taskById = new Map<string, Task>(tasks.map((t) => [t.id, t]));
         for (const rel of relations) {
-            const fromTask = tasks.find(t => t.id === rel.from);
-            const toTask = tasks.find(t => t.id === rel.to);
+            const fromTask = taskById.get(rel.from);
+            const toTask = taskById.get(rel.to);
             if (!fromTask || !toTask) continue;
 
             const fromBounds = LayoutEngine.getTaskBounds(fromTask, viewport);

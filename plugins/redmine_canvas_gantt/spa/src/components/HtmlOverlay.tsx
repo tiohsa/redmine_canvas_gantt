@@ -21,11 +21,12 @@ export const HtmlOverlay: React.FC = () => {
     const draftRef = React.useRef<typeof draft>(null);
     const [tooltipPosition, setTooltipPosition] = React.useState<{ x: number; y: number } | null>(null);
 
-    const hoveredTask = hoveredTaskId ? tasks.find(t => t.id === hoveredTaskId) : null;
-    const contextTask = contextMenu ? tasks.find(t => t.id === contextMenu.taskId) : null;
+    const taskById = React.useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+    const hoveredTask = hoveredTaskId ? taskById.get(hoveredTaskId) ?? null : null;
+    const contextTask = contextMenu ? taskById.get(contextMenu.taskId) ?? null : null;
 
     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
-    const visibleTasks = tasks.filter(t => t.rowIndex >= startRow && t.rowIndex <= endRow);
+    const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
 
     const setDraftState = React.useCallback((next: typeof draft) => {
         draftRef.current = next;
@@ -39,8 +40,11 @@ export const HtmlOverlay: React.FC = () => {
     }, []);
 
     const hitTestTask = React.useCallback((x: number, y: number) => {
-        const { tasks: currentTasks, viewport: currentViewport } = useTaskStore.getState();
-        for (const task of currentTasks) {
+        // Dependency dragging only needs hit-testing against currently visible rows.
+        const { viewport: currentViewport, tasks: currentTasks, rowCount: currentRowCount } = useTaskStore.getState();
+        const [s, e] = LayoutEngine.getVisibleRowRange(currentViewport, currentRowCount || currentTasks.length);
+        const candidates = LayoutEngine.sliceTasksInRowRange(currentTasks, s, e);
+        for (const task of candidates) {
             const bounds = LayoutEngine.getTaskBounds(task, currentViewport, 'hit');
             if (x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height) {
                 return task;

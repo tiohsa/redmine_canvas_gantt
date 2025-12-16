@@ -276,9 +276,18 @@ export const useTaskStore = create<TaskState>((set) => ({
         };
     }),
 
-    updateViewport: (updates) => set((state) => ({
-        viewport: { ...state.viewport, ...updates }
-    })),
+    updateViewport: (updates) => set((state) => {
+        const nextViewport = { ...state.viewport, ...updates };
+
+        // Prevent "scroll into nothing" when there are many rows.
+        const totalHeight = Math.max(0, state.rowCount * nextViewport.rowHeight);
+        const maxScrollY = Math.max(0, totalHeight - nextViewport.height);
+        const nextScrollY = Math.max(0, Math.min(maxScrollY, nextViewport.scrollY));
+
+        return {
+            viewport: { ...nextViewport, scrollY: nextScrollY }
+        };
+    }),
 
     setViewMode: (mode) => set((state) => {
         let zoom = state.zoomLevel;

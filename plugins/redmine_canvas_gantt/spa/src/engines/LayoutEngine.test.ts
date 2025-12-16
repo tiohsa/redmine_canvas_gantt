@@ -59,4 +59,18 @@ describe('LayoutEngine', () => {
         expect(bounds.y).toBe(80);
         expect(bounds.height).toBe(40);
     });
+
+    it('sliceTasksInRowRange は rowIndex 範囲のタスクだけ返す', () => {
+        const tasks: Task[] = [
+            { id: 'a', subject: 'a', startDate: 0, dueDate: 1, ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 0, hasChildren: false },
+            { id: 'b', subject: 'b', startDate: 0, dueDate: 1, ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 2, hasChildren: false },
+            { id: 'c', subject: 'c', startDate: 0, dueDate: 1, ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 5, hasChildren: false }
+        ];
+
+        expect(LayoutEngine.sliceTasksInRowRange(tasks, 0, 0).map(t => t.id)).toEqual(['a']);
+        expect(LayoutEngine.sliceTasksInRowRange(tasks, 1, 4).map(t => t.id)).toEqual(['b']);
+        expect(LayoutEngine.sliceTasksInRowRange(tasks, 2, 5).map(t => t.id)).toEqual(['b', 'c']);
+        expect(LayoutEngine.sliceTasksInRowRange(tasks, 6, 10)).toEqual([]);
+        expect(LayoutEngine.sliceTasksInRowRange(tasks, 4, 3)).toEqual([]);
+    });
 });

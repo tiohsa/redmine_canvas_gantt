@@ -48,4 +48,33 @@ export class LayoutEngine {
             Math.min(totalRows - 1, endRow)
         ];
     }
+
+    /**
+     * Returns tasks within the given row range efficiently.
+     * Assumes tasks are ordered by `rowIndex` ascending (as produced by TaskStore layout).
+     */
+    static sliceTasksInRowRange(tasks: Task[], startRow: number, endRow: number): Task[] {
+        if (tasks.length === 0) return [];
+        if (endRow < startRow) return [];
+
+        // Lower-bound search for the first task whose rowIndex >= startRow
+        let lo = 0;
+        let hi = tasks.length;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (tasks[mid].rowIndex < startRow) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+
+        const result: Task[] = [];
+        for (let i = lo; i < tasks.length; i += 1) {
+            const task = tasks[i];
+            if (task.rowIndex > endRow) break;
+            result.push(task);
+        }
+        return result;
+    }
 }

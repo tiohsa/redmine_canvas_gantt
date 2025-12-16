@@ -89,10 +89,13 @@ export class InteractionEngine {
     }
 
     private hitTest(x: number, y: number): { task: Task | null; region: 'body' | 'start' | 'end' } {
-        const { tasks, viewport } = useTaskStore.getState();
+        const { tasks, viewport, rowCount } = useTaskStore.getState();
         const RESIZE_HANDLE_WIDTH = 8;
 
-        for (const t of tasks) {
+        const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
+        const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
+
+        for (const t of visibleTasks) {
             const bounds = LayoutEngine.getTaskBounds(t, viewport, 'hit');
             if (x >= bounds.x && x <= bounds.x + bounds.width &&
                 y >= bounds.y && y <= bounds.y + bounds.height) {
@@ -207,9 +210,11 @@ export class InteractionEngine {
 
                 // If not strictly hitting a task, check with expanded bounds (to cover the gap to handles)
                 if (!hoveredId) {
-                    const { tasks } = useTaskStore.getState();
+                    const { tasks, rowCount } = useTaskStore.getState();
+                    const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
+                    const candidates = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
                     const HOVER_MARGIN = 20; // Enough to cover handle offset (12px) + handle size (10px)
-                    for (const t of tasks) {
+                    for (const t of candidates) {
                         const bounds = LayoutEngine.getTaskBounds(t, viewport, 'hit');
                         // Expand horizontally
                         if (x >= bounds.x - HOVER_MARGIN && x <= bounds.x + bounds.width + HOVER_MARGIN &&
