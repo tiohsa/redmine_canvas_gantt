@@ -23,12 +23,14 @@ AIエージェントは以下の優先順位に従って行動すること：
 | フレームワーク | Redmine 5.x + Vite + React 19 |
 | パッケージマネージャ | pnpm (フロントエンド), Bundler (Ruby) |
 | DB | MariaDB 10 (Docker) |
-| 状態管理 | Zustand |
+| 状態管理 | Zustand (`TaskStore`, `UIStore` 等) |
+| レンダリング | HTML5 Canvas (`TaskRenderer`, `OverlayRenderer` 等) |
+| ロジック集約 | `TaskLogicService.ts` (制約、日付伝播、バリデーション) |
 | テスト | Vitest + Testing Library (フロントエンド), RSpec (Ruby) |
 
 ### 推測禁止事項
 - Redmine のバージョンや設定を勝手に推測しない
-- API エンドポイントの仕様を推測しない（実コードを確認すること）
+- API エンドポイントの仕様を推測しない（実コード `src/api/client.ts` を確認すること）
 - 権限設定を推測しない（`init.rb` の定義を参照）
 
 ---
@@ -71,6 +73,8 @@ docker compose up -d
 pnpm run dev
 ```
 
+> **注意**: スタンドアロンで開発サーバーを動作させる場合、`window.RedmineCanvasGantt` オブジェクト（Backend URLやトークン）を `main.tsx` 等でモックする必要がある。
+
 ### ビルド・テスト
 
 ```bash
@@ -83,7 +87,7 @@ pnpm run lint
 # 単体テスト
 pnpm run test
 
-# Ruby 側マイグレーション（DB変更時のみ）
+# Ruby 側マイグレーション（原則禁止だが、既存マイグレーション実行用）
 docker compose exec redmine bundle exec rake redmine:plugins:migrate
 ```
 
@@ -101,14 +105,15 @@ docker compose exec redmine bundle exec rake redmine:plugins:migrate
 - strict モード有効 (`tsconfig.app.json`)
 - 関数コンポーネント + Hooks のみ使用
 - 状態管理: Zustand stores を `src/stores/` に配置
-- レンダラー: `src/renderers/` に分離
-- エンジン: `src/engines/` に分離
+- レンダラー: `src/renderers/` に分離（Canvas操作はここに集約）
+- エンジン: `src/engines/` に分離（インタラクション、レイアウト）
 - ESLint 設定に従う（Prettier は未使用）
 
 ### 禁止事項
 - ハードコードされたURL（Vite base path 以外）
 - `any` 型の安易な使用
 - AIが勝手に新しいコーディングスタイルを導入すること
+- **既存のディレクトリ構造やアーキテクチャの変更**
 
 ---
 
@@ -118,9 +123,9 @@ docker compose exec redmine bundle exec rake redmine:plugins:migrate
 > 全ての機能変更は Red → Green → Refactor サイクルに従うこと。
 
 ### テスト粒度
-1. **ユニットテスト**: 各関数・コンポーネント
+1. **ユニットテスト**: 各関数・コンポーネント (Vitest)
 2. **統合テスト**: API通信・状態管理フロー
-3. **E2Eテスト**: 主要ユーザーフロー（手動検証も可）
+3. **検証**: フロントエンドの変更は Playwright スクリプト（使い捨て）を作成して視覚的に検証することを推奨。
 
 ### 例外
 - 純粋なCSSの変更
@@ -147,69 +152,28 @@ docker compose exec redmine bundle exec rake redmine:plugins:migrate
 ```
 redmine-gantt/
 ├── docker-compose.yml          # 開発用 Docker 設定
-├── AGENTS.md                   # このファイル（AIエージェント向けガイド）
-├── SETUP.md                    # セットアップ手順
+├── AGENTS.md                   # このファイル
+├── README.md                   # インストール・利用ガイド
 ├── plugins/
 │   └── redmine_canvas_gantt/
-│       ├── init.rb             # プラグイン登録・権限定義
-│       ├── app/
-│       │   ├── controllers/    # Rails コントローラ
-│       │   └── views/          # ERB テンプレート
-│       ├── config/
-│       │   └── routes.rb       # ルーティング定義
-│       ├── lib/                # Vite アセットヘルパー
-│       ├── spec/               # Ruby テスト（RSpec）
-│       ├── assets/
-│       │   └── build/          # ビルド成果物
-│       └── spa/                # React SPA
+│       ├── init.rb             # プラグイン登録
+│       ├── spa/                # React SPA
 │           ├── src/
-│           │   ├── api/        # API クライアント (client.ts)
+│           │   ├── api/        # API クライアント
 │           │   ├── components/ # React コンポーネント
-│           │   │   ├── GanttContainer.tsx   # メインコンテナ
-│           │   │   ├── GanttToolbar.tsx     # ツールバー（ズーム、Today等）
-│           │   │   ├── HtmlOverlay.tsx      # HTMLオーバーレイ
-│           │   │   ├── TaskDetailPanel.tsx  # タスク詳細パネル
-│           │   │   ├── TimelineHeader.tsx   # タイムラインヘッダー
-│           │   │   ├── UiSidebar.tsx        # サイドバー（タスクリスト）
-│           │   │   ├── Toast.tsx            # 通知トースト
-│           │   │   └── A11yLayer.tsx        # アクセシビリティ層
+│           │   │   ├── HtmlOverlay.tsx      # ツールチップ等（絶対配置）
+│           │   │   ├── ...
 │           │   ├── engines/    # ビジネスロジック
-│           │   │   ├── InteractionEngine.ts # マウス・キーボード操作
-│           │   │   └── LayoutEngine.ts      # レイアウト計算
 │           │   ├── renderers/  # Canvas 描画ロジック
-│           │   │   ├── TaskRenderer.ts      # タスクバー描画
-│           │   │   ├── DependencyRenderer.ts # 依存関係線描画
-│           │   │   ├── BackgroundRenderer.ts # 背景グリッド描画
-│           │   │   └── OverlayRenderer.ts   # オーバーレイ描画
+│           │   │   ├── TaskRenderer.ts      # タスクバー、件名描画
+│           │   │   ├── DependencyRenderer.ts # 依存関係線
+│           │   │   ├── BackgroundRenderer.ts # グリッド
+│           │   │   └── OverlayRenderer.ts   # 依存関係（Manhattan Paths）
 │           │   ├── stores/     # Zustand ストア
-│           │   │   ├── TaskStore.ts         # タスクデータ管理
-│           │   │   ├── UIStore.ts           # UI状態管理
-│           │   │   └── EditMetaStore.ts     # 編集メタデータ
 │           │   ├── services/   # ビジネスサービス
-│           │   │   ├── TaskLogicService.ts  # タスクロジック
-│           │   │   └── InlineEditService.ts # インライン編集
-│           │   ├── types/      # TypeScript型定義
-│           │   │   ├── index.ts             # 共通型
-│           │   │   ├── editMeta.ts          # 編集メタ型
-│           │   │   └── constraints.ts       # 制約型
-│           │   └── utils/      # ユーティリティ
-│           │       ├── grid.ts              # グリッド計算
-│           │       ├── time.ts              # 日時計算
-│           │       ├── styles.ts            # スタイル定数
-│           │       ├── preferences.ts       # ユーザー設定
-│           │       └── i18n.ts              # 国際化
-│           └── package.json
-└── themes/                     # Redmine テーマ
+│           │   │   └── TaskLogicService.ts  # 日付計算・制約ロジック
+│           │   └── ...
 ```
-
-### 触ってよい場所
-- `plugins/redmine_canvas_gantt/` 配下全般
-- `themes/` 配下（テーマカスタマイズ時）
-
-### 触ってはいけない場所
-- `docker-compose.yml` の本番設定値
-- `.git/` ディレクトリ
-- `node_modules/`, `pnpm-lock.yaml`（自動生成）
 
 ---
 
@@ -219,21 +183,14 @@ redmine-gantt/
 - **パッケージマネージャ**: pnpm（npm/yarn は禁止）
 - **ビルドツール**: Vite 7.x
 - **主要ライブラリ**:
-  - React 19.2.x + React DOM 19.2.x
-  - Zustand 5.x（状態管理）
-  - classnames（CSS クラス結合）
-- **テスト**: Vitest 4.x + Testing Library
-- **言語**: TypeScript 5.9.x（strict モード）
+  - React 19.2.x
+  - Zustand 5.x
+  - classnames
+- **テスト**: Vitest 4.x
 
 ### バックエンド
 - **Redmine**: 公式 Docker イメージ
 - **DB**: MariaDB 10
-
-### 禁止ライブラリ
-- jQuery（React との混在を避ける）
-- moment.js（代わりに native Date または dayjs）
-- lodash 全体インポート（必要な関数のみ個別インポート可）
-- TailwindCSS（Vanilla CSS を使用）
 
 ---
 
@@ -242,115 +199,39 @@ redmine-gantt/
 > [!CAUTION]
 > 以下の規則は絶対に遵守すること。
 
+### データベース制約
+- **DBスキーマの変更（テーブル・カラム追加等）は厳禁**
+- データの永続化は既存のAPIエンドポイントまたは `localStorage`（ユーザー設定等）を使用すること。
+
 ### 削除禁止ファイル
 - `init.rb`
 - `docker-compose.yml`
 - `package.json`, `pnpm-lock.yaml`
-- `.gitignore`
 
 ### 禁止事項
-- 本番データベースへの直接操作
-- 認証情報・APIキーのハードコード
-- `REDMINE_SECRET_KEY_BASE` の変更
 - `rm -rf` コマンドの実行
-- 外部サービスへの認証情報送信
-
-### 機密情報の扱い
-- 環境変数経由でのみ設定
-- ログへの出力禁止
-- コミットへの含有禁止
+- 認証情報・APIキーのハードコード
+- 既存のフォルダ構造の変更
 
 ---
 
-## 11. レビュー・検証（Review & Verification）
+## 11. 技術的詳細と注意点（Technical Details & Pitfalls）
 
-### 提出前チェックリスト
-- [ ] `pnpm run lint` がエラーなしで通過
-- [ ] `pnpm run test` が全て成功
-- [ ] `pnpm run build` が成功
-- [ ] 既存機能が壊れていないことを確認
-- [ ] 新規追加コードにはテストを追加
-
-### 人間レビュー
-- 全ての変更は人間レビューを前提とする
-- 特に権限・認証・API変更は必ずレビューを受けること
-
----
-
-## 12. CI/CD 連携
-
-> [!WARNING]
-> CI で失敗する変更を作成してはならない。
-
-### AIが想定すべきパイプライン
-1. `pnpm install`
-2. `pnpm run lint`
-3. `pnpm run test`
-4. `pnpm run build`
-
-### 変更前に確認
-- TypeScript 型エラーがないこと
-- ESLint エラーがないこと
-- テストが全て通過すること
-
----
-
-## 13. よくあるタスク（Common Tasks）
-
-### 機能追加
-1. 要件を確認し、影響範囲を特定
-2. テストを先に書く（Red）
-3. 最小限の実装（Green）
-4. リファクタリング
-5. lint/test を実行して確認
-
-### リファクタリング
-1. 既存テストが通ることを確認
-2. 小さなステップで変更
-3. 各ステップでテスト実行
-4. 機能が変わっていないことを確認
-
-### バグ修正
-1. バグを再現するテストを作成
-2. 修正を実装
-3. テストが通ることを確認
-4. 回帰テストを追加
-
-### テスト追加
-1. 既存コードの動作を理解
-2. ハッピーパスのテストを追加
-3. エッジケース・エラーパスを追加
-4. カバレッジを確認
-
----
-
-## 14. 既知の問題・落とし穴（Pitfalls）
+### レンダリングとロジック
+- **依存関係の描画**: ガントチャート上の依存線は `OverlayRenderer` で処理され、マンハッタンパス（直角に折れ曲がる線）として描画されなければならない。
+- **タスクのグループ化**: フロントエンドでの処理時に仮想的なヘッダータスクを注入し、`rowIndex` と `depth` を再計算することでプロジェクトごとのグループ化を実現している。
+- **ビジネスロジック**: 親子間の日付伝播、依存関係のバリデーション、ステータスルールなどはすべて `plugins/redmine_canvas_gantt/spa/src/services/TaskLogicService.ts` に集約されている。
+- **ツールチップ**: `HtmlOverlay.tsx` で実装されており、絶対配置を使用してマウス座標を動的に追跡する。
+- **件名の描画**: パフォーマンス向上のため、DOMではなく `TaskRenderer.ts` 内でCanvas APIを使ってバーの上に直接描画される。
 
 ### 過去に発生した問題
-- Docker ボリュームでシンボリックリンクが失敗する → `FileUtils.cp_r` にフォールバック
-- アセットマニフェストの JSON パースエラー → ビルド成果物の整合性を確認
-- iframe 内の SPA と親ページ間の CORS 問題 → 同一オリジンまたは postMessage を使用
-- 依存関係ハンドルのドラッグ中にガントチャートの日付が動く → InteractionEngine で適切にイベント処理を分離
-- ドラッグ＆ドロップでの日付変更失敗時のリバート処理 → 楽観的更新後にAPIエラー時は元の位置に戻す
-- プラグインアセットのリンク失敗（Permission denied） → `FileUtils.cp_r` を使用
-
-### AIが特に注意すべき点
-- Vite の base path 設定：`/plugin_assets/redmine_canvas_gantt/build/`
-- Redmine の権限システム：`init.rb` で定義された権限を使用
-- 楽観的ロック：チケット更新時の競合処理
-- 日本語対応：i18n キーを使用し、ハードコードした日本語を避ける
-- ズームレベル：月・週・日の3段階（時間表示は削除済み）
-- 親タスクの描画：Redmine スタイルのサマリーバー（両端にエンドキャップ）
-- カラム幅の自動調整：初期表示時にヘッダーとデータから最適幅を計算
+- **Dockerボリューム**: シンボリックリンクが失敗する場合があるため、ビルド成果物の配置には `FileUtils.cp_r` へのフォールバックが必要（`init.rb` 参照）。
+- **CORS**: iframe内外の通信でのオリジン問題に注意。
+- **ドラッグ操作**: 日付変更失敗時は、楽観的更新をロールバックする必要がある。
 
 ---
 
-## 15. 参照・連絡先（References & Contacts）
-
-### 関連ドキュメント
-- [Redmine Plugin Tutorial](https://www.redmine.org/projects/redmine/wiki/Plugin_Tutorial)
-- [Vite Documentation](https://vitejs.dev/)
-- [React Documentation](https://react.dev/)
+## 12. 参照・連絡先（References & Contacts）
 
 ### エスカレーション
 判断不能な場合は、必ず以下を行うこと：
@@ -365,18 +246,4 @@ redmine-gantt/
 ### コミットメッセージ
 ```
 <type>: <subject> (日本語可)
-
-例:
-feat: ガントチャートのドラッグ＆ドロップ機能を追加
-fix: 依存関係削除時のエラーハンドリングを修正
-refactor: レンダラーのコード整理
-chore: 依存関係のアップデート
 ```
-
-### PR に含めるべき情報
-- 問題の説明
-- 変更内容の概要
-- テスト結果（`pnpm run test`, `pnpm run lint`）
-- スクリーンショット（UI 変更時）
-- 関連する Redmine Issue へのリンク
-- マージ後に必要な手順（`pnpm run build` など）
