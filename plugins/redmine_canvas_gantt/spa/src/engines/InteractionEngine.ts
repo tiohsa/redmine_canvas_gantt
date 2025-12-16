@@ -186,12 +186,19 @@ export class InteractionEngine {
     private handleMouseMove = (e: MouseEvent) => {
         const { viewport, updateTask, setHoveredTask } = useTaskStore.getState();
 
-        // Hover logic
+        // Hover logic (only update when not dragging a task)
         const rect = this.container.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         const hit = this.hitTest(x, y);
-        setHoveredTask(hit.task ? hit.task.id : null);
+
+        // Skip hover update during task drag to keep tooltip visible
+        const isTaskDragging = this.drag.mode === 'task-move' ||
+            this.drag.mode === 'task-resize-start' ||
+            this.drag.mode === 'task-resize-end';
+        if (!isTaskDragging) {
+            setHoveredTask(hit.task ? hit.task.id : null);
+        }
 
         // Update cursor based on hit region
         if (hit.task && hit.task.editable) {
