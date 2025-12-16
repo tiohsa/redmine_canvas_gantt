@@ -334,15 +334,30 @@ export const UiSidebar: React.FC = () => {
                     <div style={{ marginRight: 6, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                         <TrackerIcon name={t.trackerName} />
                     </div>
-                    <a
-                        href={`/issues/${t.id}/edit`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: '#1a73e8', textDecoration: 'none', whiteSpace: 'nowrap', flex: 1 }}
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            useUIStore.getState().openIssueDialog(`/issues/${t.id}/edit`);
+                        }}
+                        style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            color: '#1a73e8',
+                            textDecoration: 'none',
+                            whiteSpace: 'nowrap',
+                            flex: 1,
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            font: 'inherit',
+                            cursor: 'pointer',
+                            textAlign: 'left'
+                        }}
                         title={t.subject}
                     >
                         {t.subject}
-                    </a>
+                    </button>
                 </div>
             )
         },

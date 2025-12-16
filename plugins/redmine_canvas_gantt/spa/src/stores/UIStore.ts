@@ -21,6 +21,7 @@ interface UIState {
     leftPaneVisible: boolean;
     activeInlineEdit: { taskId: string; field: string; source?: 'cell' | 'panel' } | null;
     isFullScreen: boolean;
+    issueDialogUrl: string | null;
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
@@ -31,6 +32,8 @@ interface UIState {
     setActiveInlineEdit: (value: { taskId: string; field: string; source?: 'cell' | 'panel' } | null) => void;
     setFullScreen: (value: boolean) => void;
     toggleFullScreen: () => void;
+    openIssueDialog: (url: string) => void;
+    closeIssueDialog: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -52,6 +55,7 @@ export const useUIStore = create<UIState>((set) => ({
     sidebarWidth: preferences.sidebarWidth ?? 400,
     activeInlineEdit: null,
     isFullScreen: false,
+    issueDialogUrl: null,
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
@@ -76,5 +80,7 @@ export const useUIStore = create<UIState>((set) => ({
     setSidebarWidth: (width) => set(() => ({ sidebarWidth: width })),
     setActiveInlineEdit: (value) => set(() => ({ activeInlineEdit: value })),
     setFullScreen: (value) => set(() => ({ isFullScreen: value })),
-    toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen }))
+    toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen })),
+    openIssueDialog: (url) => set(() => ({ issueDialogUrl: url })),
+    closeIssueDialog: () => set(() => ({ issueDialogUrl: null }))
 }));

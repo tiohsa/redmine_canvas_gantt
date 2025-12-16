@@ -9,6 +9,7 @@ import { A11yLayer } from './A11yLayer';
 import { HtmlOverlay } from './HtmlOverlay';
 import { UiSidebar } from './UiSidebar';
 import { TimelineHeader } from './TimelineHeader';
+import { IssueIframeDialog } from './IssueIframeDialog';
 
 export const GanttContainer: React.FC = () => {
     // containerRef is the root flex container
@@ -133,40 +134,43 @@ export const GanttContainer: React.FC = () => {
     }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations]);
 
     return (
-        <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
-            {/* Resizable Sidebar Wrapper */}
-            {leftPaneVisible && (
-                <>
-                    <div style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
-                        <UiSidebar />
+        <>
+            <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
+                {/* Resizable Sidebar Wrapper */}
+                {leftPaneVisible && (
+                    <>
+                        <div style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
+                            <UiSidebar />
+                        </div>
+
+                        {/* Resize Handle */}
+                        <div
+                            onMouseDown={startResize}
+                            style={{
+                                width: 4,
+                                cursor: 'col-resize',
+                                backgroundColor: '#f0f0f0',
+                                borderRight: '1px solid #e0e0e0',
+                                borderLeft: '1px solid #e0e0e0',
+                                zIndex: 10
+                            }}
+                        />
+                    </>
+                )}
+
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                    <TimelineHeader />
+                    {/* Timeline Pane */}
+                    <div ref={mainPaneRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                        <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+                        <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
+                        <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
+                        <HtmlOverlay />
+                        <A11yLayer />
                     </div>
-
-                    {/* Resize Handle */}
-                    <div
-                        onMouseDown={startResize}
-                        style={{
-                            width: 4,
-                            cursor: 'col-resize',
-                            backgroundColor: '#f0f0f0',
-                            borderRight: '1px solid #e0e0e0',
-                            borderLeft: '1px solid #e0e0e0',
-                            zIndex: 10
-                        }}
-                    />
-                </>
-            )}
-
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                <TimelineHeader />
-                {/* Timeline Pane */}
-                <div ref={mainPaneRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-                    <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
-                    <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
-                    <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
-                    <HtmlOverlay />
-                    <A11yLayer />
                 </div>
             </div>
-        </div>
+            <IssueIframeDialog />
+        </>
     );
 };
