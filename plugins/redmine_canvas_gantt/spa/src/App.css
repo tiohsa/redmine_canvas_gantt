@@ -6,6 +6,14 @@
   text-align: left;
 }
 
+.app-container.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background-color: #f4f5f7;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
 .logo {
   height: 6em;
   padding: 1.5em;
