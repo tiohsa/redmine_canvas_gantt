@@ -14,6 +14,8 @@ import { IssueIframeDialog } from './IssueIframeDialog';
 export const GanttContainer: React.FC = () => {
     // containerRef is the root flex container
     const containerRef = useRef<HTMLDivElement>(null);
+    // scrollPaneRef provides the native scrollbar UI (we sync it with viewport.scrollX/Y)
+    const scrollPaneRef = useRef<HTMLDivElement>(null);
     // mainPaneRef is the right side (timeline) where canvases live
     const mainPaneRef = useRef<HTMLDivElement>(null);
 
@@ -25,6 +27,26 @@ export const GanttContainer: React.FC = () => {
     const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
 
     const isResizing = useRef(false);
+    const isSyncingScroll = useRef(false);
+
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const computeScrollContentSize = (): { width: number; height: number } => {
+        const scale = viewport.scale || 0.00000001;
+        const tasksMaxDue = tasks.reduce<number | null>((acc, t) => (acc === null ? t.dueDate : Math.max(acc, t.dueDate)), null);
+
+        const visibleMs = viewport.width / scale;
+        const visibleEnd = viewport.startDate + visibleMs;
+
+        const paddingMs = 60 * ONE_DAY_MS;
+        const rangeEnd = Math.max(tasksMaxDue ?? visibleEnd, visibleEnd) + paddingMs;
+
+        const contentWidth = Math.max(viewport.width, Math.ceil((rangeEnd - viewport.startDate) * scale));
+        const contentHeight = Math.max(viewport.height, Math.ceil(rowCount * viewport.rowHeight));
+
+        return { width: contentWidth, height: contentHeight };
+    };
+
+    const scrollContentSize = computeScrollContentSize();
 
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
@@ -126,6 +148,33 @@ export const GanttContainer: React.FC = () => {
         return () => resizeObserver.disconnect();
     }, []);
 
+    // Sync native scrollbar position -> viewport
+    useEffect(() => {
+        const el = scrollPaneRef.current;
+        if (!el) return;
+
+        const onScroll = () => {
+            if (isSyncingScroll.current) return;
+            updateViewport({ scrollX: el.scrollLeft, scrollY: el.scrollTop });
+        };
+
+        el.addEventListener('scroll', onScroll, { passive: true });
+        return () => el.removeEventListener('scroll', onScroll);
+    }, [updateViewport]);
+
+    // Sync viewport -> native scrollbar (wheel/drag/keys update viewport directly)
+    useEffect(() => {
+        const el = scrollPaneRef.current;
+        if (!el) return;
+
+        isSyncingScroll.current = true;
+        if (el.scrollLeft !== viewport.scrollX) el.scrollLeft = viewport.scrollX;
+        if (el.scrollTop !== viewport.scrollY) el.scrollTop = viewport.scrollY;
+        requestAnimationFrame(() => {
+            isSyncingScroll.current = false;
+        });
+    }, [viewport.scrollX, viewport.scrollY]);
+
     // Render Loop
     useEffect(() => {
         if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel);
@@ -161,12 +210,27 @@ export const GanttContainer: React.FC = () => {
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                     <TimelineHeader />
                     {/* Timeline Pane */}
-                    <div ref={mainPaneRef} style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-                        <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
-                        <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
-                        <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
-                        <HtmlOverlay />
-                        <A11yLayer />
+                    <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                        <div
+                            ref={scrollPaneRef}
+                            className="rcg-scroll rcg-gantt-scroll-pane"
+                            style={{ position: 'absolute', inset: 0, overflow: 'auto', display: 'grid' }}
+                        >
+                            {/* Spacer that defines the scrollable range */}
+                            <div style={{ gridArea: '1 / 1', width: scrollContentSize.width, height: scrollContentSize.height }} />
+                            {/* Sticky viewport overlay (keeps canvases fixed while scrollbars move) */}
+                            <div
+                                ref={mainPaneRef}
+                                className="rcg-gantt-viewport"
+                                style={{ gridArea: '1 / 1', position: 'sticky', top: 0, left: 0, width: '100%', height: '100%', overflow: 'hidden' }}
+                            >
+                                <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+                                <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
+                                <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
+                                <HtmlOverlay />
+                                <A11yLayer />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

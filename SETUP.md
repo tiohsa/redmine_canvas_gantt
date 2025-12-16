@@ -98,4 +98,6 @@ docker compose restart redmine
 
 ```bash
 docker compose exec -e REDMINE_LANG=ja redmine bundle exec rake redmine:load_default_data
+
+docker compose exec redmine  bundle exec rake redmine:generate_issues
 ```

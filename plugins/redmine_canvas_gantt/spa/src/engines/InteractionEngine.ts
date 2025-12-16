@@ -114,7 +114,8 @@ export class InteractionEngine {
 
     private handleMouseDown = (e: MouseEvent) => {
         // Ignore events from dependency handles (let/leave them for the Overlay handler)
-        if ((e.target as HTMLElement).closest('.dependency-handle')) {
+        const downTarget = e.target;
+        if (downTarget instanceof Element && downTarget.closest('.dependency-handle')) {
             return;
         }
 
@@ -198,7 +199,8 @@ export class InteractionEngine {
             this.drag.mode === 'task-resize-end';
         if (!isTaskDragging) {
             // Check if hovering over a dependency handle
-            if ((e.target as HTMLElement).closest('.dependency-handle')) {
+            const moveTarget = e.target;
+            if (moveTarget instanceof Element && moveTarget.closest('.dependency-handle')) {
                 // Keep current hover
             } else {
                 let hoveredId = hit.task ? hit.task.id : null;
@@ -338,6 +340,7 @@ export class InteractionEngine {
             updateViewport({ scale: newScale });
         } else {
             // Scroll
+            e.preventDefault();
             this.scrollViewportByWheel(e.deltaX, e.deltaY);
         }
     };

@@ -59,7 +59,10 @@ describe('InteractionEngine viewport panning', () => {
         const container = createContainer();
         const engine = new InteractionEngine(container);
 
-        container.dispatchEvent(new WheelEvent('wheel', { deltaX: -30, deltaY: 0, bubbles: true })); // nextScrollX=-20
+        const e = new WheelEvent('wheel', { deltaX: -30, deltaY: 0, bubbles: true, cancelable: true }); // nextScrollX=-20
+        const result = container.dispatchEvent(e);
+        expect(result).toBe(false);
+        expect(e.defaultPrevented).toBe(true);
 
         const { viewport } = useTaskStore.getState();
         expect(viewport.scrollX).toBe(0);
@@ -68,5 +71,18 @@ describe('InteractionEngine viewport panning', () => {
         engine.detach();
         container.remove();
     });
-});
 
+    it('ホイールスクロールはデフォルト動作を抑止する（スクロールバーと二重に動かさない）', () => {
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+
+        const e = new WheelEvent('wheel', { deltaX: 0, deltaY: 10, bubbles: true, cancelable: true });
+        const result = container.dispatchEvent(e);
+        expect(result).toBe(false);
+        expect(e.defaultPrevented).toBe(true);
+
+        engine.detach();
+        container.remove();
+    });
+});
