@@ -11,7 +11,16 @@ interface GanttToolbarProps {
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const { viewport, updateViewport, groupByProject, setGroupByProject, filterText, setFilterText } = useTaskStore();
-    const { showProgressLine, toggleProgressLine, visibleColumns, setVisibleColumns, leftPaneVisible, toggleLeftPane } = useUIStore();
+    const {
+        showProgressLine,
+        toggleProgressLine,
+        visibleColumns,
+        setVisibleColumns,
+        leftPaneVisible,
+        toggleLeftPane,
+        isFullScreen,
+        toggleFullScreen
+    } = useUIStore();
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
     const [showFilterMenu, setShowFilterMenu] = React.useState(false);
 
@@ -339,6 +348,44 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     Today
                 </button>
 
+                <button
+                    onClick={toggleFullScreen}
+                    style={{
+                        padding: '6px 16px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: isFullScreen ? '#1a73e8' : '#fff',
+                        color: isFullScreen ? '#fff' : '#333',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        height: '32px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                    }}
+                    title={isFullScreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        {isFullScreen ? (
+                            <>
+                                <polyline points="9 9 3 9 3 3" />
+                                <line x1="3" y1="3" x2="9" y2="9" />
+                                <polyline points="15 15 21 15 21 21" />
+                                <line x1="15" y1="15" x2="21" y2="21" />
+                            </>
+                        ) : (
+                            <>
+                                <polyline points="3 9 9 9 9 3" />
+                                <line x1="9" y1="3" x2="3" y2="9" />
+                                <polyline points="21 15 15 15 15 21" />
+                                <line x1="15" y1="21" x2="21" y2="15" />
+                            </>
+                        )}
+                    </svg>
+                    {isFullScreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                </button>
+
                 <div style={{
                     display: 'flex',
                     backgroundColor: '#e9ecef',
@@ -374,6 +421,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     })}
                 </div>
             </div>
-        </div >
+        </div>
     );
 };

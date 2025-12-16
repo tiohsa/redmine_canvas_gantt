@@ -20,6 +20,7 @@ interface UIState {
     sidebarWidth: number;
     leftPaneVisible: boolean;
     activeInlineEdit: { taskId: string; field: string; source?: 'cell' | 'panel' } | null;
+    isFullScreen: boolean;
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
@@ -28,6 +29,8 @@ interface UIState {
     setColumnWidth: (key: string, width: number) => void;
     setSidebarWidth: (width: number) => void;
     setActiveInlineEdit: (value: { taskId: string; field: string; source?: 'cell' | 'panel' } | null) => void;
+    setFullScreen: (value: boolean) => void;
+    toggleFullScreen: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -48,6 +51,7 @@ export const useUIStore = create<UIState>((set) => ({
     },
     sidebarWidth: preferences.sidebarWidth ?? 400,
     activeInlineEdit: null,
+    isFullScreen: false,
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
@@ -70,5 +74,7 @@ export const useUIStore = create<UIState>((set) => ({
     setVisibleColumns: (cols) => set(() => ({ visibleColumns: cols })),
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),
     setSidebarWidth: (width) => set(() => ({ sidebarWidth: width })),
-    setActiveInlineEdit: (value) => set(() => ({ activeInlineEdit: value }))
+    setActiveInlineEdit: (value) => set(() => ({ activeInlineEdit: value })),
+    setFullScreen: (value) => set(() => ({ isFullScreen: value })),
+    toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen }))
 }));
