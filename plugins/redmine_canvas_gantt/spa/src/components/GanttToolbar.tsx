@@ -291,7 +291,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <div style={{ display: 'flex', gap: '6px' }}>
                     <button
-                        onClick={() => updateViewport({ scrollX: 0 })}
+                        onClick={() => updateViewport({ scrollY: 0 })}
                         style={{
                             padding: '6px 12px',
                             borderRadius: '6px',
@@ -306,14 +306,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             alignItems: 'center',
                             gap: '4px'
                         }}
-                        title="Scroll to Start"
+                        title="Scroll to Top"
                     >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="19" y1="12" x2="5" y2="12"></line>
-                            <polyline points="12 19 5 12 12 5"></polyline>
-                            <line x1="19" y1="5" x2="19" y2="19"></line>
+                            <line x1="12" y1="19" x2="12" y2="5"></line>
+                            <polyline points="5 12 12 5 19 12"></polyline>
+                            <line x1="5" y1="19" x2="19" y2="19"></line>
                         </svg>
-                        Start
+                        Top
                     </button>
                     <button
                         onClick={() => navigateMonth(-1)}
