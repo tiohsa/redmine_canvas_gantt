@@ -524,40 +524,70 @@ export const UiSidebar: React.FC = () => {
                 fontSize: '13px'
             }}>
                 {
-                    activeColumns.map((col, idx) => (
-                        <div key={idx} style={{
-                            width: col.width,
-                            padding: '0 8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            overflow: 'hidden',
-                            position: 'relative'
-                        }}>
-                            {col.title}
+                    activeColumns.map((col, idx) => {
+                        const sortConfig = useTaskStore.getState().sortConfig;
+                        const isSorted = sortConfig?.key === col.key;
+                        return (
                             <div
+                                key={idx}
                                 style={{
-                                    position: 'absolute',
-                                    right: 0,
-                                    bottom: 0,
-                                    width: 4, // Hit area
-                                    height: '100%',
-                                    cursor: 'col-resize',
-                                    zIndex: 10,
+                                    width: col.width,
+                                    padding: '0 8px',
                                     display: 'flex',
-                                    alignItems: 'flex-end',
-                                    justifyContent: 'center'
+                                    alignItems: 'center',
+                                    overflow: 'hidden',
+                                    position: 'relative',
+                                    cursor: 'pointer',
+                                    userSelect: 'none',
+                                    justifyContent: 'space-between'
                                 }}
-                                onMouseDown={(e) => handleResizeStart(e, col.key, col.width)}
+                                onClick={() => useTaskStore.getState().setSortConfig(col.key as keyof Task)}
+                                title={`Sort by ${col.title}`}
                             >
-                                <div style={{
-                                    width: 1,
-                                    height: 12,
-                                    backgroundColor: '#d0d0d0',
-                                    pointerEvents: 'none'
-                                }} />
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {col.title}
+                                </span>
+
+                                {isSorted && (
+                                    <span style={{ marginLeft: 4, display: 'flex', alignItems: 'center' }}>
+                                        {sortConfig?.direction === 'asc' ? (
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <polyline points="18 15 12 9 6 15"></polyline>
+                                            </svg>
+                                        ) : (
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <polyline points="6 9 12 15 18 9"></polyline>
+                                            </svg>
+                                        )}
+                                    </span>
+                                )}
+
+                                <div
+                                    style={{
+                                        position: 'absolute',
+                                        right: 0,
+                                        bottom: 0,
+                                        width: 4, // Hit area
+                                        height: '100%',
+                                        cursor: 'col-resize',
+                                        zIndex: 10,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => handleResizeStart(e, col.key, col.width)}
+                                >
+                                    <div style={{
+                                        width: 1,
+                                        height: 12,
+                                        backgroundColor: '#d0d0d0',
+                                        pointerEvents: 'none'
+                                    }} />
+                                </div>
                             </div>
-                        </div>
-                    ))
+                        )
+                    })
                 }
             </div>
 

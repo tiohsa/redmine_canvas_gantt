@@ -22,6 +22,8 @@ interface TaskState {
     taskExpansion: Record<string, boolean>;
     filterText: string;
 
+    sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null;
+
     // Actions
     setTasks: (tasks: Task[]) => void;
     setRelations: (relations: Relation[]) => void;
@@ -41,6 +43,7 @@ interface TaskState {
     setBatchEditMode: (enabled: boolean) => void;
     setFilterText: (text: string) => void;
     scrollToTask: (taskId: string) => void;
+    setSortConfig: (key: keyof Task | null) => void;
 }
 
 const preferences = loadPreferences();
@@ -59,7 +62,8 @@ const buildLayout = (
     tasks: Task[],
     groupByProject: boolean,
     projectExpansion: Record<string, boolean>,
-    taskExpansion: Record<string, boolean>
+    taskExpansion: Record<string, boolean>,
+    sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null
 ): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
     const normalizedTasks = tasks.map((task) => ({ ...task, hasChildren: false }));
 
@@ -89,21 +93,39 @@ const buildLayout = (
         }
     });
 
-    // Sort children and root nodes by displayOrder for stable rendering
-    nodeMap.forEach((node) => {
-        node.children.sort((a, b) => {
+    // Helper to sort task IDs by configured sort or default displayOrder
+    const sortTaskIds = (ids: string[]) => {
+        ids.sort((a, b) => {
             const taskA = nodeMap.get(a)?.task;
             const taskB = nodeMap.get(b)?.task;
-            return (taskA?.displayOrder ?? 0) - (taskB?.displayOrder ?? 0);
+            if (!taskA || !taskB) return 0;
+
+            if (sortConfig) {
+                const valA = taskA[sortConfig.key];
+                const valB = taskB[sortConfig.key];
+
+                if (valA === valB) return 0;
+
+                // Handle nulls/undefined always at the bottom? or top? 
+                // Let's say nulls last.
+                if (valA === null || valA === undefined) return 1;
+                if (valB === null || valB === undefined) return -1;
+
+                const compare = (valA < valB ? -1 : 1);
+                return sortConfig.direction === 'asc' ? compare : -compare;
+            }
+
+            return (taskA.displayOrder ?? 0) - (taskB.displayOrder ?? 0);
         });
+    };
+
+    // Sort children and root nodes by displayOrder for stable rendering
+    nodeMap.forEach((node) => {
+        sortTaskIds(node.children);
     });
 
     projectRoots.forEach((roots) => {
-        roots.sort((a, b) => {
-            const taskA = nodeMap.get(a)?.task;
-            const taskB = nodeMap.get(b)?.task;
-            return (taskA?.displayOrder ?? 0) - (taskB?.displayOrder ?? 0);
-        });
+        sortTaskIds(roots);
     });
 
     const orderedProjects = Array.from(projectRoots.keys()).sort((a, b) => (projectOrder.get(a) ?? 0) - (projectOrder.get(b) ?? 0));
@@ -163,6 +185,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     projectExpansion: {},
     taskExpansion: {},
     filterText: '',
+    sortConfig: null,
 
     setTasks: (tasks) => set((state) => {
         const projectExpansion = { ...state.projectExpansion };
@@ -179,7 +202,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             ? tasks.filter(t => t.subject.toLowerCase().includes(filterText))
             : tasks;
 
-        const layout = buildLayout(filteredTasks, state.groupByProject, projectExpansion, taskExpansion);
+        const layout = buildLayout(filteredTasks, state.groupByProject, projectExpansion, taskExpansion, state.sortConfig);
 
         return {
             allTasks: tasks,
@@ -266,7 +289,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             return t;
         });
 
-        const layout = buildLayout(finalTasks, state.groupByProject, state.projectExpansion, state.taskExpansion);
+        const layout = buildLayout(finalTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
 
         return {
             allTasks: finalTasks,
@@ -342,7 +365,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setGroupByProject: (grouped) => set((state) => {
-        const layout = buildLayout(state.allTasks, grouped, state.projectExpansion, state.taskExpansion);
+        const layout = buildLayout(state.allTasks, grouped, state.projectExpansion, state.taskExpansion, state.sortConfig);
         return {
             groupByProject: grouped,
             tasks: layout.tasks,
@@ -353,7 +376,7 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     toggleProjectExpansion: (projectId) => set((state) => {
         const projectExpansion = { ...state.projectExpansion, [projectId]: !(state.projectExpansion[projectId] ?? true) };
-        const layout = buildLayout(state.allTasks, state.groupByProject, projectExpansion, state.taskExpansion);
+        const layout = buildLayout(state.allTasks, state.groupByProject, projectExpansion, state.taskExpansion, state.sortConfig);
         return {
             projectExpansion,
             tasks: layout.tasks,
@@ -364,7 +387,7 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     toggleTaskExpansion: (taskId: string) => set((state) => {
         const taskExpansion = { ...state.taskExpansion, [taskId]: !(state.taskExpansion[taskId] ?? true) };
-        const layout = buildLayout(state.allTasks, state.groupByProject, state.projectExpansion, taskExpansion);
+        const layout = buildLayout(state.allTasks, state.groupByProject, state.projectExpansion, taskExpansion, state.sortConfig);
         return {
             taskExpansion,
             tasks: layout.tasks,
@@ -381,7 +404,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             ? state.allTasks.filter(t => t.subject.toLowerCase().includes(filterText))
             : state.allTasks;
 
-        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion);
+        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
         return {
             filterText: text,
             tasks: layout.tasks,
@@ -410,6 +433,34 @@ export const useTaskStore = create<TaskState>((set) => ({
 
         return {
             viewport: { ...viewport, scrollX: centeredX }
+        };
+    }),
+
+    setSortConfig: (key) => set((state) => {
+        let newSort: TaskState['sortConfig'] = null;
+        if (key === null) {
+            newSort = null;
+        } else {
+            if (state.sortConfig?.key === key) {
+                // toggle direction
+                newSort = { key, direction: state.sortConfig.direction === 'asc' ? 'desc' : 'asc' };
+            } else {
+                newSort = { key, direction: 'asc' };
+            }
+        }
+
+        const filterText = state.filterText.toLowerCase();
+        const filteredTasks = filterText
+            ? state.allTasks.filter(t => t.subject.toLowerCase().includes(filterText))
+            : state.allTasks;
+
+        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, newSort);
+
+        return {
+            sortConfig: newSort,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
         };
     })
 }));
