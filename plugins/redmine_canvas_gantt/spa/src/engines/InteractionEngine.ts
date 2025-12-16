@@ -197,7 +197,28 @@ export class InteractionEngine {
             this.drag.mode === 'task-resize-start' ||
             this.drag.mode === 'task-resize-end';
         if (!isTaskDragging) {
-            setHoveredTask(hit.task ? hit.task.id : null);
+            // Check if hovering over a dependency handle
+            if ((e.target as HTMLElement).closest('.dependency-handle')) {
+                // Keep current hover
+            } else {
+                let hoveredId = hit.task ? hit.task.id : null;
+
+                // If not strictly hitting a task, check with expanded bounds (to cover the gap to handles)
+                if (!hoveredId) {
+                    const { tasks } = useTaskStore.getState();
+                    const HOVER_MARGIN = 20; // Enough to cover handle offset (12px) + handle size (10px)
+                    for (const t of tasks) {
+                        const bounds = LayoutEngine.getTaskBounds(t, viewport, 'hit');
+                        // Expand horizontally
+                        if (x >= bounds.x - HOVER_MARGIN && x <= bounds.x + bounds.width + HOVER_MARGIN &&
+                            y >= bounds.y && y <= bounds.y + bounds.height) {
+                            hoveredId = t.id;
+                            break;
+                        }
+                    }
+                }
+                setHoveredTask(hoveredId);
+            }
         }
 
         // Update cursor based on hit region

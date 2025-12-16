@@ -154,6 +154,8 @@ export const HtmlOverlay: React.FC = () => {
 
                 const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit');
                 const centerY = bounds.y + bounds.height / 2;
+                // Position handles OUTSIDE the task bar to avoid conflict with resize handles
+                const handleOffset = 12; // Distance from bar edge
                 const baseStyle: React.CSSProperties = {
                     position: 'absolute',
                     top: centerY - 5,
@@ -170,19 +172,19 @@ export const HtmlOverlay: React.FC = () => {
 
                 return (
                     <React.Fragment key={`handles-${task.id}`}>
+                        {/* Left handle - positioned outside the bar */}
                         <div
                             className="dependency-handle"
-                            style={{ ...baseStyle, left: bounds.x - 5 }}
+                            style={{ ...baseStyle, left: bounds.x - handleOffset - 5 }}
                             onMouseDown={() => {
-                                // e.stopPropagation(); // React synthetic - not enough, handled by native listener
                                 startDraft(task.id, bounds.x, centerY);
                             }}
                         />
+                        {/* Right handle - positioned outside the bar */}
                         <div
                             className="dependency-handle"
-                            style={{ ...baseStyle, left: bounds.x + bounds.width - 5 }}
+                            style={{ ...baseStyle, left: bounds.x + bounds.width + handleOffset - 5 }}
                             onMouseDown={() => {
-                                // e.stopPropagation();
                                 startDraft(task.id, bounds.x + bounds.width, centerY);
                             }}
                         />
