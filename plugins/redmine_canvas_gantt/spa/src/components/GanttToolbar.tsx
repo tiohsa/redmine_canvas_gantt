@@ -279,31 +279,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             {/* Right: Zoom Level & Today */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <div style={{ display: 'flex', gap: '6px' }}>
-                    <button
-                        onClick={() => updateViewport({ scrollY: 0 })}
-                        style={{
-                            padding: '6px 12px',
-                            borderRadius: '6px',
-                            border: '1px solid #e0e0e0',
-                            backgroundColor: '#fff',
-                            color: '#333',
-                            fontSize: '13px',
-                            fontWeight: 500,
-                            cursor: 'pointer',
-                            height: '32px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                        }}
-                        title="Scroll to Top"
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="12" y1="19" x2="12" y2="5"></line>
-                            <polyline points="5 12 12 5 19 12"></polyline>
-                            <line x1="5" y1="19" x2="19" y2="19"></line>
-                        </svg>
-                        Top
-                    </button>
+
                     <button
                         onClick={() => navigateMonth(-1)}
                         style={{
@@ -438,6 +414,32 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             </>
                         )}
                     </svg>
+                </button>
+
+                <button
+                    onClick={() => updateViewport({ scrollY: 0 })}
+                    style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: '#fff',
+                        color: '#333',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        height: '32px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                    }}
+                    title="Scroll to Top"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="12" y1="19" x2="12" y2="5"></line>
+                        <polyline points="5 12 12 5 19 12"></polyline>
+                        <line x1="5" y1="19" x2="19" y2="19"></line>
+                    </svg>
+                    Top
                 </button>
             </div>
         </div>
