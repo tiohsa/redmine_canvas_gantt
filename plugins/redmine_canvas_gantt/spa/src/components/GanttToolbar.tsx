@@ -26,10 +26,20 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
     const handleTodayClick = () => {
         const now = Date.now();
-        const todayX = (now - viewport.startDate) * viewport.scale;
+        let newStartDate = viewport.startDate;
+
+        // If today is before current start date, move start date back
+        if (now < newStartDate) {
+            // Move start date to 1 month before today to give some context
+            const d = new Date(now);
+            d.setMonth(d.getMonth() - 1);
+            newStartDate = d.getTime();
+        }
+
+        const todayX = (now - newStartDate) * viewport.scale;
         // Center the view (assuming width is available in viewport, otherwise guess)
         const centeredX = Math.max(0, todayX - (viewport.width / 2));
-        updateViewport({ scrollX: centeredX });
+        updateViewport({ startDate: newStartDate, scrollX: centeredX });
     };
 
     const navigateMonth = (offset: number) => {
