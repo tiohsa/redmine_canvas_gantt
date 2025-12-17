@@ -30,6 +30,9 @@ export const GanttContainer: React.FC = () => {
 
     const isResizing = useRef(false);
     const isSyncingScroll = useRef(false);
+    // ユーザーがスクロールバー領域を直接操作しているかを追跡
+    const isUserScrolling = useRef(false);
+    const userScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
     const MAX_SCROLL_AREA_PX = 10_000_000;
@@ -167,12 +170,41 @@ export const GanttContainer: React.FC = () => {
     }, []);
 
     // Sync native scrollbar position -> viewport
+    // ユーザーが直接スクロールバー領域を操作した時のみviewportを更新
+    // (scrollToTask等のプログラム的スクロール後にscrollイベントが発火してviewportを上書きするのを防止)
     useEffect(() => {
         const el = scrollPaneRef.current;
         if (!el) return;
 
+        // ユーザー操作開始時にフラグを立てる
+        const markUserScrolling = () => {
+            isUserScrolling.current = true;
+            // 前回のタイマーをクリア
+            if (userScrollTimeoutRef.current !== null) {
+                clearTimeout(userScrollTimeoutRef.current);
+            }
+            // 400ms後にフラグをリセット
+            userScrollTimeoutRef.current = setTimeout(() => {
+                isUserScrolling.current = false;
+                userScrollTimeoutRef.current = null;
+            }, 400);
+        };
+
+        const onPointerDown = (_e: PointerEvent) => {
+            // スクロールバー領域でのpointerdownを検出
+            // (スクロールバーはel内のpadding/bordersの外側に表示されるため、
+            //  clientRect外またはオフセット位置でおおよそ判定できる)
+            markUserScrolling();
+        };
+
+        const onWheel = () => {
+            markUserScrolling();
+        };
+
         const onScroll = () => {
             if (isSyncingScroll.current) return;
+            // ユーザーが直近でスクロール操作していない場合はviewportを更新しない
+            if (!isUserScrolling.current) return;
 
             const virtualAvailableX = Math.max(0, scrollContentSize.width - viewport.width);
             const virtualAvailableY = Math.max(0, scrollContentSize.height - viewport.height);
@@ -192,8 +224,17 @@ export const GanttContainer: React.FC = () => {
             });
         };
 
+        el.addEventListener('pointerdown', onPointerDown, { passive: true });
+        el.addEventListener('wheel', onWheel, { passive: true });
         el.addEventListener('scroll', onScroll, { passive: true });
-        return () => el.removeEventListener('scroll', onScroll);
+        return () => {
+            el.removeEventListener('pointerdown', onPointerDown);
+            el.removeEventListener('wheel', onWheel);
+            el.removeEventListener('scroll', onScroll);
+            if (userScrollTimeoutRef.current !== null) {
+                clearTimeout(userScrollTimeoutRef.current);
+            }
+        };
     }, [realContentSize.height, realContentSize.width, scrollContentSize.height, scrollContentSize.width, updateViewport, viewport.height, viewport.width]);
 
     // Sync viewport -> native scrollbar (wheel/drag/keys update viewport directly)

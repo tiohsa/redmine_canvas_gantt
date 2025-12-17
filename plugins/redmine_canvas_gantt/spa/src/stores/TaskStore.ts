@@ -414,25 +414,54 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     scrollToTask: (taskId: string) => set((state) => {
-        const task = state.allTasks.find(t => t.id === taskId);
-        if (!task) return state;
+        // レイアウト済みのtasksから検索（rowIndexが必要）
+        const task = state.tasks.find(t => t.id === taskId);
+        if (!task) {
+            // tasksに見つからない場合はallTasksから検索（折りたたまれている可能性）
+            const allTask = state.allTasks.find(t => t.id === taskId);
+            if (!allTask) return state;
+            // この場合、taskのrowIndexがないのでscrollYは更新しない
+        }
+
+        const targetTask = task ?? state.allTasks.find(t => t.id === taskId);
+        if (!targetTask) return state;
 
         // Determine target date to center on: startDate -> dueDate -> Today
         let targetMetadata = 0;
-        if (Number.isFinite(task.startDate)) {
-            targetMetadata = task.startDate!;
-        } else if (Number.isFinite(task.dueDate)) {
-            targetMetadata = task.dueDate!;
+        if (Number.isFinite(targetTask.startDate)) {
+            targetMetadata = targetTask.startDate!;
+        } else if (Number.isFinite(targetTask.dueDate)) {
+            targetMetadata = targetTask.dueDate!;
         } else {
             targetMetadata = Date.now();
         }
 
-        const { viewport } = state;
+        let { viewport } = state;
+
+        // もしターゲット日付が現在の表示開始日より前なら、表示開始日を過去にずらす
+        // 少し余白を持たせるために、1週間前を開始日とする
+        if (targetMetadata < viewport.startDate) {
+            const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+            const newStartDate = targetMetadata - ONE_WEEK;
+            viewport = {
+                ...viewport,
+                startDate: newStartDate
+            };
+        }
+
         const taskX = (targetMetadata - viewport.startDate) * viewport.scale;
         const centeredX = Math.max(0, taskX - (viewport.width / 2));
 
+        // scrollYの計算（タスクが縦方向で中央付近に来るように）
+        let newScrollY = viewport.scrollY;
+        if (task && typeof task.rowIndex === 'number') {
+            const taskY = task.rowIndex * viewport.rowHeight;
+            const centeredY = Math.max(0, taskY - (viewport.height / 2) + (viewport.rowHeight / 2));
+            newScrollY = centeredY;
+        }
+
         return {
-            viewport: { ...viewport, scrollX: centeredX }
+            viewport: { ...viewport, scrollX: centeredX, scrollY: newScrollY }
         };
     }),
 
