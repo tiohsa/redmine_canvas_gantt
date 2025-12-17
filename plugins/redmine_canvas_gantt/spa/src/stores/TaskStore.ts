@@ -39,8 +39,7 @@ interface TaskState {
     setGroupByProject: (grouped: boolean) => void;
     toggleProjectExpansion: (projectId: string) => void;
     toggleTaskExpansion: (taskId: string) => void;
-    isBatchEditMode: boolean;
-    setBatchEditMode: (enabled: boolean) => void;
+
     setFilterText: (text: string) => void;
     scrollToTask: (taskId: string) => void;
     setSortConfig: (key: keyof Task | null) => void;
@@ -395,8 +394,6 @@ export const useTaskStore = create<TaskState>((set) => ({
             rowCount: layout.rowCount
         };
     }),
-    isBatchEditMode: false,
-    setBatchEditMode: (enabled) => set({ isBatchEditMode: enabled }),
 
     setFilterText: (text) => set((state) => {
         const filterText = text.toLowerCase();

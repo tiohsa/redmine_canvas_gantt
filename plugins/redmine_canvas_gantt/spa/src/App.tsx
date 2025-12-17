@@ -3,12 +3,12 @@ import { useTaskStore } from './stores/TaskStore';
 import { GanttContainer } from './components/GanttContainer';
 import { GanttToolbar } from './components/GanttToolbar';
 import Toast from './components/Toast';
-import BatchEditDialog from './components/BatchEditDialog';
+
 import { useUIStore } from './stores/UIStore';
 import './App.css';
 
 function App() {
-  const { zoomLevel, setZoomLevel, isBatchEditMode } = useTaskStore();
+  const { zoomLevel, setZoomLevel } = useTaskStore();
   const { isFullScreen, setFullScreen } = useUIStore();
   const previousOverflow = useRef<string | undefined>(undefined);
 
@@ -43,7 +43,7 @@ function App() {
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         <GanttContainer />
       </div>
-      {isBatchEditMode && <BatchEditDialog />}
+
       <Toast />
     </div>
   );
