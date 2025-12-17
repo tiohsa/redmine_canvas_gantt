@@ -414,16 +414,8 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     scrollToTask: (taskId: string) => set((state) => {
-        // レイアウト済みのtasksから検索（rowIndexが必要）
-        const task = state.tasks.find(t => t.id === taskId);
-        if (!task) {
-            // tasksに見つからない場合はallTasksから検索（折りたたまれている可能性）
-            const allTask = state.allTasks.find(t => t.id === taskId);
-            if (!allTask) return state;
-            // この場合、taskのrowIndexがないのでscrollYは更新しない
-        }
-
-        const targetTask = task ?? state.allTasks.find(t => t.id === taskId);
+        const targetTask = state.tasks.find(t => t.id === taskId)
+            ?? state.allTasks.find(t => t.id === taskId);
         if (!targetTask) return state;
 
         // Determine target date to center on: startDate -> dueDate -> Today
@@ -452,16 +444,9 @@ export const useTaskStore = create<TaskState>((set) => ({
         const taskX = (targetMetadata - viewport.startDate) * viewport.scale;
         const centeredX = Math.max(0, taskX - (viewport.width / 2));
 
-        // scrollYの計算（タスクが縦方向で中央付近に来るように）
-        let newScrollY = viewport.scrollY;
-        if (task && typeof task.rowIndex === 'number') {
-            const taskY = task.rowIndex * viewport.rowHeight;
-            const centeredY = Math.max(0, taskY - (viewport.height / 2) + (viewport.rowHeight / 2));
-            newScrollY = centeredY;
-        }
-
+        // scrollYは変更しない（縦方向のスクロール位置を維持）
         return {
-            viewport: { ...viewport, scrollX: centeredX, scrollY: newScrollY }
+            viewport: { ...viewport, scrollX: centeredX }
         };
     }),
 
