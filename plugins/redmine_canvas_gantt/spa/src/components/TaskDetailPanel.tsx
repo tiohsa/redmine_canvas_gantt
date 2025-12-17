@@ -55,17 +55,13 @@ const InlineRow: React.FC<{
     const close = () => setActiveInlineEdit(null);
 
     return (
-        <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: 8, alignItems: 'center', padding: '6px 0' }}>
+        <div
+            style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8, alignItems: 'center', padding: '6px 0', cursor: editable ? 'pointer' : 'default' }}
+            onClick={() => !isActive && open()}
+        >
             <div style={{ fontSize: 12, color: '#666' }}>{label}</div>
             <div style={{ minWidth: 0 }}>
                 {isActive ? editor({ onClose: close }) : <div style={{ fontSize: 13, color: '#222', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>}
-            </div>
-            <div>
-                {editable && !isActive ? (
-                    <button type="button" onClick={open} style={{ fontSize: 12, padding: '4px 8px' }}>
-                        {i18n.t('button_edit')}
-                    </button>
-                ) : null}
             </div>
         </div>
     );
