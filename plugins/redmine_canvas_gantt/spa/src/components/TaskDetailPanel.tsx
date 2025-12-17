@@ -359,6 +359,7 @@ export const SubjectEditor: React.FC<{
                         if (e.key === 'Enter') void commit();
                         if (e.key === 'Escape') onCancel();
                     }}
+                    onBlur={() => void commit()}
                     disabled={saving}
                     style={{ width: '100%', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
                 />
@@ -479,6 +480,7 @@ export const DoneRatioEditor: React.FC<{
                         if (e.key === 'Escape') onCancel();
                         if (e.key === 'Enter') void commit();
                     }}
+                    onBlur={() => void commit()}
                     style={{ width: '80px', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
                 />
                 <span style={{ fontSize: 12, color: '#444' }}>%</span>
