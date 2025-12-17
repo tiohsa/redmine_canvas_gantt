@@ -30,6 +30,19 @@ export const GanttContainer: React.FC = () => {
 
     const isResizing = useRef(false);
     const isSyncingScroll = useRef(false);
+    const userScrollbarInteraction = useRef(false);
+    const userScrollTimer = useRef<number | null>(null);
+
+    const markUserScrollIntent = () => {
+        userScrollbarInteraction.current = true;
+        if (userScrollTimer.current) {
+            window.clearTimeout(userScrollTimer.current);
+        }
+        userScrollTimer.current = window.setTimeout(() => {
+            userScrollbarInteraction.current = false;
+            userScrollTimer.current = null;
+        }, 400);
+    };
 
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
     const MAX_SCROLL_AREA_PX = 10_000_000;
@@ -173,6 +186,7 @@ export const GanttContainer: React.FC = () => {
 
         const onScroll = () => {
             if (isSyncingScroll.current) return;
+            if (!userScrollbarInteraction.current) return;
 
             const virtualAvailableX = Math.max(0, scrollContentSize.width - viewport.width);
             const virtualAvailableY = Math.max(0, scrollContentSize.height - viewport.height);
@@ -192,8 +206,23 @@ export const GanttContainer: React.FC = () => {
             });
         };
 
+        const onPointerDown = () => markUserScrollIntent();
+        const onWheel = () => markUserScrollIntent();
+
         el.addEventListener('scroll', onScroll, { passive: true });
-        return () => el.removeEventListener('scroll', onScroll);
+        el.addEventListener('pointerdown', onPointerDown, { passive: true });
+        el.addEventListener('wheel', onWheel, { passive: true });
+
+        return () => {
+            el.removeEventListener('scroll', onScroll);
+            el.removeEventListener('pointerdown', onPointerDown);
+            el.removeEventListener('wheel', onWheel);
+            if (userScrollTimer.current) {
+                window.clearTimeout(userScrollTimer.current);
+                userScrollTimer.current = null;
+            }
+            userScrollbarInteraction.current = false;
+        };
     }, [realContentSize.height, realContentSize.width, scrollContentSize.height, scrollContentSize.width, updateViewport, viewport.height, viewport.width]);
 
     // Sync viewport -> native scrollbar (wheel/drag/keys update viewport directly)
