@@ -355,7 +355,14 @@ export const SubjectEditor: React.FC<{
                         if (e.key === 'Enter') void commit();
                         if (e.key === 'Escape') onCancel();
                     }}
-                    onBlur={() => void commit()}
+                    onBlur={() => {
+                        const trimmed = value.trim();
+                        if (!trimmed || trimmed === initialValue) {
+                            onCancel();
+                        } else {
+                            void commit();
+                        }
+                    }}
                     disabled={saving}
                     style={{ width: '100%', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
                 />
@@ -417,6 +424,13 @@ export const SelectEditor: React.FC<{
                     const next = raw === '' ? null : Number(raw);
                     void commit(next);
                 }}
+                onBlur={(e) => {
+                    // Only close if focus moves outside this component
+                    const container = e.currentTarget.parentElement;
+                    if (container && !container.contains(e.relatedTarget as Node)) {
+                        onCancel();
+                    }
+                }}
                 disabled={saving}
                 style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
             >
@@ -476,7 +490,14 @@ export const DoneRatioEditor: React.FC<{
                         if (e.key === 'Escape') onCancel();
                         if (e.key === 'Enter') void commit();
                     }}
-                    onBlur={() => void commit()}
+                    onBlur={() => {
+                        const numVal = Number(value);
+                        if (Number.isNaN(numVal) || numVal < 0 || numVal > 100 || numVal === initialValue) {
+                            onCancel();
+                        } else {
+                            void commit();
+                        }
+                    }}
                     style={{ width: '80px', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
                 />
                 <span style={{ fontSize: 12, color: '#444' }}>%</span>
@@ -524,6 +545,13 @@ export const DueDateEditor: React.FC<{
                 }}
                 onKeyDown={(e) => {
                     if (e.key === 'Escape') onCancel();
+                }}
+                onBlur={() => {
+                    if (value === initialValue) {
+                        onCancel();
+                    } else {
+                        void commit(value);
+                    }
                 }}
                 style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
             />
@@ -600,6 +628,13 @@ export const CustomFieldEditor: React.FC<{
                     onKeyDown={(e) => {
                         if (e.key === 'Escape') onCancel();
                     }}
+                    onBlur={() => {
+                        if (value === (initialValue ?? '')) {
+                            onCancel();
+                        } else {
+                            void commit(value);
+                        }
+                    }}
                     style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
                 >
                     {!customField.isRequired ? <option value="">-</option> : null}
@@ -661,7 +696,13 @@ export const CustomFieldEditor: React.FC<{
                         if (e.key === 'Escape') onCancel();
                         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void commit(value);
                     }}
-                    onBlur={() => void commit(value)}
+                    onBlur={() => {
+                        if (validate(value) || value === (initialValue ?? '')) {
+                            onCancel();
+                        } else {
+                            void commit(value);
+                        }
+                    }}
                     style={{ width: '100%', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4, resize: 'vertical' }}
                 />
             ) : (
@@ -674,7 +715,13 @@ export const CustomFieldEditor: React.FC<{
                         if (e.key === 'Enter') void commit(value);
                         if (e.key === 'Escape') onCancel();
                     }}
-                    onBlur={() => void commit(value)}
+                    onBlur={() => {
+                        if (validate(value) || value === (initialValue ?? '')) {
+                            onCancel();
+                        } else {
+                            void commit(value);
+                        }
+                    }}
                     style={{ width: '100%', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
                 />
             )}
