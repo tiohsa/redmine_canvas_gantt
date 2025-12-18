@@ -14,7 +14,7 @@ export const A11yLayer: React.FC = () => {
         if (selectedTaskId && listRef.current) {
             const el = listRef.current.querySelector<HTMLElement>(`[data-id="${selectedTaskId}"]`);
             if (el && document.activeElement !== el) {
-                el.focus();
+                el.focus({ preventScroll: true });
             }
         }
     }, [selectedTaskId]);

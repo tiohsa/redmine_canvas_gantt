@@ -116,6 +116,8 @@ export class InteractionEngine {
     }
 
     private handleMouseDown = (e: MouseEvent) => {
+        if (e.button === 2) return; // Ignore right-click
+
         // Ignore events from dependency handles (let/leave them for the Overlay handler)
         const downTarget = e.target;
         if (downTarget instanceof Element && downTarget.closest('.dependency-handle')) {
