@@ -1,12 +1,46 @@
 import React from 'react';
 import { useUIStore } from '../stores/UIStore';
+import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
 
 export const IssueIframeDialog: React.FC = () => {
     const issueDialogUrl = useUIStore(state => state.issueDialogUrl);
     const closeIssueDialog = useUIStore(state => state.closeIssueDialog);
+    const refreshData = useTaskStore(state => state.refreshData);
+    const iframeRef = React.useRef<HTMLIFrameElement>(null);
 
     if (!issueDialogUrl) return null;
+
+    const handleClose = () => {
+        closeIssueDialog();
+        void refreshData();
+    };
+
+    const handleIframeLoad = () => {
+        try {
+            const iframe = iframeRef.current;
+            if (!iframe) return;
+
+            // Only works if same-origin. 
+            // If it redirected to an issue page (view mode instead of edit/new), 
+            // we can trigger a refresh.
+            const currentUrl = iframe.contentWindow?.location.href;
+            if (currentUrl) {
+                const isEdit = currentUrl.includes('/edit');
+                const isNew = currentUrl.includes('/new');
+                const isIssuesList = currentUrl.endsWith('/issues');
+
+                // If we are no longer in edit/new mode, but still on Redmine,
+                // it's likely a redirect after save.
+                if (!isEdit && !isNew && !isIssuesList) {
+                    void refreshData();
+                }
+            }
+        } catch (e) {
+            // cross-origin error or similar, fallback to refresh on manual close
+            console.debug("Could not verify iframe URL", e);
+        }
+    };
 
     return (
         <div
@@ -23,9 +57,8 @@ export const IssueIframeDialog: React.FC = () => {
                 zIndex: 2000
             }}
             onClick={(e) => {
-                // Close when clicking backdrop
                 if (e.target === e.currentTarget) {
-                    closeIssueDialog();
+                    handleClose();
                 }
             }}
         >
@@ -55,7 +88,7 @@ export const IssueIframeDialog: React.FC = () => {
                     }}
                 >
                     <span style={{ fontWeight: 600, color: '#333' }}>
-                        {i18n.t('button_edit')}
+                        #{issueDialogUrl.split('/').pop()?.split('?')[0] || i18n.t('button_edit')}
                     </span>
                     <div style={{ display: 'flex', gap: 8 }}>
                         <a
@@ -71,13 +104,12 @@ export const IssueIframeDialog: React.FC = () => {
                                 borderRadius: 4,
                                 backgroundColor: 'white'
                             }}
-
                         >
                             ↗
                         </a>
                         <button
                             type="button"
-                            onClick={closeIssueDialog}
+                            onClick={handleClose}
                             style={{
                                 padding: '6px 12px',
                                 fontSize: 13,
@@ -96,13 +128,14 @@ export const IssueIframeDialog: React.FC = () => {
                 {/* Iframe Content */}
                 <div style={{ flex: 1, position: 'relative' }}>
                     <iframe
+                        ref={iframeRef}
                         src={issueDialogUrl}
+                        onLoad={handleIframeLoad}
                         style={{
                             width: '100%',
                             height: '100%',
                             border: 'none'
                         }}
-
                     />
                 </div>
             </div>

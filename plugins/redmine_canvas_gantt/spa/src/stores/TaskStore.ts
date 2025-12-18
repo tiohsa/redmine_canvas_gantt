@@ -43,6 +43,7 @@ interface TaskState {
     setFilterText: (text: string) => void;
     scrollToTask: (taskId: string) => void;
     setSortConfig: (key: keyof Task | null) => void;
+    refreshData: () => Promise<void>;
 }
 
 const preferences = loadPreferences();
@@ -473,5 +474,12 @@ export const useTaskStore = create<TaskState>((set) => ({
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
         };
-    })
+    }),
+    refreshData: async () => {
+        const { apiClient } = await import('../api/client');
+        const data = await apiClient.fetchData();
+        const { setTasks, setRelations } = useTaskStore.getState();
+        setTasks(data.tasks);
+        setRelations(data.relations);
+    }
 }));
