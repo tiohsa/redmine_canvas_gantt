@@ -16,7 +16,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         toggleProgressLine,
         visibleColumns,
         setVisibleColumns,
-        leftPaneVisible,
         toggleLeftPane,
         isFullScreen,
         toggleFullScreen
@@ -87,7 +86,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
                 <button
                     onClick={toggleLeftPane}
-                    title={leftPaneVisible ? "Hide List" : "Show List"}
+
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -395,7 +394,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         alignItems: 'center',
                         justifyContent: 'center'
                     }}
-                    title={isFullScreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+
                 >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         {isFullScreen ? (
@@ -432,7 +431,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         alignItems: 'center',
                         gap: '4px'
                     }}
-                    title="Scroll to Top"
+
                 >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <line x1="12" y1="19" x2="12" y2="5"></line>

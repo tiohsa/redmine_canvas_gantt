@@ -71,7 +71,7 @@ export const IssueIframeDialog: React.FC = () => {
                                 borderRadius: 4,
                                 backgroundColor: 'white'
                             }}
-                            title={i18n.t('label_open_in_new_tab') || 'Open in new tab'}
+
                         >
                             ↗
                         </a>
@@ -102,7 +102,7 @@ export const IssueIframeDialog: React.FC = () => {
                             height: '100%',
                             border: 'none'
                         }}
-                        title="Issue Editor"
+
                     />
                 </div>
             </div>

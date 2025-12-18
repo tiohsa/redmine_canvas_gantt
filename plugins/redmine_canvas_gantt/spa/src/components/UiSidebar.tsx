@@ -12,6 +12,16 @@ import type { InlineEditSettings, TaskEditMeta } from '../types/editMeta';
 import { InlineEditService } from '../services/InlineEditService';
 import { i18n } from '../utils/i18n';
 
+const getAvatarColor = (name: string) => {
+    const colors = ['#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800', '#ff5722'];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % colors.length;
+    return colors[index];
+};
+
 const getInitials = (name?: string) => {
     if (!name) return '?';
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
@@ -38,10 +48,8 @@ const ProgressCircle = ({ ratio, statusId }: { ratio: number, statusId: number }
 };
 
 const ProjectIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d61b3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-        <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
     </svg>
 );
 
@@ -52,7 +60,6 @@ const TrackerIcon = ({ name }: { name?: string }) => {
     if (lowerName.includes('bug') || lowerName.includes('バグ')) {
         return (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d32f2f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                {name && <title>{name}</title>}
                 <rect x="8" y="6" width="8" height="14" rx="4" fill="#d32f2f" fillOpacity="0.1" />
                 <line x1="4" y1="10" x2="8" y2="10"></line>
                 <line x1="16" y1="10" x2="20" y2="10"></line>
@@ -69,7 +76,6 @@ const TrackerIcon = ({ name }: { name?: string }) => {
     if (lowerName.includes('feature') || lowerName.includes('機能')) {
         return (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f57c00" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                {name && <title>{name}</title>}
                 <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="#f57c00" fillOpacity="0.2"></polygon>
             </svg>
         );
@@ -79,7 +85,6 @@ const TrackerIcon = ({ name }: { name?: string }) => {
     if (lowerName.includes('support') || lowerName.includes('サポート')) {
         return (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1976d2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                {name && <title>{name}</title>}
                 <circle cx="12" cy="12" r="10" fill="#1976d2" fillOpacity="0.1"></circle>
                 <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
                 <circle cx="12" cy="17" r="0.5" fill="#1976d2"></circle>
@@ -90,7 +95,6 @@ const TrackerIcon = ({ name }: { name?: string }) => {
     // Task icon (default) - 📄
     return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d61b3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            {name && <title>{name}</title>}
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
             <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -334,8 +338,11 @@ export const UiSidebar: React.FC = () => {
                     <div style={{ marginRight: 6, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                         <TrackerIcon name={t.trackerName} />
                     </div>
-                    <button
-                        type="button"
+                    <a
+                        href={`/issues/${t.id}`}
+                        className="task-subject"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         onClick={(e) => {
                             e.stopPropagation();
                             useUIStore.getState().openIssueDialog(`/issues/${t.id}/edit`);
@@ -354,10 +361,9 @@ export const UiSidebar: React.FC = () => {
                             cursor: 'pointer',
                             textAlign: 'left'
                         }}
-                        title={t.subject}
                     >
                         {t.subject}
-                    </button>
+                    </a>
                 </div>
             )
         },
@@ -391,20 +397,9 @@ export const UiSidebar: React.FC = () => {
                 <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                     {t.assignedToName && (
                         <>
-                            <div style={{
-                                width: '24px',
-                                height: '24px',
-                                borderRadius: '50%',
-                                backgroundColor: '#bdbdbd',
-                                display: 'flex',
-                                alignItems: 'center',
-                                color: 'white',
-                                justifyContent: 'center',
-                                fontSize: '10px',
-                                marginRight: 4,
-                                flexShrink: 0
-                            }}
-                                title={t.assignedToName}
+                            <div
+                                className="assignee-avatar"
+                                style={{ backgroundColor: getAvatarColor(t.assignedToName || ''), width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '10px', marginRight: 4, flexShrink: 0 }}
                             >
                                 {getInitials(t.assignedToName)}
                             </div>
