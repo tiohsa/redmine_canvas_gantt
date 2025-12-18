@@ -672,6 +672,15 @@ export const UiSidebar: React.FC = () => {
                                     color: '#333',
                                     transition: 'background-color 0.1s'
                                 }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    useTaskStore.getState().setContextMenu({
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                        taskId: task.id
+                                    });
+                                }}
                             >
                                 {activeColumns.map((col, idx) => (
                                     <div key={idx} style={{

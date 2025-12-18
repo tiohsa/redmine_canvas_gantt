@@ -207,63 +207,110 @@ export const HtmlOverlay: React.FC = () => {
                         top: contextMenu.y,
                         left: contextMenu.x,
                         background: 'white',
-                        border: '1px solid #ccc',
-                        boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-                        pointerEvents: 'auto'
+                        borderRadius: '8px',
+                        minWidth: '200px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.15), 0 0 1px rgba(0,0,0,0.1)',
+                        padding: '6px',
+                        zIndex: 1000,
+                        pointerEvents: 'auto',
+                        animation: 'fadeIn 0.1s ease-out'
                     }}
                     onMouseLeave={() => setContextMenu(null)}
                 >
-                    <ul style={{ listStyle: 'none', margin: 0, padding: '4px' }}>
-                        <li style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onClick={() => setContextMenu(null)}>{i18n.t('button_edit')}</li>
-                        <li style={{ padding: '8px 12px', cursor: 'pointer', color: 'red', borderBottom: relatedRelations.length > 0 ? '1px solid #eee' : undefined }} onClick={() => setContextMenu(null)}>{i18n.t('button_delete')}</li>
-                        {relatedRelations.length > 0 && (
-                            <li style={{
-                                padding: '8px 12px',
-                                fontSize: '12px',
-                                color: '#666',
-                                borderBottom: '1px solid #eee'
-                            }}>
-                                {i18n.t('label_relations_remove_heading') || 'Remove dependency'}
-                                {contextTask ? (
-                                    <span style={{ marginLeft: 8, color: '#999' }}>
-                                        ({contextTask.subject} #{contextTask.id})
-                                    </span>
-                                ) : null}
-                            </li>
-                        )}
-                        {relatedRelations.map((rel) => {
-                            const { from, to } = formatRelationLabel(rel);
-                            const fromIsContext = contextMenu.taskId === from.id;
-                            const toIsContext = contextMenu.taskId === to.id;
-                            const emphasisId = (fromIsContext ? from.id : (toIsContext ? to.id : null));
-                            const direction = fromIsContext ? '→' : '←';
+                    <style>{`
+                        @keyframes fadeIn {
+                            from { opacity: 0; transform: translateY(-4px); }
+                            to { opacity: 1; transform: translateY(0); }
+                        }
+                        .menu-item {
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                            padding: 8px 12px;
+                            cursor: pointer;
+                            border-radius: 6px;
+                            font-size: 13px;
+                            color: #333;
+                            transition: background-color 0.1s;
+                        }
+                        .menu-item:hover {
+                            background-color: #f0f4f9;
+                        }
+                        .menu-item.danger {
+                            color: #d32f2f;
+                        }
+                        .menu-item.danger:hover {
+                            background-color: #fee;
+                        }
+                        .menu-divider {
+                            height: 1px;
+                            background-color: #eee;
+                            margin: 6px 0;
+                        }
+                        .menu-section-title {
+                            font-size: 11px;
+                            font-weight: 700;
+                            color: #888;
+                            padding: 6px 12px 2px;
+                            text-transform: uppercase;
+                        }
+                    `}</style>
 
-                            return (
-                                <li
-                                    key={rel.id}
-                                    data-testid={`remove-relation-${rel.id}`}
-                                    style={{ padding: '8px 12px', cursor: 'pointer', color: '#d32f2f' }}
-                                    onClick={() => handleRemoveRelation(rel.id)}
-                                >
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 260 }}>
-                                        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                                            <span style={{ fontWeight: 700 }}>{i18n.t('label_relation_remove') || 'Remove dependency'}</span>
-                                            <span style={{ fontSize: 12, color: '#999' }}>#{rel.id}</span>
+                    <div className="menu-item" onClick={() => {
+                        useUIStore.getState().openIssueDialog(`/issues/${contextMenu.taskId}/edit`);
+                        setContextMenu(null);
+                    }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                        {i18n.t('button_edit')}
+                    </div>
+
+                    <div className="menu-item" onClick={() => {
+                        useUIStore.getState().openIssueDialog(`/projects/${contextTask?.projectId || ''}/issues/new?parent_issue_id=${contextMenu.taskId}`);
+                        setContextMenu(null);
+                    }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        {i18n.t('label_add_child_task') || 'Add Child Task'}
+                    </div>
+
+                    <div className="menu-item danger" onClick={() => setContextMenu(null)}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
+                        {i18n.t('button_delete')}
+                    </div>
+
+                    {relatedRelations.length > 0 && (
+                        <>
+                            <div className="menu-divider" />
+                            <div className="menu-section-title">
+                                {i18n.t('label_relations_remove_heading') || 'Remove dependency'}
+                            </div>
+
+                            {relatedRelations.map((rel) => {
+                                const { from, to } = formatRelationLabel(rel);
+                                const fromIsContext = contextMenu.taskId === from.id;
+                                const direction = fromIsContext ? '→' : '←';
+
+                                return (
+                                    <div
+                                        key={rel.id}
+                                        className="menu-item danger"
+                                        onClick={() => handleRemoveRelation(rel.id)}
+                                        style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
+                                    >
+                                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <path d="M18.36 6.64a9 9 0 1 1-12.73 12.73 9 9 0 0 1 12.73-12.73z" />
+                                                <line x1="6" y1="6" x2="18" y2="18" />
+                                            </svg>
+                                            <span style={{ fontWeight: 600 }}>#{rel.id}</span>
                                         </div>
-                                        <div style={{ fontSize: 12, color: '#444', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            <span style={{ fontWeight: emphasisId === from.id ? 700 : 400 }}>
-                                                {from.subject} #{from.id}
-                                            </span>
-                                            <span style={{ margin: '0 6px', color: '#999' }}>{direction}</span>
-                                            <span style={{ fontWeight: emphasisId === to.id ? 700 : 400 }}>
-                                                {to.subject} #{to.id}
-                                            </span>
+                                        <div style={{ fontSize: '11px', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }}>
+                                            {from.subject} {direction} {to.subject}
                                         </div>
                                     </div>
-                                </li>
-                            );
-                        })}
-                    </ul>
+                                );
+                            })}
+                        </>
+                    )}
                 </div>
             )}
         </div>

@@ -30,6 +30,7 @@ class CanvasGanttsController < ApplicationController
       label_relation_remove_failed: l(:label_relation_remove_failed),
       label_relation_added: l(:label_relation_added),
       label_relation_already_exists: l(:label_relation_already_exists),
+      label_add_child_task: l(:button_add_subtask),
       label_unassigned: l(:label_none)
     }
 

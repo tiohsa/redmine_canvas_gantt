@@ -95,7 +95,7 @@ describe('UiSidebar Blur-to-Save', () => {
 
         // Subject cell index usually 1 (ID is 0)
         // Actually we use data-testid={`cell-${task.id}-${col.key}`}
-        const cell = await screen.findByTestId(`cell-${taskId}-subject`);
+        await screen.findByTestId(`cell-${taskId}-subject`);
 
         // Double click is prevented for subject in code? 
         // L693: if (col.key === 'subject') return;
