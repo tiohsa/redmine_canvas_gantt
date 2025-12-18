@@ -5,3 +5,5 @@ ja:
   label_relation_remove_failed: "依存関係の解除に失敗しました"
   label_relation_added: "依存関係を追加しました"
   label_relation_already_exists: "依存関係は既に存在します"
+  label_issue_new: "新規チケット"
+  button_add_subtask: "子チケットを追加"

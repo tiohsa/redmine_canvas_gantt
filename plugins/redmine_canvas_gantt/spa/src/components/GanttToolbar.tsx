@@ -86,7 +86,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
                 <button
                     onClick={toggleLeftPane}
-
+                    title="Toggle Sidebar"
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -105,6 +105,36 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                         <line x1="9" y1="3" x2="9" y2="21" />
                     </svg>
+                </button>
+
+                <button
+                    onClick={() => {
+                        const projectId = window.RedmineCanvasGantt?.projectId;
+                        if (projectId) {
+                            useUIStore.getState().openIssueDialog(`/projects/${projectId}/issues/new`);
+                        }
+                    }}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 16px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        backgroundColor: '#1a73e8',
+                        color: '#fff',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        height: '36px',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                    }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    {window.RedmineCanvasGantt?.i18n?.label_issue_new || 'New Ticket'}
                 </button>
 
                 <div style={{ width: 1, height: 24, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
