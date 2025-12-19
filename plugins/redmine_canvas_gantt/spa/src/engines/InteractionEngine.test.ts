@@ -17,6 +17,7 @@ const setViewport = (partial: Partial<ReturnType<typeof useTaskStore.getState>['
     useTaskStore.setState({
         allTasks: [],
         tasks: [],
+        zoomLevel: 2,
         viewport: {
             startDate: 0,
             scrollX: 0,
@@ -151,7 +152,8 @@ describe('InteractionEngine task updates', () => {
             permissions: { editable: true, viewable: true }
         });
 
-        const bounds = LayoutEngine.getTaskBounds(task1, useTaskStore.getState().viewport, 'hit');
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task1, viewport, 'hit', zoomLevel);
         container.dispatchEvent(new MouseEvent('mousedown', { clientX: bounds.x + 1, clientY: bounds.y + 1, bubbles: true }));
         window.dispatchEvent(new MouseEvent('mousemove', { clientX: bounds.x + 11, clientY: bounds.y + 1, bubbles: true }));
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));

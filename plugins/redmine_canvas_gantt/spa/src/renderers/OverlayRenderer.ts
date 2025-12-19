@@ -1,4 +1,4 @@
-import type { Viewport, Task, Relation } from '../types';
+import type { Viewport, Task, Relation, ZoomLevel } from '../types';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
@@ -17,7 +17,7 @@ export class OverlayRenderer {
 
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        const { tasks, relations, selectedTaskId, rowCount } = useTaskStore.getState();
+        const { tasks, relations, selectedTaskId, rowCount, zoomLevel } = useTaskStore.getState();
         const totalRows = rowCount || tasks.length;
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, totalRows);
 
@@ -29,24 +29,24 @@ export class OverlayRenderer {
         );
 
         // Draw dependency lines
-        this.drawDependencies(ctx, viewport, bufferedTasks, relations);
+        this.drawDependencies(ctx, viewport, bufferedTasks, relations, zoomLevel);
 
         // Draw selection highlight
         if (selectedTaskId) {
             const selectedTask = visibleTasks.find(t => t.id === selectedTaskId);
             if (selectedTask) {
-                this.drawSelectionHighlight(ctx, viewport, selectedTask);
+                this.drawSelectionHighlight(ctx, viewport, selectedTask, zoomLevel);
             }
         }
 
         // Draw Inazuma line (Progress Line)
-        this.drawProgressLine(ctx, viewport, visibleTasks);
+        this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel);
 
         // Draw "Today" line
         this.drawTodayLine(ctx, viewport);
     }
 
-    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[]) {
+    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[], zoomLevel: ZoomLevel) {
         const { showProgressLine } = useUIStore.getState();
         if (!showProgressLine) return;
 
@@ -64,7 +64,7 @@ export class OverlayRenderer {
         let firstPoint = true;
 
         drawableTasks.forEach(task => {
-            const bounds = LayoutEngine.getTaskBounds(task, viewport);
+            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
 
             // X position based on progress
             // bounds.x is start, bounds.width is total width
@@ -90,7 +90,8 @@ export class OverlayRenderer {
         ctx: CanvasRenderingContext2D,
         viewport: Viewport,
         tasks: Task[],
-        relations: Relation[]
+        relations: Relation[],
+        zoomLevel: ZoomLevel
     ) {
         ctx.strokeStyle = '#888';
         ctx.lineWidth = 1.5;
@@ -101,8 +102,8 @@ export class OverlayRenderer {
             const toTask = taskById.get(rel.to);
             if (!fromTask || !toTask) continue;
 
-            const fromBounds = LayoutEngine.getTaskBounds(fromTask, viewport);
-            const toBounds = LayoutEngine.getTaskBounds(toTask, viewport);
+            const fromBounds = LayoutEngine.getTaskBounds(fromTask, viewport, 'bar', zoomLevel);
+            const toBounds = LayoutEngine.getTaskBounds(toTask, viewport, 'bar', zoomLevel);
 
             // Manhattan path (Orthogonal)
             const startX = fromBounds.x + fromBounds.width;
@@ -189,8 +190,8 @@ export class OverlayRenderer {
         ctx.fill();
     }
 
-    private drawSelectionHighlight(ctx: CanvasRenderingContext2D, viewport: Viewport, task: Task) {
-        const bounds = LayoutEngine.getTaskBounds(task, viewport);
+    private drawSelectionHighlight(ctx: CanvasRenderingContext2D, viewport: Viewport, task: Task, zoomLevel: ZoomLevel) {
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
 
         ctx.strokeStyle = '#ff9800';
         ctx.lineWidth = 2;

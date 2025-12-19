@@ -69,6 +69,7 @@ describe('HtmlOverlay', () => {
             viewport,
             layoutRows: [],
             rowCount: 0,
+            zoomLevel: 2,
             groupByProject: false,
             viewportFromStorage: false,
             selectedTaskId: null,
@@ -116,7 +117,7 @@ describe('HtmlOverlay', () => {
         const arrangedTask2 = useTaskStore.getState().tasks.find(t => t.id === '2');
         expect(arrangedTask2).toBeTruthy();
 
-        const bounds2 = LayoutEngine.getTaskBounds(arrangedTask2!, viewport, 'hit');
+        const bounds2 = LayoutEngine.getTaskBounds(arrangedTask2!, viewport, 'hit', 2);
         fireEvent.mouseMove(window, { clientX: bounds2.x + 1, clientY: bounds2.y + 1 });
         fireEvent.mouseUp(window);
 

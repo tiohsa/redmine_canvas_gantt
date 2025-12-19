@@ -266,7 +266,7 @@ export const GanttContainer: React.FC = () => {
     useEffect(() => {
         // console.log('Render Loop:', { width: viewport.width, height: viewport.height, scrollX: viewport.scrollX, scrollY: viewport.scrollY, rowCount, tasks: tasks.length });
         if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel);
-        if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount);
+        if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount, zoomLevel);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
     }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations]);
 

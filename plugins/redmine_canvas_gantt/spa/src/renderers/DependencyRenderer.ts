@@ -1,4 +1,4 @@
-import type { Relation, Task, Viewport } from '../types';
+import type { Relation, Task, Viewport, ZoomLevel } from '../types';
 import { LayoutEngine } from '../engines/LayoutEngine';
 
 export class DependencyRenderer {
@@ -8,7 +8,7 @@ export class DependencyRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, tasks: Task[], relations: Relation[]) {
+    render(viewport: Viewport, tasks: Task[], relations: Relation[], zoomLevel?: ZoomLevel) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -24,8 +24,8 @@ export class DependencyRenderer {
             const toTask = tasks.find(t => t.id === rel.to);
             if (!fromTask || !toTask) continue;
 
-            const fromBounds = LayoutEngine.getTaskBounds(fromTask, viewport);
-            const toBounds = LayoutEngine.getTaskBounds(toTask, viewport);
+            const fromBounds = LayoutEngine.getTaskBounds(fromTask, viewport, 'bar', zoomLevel);
+            const toBounds = LayoutEngine.getTaskBounds(toTask, viewport, 'bar', zoomLevel);
 
             const startX = fromBounds.x + fromBounds.width;
             const startY = fromBounds.y + fromBounds.height / 2;
@@ -63,4 +63,3 @@ export class DependencyRenderer {
         ctx.fill();
     }
 }
-

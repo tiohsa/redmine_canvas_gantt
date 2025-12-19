@@ -4,7 +4,7 @@ import type { Viewport, Task } from '../types';
 
 describe('LayoutEngine', () => {
     const mockViewport: Viewport = {
-        startDate: new Date('2024-01-01').getTime(),
+        startDate: new Date(2024, 0, 1).getTime(),
         scrollX: 0,
         scrollY: 0,
         scale: 1, // 1 px per ms
@@ -14,7 +14,7 @@ describe('LayoutEngine', () => {
     };
 
     it('dateToX converts date to x coordinate accurately', () => {
-        const date = new Date('2024-01-02').getTime(); // +1 day
+        const date = new Date(2024, 0, 2).getTime(); // +1 day
         // 1 day = 86400000 ms
         const expectedX = 86400000;
         expect(LayoutEngine.dateToX(date, mockViewport)).toBe(expectedX);
@@ -24,8 +24,8 @@ describe('LayoutEngine', () => {
         const task: Task = {
             id: '1',
             subject: 'Test',
-            startDate: new Date('2024-01-01').getTime(),
-            dueDate: new Date('2024-01-02').getTime(),
+            startDate: new Date(2024, 0, 1).getTime(),
+            dueDate: new Date(2024, 0, 2).getTime(),
             rowIndex: 0,
             ratioDone: 0,
             statusId: 1,
@@ -34,7 +34,7 @@ describe('LayoutEngine', () => {
             hasChildren: false
         };
 
-        const bounds = LayoutEngine.getTaskBounds(task, mockViewport);
+        const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
         expect(bounds.x).toBe(0);
         expect(bounds.width).toBe(86400000);
         expect(bounds.y).toBe(13); // centered half-height bar in 40px row
@@ -55,7 +55,7 @@ describe('LayoutEngine', () => {
             hasChildren: false
         };
 
-        const bounds = LayoutEngine.getTaskBounds(task, mockViewport);
+        const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
         expect(bounds.x).toBe(0);
         expect(bounds.width).toBe(86400000);
     });
@@ -64,8 +64,8 @@ describe('LayoutEngine', () => {
         const task: Task = {
             id: '1',
             subject: 'Test',
-            startDate: new Date('2024-01-01').getTime(),
-            dueDate: new Date('2024-01-02').getTime(),
+            startDate: new Date(2024, 0, 1).getTime(),
+            dueDate: new Date(2024, 0, 2).getTime(),
             rowIndex: 2,
             ratioDone: 0,
             statusId: 1,
@@ -74,9 +74,47 @@ describe('LayoutEngine', () => {
             hasChildren: false
         };
 
-        const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'hit');
+        const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'hit', 2);
         expect(bounds.y).toBe(80);
         expect(bounds.height).toBe(40);
+    });
+
+    it('getTaskBounds snaps to week grid when zoomLevel=1', () => {
+        const task: Task = {
+            id: '1',
+            subject: 'Week',
+            startDate: new Date(2024, 0, 3, 12, 0, 0, 0).getTime(),
+            dueDate: new Date(2024, 0, 10, 12, 0, 0, 0).getTime(),
+            rowIndex: 0,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            hasChildren: false
+        };
+
+        const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 1);
+        expect(bounds.x).toBe(0);
+        expect(bounds.width).toBe(7 * 24 * 60 * 60 * 1000);
+    });
+
+    it('getTaskBounds snaps to month grid when zoomLevel=0', () => {
+        const task: Task = {
+            id: '1',
+            subject: 'Month',
+            startDate: new Date(2024, 0, 10, 12, 0, 0, 0).getTime(),
+            dueDate: new Date(2024, 0, 20, 12, 0, 0, 0).getTime(),
+            rowIndex: 0,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            hasChildren: false
+        };
+
+        const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 0);
+        expect(bounds.x).toBe(0);
+        expect(bounds.width).toBe(31 * 24 * 60 * 60 * 1000);
     });
 
     it('sliceTasksInRowRange は rowIndex 範囲のタスクだけ返す', () => {

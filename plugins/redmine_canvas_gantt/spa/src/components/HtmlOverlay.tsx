@@ -14,6 +14,7 @@ export const HtmlOverlay: React.FC = () => {
     const setContextMenu = useTaskStore(state => state.setContextMenu);
     const refreshData = useTaskStore(state => state.refreshData);
     const viewport = useTaskStore(state => state.viewport);
+    const zoomLevel = useTaskStore(state => state.zoomLevel);
     const rowCount = useTaskStore(state => state.rowCount);
 
     const overlayRef = React.useRef<HTMLDivElement>(null);
@@ -29,7 +30,7 @@ export const HtmlOverlay: React.FC = () => {
     const setDraftState = React.useCallback((next: typeof draft) => {
         draftRef.current = next;
         setDraft(next);
-    }, []);
+    }, [zoomLevel]);
 
     const toLocalPoint = React.useCallback((clientX: number, clientY: number) => {
         const rect = overlayRef.current?.getBoundingClientRect();
@@ -43,7 +44,7 @@ export const HtmlOverlay: React.FC = () => {
         const [s, e] = LayoutEngine.getVisibleRowRange(currentViewport, currentRowCount || currentTasks.length);
         const candidates = LayoutEngine.sliceTasksInRowRange(currentTasks, s, e);
         for (const task of candidates) {
-            const bounds = LayoutEngine.getTaskBounds(task, currentViewport, 'hit');
+            const bounds = LayoutEngine.getTaskBounds(task, currentViewport, 'hit', zoomLevel);
             if (x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height) {
                 return task;
             }
@@ -185,7 +186,7 @@ export const HtmlOverlay: React.FC = () => {
             {visibleTasks.map(task => {
                 if (task.id !== hoveredTaskId) return null;
 
-                const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit');
+                const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
                 const centerY = bounds.y + bounds.height / 2;
                 // Position handles OUTSIDE the task bar to avoid conflict with resize handles
                 const handleOffset = 12; // Distance from bar edge

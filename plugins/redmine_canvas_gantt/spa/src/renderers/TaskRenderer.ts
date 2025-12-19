@@ -1,4 +1,4 @@
-import type { Viewport, Task } from '../types';
+import type { Viewport, Task, ZoomLevel } from '../types';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { getStatusColor } from '../utils/styles';
 
@@ -17,7 +17,7 @@ export class TaskRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, tasks: Task[], rowCount: number) {
+    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -35,7 +35,7 @@ export class TaskRenderer {
         visibleTasks.forEach(task => {
             if (!Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) return;
 
-            const bounds = LayoutEngine.getTaskBounds(task, viewport);
+            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
             // Requirement 6.1: Parent tasks drawn as Redmine standard summary bar (bracket style replaced by cap bar)
             if (task.hasChildren) {
                 // For parent tasks, use the Redmine-standard Cap style
