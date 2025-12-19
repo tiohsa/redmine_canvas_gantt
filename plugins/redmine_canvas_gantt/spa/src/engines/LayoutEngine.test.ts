@@ -41,6 +41,25 @@ describe('LayoutEngine', () => {
         expect(bounds.height).toBe(15);
     });
 
+    it('getTaskBounds snaps start/end to local day grid', () => {
+        const task: Task = {
+            id: '1',
+            subject: 'Snap',
+            startDate: new Date(2024, 0, 1, 12, 0, 0, 0).getTime(),
+            dueDate: new Date(2024, 0, 2, 12, 0, 0, 0).getTime(),
+            rowIndex: 0,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            hasChildren: false
+        };
+
+        const bounds = LayoutEngine.getTaskBounds(task, mockViewport);
+        expect(bounds.x).toBe(0);
+        expect(bounds.width).toBe(86400000);
+    });
+
     it('getTaskBounds(kind=hit) uses full row height for interactions', () => {
         const task: Task = {
             id: '1',

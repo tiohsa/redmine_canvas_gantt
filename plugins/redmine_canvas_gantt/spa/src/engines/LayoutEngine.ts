@@ -1,4 +1,5 @@
 import type { Task, Viewport, Bounds } from '../types';
+import { snapToLocalDay } from '../utils/time';
 
 export class LayoutEngine {
     /**
@@ -20,10 +21,12 @@ export class LayoutEngine {
      * Returns the screen bounding box for a task bar.
      */
     static getTaskBounds(task: Task, viewport: Viewport, kind: 'bar' | 'hit' = 'bar'): Bounds {
-        const x = this.dateToX(task.startDate, viewport) - viewport.scrollX;
+        const snappedStart = snapToLocalDay(task.startDate);
+        const snappedDue = Math.max(snappedStart, snapToLocalDay(task.dueDate));
+        const x = this.dateToX(snappedStart, viewport) - viewport.scrollX;
         const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
         // Ensure width is at least something visible (e.g., 2px) even if duration is 0
-        const width = Math.max(2, (task.dueDate - task.startDate) * viewport.scale);
+        const width = Math.max(2, (snappedDue - snappedStart) * viewport.scale);
 
         if (kind === 'hit') {
             return { x, y, width, height: viewport.rowHeight };
