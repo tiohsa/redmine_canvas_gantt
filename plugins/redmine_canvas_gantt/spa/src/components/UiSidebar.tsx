@@ -345,6 +345,7 @@ export const UiSidebar: React.FC = () => {
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             useUIStore.getState().openIssueDialog(`/issues/${t.id}/edit`);
                         }}
