@@ -294,7 +294,7 @@ export class InteractionEngine {
 
         if (wasDragging && draggedTaskId) {
             // Persist the change to backend
-            const { tasks, updateTask } = useTaskStore.getState();
+            const { tasks, updateTask, relations, refreshData } = useTaskStore.getState();
             const task = tasks.find(t => t.id === draggedTaskId);
             if (!task) return;
 
@@ -305,6 +305,14 @@ export class InteractionEngine {
                 if (result.status === 'ok' && result.lockVersion !== undefined) {
                     // Update lockVersion in store
                     updateTask(draggedTaskId, { lockVersion: result.lockVersion });
+                    if (relations.some(r => r.from === draggedTaskId || r.to === draggedTaskId)) {
+                        try {
+                            await refreshData();
+                        } catch (refreshError) {
+                            console.error('Failed to refresh data after update:', refreshError);
+                            useUIStore.getState().addNotification('Failed to refresh data after update.', 'warning');
+                        }
+                    }
                 } else {
                     const errorMsg = result.status === 'conflict'
                         ? (result.error || 'Conflict detected. Please reload.')

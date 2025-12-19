@@ -62,6 +62,7 @@ describe('HtmlOverlay', () => {
 
     beforeEach(() => {
         vi.mocked(apiClient.createRelation).mockReset();
+        vi.mocked(apiClient.fetchData).mockReset();
         useTaskStore.setState({
             tasks: [],
             relations: [],
@@ -79,6 +80,12 @@ describe('HtmlOverlay', () => {
     it('creates a relation by dragging a dependency handle onto another task', async () => {
         const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes };
         vi.mocked(apiClient.createRelation).mockResolvedValue(relation);
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [task1, task2],
+            relations: [relation],
+            project: { id: 'p1', name: 'Project' },
+            permissions: { editable: true, viewable: true }
+        });
 
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);
@@ -115,12 +122,19 @@ describe('HtmlOverlay', () => {
 
         await waitFor(() => {
             expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes);
+            expect(apiClient.fetchData).toHaveBeenCalled();
             expect(useTaskStore.getState().relations).toEqual([relation]);
         });
     });
 
     it('removes a relation from the context menu', async () => {
         vi.mocked(apiClient.deleteRelation).mockResolvedValue(undefined);
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [task1, task2],
+            relations: [],
+            project: { id: 'p1', name: 'Project' },
+            permissions: { editable: true, viewable: true }
+        });
 
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);
@@ -137,6 +151,7 @@ describe('HtmlOverlay', () => {
 
         await waitFor(() => {
             expect(apiClient.deleteRelation).toHaveBeenCalledWith('rel-1');
+            expect(apiClient.fetchData).toHaveBeenCalled();
             expect(useTaskStore.getState().relations).toEqual([]);
         });
     });

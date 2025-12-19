@@ -12,6 +12,7 @@ export const HtmlOverlay: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
     const relations = useTaskStore(state => state.relations);
     const setContextMenu = useTaskStore(state => state.setContextMenu);
+    const refreshData = useTaskStore(state => state.refreshData);
     const viewport = useTaskStore(state => state.viewport);
     const rowCount = useTaskStore(state => state.rowCount);
 
@@ -80,12 +81,18 @@ export const HtmlOverlay: React.FC = () => {
         try {
             const relation = await apiClient.createRelation(fromId, targetId, RelationType.Precedes);
             addRelation(relation);
+            try {
+                await refreshData();
+            } catch (refreshError: unknown) {
+                const message = refreshError instanceof Error ? refreshError.message : undefined;
+                useUIStore.getState().addNotification(message || 'Failed to refresh data.', 'warning');
+            }
             useUIStore.getState().addNotification(i18n.t('label_relation_added') || 'Dependency created', 'success');
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : undefined;
             useUIStore.getState().addNotification(message || i18n.t('label_error') || 'Failed to create relation', 'error');
         }
-    }, [handleMouseMove]);
+    }, [handleMouseMove, refreshData]);
 
     const startDraft = React.useCallback((taskId: string, x: number, y: number) => {
         const startPoint = { x, y };
@@ -139,6 +146,12 @@ export const HtmlOverlay: React.FC = () => {
         try {
             await apiClient.deleteRelation(relationId);
             useTaskStore.getState().removeRelation(relationId);
+            try {
+                await refreshData();
+            } catch (refreshError: unknown) {
+                const message = refreshError instanceof Error ? refreshError.message : undefined;
+                useUIStore.getState().addNotification(message || 'Failed to refresh data.', 'warning');
+            }
             useUIStore.getState().addNotification(i18n.t('label_relation_removed') || 'Dependency removed', 'success');
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : undefined;
@@ -146,7 +159,7 @@ export const HtmlOverlay: React.FC = () => {
         } finally {
             useTaskStore.getState().setContextMenu(null);
         }
-    }, []);
+    }, [refreshData]);
 
     const handleTaskDelete = React.useCallback(async (taskId: string) => {
         const msg = i18n.t('text_are_you_sure') || 'Are you sure?';
