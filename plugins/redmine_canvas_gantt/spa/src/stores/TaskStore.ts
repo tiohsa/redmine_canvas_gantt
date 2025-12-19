@@ -352,14 +352,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const { viewport } = state;
         const newScale = ZOOM_SCALES[level];
 
-        // Preserve Center Logic
-        const width = viewport.width || 800;
-        // Current center relative to start
-        const centerOffsetPixels = viewport.scrollX + (width / 2);
-        const centerTimeOffset = centerOffsetPixels / viewport.scale;
+        // Preserve Left Edge Logic (instead of center)
+        // Calculate the timestamp at the current left edge of the visible area
+        const leftEdgeTimeOffset = viewport.scrollX / viewport.scale;
 
-        // New scrollX
-        let newScrollX = (centerTimeOffset * newScale) - (width / 2);
+        // New scrollX to keep the same left edge visible
+        let newScrollX = leftEdgeTimeOffset * newScale;
         if (newScrollX < 0) newScrollX = 0;
 
         // Reverse map to viewMode for compatibility if needed
