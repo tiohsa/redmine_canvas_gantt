@@ -59,17 +59,17 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
     const columnOptions = [
         { key: 'id', label: 'ID' },
-        { key: 'status', label: 'Status' },
-        { key: 'assignee', label: 'Assignee' },
-        { key: 'startDate', label: 'Start Date' },
-        { key: 'dueDate', label: 'Due Date' },
-        { key: 'ratioDone', label: 'Progress' }
+        { key: 'status', label: i18n.t('field_status') || 'Status' },
+        { key: 'assignee', label: i18n.t('field_assigned_to') || 'Assignee' },
+        { key: 'startDate', label: i18n.t('field_start_date') || 'Start Date' },
+        { key: 'dueDate', label: i18n.t('field_due_date') || 'Due Date' },
+        { key: 'ratioDone', label: i18n.t('field_done_ratio') || 'Progress' }
     ];
 
     const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
-        { level: 0, label: 'Month' },
-        { level: 1, label: 'Week' },
-        { level: 2, label: 'Day' }
+        { level: 0, label: i18n.t('label_month') || 'Month' },
+        { level: 1, label: i18n.t('label_week') || 'Week' },
+        { level: 2, label: i18n.t('label_day') || 'Day' }
     ];
 
     return (
@@ -87,7 +87,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
                 <button
                     onClick={toggleLeftPane}
-                    title="Toggle Sidebar"
+                    title={i18n.t('label_toggle_sidebar') || "Toggle Sidebar"}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -163,7 +163,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <line x1="6" y1="12" x2="18" y2="12" />
                         <line x1="8" y1="18" x2="16" y2="18" />
                     </svg>
-                    Filter {filterText ? '(Active)' : ''}
+                    {i18n.t('label_filter') || 'Filter'} {filterText ? '(Active)' : ''}
                 </button>
 
                 {showFilterMenu && (
@@ -181,10 +181,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             minWidth: '220px'
                         }}
                     >
-                        <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>Filter Tasks</div>
+                        <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('label_filter_tasks') || 'Filter Tasks'}</div>
                         <input
                             type="text"
-                            placeholder="Filter by subject..."
+                            placeholder={i18n.t('label_filter_by_subject') || "Filter by subject..."}
                             value={filterText}
                             onChange={(e) => setFilterText(e.target.value)}
                             style={{
@@ -210,7 +210,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     fontSize: 13
                                 }}
                             >
-                                Clear Filter
+                                {i18n.t('label_clear_filter') || 'Clear Filter'}
                             </button>
                         )}
                     </div>
@@ -239,7 +239,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <path d="M7 12h10" />
                             <path d="M10 19h4" />
                         </svg>
-                        Columns
+                        {i18n.t('label_column_plural') || 'Columns'}
                     </button>
 
                     {showColumnMenu && (
@@ -258,7 +258,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 minWidth: '200px'
                             }}
                         >
-                            <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>Columns</div>
+                            <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('label_column_plural') || 'Columns'}</div>
                             {columnOptions.map(option => (
                                 <label key={option.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444' }}>
                                     <input
@@ -280,7 +280,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     padding: 0
                                 }}
                             >
-                                Reset
+                                {i18n.t('button_reset') || 'Reset'}
                             </button>
                         </div>
                     )}
@@ -293,7 +293,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         onChange={toggleProgressLine}
                         style={{ cursor: 'pointer' }}
                     />
-                    Progress Line
+                    {i18n.t('label_progress_line') || 'Progress Line'}
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#555', cursor: 'pointer', userSelect: 'none' }}>
@@ -303,7 +303,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         onChange={(e) => setGroupByProject(e.target.checked)}
                         style={{ cursor: 'pointer' }}
                     />
-                    Group by project
+                    {i18n.t('label_group_by_project') || 'Group by project'}
                 </label>
             </div>
 
@@ -327,7 +327,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             alignItems: 'center'
                         }}
                     >
-                        ◀ Prev Month
+                        ◀ {i18n.t('label_previous_month') || 'Prev Month'}
                     </button>
                     <button
                         onClick={() => navigateMonth(1)}
@@ -345,7 +345,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             alignItems: 'center'
                         }}
                     >
-                        Next Month ▶
+                        {i18n.t('label_next_month') || 'Next Month'} ▶
                     </button>
                 </div>
 
@@ -369,7 +369,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         alignItems: 'center'
                     }}
                 >
-                    Today
+                    {i18n.t('label_today') || 'Today'}
                 </button>
 
 
@@ -400,7 +400,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' : 'none',
                                     transition: 'all 0.2s ease',
                                     outline: 'none',
-                                    minWidth: '60px'
+                                    minWidth: '60px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
                                 }}
                             >
                                 {option.label}
@@ -470,7 +473,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <polyline points="5 12 12 5 19 12"></polyline>
                         <line x1="5" y1="19" x2="19" y2="19"></line>
                     </svg>
-                    Top
+                    {i18n.t('button_top') || 'Top'}
                 </button>
             </div>
         </div>

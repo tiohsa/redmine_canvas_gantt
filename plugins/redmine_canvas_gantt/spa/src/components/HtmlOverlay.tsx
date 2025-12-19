@@ -83,7 +83,7 @@ export const HtmlOverlay: React.FC = () => {
             useUIStore.getState().addNotification(i18n.t('label_relation_added') || 'Dependency created', 'success');
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : undefined;
-            useUIStore.getState().addNotification(message || 'Failed to create relation', 'error');
+            useUIStore.getState().addNotification(message || i18n.t('label_error') || 'Failed to create relation', 'error');
         }
     }, [handleMouseMove]);
 
@@ -155,10 +155,10 @@ export const HtmlOverlay: React.FC = () => {
         try {
             await apiClient.deleteTask(taskId);
             useTaskStore.getState().removeTask(taskId);
-            useUIStore.getState().addNotification(i18n.t('button_delete') + ': Success', 'success');
+            useUIStore.getState().addNotification((i18n.t('button_delete') || 'Delete') + ': ' + (i18n.t('label_success') || 'Success'), 'success');
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : undefined;
-            useUIStore.getState().addNotification(message || 'Failed to delete task', 'error');
+            useUIStore.getState().addNotification(message || (i18n.t('label_delete_task_failed') || 'Failed to delete task'), 'error');
         } finally {
             useTaskStore.getState().setContextMenu(null);
         }

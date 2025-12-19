@@ -189,24 +189,25 @@ export const UiSidebar: React.FC = () => {
             const editIcon = 24;
             return indent + icons + text + editIcon + 12;
         };
-        const subjectWidth = Math.max(measure('Task Name') + 24, ...tasks.slice(0, 50).map(getSubjectWidth));
+        const subjectTitle = i18n.t('field_subject') || 'Task Name';
+        const subjectWidth = Math.max(measure(subjectTitle) + 24, ...tasks.slice(0, 50).map(getSubjectWidth));
         newWidths['subject'] = Math.ceil(Math.min(600, subjectWidth)); // Cap at 600 to prevent explosion
 
-        newWidths['status'] = getColWidth('Status', (t: Task) => {
+        newWidths['status'] = getColWidth(i18n.t('field_status') || 'Status', (t: Task) => {
             const s = getStatusColor(t.statusId);
             return s.label; // Padded pill
         }) + 16; // Pill padding
 
-        newWidths['assignee'] = Math.max(measure('Assignee') + 24, ...tasks.slice(0, 50).map(t => {
+        newWidths['assignee'] = Math.max(measure(i18n.t('field_assigned_to') || 'Assignee') + 24, ...tasks.slice(0, 50).map(t => {
             if (!t.assignedToName) return 0;
             // Icon 24 + gap 4 + text
             return 24 + 4 + measure(t.assignedToName) + 12;
         }));
 
-        newWidths['startDate'] = getColWidth('Start Date', (t: Task) => Number.isFinite(t.startDate) ? new Date(t.startDate).toLocaleDateString() : '-');
-        newWidths['dueDate'] = getColWidth('Due Date', (t: Task) => Number.isFinite(t.dueDate) ? new Date(t.dueDate).toLocaleDateString() : '-');
+        newWidths['startDate'] = getColWidth(i18n.t('field_start_date') || 'Start Date', (t: Task) => Number.isFinite(t.startDate) ? new Date(t.startDate).toLocaleDateString() : '-');
+        newWidths['dueDate'] = getColWidth(i18n.t('field_due_date') || 'Due Date', (t: Task) => Number.isFinite(t.dueDate) ? new Date(t.dueDate).toLocaleDateString() : '-');
 
-        newWidths['ratioDone'] = Math.max(measure('Progress') + 24, ...tasks.slice(0, 50).map(t => {
+        newWidths['ratioDone'] = Math.max(measure(i18n.t('field_done_ratio') || 'Progress') + 24, ...tasks.slice(0, 50).map(t => {
             // Icon 20 + gap 6 + text
             return 20 + 6 + measure(String(t.ratioDone) + '%') + 12;
         }));
@@ -278,7 +279,7 @@ export const UiSidebar: React.FC = () => {
     const columns = [
         {
             key: 'id',
-            title: 'ID',
+            title: i18n.t('field_id') || 'ID',
             width: columnWidths['id'] ?? 72,
             render: (t: Task) => (
                 <span
@@ -291,7 +292,7 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'subject',
-            title: 'Task Name',
+            title: i18n.t('field_subject') || 'Task Name',
             width: columnWidths['subject'] ?? 280,
             render: (t: Task) => (
                 <div
@@ -309,7 +310,7 @@ export const UiSidebar: React.FC = () => {
                     {t.hasChildren ? (
                         <button
                             type="button"
-                            aria-label={taskExpansion[t.id] ?? true ? '折りたたむ' : '展開する'}
+                            aria-label={(taskExpansion[t.id] ?? true) ? (i18n.t('button_collapse') || 'Collapse') : (i18n.t('button_expand') || 'Expand')}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setActiveInlineEdit(null);
@@ -369,7 +370,7 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'status',
-            title: 'Status',
+            title: i18n.t('field_status') || 'Status',
             width: columnWidths['status'] ?? 100,
             render: (t: Task) => {
                 const style = getStatusColor(t.statusId);
@@ -391,7 +392,7 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'assignee',
-            title: 'Assignee',
+            title: i18n.t('field_assigned_to') || 'Assignee',
             width: columnWidths['assignee'] ?? 80,
             render: (t: Task) => renderEditableCell(t, 'assignedToId', (
                 <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
@@ -413,7 +414,7 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'startDate',
-            title: 'Start Date',
+            title: i18n.t('field_start_date') || 'Start Date',
             width: columnWidths['startDate'] ?? 90,
             render: (t: Task) => renderEditableCell(t, 'startDate', (
                 <span style={{ color: '#666' }}>{Number.isFinite(t.startDate) ? new Date(t.startDate).toLocaleDateString() : '-'}</span>
@@ -421,7 +422,7 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'dueDate',
-            title: 'Due Date',
+            title: i18n.t('field_due_date') || 'Due Date',
             width: columnWidths['dueDate'] ?? 90,
             render: (t: Task) => renderEditableCell(t, 'dueDate', (
                 <span style={{ color: '#666' }}>{Number.isFinite(t.dueDate) ? new Date(t.dueDate).toLocaleDateString() : '-'}</span>
@@ -429,7 +430,7 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'ratioDone',
-            title: 'Progress',
+            title: i18n.t('field_done_ratio') || 'Progress',
             width: columnWidths['ratioDone'] ?? 80,
             render: (t: Task) => renderEditableCell(t, 'doneRatio', (
                 <ProgressCircle ratio={t.ratioDone} statusId={t.statusId} />
@@ -537,7 +538,7 @@ export const UiSidebar: React.FC = () => {
                                     justifyContent: 'space-between'
                                 }}
                                 onClick={() => useTaskStore.getState().setSortConfig(col.key as keyof Task)}
-                                title={`Sort by ${col.title}`}
+                                title={`${i18n.t('label_sort_by') || 'Sort by'} ${col.title}`}
                             >
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {col.title}
@@ -617,7 +618,7 @@ export const UiSidebar: React.FC = () => {
                                     }}
                                 >
                                     <span
-                                        aria-label={expanded ? 'プロジェクトを折りたたむ' : 'プロジェクトを展開する'}
+                                        aria-label={expanded ? (i18n.t('button_collapse') || 'Collapse') : (i18n.t('button_expand') || 'Expand')}
                                         style={{
                                             display: 'inline-flex',
                                             alignItems: 'center',
@@ -638,7 +639,7 @@ export const UiSidebar: React.FC = () => {
                                     <div style={{ marginRight: 6, display: 'flex', alignItems: 'center' }}>
                                         <ProjectIcon />
                                     </div>
-                                    {row.projectName || 'Project'}
+                                    {row.projectName || i18n.t('label_project') || 'Project'}
                                 </div>
                             );
                         }
@@ -737,7 +738,7 @@ export const UiSidebar: React.FC = () => {
                                                 }
 
                                                 if (field === 'assignedToId') {
-                                                    if (!meta) return <span style={{ fontSize: 12, color: '#666' }}>Loading…</span>;
+                                                    if (!meta) return <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
                                                     const current = task.assignedToId ?? null;
                                                     return (
                                                         <SelectEditor
@@ -762,7 +763,7 @@ export const UiSidebar: React.FC = () => {
                                                 }
 
                                                 if (field === 'statusId') {
-                                                    if (!meta) return <span style={{ fontSize: 12, color: '#666' }}>Loading…</span>;
+                                                    if (!meta) return <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
                                                     return (
                                                         <SelectEditor
                                                             value={task.statusId}

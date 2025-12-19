@@ -105,7 +105,7 @@ export const TaskDetailPanel: React.FC = () => {
         clearError();
         if (!selectedTaskId) return;
         void fetchEditMeta(selectedTaskId).catch(() => {
-            addNotification('Failed to load edit options', 'error');
+            addNotification(i18n.t('label_failed_to_load_edit_options') || 'Failed to load edit options', 'error');
         });
     }, [activeInlineEdit, addNotification, clearError, fetchEditMeta, selectedTaskId, setActiveInlineEdit]);
 
@@ -128,7 +128,7 @@ export const TaskDetailPanel: React.FC = () => {
     if (!selectedTaskId || !task) {
         return (
             <div style={{ padding: 12, color: '#666', fontSize: 13 }}>
-                Select a task to view details.
+                {i18n.t('label_select_task_to_view_details') || 'Select a task to view details.'}
             </div>
         );
     }
@@ -150,7 +150,7 @@ export const TaskDetailPanel: React.FC = () => {
             </div>
 
             {isLoading ? (
-                <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>Loading…</div>
+                <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</div>
             ) : null}
 
             {error ? (
@@ -260,7 +260,7 @@ export const TaskDetailPanel: React.FC = () => {
                                     const nextTs = toTimestampFromDateInput(next);
                                     if (nextTs === null) return;
                                     if (Number.isFinite(task.startDate) && task.startDate > nextTs) {
-                                        addNotification('Invalid date range', 'warning');
+                                        addNotification(i18n.t('label_invalid_date_range') || 'Invalid date range', 'warning');
                                         return;
                                     }
                                     await saveFields(task.id, { dueDate: nextTs }, { dueDate: task.dueDate }, { due_date: next });
@@ -273,7 +273,7 @@ export const TaskDetailPanel: React.FC = () => {
 
                 {enabledCustomFields && meta?.editable.customFieldValues && meta.options.customFields.length > 0 ? (
                     <div style={{ marginTop: 10 }}>
-                        <div style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>Custom fields</div>
+                        <div style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>{i18n.t('label_custom_field_plural') || 'Custom fields'}</div>
                         {meta.options.customFields.map((cf) => (
                             <InlineRow
                                 key={cf.id}
@@ -326,7 +326,7 @@ export const SubjectEditor: React.FC<{
     const commit = async () => {
         const trimmed = value.trim();
         if (!trimmed) {
-            setError('Required');
+            setError(i18n.t('label_required') || 'Required');
             return;
         }
         if (trimmed === initialValue) {
@@ -338,7 +338,7 @@ export const SubjectEditor: React.FC<{
         try {
             await onCommit(trimmed);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to save');
+            setError(e instanceof Error ? e.message : (i18n.t('label_failed_to_save') || 'Failed to save'));
         } finally {
             setSaving(false);
         }
@@ -366,7 +366,7 @@ export const SubjectEditor: React.FC<{
                     disabled={saving}
                     style={{ width: '100%', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
                 />
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>…</span> : null}
+                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
             </div>
             {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
         </div>
@@ -401,7 +401,7 @@ export const SelectEditor: React.FC<{
         try {
             await onCommit(next);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to save');
+            setError(e instanceof Error ? e.message : (i18n.t('label_failed_to_save') || 'Failed to save'));
             setSaving(false);
         }
     };
@@ -412,7 +412,7 @@ export const SelectEditor: React.FC<{
                 <input
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
-                    placeholder="Search…"
+                    placeholder={i18n.t('label_search') || "Search..."}
                     style={{ fontSize: 12, padding: '6px 8px', border: '1px solid #ccc', borderRadius: 4 }}
                     disabled={saving}
                 />
@@ -456,7 +456,7 @@ export const DoneRatioEditor: React.FC<{
     const commit = async () => {
         const numVal = Number(value);
         if (Number.isNaN(numVal) || numVal < 0 || numVal > 100) {
-            setError('Must be 0-100');
+            setError(i18n.t('label_must_be_0_100') || 'Must be 0-100');
             return;
         }
 
@@ -469,7 +469,7 @@ export const DoneRatioEditor: React.FC<{
         try {
             await onCommit(numVal);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to save');
+            setError(e instanceof Error ? e.message : (i18n.t('label_failed_to_save') || 'Failed to save'));
         } finally {
             setSaving(false);
         }
@@ -501,7 +501,7 @@ export const DoneRatioEditor: React.FC<{
                     style={{ width: '80px', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
                 />
                 <span style={{ fontSize: 12, color: '#444' }}>%</span>
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>…</span> : null}
+                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
             </div>
             {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
         </div>
@@ -527,7 +527,7 @@ export const DueDateEditor: React.FC<{
         try {
             await onCommit(next);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to save');
+            setError(e instanceof Error ? e.message : (i18n.t('label_failed_to_save') || 'Failed to save'));
             setSaving(false);
         }
     };
@@ -563,7 +563,7 @@ export const DueDateEditor: React.FC<{
 const formatCustomFieldValue = (meta: TaskEditMeta, customField: CustomFieldMeta) => {
     const raw = meta.customFieldValues[String(customField.id)];
     if (!raw) return '-';
-    if (customField.fieldFormat === 'bool') return raw === '1' ? 'Yes' : 'No';
+    if (customField.fieldFormat === 'bool') return raw === '1' ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No');
     return raw;
 };
 
@@ -578,13 +578,13 @@ export const CustomFieldEditor: React.FC<{
     const [error, setError] = React.useState<string | null>(null);
 
     const validate = (next: string): string | null => {
-        if (customField.isRequired && !next.trim()) return 'Required';
-        if (customField.maxLength && next.length > customField.maxLength) return 'Too long';
-        if (customField.minLength && next.length < customField.minLength) return 'Too short';
+        if (customField.isRequired && !next.trim()) return i18n.t('label_required') || 'Required';
+        if (customField.maxLength && next.length > customField.maxLength) return i18n.t('label_too_long') || 'Too long';
+        if (customField.minLength && next.length < customField.minLength) return i18n.t('label_too_short') || 'Too short';
         if (customField.regexp) {
             try {
                 const re = new RegExp(customField.regexp);
-                if (next && !re.test(next)) return 'Invalid format';
+                if (next && !re.test(next)) return i18n.t('label_invalid_format') || 'Invalid format';
             } catch {
                 // ignore invalid regexp from server
             }
@@ -607,7 +607,7 @@ export const CustomFieldEditor: React.FC<{
         try {
             await onCommit(next ? next : null);
         } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to save');
+            setError(e instanceof Error ? e.message : (i18n.t('label_failed_to_save') || 'Failed to save'));
         } finally {
             setSaving(false);
         }
@@ -642,7 +642,7 @@ export const CustomFieldEditor: React.FC<{
                         <option key={pv} value={pv}>{pv}</option>
                     ))}
                 </select>
-                {saving ? <div style={{ fontSize: 12, color: '#666' }}>Saving…</div> : null}
+                {saving ? <div style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
                 {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
             </div>
         );
@@ -662,7 +662,7 @@ export const CustomFieldEditor: React.FC<{
                         void commit(next);
                     }}
                 />
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>…</span> : null}
+                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
                 {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
             </div>
         );
@@ -725,7 +725,7 @@ export const CustomFieldEditor: React.FC<{
                     style={{ width: '100%', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
                 />
             )}
-            {saving ? <div style={{ fontSize: 12, color: '#666' }}>Saving…</div> : null}
+            {saving ? <div style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
             {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
         </div>
     );
