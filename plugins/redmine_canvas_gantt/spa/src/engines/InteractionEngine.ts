@@ -334,6 +334,8 @@ export class InteractionEngine {
         const { hoveredTaskId, setContextMenu } = useTaskStore.getState();
         if (hoveredTaskId) {
             setContextMenu({ x: e.clientX, y: e.clientY, taskId: hoveredTaskId });
+        } else {
+            setContextMenu(null);
         }
     };
 

@@ -94,10 +94,26 @@ export const HtmlOverlay: React.FC = () => {
         window.addEventListener('mouseup', handleMouseUp);
     }, [handleMouseMove, handleMouseUp, setDraftState]);
 
-    React.useEffect(() => () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-    }, [handleMouseMove, handleMouseUp]);
+    React.useEffect(() => {
+        const handleGlobalMouseDown = (e: MouseEvent) => {
+            if (contextMenu) {
+                const target = e.target as HTMLElement;
+                // If it's not a menu item (which handles its own closure), close the menu
+                if (!target.closest('.menu-item')) {
+                    setContextMenu(null);
+                }
+            }
+        };
+
+        window.addEventListener('mousedown', handleGlobalMouseDown);
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousedown', handleGlobalMouseDown);
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [handleMouseMove, handleMouseUp, contextMenu, setContextMenu]);
 
 
     const relatedRelations = React.useMemo(() => {
