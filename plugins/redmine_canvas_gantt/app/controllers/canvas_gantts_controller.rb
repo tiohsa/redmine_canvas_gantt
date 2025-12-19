@@ -32,7 +32,8 @@ class CanvasGanttsController < ApplicationController
       label_relation_already_exists: l(:label_relation_already_exists),
       label_add_child_task: l(:button_add_subtask),
       label_issue_new: l(:label_issue_new),
-      label_unassigned: l(:label_none)
+      label_unassigned: l(:label_none),
+      text_are_you_sure: l(:text_are_you_sure)
     }
 
     @settings = Setting.plugin_redmine_canvas_gantt || {}

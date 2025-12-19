@@ -33,6 +33,7 @@ interface TaskState {
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
     updateTask: (id: string, updates: Partial<Task>) => void;
+    removeTask: (id: string) => void;
     updateViewport: (updates: Partial<Viewport>) => void;
     setViewMode: (mode: ViewMode) => void;
     setZoomLevel: (level: ZoomLevel) => void;
@@ -291,6 +292,17 @@ export const useTaskStore = create<TaskState>((set) => ({
 
         const layout = buildLayout(finalTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
 
+        return {
+            allTasks: finalTasks,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+
+    removeTask: (id) => set((state) => {
+        const finalTasks = state.allTasks.filter(t => t.id !== id);
+        const layout = buildLayout(finalTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
         return {
             allTasks: finalTasks,
             tasks: layout.tasks,
