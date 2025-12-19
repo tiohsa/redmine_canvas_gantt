@@ -226,6 +226,7 @@ export const HtmlOverlay: React.FC = () => {
                         y2={draft.pointer.y}
                         stroke="#1a73e8"
                         strokeWidth={2}
+                        strokeDasharray="5 5"
                         markerEnd="url(#draft-arrow)"
                     />
                 </svg>
