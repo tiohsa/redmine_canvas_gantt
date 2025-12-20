@@ -1,6 +1,5 @@
 import type { Viewport, Task, ZoomLevel } from '../types';
 import { LayoutEngine } from '../engines/LayoutEngine';
-import { getStatusColor } from '../utils/styles';
 
 export class TaskRenderer {
     private canvas: HTMLCanvasElement;
@@ -11,7 +10,6 @@ export class TaskRenderer {
     private static readonly PLAN_GRAY = '#dddddd';
 
 
-    private static readonly LABEL_COLOR = '#aaaaaa';
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -37,19 +35,8 @@ export class TaskRenderer {
 
             const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
             // Requirement 6.1: Parent tasks drawn as Redmine standard summary bar (bracket style replaced by cap bar)
-            if (task.hasChildren) {
-                // For parent tasks, use the Redmine-standard Cap style
-                this.drawRedmineTaskBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height, xTodayLine);
-            } else {
-                // Leaf task: simple rectangle (no rounded corners)
-                // We could use drawRedmineTaskBar without caps too, but let's stick to existing leaf style to be safe, 
-                // OR use the new logic for consistency if requested. 
-                // The 'Delay' calculation in drawRedmineTaskBar is better. Let's use it for ALL tasks but only draw Caps for parents.
-                this.drawRedmineTaskBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height, xTodayLine);
-            }
-
-            // Label to the right of bar: "[status] [ratio]%"
-            this.drawLabel(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
+            // Cap bar or leaf bar drawing logic
+            this.drawRedmineTaskBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height, xTodayLine);
 
             // Draw Subject BEFORE the bar (to the left)
             this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
@@ -64,7 +51,7 @@ export class TaskRenderer {
         ctx.font = '12px sans-serif';
         ctx.fillStyle = '#000000';
 
-        const textX = x - 5; // Left of the bar with padding
+        const textX = x - 30; // Increased offset to 30px to avoid dependency lines
         const textY = y + height / 2;
 
         ctx.textAlign = 'right';
@@ -171,17 +158,4 @@ export class TaskRenderer {
 
 
 
-    private drawLabel(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number) {
-        const label = `${getStatusColor(task.statusId).label} ${Math.max(0, Math.min(100, task.ratioDone))}%`;
-        const textX = x + width + 6;
-        const textY = y + height / 2 + 4;
-
-        ctx.save();
-        ctx.font = '12px sans-serif';
-        ctx.fillStyle = TaskRenderer.LABEL_COLOR;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, textX, textY);
-        ctx.restore();
-    }
 }
