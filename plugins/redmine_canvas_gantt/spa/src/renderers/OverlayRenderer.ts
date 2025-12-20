@@ -82,6 +82,11 @@ export class OverlayRenderer {
         const drawableTasks = tasks.filter(t => Number.isFinite(t.startDate) && Number.isFinite(t.dueDate) && Number.isFinite(t.ratioDone));
         if (drawableTasks.length === 0) return;
 
+        // Calculate Today X
+        const today = new Date().setHours(0, 0, 0, 0);
+        const ONE_DAY = 24 * 60 * 60 * 1000;
+        const xToday = LayoutEngine.dateToX(today + ONE_DAY, viewport) - viewport.scrollX;
+
         ctx.save();
         ctx.beginPath();
         ctx.strokeStyle = '#e53935'; // Red solid line
@@ -89,7 +94,8 @@ export class OverlayRenderer {
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
 
-        let firstPoint = true;
+        // Start from Today Line at Top
+        ctx.moveTo(xToday, 0);
 
         drawableTasks.forEach(task => {
             const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
@@ -102,13 +108,11 @@ export class OverlayRenderer {
             // Y position: vertically centered in the task row
             const pointY = bounds.y + bounds.height / 2;
 
-            if (firstPoint) {
-                ctx.moveTo(pointX, pointY);
-                firstPoint = false;
-            } else {
-                ctx.lineTo(pointX, pointY);
-            }
+            ctx.lineTo(pointX, pointY);
         });
+
+        // End at Today Line at Bottom
+        ctx.lineTo(xToday, this.canvas.height);
 
         ctx.stroke();
         ctx.restore();
