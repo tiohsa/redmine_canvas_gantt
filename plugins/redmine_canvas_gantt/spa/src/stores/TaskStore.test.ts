@@ -1,6 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useTaskStore } from './TaskStore';
+import type { Task } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
+
+const buildTask = (overrides: Partial<Task>): Task => ({
+    id: 'task',
+    subject: 'task',
+    startDate: 0,
+    dueDate: 0,
+    ratioDone: 0,
+    statusId: 1,
+    lockVersion: 0,
+    editable: true,
+    rowIndex: 0,
+    hasChildren: false,
+    ...overrides
+});
 
 describe('TaskStore viewport clamping', () => {
     beforeEach(() => {
@@ -100,6 +115,26 @@ describe('TaskStore assignee filter', () => {
         // Clear filter
         setSelectedAssigneeIds([]);
         expect(useTaskStore.getState().tasks.length).toBe(3);
+    });
+});
+
+describe('TaskStore filter hierarchy', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('setFilterText は親タスクを子タスクの上に表示する', () => {
+        const tasks = [
+            buildTask({ id: 'parent', subject: 'Parent', hasChildren: true }),
+            buildTask({ id: 'child', subject: 'Child Match', parentId: 'parent' })
+        ];
+
+        const { setTasks, setFilterText } = useTaskStore.getState();
+        setTasks(tasks);
+        setFilterText('Match');
+
+        const visibleTasks = useTaskStore.getState().tasks;
+        expect(visibleTasks.map(task => task.id)).toEqual(['parent', 'child']);
     });
 });
 

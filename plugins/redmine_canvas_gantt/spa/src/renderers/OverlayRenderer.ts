@@ -2,10 +2,18 @@ import type { Viewport, Task, Relation, ZoomLevel } from '../types';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
+import { routeDependencyFS, type Point, type Rect, type RouteParams } from './dependencyRouting';
 
 export class OverlayRenderer {
     private canvas: HTMLCanvasElement;
     private static readonly DEPENDENCY_ROW_BUFFER = 50;
+    private static readonly DEPENDENCY_ROUTE_PARAMS: RouteParams = {
+        outset: 20,
+        inset: 12,
+        step: 24,
+        maxShift: 8
+    };
+    private dependencyCache = new Map<string, { key: string; points: Point[] }>();
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -97,94 +105,80 @@ export class OverlayRenderer {
         ctx.lineWidth = 1.5;
 
         const taskById = new Map<string, Task>(tasks.map((t) => [t.id, t]));
+        const rectById = new Map<string, Rect>();
+        const allRects: Array<{ id: string; rect: Rect }> = [];
+
+        for (const task of tasks) {
+            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
+            const rect = {
+                x: bounds.x + viewport.scrollX,
+                y: bounds.y + viewport.scrollY,
+                width: bounds.width,
+                height: bounds.height
+            };
+            rectById.set(task.id, rect);
+            allRects.push({ id: task.id, rect });
+        }
+
         for (const rel of relations) {
             const fromTask = taskById.get(rel.from);
             const toTask = taskById.get(rel.to);
             if (!fromTask || !toTask) continue;
 
-            const fromBounds = LayoutEngine.getTaskBounds(fromTask, viewport, 'bar', zoomLevel);
-            const toBounds = LayoutEngine.getTaskBounds(toTask, viewport, 'bar', zoomLevel);
+            const fromRect = rectById.get(rel.from);
+            const toRect = rectById.get(rel.to);
+            if (!fromRect || !toRect) continue;
 
-            // Manhattan path (Orthogonal)
-            const startX = fromBounds.x + fromBounds.width;
-            const startY = fromBounds.y + fromBounds.height / 2;
-            const endX = toBounds.x;
-            const endY = toBounds.y + toBounds.height / 2;
+            const cacheKey = buildCacheKey(fromRect, toRect, OverlayRenderer.DEPENDENCY_ROUTE_PARAMS);
+            const cached = this.dependencyCache.get(rel.id);
+            let points = cached?.key === cacheKey ? cached.points : undefined;
 
-            ctx.beginPath();
-            ctx.moveTo(startX, startY);
-
-            const midX = startX + 20; // First segment to the right
-
-            // Logic for orthogonal path
-            if (endX > startX + 20) {
-                // Simple case: Right then Up/Down then Right
-                const midX2 = startX + (endX - startX) / 2; // Or strictly 20px if we want to stay close
-                // Actually usually we want to go out a bit, then vertical, then into target.
-                // Standard: Right 10px, Vertical to target Y, Right to target.
-                // But we must respect 'midX' to avoid going through the task if possible (though task is to the left)
-
-                // Let's use 2 corners
-                ctx.lineTo(midX2, startY);
-                ctx.lineTo(midX2, endY);
-                ctx.lineTo(endX, endY);
-            } else {
-                // Complex case: Target is behind or close.
-                // Go Right, Go Down/Up, Go Left, Go Down/Up to target Y, Go Right
-                // 1. Right 20px
-                ctx.lineTo(midX, startY);
-
-                // 2. Vertical to clear the source task or target task
-                // We need to decide whether to go above or below.
-                // Usually below.
-                // const verticalClearance = 10; // Clearance below/above
-                // const yClearance = (endY > startY) ? fromBounds.y + fromBounds.height + verticalClearance : fromBounds.y - verticalClearance;
-                // Actually simplified:
-                // Right 20, Down to target Y (if possible) or Down/Up to clear, Left to target X - 20, Up/Down to target Y, Right.
-
-                // Let's implement a standard 3-segment if valid, or 5-segment.
-                // 5-segment wrap around
-                // const midY1 = (endY > startY) ? Math.max(startY, endY) + 20 : Math.min(startY, endY) - 20;
-                // Actually let's just use a simple step-down pattern regardless of overlap for now to keep it cleanish
-
-                const turnX1 = startX + 20;
-                const turnX2 = endX - 20;
-
-                ctx.lineTo(turnX1, startY);
-
-                // We need to go vertical. If turnX2 < turnX1, we have to go "around".
-                // Simple "around":
-                // 1. Right to turnX1
-                // 2. Down to some Y that is safe (e.g. max(startY, endY) + rowHeight?)
-                // Since we don't know row layout easily here without iterating all, let's just go down 1 row height if needed.
-
-                const safeY = endY + 20; // Just random guess
-
-                ctx.lineTo(turnX1, safeY);
-                ctx.lineTo(turnX2, safeY);
-                ctx.lineTo(turnX2, endY);
-                ctx.lineTo(endX, endY);
+            if (!points) {
+                const obstacles: Rect[] = [];
+                for (const rectEntry of allRects) {
+                    if (rectEntry.id === rel.from || rectEntry.id === rel.to) continue;
+                    obstacles.push(rectEntry.rect);
+                }
+                points = routeDependencyFS(
+                    fromRect,
+                    toRect,
+                    obstacles,
+                    { scrollY: viewport.scrollY, height: viewport.height },
+                    OverlayRenderer.DEPENDENCY_ROUTE_PARAMS
+                );
+                this.dependencyCache.set(rel.id, { key: cacheKey, points });
             }
 
+            if (!points) continue;
+            if (!isRouteVisible(points, viewport)) continue;
+
+            ctx.beginPath();
+            const first = points[0];
+            ctx.moveTo(first.x - viewport.scrollX, first.y - viewport.scrollY);
+            for (let i = 1; i < points.length; i += 1) {
+                const point = points[i];
+                ctx.lineTo(point.x - viewport.scrollX, point.y - viewport.scrollY);
+            }
             ctx.stroke();
 
-            // Arrow head
-            this.drawArrowHead(ctx, endX, endY, 'right');
+            this.drawArrowHead(ctx, points[points.length - 2], points[points.length - 1], viewport);
         }
     }
 
-    private drawArrowHead(ctx: CanvasRenderingContext2D, x: number, y: number, direction: 'right' | 'left') {
+    private drawArrowHead(ctx: CanvasRenderingContext2D, from: Point, to: Point, viewport: Viewport) {
         const size = 6;
+        const fromX = from.x - viewport.scrollX;
+        const fromY = from.y - viewport.scrollY;
+        const toX = to.x - viewport.scrollX;
+        const toY = to.y - viewport.scrollY;
+        const angle = Math.atan2(toY - fromY, toX - fromX);
+
+        const a1 = angle + Math.PI * 0.85;
+        const a2 = angle - Math.PI * 0.85;
         ctx.beginPath();
-        if (direction === 'right') {
-            ctx.moveTo(x, y);
-            ctx.lineTo(x - size, y - size / 2);
-            ctx.lineTo(x - size, y + size / 2);
-        } else {
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + size, y - size / 2);
-            ctx.lineTo(x + size, y + size / 2);
-        }
+        ctx.moveTo(toX, toY);
+        ctx.lineTo(toX + Math.cos(a1) * size, toY + Math.sin(a1) * size);
+        ctx.lineTo(toX + Math.cos(a2) * size, toY + Math.sin(a2) * size);
         ctx.closePath();
         ctx.fillStyle = '#888';
         ctx.fill();
@@ -217,4 +211,42 @@ export class OverlayRenderer {
             ctx.setLineDash([]);
         }
     }
+}
+
+function buildCacheKey(fromRect: Rect, toRect: Rect, params: RouteParams): string {
+    return [
+        fromRect.x,
+        fromRect.y,
+        fromRect.width,
+        fromRect.height,
+        toRect.x,
+        toRect.y,
+        toRect.width,
+        toRect.height,
+        params.outset,
+        params.inset,
+        params.step,
+        params.maxShift
+    ].join('|');
+}
+
+function isRouteVisible(points: Point[], viewport: Viewport): boolean {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    for (const point of points) {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+    }
+
+    const viewLeft = viewport.scrollX;
+    const viewRight = viewport.scrollX + viewport.width;
+    const viewTop = viewport.scrollY;
+    const viewBottom = viewport.scrollY + viewport.height;
+
+    return !(maxX < viewLeft || minX > viewRight || maxY < viewTop || minY > viewBottom);
 }

@@ -172,20 +172,37 @@ const buildLayout = (
 };
 
 const applyFilters = (tasks: Task[], filterText: string, selectedAssigneeIds: (number | null)[]) => {
-    let filtered = tasks;
     const lowerText = filterText.toLowerCase();
+    const hasTextFilter = Boolean(lowerText);
+    const hasAssigneeFilter = selectedAssigneeIds.length > 0;
 
-    if (lowerText) {
-        filtered = filtered.filter(t => t.subject.toLowerCase().includes(lowerText));
+    if (!hasTextFilter && !hasAssigneeFilter) {
+        return tasks;
     }
 
-    if (selectedAssigneeIds.length > 0) {
-        filtered = filtered.filter(t => {
-            const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
-            return selectedAssigneeIds.includes(taskAssignee);
-        });
-    }
-    return filtered;
+    const matched = tasks.filter(t => {
+        const matchesText = !hasTextFilter || t.subject.toLowerCase().includes(lowerText);
+        const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
+        const matchesAssignee = !hasAssigneeFilter || selectedAssigneeIds.includes(taskAssignee);
+        return matchesText && matchesAssignee;
+    });
+
+    if (matched.length === 0) return [];
+
+    const taskById = new Map(tasks.map(task => [task.id, task]));
+    const visibleIds = new Set<string>();
+
+    matched.forEach(task => {
+        visibleIds.add(task.id);
+
+        let currentParentId = task.parentId;
+        while (currentParentId && taskById.has(currentParentId)) {
+            visibleIds.add(currentParentId);
+            currentParentId = taskById.get(currentParentId)?.parentId;
+        }
+    });
+
+    return tasks.filter(task => visibleIds.has(task.id));
 };
 
 export const useTaskStore = create<TaskState>((set) => ({
