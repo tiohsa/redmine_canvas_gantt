@@ -18,8 +18,10 @@ export const HtmlOverlay: React.FC = () => {
     const rowCount = useTaskStore(state => state.rowCount);
 
     const overlayRef = React.useRef<HTMLDivElement>(null);
+    const contextMenuRef = React.useRef<HTMLDivElement>(null);
     const [draft, setDraft] = React.useState<{ fromId: string; start: { x: number; y: number }; pointer: { x: number; y: number }; targetId?: string } | null>(null);
     const draftRef = React.useRef<typeof draft>(null);
+    const [menuPosition, setMenuPosition] = React.useState<{ x: number; y: number } | null>(null);
 
     const taskById = React.useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
     const contextTask = contextMenu ? taskById.get(contextMenu.taskId) ?? null : null;
@@ -128,6 +130,47 @@ export const HtmlOverlay: React.FC = () => {
         if (!contextMenu) return [];
         return relations.filter(r => r.from === contextMenu.taskId || r.to === contextMenu.taskId);
     }, [contextMenu, relations]);
+
+    React.useEffect(() => {
+        if (!contextMenu) {
+            setMenuPosition(null);
+            return;
+        }
+        setMenuPosition({ x: contextMenu.x, y: contextMenu.y });
+    }, [contextMenu]);
+
+    React.useLayoutEffect(() => {
+        if (!contextMenu || !contextMenuRef.current) return;
+
+        const clampPosition = () => {
+            if (!contextMenuRef.current) return;
+            const rect = contextMenuRef.current.getBoundingClientRect();
+            const margin = 8;
+            const maxX = window.innerWidth - rect.width - margin;
+            const maxY = window.innerHeight - rect.height - margin;
+            const nextX = Math.max(margin, Math.min(contextMenu.x, maxX));
+            const nextY = Math.max(margin, Math.min(contextMenu.y, maxY));
+            setMenuPosition((prev) => {
+                if (!prev || prev.x !== nextX || prev.y !== nextY) {
+                    return { x: nextX, y: nextY };
+                }
+                return prev;
+            });
+        };
+
+        clampPosition();
+
+        const resizeObserver = new ResizeObserver(() => clampPosition());
+        resizeObserver.observe(contextMenuRef.current);
+
+        const handleWindowResize = () => clampPosition();
+        window.addEventListener('resize', handleWindowResize);
+
+        return () => {
+            resizeObserver.disconnect();
+            window.removeEventListener('resize', handleWindowResize);
+        };
+    }, [contextMenu, relatedRelations.length]);
 
     const getTaskLabel = React.useCallback((taskId: string) => {
         const task = tasks.find(t => t.id === taskId);
@@ -266,10 +309,11 @@ export const HtmlOverlay: React.FC = () => {
                         }}
                     />
                     <div
+                        ref={contextMenuRef}
                         style={{
                             position: 'fixed',
-                            top: contextMenu.y,
-                            left: contextMenu.x,
+                            top: menuPosition?.y ?? contextMenu.y,
+                            left: menuPosition?.x ?? contextMenu.x,
                             background: 'white',
                             borderRadius: '8px',
                             minWidth: '200px',
