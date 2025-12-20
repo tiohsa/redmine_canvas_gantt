@@ -27,14 +27,13 @@ const getInitials = (name?: string) => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 };
 
-const ProgressCircle = ({ ratio, statusId }: { ratio: number, statusId: number }) => {
+const ProgressCircle = ({ ratio }: { ratio: number, statusId: number }) => {
     const r = 8;
     const c = 2 * Math.PI * r;
     const offset = c - (ratio / 100) * c;
 
-    const style = getStatusColor(statusId);
-    // Use status color for the circle
-    const color = style.text;
+    // Matching TaskRenderer.DONE_GREEN
+    const color = '#50c878';
 
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
