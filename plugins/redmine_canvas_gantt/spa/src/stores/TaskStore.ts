@@ -62,7 +62,7 @@ const DEFAULT_VIEWPORT: Viewport = {
     scale: preferences.viewport?.scale ?? preferences.customScales?.[preferences.zoomLevel ?? 1] ?? ZOOM_SCALES[preferences.zoomLevel ?? 1],
     width: 800,
     height: 600,
-    rowHeight: Number((window as any).RedmineCanvasGantt?.settings?.row_height) || 32
+    rowHeight: Number((window as any).RedmineCanvasGantt?.settings?.row_height) || 36
 };
 
 const buildLayout = (
