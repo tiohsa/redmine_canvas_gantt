@@ -166,18 +166,18 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             useUIStore.getState().openIssueDialog(`/projects/${projectId}/issues/new`);
                         }
                     }}
+                    title={i18n.t('label_issue_new')}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px',
-                        padding: '0 12px',
+                        justifyContent: 'center',
+                        padding: '0',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
                         backgroundColor: '#fff',
                         color: '#333',
-                        fontSize: '13px',
-                        fontWeight: 500,
                         cursor: 'pointer',
+                        width: '32px',
                         height: '32px'
                     }}
                 >
@@ -185,7 +185,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <line x1="12" y1="5" x2="12" y2="19" />
                         <line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
-                    {i18n.t('label_issue_new')}
                 </button>
 
                 <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
