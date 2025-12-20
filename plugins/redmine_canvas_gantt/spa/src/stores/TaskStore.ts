@@ -3,6 +3,7 @@ import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow } from '.
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences } from '../utils/preferences';
+import { getMaxFiniteDueDate } from '../utils/taskRange';
 
 interface TaskState {
     allTasks: Task[];
@@ -247,6 +248,22 @@ const applyFilters = (tasks: Task[], filterText: string, selectedAssigneeIds: (n
     });
 
     return tasks.filter(task => visibleIds.has(task.id));
+};
+
+const computeCenteredScrollX = (viewport: Viewport, newScale: number, tasksMaxDue: number | null): number => {
+    const safeScale = viewport.scale || 0.00000001;
+    const centerDate = viewport.startDate + (viewport.scrollX + viewport.width / 2) / safeScale;
+    const ONE_DAY = 24 * 60 * 60 * 1000;
+    const paddingMs = 60 * ONE_DAY;
+    const visibleMs = viewport.width / newScale;
+    const minRangeEnd = centerDate + visibleMs / 2;
+    const rangeEnd = Math.max(tasksMaxDue ?? minRangeEnd, minRangeEnd) + paddingMs;
+    const maxScrollX = Math.max(0, (rangeEnd - viewport.startDate) * newScale - viewport.width);
+
+    let nextScrollX = (centerDate - viewport.startDate) * newScale - viewport.width / 2;
+    if (nextScrollX < 0) nextScrollX = 0;
+    if (nextScrollX > maxScrollX) nextScrollX = maxScrollX;
+    return nextScrollX;
 };
 
 const buildDependencyComponents = (tasks: Task[], relations: Relation[]): Map<string, string> => {
@@ -515,11 +532,8 @@ export const useTaskStore = create<TaskState>((set) => ({
 
         const { viewport } = state;
         const newScale = ZOOM_SCALES[zoom];
-        const safeScale = viewport.scale || 0.00000001;
-
-        const visibleStartTime = viewport.startDate + (viewport.scrollX / safeScale);
-        let newScrollX = (visibleStartTime - viewport.startDate) * newScale;
-        if (newScrollX < 0) newScrollX = 0;
+        const tasksMaxDue = getMaxFiniteDueDate(state.allTasks);
+        const newScrollX = computeCenteredScrollX(viewport, newScale, tasksMaxDue);
 
         return {
             viewMode: mode,
@@ -531,11 +545,8 @@ export const useTaskStore = create<TaskState>((set) => ({
     setZoomLevel: (level) => set((state) => {
         const { viewport } = state;
         const newScale = ZOOM_SCALES[level];
-        const safeScale = viewport.scale || 0.00000001;
-
-        const visibleStartTime = viewport.startDate + (viewport.scrollX / safeScale);
-        let newScrollX = (visibleStartTime - viewport.startDate) * newScale;
-        if (newScrollX < 0) newScrollX = 0;
+        const tasksMaxDue = getMaxFiniteDueDate(state.allTasks);
+        const newScrollX = computeCenteredScrollX(viewport, newScale, tasksMaxDue);
 
         let mode: ViewMode = 'Week';
         if (level === 0) mode = 'Month';

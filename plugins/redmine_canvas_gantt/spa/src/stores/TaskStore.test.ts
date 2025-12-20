@@ -43,30 +43,31 @@ describe('TaskStore zoom behavior', () => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
     });
 
-    it('setZoomLevel は表示範囲の左端を維持する', () => {
+    it('setZoomLevel は表示範囲の中央を維持する', () => {
         const { setZoomLevel } = useTaskStore.getState();
+        const initialViewport = useTaskStore.getState().viewport;
         const initialScale = ZOOM_SCALES[1];
         useTaskStore.setState({
             viewport: {
-                ...useTaskStore.getState().viewport,
+                ...initialViewport,
                 startDate: 1000,
                 scrollX: 500, // visibleStart = 1000 + 500/scale
                 scale: initialScale
             }
         });
 
-        const expectedVisibleStart = 1000 + 500 / initialScale;
+        const expectedCenter = 1000 + (500 + initialViewport.width / 2) / initialScale;
 
         setZoomLevel(2); // Zoom in
 
         const newViewport = useTaskStore.getState().viewport;
         const newScale = ZOOM_SCALES[2];
-        const newVisibleStart = newViewport.startDate + newViewport.scrollX / newScale;
+        const newCenter = newViewport.startDate + (newViewport.scrollX + newViewport.width / 2) / newScale;
 
-        expect(newVisibleStart).toBeCloseTo(expectedVisibleStart, 5);
+        expect(newCenter).toBeCloseTo(expectedCenter, 5);
     });
 
-    it('setViewMode は表示範囲の左端を維持する', () => {
+    it('setViewMode は表示範囲の中央を維持する', () => {
         const { setViewMode } = useTaskStore.getState();
         // Start at Week (zoom 1)
         useTaskStore.setState({ viewMode: 'Week', zoomLevel: 1 });
@@ -74,15 +75,39 @@ describe('TaskStore zoom behavior', () => {
 
         // Move scroll
         useTaskStore.setState({ viewport: { ...initialViewport, scrollX: 300 } });
+        const expectedCenter = initialViewport.startDate + (300 + initialViewport.width / 2) / ZOOM_SCALES[1];
 
         // Switch to Month (zoom 0)
         setViewMode('Month');
 
         const { viewMode, zoomLevel, viewport } = useTaskStore.getState();
-        const expectedScrollX = 300 * (ZOOM_SCALES[0] / ZOOM_SCALES[1]);
+        const newCenter = viewport.startDate + (viewport.scrollX + viewport.width / 2) / ZOOM_SCALES[0];
         expect(viewMode).toBe('Month');
         expect(zoomLevel).toBe(0);
-        expect(viewport.scrollX).toBeCloseTo(expectedScrollX, 6);
+        expect(newCenter).toBeCloseTo(expectedCenter, 5);
+    });
+
+    it('setZoomLevel はタスク範囲が未定でも中央を維持する', () => {
+        const { setZoomLevel } = useTaskStore.getState();
+        useTaskStore.setState({
+            allTasks: [],
+            viewport: {
+                ...useTaskStore.getState().viewport,
+                startDate: 1000,
+                scrollX: 500,
+                scale: ZOOM_SCALES[0]
+            }
+        });
+
+        const initialViewport = useTaskStore.getState().viewport;
+        const expectedCenter = 1000 + (500 + initialViewport.width / 2) / ZOOM_SCALES[0];
+
+        setZoomLevel(2);
+
+        const newViewport = useTaskStore.getState().viewport;
+        const newCenter = newViewport.startDate + (newViewport.scrollX + newViewport.width / 2) / ZOOM_SCALES[2];
+
+        expect(newCenter).toBeCloseTo(expectedCenter, 5);
     });
 });
 
