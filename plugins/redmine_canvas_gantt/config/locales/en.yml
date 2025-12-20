@@ -33,6 +33,7 @@ en:
   label_yes: "Yes"
   label_no: "No"
   label_filter: "Filter"
+  label_row_height: "Row height (pixel)"
   label_column_plural: "Columns"
   label_previous_month: "Prev Month"
   label_next_month: "Next Month"

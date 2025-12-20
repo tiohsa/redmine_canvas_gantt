@@ -35,6 +35,7 @@ ja:
   label_yes: "はい"
   label_no: "いいえ"
   label_filter: "フィルタ"
+  label_row_height: "行の高さ (pixel)"
   label_column_plural: "カラム"
   label_previous_month: "前の月"
   label_next_month: "次の月"

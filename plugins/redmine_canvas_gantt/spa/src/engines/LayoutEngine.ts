@@ -38,9 +38,9 @@ export class LayoutEngine {
             return { x, y, width, height: viewport.rowHeight };
         }
 
-        // Half-height task bar (visually) while keeping rowHeight unchanged.
-        // Old: height = rowHeight - 10 (padding 5 top/bottom).
-        const height = Math.max(2, Math.round((viewport.rowHeight - 10) / 2));
+        // Calculate task bar height based on rowHeight.
+        // We use 40% of rowHeight for the bar, but at least 2px.
+        const height = Math.max(2, Math.round(viewport.rowHeight * 0.4));
         const yOffset = Math.round((viewport.rowHeight - height) / 2);
 
         return { x, y: y + yOffset, width, height };

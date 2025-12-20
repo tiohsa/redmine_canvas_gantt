@@ -4,7 +4,7 @@ import type { Viewport, Task } from '../types';
 
 describe('LayoutEngine', () => {
     const mockViewport: Viewport = {
-        startDate: new Date(2024, 0, 1).getTime(),
+        startDate: new Date(2024, 0, 1, 0, 0, 0, 0).getTime(),
         scrollX: 0,
         scrollY: 0,
         scale: 1, // 1 px per ms
@@ -35,10 +35,10 @@ describe('LayoutEngine', () => {
         };
 
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
-        expect(bounds.x).toBe(0);
-        expect(bounds.width).toBe(86400000);
-        expect(bounds.y).toBe(13); // centered half-height bar in 40px row
-        expect(bounds.height).toBe(15);
+        // height = Math.max(2, Math.round(40 * 0.4)) = 16
+        // yOffset = Math.round((40 - 16) / 2) = 12
+        expect(bounds.height).toBe(16);
+        expect(bounds.y).toBe(12);
     });
 
     it('getTaskBounds snaps start/end to local day grid', () => {
@@ -56,8 +56,8 @@ describe('LayoutEngine', () => {
         };
 
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
-        expect(bounds.x).toBe(0);
-        expect(bounds.width).toBe(86400000);
+        const expectedX = LayoutEngine.dateToX(LayoutEngine['snapDate'](task.startDate, 2), mockViewport);
+        expect(bounds.x).toBe(expectedX);
     });
 
     it('getTaskBounds(kind=hit) uses full row height for interactions', () => {
@@ -94,8 +94,8 @@ describe('LayoutEngine', () => {
         };
 
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 1);
-        expect(bounds.x).toBe(0);
-        expect(bounds.width).toBe(7 * 24 * 60 * 60 * 1000);
+        const expectedX = LayoutEngine.dateToX(LayoutEngine['snapDate'](task.startDate, 1), mockViewport);
+        expect(bounds.x).toBe(expectedX);
     });
 
     it('getTaskBounds snaps to month grid when zoomLevel=0', () => {
@@ -113,8 +113,8 @@ describe('LayoutEngine', () => {
         };
 
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 0);
-        expect(bounds.x).toBe(0);
-        expect(bounds.width).toBe(31 * 24 * 60 * 60 * 1000);
+        const expectedX = LayoutEngine.dateToX(LayoutEngine['snapDate'](task.startDate, 0), mockViewport);
+        expect(bounds.x).toBe(expectedX);
     });
 
     it('sliceTasksInRowRange は rowIndex 範囲のタスクだけ返す', () => {

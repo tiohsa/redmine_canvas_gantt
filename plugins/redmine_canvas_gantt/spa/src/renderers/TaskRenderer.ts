@@ -77,27 +77,24 @@ export class TaskRenderer {
 
 
 
-    // Spec Constants
-    private static readonly BAR_HEIGHT = 12;
-    private static readonly CAP_WIDTH = 4; // Adjusted for visual balance 3-4px
-    private static readonly CAP_OVERFLOW = 2; // Spec says 1, but 2 looks better for "End Cap" style
-
     private drawRedmineTaskBar(
         ctx: CanvasRenderingContext2D,
         task: Task,
         x: number,
         y: number,
         width: number,
-        rowHeight: number,
+        height: number,
         xToday: number
     ) {
         // === 1. Calculation & Pixel Snapping ===
         const isParent = task.hasChildren;
-        // Parent task body is half height, leaf is full height
-        const currentBarHeight = isParent ? Math.floor(TaskRenderer.BAR_HEIGHT / 2) : TaskRenderer.BAR_HEIGHT;
 
-        // Center the bar vertically in the row
-        const barY = Math.floor(y + (rowHeight - currentBarHeight) / 2);
+        // For parent tasks, the body is half the height of the leaf bar.
+        // For leaf tasks, height is the full height calculated in LayoutEngine.
+        const currentBarHeight = isParent ? Math.floor(height / 2) : height;
+
+        // Center the bar vertically in the provided 'height' area (which is already centered in the row)
+        const barY = Math.floor(y + (height - currentBarHeight) / 2);
 
         // Base Rectangle
         const baseX = Math.floor(x);
@@ -108,20 +105,15 @@ export class TaskRenderer {
         const progressWidth = Math.floor(baseWidth * (ratio / 100));
 
         // Delay (Hatched Rectangle)
-        // Note: Standard Redmine "Delay" is the segment from "Done End" to "Today" (if Today > Done End).
-        // The provided text formula seemed to calculate "Future Remaining", so we use the standard "Late" visual definition.
         const delayStartX = baseX + progressWidth;
         const delayEndX = Math.min(xToday, baseX + baseWidth);
         let delayWidth = 0;
 
-        // Only draw delay if today is past the progress point and within project bounds (roughly)
         if (delayEndX > delayStartX) {
             delayWidth = delayEndX - delayStartX;
         }
 
         // === 2. Drawing (Z-Order) ===
-        // "Background -> Body -> Internal -> Emphasis -> Caps"
-
         // 1. Base Bar (Planned Duration) - Gray
         ctx.fillStyle = TaskRenderer.PLAN_GRAY;
         ctx.fillRect(baseX, barY, baseWidth, currentBarHeight);
@@ -138,30 +130,20 @@ export class TaskRenderer {
         }
 
         // 4. & 5. End Caps (Parent Only)
-        // The spec implies these caps overwrite. The image shows them for Parent tasks.
         if (isParent) {
-            // Caps use the FULL BAR_HEIGHT to remain "not changed" in height/size
-            const capH = TaskRenderer.BAR_HEIGHT + TaskRenderer.CAP_OVERFLOW * 2;
-
-            // Calculate Cap Y based on where the FULL height bar would have been
-            // This ensures they are centered in the row exactly as before
-            const fullHeightBarY = Math.floor(y + (rowHeight - TaskRenderer.BAR_HEIGHT) / 2);
-            const capY = fullHeightBarY - TaskRenderer.CAP_OVERFLOW;
+            // Cap height matches target bar height if it were a leaf bar (height) + overflow
+            const capOverflow = Math.max(1, Math.round(height * 0.15));
+            const capH = height + capOverflow * 2;
+            const capY = y - capOverflow;
+            const capWidth = Math.max(2, Math.round(height * 0.3));
 
             ctx.fillStyle = '#666666'; // Cap color (Dark Gray)
 
             // Left Cap
-            ctx.fillRect(baseX, capY, TaskRenderer.CAP_WIDTH, capH);
+            ctx.fillRect(baseX, capY, capWidth, capH);
 
             // Right Cap
-            ctx.fillRect(baseX + baseWidth - TaskRenderer.CAP_WIDTH, capY, TaskRenderer.CAP_WIDTH, capH);
-
-            // Optional: Triangle/Pentagon shape refinement? 
-            // The user spec said "drawRect(..., CAP_WIDTH, ...)" so simple rects for now as per "8. Canvas Pseudo-code".
-            // The image showed downward points, but the text spec says "drawRect". I will follow the TEXT spec for coordinates ("drawRect"),
-            // but the Image showed points... "そのまま実装に落とせる形" (As is) implementation of the TEXT.
-            // Text says "drawRect(ctx, baseX, barY - 1, CAP_WIDTH, BAR_HEIGHT + 2)".
-            // I will stick to Rects.
+            ctx.fillRect(baseX + baseWidth - capWidth, capY, capWidth, capH);
         }
     }
 

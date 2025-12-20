@@ -56,7 +56,7 @@ const DEFAULT_VIEWPORT: Viewport = {
     scale: preferences.viewport?.scale ?? ZOOM_SCALES[preferences.zoomLevel ?? 1],
     width: 800,
     height: 600,
-    rowHeight: 32
+    rowHeight: Number((window as any).RedmineCanvasGantt?.settings?.row_height) || 32
 };
 
 const buildLayout = (
@@ -332,13 +332,11 @@ export const useTaskStore = create<TaskState>((set) => ({
 
         const { viewport } = state;
         const newScale = ZOOM_SCALES[zoom];
+        const safeScale = viewport.scale || 0.00000001;
 
-        // Preserve Center Logic (shared)
-        const width = viewport.width || 800;
-        const centerOffsetPixels = viewport.scrollX + (width / 2);
-        const centerTimeOffset = centerOffsetPixels / viewport.scale;
-
-        let newScrollX = (centerTimeOffset * newScale) - (width / 2);
+        // Preserve left edge to keep the visible range stable.
+        const visibleStartTime = viewport.startDate + (viewport.scrollX / safeScale);
+        let newScrollX = (visibleStartTime - viewport.startDate) * newScale;
         if (newScrollX < 0) newScrollX = 0;
 
         return {
@@ -351,13 +349,11 @@ export const useTaskStore = create<TaskState>((set) => ({
     setZoomLevel: (level) => set((state) => {
         const { viewport } = state;
         const newScale = ZOOM_SCALES[level];
+        const safeScale = viewport.scale || 0.00000001;
 
-        // Preserve Left Edge Logic (instead of center)
-        // Calculate the timestamp at the current left edge of the visible area
-        const leftEdgeTimeOffset = viewport.scrollX / viewport.scale;
-
-        // New scrollX to keep the same left edge visible
-        let newScrollX = leftEdgeTimeOffset * newScale;
+        // Preserve left edge to keep the visible range stable.
+        const visibleStartTime = viewport.startDate + (viewport.scrollX / safeScale);
+        let newScrollX = (visibleStartTime - viewport.startDate) * newScale;
         if (newScrollX < 0) newScrollX = 0;
 
         // Reverse map to viewMode for compatibility if needed
@@ -365,7 +361,6 @@ export const useTaskStore = create<TaskState>((set) => ({
         if (level === 0) mode = 'Month';
         if (level === 1) mode = 'Week';
         if (level === 2) mode = 'Day';
-
 
         return {
             zoomLevel: level,
