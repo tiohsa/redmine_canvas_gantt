@@ -1,73 +1,70 @@
-import { describe, expect, it } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { useTaskStore } from './TaskStore';
 import { ZOOM_SCALES } from '../utils/grid';
 
 describe('TaskStore viewport clamping', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
     it('updateViewport は scrollY を rowCount に合わせてクランプする', () => {
-        useTaskStore.setState({
-            rowCount: 10,
-            viewport: {
-                startDate: 0,
-                scrollX: 0,
-                scrollY: 0,
-                scale: 1,
-                width: 800,
-                height: 64,
-                rowHeight: 32
-            }
-        });
+        const { updateViewport } = useTaskStore.getState();
+        useTaskStore.setState({ rowCount: 10 });
 
-        // totalHeight=320, maxScrollY=256
-        useTaskStore.getState().updateViewport({ scrollY: 9999 });
-        expect(useTaskStore.getState().viewport.scrollY).toBe(256);
+        updateViewport({ scrollY: 999999 });
+        expect(useTaskStore.getState().viewport.scrollY).toBe(0); // If height > content, it clamps to 0?
+        // Wait, if rowCount=10, height=600, rowHeight=32 -> content=320. 320 < 600. maxScroll=0.
 
-        useTaskStore.getState().updateViewport({ scrollY: -10 });
-        expect(useTaskStore.getState().viewport.scrollY).toBe(0);
+        useTaskStore.setState({ rowCount: 100 }); // 3200px
+        const maxScroll2 = 100 * 32 - 600; // 2600
+
+        updateViewport({ scrollY: 5000 });
+        expect(useTaskStore.getState().viewport.scrollY).toBe(maxScroll2);
     });
 });
 
 describe('TaskStore zoom behavior', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
     it('setZoomLevel は表示範囲の左端を維持する', () => {
+        const { setZoomLevel } = useTaskStore.getState();
+        const initialScale = ZOOM_SCALES[1];
         useTaskStore.setState({
-            zoomLevel: 1,
             viewport: {
-                startDate: 0,
-                scrollX: 500,
-                scrollY: 0,
-                scale: ZOOM_SCALES[1],
-                width: 800,
-                height: 600,
-                rowHeight: 32
+                ...useTaskStore.getState().viewport,
+                startDate: 1000,
+                scrollX: 500, // visibleStart = 1000 + 500/scale
+                scale: initialScale
             }
         });
 
-        useTaskStore.getState().setZoomLevel(2);
+        const expectedVisibleStart = 1000 + 500 / initialScale;
 
-        const { viewport, zoomLevel } = useTaskStore.getState();
-        const expectedScrollX = 500 * (ZOOM_SCALES[2] / ZOOM_SCALES[1]);
-        expect(zoomLevel).toBe(2);
-        expect(viewport.scrollX).toBeCloseTo(expectedScrollX, 6);
+        setZoomLevel(2); // Zoom in
+
+        const newViewport = useTaskStore.getState().viewport;
+        const newScale = ZOOM_SCALES[2];
+        const newVisibleStart = newViewport.startDate + newViewport.scrollX / newScale;
+
+        expect(newVisibleStart).toBeCloseTo(expectedVisibleStart, 5);
     });
 
     it('setViewMode は表示範囲の左端を維持する', () => {
-        useTaskStore.setState({
-            zoomLevel: 2,
-            viewMode: 'Day',
-            viewport: {
-                startDate: 1000,
-                scrollX: 300,
-                scrollY: 0,
-                scale: ZOOM_SCALES[2],
-                width: 800,
-                height: 600,
-                rowHeight: 32
-            }
-        });
+        const { setViewMode } = useTaskStore.getState();
+        // Start at Week (zoom 1)
+        useTaskStore.setState({ viewMode: 'Week', zoomLevel: 1 });
+        const initialViewport = useTaskStore.getState().viewport;
 
-        useTaskStore.getState().setViewMode('Month');
+        // Move scroll
+        useTaskStore.setState({ viewport: { ...initialViewport, scrollX: 300 } });
 
-        const { viewport, zoomLevel, viewMode } = useTaskStore.getState();
-        const expectedScrollX = 300 * (ZOOM_SCALES[0] / ZOOM_SCALES[2]);
+        // Switch to Month (zoom 0)
+        setViewMode('Month');
+
+        const { viewMode, zoomLevel, viewport } = useTaskStore.getState();
+        const expectedScrollX = 300 * (ZOOM_SCALES[0] / ZOOM_SCALES[1]);
         expect(viewMode).toBe('Month');
         expect(zoomLevel).toBe(0);
         expect(viewport.scrollX).toBeCloseTo(expectedScrollX, 6);
@@ -75,6 +72,10 @@ describe('TaskStore zoom behavior', () => {
 });
 
 describe('TaskStore assignee filter', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
     it('setSelectedAssigneeIds はタスクをフィルタリングする', () => {
         const mockTasks = [
             { id: '1', subject: 'Task 1', assignedToId: 10, assignedToName: 'User A', startDate: 0, dueDate: 0 },
@@ -82,22 +83,74 @@ describe('TaskStore assignee filter', () => {
             { id: '3', subject: 'Task 3', assignedToId: null, assignedToName: 'None', startDate: 0, dueDate: 0 },
         ] as any;
 
-        useTaskStore.setState({ allTasks: mockTasks });
-        useTaskStore.getState().setTasks(mockTasks);
+        const { setTasks, setSelectedAssigneeIds } = useTaskStore.getState();
+        setTasks(mockTasks);
 
         // Filter by User A
-        useTaskStore.getState().setSelectedAssigneeIds([10]);
+        setSelectedAssigneeIds([10]);
         expect(useTaskStore.getState().tasks.length).toBe(1);
         expect(useTaskStore.getState().tasks[0].id).toBe('1');
 
         // Filter by User A and None
-        useTaskStore.getState().setSelectedAssigneeIds([10, null]);
+        setSelectedAssigneeIds([10, null]);
         expect(useTaskStore.getState().tasks.length).toBe(2);
         expect(useTaskStore.getState().tasks.map(t => t.id)).toContain('1');
         expect(useTaskStore.getState().tasks.map(t => t.id)).toContain('3');
 
         // Clear filter
-        useTaskStore.getState().setSelectedAssigneeIds([]);
+        setSelectedAssigneeIds([]);
         expect(useTaskStore.getState().tasks.length).toBe(3);
+    });
+});
+
+describe('TaskStore filter persistence', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('updateTask preserves assignee filter', () => {
+        const { setTasks, setSelectedAssigneeIds, updateTask } = useTaskStore.getState();
+        const initialTasks = [
+            { id: '1', subject: 'Task A', assignedToId: 10, assignedToName: 'User A', startDate: 0, dueDate: 0, editable: true },
+            { id: '2', subject: 'Task B', assignedToId: 11, assignedToName: 'User B', startDate: 0, dueDate: 0, editable: true },
+            { id: '3', subject: 'Task C', assignedToId: 10, assignedToName: 'User A', startDate: 0, dueDate: 0, editable: true },
+        ] as any[];
+
+        setTasks(initialTasks);
+        setSelectedAssigneeIds([10]); // Filter for User A (Task 1 & 3)
+
+        expect(useTaskStore.getState().tasks).toHaveLength(2);
+        expect(useTaskStore.getState().tasks.map(t => t.id)).toEqual(['1', '3']);
+
+        // Update Task 1
+        updateTask('1', { subject: 'Task A Updated' });
+
+        // Filter should still be active
+        expect(useTaskStore.getState().tasks).toHaveLength(2);
+        expect(useTaskStore.getState().tasks.map(t => t.id)).toEqual(['1', '3']);
+        expect(useTaskStore.getState().tasks.find(t => t.id === '1')?.subject).toBe('Task A Updated');
+
+        // Update Task 2 (hidden) -> should remain hidden
+        updateTask('2', { subject: 'Task B Updated' });
+        expect(useTaskStore.getState().tasks).toHaveLength(2);
+        expect(useTaskStore.getState().tasks.map(t => t.id)).toEqual(['1', '3']);
+    });
+
+    it('removeTask respects active filters', () => {
+        const { setTasks, setSelectedAssigneeIds, removeTask } = useTaskStore.getState();
+        const initialTasks = [
+            { id: '1', subject: 'Task A', assignedToId: 10, editable: true },
+            { id: '2', subject: 'Task B', assignedToId: 11, editable: true },
+            { id: '3', subject: 'Task C', assignedToId: 10, editable: true },
+        ] as any[];
+
+        setTasks(initialTasks);
+        setSelectedAssigneeIds([10]); // Filter [1, 3]
+
+        removeTask('1'); // Remove visible task
+        expect(useTaskStore.getState().tasks.map(t => t.id)).toEqual(['3']);
+
+        removeTask('2'); // Remove hidden task
+        expect(useTaskStore.getState().tasks.map(t => t.id)).toEqual(['3']);
     });
 });

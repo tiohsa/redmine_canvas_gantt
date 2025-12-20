@@ -171,6 +171,23 @@ const buildLayout = (
     return { tasks: arrangedTasks, layoutRows, rowCount: rowIndex };
 };
 
+const applyFilters = (tasks: Task[], filterText: string, selectedAssigneeIds: (number | null)[]) => {
+    let filtered = tasks;
+    const lowerText = filterText.toLowerCase();
+
+    if (lowerText) {
+        filtered = filtered.filter(t => t.subject.toLowerCase().includes(lowerText));
+    }
+
+    if (selectedAssigneeIds.length > 0) {
+        filtered = filtered.filter(t => {
+            const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
+            return selectedAssigneeIds.includes(taskAssignee);
+        });
+    }
+    return filtered;
+};
+
 export const useTaskStore = create<TaskState>((set) => ({
     allTasks: [],
     tasks: [],
@@ -194,7 +211,6 @@ export const useTaskStore = create<TaskState>((set) => ({
     setTasks: (tasks) => set((state) => {
         const projectExpansion = { ...state.projectExpansion };
         const taskExpansion = { ...state.taskExpansion };
-        const filterText = state.filterText.toLowerCase();
 
         tasks.forEach((task) => {
             const projectId = task.projectId ?? 'default_project';
@@ -202,18 +218,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             if (taskExpansion[task.id] === undefined) taskExpansion[task.id] = true;
         });
 
-        let filteredTasks = filterText
-            ? tasks.filter(t => t.subject.toLowerCase().includes(filterText))
-            : tasks;
-
-        if (state.selectedAssigneeIds.length > 0) {
-            filteredTasks = filteredTasks.filter(t => {
-                // null is used for unassigned; undefined should be treated as null
-                const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
-                return state.selectedAssigneeIds.includes(taskAssignee);
-            });
-        }
-
+        const filteredTasks = applyFilters(tasks, state.filterText, state.selectedAssigneeIds);
         const layout = buildLayout(filteredTasks, state.groupByProject, projectExpansion, taskExpansion, state.sortConfig);
 
         return {
@@ -242,23 +247,17 @@ export const useTaskStore = create<TaskState>((set) => ({
         const task = state.allTasks.find(t => t.id === id);
         if (!task) return state;
 
-        // 1. Check editability
         if (!TaskLogicService.canEditTask(task)) {
             console.warn('Task is not editable');
             return state;
         }
 
-        // 2. Prepare new state for this task
         const updatedTask = { ...task, ...updates };
-
-        // 3. Validate dates (basic check)
-        // For now logging warnings, but we could prevent update if invalid
         TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
 
         let currentTasks = state.allTasks.map(t => t.id === id ? updatedTask : t);
         const pendingUpdates = new Map<string, Partial<Task>>();
 
-        // 4. Check dependencies (snap successors)
         if (updates.startDate || updates.dueDate) {
             const depUpdates = TaskLogicService.checkDependencies(
                 currentTasks,
@@ -270,7 +269,6 @@ export const useTaskStore = create<TaskState>((set) => ({
             depUpdates.forEach((v, k) => pendingUpdates.set(k, v));
         }
 
-        // Apply dependency updates to currentTasks to prepare for parent calc
         if (pendingUpdates.size > 0) {
             currentTasks = currentTasks.map(t => {
                 if (pendingUpdates.has(t.id)) {
@@ -280,8 +278,6 @@ export const useTaskStore = create<TaskState>((set) => ({
             });
         }
 
-        // 5. Recalculate parent dates
-        // We need to check the parent of the moved task, and parents of any moved successors
         const tasksToCheckParents = [id, ...pendingUpdates.keys()];
         const processedParents = new Set<string>();
 
@@ -294,14 +290,14 @@ export const useTaskStore = create<TaskState>((set) => ({
             }
         });
 
-        // Final application of all updates
         const finalTasks = state.allTasks.map(t => {
             if (t.id === id) return updatedTask;
             if (pendingUpdates.has(t.id)) return { ...t, ...pendingUpdates.get(t.id) };
             return t;
         });
 
-        const layout = buildLayout(finalTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
+        const filteredTasks = applyFilters(finalTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
 
         return {
             allTasks: finalTasks,
@@ -313,7 +309,8 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     removeTask: (id) => set((state) => {
         const finalTasks = state.allTasks.filter(t => t.id !== id);
-        const layout = buildLayout(finalTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
+        const filteredTasks = applyFilters(finalTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
         return {
             allTasks: finalTasks,
             tasks: layout.tasks,
@@ -325,7 +322,6 @@ export const useTaskStore = create<TaskState>((set) => ({
     updateViewport: (updates) => set((state) => {
         const nextViewport = { ...state.viewport, ...updates };
 
-        // Prevent "scroll into nothing" when there are many rows.
         const totalHeight = Math.max(0, state.rowCount * nextViewport.rowHeight);
         const maxScrollY = Math.max(0, totalHeight - nextViewport.height);
         const nextScrollY = Math.max(0, Math.min(maxScrollY, nextViewport.scrollY));
@@ -345,7 +341,6 @@ export const useTaskStore = create<TaskState>((set) => ({
         const newScale = ZOOM_SCALES[zoom];
         const safeScale = viewport.scale || 0.00000001;
 
-        // Preserve left edge to keep the visible range stable.
         const visibleStartTime = viewport.startDate + (viewport.scrollX / safeScale);
         let newScrollX = (visibleStartTime - viewport.startDate) * newScale;
         if (newScrollX < 0) newScrollX = 0;
@@ -362,12 +357,10 @@ export const useTaskStore = create<TaskState>((set) => ({
         const newScale = ZOOM_SCALES[level];
         const safeScale = viewport.scale || 0.00000001;
 
-        // Preserve left edge to keep the visible range stable.
         const visibleStartTime = viewport.startDate + (viewport.scrollX / safeScale);
         let newScrollX = (visibleStartTime - viewport.startDate) * newScale;
         if (newScrollX < 0) newScrollX = 0;
 
-        // Reverse map to viewMode for compatibility if needed
         let mode: ViewMode = 'Week';
         if (level === 0) mode = 'Month';
         if (level === 1) mode = 'Week';
@@ -381,7 +374,8 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setGroupByProject: (grouped) => set((state) => {
-        const layout = buildLayout(state.allTasks, grouped, state.projectExpansion, state.taskExpansion, state.sortConfig);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(filteredTasks, grouped, state.projectExpansion, state.taskExpansion, state.sortConfig);
         return {
             groupByProject: grouped,
             tasks: layout.tasks,
@@ -392,7 +386,8 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     toggleProjectExpansion: (projectId) => set((state) => {
         const projectExpansion = { ...state.projectExpansion, [projectId]: !(state.projectExpansion[projectId] ?? true) };
-        const layout = buildLayout(state.allTasks, state.groupByProject, projectExpansion, state.taskExpansion, state.sortConfig);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(filteredTasks, state.groupByProject, projectExpansion, state.taskExpansion, state.sortConfig);
         return {
             projectExpansion,
             tasks: layout.tasks,
@@ -403,7 +398,8 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     toggleTaskExpansion: (taskId: string) => set((state) => {
         const taskExpansion = { ...state.taskExpansion, [taskId]: !(state.taskExpansion[taskId] ?? true) };
-        const layout = buildLayout(state.allTasks, state.groupByProject, state.projectExpansion, taskExpansion, state.sortConfig);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, taskExpansion, state.sortConfig);
         return {
             taskExpansion,
             tasks: layout.tasks,
@@ -413,19 +409,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setFilterText: (text) => set((state) => {
-        const filterText = text.toLowerCase();
-        let filteredTasks = filterText
-            ? state.allTasks.filter(t => t.subject.toLowerCase().includes(filterText))
-            : state.allTasks;
-
-        if (state.selectedAssigneeIds.length > 0) {
-            filteredTasks = filteredTasks.filter(t => {
-                // null is used for unassigned; undefined should be treated as null
-                const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
-                return state.selectedAssigneeIds.includes(taskAssignee);
-            });
-        }
-
+        const filteredTasks = applyFilters(state.allTasks, text, state.selectedAssigneeIds);
         const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
         return {
             filterText: text,
@@ -436,18 +420,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setSelectedAssigneeIds: (ids) => set((state) => {
-        const filterText = state.filterText.toLowerCase();
-        let filteredTasks = filterText
-            ? state.allTasks.filter(t => t.subject.toLowerCase().includes(filterText))
-            : state.allTasks;
-
-        if (ids.length > 0) {
-            filteredTasks = filteredTasks.filter(t => {
-                const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
-                return ids.includes(taskAssignee);
-            });
-        }
-
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, ids);
         const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
         return {
             selectedAssigneeIds: ids,
@@ -462,7 +435,6 @@ export const useTaskStore = create<TaskState>((set) => ({
             ?? state.allTasks.find(t => t.id === taskId);
         if (!targetTask) return state;
 
-        // Determine target date to center on: startDate -> dueDate -> Today
         let targetMetadata = 0;
         if (Number.isFinite(targetTask.startDate)) {
             targetMetadata = targetTask.startDate!;
@@ -474,8 +446,6 @@ export const useTaskStore = create<TaskState>((set) => ({
 
         let { viewport } = state;
 
-        // もしターゲット日付が現在の表示開始日より前なら、表示開始日を過去にずらす
-        // 少し余白を持たせるために、1週間前を開始日とする
         if (targetMetadata < viewport.startDate) {
             const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
             const newStartDate = targetMetadata - ONE_WEEK;
@@ -488,7 +458,6 @@ export const useTaskStore = create<TaskState>((set) => ({
         const taskX = (targetMetadata - viewport.startDate) * viewport.scale;
         const centeredX = Math.max(0, taskX - (viewport.width / 2));
 
-        // scrollYは変更しない（縦方向のスクロール位置を維持）
         return {
             viewport: { ...viewport, scrollX: centeredX }
         };
@@ -500,26 +469,13 @@ export const useTaskStore = create<TaskState>((set) => ({
             newSort = null;
         } else {
             if (state.sortConfig?.key === key) {
-                // toggle direction
                 newSort = { key, direction: state.sortConfig.direction === 'asc' ? 'desc' : 'asc' };
             } else {
                 newSort = { key, direction: 'asc' };
             }
         }
 
-        const filterText = state.filterText.toLowerCase();
-        let filteredTasks = filterText
-            ? state.allTasks.filter(t => t.subject.toLowerCase().includes(filterText))
-            : state.allTasks;
-
-        if (state.selectedAssigneeIds.length > 0) {
-            filteredTasks = filteredTasks.filter(t => {
-                // null is used for unassigned; undefined should be treated as null
-                const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
-                return state.selectedAssigneeIds.includes(taskAssignee);
-            });
-        }
-
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
         const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, newSort);
 
         return {
