@@ -26,6 +26,7 @@ interface TaskState {
     selectedAssigneeIds: (number | null)[];
 
     sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null;
+    customScales: Record<number, number>;
 
     // Actions
     setTasks: (tasks: Task[]) => void;
@@ -58,7 +59,7 @@ const DEFAULT_VIEWPORT: Viewport = {
     startDate: preferences.viewport?.startDate ?? new Date().setFullYear(new Date().getFullYear() - 1),
     scrollX: preferences.viewport?.scrollX ?? 0,
     scrollY: preferences.viewport?.scrollY ?? 0,
-    scale: preferences.viewport?.scale ?? ZOOM_SCALES[preferences.zoomLevel ?? 1],
+    scale: preferences.viewport?.scale ?? preferences.customScales?.[preferences.zoomLevel ?? 1] ?? ZOOM_SCALES[preferences.zoomLevel ?? 1],
     width: 800,
     height: 600,
     rowHeight: Number((window as any).RedmineCanvasGantt?.settings?.row_height) || 32
@@ -279,12 +280,6 @@ const computeCenteredViewport = (viewport: Viewport, newScale: number, tasksMaxD
     if (nextScrollX > maxScrollX) nextScrollX = maxScrollX;
     if (nextScrollX < 0) nextScrollX = 0;
 
-    console.log('[computeCenteredViewport] Result:', {
-        centerDate: new Date(centerDate).toISOString(),
-        startDateChanged: nextStartDate !== viewport.startDate,
-        nextScrollX
-    });
-
     return { scrollX: nextScrollX, startDate: nextStartDate };
 };
 
@@ -349,6 +344,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     filterText: '',
     selectedAssigneeIds: preferences.selectedAssigneeIds ?? [],
     sortConfig: null,
+    customScales: preferences.customScales ?? {},
 
     setTasks: (tasks) => set((state) => {
         const projectExpansion = { ...state.projectExpansion };
@@ -541,9 +537,19 @@ export const useTaskStore = create<TaskState>((set) => ({
         const maxScrollY = Math.max(0, totalHeight - nextViewport.height);
         const nextScrollY = Math.max(0, Math.min(maxScrollY, nextViewport.scrollY));
 
-        return {
+        const nextState: Partial<TaskState> = {
             viewport: { ...nextViewport, scrollY: nextScrollY }
         };
+
+        // If scale changed (e.g. CTRL+wheel), persist it to customScales for current level
+        if (updates.scale !== undefined && updates.scale !== state.viewport.scale) {
+            nextState.customScales = {
+                ...state.customScales,
+                [state.zoomLevel]: updates.scale
+            };
+        }
+
+        return nextState;
     }),
 
     setViewMode: (mode) => set((state) => {
@@ -552,8 +558,8 @@ export const useTaskStore = create<TaskState>((set) => ({
         if (mode === 'Week') zoom = 1;
         if (mode === 'Day') zoom = 2;
 
-        const { viewport } = state;
-        const newScale = ZOOM_SCALES[zoom];
+        const { viewport, customScales } = state;
+        const newScale = customScales[zoom] ?? ZOOM_SCALES[zoom];
         const tasksMaxDue = getMaxFiniteDueDate(state.allTasks);
         const adjustment = computeCenteredViewport(viewport, newScale, tasksMaxDue);
 
@@ -565,8 +571,8 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setZoomLevel: (level) => set((state) => {
-        const { viewport } = state;
-        const newScale = ZOOM_SCALES[level];
+        const { viewport, customScales } = state;
+        const newScale = customScales[level] ?? ZOOM_SCALES[level];
         const tasksMaxDue = getMaxFiniteDueDate(state.allTasks);
         const adjustment = computeCenteredViewport(viewport, newScale, tasksMaxDue);
 

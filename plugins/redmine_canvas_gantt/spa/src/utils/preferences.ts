@@ -13,6 +13,7 @@ export interface StoredPreferences {
     columnWidths?: Record<string, number>;
     sidebarWidth?: number;
     selectedAssigneeIds?: (number | null)[];
+    customScales?: Record<number, number>;
 }
 
 const STORAGE_KEY = 'canvasGantt:preferences';

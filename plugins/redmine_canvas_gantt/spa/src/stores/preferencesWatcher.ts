@@ -21,7 +21,8 @@ const persistSelections = () => {
         organizeByDependency: taskState.organizeByDependency,
         columnWidths: uiState.columnWidths,
         sidebarWidth: uiState.sidebarWidth,
-        selectedAssigneeIds: taskState.selectedAssigneeIds
+        selectedAssigneeIds: taskState.selectedAssigneeIds,
+        customScales: taskState.customScales
     });
 };
 
