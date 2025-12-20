@@ -18,6 +18,7 @@ const persistSelections = () => {
         showProgressLine: uiState.showProgressLine,
         visibleColumns: uiState.visibleColumns,
         groupByProject: taskState.groupByProject,
+        organizeByDependency: taskState.organizeByDependency,
         columnWidths: uiState.columnWidths,
         sidebarWidth: uiState.sidebarWidth
     });

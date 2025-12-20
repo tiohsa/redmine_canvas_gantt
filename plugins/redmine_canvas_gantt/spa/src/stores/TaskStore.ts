@@ -14,6 +14,7 @@ interface TaskState {
     layoutRows: LayoutRow[];
     rowCount: number;
     groupByProject: boolean;
+    organizeByDependency: boolean;
     viewportFromStorage: boolean;
     selectedTaskId: string | null;
     hoveredTaskId: string | null;
@@ -39,6 +40,7 @@ interface TaskState {
     setViewMode: (mode: ViewMode) => void;
     setZoomLevel: (level: ZoomLevel) => void;
     setGroupByProject: (grouped: boolean) => void;
+    setOrganizeByDependency: (enabled: boolean) => void;
     toggleProjectExpansion: (projectId: string) => void;
     toggleTaskExpansion: (taskId: string) => void;
 
@@ -63,7 +65,9 @@ const DEFAULT_VIEWPORT: Viewport = {
 
 const buildLayout = (
     tasks: Task[],
+    relations: Relation[],
     groupByProject: boolean,
+    organizeByDependency: boolean,
     projectExpansion: Record<string, boolean>,
     taskExpansion: Record<string, boolean>,
     sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null
@@ -130,6 +134,33 @@ const buildLayout = (
     projectRoots.forEach((roots) => {
         sortTaskIds(roots);
     });
+
+    const componentMap = organizeByDependency ? buildDependencyComponents(normalizedTasks, relations) : null;
+
+    if (organizeByDependency && componentMap) {
+        projectRoots.forEach((roots) => {
+            const rootIndex = new Map(roots.map((id, index) => [id, index]));
+            const componentOrder = new Map<string, number>();
+            let order = 0;
+
+            roots.forEach((id) => {
+                const component = componentMap.get(id) ?? id;
+                if (!componentOrder.has(component)) {
+                    componentOrder.set(component, order);
+                    order += 1;
+                }
+            });
+
+            roots.sort((a, b) => {
+                const componentA = componentMap.get(a) ?? a;
+                const componentB = componentMap.get(b) ?? b;
+                const orderA = componentOrder.get(componentA) ?? 0;
+                const orderB = componentOrder.get(componentB) ?? 0;
+                if (orderA !== orderB) return orderA - orderB;
+                return (rootIndex.get(a) ?? 0) - (rootIndex.get(b) ?? 0);
+            });
+        });
+    }
 
     const orderedProjects = Array.from(projectRoots.keys()).sort((a, b) => (projectOrder.get(a) ?? 0) - (projectOrder.get(b) ?? 0));
 
@@ -205,6 +236,47 @@ const applyFilters = (tasks: Task[], filterText: string, selectedAssigneeIds: (n
     return tasks.filter(task => visibleIds.has(task.id));
 };
 
+const buildDependencyComponents = (tasks: Task[], relations: Relation[]): Map<string, string> => {
+    const parent = new Map<string, string>();
+    tasks.forEach(task => parent.set(task.id, task.id));
+
+    const find = (id: string): string => {
+        const stored = parent.get(id);
+        if (!stored) return id;
+        if (stored !== id) {
+            const root = find(stored);
+            parent.set(id, root);
+            return root;
+        }
+        return stored;
+    };
+
+    const union = (a: string, b: string) => {
+        const rootA = find(a);
+        const rootB = find(b);
+        if (rootA === rootB) return;
+        parent.set(rootB, rootA);
+    };
+
+    relations.forEach((rel) => {
+        if (!parent.has(rel.from) || !parent.has(rel.to)) return;
+        union(rel.from, rel.to);
+    });
+
+    tasks.forEach((task) => {
+        if (!task.parentId) return;
+        if (!parent.has(task.parentId)) return;
+        union(task.id, task.parentId);
+    });
+
+    const components = new Map<string, string>();
+    tasks.forEach((task) => {
+        components.set(task.id, find(task.id));
+    });
+
+    return components;
+};
+
 export const useTaskStore = create<TaskState>((set) => ({
     allTasks: [],
     tasks: [],
@@ -215,6 +287,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     layoutRows: [],
     rowCount: 0,
     groupByProject: preferences.groupByProject ?? true,
+    organizeByDependency: preferences.organizeByDependency ?? false,
     viewportFromStorage: Boolean(preferences.viewport),
     selectedTaskId: null,
     hoveredTaskId: null,
@@ -236,7 +309,15 @@ export const useTaskStore = create<TaskState>((set) => ({
         });
 
         const filteredTasks = applyFilters(tasks, state.filterText, state.selectedAssigneeIds);
-        const layout = buildLayout(filteredTasks, state.groupByProject, projectExpansion, taskExpansion, state.sortConfig);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            projectExpansion,
+            taskExpansion,
+            state.sortConfig
+        );
 
         return {
             allTasks: tasks,
@@ -247,15 +328,64 @@ export const useTaskStore = create<TaskState>((set) => ({
             taskExpansion
         };
     }),
-    setRelations: (relations) => set({ relations }),
+    setRelations: (relations) => set((state) => {
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(
+            filteredTasks,
+            relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
+        return {
+            relations,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
     addRelation: (relation) => set((state) => {
         const exists = state.relations.some(r => r.from === relation.from && r.to === relation.to && r.type === relation.type);
         if (exists) return state;
-        return { relations: [...state.relations, relation] };
+        const nextRelations = [...state.relations, relation];
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(
+            filteredTasks,
+            nextRelations,
+            state.groupByProject,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
+        return {
+            relations: nextRelations,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
     }),
-    removeRelation: (relationId) => set((state) => ({
-        relations: state.relations.filter(r => r.id !== relationId)
-    })),
+    removeRelation: (relationId) => set((state) => {
+        const nextRelations = state.relations.filter(r => r.id !== relationId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(
+            filteredTasks,
+            nextRelations,
+            state.groupByProject,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
+        return {
+            relations: nextRelations,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
     selectTask: (id) => set({ selectedTaskId: id }),
     setHoveredTask: (id) => set({ hoveredTaskId: id }),
     setContextMenu: (menu) => set({ contextMenu: menu }),
@@ -314,7 +444,15 @@ export const useTaskStore = create<TaskState>((set) => ({
         });
 
         const filteredTasks = applyFilters(finalTasks, state.filterText, state.selectedAssigneeIds);
-        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
 
         return {
             allTasks: finalTasks,
@@ -327,7 +465,15 @@ export const useTaskStore = create<TaskState>((set) => ({
     removeTask: (id) => set((state) => {
         const finalTasks = state.allTasks.filter(t => t.id !== id);
         const filteredTasks = applyFilters(finalTasks, state.filterText, state.selectedAssigneeIds);
-        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
         return {
             allTasks: finalTasks,
             tasks: layout.tasks,
@@ -392,9 +538,35 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     setGroupByProject: (grouped) => set((state) => {
         const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
-        const layout = buildLayout(filteredTasks, grouped, state.projectExpansion, state.taskExpansion, state.sortConfig);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            grouped,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
         return {
             groupByProject: grouped,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+    setOrganizeByDependency: (enabled) => set((state) => {
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            enabled,
+            state.projectExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
+        return {
+            organizeByDependency: enabled,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -404,7 +576,15 @@ export const useTaskStore = create<TaskState>((set) => ({
     toggleProjectExpansion: (projectId) => set((state) => {
         const projectExpansion = { ...state.projectExpansion, [projectId]: !(state.projectExpansion[projectId] ?? true) };
         const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
-        const layout = buildLayout(filteredTasks, state.groupByProject, projectExpansion, state.taskExpansion, state.sortConfig);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            projectExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
         return {
             projectExpansion,
             tasks: layout.tasks,
@@ -416,7 +596,15 @@ export const useTaskStore = create<TaskState>((set) => ({
     toggleTaskExpansion: (taskId: string) => set((state) => {
         const taskExpansion = { ...state.taskExpansion, [taskId]: !(state.taskExpansion[taskId] ?? true) };
         const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
-        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, taskExpansion, state.sortConfig);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            state.projectExpansion,
+            taskExpansion,
+            state.sortConfig
+        );
         return {
             taskExpansion,
             tasks: layout.tasks,
@@ -427,7 +615,15 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     setFilterText: (text) => set((state) => {
         const filteredTasks = applyFilters(state.allTasks, text, state.selectedAssigneeIds);
-        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
         return {
             filterText: text,
             tasks: layout.tasks,
@@ -438,7 +634,15 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     setSelectedAssigneeIds: (ids) => set((state) => {
         const filteredTasks = applyFilters(state.allTasks, state.filterText, ids);
-        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
         return {
             selectedAssigneeIds: ids,
             tasks: layout.tasks,
@@ -493,7 +697,15 @@ export const useTaskStore = create<TaskState>((set) => ({
         }
 
         const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
-        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, newSort);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.taskExpansion,
+            newSort
+        );
 
         return {
             sortConfig: newSort,

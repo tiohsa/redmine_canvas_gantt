@@ -9,6 +9,7 @@ export interface StoredPreferences {
     showProgressLine?: boolean;
     visibleColumns?: string[];
     groupByProject?: boolean;
+    organizeByDependency?: boolean;
     columnWidths?: Record<string, number>;
     sidebarWidth?: number;
 }

@@ -12,7 +12,7 @@ interface GanttToolbarProps {
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const {
-        viewport, updateViewport, groupByProject, setGroupByProject,
+        viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, selectedAssigneeIds, setSelectedAssigneeIds
     } = useTaskStore();
     const {
@@ -450,6 +450,32 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                     </svg>
                     {'プロジェクトでグループ化'}
+                </button>
+
+                <button
+                    onClick={() => setOrganizeByDependency(!organizeByDependency)}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '0 10px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: organizeByDependency ? '#e8f0fe' : '#fff',
+                        color: organizeByDependency ? '#1a73e8' : '#333',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        height: '32px'
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M5 6h6v6H5z" />
+                        <path d="M13 12h6v6h-6z" />
+                        <path d="M11 9l2 2" />
+                        <path d="M7 12l6-6" />
+                    </svg>
+                    {'依存関係で整理'}
                 </button>
             </div>
 

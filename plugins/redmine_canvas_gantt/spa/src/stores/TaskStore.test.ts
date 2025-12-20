@@ -138,6 +138,29 @@ describe('TaskStore filter hierarchy', () => {
     });
 });
 
+describe('TaskStore dependency grouping', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('依存関係のあるタスクを隣接して表示する', () => {
+        const tasks = [
+            buildTask({ id: 'a', subject: 'A', displayOrder: 1 }),
+            buildTask({ id: 'b', subject: 'B', displayOrder: 2 }),
+            buildTask({ id: 'c', subject: 'C', displayOrder: 3 })
+        ];
+
+        const { setTasks, setRelations, setOrganizeByDependency } = useTaskStore.getState();
+        setTasks(tasks);
+        setRelations([{ id: 'r1', from: 'a', to: 'c', type: 'precedes' }]);
+
+        setOrganizeByDependency(true);
+
+        const orderedIds = useTaskStore.getState().tasks.map(task => task.id);
+        expect(orderedIds).toEqual(['a', 'c', 'b']);
+    });
+});
+
 describe('TaskStore filter persistence', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
