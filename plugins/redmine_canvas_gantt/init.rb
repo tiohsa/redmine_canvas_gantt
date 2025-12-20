@@ -2,11 +2,11 @@ require 'redmine'
 
 Redmine::Plugin.register :redmine_canvas_gantt do
   name 'Redmine Canvas Gantt plugin'
-  author 'Antigravity'
+  author 'tiohsa'
   description 'A high-performance Canvas-based Gantt chart plugin'
   version '0.1.0'
-  url 'https://github.com/example/redmine_canvas_gantt'
-  author_url 'https://github.com/example'
+  url 'https://github.com/tiohsa/redmine_canvas_gantt'
+  author_url 'https://github.com/tiohsa/redmine_canvas_gantt'
 
   project_module :canvas_gantt do
     permission :view_canvas_gantt, { canvas_gantts: [:index, :data] }
