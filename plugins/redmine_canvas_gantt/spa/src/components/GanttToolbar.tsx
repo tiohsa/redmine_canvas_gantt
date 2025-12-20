@@ -28,6 +28,29 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [showFilterMenu, setShowFilterMenu] = React.useState(false);
     const [showAssigneeMenu, setShowAssigneeMenu] = React.useState(false);
 
+    const filterMenuRef = React.useRef<HTMLDivElement>(null);
+    const columnMenuRef = React.useRef<HTMLDivElement>(null);
+    const assigneeMenuRef = React.useRef<HTMLDivElement>(null);
+
+    // Click outside handler to close all dropdowns
+    React.useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as Node;
+            if (showFilterMenu && filterMenuRef.current && !filterMenuRef.current.contains(target)) {
+                setShowFilterMenu(false);
+            }
+            if (showColumnMenu && columnMenuRef.current && !columnMenuRef.current.contains(target)) {
+                setShowColumnMenu(false);
+            }
+            if (showAssigneeMenu && assigneeMenuRef.current && !assigneeMenuRef.current.contains(target)) {
+                setShowAssigneeMenu(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showFilterMenu, showColumnMenu, showAssigneeMenu]);
+
     const handleTodayClick = () => {
         const now = Date.now();
         let newStartDate = viewport.startDate;
@@ -196,10 +219,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 {showFilterMenu && (
                     <div
+                        ref={filterMenuRef}
                         style={{
                             position: 'absolute',
                             top: '44px',
-                            left: '110px', // Adjust depending on button position, or calculate dynamically
+                            left: '110px',
                             background: '#fff',
                             border: '1px solid #e0e0e0',
                             borderRadius: '8px',
@@ -272,6 +296,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                     {showColumnMenu && (
                         <div
+                            ref={columnMenuRef}
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -341,6 +366,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                     {showAssigneeMenu && (
                         <div
+                            ref={assigneeMenuRef}
                             style={{
                                 position: 'absolute',
                                 top: '100%',

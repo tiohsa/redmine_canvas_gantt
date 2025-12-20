@@ -436,10 +436,6 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setSelectedAssigneeIds: (ids) => set((state) => {
-        console.log('[DEBUG] setSelectedAssigneeIds called with:', ids);
-        console.log('[DEBUG] allTasks count:', state.allTasks.length);
-        console.log('[DEBUG] sample assignedToId values:', state.allTasks.slice(0, 5).map(t => ({ id: t.id, assignedToId: t.assignedToId })));
-
         const filterText = state.filterText.toLowerCase();
         let filteredTasks = filterText
             ? state.allTasks.filter(t => t.subject.toLowerCase().includes(filterText))
@@ -448,12 +444,9 @@ export const useTaskStore = create<TaskState>((set) => ({
         if (ids.length > 0) {
             filteredTasks = filteredTasks.filter(t => {
                 const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
-                const included = ids.includes(taskAssignee);
-                return included;
+                return ids.includes(taskAssignee);
             });
         }
-
-        console.log('[DEBUG] filteredTasks count after filter:', filteredTasks.length);
 
         const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
         return {
