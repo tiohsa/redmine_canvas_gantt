@@ -11,7 +11,10 @@ interface GanttToolbarProps {
 }
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
-    const { viewport, updateViewport, groupByProject, setGroupByProject, filterText, setFilterText } = useTaskStore();
+    const {
+        viewport, updateViewport, groupByProject, setGroupByProject,
+        filterText, setFilterText, allTasks, selectedAssigneeIds, setSelectedAssigneeIds
+    } = useTaskStore();
     const {
         showProgressLine,
         toggleProgressLine,
@@ -23,6 +26,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     } = useUIStore();
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
     const [showFilterMenu, setShowFilterMenu] = React.useState(false);
+    const [showAssigneeMenu, setShowAssigneeMenu] = React.useState(false);
 
     const handleTodayClick = () => {
         const now = Date.now();
@@ -65,6 +69,30 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         { key: 'dueDate', label: i18n.t('field_due_date') || 'Due Date' },
         { key: 'ratioDone', label: i18n.t('field_done_ratio') || 'Progress' }
     ];
+
+    const assignees = React.useMemo(() => {
+        const map = new Map<number | null, string>();
+        // 未割当を明示的に追加
+        map.set(null, '未割当');
+        allTasks.forEach(task => {
+            if (task.assignedToId !== undefined && task.assignedToId !== null) {
+                map.set(task.assignedToId, task.assignedToName || `担当者 #${task.assignedToId}`);
+            }
+        });
+        return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => {
+            // 未割当(null)は一番上に表示
+            if (a.id === null) return -1;
+            if (b.id === null) return 1;
+            return a.name.localeCompare(b.name);
+        });
+    }, [allTasks]);
+
+    const toggleAssignee = (id: number | null) => {
+        const next = selectedAssigneeIds.includes(id)
+            ? selectedAssigneeIds.filter(i => i !== id)
+            : [...selectedAssigneeIds, id];
+        setSelectedAssigneeIds(next);
+    };
 
     const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
         { level: 0, label: i18n.t('label_month') || 'Month' },
@@ -281,6 +309,77 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 }}
                             >
                                 {i18n.t('button_reset') || 'Reset'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                    <button
+                        onClick={() => setShowAssigneeMenu(prev => !prev)}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '0 12px',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: selectedAssigneeIds.length > 0 ? '#e8f0fe' : '#fff',
+                            color: selectedAssigneeIds.length > 0 ? '#1a73e8' : '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px'
+                        }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                            <circle cx="12" cy="7" r="4" />
+                        </svg>
+                        {i18n.t('field_assigned_to') || 'Assignee'} {selectedAssigneeIds.length > 0 ? `(${selectedAssigneeIds.length})` : ''}
+                    </button>
+
+                    {showAssigneeMenu && (
+                        <div
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                background: '#fff',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                padding: '12px',
+                                zIndex: 20,
+                                minWidth: '200px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}
+                        >
+                            <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('field_assigned_to') || 'Assignee'}</div>
+                            {assignees.map(assignee => (
+                                <label key={assignee.id ?? 'none'} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedAssigneeIds.includes(assignee.id)}
+                                        onChange={() => toggleAssignee(assignee.id)}
+                                    />
+                                    {assignee.name}
+                                </label>
+                            ))}
+                            <button
+                                onClick={() => setSelectedAssigneeIds([])}
+                                style={{
+                                    marginTop: '8px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: '#1a73e8',
+                                    cursor: 'pointer',
+                                    padding: 0
+                                }}
+                            >
+                                {'クリア'}
                             </button>
                         </div>
                     )}

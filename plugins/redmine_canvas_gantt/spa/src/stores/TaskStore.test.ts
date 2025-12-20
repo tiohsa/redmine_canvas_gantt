@@ -73,3 +73,31 @@ describe('TaskStore zoom behavior', () => {
         expect(viewport.scrollX).toBeCloseTo(expectedScrollX, 6);
     });
 });
+
+describe('TaskStore assignee filter', () => {
+    it('setSelectedAssigneeIds はタスクをフィルタリングする', () => {
+        const mockTasks = [
+            { id: '1', subject: 'Task 1', assignedToId: 10, assignedToName: 'User A', startDate: 0, dueDate: 0 },
+            { id: '2', subject: 'Task 2', assignedToId: 11, assignedToName: 'User B', startDate: 0, dueDate: 0 },
+            { id: '3', subject: 'Task 3', assignedToId: null, assignedToName: 'None', startDate: 0, dueDate: 0 },
+        ] as any;
+
+        useTaskStore.setState({ allTasks: mockTasks });
+        useTaskStore.getState().setTasks(mockTasks);
+
+        // Filter by User A
+        useTaskStore.getState().setSelectedAssigneeIds([10]);
+        expect(useTaskStore.getState().tasks.length).toBe(1);
+        expect(useTaskStore.getState().tasks[0].id).toBe('1');
+
+        // Filter by User A and None
+        useTaskStore.getState().setSelectedAssigneeIds([10, null]);
+        expect(useTaskStore.getState().tasks.length).toBe(2);
+        expect(useTaskStore.getState().tasks.map(t => t.id)).toContain('1');
+        expect(useTaskStore.getState().tasks.map(t => t.id)).toContain('3');
+
+        // Clear filter
+        useTaskStore.getState().setSelectedAssigneeIds([]);
+        expect(useTaskStore.getState().tasks.length).toBe(3);
+    });
+});

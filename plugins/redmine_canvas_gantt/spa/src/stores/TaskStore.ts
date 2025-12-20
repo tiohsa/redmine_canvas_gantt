@@ -21,6 +21,7 @@ interface TaskState {
     projectExpansion: Record<string, boolean>;
     taskExpansion: Record<string, boolean>;
     filterText: string;
+    selectedAssigneeIds: (number | null)[];
 
     sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null;
 
@@ -42,6 +43,7 @@ interface TaskState {
     toggleTaskExpansion: (taskId: string) => void;
 
     setFilterText: (text: string) => void;
+    setSelectedAssigneeIds: (ids: (number | null)[]) => void;
     scrollToTask: (taskId: string) => void;
     setSortConfig: (key: keyof Task | null) => void;
     refreshData: () => Promise<void>;
@@ -186,6 +188,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     projectExpansion: {},
     taskExpansion: {},
     filterText: '',
+    selectedAssigneeIds: [],
     sortConfig: null,
 
     setTasks: (tasks) => set((state) => {
@@ -199,9 +202,17 @@ export const useTaskStore = create<TaskState>((set) => ({
             if (taskExpansion[task.id] === undefined) taskExpansion[task.id] = true;
         });
 
-        const filteredTasks = filterText
+        let filteredTasks = filterText
             ? tasks.filter(t => t.subject.toLowerCase().includes(filterText))
             : tasks;
+
+        if (state.selectedAssigneeIds.length > 0) {
+            filteredTasks = filteredTasks.filter(t => {
+                // null is used for unassigned; undefined should be treated as null
+                const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
+                return state.selectedAssigneeIds.includes(taskAssignee);
+            });
+        }
 
         const layout = buildLayout(filteredTasks, state.groupByProject, projectExpansion, taskExpansion, state.sortConfig);
 
@@ -403,13 +414,50 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     setFilterText: (text) => set((state) => {
         const filterText = text.toLowerCase();
-        const filteredTasks = filterText
+        let filteredTasks = filterText
             ? state.allTasks.filter(t => t.subject.toLowerCase().includes(filterText))
             : state.allTasks;
+
+        if (state.selectedAssigneeIds.length > 0) {
+            filteredTasks = filteredTasks.filter(t => {
+                // null is used for unassigned; undefined should be treated as null
+                const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
+                return state.selectedAssigneeIds.includes(taskAssignee);
+            });
+        }
 
         const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
         return {
             filterText: text,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+
+    setSelectedAssigneeIds: (ids) => set((state) => {
+        console.log('[DEBUG] setSelectedAssigneeIds called with:', ids);
+        console.log('[DEBUG] allTasks count:', state.allTasks.length);
+        console.log('[DEBUG] sample assignedToId values:', state.allTasks.slice(0, 5).map(t => ({ id: t.id, assignedToId: t.assignedToId })));
+
+        const filterText = state.filterText.toLowerCase();
+        let filteredTasks = filterText
+            ? state.allTasks.filter(t => t.subject.toLowerCase().includes(filterText))
+            : state.allTasks;
+
+        if (ids.length > 0) {
+            filteredTasks = filteredTasks.filter(t => {
+                const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
+                const included = ids.includes(taskAssignee);
+                return included;
+            });
+        }
+
+        console.log('[DEBUG] filteredTasks count after filter:', filteredTasks.length);
+
+        const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, state.sortConfig);
+        return {
+            selectedAssigneeIds: ids,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -467,9 +515,17 @@ export const useTaskStore = create<TaskState>((set) => ({
         }
 
         const filterText = state.filterText.toLowerCase();
-        const filteredTasks = filterText
+        let filteredTasks = filterText
             ? state.allTasks.filter(t => t.subject.toLowerCase().includes(filterText))
             : state.allTasks;
+
+        if (state.selectedAssigneeIds.length > 0) {
+            filteredTasks = filteredTasks.filter(t => {
+                // null is used for unassigned; undefined should be treated as null
+                const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
+                return state.selectedAssigneeIds.includes(taskAssignee);
+            });
+        }
 
         const layout = buildLayout(filteredTasks, state.groupByProject, state.projectExpansion, state.taskExpansion, newSort);
 
