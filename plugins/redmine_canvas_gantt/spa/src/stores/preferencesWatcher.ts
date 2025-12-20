@@ -20,7 +20,8 @@ const persistSelections = () => {
         groupByProject: taskState.groupByProject,
         organizeByDependency: taskState.organizeByDependency,
         columnWidths: uiState.columnWidths,
-        sidebarWidth: uiState.sidebarWidth
+        sidebarWidth: uiState.sidebarWidth,
+        selectedAssigneeIds: taskState.selectedAssigneeIds
     });
 };
 
