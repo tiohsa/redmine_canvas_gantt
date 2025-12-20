@@ -27,12 +27,15 @@ export class LayoutEngine {
     }
 
     static getTaskBounds(task: Task, viewport: Viewport, kind: 'bar' | 'hit' = 'bar', zoomLevel?: ZoomLevel): Bounds {
+        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
         const snappedStart = this.snapDate(task.startDate, zoomLevel);
         const snappedDue = Math.max(snappedStart, this.snapDate(task.dueDate, zoomLevel));
+        // Add 1 day to make due date inclusive (bar ends at the END of due date, not the start)
+        const snappedDueInclusive = snappedDue + ONE_DAY_MS;
         const x = this.dateToX(snappedStart, viewport) - viewport.scrollX;
         const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
         // Ensure width is at least something visible (e.g., 2px) even if duration is 0
-        const width = Math.max(2, (snappedDue - snappedStart) * viewport.scale);
+        const width = Math.max(2, (snappedDueInclusive - snappedStart) * viewport.scale);
 
         if (kind === 'hit') {
             return { x, y, width, height: viewport.rowHeight };
