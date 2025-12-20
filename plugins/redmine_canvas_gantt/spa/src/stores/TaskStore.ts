@@ -250,20 +250,42 @@ const applyFilters = (tasks: Task[], filterText: string, selectedAssigneeIds: (n
     return tasks.filter(task => visibleIds.has(task.id));
 };
 
-const computeCenteredScrollX = (viewport: Viewport, newScale: number, tasksMaxDue: number | null): number => {
+const computeCenteredViewport = (viewport: Viewport, newScale: number, tasksMaxDue: number | null): { scrollX: number; startDate: number } => {
     const safeScale = viewport.scale || 0.00000001;
     const centerDate = viewport.startDate + (viewport.scrollX + viewport.width / 2) / safeScale;
     const ONE_DAY = 24 * 60 * 60 * 1000;
     const paddingMs = 60 * ONE_DAY;
+
+    // Calculate the ideal scrollX to center on centerDate
+    let nextScrollX = (centerDate - viewport.startDate) * newScale - viewport.width / 2;
+    let nextStartDate = viewport.startDate;
+
+    // If scrollX would be negative, we need to shift startDate earlier
+    if (nextScrollX < 0) {
+        // Calculate how much earlier startDate needs to be
+        const shortfallMs = -nextScrollX / newScale;
+        // Add some buffer (2 weeks) to avoid edge cases
+        nextStartDate = viewport.startDate - shortfallMs - 14 * ONE_DAY;
+        // Recalculate scrollX with the new startDate
+        nextScrollX = (centerDate - nextStartDate) * newScale - viewport.width / 2;
+    }
+
+    // Calculate max scroll based on task range
     const visibleMs = viewport.width / newScale;
     const minRangeEnd = centerDate + visibleMs / 2;
     const rangeEnd = Math.max(tasksMaxDue ?? minRangeEnd, minRangeEnd) + paddingMs;
-    const maxScrollX = Math.max(0, (rangeEnd - viewport.startDate) * newScale - viewport.width);
+    const maxScrollX = Math.max(0, (rangeEnd - nextStartDate) * newScale - viewport.width);
 
-    let nextScrollX = (centerDate - viewport.startDate) * newScale - viewport.width / 2;
-    if (nextScrollX < 0) nextScrollX = 0;
     if (nextScrollX > maxScrollX) nextScrollX = maxScrollX;
-    return nextScrollX;
+    if (nextScrollX < 0) nextScrollX = 0;
+
+    console.log('[computeCenteredViewport] Result:', {
+        centerDate: new Date(centerDate).toISOString(),
+        startDateChanged: nextStartDate !== viewport.startDate,
+        nextScrollX
+    });
+
+    return { scrollX: nextScrollX, startDate: nextStartDate };
 };
 
 const buildDependencyComponents = (tasks: Task[], relations: Relation[]): Map<string, string> => {
@@ -533,12 +555,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const { viewport } = state;
         const newScale = ZOOM_SCALES[zoom];
         const tasksMaxDue = getMaxFiniteDueDate(state.allTasks);
-        const newScrollX = computeCenteredScrollX(viewport, newScale, tasksMaxDue);
+        const adjustment = computeCenteredViewport(viewport, newScale, tasksMaxDue);
 
         return {
             viewMode: mode,
             zoomLevel: zoom,
-            viewport: { ...state.viewport, scale: newScale, scrollX: newScrollX }
+            viewport: { ...state.viewport, scale: newScale, scrollX: adjustment.scrollX, startDate: adjustment.startDate }
         };
     }),
 
@@ -546,7 +568,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         const { viewport } = state;
         const newScale = ZOOM_SCALES[level];
         const tasksMaxDue = getMaxFiniteDueDate(state.allTasks);
-        const newScrollX = computeCenteredScrollX(viewport, newScale, tasksMaxDue);
+        const adjustment = computeCenteredViewport(viewport, newScale, tasksMaxDue);
 
         let mode: ViewMode = 'Week';
         if (level === 0) mode = 'Month';
@@ -556,7 +578,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         return {
             zoomLevel: level,
             viewMode: mode,
-            viewport: { ...state.viewport, scale: newScale, scrollX: newScrollX }
+            viewport: { ...state.viewport, scale: newScale, scrollX: adjustment.scrollX, startDate: adjustment.startDate }
         };
     }),
 
