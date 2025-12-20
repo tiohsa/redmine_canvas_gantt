@@ -1,5 +1,6 @@
-import type { Viewport, Task, ZoomLevel } from '../types';
+import type { Viewport, Task, ZoomLevel, Relation } from '../types';
 import { LayoutEngine } from '../engines/LayoutEngine';
+import { buildDependencySummary } from './dependencyIndicators';
 
 export class TaskRenderer {
     private canvas: HTMLCanvasElement;
@@ -8,6 +9,7 @@ export class TaskRenderer {
     private static readonly DONE_GREEN = '#50c878';
     private static readonly DELAY_RED = '#ff6b6b';
     private static readonly PLAN_GRAY = '#dddddd';
+    private static readonly DEPENDENCY_COLOR = '#9ca3af';
 
 
 
@@ -15,7 +17,7 @@ export class TaskRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel) {
+    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[]) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -30,13 +32,27 @@ export class TaskRenderer {
         const todayLineTs = todayTs + ONE_DAY;
         const xTodayLine = LayoutEngine.dateToX(todayLineTs, viewport) - viewport.scrollX;
 
+        const showDependencyIndicators = zoomLevel === 0 || zoomLevel === 1;
+        const dependencySummary = showDependencyIndicators ? buildDependencySummary(tasks, relations) : null;
+
         visibleTasks.forEach(task => {
             if (!Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) return;
 
             const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
             // Requirement 6.1: Parent tasks drawn as Redmine standard summary bar (bracket style replaced by cap bar)
             // Cap bar or leaf bar drawing logic
-            this.drawRedmineTaskBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height, xTodayLine);
+            const barBounds = this.drawRedmineTaskBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height, xTodayLine);
+
+            if (showDependencyIndicators && dependencySummary) {
+                const summary = dependencySummary.get(task.id);
+                if (summary) {
+                    const showIncoming = summary.incoming > 0;
+                    const showOutgoing = summary.outgoing > 0;
+                    const incomingVisible = zoomLevel === 1 ? showIncoming : false;
+                    const outgoingVisible = showOutgoing;
+                    this.drawDependencyIndicators(ctx, barBounds, incomingVisible, outgoingVisible);
+                }
+            }
 
             // Draw Subject BEFORE the bar (to the left)
             this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
@@ -132,6 +148,13 @@ export class TaskRenderer {
             // Right Cap
             ctx.fillRect(baseX + baseWidth - capWidth, capY, capWidth, capH);
         }
+
+        return {
+            x: baseX,
+            y: barY,
+            width: baseWidth,
+            height: currentBarHeight
+        };
     }
 
     private drawHatchedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
@@ -156,6 +179,39 @@ export class TaskRenderer {
         ctx.restore();
     }
 
+    private drawDependencyIndicators(
+        ctx: CanvasRenderingContext2D,
+        bar: { x: number; y: number; width: number; height: number },
+        hasIncoming: boolean,
+        hasOutgoing: boolean
+    ) {
+        const indicatorSize = Math.max(4, Math.round(bar.height * 0.35));
+        const centerY = bar.y + bar.height / 2;
 
+        ctx.save();
+        ctx.fillStyle = TaskRenderer.DEPENDENCY_COLOR;
+
+        if (hasIncoming) {
+            const leftX = bar.x;
+            ctx.beginPath();
+            ctx.moveTo(leftX, centerY);
+            ctx.lineTo(leftX + indicatorSize, centerY - indicatorSize / 2);
+            ctx.lineTo(leftX + indicatorSize, centerY + indicatorSize / 2);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        if (hasOutgoing) {
+            const rightX = bar.x + bar.width;
+            ctx.beginPath();
+            ctx.moveTo(rightX, centerY);
+            ctx.lineTo(rightX - indicatorSize, centerY - indicatorSize / 2);
+            ctx.lineTo(rightX - indicatorSize, centerY + indicatorSize / 2);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
 
 }

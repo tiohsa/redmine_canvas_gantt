@@ -3,6 +3,7 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { routeDependencyFS, type Point, type Rect, type RouteParams } from './dependencyRouting';
+import { filterRelationsForSelected, getOverflowBadgeLabel, MAX_SELECTED_RELATIONS } from './dependencyIndicators';
 
 export class OverlayRenderer {
     private canvas: HTMLCanvasElement;
@@ -37,7 +38,26 @@ export class OverlayRenderer {
         );
 
         // Draw dependency lines
-        this.drawDependencies(ctx, viewport, bufferedTasks, relations, zoomLevel);
+        if (zoomLevel === 2) {
+            this.drawDependencies(ctx, viewport, bufferedTasks, relations, zoomLevel);
+        } else if (zoomLevel === 1 && selectedTaskId) {
+            const { relations: limitedRelations, overflowCount } = filterRelationsForSelected(
+                relations,
+                selectedTaskId,
+                MAX_SELECTED_RELATIONS
+            );
+            this.drawDependencies(ctx, viewport, bufferedTasks, limitedRelations, zoomLevel);
+
+            if (overflowCount > 0) {
+                const selectedTask = tasks.find(task => task.id === selectedTaskId);
+                if (selectedTask) {
+                    const bounds = LayoutEngine.getTaskBounds(selectedTask, viewport, 'bar', zoomLevel);
+                    if (this.isBoundsVisible(bounds, viewport)) {
+                        this.drawOverflowBadge(ctx, bounds, getOverflowBadgeLabel(overflowCount));
+                    }
+                }
+            }
+        }
 
         // Draw selection highlight
         if (selectedTaskId) {
@@ -182,6 +202,55 @@ export class OverlayRenderer {
         ctx.closePath();
         ctx.fillStyle = '#888';
         ctx.fill();
+    }
+
+    private drawOverflowBadge(ctx: CanvasRenderingContext2D, bounds: { x: number; y: number; width: number; height: number }, label: string) {
+        if (!label) return;
+
+        ctx.save();
+        ctx.font = '11px sans-serif';
+        const paddingX = 6;
+        const textMetrics = ctx.measureText(label);
+        const textWidth = Math.ceil(textMetrics.width);
+        const badgeWidth = textWidth + paddingX * 2;
+        const badgeHeight = Math.max(16, Math.round(bounds.height * 0.6));
+
+        const badgeX = bounds.x + bounds.width + 6;
+        const badgeY = bounds.y + (bounds.height - badgeHeight) / 2;
+        const radius = 6;
+
+        ctx.beginPath();
+        ctx.moveTo(badgeX + radius, badgeY);
+        ctx.lineTo(badgeX + badgeWidth - radius, badgeY);
+        ctx.quadraticCurveTo(badgeX + badgeWidth, badgeY, badgeX + badgeWidth, badgeY + radius);
+        ctx.lineTo(badgeX + badgeWidth, badgeY + badgeHeight - radius);
+        ctx.quadraticCurveTo(badgeX + badgeWidth, badgeY + badgeHeight, badgeX + badgeWidth - radius, badgeY + badgeHeight);
+        ctx.lineTo(badgeX + radius, badgeY + badgeHeight);
+        ctx.quadraticCurveTo(badgeX, badgeY + badgeHeight, badgeX, badgeY + badgeHeight - radius);
+        ctx.lineTo(badgeX, badgeY + radius);
+        ctx.quadraticCurveTo(badgeX, badgeY, badgeX + radius, badgeY);
+        ctx.closePath();
+
+        ctx.fillStyle = '#e8f0fe';
+        ctx.fill();
+        ctx.strokeStyle = '#bcd3fb';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#1a73e8';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, badgeX + badgeWidth / 2, badgeY + badgeHeight / 2);
+        ctx.restore();
+    }
+
+    private isBoundsVisible(bounds: { x: number; y: number; width: number; height: number }, viewport: Viewport): boolean {
+        return !(
+            bounds.x + bounds.width < 0 ||
+            bounds.x > viewport.width ||
+            bounds.y + bounds.height < 0 ||
+            bounds.y > viewport.height
+        );
     }
 
     private drawSelectionHighlight(ctx: CanvasRenderingContext2D, viewport: Viewport, task: Task, zoomLevel: ZoomLevel) {
