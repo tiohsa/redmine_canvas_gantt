@@ -168,7 +168,7 @@ const buildLayout = (
     const arrangedTasks: Task[] = [];
     const layoutRows: LayoutRow[] = [];
 
-    const traverse = (taskId: string, depth: number, hiddenByAncestor: boolean) => {
+    const traverse = (taskId: string, depth: number, hiddenByAncestor: boolean, guides: boolean[], isLast: boolean) => {
         const node = nodeMap.get(taskId);
         if (!node) return;
 
@@ -176,13 +176,23 @@ const buildLayout = (
         const shouldHideChildren = hiddenByAncestor || !isExpanded;
 
         if (!hiddenByAncestor) {
-            const taskWithLayout: Task = { ...node.task, indentLevel: depth, rowIndex };
+            const taskWithLayout: Task = {
+                ...node.task,
+                indentLevel: depth,
+                rowIndex,
+                treeLevelGuides: guides,
+                isLastChild: isLast
+            };
             arrangedTasks.push(taskWithLayout);
             layoutRows.push({ type: 'task', taskId: taskWithLayout.id, rowIndex });
             rowIndex += 1;
         }
 
-        node.children.forEach((childId) => traverse(childId, depth + 1, shouldHideChildren));
+        const childGuides = [...guides, !isLast];
+        node.children.forEach((childId, idx) => {
+            const isChildLast = idx === node.children.length - 1;
+            traverse(childId, depth + 1, shouldHideChildren, childGuides, isChildLast);
+        });
     };
 
     orderedProjects.forEach((projectId) => {
@@ -196,7 +206,10 @@ const buildLayout = (
         }
 
         const hideDescendants = groupByProject ? !expanded : false;
-        roots.forEach((rootId) => traverse(rootId, 0, hideDescendants));
+        roots.forEach((rootId, idx) => {
+            const isLast = idx === roots.length - 1;
+            traverse(rootId, 0, hideDescendants, [], isLast);
+        });
     });
 
     return { tasks: arrangedTasks, layoutRows, rowCount: rowIndex };

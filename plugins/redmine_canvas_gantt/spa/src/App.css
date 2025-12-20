@@ -52,3 +52,18 @@
 .read-the-docs {
   color: #888;
 }
+.task-row:hover {
+  background-color: #f8f9fa !important;
+}
+
+.task-row.is-selected:hover {
+  background-color: #e8f0fe !important;
+}
+
+.project-header-row:hover {
+  background-color: #f1f3f4 !important;
+}
+
+.task-subject:hover {
+  text-decoration: underline !important;
+}

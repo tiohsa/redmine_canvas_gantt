@@ -20,6 +20,8 @@ export interface Task {
     rowIndex: number;
     hasChildren: boolean;
     indentLevel?: number;
+    treeLevelGuides?: boolean[];
+    isLastChild?: boolean;
 }
 
 export interface Relation {

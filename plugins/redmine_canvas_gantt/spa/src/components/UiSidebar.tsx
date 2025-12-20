@@ -52,53 +52,63 @@ const ProjectIcon = () => (
     </svg>
 );
 
+const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{
+            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            color: '#5f6368'
+        }}
+    >
+        <polyline points="9 18 15 12 9 6" />
+    </svg>
+);
+
 const TrackerIcon = ({ name }: { name?: string }) => {
     const lowerName = name?.toLowerCase() || '';
 
-    // Bug icon - 🐞
+    // Bug icon
     if (lowerName.includes('bug') || lowerName.includes('バグ')) {
         return (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d32f2f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <rect x="8" y="6" width="8" height="14" rx="4" fill="#d32f2f" fillOpacity="0.1" />
-                <line x1="4" y1="10" x2="8" y2="10"></line>
-                <line x1="16" y1="10" x2="20" y2="10"></line>
-                <line x1="4" y1="14" x2="8" y2="14"></line>
-                <line x1="16" y1="14" x2="20" y2="14"></line>
-                <path d="M10 6 L8 4 M14 6 L16 4"></path>
-                <circle cx="10" cy="10" r="1" fill="#d32f2f" />
-                <circle cx="14" cy="10" r="1" fill="#d32f2f" />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d93025" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="8" fill="#d93025" fillOpacity="0.1" />
+                <path d="M12 4v2m0 12v2M4 12h2m12 0h2M6.34 6.34l1.42 1.42M16.24 16.24l1.42 1.42M6.34 17.66l1.42-1.42M16.24 7.76l1.42-1.42" />
             </svg>
         );
     }
 
-    // Feature icon - ⭐
+    // Feature icon
     if (lowerName.includes('feature') || lowerName.includes('機能')) {
         return (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f57c00" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="#f57c00" fillOpacity="0.2"></polygon>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#188038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" fill="#188038" fillOpacity="0.1" />
             </svg>
         );
     }
 
-    // Support icon - ❓
+    // Support icon
     if (lowerName.includes('support') || lowerName.includes('サポート')) {
         return (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1976d2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <circle cx="12" cy="12" r="10" fill="#1976d2" fillOpacity="0.1"></circle>
-                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                <circle cx="12" cy="17" r="0.5" fill="#1976d2"></circle>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a73e8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="10" fill="#1a73e8" fillOpacity="0.1" />
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" />
             </svg>
         );
     }
 
-    // Task icon (default) - 📄
+    // Task icon (default)
     return (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d61b3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-            <polyline points="10 9 9 9 8 9"></polyline>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5f6368" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+            <polyline points="13 2 13 9 20 9" />
         </svg>
     );
 };
@@ -298,73 +308,125 @@ export const UiSidebar: React.FC = () => {
                     style={{
                         display: 'flex',
                         alignItems: 'center',
-                        paddingLeft: `${8 + (t.indentLevel ?? 0) * 16}px`,
-                        fontWeight: t.hasChildren ? 700 : 400,
-                        gap: 4,
+                        fontWeight: t.hasChildren ? 600 : 400,
+                        height: '100%',
                         width: '100%',
                         position: 'relative'
                     }}
                     className="task-subject-cell"
                 >
-                    {t.hasChildren ? (
-                        <button
-                            type="button"
-                            aria-label={(taskExpansion[t.id] ?? true) ? (i18n.t('button_collapse') || 'Collapse') : (i18n.t('button_expand') || 'Expand')}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveInlineEdit(null);
-                                toggleTaskExpansion(t.id);
-                            }}
-                            style={{
-                                width: 18,
-                                height: 18,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                border: '1px solid #d0d0d0',
-                                borderRadius: 4,
-                                background: '#fff',
-                                cursor: 'pointer',
-                                flexShrink: 0
-                            }}
-                        >
-                            <span style={{ fontSize: 10, color: '#555', lineHeight: 1 }}>
-                                {(taskExpansion[t.id] ?? true) ? '▼' : '▶'}
-                            </span>
-                        </button>
-                    ) : (
-                        <span style={{ display: 'inline-block', width: 18, flexShrink: 0 }} />
-                    )}
-                    <div style={{ marginRight: 6, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                        <TrackerIcon name={t.trackerName} />
-                    </div>
-                    <a
-                        href={`/issues/${t.id}`}
-                        className="task-subject"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            useUIStore.getState().openIssueDialog(`/issues/${t.id}/edit`);
-                        }}
-                        style={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            color: '#1a73e8',
-                            textDecoration: 'none',
-                            whiteSpace: 'nowrap',
-                            flex: 1,
-                            background: 'none',
-                            border: 'none',
-                            padding: 0,
-                            font: 'inherit',
-                            cursor: 'pointer',
-                            textAlign: 'left'
-                        }}
-                    >
-                        {t.subject}
-                    </a>
+                    {(() => {
+                        const isSelected = t.id === selectedTaskId;
+                        return (
+                            <>
+                                {/* Tree Lines */}
+                                <div style={{ display: 'flex', height: '100%', flexShrink: 0, paddingLeft: 8 }}>
+                                    {(t.treeLevelGuides ?? []).map((hasLine, i) => (
+                                        <div key={i} style={{ width: 16, height: '100%', position: 'relative' }}>
+                                            {hasLine && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    left: '50%',
+                                                    top: 0,
+                                                    bottom: 0,
+                                                    width: 1,
+                                                    backgroundColor: '#e0e0e0',
+                                                    transform: 'translateX(-50%)'
+                                                }} />
+                                            )}
+                                        </div>
+                                    ))}
+                                    <div style={{ width: 16, height: '100%', position: 'relative' }}>
+                                        {/* Vertical line for the current node */}
+                                        <div style={{
+                                            position: 'absolute',
+                                            left: '50%',
+                                            top: 0,
+                                            bottom: t.isLastChild ? '50%' : 0,
+                                            width: 1,
+                                            backgroundColor: '#e0e0e0',
+                                            transform: 'translateX(-50%)'
+                                        }} />
+                                        {/* Horizontal line for the current node */}
+                                        <div style={{
+                                            position: 'absolute',
+                                            left: '50%',
+                                            top: '50%',
+                                            right: 0,
+                                            height: 1,
+                                            backgroundColor: '#e0e0e0',
+                                            transform: 'translateY(-50%)'
+                                        }} />
+
+                                        {/* Expansion Trigger (Chevron) overlaying on the line branch */}
+                                        {t.hasChildren && (
+                                            <button
+                                                type="button"
+                                                aria-label={(taskExpansion[t.id] ?? true) ? (i18n.t('button_collapse') || 'Collapse') : (i18n.t('button_expand') || 'Expand')}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setActiveInlineEdit(null);
+                                                    toggleTaskExpansion(t.id);
+                                                }}
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: '50%',
+                                                    top: '50%',
+                                                    transform: 'translate(-50%, -50%)',
+                                                    width: 20,
+                                                    height: 20,
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    border: '1px solid #d0d0d0',
+                                                    borderRadius: '50%',
+                                                    background: '#fff',
+                                                    cursor: 'pointer',
+                                                    flexShrink: 0,
+                                                    zIndex: 1,
+                                                    padding: 0,
+                                                    boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                                                }}
+                                            >
+                                                <ChevronIcon expanded={taskExpansion[t.id] ?? true} />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div style={{ marginLeft: 8, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                    <TrackerIcon name={t.trackerName} />
+                                </div>
+                                <a
+                                    href={`/issues/${t.id}`}
+                                    className="task-subject"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        useUIStore.getState().openIssueDialog(`/issues/${t.id}/edit`);
+                                    }}
+                                    style={{
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        color: isSelected ? '#1a73e8' : '#3c4043',
+                                        textDecoration: 'none',
+                                        whiteSpace: 'nowrap',
+                                        flex: 1,
+                                        background: 'none',
+                                        border: 'none',
+                                        padding: '0 8px',
+                                        font: 'inherit',
+                                        cursor: 'pointer',
+                                        textAlign: 'left'
+                                    }}
+                                >
+                                    {t.subject}
+                                </a>
+                            </>
+                        );
+                    })()}
                 </div>
             )
         },
@@ -606,37 +668,31 @@ export const UiSidebar: React.FC = () => {
                                         display: 'flex',
                                         alignItems: 'center',
                                         padding: '0 12px',
-                                        backgroundColor: '#f1f3f5',
-                                        color: '#333',
-                                        fontWeight: 700,
+                                        backgroundColor: '#f8f9fa',
+                                        color: '#3c4043',
+                                        fontWeight: 600,
                                         borderBottom: '1px solid #e0e0e0',
-                                        boxSizing: 'border-box'
+                                        boxSizing: 'border-box',
+                                        cursor: 'pointer',
+                                        transition: 'background-color 0.2s'
                                     }}
                                     onClick={() => {
                                         setActiveInlineEdit(null);
                                         toggleProjectExpansion(row.projectId);
                                     }}
+                                    className="project-header-row"
                                 >
-                                    <span
-                                        aria-label={expanded ? (i18n.t('button_collapse') || 'Collapse') : (i18n.t('button_expand') || 'Expand')}
-                                        style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            width: 18,
-                                            height: 18,
-                                            border: '1px solid #d0d0d0',
-                                            borderRadius: 4,
-                                            marginRight: 8,
-                                            background: '#fff',
-                                            cursor: 'pointer',
-                                            fontSize: 10,
-                                            color: '#555'
-                                        }}
-                                    >
-                                        {expanded ? '▼' : '▶'}
-                                    </span>
-                                    <div style={{ marginRight: 6, display: 'flex', alignItems: 'center' }}>
+                                    <div style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: 20,
+                                        height: 20,
+                                        marginRight: 8
+                                    }}>
+                                        <ChevronIcon expanded={expanded} />
+                                    </div>
+                                    <div style={{ marginRight: 8, display: 'flex', alignItems: 'center', color: '#5f6368' }}>
                                         <ProjectIcon />
                                     </div>
                                     {row.projectName || i18n.t('label_project') || 'Project'}
@@ -666,13 +722,14 @@ export const UiSidebar: React.FC = () => {
                                     height: viewport.rowHeight,
                                     width: '100%',
                                     display: 'flex',
-                                    borderBottom: '1px solid #f5f5f5',
-                                    backgroundColor: isSelected ? '#f0f7ff' : 'white',
+                                    borderBottom: '1px solid #f1f3f4',
+                                    backgroundColor: isSelected ? '#e8f0fe' : 'transparent',
                                     cursor: 'pointer',
                                     fontSize: '13px',
-                                    color: '#333',
-                                    transition: 'background-color 0.1s'
+                                    color: '#3c4043',
+                                    transition: 'background-color 0.2s, color 0.2s'
                                 }}
+                                className={`task-row ${isSelected ? 'is-selected' : ''}`}
                                 onContextMenu={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
