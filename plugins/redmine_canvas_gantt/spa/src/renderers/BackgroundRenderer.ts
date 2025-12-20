@@ -9,7 +9,7 @@ export class BackgroundRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, zoomLevel: ZoomLevel) {
+    render(viewport: Viewport, zoomLevel: ZoomLevel, selectedTaskId: string | null, tasks: any[]) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -40,6 +40,18 @@ export class BackgroundRenderer {
                     }
                 }
             });
+        }
+
+        // Highlight selected row
+        if (selectedTaskId) {
+            const selectedTask = tasks.find(t => t.id === selectedTaskId);
+            if (selectedTask) {
+                const y = selectedTask.rowIndex * viewport.rowHeight - viewport.scrollY;
+                if (y + viewport.rowHeight > 0 && y < this.canvas.height) {
+                    ctx.fillStyle = '#e8f0fe'; // Match sidebar selection color
+                    ctx.fillRect(0, y, this.canvas.width, viewport.rowHeight);
+                }
+            }
         }
 
         // Grid (vertical lines)

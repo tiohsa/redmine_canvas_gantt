@@ -25,7 +25,7 @@ export const GanttContainer: React.FC = () => {
     const taskCanvasRef = useRef<HTMLCanvasElement>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    const { viewport, tasks, relations, setTasks, setRelations, updateViewport, zoomLevel, rowCount, viewportFromStorage } = useTaskStore();
+    const { viewport, tasks, relations, setTasks, setRelations, updateViewport, zoomLevel, rowCount, viewportFromStorage, selectedTaskId } = useTaskStore();
     const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
 
     const isResizing = useRef(false);
@@ -223,13 +223,12 @@ export const GanttContainer: React.FC = () => {
         });
     }, [realContentSize.height, realContentSize.width, scrollContentSize.height, scrollContentSize.width, viewport.height, viewport.scrollX, viewport.scrollY, viewport.width]);
 
-    // Render Loop
     useEffect(() => {
         // console.log('Render Loop:', { width: viewport.width, height: viewport.height, scrollX: viewport.scrollX, scrollY: viewport.scrollY, rowCount, tasks: tasks.length });
-        if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel);
+        if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel, selectedTaskId, tasks);
         if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
-    }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations]);
+    }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations, selectedTaskId]);
 
     return (
         <>
