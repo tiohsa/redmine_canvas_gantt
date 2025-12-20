@@ -24,16 +24,27 @@ describe('routeDependencyFS', () => {
         const fromRect = { x: 0, y: 0, width: 20, height: 10 };
         const toRect = { x: 120, y: 0, width: 20, height: 10 };
         const viewport = { scrollY: 0, height: 200 };
-        const points = routeDependencyFS(fromRect, toRect, [], viewport, {
+        const context = {
+            rowHeight: 40,
+            fromRowIndex: 0,
+            toRowIndex: 0,
+            columnWidth: 40
+        };
+        const points = routeDependencyFS(fromRect, toRect, [], viewport, context, {
             outset: 20,
             inset: 10,
             step: 20,
             maxShift: 3
         });
 
-        expect(points).toHaveLength(5);
+        expect(points.length).toBeGreaterThanOrEqual(4);
         expect(points[0].x).toBe(fromRect.x + fromRect.width);
         expect(points[points.length - 1].x).toBe(toRect.x);
+        const hasGridPoint = points.some((point, index) => {
+            if (index === 0 || index === points.length - 1) return false;
+            return point.y % context.rowHeight === 0;
+        });
+        expect(hasGridPoint).toBe(true);
     });
 
     it('shifts the mid route to avoid obstacles', () => {
@@ -42,14 +53,23 @@ describe('routeDependencyFS', () => {
         const obstacle = { x: 40, y: 42, width: 60, height: 6 };
         const viewport = { scrollY: 0, height: 200 };
 
-        const points = routeDependencyFS(fromRect, toRect, [obstacle], viewport, {
+        const context = {
+            rowHeight: 40,
+            fromRowIndex: 0,
+            toRowIndex: 1,
+            columnWidth: 40
+        };
+        const points = routeDependencyFS(fromRect, toRect, [obstacle], viewport, context, {
             outset: 20,
             inset: 10,
             step: 20,
             maxShift: 2
         });
 
-        expect(points[2].y).not.toBe(toRect.y + toRect.height / 2);
+        expect(points.some((point, index) => {
+            if (index === 0 || index === points.length - 1) return false;
+            return point.y % context.rowHeight === 0;
+        })).toBe(true);
         expect(points.some((point, index) => {
             if (index === points.length - 1) return false;
             return segmentIntersectsRect(point, points[index + 1], obstacle);

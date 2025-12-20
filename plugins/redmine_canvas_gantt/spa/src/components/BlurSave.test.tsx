@@ -73,8 +73,16 @@ describe('UiSidebar Blur-to-Save', () => {
                 return {
                     ok: true,
                     json: async () => ({
-                        task: { id: 123, subject: 'Initial Subject', status_id: 1, lock_version: 1 },
-                        editable: { subject: true, status_id: true, start_date: true },
+                        task: { id: 123, subject: 'Initial Subject', status_id: 1, done_ratio: 0, lock_version: 1 },
+                        editable: {
+                            subject: true,
+                            assigned_to_id: true,
+                            status_id: true,
+                            done_ratio: true,
+                            due_date: true,
+                            custom_field_values: false,
+                            start_date: true
+                        },
                         options: { statuses: [{ id: 1, name: 'New' }, { id: 2, name: 'In Progress' }], assignees: [], custom_fields: [] },
                         custom_field_values: {}
                     })

@@ -153,7 +153,11 @@ export class OverlayRenderer {
             const toRect = rectById.get(rel.to);
             if (!fromRect || !toRect) continue;
 
-            const cacheKey = buildCacheKey(fromRect, toRect, OverlayRenderer.DEPENDENCY_ROUTE_PARAMS);
+            const routeParams: RouteParams = {
+                ...OverlayRenderer.DEPENDENCY_ROUTE_PARAMS,
+                step: viewport.rowHeight
+            };
+            const cacheKey = buildCacheKey(fromRect, toRect, routeParams);
             const cached = this.dependencyCache.get(rel.id);
             let points = cached?.key === cacheKey ? cached.points : undefined;
 
@@ -163,12 +167,19 @@ export class OverlayRenderer {
                     if (rectEntry.id === rel.from || rectEntry.id === rel.to) continue;
                     obstacles.push(rectEntry.rect);
                 }
+                const ONE_DAY_MS = 24 * 60 * 60 * 1000;
                 points = routeDependencyFS(
                     fromRect,
                     toRect,
                     obstacles,
                     { scrollY: viewport.scrollY, height: viewport.height },
-                    OverlayRenderer.DEPENDENCY_ROUTE_PARAMS
+                    {
+                        rowHeight: viewport.rowHeight,
+                        fromRowIndex: fromTask.rowIndex,
+                        toRowIndex: toTask.rowIndex,
+                        columnWidth: ONE_DAY_MS * viewport.scale
+                    },
+                    routeParams
                 );
                 this.dependencyCache.set(rel.id, { key: cacheKey, points });
             }

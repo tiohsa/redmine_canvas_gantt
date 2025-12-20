@@ -160,14 +160,19 @@ export const HtmlOverlay: React.FC = () => {
 
         clampPosition();
 
-        const resizeObserver = new ResizeObserver(() => clampPosition());
-        resizeObserver.observe(contextMenuRef.current);
-
         const handleWindowResize = () => clampPosition();
         window.addEventListener('resize', handleWindowResize);
 
+        if (typeof ResizeObserver !== 'undefined') {
+            const resizeObserver = new ResizeObserver(() => clampPosition());
+            resizeObserver.observe(contextMenuRef.current);
+            return () => {
+                resizeObserver.disconnect();
+                window.removeEventListener('resize', handleWindowResize);
+            };
+        }
+
         return () => {
-            resizeObserver.disconnect();
             window.removeEventListener('resize', handleWindowResize);
         };
     }, [contextMenu, relatedRelations.length]);
@@ -411,6 +416,7 @@ export const HtmlOverlay: React.FC = () => {
                                         <div
                                             key={rel.id}
                                             className="menu-item danger"
+                                            data-testid={`remove-relation-${rel.id}`}
                                             onClick={() => handleRemoveRelation(rel.id)}
                                             style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
                                         >

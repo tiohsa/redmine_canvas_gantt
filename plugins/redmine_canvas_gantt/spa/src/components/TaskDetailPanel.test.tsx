@@ -65,8 +65,8 @@ describe('TaskDetailPanel', () => {
 
         render(<TaskDetailPanel />);
 
-        const editButtons = screen.getAllByRole('button', { name: 'Edit' });
-        fireEvent.click(editButtons[0]!);
+        const subjectLabel = screen.getByText('Subject');
+        fireEvent.click(subjectLabel.parentElement!);
 
         const input = screen.getByRole('textbox');
         fireEvent.change(input, { target: { value: 'New subject' } });
@@ -139,8 +139,8 @@ describe('TaskDetailPanel', () => {
 
         render(<TaskDetailPanel />);
 
-        const editButtons = screen.getAllByRole('button', { name: 'Edit' });
-        fireEvent.click(editButtons[0]!);
+        const subjectLabel = screen.getByText('Subject');
+        fireEvent.click(subjectLabel.parentElement!);
 
         const input = screen.getByRole('textbox');
         fireEvent.change(input, { target: { value: 'New subject' } });

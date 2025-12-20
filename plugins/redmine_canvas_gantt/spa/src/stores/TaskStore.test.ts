@@ -70,12 +70,24 @@ describe('TaskStore zoom behavior', () => {
     it('setViewMode は表示範囲の中央を維持する', () => {
         const { setViewMode } = useTaskStore.getState();
         // Start at Week (zoom 1)
-        useTaskStore.setState({ viewMode: 'Week', zoomLevel: 1 });
+        const ONE_DAY = 24 * 60 * 60 * 1000;
+        useTaskStore.setState({
+            viewMode: 'Week',
+            zoomLevel: 1,
+            viewport: {
+                ...useTaskStore.getState().viewport,
+                startDate: 0,
+                scrollX: 1600,
+                scale: ZOOM_SCALES[1],
+                width: 800,
+                height: 600
+            },
+            allTasks: [
+                buildTask({ id: 'range', startDate: 0, dueDate: ONE_DAY * 800 })
+            ]
+        });
         const initialViewport = useTaskStore.getState().viewport;
-
-        // Move scroll
-        useTaskStore.setState({ viewport: { ...initialViewport, scrollX: 300 } });
-        const expectedCenter = initialViewport.startDate + (300 + initialViewport.width / 2) / ZOOM_SCALES[1];
+        const expectedCenter = initialViewport.startDate + (1600 + initialViewport.width / 2) / ZOOM_SCALES[1];
 
         // Switch to Month (zoom 0)
         setViewMode('Month');

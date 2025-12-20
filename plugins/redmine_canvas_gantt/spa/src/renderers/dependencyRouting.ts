@@ -14,6 +14,13 @@ export type ViewportLike = {
     height: number;
 };
 
+export type RouteContext = {
+    rowHeight: number;
+    fromRowIndex: number;
+    toRowIndex: number;
+    columnWidth: number;
+};
+
 type Segment = { from: Point; to: Point };
 
 const DEFAULT_PARAMS: RouteParams = {
@@ -43,38 +50,86 @@ export function routeDependencyFS(
     toRect: Rect,
     obstacles: Rect[],
     viewport: ViewportLike,
+    context: RouteContext,
     params: RouteParams = DEFAULT_PARAMS
 ): Point[] {
     const fromPort = getPort(fromRect, 'RIGHT_CENTER');
     const toPort = getPort(toRect, 'LEFT_CENTER');
-    const basePoints = buildRoute(fromPort, toPort, params, toPort.y);
+
+    // Strategy 1: Simple Direct Z-Route with Column Center Snapping
+    // Search for a column center that fits in the gap between Source and Target.
+
+    let dropX: number | null = null;
+    const minX = fromPort.x + params.outset;
+    const maxX = toPort.x - params.inset;
+
+    if (maxX > minX) {
+        // Start from the column containing the target start
+        let colIndex = Math.floor(toPort.x / context.columnWidth);
+
+        // Look backwards for a few columns to find one that fits
+        for (let i = 0; i < 5; i++) {
+            const center = (colIndex - i) * context.columnWidth + context.columnWidth / 2;
+
+            // If we went too far left (behind source), stop
+            if (center < minX) break;
+
+            // If this center is valid (left of target buffer), use it
+            if (center <= maxX) {
+                dropX = center;
+                break;
+            }
+        }
+    }
+
+    // Only attempt if we found a valid drop point
+    if (dropX !== null) {
+        const directRoute = [
+            fromPort,
+            { x: dropX, y: fromPort.y },
+            { x: dropX, y: toPort.y },
+            toPort
+        ];
+        if (!pathIntersectsAny(directRoute, obstacles)) {
+            return directRoute;
+        }
+    }
+
+    const boundaryY = pickRowBoundary(context);
+    const basePoints = simplifyOrthogonal(buildRouteViaBoundary(fromPort, toPort, params, boundaryY));
 
     if (!pathIntersectsAny(basePoints, obstacles)) {
         return basePoints;
     }
 
-    const shiftOffsets = buildShiftOffsets(params.maxShift, params.step);
+    const shiftOffsets = buildShiftOffsets(params.maxShift, context.rowHeight);
     for (const offset of shiftOffsets) {
-        const shiftedPoints = buildRoute(fromPort, toPort, params, toPort.y + offset);
+        const shiftedPoints = simplifyOrthogonal(buildRouteViaBoundary(
+            fromPort,
+            toPort,
+            params,
+            boundaryY + offset
+        ));
         if (!pathIntersectsAny(shiftedPoints, obstacles)) {
             return shiftedPoints;
         }
     }
 
-    const bypassCandidates = buildBypassCandidates(viewport, params.step);
+    const bypassCandidates = buildBypassCandidates(viewport, context.rowHeight);
     for (const safeY of bypassCandidates) {
-        const bypassPoints = buildRoute(fromPort, toPort, params, safeY);
+        const bypassPoints = simplifyOrthogonal(buildRouteViaBoundary(fromPort, toPort, params, safeY));
         if (!pathIntersectsAny(bypassPoints, obstacles)) {
             return bypassPoints;
         }
     }
 
+    const stretch = context.rowHeight;
     const stretchedParams: RouteParams = {
         ...params,
-        outset: params.outset + params.step,
-        inset: params.inset + params.step
+        outset: params.outset + stretch,
+        inset: params.inset + stretch
     };
-    const stretchedPoints = buildRoute(fromPort, toPort, stretchedParams, toPort.y);
+    const stretchedPoints = simplifyOrthogonal(buildRouteViaBoundary(fromPort, toPort, stretchedParams, boundaryY));
     if (!pathIntersectsAny(stretchedPoints, obstacles)) {
         return stretchedPoints;
     }
@@ -90,31 +145,46 @@ function buildShiftOffsets(maxShift: number, step: number): number[] {
     return offsets;
 }
 
-function buildBypassCandidates(viewport: ViewportLike, step: number): number[] {
-    const topSafe = viewport.scrollY + step;
-    const bottomSafe = viewport.scrollY + viewport.height - step;
+function buildBypassCandidates(viewport: ViewportLike, rowHeight: number): number[] {
+    const topSafe = snapToGridLine(viewport.scrollY + rowHeight, rowHeight);
+    const bottomSafe = snapToGridLine(viewport.scrollY + viewport.height - rowHeight, rowHeight);
     return [topSafe, bottomSafe];
 }
 
-function buildRoute(fromPort: Point, toPort: Point, params: RouteParams, midY: number): Point[] {
+function pickRowBoundary(context: RouteContext): number {
+    const fromTop = context.fromRowIndex * context.rowHeight;
+    const fromBottom = fromTop + context.rowHeight;
+
+    if (context.fromRowIndex === context.toRowIndex) {
+        return fromBottom;
+    }
+
+    if (context.fromRowIndex < context.toRowIndex) {
+        return fromBottom;
+    }
+
+    return fromTop;
+}
+
+function snapToGridLine(y: number, rowHeight: number): number {
+    if (rowHeight <= 0) return y;
+    return Math.round(y / rowHeight) * rowHeight;
+}
+
+function buildRouteViaBoundary(
+    fromPort: Point,
+    toPort: Point,
+    params: RouteParams,
+    boundaryY: number
+): Point[] {
     const outsetX = fromPort.x + params.outset;
     const insetX = toPort.x - params.inset;
-
-    if (midY === toPort.y) {
-        return [
-            fromPort,
-            { x: outsetX, y: fromPort.y },
-            { x: outsetX, y: toPort.y },
-            { x: insetX, y: toPort.y },
-            toPort
-        ];
-    }
 
     return [
         fromPort,
         { x: outsetX, y: fromPort.y },
-        { x: outsetX, y: midY },
-        { x: insetX, y: midY },
+        { x: outsetX, y: boundaryY },
+        { x: insetX, y: boundaryY },
         { x: insetX, y: toPort.y },
         toPort
     ];
@@ -130,6 +200,34 @@ function pathIntersectsAny(points: Point[], obstacles: Rect[]): boolean {
         }
     }
     return false;
+}
+
+function simplifyOrthogonal(points: Point[]): Point[] {
+    if (points.length <= 2) return points;
+    const simplified: Point[] = [points[0]];
+
+    for (let i = 1; i < points.length; i += 1) {
+        const prev = simplified[simplified.length - 1];
+        const curr = points[i];
+
+        if (prev.x === curr.x && prev.y === curr.y) {
+            continue;
+        }
+
+        if (simplified.length >= 2) {
+            const prevPrev = simplified[simplified.length - 2];
+            const isVertical = prevPrev.x === prev.x && prev.x === curr.x;
+            const isHorizontal = prevPrev.y === prev.y && prev.y === curr.y;
+            if (isVertical || isHorizontal) {
+                simplified[simplified.length - 1] = curr;
+                continue;
+            }
+        }
+
+        simplified.push(curr);
+    }
+
+    return simplified;
 }
 
 function toSegments(points: Point[]): Segment[] {

@@ -4,6 +4,8 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 export class DependencyRenderer {
     private canvas: HTMLCanvasElement;
 
+    private static readonly HORIZONTAL_OFFSET = 12;
+
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
     }
@@ -32,19 +34,92 @@ export class DependencyRenderer {
             const endX = toBounds.x;
             const endY = toBounds.y + toBounds.height / 2;
 
-            // Keep connectors readable even when target is "behind"
-            const dx = Math.max(24, Math.min(80, (endX - startX) / 2));
-            const cp1x = startX + dx;
-            const cp1y = startY;
-            const cp2x = endX - dx;
-            const cp2y = endY;
+            const waypoints = this.calculateOrthogonalPath(startX, startY, endX, endY, viewport);
 
             ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
+            ctx.moveTo(waypoints[0].x, waypoints[0].y);
+            for (let i = 1; i < waypoints.length; i++) {
+                ctx.lineTo(waypoints[i].x, waypoints[i].y);
+            }
             ctx.stroke();
 
-            this.drawArrowHead(ctx, endX, endY, cp2x, cp2y);
+            // Draw arrowhead at the last segment
+            if (waypoints.length >= 2) {
+                const lastPoint = waypoints[waypoints.length - 1];
+                const prevPoint = waypoints[waypoints.length - 2];
+                this.drawArrowHead(ctx, lastPoint.x, lastPoint.y, prevPoint.x, prevPoint.y);
+            }
+        }
+    }
+
+    private calculateOrthogonalPath(
+        startX: number, startY: number,
+        endX: number, endY: number,
+        viewport: Viewport
+    ): Array<{ x: number; y: number }> {
+        const offset = DependencyRenderer.HORIZONTAL_OFFSET;
+
+        // If target is significantly to the right of source (normal case)
+        if (endX > startX + offset * 2) {
+            // Find a suitable vertical drop X.
+            // Requirement: "Center of the column"
+            // We calculate the center of the day column that is closest to the target but to its left.
+            const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+            const colWidth = ONE_DAY_MS * viewport.scale;
+
+            // Calculate absolute X coordinate in the timeline
+            const absoluteEndX = endX + viewport.scrollX;
+
+            // Determine the column index for the target's start position
+            const colIndex = Math.floor(absoluteEndX / colWidth);
+
+            // Calculate the center of that column (absolute)
+            let dropAbsoluteX = colIndex * colWidth + colWidth / 2;
+
+            // If the column center is to the right of the target start (e.g. task starts early in the day),
+            // move to the previous column's center to ensuring dropping "before" the task.
+            // Also ensure we don't drop too close to the text (allow some gap).
+            if (dropAbsoluteX > absoluteEndX - offset) {
+                dropAbsoluteX -= colWidth;
+            }
+
+            let midX = dropAbsoluteX - viewport.scrollX;
+
+            // Constrain midX: must be between startX + offset and endX - offset
+            // If the calculated column center is invalid (too far left), fallback to a safe position relative to target.
+            if (midX < startX + offset) {
+                midX = endX - offset; // Fallback: just before target
+
+                // If still invalid (source and target too close), fallback to geometric center
+                if (midX < startX + offset) {
+                    midX = (startX + endX) / 2;
+                }
+            }
+
+            return [
+                { x: startX, y: startY },
+                { x: midX, y: startY },
+                { x: midX, y: endY },
+                { x: endX, y: endY }
+            ];
+        } else {
+            // Target is behind or overlapping source - route around
+            const rightOffset = startX + offset;
+            const leftOffset = endX - offset;
+
+            const goDown = startY <= endY;
+            const verticalOffset = goDown
+                ? Math.max(startY, endY) + 20
+                : Math.min(startY, endY) - 20;
+
+            return [
+                { x: startX, y: startY },
+                { x: rightOffset, y: startY },
+                { x: rightOffset, y: verticalOffset },
+                { x: leftOffset, y: verticalOffset },
+                { x: leftOffset, y: endY },
+                { x: endX, y: endY }
+            ];
         }
     }
 
