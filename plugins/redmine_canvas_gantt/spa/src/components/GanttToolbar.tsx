@@ -135,7 +135,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             boxSizing: 'border-box'
         }}>
             {/* Left: Filter & Options */}
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
                 <button
                     onClick={toggleLeftPane}
                     title={i18n.t('label_toggle_sidebar') || "Toggle Sidebar"}
@@ -153,7 +153,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         height: '32px'
                     }}
                 >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                         <line x1="9" y1="3" x2="9" y2="21" />
                     </svg>
@@ -181,7 +181,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         height: '32px'
                     }}
                 >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="12" y1="5" x2="12" y2="19" />
                         <line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
@@ -189,15 +189,13 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
 
-
-
                 <button
                     onClick={() => setShowFilterMenu(prev => !prev)}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px',
-                        padding: '0 12px',
+                        gap: '6px',
+                        padding: '0 10px',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
                         backgroundColor: filterText ? '#e8f0fe' : '#fff',
@@ -208,12 +206,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         height: '32px'
                     }}
                 >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="4" y1="6" x2="20" y2="6" />
-                        <line x1="6" y1="12" x2="18" y2="12" />
-                        <line x1="8" y1="18" x2="16" y2="18" />
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
                     </svg>
-                    {i18n.t('label_filter') || 'Filter'} {filterText ? '(Active)' : ''}
+                    {'フィルタ'}
                 </button>
 
                 {showFilterMenu && (
@@ -221,8 +217,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         ref={filterMenuRef}
                         style={{
                             position: 'absolute',
-                            top: '44px',
-                            left: '110px',
+                            top: '40px',
+                            left: '80px',
                             background: '#fff',
                             border: '1px solid #e0e0e0',
                             borderRadius: '8px',
@@ -273,8 +269,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '8px',
-                            padding: '0 12px',
+                            gap: '6px',
+                            padding: '0 10px',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: '#fff',
@@ -285,12 +281,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             height: '32px'
                         }}
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M4 5h16" />
-                            <path d="M7 12h10" />
-                            <path d="M10 19h4" />
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <line x1="9" y1="3" x2="9" y2="21" />
+                            <line x1="15" y1="3" x2="15" y2="21" />
                         </svg>
-                        {i18n.t('label_column_plural') || 'Columns'}
+                        {'カラム'}
                     </button>
 
                     {showColumnMenu && (
@@ -344,8 +340,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '8px',
-                            padding: '0 12px',
+                            gap: '6px',
+                            padding: '0 10px',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: selectedAssigneeIds.length > 0 ? '#e8f0fe' : '#fff',
@@ -356,11 +352,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             height: '32px'
                         }}
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                             <circle cx="12" cy="7" r="4" />
                         </svg>
-                        {i18n.t('field_assigned_to') || 'Assignee'} {selectedAssigneeIds.length > 0 ? `(${selectedAssigneeIds.length})` : ''}
+                        {'担当者'}
                     </button>
 
                     {showAssigneeMenu && (
@@ -410,93 +406,121 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#555', cursor: 'pointer', userSelect: 'none' }}>
-                    <input
-                        type="checkbox"
-                        checked={showProgressLine}
-                        onChange={toggleProgressLine}
-                        style={{ cursor: 'pointer' }}
-                    />
-                    {i18n.t('label_progress_line') || 'Progress Line'}
-                </label>
+                <button
+                    onClick={toggleProgressLine}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '0 10px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: showProgressLine ? '#e8f0fe' : '#fff',
+                        color: showProgressLine ? '#1a73e8' : '#333',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        height: '32px'
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                    </svg>
+                    {'進捗ライン'}
+                </button>
 
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#555', cursor: 'pointer', userSelect: 'none' }}>
-                    <input
-                        type="checkbox"
-                        checked={groupByProject}
-                        onChange={(e) => setGroupByProject(e.target.checked)}
-                        style={{ cursor: 'pointer' }}
-                    />
-                    {i18n.t('label_group_by_project') || 'Group by project'}
-                </label>
+                <button
+                    onClick={() => setGroupByProject(!groupByProject)}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '0 10px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: groupByProject ? '#e8f0fe' : '#fff',
+                        color: groupByProject ? '#1a73e8' : '#333',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        height: '32px'
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                    {'プロジェクトでグループ化'}
+                </button>
             </div>
 
             {/* Right: Zoom Level & Today */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <div style={{ display: 'flex', gap: '6px' }}>
-
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '4px' }}>
                     <button
                         onClick={() => navigateMonth(-1)}
                         style={{
-                            padding: '6px 16px',
+                            width: '32px',
+                            height: '32px',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: '#fff',
                             color: '#333',
-                            fontSize: '13px',
-                            fontWeight: 500,
                             cursor: 'pointer',
-                            height: '32px',
                             display: 'flex',
-                            alignItems: 'center'
+                            alignItems: 'center',
+                            justifyContent: 'center'
                         }}
                     >
-                        ◀ {i18n.t('label_previous_month') || 'Prev Month'}
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="15 18 9 12 15 6" />
+                        </svg>
                     </button>
                     <button
                         onClick={() => navigateMonth(1)}
                         style={{
-                            padding: '6px 16px',
+                            width: '32px',
+                            height: '32px',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: '#fff',
                             color: '#333',
-                            fontSize: '13px',
-                            fontWeight: 500,
                             cursor: 'pointer',
-                            height: '32px',
                             display: 'flex',
-                            alignItems: 'center'
+                            alignItems: 'center',
+                            justifyContent: 'center'
                         }}
                     >
-                        {i18n.t('label_next_month') || 'Next Month'} ▶
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="9 18 15 12 9 6" />
+                        </svg>
                     </button>
                 </div>
-
-                {/* Final Decision: Put Today in a similar container OR just style it to match the segmented control's HEIGHT/FONT/LOOK but standalone. */}
 
                 <button
                     onClick={handleTodayClick}
                     style={{
-                        padding: '6px 16px',
+                        padding: '0 12px',
                         borderRadius: '6px',
-                        border: '1px solid #e0e0e0', // Keep border if outside, or remove to match flat look?
-                        // "Day" button (inside group) has no border, just bg.
-                        // Let's give Today a similar look to the segmented control container but clickable?
+                        border: '1px solid #e0e0e0',
                         backgroundColor: '#fff',
                         color: '#333',
                         fontSize: '13px',
                         fontWeight: 500,
                         cursor: 'pointer',
-                        height: '32px', // Match standard height of the checks
+                        height: '32px',
                         display: 'flex',
-                        alignItems: 'center'
+                        alignItems: 'center',
+                        gap: '6px'
                     }}
                 >
-                    {i18n.t('label_today') || 'Today'}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    {'今日'}
                 </button>
-
-
 
                 <div style={{
                     display: 'flex',
@@ -516,7 +540,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     border: 'none',
                                     background: isActive ? '#fff' : 'transparent',
                                     color: isActive ? '#1a1a1a' : '#6c757d',
-                                    padding: '6px 16px',
+                                    padding: '0 12px',
                                     borderRadius: '6px',
                                     fontSize: '13px',
                                     fontWeight: isActive ? 600 : 500,
@@ -524,13 +548,20 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)' : 'none',
                                     transition: 'all 0.2s ease',
                                     outline: 'none',
-                                    minWidth: '60px',
+                                    height: '26px',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center'
                                 }}
                             >
-                                {option.label}
+                                {option.level === 2 ? (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                                        <line x1="16" y1="2" x2="16" y2="6" />
+                                        <line x1="8" y1="2" x2="8" y2="6" />
+                                        <line x1="3" y1="10" x2="21" y2="10" />
+                                    </svg>
+                                ) : option.label.substring(0, 1)}
                             </button>
                         );
                     })}
@@ -539,13 +570,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <button
                     onClick={toggleFullScreen}
                     style={{
-                        padding: '8px',
+                        padding: '0',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
                         backgroundColor: isFullScreen ? '#1a73e8' : '#fff',
                         color: isFullScreen ? '#fff' : '#333',
-                        fontSize: '13px',
-                        fontWeight: 600,
                         cursor: 'pointer',
                         height: '32px',
                         width: '32px',
@@ -553,22 +582,21 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         alignItems: 'center',
                         justifyContent: 'center'
                     }}
-
                 >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         {isFullScreen ? (
                             <>
-                                <polyline points="9 9 3 9 3 3" />
-                                <line x1="3" y1="3" x2="9" y2="9" />
-                                <polyline points="15 15 21 15 21 21" />
-                                <line x1="15" y1="15" x2="21" y2="21" />
+                                <polyline points="4 14 10 14 10 20" />
+                                <polyline points="20 10 14 10 14 4" />
+                                <line x1="14" y1="10" x2="21" y2="3" />
+                                <line x1="3" y1="21" x2="10" y2="14" />
                             </>
                         ) : (
                             <>
-                                <polyline points="3 9 9 9 9 3" />
-                                <line x1="9" y1="3" x2="3" y2="9" />
-                                <polyline points="21 15 15 15 15 21" />
-                                <line x1="15" y1="21" x2="21" y2="15" />
+                                <polyline points="15 3 21 3 21 9" />
+                                <polyline points="9 21 3 21 3 15" />
+                                <line x1="21" y1="3" x2="14" y2="10" />
+                                <line x1="3" y1="21" x2="10" y2="14" />
                             </>
                         )}
                     </svg>
@@ -577,7 +605,27 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <button
                     onClick={() => updateViewport({ scrollY: 0 })}
                     style={{
-                        padding: '6px 12px',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: '#fff',
+                        color: '#333',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="18 15 12 9 6 15" />
+                    </svg>
+                </button>
+
+                <button
+                    onClick={() => updateViewport({ scrollY: 0 })}
+                    style={{
+                        padding: '0 12px',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
                         backgroundColor: '#fff',
@@ -588,16 +636,15 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         height: '32px',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px'
+                        gap: '6px'
                     }}
-
                 >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="12" y1="19" x2="12" y2="5"></line>
                         <polyline points="5 12 12 5 19 12"></polyline>
-                        <line x1="5" y1="19" x2="19" y2="19"></line>
+                        <line x1="5" y1="5" x2="19" y2="5"></line>
                     </svg>
-                    {i18n.t('button_top') || 'Top'}
+                    {'トップ'}
                 </button>
             </div>
         </div>
