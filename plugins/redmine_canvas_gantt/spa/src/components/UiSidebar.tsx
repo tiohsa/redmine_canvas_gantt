@@ -674,8 +674,10 @@ export const UiSidebar: React.FC = () => {
                                         borderBottom: '1px solid #e0e0e0',
                                         boxSizing: 'border-box',
                                         cursor: 'pointer',
+                                        userSelect: 'none',
                                         transition: 'background-color 0.2s'
                                     }}
+                                    onMouseDown={(e) => e.preventDefault()}
                                     onClick={() => {
                                         setActiveInlineEdit(null);
                                         toggleProjectExpansion(row.projectId);
