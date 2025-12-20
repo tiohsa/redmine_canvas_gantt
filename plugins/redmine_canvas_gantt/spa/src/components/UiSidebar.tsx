@@ -288,7 +288,7 @@ export const UiSidebar: React.FC = () => {
     const columns = [
         {
             key: 'id',
-            title: i18n.t('field_id') || 'ID',
+            title: 'ID',
             width: columnWidths['id'] ?? 72,
             render: (t: Task) => (
                 <span
