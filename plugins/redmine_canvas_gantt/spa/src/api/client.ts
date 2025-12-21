@@ -263,6 +263,13 @@ export const apiClient = {
         const statusIdValue = task.status_id;
         const doneRatioValue = task.done_ratio;
         const dueDateValue = task.due_date;
+        const startDateValue = task.start_date;
+        const priorityIdValue = task.priority_id;
+        const categoryIdValue = task.category_id;
+        const estimatedHoursValue = task.estimated_hours;
+        const projectIdValue = task.project_id;
+        const trackerIdValue = task.tracker_id;
+        const fixedVersionIdValue = task.fixed_version_id;
         const lockVersionValue = task.lock_version;
 
         if (taskIdValue === undefined || subjectValue === undefined || statusIdValue === undefined || doneRatioValue === undefined || lockVersionValue === undefined) {
@@ -274,18 +281,35 @@ export const apiClient = {
         const editableStatusId = editable.status_id;
         const editableDoneRatio = editable.done_ratio;
         const editableDueDate = editable.due_date;
+        const editableStartDate = editable.start_date;
+        const editablePriorityId = editable.priority_id;
+        const editableCategoryId = editable.category_id;
+        const editableEstimatedHours = editable.estimated_hours;
+        const editableProjectId = editable.project_id;
+        const editableTrackerId = editable.tracker_id;
+        const editableFixedVersionId = editable.fixed_version_id;
         const editableCustomFieldValues = editable.custom_field_values;
 
-        if (![editableSubject, editableAssignedToId, editableStatusId, editableDoneRatio, editableDueDate, editableCustomFieldValues].every(v => typeof v === 'boolean')) {
+        if (![editableSubject, editableAssignedToId, editableStatusId, editableDoneRatio, editableDueDate, editableStartDate, editablePriorityId, editableCategoryId, editableEstimatedHours, editableProjectId, editableTrackerId, editableFixedVersionId, editableCustomFieldValues].every(v => typeof v === 'boolean')) {
             throw new Error('Invalid response');
         }
 
         const statusesRaw = Array.isArray(options.statuses) ? options.statuses : [];
         const assigneesRaw = Array.isArray(options.assignees) ? options.assignees : [];
+        const prioritiesRaw = Array.isArray(options.priorities) ? options.priorities : [];
+        const categoriesRaw = Array.isArray(options.categories) ? options.categories : [];
+        const projectsRaw = Array.isArray(options.projects) ? options.projects : [];
+        const trackersRaw = Array.isArray(options.trackers) ? options.trackers : [];
+        const versionsRaw = Array.isArray(options.versions) ? options.versions : [];
         const customFieldsRaw = Array.isArray(options.custom_fields) ? options.custom_fields : [];
 
         const statuses = statusesRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
         const assignees = assigneesRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
+        const priorities = prioritiesRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
+        const categories = categoriesRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
+        const projects = projectsRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
+        const trackers = trackersRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
+        const versions = versionsRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
         const customFields = customFieldsRaw.map(parseCustomFieldMeta).filter((v): v is CustomFieldMeta => Boolean(v));
 
         const customFieldValues: Record<string, string | null> = {};
@@ -302,6 +326,13 @@ export const apiClient = {
                 statusId: typeof statusIdValue === 'number' ? statusIdValue : Number(statusIdValue),
                 doneRatio: typeof doneRatioValue === 'number' ? doneRatioValue : Number(doneRatioValue),
                 dueDate: typeof dueDateValue === 'string' ? dueDateValue : null,
+                startDate: typeof startDateValue === 'string' ? startDateValue : null,
+                priorityId: typeof priorityIdValue === 'number' ? priorityIdValue : Number(priorityIdValue),
+                categoryId: typeof categoryIdValue === 'number' ? categoryIdValue : (categoryIdValue ? Number(categoryIdValue) : null),
+                estimatedHours: typeof estimatedHoursValue === 'number' ? estimatedHoursValue : (estimatedHoursValue ? Number(estimatedHoursValue) : null),
+                projectId: typeof projectIdValue === 'number' ? projectIdValue : Number(projectIdValue),
+                trackerId: typeof trackerIdValue === 'number' ? trackerIdValue : Number(trackerIdValue),
+                fixedVersionId: typeof fixedVersionIdValue === 'number' ? fixedVersionIdValue : (fixedVersionIdValue ? Number(fixedVersionIdValue) : null),
                 lockVersion: typeof lockVersionValue === 'number' ? lockVersionValue : Number(lockVersionValue)
             },
             editable: {
@@ -310,11 +341,23 @@ export const apiClient = {
                 statusId: editableStatusId as boolean,
                 doneRatio: editableDoneRatio as boolean,
                 dueDate: editableDueDate as boolean,
+                startDate: editableStartDate as boolean,
+                priorityId: editablePriorityId as boolean,
+                categoryId: editableCategoryId as boolean,
+                estimatedHours: editableEstimatedHours as boolean,
+                projectId: editableProjectId as boolean,
+                trackerId: editableTrackerId as boolean,
+                fixedVersionId: editableFixedVersionId as boolean,
                 customFieldValues: editableCustomFieldValues as boolean
             },
             options: {
                 statuses,
                 assignees,
+                priorities,
+                categories,
+                projects,
+                trackers,
+                versions,
                 customFields
             },
             customFieldValues

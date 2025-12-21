@@ -34,6 +34,13 @@ export interface TaskEditMeta {
         statusId: number;
         doneRatio: number;
         dueDate: string | null;
+        startDate: string | null;
+        priorityId: number;
+        categoryId: number | null;
+        estimatedHours: number | null;
+        projectId: number;
+        trackerId: number;
+        fixedVersionId: number | null;
         lockVersion: number;
     };
     editable: {
@@ -42,11 +49,23 @@ export interface TaskEditMeta {
         statusId: boolean;
         doneRatio: boolean;
         dueDate: boolean;
+        startDate: boolean;
+        priorityId: boolean;
+        categoryId: boolean;
+        estimatedHours: boolean;
+        projectId: boolean;
+        trackerId: boolean;
+        fixedVersionId: boolean;
         customFieldValues: boolean;
     };
     options: {
         statuses: EditOption[];
         assignees: EditOption[];
+        priorities: EditOption[];
+        categories: EditOption[];
+        projects: EditOption[];
+        trackers: EditOption[];
+        versions: EditOption[];
         customFields: CustomFieldMeta[];
     };
     customFieldValues: Record<string, string | null>;

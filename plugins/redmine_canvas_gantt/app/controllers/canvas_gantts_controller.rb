@@ -188,6 +188,13 @@ class CanvasGanttsController < ApplicationController
       status_id: editable && issue.safe_attribute?('status_id'),
       done_ratio: editable && issue.safe_attribute?('done_ratio'),
       due_date: editable && issue.safe_attribute?('due_date'),
+      start_date: editable && issue.safe_attribute?('start_date'),
+      priority_id: editable && issue.safe_attribute?('priority_id'),
+      category_id: editable && issue.safe_attribute?('category_id'),
+      estimated_hours: editable && issue.safe_attribute?('estimated_hours'),
+      project_id: editable && issue.safe_attribute?('project_id'),
+      tracker_id: editable && issue.safe_attribute?('tracker_id'),
+      fixed_version_id: editable && issue.safe_attribute?('fixed_version_id'),
       custom_field_values: editable && issue.safe_attribute?('custom_field_values')
     }
 
@@ -241,6 +248,11 @@ class CanvasGanttsController < ApplicationController
       options: {
         statuses: statuses.map { |s| { id: s.id, name: s.name } },
         assignees: assignables.map { |u| { id: u.id, name: u.name } },
+        priorities: IssuePriority.active.map { |p| { id: p.id, name: p.name } },
+        categories: issue.project.issue_categories.map { |c| { id: c.id, name: c.name } },
+        projects: Project.allowed_to(:add_issues).active.map { |p| { id: p.id, name: p.name } },
+        trackers: issue.project.trackers.map { |t| { id: t.id, name: t.name } },
+        versions: issue.project.shared_versions.map { |v| { id: v.id, name: v.name } },
         custom_fields: custom_fields
       },
       custom_field_values: custom_field_values,
@@ -278,6 +290,13 @@ class CanvasGanttsController < ApplicationController
       :assigned_to_id,
       :status_id,
       :done_ratio,
+      :priority_id,
+      :author_id,
+      :category_id,
+      :estimated_hours,
+      :project_id,
+      :tracker_id,
+      :fixed_version_id,
       custom_field_values: {}
     )
 

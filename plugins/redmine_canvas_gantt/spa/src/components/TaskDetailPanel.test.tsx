@@ -38,9 +38,9 @@ describe('TaskDetailPanel', () => {
         useEditMetaStore.setState({
             metaByTaskId: {
                 [taskId]: {
-                    task: { id: taskId, subject: 'Old', assignedToId: null, statusId: 1, doneRatio: 0, dueDate: '2025-01-01', lockVersion: 1 },
-                    editable: { subject: true, assignedToId: true, statusId: true, doneRatio: true, dueDate: true, customFieldValues: false },
-                    options: { statuses: [{ id: 1, name: 'New' }], assignees: [], customFields: [] },
+                    task: { id: taskId, subject: 'Old', assignedToId: null, statusId: 1, doneRatio: 0, dueDate: '2025-01-01', startDate: '2025-01-01', priorityId: 1, categoryId: null, estimatedHours: null, projectId: 1, trackerId: 1, fixedVersionId: null, lockVersion: 1 },
+                    editable: { subject: true, assignedToId: true, statusId: true, doneRatio: true, dueDate: true, startDate: true, priorityId: true, categoryId: true, estimatedHours: true, projectId: true, trackerId: true, fixedVersionId: true, customFieldValues: false },
+                    options: { statuses: [{ id: 1, name: 'New' }], assignees: [], priorities: [], categories: [], projects: [], trackers: [], versions: [], customFields: [] },
                     customFieldValues: {}
                 }
             },
@@ -111,9 +111,9 @@ describe('TaskDetailPanel', () => {
         useEditMetaStore.setState({
             metaByTaskId: {
                 [taskId]: {
-                    task: { id: taskId, subject: 'Old', assignedToId: null, statusId: 1, doneRatio: 0, dueDate: '2025-01-01', lockVersion: 1 },
-                    editable: { subject: true, assignedToId: true, statusId: true, doneRatio: true, dueDate: true, customFieldValues: false },
-                    options: { statuses: [{ id: 1, name: 'New' }], assignees: [], customFields: [] },
+                    task: { id: taskId, subject: 'Old', assignedToId: null, statusId: 1, doneRatio: 0, dueDate: '2025-01-01', startDate: '2025-01-01', priorityId: 1, categoryId: null, estimatedHours: null, projectId: 1, trackerId: 1, fixedVersionId: null, lockVersion: 1 },
+                    editable: { subject: true, assignedToId: true, statusId: true, doneRatio: true, dueDate: true, startDate: true, priorityId: true, categoryId: true, estimatedHours: true, projectId: true, trackerId: true, fixedVersionId: true, customFieldValues: false },
+                    options: { statuses: [{ id: 1, name: 'New' }], assignees: [], priorities: [], categories: [], projects: [], trackers: [], versions: [], customFields: [] },
                     customFieldValues: {}
                 }
             },
