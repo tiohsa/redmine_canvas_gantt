@@ -452,7 +452,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowProjectMenu(prev => !prev)}
-                        title={i18n.t('label_project_plural') || 'プロジェクト軸でフィルタ'}
+                        title={i18n.t('label_project_plural') || 'プロジェクト軸でフィルタ / PJ軸表示切替'}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -460,8 +460,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             padding: '0 10px',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
-                            backgroundColor: selectedProjectIds.length > 0 ? '#e8f0fe' : '#fff',
-                            color: selectedProjectIds.length > 0 ? '#1a73e8' : '#333',
+                            backgroundColor: (selectedProjectIds.length > 0 || groupByProject) ? '#e8f0fe' : '#fff',
+                            color: (selectedProjectIds.length > 0 || groupByProject) ? '#1a73e8' : '#333',
                             fontSize: '13px',
                             fontWeight: 500,
                             cursor: 'pointer',
@@ -470,6 +470,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                            {groupByProject && <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" opacity="0.5" />}
                         </svg>
                         {'PJ'}
                     </button>
@@ -493,6 +494,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             }}
                         >
                             <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('label_project_plural') || 'Projects'}</div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#333', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', marginBottom: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={groupByProject}
+                                    onChange={() => setGroupByProject(!groupByProject)}
+                                />
+                                <span style={{ fontWeight: 500 }}>{'PJ軸で表示'}</span>
+                            </label>
                             {projects.map(project => (
                                 <label key={project.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
                                     <input
@@ -625,29 +634,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 </button>
 
 
-                <button
-                    onClick={() => setGroupByProject(!groupByProject)}
-                    title={i18n.t('label_group_by_project') || 'PJ軸で表示（子PJを含む）'}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '0 10px',
-                        borderRadius: '6px',
-                        border: '1px solid #e0e0e0',
-                        backgroundColor: groupByProject ? '#e8f0fe' : '#fff',
-                        color: groupByProject ? '#1a73e8' : '#333',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                        height: '32px'
-                    }}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                    </svg>
-                    {'PJ'}
-                </button>
 
 
                 <button
