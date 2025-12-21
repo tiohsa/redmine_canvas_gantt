@@ -20,7 +20,7 @@ export class LayoutEngine {
     /**
      * Returns the screen bounding box for a task bar.
      */
-    private static snapDate(timestamp: number, zoomLevel?: ZoomLevel): number {
+    public static snapDate(timestamp: number, zoomLevel?: ZoomLevel): number {
         if (zoomLevel === 0) return snapToLocalMonth(timestamp);
         if (zoomLevel === 1) return snapToLocalWeek(timestamp);
         return snapToLocalDay(timestamp);

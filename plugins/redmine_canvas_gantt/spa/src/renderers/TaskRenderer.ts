@@ -40,15 +40,19 @@ export class TaskRenderer {
             if (row.rowIndex >= startRow && row.rowIndex <= endRow) {
                 if (row.type === 'header') {
                     if (row.startDate !== undefined && row.dueDate !== undefined) {
-                        const x1 = LayoutEngine.dateToX(row.startDate, viewport) - viewport.scrollX;
-                        const x2 = LayoutEngine.dateToX(row.dueDate + ONE_DAY, viewport) - viewport.scrollX;
+                        const s = LayoutEngine.snapDate(row.startDate, zoomLevel);
+                        const d = LayoutEngine.snapDate(row.dueDate, zoomLevel);
+                        const x1 = LayoutEngine.dateToX(s, viewport) - viewport.scrollX;
+                        const x2 = LayoutEngine.dateToX(d + ONE_DAY, viewport) - viewport.scrollX;
                         const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
                         this.drawProjectSummaryBar(ctx, x1, x2, y, viewport.rowHeight);
                     }
                 } else if (row.type === 'version') {
                     if (row.startDate !== undefined && row.dueDate !== undefined) {
-                        const x1 = LayoutEngine.dateToX(row.startDate, viewport) - viewport.scrollX;
-                        const x2 = LayoutEngine.dateToX(row.dueDate + ONE_DAY, viewport) - viewport.scrollX;
+                        const s = LayoutEngine.snapDate(row.startDate, zoomLevel);
+                        const d = LayoutEngine.snapDate(row.dueDate, zoomLevel);
+                        const x1 = LayoutEngine.dateToX(s, viewport) - viewport.scrollX;
+                        const x2 = LayoutEngine.dateToX(d + ONE_DAY, viewport) - viewport.scrollX;
                         const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
                         this.drawVersionSummaryBar(ctx, x1, x2, y, viewport.rowHeight, row.ratioDone ?? 0);
                         // Draw Name
@@ -88,6 +92,10 @@ export class TaskRenderer {
         const centerY = Math.floor(y + rowHeight / 2);
         const diamondSize = 8; // Size of the diamond
 
+        // Shift markers to be within the boundaries
+        const startDiamondX = x1 + diamondSize / 2;
+        const endDiamondX = x2 - diamondSize / 2;
+
         ctx.save();
 
         // Use a semi-transparent theme blue for the diamonds
@@ -96,18 +104,18 @@ export class TaskRenderer {
         ctx.lineWidth = 1;
 
         // Draw Diamond at Start
-        this.drawDiamond(ctx, x1, centerY, diamondSize);
+        this.drawDiamond(ctx, startDiamondX, centerY, diamondSize);
 
         // Draw Diamond at End
-        this.drawDiamond(ctx, x2, centerY, diamondSize);
+        this.drawDiamond(ctx, endDiamondX, centerY, diamondSize);
 
         // Draw Dotted Line between diamonds
         ctx.setLineDash([2, 2]);
         ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(x1, centerY);
-        ctx.lineTo(x2, centerY);
+        ctx.moveTo(startDiamondX, centerY);
+        ctx.lineTo(endDiamondX, centerY);
         ctx.stroke();
 
         ctx.restore();
@@ -118,30 +126,34 @@ export class TaskRenderer {
 
         const centerY = Math.floor(y + rowHeight / 2);
         const diamondSize = 8;
+
+        // Shift markers to be within the boundaries
+        const startDiamondX = x1 + diamondSize / 2;
+        const endDiamondX = x2 - diamondSize / 2;
+
         const width = x2 - x1;
         const progressWidth = width * (Math.max(0, Math.min(100, ratioDone)) / 100);
 
         ctx.save();
 
-        // Diamonds Color (Greenish for Version/Milestone?) or same Blue?
-        // Let's use darker gray or teal to distinguish from Project
+        // Diamonds Color
         ctx.fillStyle = '#009688';
         ctx.strokeStyle = '#00695c';
         ctx.lineWidth = 1;
 
         // Draw Diamond at Start
-        this.drawDiamond(ctx, x1, centerY, diamondSize);
+        this.drawDiamond(ctx, startDiamondX, centerY, diamondSize);
 
         // Draw Diamond at End
-        this.drawDiamond(ctx, x2, centerY, diamondSize);
+        this.drawDiamond(ctx, endDiamondX, centerY, diamondSize);
 
         // Draw Dotted Line (Background)
         ctx.setLineDash([2, 2]);
         ctx.strokeStyle = '#bdbdbd';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(x1, centerY);
-        ctx.lineTo(x2, centerY);
+        ctx.moveTo(startDiamondX, centerY);
+        ctx.lineTo(endDiamondX, centerY);
         ctx.stroke();
 
         // Draw Progress (Solid Line)
@@ -150,8 +162,8 @@ export class TaskRenderer {
             ctx.strokeStyle = '#4db6ac'; // Light teal
             ctx.lineWidth = 3; // Thicker to be visible
             ctx.beginPath();
-            ctx.moveTo(x1, centerY);
-            ctx.lineTo(x1 + progressWidth, centerY);
+            ctx.moveTo(startDiamondX, centerY);
+            ctx.lineTo(Math.min(endDiamondX, x1 + progressWidth), centerY);
             ctx.stroke();
         }
 
