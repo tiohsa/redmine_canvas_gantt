@@ -35,7 +35,9 @@ export interface Relation {
 export interface Version {
     id: string;
     name: string;
-    effectiveDate: number;
+    startDate?: number;
+    dueDate: number;
+    completedPercent?: number;
     projectId?: string;
     status?: string;
 }

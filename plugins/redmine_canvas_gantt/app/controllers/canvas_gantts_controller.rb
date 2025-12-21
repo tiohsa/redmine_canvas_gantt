@@ -122,7 +122,9 @@ class CanvasGanttsController < ApplicationController
         {
           id: version.id,
           name: version.name,
+          start_date: version.start_date,
           effective_date: version.effective_date,
+          completed_percent: version.completed_percent,
           project_id: version.project_id,
           status: version.status
         }

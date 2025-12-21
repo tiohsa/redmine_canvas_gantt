@@ -54,7 +54,7 @@ describe('apiClient.fetchData', () => {
                     }
                 ],
                 versions: [
-                    { id: 5, name: 'Release 1', effective_date: '2025-01-10', project_id: 1, status: 'open' }
+                    { id: 5, name: 'Release 1', start_date: '2025-01-01', effective_date: '2025-01-10', completed_percent: 40, project_id: 1, status: 'open' }
                 ],
                 relations: [{ id: 99, from: 10, to: 11, type: 'precedes' }],
                 project: { id: 1, name: 'P' },
@@ -70,7 +70,9 @@ describe('apiClient.fetchData', () => {
             {
                 id: '5',
                 name: 'Release 1',
-                effectiveDate: new Date('2025-01-10').getTime(),
+                startDate: new Date('2025-01-01').getTime(),
+                dueDate: new Date('2025-01-10').getTime(),
+                completedPercent: 40,
                 projectId: '1',
                 status: 'open'
             }

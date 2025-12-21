@@ -38,12 +38,17 @@ export const HtmlOverlay: React.FC = () => {
         const visibleEnd = viewport.startDate + (viewport.scrollX + viewport.width) / scale;
 
         return versions
-            .filter((version) => version.effectiveDate >= visibleStart && version.effectiveDate <= visibleEnd)
-            .map((version) => ({
-                ...version,
-                x: LayoutEngine.dateToX(version.effectiveDate, viewport) - viewport.scrollX
-            }))
-            .filter((version) => version.x >= 0 && version.x <= viewport.width);
+            .map((version) => {
+                const startDate = version.startDate ?? version.dueDate;
+                return {
+                    ...version,
+                    startDate,
+                    startX: LayoutEngine.dateToX(startDate, viewport) - viewport.scrollX,
+                    endX: LayoutEngine.dateToX(version.dueDate, viewport) - viewport.scrollX
+                };
+            })
+            .filter((version) => version.dueDate >= visibleStart && version.startDate <= visibleEnd)
+            .filter((version) => version.startX <= viewport.width && version.endX >= 0);
     }, [showVersions, versions, viewport]);
 
     const setDraftState = React.useCallback((next: typeof draft) => {
@@ -254,7 +259,7 @@ export const HtmlOverlay: React.FC = () => {
                     style={{
                         position: 'absolute',
                         top: 4,
-                        left: Math.round(version.x),
+                        left: Math.round(version.startX),
                         transform: 'translateX(-50%)',
                         maxWidth: 140,
                         fontSize: 11,

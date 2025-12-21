@@ -197,12 +197,20 @@ export const apiClient = {
                 .map((version): Version | null => {
                     const record = asRecord(version);
                     if (!record) return null;
-                    const effectiveDate = parseDate(typeof record.effective_date === 'string' ? record.effective_date : null);
-                    if (effectiveDate === null) return null;
+                    const dueDate = parseDate(typeof record.effective_date === 'string' ? record.effective_date : null);
+                    if (dueDate === null) return null;
+                    const startDate = parseDate(typeof record.start_date === 'string' ? record.start_date : null) ?? undefined;
+                    const completedPercent = typeof record.completed_percent === 'number'
+                        ? record.completed_percent
+                        : typeof record.completed_percent === 'string'
+                            ? Number(record.completed_percent)
+                            : undefined;
                     return {
                         id: String(record.id ?? ''),
                         name: String(record.name ?? ''),
-                        effectiveDate,
+                        startDate,
+                        dueDate,
+                        completedPercent: Number.isFinite(completedPercent) ? completedPercent : undefined,
                         projectId: record.project_id ? String(record.project_id) : undefined,
                         status: typeof record.status === 'string' ? record.status : undefined
                     };

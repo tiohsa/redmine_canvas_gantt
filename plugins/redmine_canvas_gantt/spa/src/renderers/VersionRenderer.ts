@@ -26,23 +26,67 @@ export class VersionRenderer {
         const visibleStart = viewport.startDate + viewport.scrollX / scale;
         const visibleEnd = viewport.startDate + (viewport.scrollX + viewport.width) / scale;
 
-        ctx.strokeStyle = '#ccc';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
+        const barCenterY = 14;
+        const diamondSize = 6;
 
         versions.forEach((version: Version) => {
-            const date = version.effectiveDate;
-            if (!Number.isFinite(date)) return;
-            if (date < visibleStart || date > visibleEnd) return;
+            const startDate = version.startDate ?? version.dueDate;
+            const endDate = version.dueDate;
+            if (!Number.isFinite(startDate) || !Number.isFinite(endDate)) return;
+            if (endDate < visibleStart || startDate > visibleEnd) return;
 
-            const x = LayoutEngine.dateToX(date, viewport) - viewport.scrollX;
-            if (x < -1 || x > this.canvas.width + 1) return;
+            const xStart = LayoutEngine.dateToX(Math.min(startDate, endDate), viewport) - viewport.scrollX;
+            const xEnd = LayoutEngine.dateToX(Math.max(startDate, endDate), viewport) - viewport.scrollX;
+            if (xEnd < -1 || xStart > this.canvas.width + 1) return;
 
-            const crispX = Math.floor(x) + 0.5;
-            ctx.moveTo(crispX, 0);
-            ctx.lineTo(crispX, this.canvas.height);
+            this.drawSummaryBar(ctx, xStart, xEnd, barCenterY, diamondSize);
+
+            const progress = Math.max(0, Math.min(100, version.completedPercent ?? 0));
+            if (progress > 0) {
+                const progressX = xStart + (xEnd - xStart) * (progress / 100);
+                this.drawProgressLine(ctx, xStart, progressX, barCenterY);
+            }
         });
+    }
 
+    private drawSummaryBar(ctx: CanvasRenderingContext2D, x1: number, x2: number, centerY: number, size: number) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(x1, centerY);
+        ctx.lineTo(x2, centerY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = 'rgba(26, 115, 232, 0.8)';
+        ctx.strokeStyle = '#1a73e8';
+        ctx.lineWidth = 1;
+        this.drawDiamond(ctx, x1, centerY, size);
+        this.drawDiamond(ctx, x2, centerY, size);
+        ctx.restore();
+    }
+
+    private drawProgressLine(ctx: CanvasRenderingContext2D, x1: number, x2: number, centerY: number) {
+        ctx.save();
+        ctx.strokeStyle = '#50c878';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x1, centerY);
+        ctx.lineTo(x2, centerY);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    private drawDiamond(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+        ctx.beginPath();
+        ctx.moveTo(x, y - size / 2);
+        ctx.lineTo(x + size / 2, y);
+        ctx.lineTo(x, y + size / 2);
+        ctx.lineTo(x - size / 2, y);
+        ctx.closePath();
+        ctx.fill();
         ctx.stroke();
     }
 }
