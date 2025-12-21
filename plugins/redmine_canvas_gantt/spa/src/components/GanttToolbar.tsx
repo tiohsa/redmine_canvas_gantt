@@ -14,7 +14,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
-        selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds
+        selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
+        setRowHeight
     } = useTaskStore();
     const {
         showProgressLine,
@@ -732,6 +733,32 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     </svg>
                     {'今日'}
                 </button>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
+                    <select
+                        value={viewport.rowHeight}
+                        onChange={(e) => setRowHeight(Number(e.target.value))}
+                        title="行の高さ"
+                        style={{
+                            padding: '0 8px',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: '#fff',
+                            color: '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px',
+                            outline: 'none'
+                        }}
+                    >
+                        <option value={20}>極小</option>
+                        <option value={28}>小</option>
+                        <option value={36}>標準</option>
+                        <option value={44}>中</option>
+                        <option value={52}>大</option>
+                    </select>
+                </div>
 
                 <div style={{
                     display: 'flex',

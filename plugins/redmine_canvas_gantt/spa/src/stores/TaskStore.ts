@@ -49,6 +49,7 @@ interface TaskState {
     updateTask: (id: string, updates: Partial<Task>) => void;
     removeTask: (id: string) => void;
     updateViewport: (updates: Partial<Viewport>) => void;
+    setRowHeight: (height: number) => void;
     setViewMode: (mode: ViewMode) => void;
     setZoomLevel: (level: ZoomLevel) => void;
     setGroupByProject: (grouped: boolean) => void;
@@ -79,7 +80,7 @@ const DEFAULT_VIEWPORT: Viewport = {
     scale: preferences.viewport?.scale ?? preferences.customScales?.[preferences.zoomLevel ?? 1] ?? ZOOM_SCALES[preferences.zoomLevel ?? 1],
     width: 800,
     height: 600,
-    rowHeight: Number((window as any).RedmineCanvasGantt?.settings?.row_height) || 36
+    rowHeight: preferences.rowHeight ?? (Number((window as any).RedmineCanvasGantt?.settings?.row_height) || 36)
 };
 
 const buildLayout = (
@@ -752,6 +753,9 @@ export const useTaskStore = create<TaskState>((set) => ({
 
         return nextState;
     }),
+    setRowHeight: (height) => set((state) => ({
+        viewport: { ...state.viewport, rowHeight: height }
+    })),
 
     setViewMode: (mode) => set((state) => {
         let zoom = state.zoomLevel;
