@@ -6,11 +6,13 @@ A high-performance Gantt chart plugin for Redmine, built with React, TypeScript,
 
 *   **High Performance**: Efficiently renders large datasets using HTML5 Canvas.
 *   **Smooth Interaction**: Drag & drop tasks for rescheduling, dependency creation.
+*   **Customizable Columns**: Choose from standard Redmine fields (Project, Tracker, Status, Priority, Author, Category, etc.) to display in the side panel.
+*   **Smart Sorting**: Sort tasks by clicking column headers. Supports alphabetical, numeric, and logical (Redmine position-based) sorting.
 *   **Project & Version Management**: Consolidated filter and display toggles for projects and versions.
-*   **Inline Editing**: Edit subject, status, dates, and progress directly on the chart.
+*   **Inline Editing**: Edit subject, status, dates, and progress directly on the chart side panel.
 *   **Smart Dependencies**: Visualizes dependencies with Manhattan-style (orthogonal) paths.
 *   **Zoom Levels**: Supports Month, Week, and Day views.
-*   **Customizable Row Height**: Adjustable task row height (20px to 52px) with persistent settings.
+*   **Customizable UI**: Adjustable task row height (20px to 52px) and persistent column widths.
 *   **Theme Support**: Integrates with Redmine's theming.
 
 ## Requirements
