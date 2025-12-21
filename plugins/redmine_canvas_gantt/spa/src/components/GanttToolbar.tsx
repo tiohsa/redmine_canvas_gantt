@@ -18,6 +18,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const {
         showProgressLine,
         toggleProgressLine,
+        showVersions,
+        toggleVersions,
         visibleColumns,
         setVisibleColumns,
         toggleLeftPane,
@@ -427,6 +429,30 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
                     </svg>
                     {'進捗ライン'}
+                </button>
+
+                <button
+                    onClick={toggleVersions}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '0 10px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: showVersions ? '#e8f0fe' : '#fff',
+                        color: showVersions ? '#1a73e8' : '#333',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        height: '32px'
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                        <line x1="4" y1="22" x2="4" y2="15" />
+                    </svg>
+                    {i18n.t('label_version_plural') || 'バージョン'}
                 </button>
 
                 <button

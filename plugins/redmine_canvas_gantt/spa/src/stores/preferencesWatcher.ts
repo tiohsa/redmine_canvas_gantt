@@ -16,6 +16,7 @@ const persistSelections = () => {
             scale: taskState.viewport.scale
         },
         showProgressLine: uiState.showProgressLine,
+        showVersions: uiState.showVersions,
         visibleColumns: uiState.visibleColumns,
         groupByProject: taskState.groupByProject,
         organizeByDependency: taskState.organizeByDependency,

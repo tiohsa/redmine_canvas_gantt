@@ -84,6 +84,7 @@ describe('HtmlOverlay', () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [task1, task2],
             relations: [relation],
+            versions: [],
             project: { id: 'p1', name: 'Project' },
             permissions: { editable: true, viewable: true }
         });
@@ -133,6 +134,7 @@ describe('HtmlOverlay', () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [task1, task2],
             relations: [],
+            versions: [],
             project: { id: 'p1', name: 'Project' },
             permissions: { editable: true, viewable: true }
         });

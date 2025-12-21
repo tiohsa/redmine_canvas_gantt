@@ -32,6 +32,14 @@ export interface Relation {
     delay?: number; // Delay in days (Redmine supports this)
 }
 
+export interface Version {
+    id: string;
+    name: string;
+    effectiveDate: number;
+    projectId: string;
+    status: string;
+}
+
 export interface Project {
     id: string;
     name: string;
