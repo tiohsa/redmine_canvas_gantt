@@ -43,3 +43,5 @@ ja:
   label_month: "月"
   label_week: "週"
   label_day: "日"
+  button_expand_all: "すべて展開"
+  button_collapse_all: "すべて折りたたむ"

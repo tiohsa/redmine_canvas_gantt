@@ -45,6 +45,9 @@ interface TaskState {
     setOrganizeByDependency: (enabled: boolean) => void;
     toggleProjectExpansion: (projectId: string) => void;
     toggleTaskExpansion: (taskId: string) => void;
+    toggleAllExpansion: () => void;
+    expandAll: () => void;
+    collapseAll: () => void;
 
     setFilterText: (text: string) => void;
     setSelectedAssigneeIds: (ids: (number | null)[]) => void;
@@ -658,6 +661,105 @@ export const useTaskStore = create<TaskState>((set) => ({
             state.sortConfig
         );
         return {
+            taskExpansion,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+
+    toggleAllExpansion: () => set((state) => {
+        // Check if anything is collapsed. If so, expand all. Otherwise, collapse all.
+        const anyProjectCollapsed = state.groupByProject &&
+            Object.keys(state.projectExpansion).length > 0 &&
+            Object.values(state.projectExpansion).some(v => v === false);
+
+        const anyTaskCollapsed = state.tasks.some(t => t.hasChildren && state.taskExpansion[t.id] === false);
+
+        const shouldExpand = anyProjectCollapsed || anyTaskCollapsed;
+
+        const projectExpansion: Record<string, boolean> = {};
+        const taskExpansion: Record<string, boolean> = {};
+
+        state.allTasks.forEach((task) => {
+            const projectId = task.projectId ?? 'default_project';
+            projectExpansion[projectId] = shouldExpand;
+            taskExpansion[task.id] = shouldExpand;
+        });
+
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            projectExpansion,
+            taskExpansion,
+            state.sortConfig
+        );
+
+        return {
+            projectExpansion,
+            taskExpansion,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+
+    expandAll: () => set((state) => {
+        const projectExpansion: Record<string, boolean> = {};
+        const taskExpansion: Record<string, boolean> = {};
+
+        state.allTasks.forEach((task) => {
+            const projectId = task.projectId ?? 'default_project';
+            projectExpansion[projectId] = true;
+            taskExpansion[task.id] = true;
+        });
+
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            projectExpansion,
+            taskExpansion,
+            state.sortConfig
+        );
+
+        return {
+            projectExpansion,
+            taskExpansion,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+
+    collapseAll: () => set((state) => {
+        const projectExpansion: Record<string, boolean> = {};
+        const taskExpansion: Record<string, boolean> = {};
+
+        state.allTasks.forEach((task) => {
+            const projectId = task.projectId ?? 'default_project';
+            projectExpansion[projectId] = false;
+            taskExpansion[task.id] = false;
+        });
+
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.groupByProject,
+            state.organizeByDependency,
+            projectExpansion,
+            taskExpansion,
+            state.sortConfig
+        );
+
+        return {
+            projectExpansion,
             taskExpansion,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,

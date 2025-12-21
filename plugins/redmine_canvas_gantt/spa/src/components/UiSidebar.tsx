@@ -113,6 +113,20 @@ const TrackerIcon = ({ name }: { name?: string }) => {
     );
 };
 
+const ExpandAllIcon = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="7 15 12 20 17 15" />
+        <polyline points="7 9 12 4 17 9" />
+    </svg>
+);
+
+const CollapseAllIcon = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="7 20 12 15 17 20" />
+        <polyline points="7 4 12 9 17 4" />
+    </svg>
+);
+
 export const UiSidebar: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
     const layoutRows = useTaskStore(state => state.layoutRows);
@@ -126,6 +140,7 @@ export const UiSidebar: React.FC = () => {
     const taskExpansion = useTaskStore(state => state.taskExpansion);
     const toggleProjectExpansion = useTaskStore(state => state.toggleProjectExpansion);
     const toggleTaskExpansion = useTaskStore(state => state.toggleTaskExpansion);
+    const toggleAllExpansion = useTaskStore(state => state.toggleAllExpansion);
     const visibleColumns = useUIStore(state => state.visibleColumns);
     const setActiveInlineEdit = useUIStore(state => state.setActiveInlineEdit);
     const activeInlineEdit = useUIStore(state => state.activeInlineEdit);
@@ -600,25 +615,71 @@ export const UiSidebar: React.FC = () => {
                                     justifyContent: 'space-between'
                                 }}
                                 onClick={() => useTaskStore.getState().setSortConfig(col.key as keyof Task)}
-                                title={`${i18n.t('label_sort_by') || 'Sort by'} ${col.title}`}
+                                title={`${i18n.t('label_sort_by') || '並び替え:'} ${col.title}`}
                             >
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {col.title}
                                 </span>
 
-                                {isSorted && (
-                                    <span style={{ marginLeft: 4, display: 'flex', alignItems: 'center' }}>
-                                        {sortConfig?.direction === 'asc' ? (
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <polyline points="18 15 12 9 6 15"></polyline>
-                                            </svg>
-                                        ) : (
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <polyline points="6 9 12 15 18 9"></polyline>
-                                            </svg>
-                                        )}
-                                    </span>
-                                )}
+                                {
+                                    isSorted && (
+                                        <span style={{ marginLeft: 4, display: 'flex', alignItems: 'center' }}>
+                                            {sortConfig?.direction === 'asc' ? (
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                    <polyline points="18 15 12 9 6 15"></polyline>
+                                                </svg>
+                                            ) : (
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                                </svg>
+                                            )}
+                                        </span>
+                                    )
+                                }
+
+                                {
+                                    col.key === 'subject' && (
+                                        <div style={{ display: 'flex', gap: '4px', marginLeft: 'auto', marginRight: '12px' }}>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    toggleAllExpansion();
+                                                }}
+                                                title={(() => {
+                                                    const anyProjectCollapsed = useTaskStore.getState().groupByProject &&
+                                                        Object.keys(projectExpansion).length > 0 &&
+                                                        Object.values(projectExpansion).some(v => v === false);
+                                                    const anyTaskCollapsed = tasks.some(t => t.hasChildren && taskExpansion[t.id] === false);
+                                                    return (anyProjectCollapsed || anyTaskCollapsed)
+                                                        ? (i18n.t('button_expand_all') || 'すべて展開')
+                                                        : (i18n.t('button_collapse_all') || 'すべて折りたたむ');
+                                                })()}
+                                                className="header-action-button"
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    width: '24px',
+                                                    height: '24px',
+                                                    padding: 0,
+                                                    border: '1px solid #dadce0',
+                                                    borderRadius: '4px',
+                                                    backgroundColor: '#fff',
+                                                    color: '#5f6368',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                {(() => {
+                                                    const anyProjectCollapsed = useTaskStore.getState().groupByProject &&
+                                                        Object.keys(projectExpansion).length > 0 &&
+                                                        Object.values(projectExpansion).some(v => v === false);
+                                                    const anyTaskCollapsed = tasks.some(t => t.hasChildren && taskExpansion[t.id] === false);
+                                                    return (anyProjectCollapsed || anyTaskCollapsed) ? <ExpandAllIcon /> : <CollapseAllIcon />;
+                                                })()}
+                                            </button>
+                                        </div>
+                                    )
+                                }
 
                                 <div
                                     style={{
@@ -921,6 +982,6 @@ export const UiSidebar: React.FC = () => {
 
             {/* Level 1: Inline detail panel (Level 2+ edits live here) */}
 
-        </div>
+        </div >
     );
 };

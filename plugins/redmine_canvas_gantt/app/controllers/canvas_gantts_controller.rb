@@ -70,7 +70,9 @@ class CanvasGanttsController < ApplicationController
       label_search: l(:label_search),
       label_failed_to_save: l(:label_failed_to_save),
       label_yes: l(:general_text_yes),
-      label_no: l(:general_text_no)
+      label_no: l(:general_text_no),
+      button_expand_all: l(:button_expand_all),
+      button_collapse_all: l(:button_collapse_all)
     }
 
     @settings = Setting.plugin_redmine_canvas_gantt || {}
