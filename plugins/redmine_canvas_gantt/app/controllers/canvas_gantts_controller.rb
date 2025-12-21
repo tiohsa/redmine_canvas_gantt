@@ -84,7 +84,7 @@ class CanvasGanttsController < ApplicationController
       field_category: l(:field_category),
       field_estimated_hours: l(:field_estimated_hours),
       field_created_on: l(:field_created_on),
-      field_spent_hours: l(:field_spent_hours),
+      field_spent_hours: l(:label_spent_time),
       field_version: l(:field_fixed_version)
     }
 
