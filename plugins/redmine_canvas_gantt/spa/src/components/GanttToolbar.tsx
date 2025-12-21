@@ -234,25 +234,24 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <button
                     onClick={() => setShowFilterMenu(prev => !prev)}
+                    title={i18n.t('label_filter_tasks') || 'フィルタ設定'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
-                        padding: '0 10px',
+                        justifyContent: 'center',
+                        padding: '0',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
                         backgroundColor: filterText ? '#e8f0fe' : '#fff',
                         color: filterText ? '#1a73e8' : '#333',
-                        fontSize: '13px',
-                        fontWeight: 500,
                         cursor: 'pointer',
+                        width: '32px',
                         height: '32px'
                     }}
                 >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
                     </svg>
-                    {'フィルタ'}
                 </button>
 
                 {showFilterMenu && (
@@ -300,7 +299,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     fontSize: 13
                                 }}
                             >
-                                {i18n.t('label_clear_filter') || 'Clear Filter'}
+                                {i18n.t('label_clear_filter') || 'クリア'}
                             </button>
                         )}
                     </div>
@@ -309,6 +308,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowColumnMenu(prev => !prev)}
+                        title={i18n.t('label_column_plural') || 'カラム設定'}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -380,6 +380,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowAssigneeMenu(prev => !prev)}
+                        title={i18n.t('field_assigned_to') || '担当者フィルタ'}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -399,7 +400,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                             <circle cx="12" cy="7" r="4" />
                         </svg>
-                        {'担当者'}
+                        {'担当'}
                     </button>
 
                     {showAssigneeMenu && (
@@ -443,7 +444,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     padding: 0
                                 }}
                             >
-                                {'クリア'}
+                                {i18n.t('label_clear_filter') || 'クリア'}
                             </button>
                         </div>
                     )}
@@ -452,6 +453,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowProjectMenu(prev => !prev)}
+                        title={i18n.t('label_project_plural') || 'プロジェクト軸でフィルタ'}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -470,7 +472,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                         </svg>
-                        {'プロジェクト'}
+                        {'PJ'}
                     </button>
                     {showProjectMenu && (
                         <div
@@ -513,7 +515,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     padding: 0
                                 }}
                             >
-                                {'クリア'}
+                                {i18n.t('label_clear_filter') || 'クリア'}
                             </button>
                         </div>
                     )}
@@ -522,6 +524,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowVersionMenu(prev => !prev)}
+                        title={i18n.t('label_version_plural') || 'バージョン軸でフィルタ'}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -540,7 +543,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
                         </svg>
-                        {'バージョン'}
+                        {'Ver'}
                     </button>
                     {showVersionMenu && (
                         <div
@@ -583,7 +586,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     padding: 0
                                 }}
                             >
-                                {'クリア'}
+                                {i18n.t('label_clear_filter') || 'クリア'}
                             </button>
                         </div>
                     )}
@@ -591,6 +594,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <button
                     onClick={toggleProgressLine}
+                    title={i18n.t('label_progress_line') || '進捗ライン表示の切替'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -609,11 +613,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
                     </svg>
-                    {'進捗ライン'}
+                    {'進捗'}
                 </button>
 
                 <button
                     onClick={toggleVersions}
+                    title={i18n.t('label_version_plural') || 'バージョン（マイルストーン）表示'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -633,11 +638,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
                         <line x1="4" y1="22" x2="4" y2="15" />
                     </svg>
-                    {i18n.t('label_version_plural') || 'バージョン'}
+                    {'Ver.表示'}
                 </button>
 
                 <button
                     onClick={() => setGroupByProject(!groupByProject)}
+                    title={i18n.t('label_group_by_project') || 'プロジェクトで階層表示'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -656,11 +662,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                     </svg>
-                    {'プロジェクトでグループ化'}
+                    {'PJ集約'}
                 </button>
 
                 <button
                     onClick={() => setShowSubprojects(!showSubprojects)}
+                    title={i18n.t('label_show_subprojects') || '子プロジェクトのタスクを表示'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -680,11 +687,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <path d="M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z" />
                         <path d="M12 18h.01" />
                     </svg>
-                    {i18n.t('label_show_subprojects') || '子プロジェクトを表示'}
+                    {'子PJ表示'}
                 </button>
 
                 <button
                     onClick={() => setOrganizeByDependency(!organizeByDependency)}
+                    title={i18n.t('label_organize_by_dependency') || '依存関係に基づいてタスク順序を整理'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -706,7 +714,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <path d="M11 9l2 2" />
                         <path d="M7 12l6-6" />
                     </svg>
-                    {'依存関係で整理'}
+                    {'依存整理'}
                 </button>
             </div>
 

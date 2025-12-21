@@ -160,7 +160,7 @@ export const TaskDetailPanel: React.FC = () => {
             <div style={{ marginTop: 8 }}>
                 {enabledSubject ? (
                     <InlineRow
-                        label={i18n.t('field_subject')}
+                        label={i18n.t('field_subject') || 'Subject'}
                         value={task.subject}
                         editable={Boolean(meta?.editable.subject)}
                         fieldKey="subject"
@@ -179,7 +179,7 @@ export const TaskDetailPanel: React.FC = () => {
 
                 {enabledAssignee ? (
                     <InlineRow
-                        label={i18n.t('field_assigned_to')}
+                        label={i18n.t('field_assigned_to') || 'Assignee'}
                         value={getAssigneeLabel(task)}
                         editable={Boolean(meta?.editable.assignedToId)}
                         fieldKey="assignedToId"
@@ -208,7 +208,7 @@ export const TaskDetailPanel: React.FC = () => {
 
                 {enabledStatus ? (
                     <InlineRow
-                        label={i18n.t('field_status')}
+                        label={i18n.t('field_status') || 'Status'}
                         value={meta?.options.statuses.find((s) => s.id === task.statusId)?.name ?? String(task.statusId)}
                         editable={Boolean(meta?.editable.statusId)}
                         fieldKey="statusId"
@@ -229,7 +229,7 @@ export const TaskDetailPanel: React.FC = () => {
 
                 {enabledDoneRatio ? (
                     <InlineRow
-                        label={i18n.t('field_done_ratio')}
+                        label={i18n.t('field_done_ratio') || 'Progress'}
                         value={`${task.ratioDone}%`}
                         editable={Boolean(meta?.editable.doneRatio)}
                         fieldKey="doneRatio"
@@ -248,7 +248,7 @@ export const TaskDetailPanel: React.FC = () => {
 
                 {enabledDueDate ? (
                     <InlineRow
-                        label={i18n.t('field_due_date')}
+                        label={i18n.t('field_due_date') || 'Due Date'}
                         value={toDateInputValue(task.dueDate)}
                         editable={Boolean(meta?.editable.dueDate)}
                         fieldKey="dueDate"

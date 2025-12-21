@@ -74,7 +74,8 @@ class CanvasGanttsController < ApplicationController
       button_expand_all: l(:button_expand_all),
       button_collapse_all: l(:button_collapse_all),
       label_show_subprojects: l(:label_show_subprojects),
-      label_version_plural: l(:label_version_plural)
+      label_version_plural: l(:label_version_plural),
+      label_project_plural: l(:label_project_plural)
     }
 
     @settings = Setting.plugin_redmine_canvas_gantt || {}
