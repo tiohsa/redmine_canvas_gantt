@@ -125,7 +125,7 @@ class CanvasGanttsController < ApplicationController
           name: v.name,
           effective_date: v.effective_date,
           start_date: v.try(:start_date),
-          completed_pourcent: v.completed_pourcent,
+          completed_percent: v.completed_percent,
           project_id: v.project_id,
           status: v.status
         }

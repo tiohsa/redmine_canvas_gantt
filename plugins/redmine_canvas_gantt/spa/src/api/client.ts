@@ -201,7 +201,7 @@ export const apiClient = {
 
             const startStr = typeof v.start_date === 'string' ? v.start_date : null;
             const startDate = parseDate(startStr) ?? undefined;
-            const ratioDone = typeof v.completed_pourcent === 'number' ? v.completed_pourcent : undefined;
+            const ratioDone = typeof v.completed_percent === 'number' ? v.completed_percent : undefined;
 
             return {
                 id: String(v.id),

@@ -252,9 +252,6 @@ const buildLayout = (
         const hideDescendants = groupByProject ? !expanded : false;
 
         if (groupByProject && showVersions) {
-            const projectVersions = versions.filter(v => v.projectId === projectId);
-            projectVersions.sort((a, b) => (a.effectiveDate - b.effectiveDate));
-
             const versionMap = new Map<string | undefined, string[]>();
             roots.forEach(rootId => {
                 const t = nodeMap.get(rootId)?.task;
@@ -263,6 +260,14 @@ const buildLayout = (
                 if (!versionMap.has(key)) versionMap.set(key, []);
                 versionMap.get(key)?.push(rootId);
             });
+
+            const usedVersionIds = new Set<string>();
+            versionMap.forEach((_, vId) => {
+                if (vId) usedVersionIds.add(String(vId));
+            });
+
+            const projectVersions = versions.filter(v => usedVersionIds.has(v.id));
+            projectVersions.sort((a, b) => (a.effectiveDate - b.effectiveDate));
 
             projectVersions.forEach(v => {
                 const vRoots = versionMap.get(v.id) || [];
@@ -306,10 +311,14 @@ const buildLayout = (
                 versionMap.delete(v.id);
             });
 
-            // No Version
-            const noVersionRoots = versionMap.get(undefined) || [];
-            noVersionRoots.forEach((rootId, idx) => {
-                traverse(rootId, 0, hideDescendants, [], idx === noVersionRoots.length - 1);
+            // Render remaining roots (those with no version, or versions not found in the metadata)
+            const remainingEntries = Array.from(versionMap.entries());
+            remainingEntries.forEach(([_vId, vRoots], entryIdx) => {
+                const isLastEntry = entryIdx === remainingEntries.length - 1;
+                vRoots.forEach((rootId, idx) => {
+                    const isLast = isLastEntry && (idx === vRoots.length - 1);
+                    traverse(rootId, 0, hideDescendants, [], isLast);
+                });
             });
         } else {
             roots.forEach((rootId, idx) => {
