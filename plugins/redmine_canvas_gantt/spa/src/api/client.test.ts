@@ -53,6 +53,9 @@ describe('apiClient.fetchData', () => {
                         editable: true
                     }
                 ],
+                versions: [
+                    { id: 5, name: 'Release 1', effective_date: '2025-01-10', project_id: 1, status: 'open' }
+                ],
                 relations: [{ id: 99, from: 10, to: 11, type: 'precedes' }],
                 project: { id: 1, name: 'P' },
                 permissions: { editable: true, viewable: true }
@@ -63,6 +66,15 @@ describe('apiClient.fetchData', () => {
         const data = await apiClient.fetchData();
 
         expect(data.relations).toEqual([{ id: '99', from: '10', to: '11', type: 'precedes', delay: undefined }]);
+        expect(data.versions).toEqual([
+            {
+                id: '5',
+                name: 'Release 1',
+                effectiveDate: new Date('2025-01-10').getTime(),
+                projectId: '1',
+                status: 'open'
+            }
+        ]);
     });
 });
 

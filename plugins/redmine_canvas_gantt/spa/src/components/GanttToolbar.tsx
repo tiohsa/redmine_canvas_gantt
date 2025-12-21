@@ -18,6 +18,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const {
         showProgressLine,
         toggleProgressLine,
+        showVersions,
+        toggleVersions,
         visibleColumns,
         setVisibleColumns,
         toggleLeftPane,
@@ -405,6 +407,31 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         </div>
                     )}
                 </div>
+
+                <label
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '0 10px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: showVersions ? '#e8f0fe' : '#fff',
+                        color: showVersions ? '#1a73e8' : '#333',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        height: '32px'
+                    }}
+                >
+                    <input
+                        type="checkbox"
+                        checked={showVersions}
+                        onChange={toggleVersions}
+                        style={{ margin: 0 }}
+                    />
+                    {(i18n.t('label_version') || 'バージョン') + '表示'}
+                </label>
 
                 <button
                     onClick={toggleProgressLine}

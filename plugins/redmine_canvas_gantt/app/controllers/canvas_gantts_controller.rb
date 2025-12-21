@@ -50,6 +50,7 @@ class CanvasGanttsController < ApplicationController
       label_month: l(:label_month),
       label_week: l(:label_week),
       label_day: l(:label_day),
+      label_version: l(:label_version),
       label_loading: l(:label_loading),
       button_expand: l(:label_expand),
       button_collapse: l(:label_collapse),
@@ -117,9 +118,20 @@ class CanvasGanttsController < ApplicationController
         }
       end
 
+      versions = Version.visible.where(project_id: project_ids).where.not(effective_date: nil).map do |version|
+        {
+          id: version.id,
+          name: version.name,
+          effective_date: version.effective_date,
+          project_id: version.project_id,
+          status: version.status
+        }
+      end
+
       render json: {
         tasks: tasks,
         relations: relations,
+        versions: versions,
         project: {
           id: @project.id,
           name: @project.name,

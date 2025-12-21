@@ -1,4 +1,4 @@
-import type { Relation, Project, Task } from '../types';
+import type { Relation, Project, Task, Version } from '../types';
 import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption } from '../types/editMeta';
 
 type ApiTask = Record<string, unknown>;
@@ -35,6 +35,7 @@ const normalizeRelation = (raw: unknown, fallback: { fromId: string; toId: strin
 interface ApiData {
     tasks: Task[];
     relations: Relation[];
+    versions: Version[];
     project: Project;
     permissions: { editable: boolean; viewable: boolean };
 }
@@ -191,7 +192,25 @@ export const apiClient = {
             delay: typeof r.delay === 'number' ? r.delay : undefined
         })).filter(r => r.id !== '' && r.from !== '' && r.to !== '' && r.type !== '');
 
-        return { ...data, tasks, relations };
+        const versions: Version[] = Array.isArray(data.versions)
+            ? (data.versions as UnknownRecord[])
+                .map((version): Version | null => {
+                    const record = asRecord(version);
+                    if (!record) return null;
+                    const effectiveDate = parseDate(typeof record.effective_date === 'string' ? record.effective_date : null);
+                    if (effectiveDate === null) return null;
+                    return {
+                        id: String(record.id ?? ''),
+                        name: String(record.name ?? ''),
+                        effectiveDate,
+                        projectId: record.project_id ? String(record.project_id) : undefined,
+                        status: typeof record.status === 'string' ? record.status : undefined
+                    };
+                })
+                .filter((version): version is Version => Boolean(version && version.id && version.name))
+            : [];
+
+        return { ...data, tasks, relations, versions };
     },
 
     fetchEditMeta: async (taskId: string): Promise<TaskEditMeta> => {

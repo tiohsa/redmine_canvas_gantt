@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow } from '../types';
+import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences } from '../utils/preferences';
@@ -9,6 +9,7 @@ interface TaskState {
     allTasks: Task[];
     tasks: Task[];
     relations: Relation[];
+    versions: Version[];
     viewport: Viewport;
     viewMode: ViewMode;
     zoomLevel: ZoomLevel;
@@ -34,6 +35,7 @@ interface TaskState {
     // Actions
     setTasks: (tasks: Task[]) => void;
     setRelations: (relations: Relation[]) => void;
+    setVersions: (versions: Version[]) => void;
     addRelation: (relation: Relation) => void;
     removeRelation: (relationId: string) => void;
     selectTask: (id: string | null) => void;
@@ -363,6 +365,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     allTasks: [],
     tasks: [],
     relations: [],
+    versions: [],
     viewport: DEFAULT_VIEWPORT,
     viewMode: preferences.viewMode ?? 'Week',
     zoomLevel: preferences.zoomLevel ?? 1,
@@ -431,6 +434,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             rowCount: layout.rowCount
         };
     }),
+    setVersions: (versions) => set(() => ({ versions })),
     addRelation: (relation) => set((state) => {
         const exists = state.relations.some(r => r.from === relation.from && r.to === relation.to && r.type === relation.type);
         if (exists) return state;
@@ -926,8 +930,9 @@ export const useTaskStore = create<TaskState>((set) => ({
     refreshData: async () => {
         const { apiClient } = await import('../api/client');
         const data = await apiClient.fetchData();
-        const { setTasks, setRelations } = useTaskStore.getState();
+        const { setTasks, setRelations, setVersions } = useTaskStore.getState();
         setTasks(data.tasks);
         setRelations(data.relations);
+        setVersions(data.versions);
     }
 }));
