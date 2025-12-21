@@ -26,6 +26,7 @@ AIエージェントは以下の優先順位に従って行動すること：
 | 状態管理 | Zustand (`TaskStore`, `UIStore` 等) |
 | レンダリング | HTML5 Canvas (`TaskRenderer`, `OverlayRenderer` 等) |
 | ロジック集約 | `TaskLogicService.ts` (制約、日付伝播、バリデーション) |
+| 設定永続化 | `localStorage` (行の高さ、表示モード、フィルタ、カラム幅等) |
 | テスト | Vitest + Testing Library (フロントエンド), RSpec (Ruby) |
 
 ### 推測禁止事項
@@ -220,6 +221,8 @@ redmine-gantt/
 ### レンダリングとロジック
 - **依存関係の描画**: ガントチャート上の依存線は `OverlayRenderer` で処理され、マンハッタンパス（直角に折れ曲がる線）として描画されなければならない。
 - **タスクのグループ化**: フロントエンドでの処理時に仮想的なヘッダータスクを注入し、`rowIndex` と `depth` を再計算することでプロジェクトごとのグループ化を実現している。
+- **統合UI**: プロジェクト(PJ)とバージョン(Ver)のフィルタメニュー内に、それぞれの表示モード（階層表示、バージョンバー等）のトグルが集約されている。これによりツールバーを簡素化している。
+- **行の高さ設定**: ツールバーのセレクターから20px（極小）〜52px（大）の間で変更可能。`rowHeight` は `Viewport` 状態の一部として管理され、`preferencesWatcher` を通じて `localStorage` に保存される。
 - **ビジネスロジック**: 親子間の日付伝播、依存関係のバリデーション、ステータスルールなどはすべて `plugins/redmine_canvas_gantt/spa/src/services/TaskLogicService.ts` に集約されている。
 - **ツールチップ**: `HtmlOverlay.tsx` で実装されており、絶対配置を使用してマウス座標を動的に追跡する。
 - **件名の描画**: パフォーマンス向上のため、DOMではなく `TaskRenderer.ts` 内でCanvas APIを使ってバーの上に直接描画される。
