@@ -12,3 +12,18 @@ export const getStatusColor = (statusId: number) => {
         default: return { bg: '#f5f5f5', text: '#616161', bar: '#bdbdbd', label: 'New' };
     }
 };
+
+export const getPriorityColor = (priorityId: number, priorityName?: string) => {
+    const name = priorityName?.toLowerCase() || '';
+
+    // Immediate / Urgent
+    if (name.includes('immediate') || name.includes('急') || priorityId >= 5) {
+        return { bg: '#ffebee', text: '#c62828' };
+    }
+    // High
+    if (name.includes('high') || name.includes('高') || priorityId === 4) {
+        return { bg: '#fff3e0', text: '#ef6c00' };
+    }
+    // Low or Normal (Normal and below)
+    return { bg: '#f5f5f5', text: '#616161' };
+};

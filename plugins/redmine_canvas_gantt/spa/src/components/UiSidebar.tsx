@@ -2,7 +2,7 @@ import React from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Task } from '../types';
-import { getStatusColor } from '../utils/styles';
+import { getStatusColor, getPriorityColor } from '../utils/styles';
 import { useUIStore } from '../stores/UIStore';
 import { loadPreferences } from '../utils/preferences';
 
@@ -243,6 +243,7 @@ export const UiSidebar: React.FC = () => {
         addAutoWidth('project', i18n.t('field_project') || 'Project', (t) => t.projectName || '');
         addAutoWidth('tracker', i18n.t('field_tracker') || 'Tracker', (t) => t.trackerName || '');
         addAutoWidth('priority', i18n.t('field_priority') || 'Priority', (t) => t.priorityName || '');
+        newWidths['priority'] += 16; // Badge padding
         addAutoWidth('author', i18n.t('field_author') || 'Author', (t) => t.authorName || '');
         addAutoWidth('category', i18n.t('field_category') || 'Category', (t) => t.categoryName || '');
         addAutoWidth('estimatedHours', i18n.t('field_estimated_hours') || 'Estimated Time', (t) => t.estimatedHours !== undefined ? `${t.estimatedHours}h` : '');
@@ -549,9 +550,24 @@ export const UiSidebar: React.FC = () => {
             key: 'priority',
             title: i18n.t('field_priority') || 'Priority',
             width: columnWidths['priority'] ?? 90,
-            render: (t: Task) => renderEditableCell(t, 'priorityId', (
-                <span style={{ color: '#666', fontSize: '12px' }}>{t.priorityName}</span>
-            ))
+            render: (t: Task) => {
+                const priorityId = t.priorityId || 0;
+                const style = getPriorityColor(priorityId, t.priorityName);
+                return renderEditableCell(t, 'priorityId', (
+                    <span style={{
+                        backgroundColor: style.bg,
+                        color: style.text,
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        display: 'inline-block',
+                        whiteSpace: 'nowrap'
+                    }}>
+                        {t.priorityName}
+                    </span>
+                ));
+            }
         },
         {
             key: 'author',
