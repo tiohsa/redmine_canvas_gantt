@@ -477,7 +477,7 @@ export const UiSidebar: React.FC = () => {
                         display: 'inline-block',
                         whiteSpace: 'nowrap'
                     }}>
-                        {style.label}
+                        {t.statusName || style.label}
                     </span>
                 ));
             }
@@ -1041,10 +1041,11 @@ export const UiSidebar: React.FC = () => {
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 if (next === null) return;
+                                                                const nextName = meta.options.statuses.find(s => s.id === next)?.name;
                                                                 await save({
                                                                     taskId: task.id,
-                                                                    optimisticTaskUpdates: { statusId: next },
-                                                                    rollbackTaskUpdates: { statusId: task.statusId },
+                                                                    optimisticTaskUpdates: { statusId: next, statusName: nextName },
+                                                                    rollbackTaskUpdates: { statusId: task.statusId, statusName: task.statusName },
                                                                     fields: { status_id: next }
                                                                 });
                                                                 close();
