@@ -53,7 +53,6 @@ interface TaskState {
     setZoomLevel: (level: ZoomLevel) => void;
     setGroupByProject: (grouped: boolean) => void;
     setOrganizeByDependency: (enabled: boolean) => void;
-    setShowSubprojects: (enabled: boolean) => void;
     setCurrentProjectId: (id: string) => void;
     toggleProjectExpansion: (projectId: string) => void;
     toggleVersionExpansion: (versionId: string) => void;
@@ -483,7 +482,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     sortConfig: null,
     customScales: preferences.customScales ?? {},
     currentProjectId: (window as any).RedmineCanvasGantt?.projectId?.toString() || null,
-    showSubprojects: true,
+    showSubprojects: preferences.groupByProject ?? true,
 
     setTasks: (tasks) => set((state) => {
         const projectExpansion = { ...state.projectExpansion };
@@ -791,7 +790,8 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setGroupByProject: (grouped) => set((state) => {
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
+        const nextShowSubprojects = grouped;
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, nextShowSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -806,6 +806,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         );
         return {
             groupByProject: grouped,
+            showSubprojects: nextShowSubprojects,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -833,27 +834,6 @@ export const useTaskStore = create<TaskState>((set) => ({
         };
     }),
 
-    setShowSubprojects: (enabled) => set((state) => {
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, enabled, state.currentProjectId);
-        const layout = buildLayout(
-            filteredTasks,
-            state.relations,
-            state.versions,
-            state.groupByProject,
-            state.showVersions,
-            state.organizeByDependency,
-            state.projectExpansion,
-            state.versionExpansion,
-            state.taskExpansion,
-            state.sortConfig
-        );
-        return {
-            showSubprojects: enabled,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
-        };
-    }),
 
     setCurrentProjectId: (id) => set({ currentProjectId: id }),
 

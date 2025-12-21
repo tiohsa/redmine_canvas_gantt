@@ -14,8 +14,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
-        selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
-        showSubprojects, setShowSubprojects
+        selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds
     } = useTaskStore();
     const {
         showProgressLine,
@@ -643,7 +642,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <button
                     onClick={() => setGroupByProject(!groupByProject)}
-                    title={i18n.t('label_group_by_project') || 'プロジェクトで階層表示'}
+                    title={i18n.t('label_group_by_project') || 'PJ軸で表示（子PJを含む）'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -662,33 +661,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                     </svg>
-                    {'PJ集約'}
+                    {'PJ'}
                 </button>
 
-                <button
-                    onClick={() => setShowSubprojects(!showSubprojects)}
-                    title={i18n.t('label_show_subprojects') || '子プロジェクトのタスクを表示'}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '0 10px',
-                        borderRadius: '6px',
-                        border: '1px solid #e0e0e0',
-                        backgroundColor: showSubprojects ? '#e8f0fe' : '#fff',
-                        color: showSubprojects ? '#1a73e8' : '#333',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                        height: '32px'
-                    }}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z" />
-                        <path d="M12 18h.01" />
-                    </svg>
-                    {'子PJ表示'}
-                </button>
 
                 <button
                     onClick={() => setOrganizeByDependency(!organizeByDependency)}
