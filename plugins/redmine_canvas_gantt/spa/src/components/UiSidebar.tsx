@@ -602,21 +602,34 @@ export const UiSidebar: React.FC = () => {
         return new Date(timestamp).toISOString().split('T')[0];
     }, []);
 
-    const mapColumnToField = React.useCallback((columnKey: string) => {
+    const getSortField = React.useCallback((columnKey: string): keyof Task | null => {
+        if (columnKey === 'subject') return 'subject';
+        if (columnKey === 'assignee') return 'assignedToName';
+        if (columnKey === 'status') return 'statusId'; // Position is better than name
+        if (columnKey === 'ratioDone') return 'ratioDone';
+        if (columnKey === 'dueDate') return 'dueDate';
+        if (columnKey === 'startDate') return 'startDate';
+        if (columnKey === 'estimatedHours') return 'estimatedHours';
+        if (columnKey === 'priority') return 'priorityId'; // Weight is better than name
+        if (columnKey === 'author') return 'authorName';
+        if (columnKey === 'category') return 'categoryName';
+        if (columnKey === 'project') return 'projectName';
+        if (columnKey === 'tracker') return 'trackerName';
+        if (columnKey === 'spentHours') return 'spentHours';
+        if (columnKey === 'version') return 'fixedVersionName';
+        if (columnKey === 'createdOn') return 'createdOn';
+        if (columnKey === 'updatedOn') return 'updatedOn';
+        if (columnKey === 'id') return 'id';
+        return null;
+    }, []);
+
+    const getEditField = React.useCallback((columnKey: string) => {
         if (columnKey === 'subject') return 'subject';
         if (columnKey === 'assignee') return 'assignedToId';
         if (columnKey === 'status') return 'statusId';
         if (columnKey === 'ratioDone') return 'ratioDone';
         if (columnKey === 'dueDate') return 'dueDate';
         if (columnKey === 'startDate') return 'startDate';
-        if (columnKey === 'estimatedHours') return 'estimatedHours';
-        if (columnKey === 'priority') return 'priorityId';
-        if (columnKey === 'author') return 'authorId';
-        if (columnKey === 'category') return 'categoryId';
-        if (columnKey === 'project') return 'projectId';
-        if (columnKey === 'tracker') return 'trackerId';
-        if (columnKey === 'spentHours') return 'spentHours';
-        if (columnKey === 'version') return 'fixedVersionId';
         return null;
     }, []);
 
@@ -682,7 +695,8 @@ export const UiSidebar: React.FC = () => {
                 {
                     activeColumns.map((col, idx) => {
                         const sortConfig = useTaskStore.getState().sortConfig;
-                        const isSorted = sortConfig?.key === col.key;
+                        const sortField = getSortField(col.key);
+                        const isSorted = sortConfig?.key === sortField;
                         return (
                             <div
                                 key={idx}
@@ -698,8 +712,10 @@ export const UiSidebar: React.FC = () => {
                                     justifyContent: 'space-between'
                                 }}
                                 onClick={() => {
-                                    const field = mapColumnToField(col.key);
-                                    useTaskStore.getState().setSortConfig(field ? (field as keyof Task) : (col.key as keyof Task));
+                                    const field = getSortField(col.key);
+                                    if (field) {
+                                        useTaskStore.getState().setSortConfig(field);
+                                    }
                                 }}
                             >
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -956,13 +972,13 @@ export const UiSidebar: React.FC = () => {
                                                 // Prevent double click edit for subject as it is now handled by icon
                                                 if (col.key === 'subject') return;
 
-                                                const field = mapColumnToField(col.key);
+                                                const field = getEditField(col.key);
                                                 if (!field) return;
                                                 void startCellEdit(task, field);
                                             }}
                                         >
                                             {(() => {
-                                                const field = mapColumnToField(col.key);
+                                                const field = getEditField(col.key);
                                                 const isEditing = Boolean(
                                                     field &&
                                                     activeInlineEdit?.taskId === task.id &&
