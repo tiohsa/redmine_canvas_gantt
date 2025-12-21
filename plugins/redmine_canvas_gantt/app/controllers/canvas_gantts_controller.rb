@@ -102,7 +102,7 @@ class CanvasGanttsController < ApplicationController
           assigned_to_name: issue.assigned_to&.name,
           parent_id: issue.parent_id,
           lock_version: issue.lock_version, # Critical for Optimistic Locking
-          editable: @permissions[:editable] && issue.editable?,
+          editable: User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?,
           tracker_id: issue.tracker_id,
           tracker_name: issue.tracker&.name
         }
@@ -218,13 +218,14 @@ class CanvasGanttsController < ApplicationController
   def update
     issue = Issue.visible.find(params[:id])
     
-    # Check if issue belongs to project (optional but good for safety if route doesn't scope strictly)
-    if issue.project_id != @project.id
+    # Check if issue belongs to project or one of its descendants
+    project_ids = @project.self_and_descendants.pluck(:id)
+    unless project_ids.include?(issue.project_id)
       render json: { error: 'Issue not found in this project' }, status: :not_found
       return
     end
 
-    unless @permissions[:editable] && issue.editable?
+    unless User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?
       render json: { error: 'Permission denied' }, status: :forbidden
       return
     end
