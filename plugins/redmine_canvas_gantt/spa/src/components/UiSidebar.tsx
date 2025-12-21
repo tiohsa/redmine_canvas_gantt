@@ -760,8 +760,57 @@ export const UiSidebar: React.FC = () => {
                                     {row.projectName || i18n.t('label_project') || 'Project'}
                                 </div>
                             );
+                        } else if (row.type === 'version') {
+                            const expanded = useTaskStore.getState().versionExpansion[row.id] ?? true;
+                            const toggleVersionExpansion = useTaskStore.getState().toggleVersionExpansion;
+                            return (
+                                <div
+                                    key={`version-${row.id}`}
+                                    style={{
+                                        position: 'absolute',
+                                        top,
+                                        left: 0,
+                                        height: viewport.rowHeight,
+                                        width: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        padding: '0 12px 0 32px',
+                                        backgroundColor: '#ffffff',
+                                        color: '#3c4043',
+                                        fontWeight: 600,
+                                        borderBottom: '1px solid #e0e0e0',
+                                        boxSizing: 'border-box',
+                                        cursor: 'pointer',
+                                        userSelect: 'none',
+                                        transition: 'background-color 0.2s'
+                                    }}
+                                    onClick={() => {
+                                        setActiveInlineEdit(null);
+                                        toggleVersionExpansion(row.id);
+                                    }}
+                                >
+                                    <div style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: 20,
+                                        height: 20,
+                                        marginRight: 8
+                                    }}>
+                                        <ChevronIcon expanded={expanded} />
+                                    </div>
+                                    <div style={{ marginRight: 8, display: 'flex', alignItems: 'center', color: '#009688' }}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                                            <line x1="4" y1="22" x2="4" y2="15" />
+                                        </svg>
+                                    </div>
+                                    {row.name}
+                                </div>
+                            );
                         }
 
+                        if (row.type !== 'task') return null;
                         const task = taskMap.get(row.taskId);
                         if (!task) return null;
                         const isSelected = task.id === selectedTaskId;

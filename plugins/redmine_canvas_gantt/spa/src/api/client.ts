@@ -172,6 +172,7 @@ export const apiClient = {
                 editable: Boolean(t.editable),
                 trackerId: typeof t.tracker_id === 'number' ? t.tracker_id : undefined,
                 trackerName: typeof t.tracker_name === 'string' ? t.tracker_name : undefined,
+                fixedVersionId: t.fixed_version_id ? String(t.fixed_version_id) : undefined,
                 rowIndex: index, // Simplify for now: default order
                 hasChildren: false // Will be updated below
             };
@@ -198,13 +199,19 @@ export const apiClient = {
             const effectiveDate = parseDate(dateStr);
             if (!effectiveDate) return null;
 
+            const startStr = typeof v.start_date === 'string' ? v.start_date : null;
+            const startDate = parseDate(startStr) ?? undefined;
+            const ratioDone = typeof v.completed_pourcent === 'number' ? v.completed_pourcent : undefined;
+
             return {
                 id: String(v.id),
                 name: String(v.name ?? ''),
                 effectiveDate,
+                startDate,
+                ratioDone,
                 projectId: String(v.project_id),
                 status: String(v.status ?? '')
-            };
+            } as Version;
         }).filter((v): v is Version => v !== null) : [];
 
         return { ...data, tasks, relations, versions };

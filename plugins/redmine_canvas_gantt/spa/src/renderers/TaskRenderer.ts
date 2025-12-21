@@ -35,14 +35,25 @@ export class TaskRenderer {
         const showDependencyIndicators = zoomLevel === 0 || zoomLevel === 1;
         const dependencySummary = showDependencyIndicators ? buildDependencySummary(tasks, relations) : null;
 
-        // Draw Project Summaries (Headers)
+        // Draw Project Summaries (Headers) and Version Headers
         layoutRows.forEach(row => {
-            if (row.type === 'header' && row.rowIndex >= startRow && row.rowIndex <= endRow) {
-                if (row.startDate !== undefined && row.dueDate !== undefined) {
-                    const x1 = LayoutEngine.dateToX(row.startDate, viewport) - viewport.scrollX;
-                    const x2 = LayoutEngine.dateToX(row.dueDate + ONE_DAY, viewport) - viewport.scrollX;
-                    const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
-                    this.drawProjectSummaryBar(ctx, x1, x2, y, viewport.rowHeight);
+            if (row.rowIndex >= startRow && row.rowIndex <= endRow) {
+                if (row.type === 'header') {
+                    if (row.startDate !== undefined && row.dueDate !== undefined) {
+                        const x1 = LayoutEngine.dateToX(row.startDate, viewport) - viewport.scrollX;
+                        const x2 = LayoutEngine.dateToX(row.dueDate + ONE_DAY, viewport) - viewport.scrollX;
+                        const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
+                        this.drawProjectSummaryBar(ctx, x1, x2, y, viewport.rowHeight);
+                    }
+                } else if (row.type === 'version') {
+                    if (row.startDate !== undefined && row.dueDate !== undefined) {
+                        const x1 = LayoutEngine.dateToX(row.startDate, viewport) - viewport.scrollX;
+                        const x2 = LayoutEngine.dateToX(row.dueDate + ONE_DAY, viewport) - viewport.scrollX;
+                        const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
+                        this.drawVersionSummaryBar(ctx, x1, x2, y, viewport.rowHeight, row.ratioDone ?? 0);
+                        // Draw Name
+                        this.drawSubjectBeforeBar(ctx, { subject: row.name } as Task, x1, y, x2 - x1, viewport.rowHeight);
+                    }
                 }
             }
         });
@@ -98,6 +109,51 @@ export class TaskRenderer {
         ctx.moveTo(x1, centerY);
         ctx.lineTo(x2, centerY);
         ctx.stroke();
+
+        ctx.restore();
+    }
+
+    private drawVersionSummaryBar(ctx: CanvasRenderingContext2D, x1: number, x2: number, y: number, rowHeight: number, ratioDone: number) {
+        if (!Number.isFinite(x1) || !Number.isFinite(x2)) return;
+
+        const centerY = Math.floor(y + rowHeight / 2);
+        const diamondSize = 8;
+        const width = x2 - x1;
+        const progressWidth = width * (Math.max(0, Math.min(100, ratioDone)) / 100);
+
+        ctx.save();
+
+        // Diamonds Color (Greenish for Version/Milestone?) or same Blue?
+        // Let's use darker gray or teal to distinguish from Project
+        ctx.fillStyle = '#009688';
+        ctx.strokeStyle = '#00695c';
+        ctx.lineWidth = 1;
+
+        // Draw Diamond at Start
+        this.drawDiamond(ctx, x1, centerY, diamondSize);
+
+        // Draw Diamond at End
+        this.drawDiamond(ctx, x2, centerY, diamondSize);
+
+        // Draw Dotted Line (Background)
+        ctx.setLineDash([2, 2]);
+        ctx.strokeStyle = '#bdbdbd';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x1, centerY);
+        ctx.lineTo(x2, centerY);
+        ctx.stroke();
+
+        // Draw Progress (Solid Line)
+        if (progressWidth > 0) {
+            ctx.setLineDash([]);
+            ctx.strokeStyle = '#4db6ac'; // Light teal
+            ctx.lineWidth = 3; // Thicker to be visible
+            ctx.beginPath();
+            ctx.moveTo(x1, centerY);
+            ctx.lineTo(x1 + progressWidth, centerY);
+            ctx.stroke();
+        }
 
         ctx.restore();
     }

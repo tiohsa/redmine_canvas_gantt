@@ -105,7 +105,8 @@ class CanvasGanttsController < ApplicationController
           lock_version: issue.lock_version, # Critical for Optimistic Locking
           editable: User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?,
           tracker_id: issue.tracker_id,
-          tracker_name: issue.tracker&.name
+          tracker_name: issue.tracker&.name,
+          fixed_version_id: issue.fixed_version_id
         }
       end
 
@@ -123,6 +124,8 @@ class CanvasGanttsController < ApplicationController
           id: v.id,
           name: v.name,
           effective_date: v.effective_date,
+          start_date: v.try(:start_date),
+          completed_pourcent: v.completed_pourcent,
           project_id: v.project_id,
           status: v.status
         }

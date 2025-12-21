@@ -1,4 +1,4 @@
-import type { Viewport, ZoomLevel, Version } from '../types';
+import type { Viewport, ZoomLevel } from '../types';
 import { getGridScales } from '../utils/grid';
 
 export class BackgroundRenderer {
@@ -9,7 +9,7 @@ export class BackgroundRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, zoomLevel: ZoomLevel, selectedTaskId: string | null, tasks: any[], versions: Version[] = [], showVersions: boolean = true) {
+    render(viewport: Viewport, zoomLevel: ZoomLevel, selectedTaskId: string | null, tasks: any[]) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -85,42 +85,5 @@ export class BackgroundRenderer {
         }
 
         ctx.stroke();
-
-        if (showVersions) {
-            this.drawVersions(ctx, viewport, versions);
-        }
-    }
-
-    private drawVersions(ctx: CanvasRenderingContext2D, viewport: Viewport, versions: Version[]) {
-        ctx.save();
-        ctx.strokeStyle = '#cccccc';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([]);
-        ctx.fillStyle = '#666666';
-        ctx.font = '12px sans-serif';
-        ctx.textBaseline = 'top';
-
-        versions.forEach(v => {
-            // effectiveDate is timestamp (start of day)
-            // Redmine versions are typically at that date.
-            const x = (v.effectiveDate - viewport.startDate) * viewport.scale - viewport.scrollX;
-
-            if (x < -200 || x > this.canvas.width + 200) return;
-
-            // Draw Line
-            ctx.beginPath();
-            ctx.moveTo(Math.floor(x) + 0.5, 0);
-            ctx.lineTo(Math.floor(x) + 0.5, this.canvas.height);
-            ctx.stroke();
-
-            // Draw Label
-            const labelX = Math.floor(x) + 4;
-            const labelY = 5;
-
-            // Simple ellipsis by max width
-            ctx.fillText(v.name, labelX, labelY, 150);
-        });
-
-        ctx.restore();
     }
 }
