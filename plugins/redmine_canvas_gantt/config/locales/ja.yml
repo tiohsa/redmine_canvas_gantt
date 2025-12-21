@@ -45,3 +45,4 @@ ja:
   label_day: "日"
   button_expand_all: "すべて展開"
   button_collapse_all: "すべて折りたたむ"
+  label_show_subprojects: "子プロジェクトを表示"

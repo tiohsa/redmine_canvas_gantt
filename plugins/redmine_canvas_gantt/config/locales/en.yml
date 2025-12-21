@@ -43,3 +43,4 @@ en:
   label_day: "Day"
   button_expand_all: "Expand All"
   button_collapse_all: "Collapse All"
+  label_show_subprojects: "Show subprojects"

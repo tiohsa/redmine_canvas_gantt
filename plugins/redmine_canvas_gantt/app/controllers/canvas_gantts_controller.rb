@@ -72,7 +72,8 @@ class CanvasGanttsController < ApplicationController
       label_yes: l(:general_text_yes),
       label_no: l(:general_text_no),
       button_expand_all: l(:button_expand_all),
-      button_collapse_all: l(:button_collapse_all)
+      button_collapse_all: l(:button_collapse_all),
+      label_show_subprojects: l(:label_show_subprojects)
     }
 
     @settings = Setting.plugin_redmine_canvas_gantt || {}
@@ -83,7 +84,8 @@ class CanvasGanttsController < ApplicationController
     begin
       # Fetch issues, relations, and versions
       # This is a simplified fetch logic. Real implementation needs recursive query or similar for subtasks.
-      issues = @project.issues.visible.includes(:relations_to, :relations_from, :status, :tracker, :assigned_to).all
+      project_ids = @project.self_and_descendants.pluck(:id)
+      issues = Issue.visible.where(project_id: project_ids).includes(:relations_to, :relations_from, :status, :tracker, :assigned_to).all
       
       tasks = issues.each_with_index.map do |issue, idx|
         {
