@@ -17,7 +17,7 @@ export class TaskRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[]) {
+    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: any[] = []) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -34,6 +34,18 @@ export class TaskRenderer {
 
         const showDependencyIndicators = zoomLevel === 0 || zoomLevel === 1;
         const dependencySummary = showDependencyIndicators ? buildDependencySummary(tasks, relations) : null;
+
+        // Draw Project Summaries (Headers)
+        layoutRows.forEach(row => {
+            if (row.type === 'header' && row.rowIndex >= startRow && row.rowIndex <= endRow) {
+                if (row.startDate !== undefined && row.dueDate !== undefined) {
+                    const x1 = LayoutEngine.dateToX(row.startDate, viewport) - viewport.scrollX;
+                    const x2 = LayoutEngine.dateToX(row.dueDate + ONE_DAY, viewport) - viewport.scrollX;
+                    const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
+                    this.drawProjectSummaryBar(ctx, x1, x2, y, viewport.rowHeight);
+                }
+            }
+        });
 
         visibleTasks.forEach(task => {
             if (!Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) return;
@@ -57,6 +69,48 @@ export class TaskRenderer {
             // Draw Subject BEFORE the bar (to the left)
             this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
         });
+    }
+
+    private drawProjectSummaryBar(ctx: CanvasRenderingContext2D, x1: number, x2: number, y: number, rowHeight: number) {
+        if (!Number.isFinite(x1) || !Number.isFinite(x2)) return;
+
+        const centerY = Math.floor(y + rowHeight / 2);
+        const diamondSize = 8; // Size of the diamond
+
+        ctx.save();
+
+        // Use a semi-transparent theme blue for the diamonds
+        ctx.fillStyle = 'rgba(26, 115, 232, 0.8)';
+        ctx.strokeStyle = '#1a73e8';
+        ctx.lineWidth = 1;
+
+        // Draw Diamond at Start
+        this.drawDiamond(ctx, x1, centerY, diamondSize);
+
+        // Draw Diamond at End
+        this.drawDiamond(ctx, x2, centerY, diamondSize);
+
+        // Draw Dotted Line between diamonds
+        ctx.setLineDash([2, 2]);
+        ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x1, centerY);
+        ctx.lineTo(x2, centerY);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    private drawDiamond(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+        ctx.beginPath();
+        ctx.moveTo(x, y - size / 2);
+        ctx.lineTo(x + size / 2, y);
+        ctx.lineTo(x, y + size / 2);
+        ctx.lineTo(x - size / 2, y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
     }
 
     private drawSubjectBeforeBar(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number) {

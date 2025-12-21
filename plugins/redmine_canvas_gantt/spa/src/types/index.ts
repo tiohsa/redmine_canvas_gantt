@@ -57,7 +57,7 @@ export interface Bounds {
 }
 
 export type LayoutRow =
-    | { type: 'header'; projectId: string; projectName?: string; rowIndex: number }
+    | { type: 'header'; projectId: string; projectName?: string; rowIndex: number; startDate?: number; dueDate?: number }
     | { type: 'task'; taskId: string; rowIndex: number };
 
 export type ZoomLevel = 0 | 1 | 2;

@@ -206,7 +206,32 @@ const buildLayout = (
         const expanded = projectExpansion[projectId] ?? true;
 
         if (groupByProject) {
-            layoutRows.push({ type: 'header', projectId, projectName, rowIndex });
+            // Find min/max dates for this project to draw the summary bar
+            let pStart: number | undefined;
+            let pDue: number | undefined;
+
+            // We iterate all tasks belonging to this project in nodeMap
+            nodeMap.forEach(node => {
+                if (node.task.projectId === projectId) {
+                    const ts = node.task.startDate;
+                    const td = node.task.dueDate;
+                    if (Number.isFinite(ts)) {
+                        pStart = pStart === undefined ? ts : Math.min(pStart, ts);
+                    }
+                    if (Number.isFinite(td)) {
+                        pDue = pDue === undefined ? td : Math.max(pDue, td);
+                    }
+                }
+            });
+
+            layoutRows.push({
+                type: 'header',
+                projectId,
+                projectName,
+                rowIndex,
+                startDate: pStart,
+                dueDate: pDue
+            });
             rowIndex += 1;
         }
 
