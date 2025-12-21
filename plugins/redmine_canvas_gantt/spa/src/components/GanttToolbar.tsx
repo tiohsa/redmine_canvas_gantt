@@ -13,7 +13,9 @@ interface GanttToolbarProps {
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
-        filterText, setFilterText, allTasks, selectedAssigneeIds, setSelectedAssigneeIds, showSubprojects, setShowSubprojects
+        filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
+        selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
+        showSubprojects, setShowSubprojects
     } = useTaskStore();
     const {
         showProgressLine,
@@ -29,10 +31,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
     const [showFilterMenu, setShowFilterMenu] = React.useState(false);
     const [showAssigneeMenu, setShowAssigneeMenu] = React.useState(false);
+    const [showProjectMenu, setShowProjectMenu] = React.useState(false);
+    const [showVersionMenu, setShowVersionMenu] = React.useState(false);
 
     const filterMenuRef = React.useRef<HTMLDivElement>(null);
     const columnMenuRef = React.useRef<HTMLDivElement>(null);
     const assigneeMenuRef = React.useRef<HTMLDivElement>(null);
+    const projectMenuRef = React.useRef<HTMLDivElement>(null);
+    const versionMenuRef = React.useRef<HTMLDivElement>(null);
 
     // Click outside handler to close all dropdowns
     React.useEffect(() => {
@@ -47,11 +53,17 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             if (showAssigneeMenu && assigneeMenuRef.current && !assigneeMenuRef.current.contains(target)) {
                 setShowAssigneeMenu(false);
             }
+            if (showProjectMenu && projectMenuRef.current && !projectMenuRef.current.contains(target)) {
+                setShowProjectMenu(false);
+            }
+            if (showVersionMenu && versionMenuRef.current && !versionMenuRef.current.contains(target)) {
+                setShowVersionMenu(false);
+            }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showFilterMenu, showColumnMenu, showAssigneeMenu]);
+    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu]);
 
     const handleTodayClick = () => {
         const now = Date.now();
@@ -117,6 +129,35 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             ? selectedAssigneeIds.filter(i => i !== id)
             : [...selectedAssigneeIds, id];
         setSelectedAssigneeIds(next);
+    };
+
+    const projects = React.useMemo(() => {
+        const map = new Map<string, string>();
+        allTasks.forEach(t => {
+            if (t.projectId && t.projectName) {
+                map.set(t.projectId, t.projectName);
+            }
+        });
+        return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+    }, [allTasks]);
+
+    const toggleProject = (id: string) => {
+        const next = selectedProjectIds.includes(id)
+            ? selectedProjectIds.filter(i => i !== id)
+            : [...selectedProjectIds, id];
+        setSelectedProjectIds(next);
+    };
+
+    const versionsList = React.useMemo(() => {
+        const currentProjects = new Set(projects.map(p => p.id));
+        return versions.filter(v => currentProjects.has(v.projectId)).sort((a, b) => a.name.localeCompare(b.name));
+    }, [versions, projects]);
+
+    const toggleVersion = (id: string) => {
+        const next = selectedVersionIds.includes(id)
+            ? selectedVersionIds.filter(i => i !== id)
+            : [...selectedVersionIds, id];
+        setSelectedVersionIds(next);
     };
 
     const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
@@ -393,6 +434,146 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             ))}
                             <button
                                 onClick={() => setSelectedAssigneeIds([])}
+                                style={{
+                                    marginTop: '8px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: '#1a73e8',
+                                    cursor: 'pointer',
+                                    padding: 0
+                                }}
+                            >
+                                {'クリア'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                    <button
+                        onClick={() => setShowProjectMenu(prev => !prev)}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '0 10px',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: selectedProjectIds.length > 0 ? '#e8f0fe' : '#fff',
+                            color: selectedProjectIds.length > 0 ? '#1a73e8' : '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px'
+                        }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                        </svg>
+                        {'プロジェクト'}
+                    </button>
+                    {showProjectMenu && (
+                        <div
+                            ref={projectMenuRef}
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                background: '#fff',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                padding: '12px',
+                                zIndex: 20,
+                                minWidth: '200px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}
+                        >
+                            <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('label_project_plural') || 'Projects'}</div>
+                            {projects.map(project => (
+                                <label key={project.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedProjectIds.includes(project.id)}
+                                        onChange={() => toggleProject(project.id)}
+                                    />
+                                    {project.name}
+                                </label>
+                            ))}
+                            <button
+                                onClick={() => setSelectedProjectIds([])}
+                                style={{
+                                    marginTop: '8px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: '#1a73e8',
+                                    cursor: 'pointer',
+                                    padding: 0
+                                }}
+                            >
+                                {'クリア'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                    <button
+                        onClick={() => setShowVersionMenu(prev => !prev)}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '0 10px',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: selectedVersionIds.length > 0 ? '#e8f0fe' : '#fff',
+                            color: selectedVersionIds.length > 0 ? '#1a73e8' : '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px'
+                        }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                        </svg>
+                        {'バージョン'}
+                    </button>
+                    {showVersionMenu && (
+                        <div
+                            ref={versionMenuRef}
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                background: '#fff',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                padding: '12px',
+                                zIndex: 20,
+                                minWidth: '200px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}
+                        >
+                            <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('label_version_plural') || 'Versions'}</div>
+                            {versionsList.map(version => (
+                                <label key={version.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedVersionIds.includes(version.id)}
+                                        onChange={() => toggleVersion(version.id)}
+                                    />
+                                    {version.name}
+                                </label>
+                            ))}
+                            <button
+                                onClick={() => setSelectedVersionIds([])}
                                 style={{
                                     marginTop: '8px',
                                     border: 'none',

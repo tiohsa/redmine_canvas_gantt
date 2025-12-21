@@ -27,6 +27,8 @@ interface TaskState {
     taskExpansion: Record<string, boolean>;
     filterText: string;
     selectedAssigneeIds: (number | null)[];
+    selectedProjectIds: string[];
+    selectedVersionIds: string[];
 
     sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null;
     customScales: Record<number, number>;
@@ -62,6 +64,8 @@ interface TaskState {
 
     setFilterText: (text: string) => void;
     setSelectedAssigneeIds: (ids: (number | null)[]) => void;
+    setSelectedProjectIds: (ids: string[]) => void;
+    setSelectedVersionIds: (ids: string[]) => void;
     scrollToTask: (taskId: string) => void;
     setSortConfig: (key: keyof Task | null) => void;
     refreshData: () => Promise<void>;
@@ -331,13 +335,23 @@ const buildLayout = (
     return { tasks: arrangedTasks, layoutRows, rowCount: rowIndex };
 };
 
-const applyFilters = (tasks: Task[], filterText: string, selectedAssigneeIds: (number | null)[], showSubprojects: boolean = true, currentProjectId: string | null = null) => {
+const applyFilters = (
+    tasks: Task[],
+    filterText: string,
+    selectedAssigneeIds: (number | null)[],
+    selectedProjectIds: string[],
+    selectedVersionIds: string[],
+    showSubprojects: boolean = true,
+    currentProjectId: string | null = null
+) => {
     const lowerText = filterText.toLowerCase();
     const hasTextFilter = Boolean(lowerText);
     const hasAssigneeFilter = selectedAssigneeIds.length > 0;
+    const hasProjectFilter = selectedProjectIds.length > 0;
+    const hasVersionFilter = selectedVersionIds.length > 0;
     const hasSubprojectFilter = !showSubprojects && currentProjectId !== null;
 
-    if (!hasTextFilter && !hasAssigneeFilter && !hasSubprojectFilter) {
+    if (!hasTextFilter && !hasAssigneeFilter && !hasProjectFilter && !hasVersionFilter && !hasSubprojectFilter) {
         return tasks;
     }
 
@@ -345,8 +359,10 @@ const applyFilters = (tasks: Task[], filterText: string, selectedAssigneeIds: (n
         const matchesText = !hasTextFilter || t.subject.toLowerCase().includes(lowerText);
         const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
         const matchesAssignee = !hasAssigneeFilter || selectedAssigneeIds.includes(taskAssignee);
+        const matchesProject = !hasProjectFilter || (t.projectId && selectedProjectIds.includes(t.projectId));
+        const matchesVersion = !hasVersionFilter || (t.fixedVersionId && selectedVersionIds.includes(t.fixedVersionId));
         const matchesSubproject = !hasSubprojectFilter || t.projectId === currentProjectId;
-        return matchesText && matchesAssignee && matchesSubproject;
+        return matchesText && matchesAssignee && matchesProject && matchesVersion && matchesSubproject;
     });
 
     if (matched.length === 0) return [];
@@ -462,6 +478,8 @@ export const useTaskStore = create<TaskState>((set) => ({
     taskExpansion: {},
     filterText: '',
     selectedAssigneeIds: preferences.selectedAssigneeIds ?? [],
+    selectedProjectIds: [],
+    selectedVersionIds: [],
     sortConfig: null,
     customScales: preferences.customScales ?? {},
     currentProjectId: (window as any).RedmineCanvasGantt?.projectId?.toString() || null,
@@ -479,7 +497,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             if (task.fixedVersionId && versionExpansion[task.fixedVersionId] === undefined) versionExpansion[task.fixedVersionId] = true;
         });
 
-        const filteredTasks = applyFilters(tasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(tasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -504,7 +522,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         };
     }),
     setRelations: (relations) => set((state) => {
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             relations,
@@ -525,7 +543,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         };
     }),
     setVersions: (versions) => set((state) => {
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -546,7 +564,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         };
     }),
     setShowVersions: (show) => set((state) => {
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -570,7 +588,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         const exists = state.relations.some(r => r.from === relation.from && r.to === relation.to && r.type === relation.type);
         if (exists) return state;
         const nextRelations = [...state.relations, relation];
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             nextRelations,
@@ -592,7 +610,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
     removeRelation: (relationId) => set((state) => {
         const nextRelations = state.relations.filter(r => r.id !== relationId);
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             nextRelations,
@@ -669,7 +687,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             return t;
         });
 
-        const filteredTasks = applyFilters(finalTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(finalTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -693,7 +711,7 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     removeTask: (id) => set((state) => {
         const finalTasks = state.allTasks.filter(t => t.id !== id);
-        const filteredTasks = applyFilters(finalTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(finalTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -773,7 +791,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setGroupByProject: (grouped) => set((state) => {
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -794,7 +812,7 @@ export const useTaskStore = create<TaskState>((set) => ({
         };
     }),
     setOrganizeByDependency: (enabled) => set((state) => {
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -816,7 +834,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setShowSubprojects: (enabled) => set((state) => {
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, enabled, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, enabled, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -841,7 +859,7 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     toggleProjectExpansion: (projectId) => set((state) => {
         const projectExpansion = { ...state.projectExpansion, [projectId]: !(state.projectExpansion[projectId] ?? true) };
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -864,7 +882,7 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     toggleVersionExpansion: (versionId) => set((state) => {
         const versionExpansion = { ...state.versionExpansion, [versionId]: !(state.versionExpansion[versionId] ?? true) };
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -887,7 +905,7 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     toggleTaskExpansion: (taskId: string) => set((state) => {
         const taskExpansion = { ...state.taskExpansion, [taskId]: !(state.taskExpansion[taskId] ?? true) };
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -933,7 +951,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             if (task.fixedVersionId) versionExpansion[task.fixedVersionId] = shouldExpand;
         });
 
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -969,7 +987,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             if (task.fixedVersionId) versionExpansion[task.fixedVersionId] = true;
         });
 
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -1005,7 +1023,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             if (task.fixedVersionId) versionExpansion[task.fixedVersionId] = false;
         });
 
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -1030,7 +1048,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setFilterText: (text) => set((state) => {
-        const filteredTasks = applyFilters(state.allTasks, text, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, text, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -1052,7 +1070,7 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
 
     setSelectedAssigneeIds: (ids) => set((state) => {
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, ids, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, ids, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
@@ -1067,6 +1085,49 @@ export const useTaskStore = create<TaskState>((set) => ({
         );
         return {
             selectedAssigneeIds: ids,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+
+    setSelectedProjectIds: (ids) => set((state) => {
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, ids, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.versions,
+            state.groupByProject,
+            state.showVersions,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.versionExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
+        return {
+            selectedProjectIds: ids,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+    setSelectedVersionIds: (ids) => set((state) => {
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, ids, state.showSubprojects, state.currentProjectId);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.versions,
+            state.groupByProject,
+            state.showVersions,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.versionExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
+        return {
+            selectedVersionIds: ids,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -1118,7 +1179,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             }
         }
 
-        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
