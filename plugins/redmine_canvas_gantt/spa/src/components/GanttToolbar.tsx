@@ -4,6 +4,7 @@ import type { ZoomLevel } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
+import { exportCurrentViewAsSvg, exportTasksToExcel } from '../utils/export';
 
 interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
@@ -26,19 +27,22 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setVisibleColumns,
         toggleLeftPane,
         isFullScreen,
-        toggleFullScreen
+        toggleFullScreen,
+        addNotification
     } = useUIStore();
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
     const [showFilterMenu, setShowFilterMenu] = React.useState(false);
     const [showAssigneeMenu, setShowAssigneeMenu] = React.useState(false);
     const [showProjectMenu, setShowProjectMenu] = React.useState(false);
     const [showVersionMenu, setShowVersionMenu] = React.useState(false);
+    const [showExportMenu, setShowExportMenu] = React.useState(false);
 
     const filterMenuRef = React.useRef<HTMLDivElement>(null);
     const columnMenuRef = React.useRef<HTMLDivElement>(null);
     const assigneeMenuRef = React.useRef<HTMLDivElement>(null);
     const projectMenuRef = React.useRef<HTMLDivElement>(null);
     const versionMenuRef = React.useRef<HTMLDivElement>(null);
+    const exportMenuRef = React.useRef<HTMLDivElement>(null);
 
     // Click outside handler to close all dropdowns
     React.useEffect(() => {
@@ -59,11 +63,35 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             if (showVersionMenu && versionMenuRef.current && !versionMenuRef.current.contains(target)) {
                 setShowVersionMenu(false);
             }
+            if (showExportMenu && exportMenuRef.current && !exportMenuRef.current.contains(target)) {
+                setShowExportMenu(false);
+            }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu]);
+    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu, showExportMenu]);
+
+    const handleExportSvg = () => {
+        const ok = exportCurrentViewAsSvg('gantt-current.svg');
+        if (!ok) {
+            addNotification(i18n.t('label_export_failed') || 'エクスポートに失敗しました', 'error');
+        }
+        setShowExportMenu(false);
+    };
+
+    const handleExportExcel = () => {
+        const ok = exportTasksToExcel(
+            useTaskStore.getState().tasks,
+            useUIStore.getState().visibleColumns,
+            (key) => i18n.t(key),
+            'gantt-tasks.xls'
+        );
+        if (!ok) {
+            addNotification(i18n.t('label_export_failed') || 'エクスポートに失敗しました', 'error');
+        }
+        setShowExportMenu(false);
+    };
 
     const handleTodayClick = () => {
         const now = Date.now();
@@ -386,6 +414,89 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         </div>
                     )}
                 </div>
+
+                <div style={{ position: 'relative' }}>
+                    <button
+                        onClick={() => setShowExportMenu(prev => !prev)}
+                        title={i18n.t('label_export') || 'エクスポート'}
+                        aria-label={i18n.t('label_export') || 'エクスポート'}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '0 10px',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: '#fff',
+                            color: '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px'
+                        }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        {'出力'}
+                    </button>
+
+                    {showExportMenu && (
+                        <div
+                            ref={exportMenuRef}
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                background: '#fff',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                padding: '8px',
+                                zIndex: 20,
+                                minWidth: '160px'
+                            }}
+                        >
+                            <button
+                                onClick={handleExportSvg}
+                                aria-label="SVGとしてエクスポート"
+                                style={{
+                                    width: '100%',
+                                    textAlign: 'left',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    padding: '8px',
+                                    cursor: 'pointer',
+                                    borderRadius: '6px',
+                                    color: '#333'
+                                }}
+                            >
+                                {i18n.t('label_export_svg') || 'SVGを書き出す'}
+                            </button>
+                            <button
+                                onClick={handleExportExcel}
+                                aria-label="Excelとしてエクスポート"
+                                style={{
+                                    width: '100%',
+                                    textAlign: 'left',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    padding: '8px',
+                                    cursor: 'pointer',
+                                    borderRadius: '6px',
+                                    color: '#333'
+                                }}
+                            >
+                                {i18n.t('label_export_excel') || 'Excelを書き出す'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
 
                 <div style={{ position: 'relative' }}>
                     <button
