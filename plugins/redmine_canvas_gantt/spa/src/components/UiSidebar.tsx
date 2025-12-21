@@ -288,7 +288,7 @@ export const UiSidebar: React.FC = () => {
         const value = (task as unknown as Record<string, unknown>)[key];
         if (typeof value === 'string' || typeof value === 'number') return String(value);
         if (value instanceof Date) return value.toLocaleDateString();
-        return '';
+        return '-';
     }, []);
 
     const handleWheel = (e: React.WheelEvent) => {
@@ -489,8 +489,8 @@ export const UiSidebar: React.FC = () => {
             title: i18n.t('field_assigned_to') || 'Assignee',
             width: columnWidths['assignee'] ?? 80,
             render: (t: Task) => renderEditableCell(t, 'assignedToId', (
-                <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                    {t.assignedToName && (
+                <div style={{ display: 'flex', alignItems: 'center', width: '100%', minHeight: '24px' }}>
+                    {t.assignedToName ? (
                         <>
                             <div
                                 className="assignee-avatar"
@@ -502,6 +502,8 @@ export const UiSidebar: React.FC = () => {
                                 {t.assignedToName}
                             </span>
                         </>
+                    ) : (
+                        <span style={{ color: '#ccc', fontSize: '12px' }}>-</span>
                     )}
                 </div>
             ))
@@ -535,7 +537,7 @@ export const UiSidebar: React.FC = () => {
             title: i18n.t('field_project') || 'Project',
             width: columnWidths['project'] ?? 120,
             render: (t: Task) => renderEditableCell(t, 'projectId', (
-                <span style={{ color: '#666', fontSize: '12px' }}>{t.projectName}</span>
+                <span style={{ color: '#666', fontSize: '12px' }}>{t.projectName || '-'}</span>
             ))
         },
         {
@@ -543,7 +545,7 @@ export const UiSidebar: React.FC = () => {
             title: i18n.t('field_tracker') || 'Tracker',
             width: columnWidths['tracker'] ?? 100,
             render: (t: Task) => renderEditableCell(t, 'trackerId', (
-                <span style={{ color: '#666', fontSize: '12px' }}>{t.trackerName}</span>
+                <span style={{ color: '#666', fontSize: '12px' }}>{t.trackerName || '-'}</span>
             ))
         },
         {
@@ -574,7 +576,7 @@ export const UiSidebar: React.FC = () => {
             title: i18n.t('field_author') || 'Author',
             width: columnWidths['author'] ?? 100,
             render: (t: Task) => renderEditableCell(t, 'authorId', (
-                <span style={{ color: '#666', fontSize: '12px' }}>{t.authorName}</span>
+                <span style={{ color: '#666', fontSize: '12px' }}>{t.authorName || '-'}</span>
             ))
         },
         {
@@ -582,7 +584,7 @@ export const UiSidebar: React.FC = () => {
             title: i18n.t('field_category') || 'Category',
             width: columnWidths['category'] ?? 100,
             render: (t: Task) => renderEditableCell(t, 'categoryId', (
-                <span style={{ color: '#666', fontSize: '12px' }}>{t.categoryName}</span>
+                <span style={{ color: '#666', fontSize: '12px' }}>{t.categoryName || '-'}</span>
             ))
         },
         {
@@ -590,33 +592,33 @@ export const UiSidebar: React.FC = () => {
             title: i18n.t('field_estimated_hours') || 'Estimated Time',
             width: columnWidths['estimatedHours'] ?? 80,
             render: (t: Task) => renderEditableCell(t, 'estimatedHours', (
-                <span style={{ color: '#666', fontSize: '12px' }}>{t.estimatedHours !== undefined ? `${t.estimatedHours}h` : ''}</span>
+                <span style={{ color: '#666', fontSize: '12px' }}>{t.estimatedHours !== undefined ? `${t.estimatedHours}h` : '-'}</span>
             ))
         },
         {
             key: 'createdOn',
             title: i18n.t('field_created_on') || 'Created',
             width: columnWidths['createdOn'] ?? 120,
-            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.createdOn ? new Date(t.createdOn).toLocaleString() : ''}</span>
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.createdOn ? new Date(t.createdOn).toLocaleString() : '-'}</span>
         },
         {
             key: 'updatedOn',
             title: i18n.t('field_updated_on') || 'Updated',
             width: columnWidths['updatedOn'] ?? 120,
-            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.updatedOn ? new Date(t.updatedOn).toLocaleString() : ''}</span>
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.updatedOn ? new Date(t.updatedOn).toLocaleString() : '-'}</span>
         },
         {
             key: 'spentHours',
             title: i18n.t('field_spent_hours') || 'Spent Time',
             width: columnWidths['spentHours'] ?? 80,
-            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.spentHours !== undefined ? `${t.spentHours}h` : ''}</span>
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.spentHours !== undefined ? `${t.spentHours}h` : '-'}</span>
         },
         {
             key: 'version',
             title: i18n.t('field_version') || 'Target Version',
             width: columnWidths['version'] ?? 120,
             render: (t: Task) => renderEditableCell(t, 'fixedVersionId', (
-                <span style={{ color: '#666', fontSize: '12px' }}>{t.fixedVersionName}</span>
+                <span style={{ color: '#666', fontSize: '12px' }}>{t.fixedVersionName || '-'}</span>
             ))
         },
     ];
@@ -1029,7 +1031,7 @@ export const UiSidebar: React.FC = () => {
                                     }}>
                                         <div
                                             data-testid={`cell-${task.id}-${col.key}`}
-                                            style={{ width: '100%' }}
+                                            style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center' }}
                                             onDoubleClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
