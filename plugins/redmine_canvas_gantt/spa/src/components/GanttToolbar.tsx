@@ -3,6 +3,7 @@ import React from 'react';
 import type { ZoomLevel } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
+import { exportToExcel, exportToSvg } from '../utils/exportUtils';
 import { i18n } from '../utils/i18n';
 
 interface GanttToolbarProps {
@@ -15,7 +16,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
-        setRowHeight
+        setRowHeight, layoutRows, rowCount, relations
     } = useTaskStore();
     const {
         showProgressLine,
@@ -33,12 +34,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [showAssigneeMenu, setShowAssigneeMenu] = React.useState(false);
     const [showProjectMenu, setShowProjectMenu] = React.useState(false);
     const [showVersionMenu, setShowVersionMenu] = React.useState(false);
+    const [showExportMenu, setShowExportMenu] = React.useState(false);
 
     const filterMenuRef = React.useRef<HTMLDivElement>(null);
     const columnMenuRef = React.useRef<HTMLDivElement>(null);
     const assigneeMenuRef = React.useRef<HTMLDivElement>(null);
     const projectMenuRef = React.useRef<HTMLDivElement>(null);
     const versionMenuRef = React.useRef<HTMLDivElement>(null);
+    const exportMenuRef = React.useRef<HTMLDivElement>(null);
 
     // Click outside handler to close all dropdowns
     React.useEffect(() => {
@@ -59,11 +62,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             if (showVersionMenu && versionMenuRef.current && !versionMenuRef.current.contains(target)) {
                 setShowVersionMenu(false);
             }
+            if (showExportMenu && exportMenuRef.current && !exportMenuRef.current.contains(target)) {
+                setShowExportMenu(false);
+            }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu]);
+    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu, showExportMenu]);
 
     const handleTodayClick = () => {
         const now = Date.now();
@@ -673,6 +679,95 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     </svg>
                     {'依存整理'}
                 </button>
+
+                <div style={{ position: 'relative' }}>
+                    <button
+                        onClick={() => setShowExportMenu(prev => !prev)}
+                        title={i18n.t('label_export') || 'エクスポート'}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '0 10px',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: showExportMenu ? '#e8f0fe' : '#fff',
+                            color: showExportMenu ? '#1a73e8' : '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px'
+                        }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        {'Export'}
+                    </button>
+                    {showExportMenu && (
+                        <div
+                            ref={exportMenuRef}
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                background: '#fff',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                padding: '8px',
+                                zIndex: 20,
+                                minWidth: '120px'
+                            }}
+                        >
+                            <button
+                                onClick={() => {
+                                    exportToExcel(allTasks);
+                                    setShowExportMenu(false);
+                                }}
+                                style={{
+                                    display: 'block',
+                                    width: '100%',
+                                    textAlign: 'left',
+                                    padding: '8px 12px',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    color: '#333',
+                                    fontSize: '13px'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                                Excel (.xlsx)
+                            </button>
+                            <button
+                                onClick={() => {
+                                    exportToSvg(allTasks, relations, layoutRows, rowCount, viewport, zoomLevel, showProgressLine);
+                                    setShowExportMenu(false);
+                                }}
+                                style={{
+                                    display: 'block',
+                                    width: '100%',
+                                    textAlign: 'left',
+                                    padding: '8px 12px',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    color: '#333',
+                                    fontSize: '13px'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f5f5f5'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                                SVG (.svg)
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Right: Zoom Level & Today */}

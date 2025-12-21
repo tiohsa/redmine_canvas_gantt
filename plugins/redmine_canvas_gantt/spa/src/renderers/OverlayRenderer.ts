@@ -20,13 +20,29 @@ export class OverlayRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport) {
-        const ctx = this.canvas.getContext('2d');
+    render(viewport: Viewport, options?: {
+        ctx?: any;
+        tasks?: Task[];
+        relations?: Relation[];
+        selectedTaskId?: string | null;
+        rowCount?: number;
+        zoomLevel?: ZoomLevel;
+        showProgressLine?: boolean;
+    }) {
+        const ctx = options?.ctx ?? this.canvas.getContext('2d');
         if (!ctx) return;
 
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        if (!options?.ctx) {
+            ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        }
 
-        const { tasks, relations, selectedTaskId, rowCount, zoomLevel } = useTaskStore.getState();
+        const tasks = options?.tasks ?? useTaskStore.getState().tasks;
+        const relations = options?.relations ?? useTaskStore.getState().relations;
+        const selectedTaskId = options?.selectedTaskId !== undefined ? options.selectedTaskId : useTaskStore.getState().selectedTaskId;
+        const rowCount = options?.rowCount ?? useTaskStore.getState().rowCount;
+        const zoomLevel = options?.zoomLevel ?? useTaskStore.getState().zoomLevel;
+        const showProgressLine = options?.showProgressLine ?? useUIStore.getState().showProgressLine;
+
         const totalRows = rowCount || tasks.length;
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, totalRows);
 
@@ -68,14 +84,13 @@ export class OverlayRenderer {
         }
 
         // Draw Inazuma line (Progress Line)
-        this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel);
+        this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel, showProgressLine);
 
         // Draw "Today" line
         this.drawTodayLine(ctx, viewport);
     }
 
-    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[], zoomLevel: ZoomLevel) {
-        const { showProgressLine } = useUIStore.getState();
+    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[], zoomLevel: ZoomLevel, showProgressLine: boolean) {
         if (!showProgressLine) return;
 
         // Tasks are already ordered by rowIndex (TaskStore layout).
@@ -112,7 +127,7 @@ export class OverlayRenderer {
         });
 
         // End at Today Line at Bottom
-        ctx.lineTo(xToday, this.canvas.height);
+        ctx.lineTo(xToday, viewport.height);
 
         ctx.stroke();
         ctx.restore();
@@ -284,13 +299,13 @@ export class OverlayRenderer {
         // Redmine standard: draw at the right edge of "today" column.
         const x = LayoutEngine.dateToX(today + ONE_DAY, viewport) - viewport.scrollX;
 
-        if (x >= 0 && x <= this.canvas.width) {
+        if (x >= 0 && x <= viewport.width) {
             ctx.strokeStyle = '#e53935';
             ctx.lineWidth = 2;
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
             ctx.moveTo(x, 0);
-            ctx.lineTo(x, this.canvas.height);
+            ctx.lineTo(x, viewport.height);
             ctx.stroke();
             ctx.setLineDash([]);
         }

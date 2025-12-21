@@ -17,11 +17,12 @@ export class TaskRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: any[] = []) {
-        const ctx = this.canvas.getContext('2d');
-        if (!ctx) return;
-
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: any[] = [], ctx?: any) {
+        if (!ctx) {
+            ctx = this.canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        }
 
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount);
 
