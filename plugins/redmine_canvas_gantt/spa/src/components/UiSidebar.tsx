@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { LayoutEngine } from '../engines/LayoutEngine';
-import type { Task } from '../types';
+import type { Task, Version } from '../types';
 import { getStatusColor } from '../utils/styles';
 import { useUIStore } from '../stores/UIStore';
 import { loadPreferences } from '../utils/preferences';
@@ -130,6 +130,7 @@ const CollapseAllIcon = () => (
 export const UiSidebar: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
     const layoutRows = useTaskStore(state => state.layoutRows);
+    const versions = useTaskStore(state => state.versions);
     const rowCount = useTaskStore(state => state.rowCount);
     const viewport = useTaskStore(state => state.viewport);
     const updateViewport = useTaskStore(state => state.updateViewport);
@@ -264,6 +265,12 @@ export const UiSidebar: React.FC = () => {
         tasks.forEach(t => map.set(t.id, t));
         return map;
     }, [tasks]);
+
+    const versionMap = React.useMemo(() => {
+        const map = new Map<string, Version>();
+        versions.forEach(v => map.set(v.id, v));
+        return map;
+    }, [versions]);
 
     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
     const visibleRows = layoutRows.filter(row => row.rowIndex >= startRow && row.rowIndex <= endRow);
@@ -758,6 +765,69 @@ export const UiSidebar: React.FC = () => {
                                         <ProjectIcon />
                                     </div>
                                     {row.projectName || i18n.t('label_project') || 'Project'}
+                                </div>
+                            );
+                        }
+
+                        if (row.type === 'version') {
+                            const version = versionMap.get(row.versionId);
+                            if (!version) return null;
+                            const progress = Math.max(0, Math.min(100, version.completedPercent ?? 0));
+                            const startDate = version.startDate ?? version.dueDate;
+                            return (
+                                <div
+                                    key={`version-${version.id}-${row.rowIndex}`}
+                                    style={{
+                                        position: 'absolute',
+                                        top: top,
+                                        left: 0,
+                                        height: viewport.rowHeight,
+                                        width: '100%',
+                                        display: 'flex',
+                                        borderBottom: '1px solid #f1f3f4',
+                                        backgroundColor: '#fafafa',
+                                        cursor: 'default',
+                                        fontSize: '13px',
+                                        color: '#3c4043'
+                                    }}
+                                >
+                                    {activeColumns.map((col, idx) => {
+                                        let content: React.ReactNode = null;
+                                        if (col.key === 'id') {
+                                            content = (
+                                                <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', color: '#666' }}>
+                                                    V{version.id}
+                                                </span>
+                                            );
+                                        } else if (col.key === 'subject') {
+                                            content = (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                                                    <ProjectIcon />
+                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{version.name}</span>
+                                                </div>
+                                            );
+                                        } else if (col.key === 'startDate') {
+                                            content = <span style={{ color: '#666' }}>{Number.isFinite(startDate) ? new Date(startDate).toLocaleDateString() : '-'}</span>;
+                                        } else if (col.key === 'dueDate') {
+                                            content = <span style={{ color: '#666' }}>{Number.isFinite(version.dueDate) ? new Date(version.dueDate).toLocaleDateString() : '-'}</span>;
+                                        } else if (col.key === 'ratioDone') {
+                                            content = <ProgressCircle ratio={progress} statusId={0} />;
+                                        }
+
+                                        return (
+                                            <div key={idx} style={{
+                                                width: col.width,
+                                                padding: '0 8px',
+                                                borderRight: '1px solid #f9f9f9',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                overflow: 'hidden',
+                                                whiteSpace: 'nowrap'
+                                            }}>
+                                                <div style={{ width: '100%' }}>{content}</div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             );
                         }

@@ -11,13 +11,11 @@ export const HtmlOverlay: React.FC = () => {
     const contextMenu = useTaskStore(state => state.contextMenu);
     const tasks = useTaskStore(state => state.tasks);
     const relations = useTaskStore(state => state.relations);
-    const versions = useTaskStore(state => state.versions);
     const setContextMenu = useTaskStore(state => state.setContextMenu);
     const refreshData = useTaskStore(state => state.refreshData);
     const viewport = useTaskStore(state => state.viewport);
     const zoomLevel = useTaskStore(state => state.zoomLevel);
     const rowCount = useTaskStore(state => state.rowCount);
-    const showVersions = useUIStore(state => state.showVersions);
 
     const overlayRef = React.useRef<HTMLDivElement>(null);
     const contextMenuRef = React.useRef<HTMLDivElement>(null);
@@ -31,25 +29,6 @@ export const HtmlOverlay: React.FC = () => {
     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
     const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
 
-    const visibleVersions = React.useMemo(() => {
-        if (!showVersions || versions.length === 0) return [];
-        const scale = viewport.scale || 0.00000001;
-        const visibleStart = viewport.startDate + viewport.scrollX / scale;
-        const visibleEnd = viewport.startDate + (viewport.scrollX + viewport.width) / scale;
-
-        return versions
-            .map((version) => {
-                const startDate = version.startDate ?? version.dueDate;
-                return {
-                    ...version,
-                    startDate,
-                    startX: LayoutEngine.dateToX(startDate, viewport) - viewport.scrollX,
-                    endX: LayoutEngine.dateToX(version.dueDate, viewport) - viewport.scrollX
-                };
-            })
-            .filter((version) => version.dueDate >= visibleStart && version.startDate <= visibleEnd)
-            .filter((version) => version.startX <= viewport.width && version.endX >= 0);
-    }, [showVersions, versions, viewport]);
 
     const setDraftState = React.useCallback((next: typeof draft) => {
         draftRef.current = next;
@@ -253,27 +232,6 @@ export const HtmlOverlay: React.FC = () => {
             ref={overlayRef}
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
         >
-            {visibleVersions.map((version) => (
-                <div
-                    key={`version-label-${version.id}`}
-                    style={{
-                        position: 'absolute',
-                        top: 4,
-                        left: Math.round(version.startX),
-                        transform: 'translateX(-50%)',
-                        maxWidth: 140,
-                        fontSize: 11,
-                        color: '#666',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        pointerEvents: 'none'
-                    }}
-                    title={version.name}
-                >
-                    {version.name}
-                </div>
-            ))}
             {visibleTasks.map(task => {
                 if (task.id !== hoveredTaskId) return null;
 

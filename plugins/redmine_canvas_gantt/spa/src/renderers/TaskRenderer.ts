@@ -1,4 +1,4 @@
-import type { Viewport, Task, ZoomLevel, Relation } from '../types';
+import type { Viewport, Task, ZoomLevel, Relation, Version } from '../types';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { buildDependencySummary } from './dependencyIndicators';
 
@@ -17,7 +17,7 @@ export class TaskRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: any[] = []) {
+    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: any[] = [], versions: Version[] = []) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -35,6 +35,8 @@ export class TaskRenderer {
         const showDependencyIndicators = zoomLevel === 0 || zoomLevel === 1;
         const dependencySummary = showDependencyIndicators ? buildDependencySummary(tasks, relations) : null;
 
+        const versionMap = new Map(versions.map((version) => [version.id, version]));
+
         // Draw Project Summaries (Headers)
         layoutRows.forEach(row => {
             if (row.type === 'header' && row.rowIndex >= startRow && row.rowIndex <= endRow) {
@@ -44,6 +46,17 @@ export class TaskRenderer {
                     const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
                     this.drawProjectSummaryBar(ctx, x1, x2, y, viewport.rowHeight);
                 }
+            }
+            if (row.type === 'version' && row.rowIndex >= startRow && row.rowIndex <= endRow) {
+                const version = versionMap.get(row.versionId);
+                if (!version) return;
+                const startDate = version.startDate ?? version.dueDate;
+                const endDate = version.dueDate;
+                if (!Number.isFinite(startDate) || !Number.isFinite(endDate)) return;
+                const x1 = LayoutEngine.dateToX(Math.min(startDate, endDate), viewport) - viewport.scrollX;
+                const x2 = LayoutEngine.dateToX(Math.max(startDate, endDate) + ONE_DAY, viewport) - viewport.scrollX;
+                const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
+                this.drawVersionSummaryBar(ctx, x1, x2, y, viewport.rowHeight, version.completedPercent);
             }
         });
 
@@ -98,6 +111,43 @@ export class TaskRenderer {
         ctx.moveTo(x1, centerY);
         ctx.lineTo(x2, centerY);
         ctx.stroke();
+
+        ctx.restore();
+    }
+
+    private drawVersionSummaryBar(ctx: CanvasRenderingContext2D, x1: number, x2: number, y: number, rowHeight: number, completedPercent?: number) {
+        if (!Number.isFinite(x1) || !Number.isFinite(x2)) return;
+
+        const centerY = Math.floor(y + rowHeight / 2);
+        const diamondSize = 6;
+        const progress = Math.max(0, Math.min(100, completedPercent ?? 0));
+
+        ctx.save();
+
+        ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(x1, centerY);
+        ctx.lineTo(x2, centerY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        if (progress > 0) {
+            const progressX = x1 + (x2 - x1) * (progress / 100);
+            ctx.strokeStyle = TaskRenderer.DONE_GREEN;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x1, centerY);
+            ctx.lineTo(progressX, centerY);
+            ctx.stroke();
+        }
+
+        ctx.fillStyle = 'rgba(26, 115, 232, 0.8)';
+        ctx.strokeStyle = '#1a73e8';
+        ctx.lineWidth = 1;
+        this.drawDiamond(ctx, x1, centerY, diamondSize);
+        this.drawDiamond(ctx, x2, centerY, diamondSize);
 
         ctx.restore();
     }

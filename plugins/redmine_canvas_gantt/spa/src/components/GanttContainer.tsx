@@ -5,7 +5,6 @@ import { InteractionEngine } from '../engines/InteractionEngine';
 import { BackgroundRenderer } from '../renderers/BackgroundRenderer';
 import { TaskRenderer } from '../renderers/TaskRenderer';
 import { OverlayRenderer } from '../renderers/OverlayRenderer';
-import { VersionRenderer } from '../renderers/VersionRenderer';
 import { A11yLayer } from './A11yLayer';
 import { HtmlOverlay } from './HtmlOverlay';
 import { UiSidebar } from './UiSidebar';
@@ -23,12 +22,11 @@ export const GanttContainer: React.FC = () => {
     const mainPaneRef = useRef<HTMLDivElement>(null);
 
     const bgCanvasRef = useRef<HTMLCanvasElement>(null);
-    const versionCanvasRef = useRef<HTMLCanvasElement>(null);
     const taskCanvasRef = useRef<HTMLCanvasElement>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const { viewport, tasks, relations, versions, setTasks, setRelations, setVersions, updateViewport, zoomLevel, rowCount, viewportFromStorage, selectedTaskId, layoutRows } = useTaskStore();
-    const { showProgressLine, showVersions, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
+    const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
 
     const isResizing = useRef(false);
     const isSyncingScroll = useRef(false);
@@ -102,7 +100,6 @@ export const GanttContainer: React.FC = () => {
     const engines = useRef<{
         interaction?: InteractionEngine;
         bg?: BackgroundRenderer;
-        version?: VersionRenderer;
         task?: TaskRenderer;
         overlay?: OverlayRenderer;
     }>({});
@@ -138,12 +135,11 @@ export const GanttContainer: React.FC = () => {
     useEffect(() => {
         // We attach interaction engine to the MAIN PANE (timeline), not the whole container
         // because dragging/panning is relative to timeline coordinates.
-        if (!mainPaneRef.current || !bgCanvasRef.current || !versionCanvasRef.current || !taskCanvasRef.current || !overlayCanvasRef.current) return;
+        if (!mainPaneRef.current || !bgCanvasRef.current || !taskCanvasRef.current || !overlayCanvasRef.current) return;
 
         // Initialize Engines
         engines.current.interaction = new InteractionEngine(mainPaneRef.current);
         engines.current.bg = new BackgroundRenderer(bgCanvasRef.current);
-        engines.current.version = new VersionRenderer(versionCanvasRef.current);
         engines.current.task = new TaskRenderer(taskCanvasRef.current);
         engines.current.overlay = new OverlayRenderer(overlayCanvasRef.current);
 
@@ -158,7 +154,7 @@ export const GanttContainer: React.FC = () => {
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
                 const { width, height } = entry.contentRect;
-                [bgCanvasRef.current, versionCanvasRef.current, taskCanvasRef.current, overlayCanvasRef.current].forEach(canvas => {
+                [bgCanvasRef.current, taskCanvasRef.current, overlayCanvasRef.current].forEach(canvas => {
                     if (canvas) {
                         canvas.width = width;
                         canvas.height = height;
@@ -231,10 +227,9 @@ export const GanttContainer: React.FC = () => {
     useEffect(() => {
         // console.log('Render Loop:', { width: viewport.width, height: viewport.height, scrollX: viewport.scrollX, scrollY: viewport.scrollY, rowCount, tasks: tasks.length });
         if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel, selectedTaskId, tasks);
-        if (engines.current.version) engines.current.version.render(viewport);
-        if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows);
+        if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows, versions);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
-    }, [viewport, tasks, versions, zoomLevel, showProgressLine, showVersions, rowCount, relations, selectedTaskId, layoutRows]);
+    }, [viewport, tasks, versions, zoomLevel, showProgressLine, rowCount, relations, selectedTaskId, layoutRows]);
 
     return (
         <>
@@ -287,7 +282,6 @@ export const GanttContainer: React.FC = () => {
                                 }}
                             >
                                 <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
-                                <canvas ref={versionCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
                                 <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
                                 <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
                                 <HtmlOverlay />

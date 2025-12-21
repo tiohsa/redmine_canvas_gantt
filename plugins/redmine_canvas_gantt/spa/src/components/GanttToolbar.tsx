@@ -13,7 +13,7 @@ interface GanttToolbarProps {
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
-        filterText, setFilterText, allTasks, selectedAssigneeIds, setSelectedAssigneeIds, showSubprojects, setShowSubprojects
+        filterText, setFilterText, allTasks, selectedAssigneeIds, setSelectedAssigneeIds, showSubprojects, setShowSubprojects, setShowVersions
     } = useTaskStore();
     const {
         showProgressLine,
@@ -427,7 +427,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <input
                         type="checkbox"
                         checked={showVersions}
-                        onChange={toggleVersions}
+                        onChange={() => {
+                            const next = !showVersions;
+                            toggleVersions();
+                            setShowVersions(next);
+                        }}
                         style={{ margin: 0 }}
                     />
                     {(i18n.t('label_version') || 'バージョン') + '表示'}
