@@ -531,8 +531,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             padding: '0 10px',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
-                            backgroundColor: selectedVersionIds.length > 0 ? '#e8f0fe' : '#fff',
-                            color: selectedVersionIds.length > 0 ? '#1a73e8' : '#333',
+                            backgroundColor: (selectedVersionIds.length > 0 || showVersions) ? '#e8f0fe' : '#fff',
+                            color: (selectedVersionIds.length > 0 || showVersions) ? '#1a73e8' : '#333',
                             fontSize: '13px',
                             fontWeight: 500,
                             cursor: 'pointer',
@@ -541,6 +541,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                            {showVersions && <line x1="4" y1="22" x2="4" y2="15" />}
                         </svg>
                         {'Ver'}
                     </button>
@@ -564,6 +565,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             }}
                         >
                             <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('label_version_plural') || 'Versions'}</div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#333', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', marginBottom: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={showVersions}
+                                    onChange={toggleVersions}
+                                />
+                                <span style={{ fontWeight: 500 }}>{'Ver.表示'}</span>
+                            </label>
                             {versionsList.map(version => (
                                 <label key={version.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
                                     <input
@@ -615,30 +624,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     {'進捗'}
                 </button>
 
-                <button
-                    onClick={toggleVersions}
-                    title={i18n.t('label_version_plural') || 'バージョン（マイルストーン）表示'}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '0 10px',
-                        borderRadius: '6px',
-                        border: '1px solid #e0e0e0',
-                        backgroundColor: showVersions ? '#e8f0fe' : '#fff',
-                        color: showVersions ? '#1a73e8' : '#333',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                        height: '32px'
-                    }}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                        <line x1="4" y1="22" x2="4" y2="15" />
-                    </svg>
-                    {'Ver.表示'}
-                </button>
 
                 <button
                     onClick={() => setGroupByProject(!groupByProject)}
