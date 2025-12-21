@@ -15,6 +15,7 @@ export interface Task {
     editable: boolean;
     trackerId?: number;
     trackerName?: string;
+    fixedVersionId?: string;
 
     // Computed for layout (cached)
     rowIndex: number;
@@ -30,6 +31,16 @@ export interface Relation {
     to: string;
     type: string; // "precedes" etc.
     delay?: number; // Delay in days (Redmine supports this)
+}
+
+export interface Version {
+    id: string;
+    name: string;
+    effectiveDate: number;
+    startDate?: number;
+    ratioDone?: number;
+    projectId: string;
+    status: string;
 }
 
 export interface Project {
@@ -58,6 +69,7 @@ export interface Bounds {
 
 export type LayoutRow =
     | { type: 'header'; projectId: string; projectName?: string; rowIndex: number; startDate?: number; dueDate?: number }
+    | { type: 'version'; id: string; name: string; rowIndex: number; startDate?: number; dueDate?: number; ratioDone?: number; projectId: string }
     | { type: 'task'; taskId: string; rowIndex: number };
 
 export type ZoomLevel = 0 | 1 | 2;

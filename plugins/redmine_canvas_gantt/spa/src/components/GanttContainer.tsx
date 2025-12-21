@@ -25,8 +25,12 @@ export const GanttContainer: React.FC = () => {
     const taskCanvasRef = useRef<HTMLCanvasElement>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    const { viewport, tasks, relations, setTasks, setRelations, updateViewport, zoomLevel, rowCount, viewportFromStorage, selectedTaskId, layoutRows } = useTaskStore();
-    const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
+    const { viewport, tasks, relations, versions, setTasks, setRelations, setVersions, setShowVersions, updateViewport, zoomLevel, rowCount, viewportFromStorage, selectedTaskId, layoutRows } = useTaskStore();
+    const { showProgressLine, showVersions, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
+
+    useEffect(() => {
+        setShowVersions(showVersions);
+    }, [showVersions, setShowVersions]);
 
     const isResizing = useRef(false);
     const isSyncingScroll = useRef(false);
@@ -110,6 +114,7 @@ export const GanttContainer: React.FC = () => {
             apiClient.fetchData().then(data => {
                 setTasks(data.tasks);
                 setRelations(data.relations);
+                setVersions(data.versions);
 
                 if (!viewportFromStorage) {
                     // Fit timeline start to the earliest available date so tasks are visible
@@ -228,7 +233,7 @@ export const GanttContainer: React.FC = () => {
         if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel, selectedTaskId, tasks);
         if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
-    }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations, selectedTaskId, layoutRows]);
+    }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations, selectedTaskId, layoutRows, versions, showVersions]);
 
     return (
         <>

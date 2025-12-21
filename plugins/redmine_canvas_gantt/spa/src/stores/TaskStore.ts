@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow } from '../types';
+import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences } from '../utils/preferences';
@@ -9,18 +9,21 @@ interface TaskState {
     allTasks: Task[];
     tasks: Task[];
     relations: Relation[];
+    versions: Version[];
     viewport: Viewport;
     viewMode: ViewMode;
     zoomLevel: ZoomLevel;
     layoutRows: LayoutRow[];
     rowCount: number;
     groupByProject: boolean;
+    showVersions: boolean;
     organizeByDependency: boolean;
     viewportFromStorage: boolean;
     selectedTaskId: string | null;
     hoveredTaskId: string | null;
     contextMenu: { x: number; y: number; taskId: string } | null;
     projectExpansion: Record<string, boolean>;
+    versionExpansion: Record<string, boolean>;
     taskExpansion: Record<string, boolean>;
     filterText: string;
     selectedAssigneeIds: (number | null)[];
@@ -34,6 +37,8 @@ interface TaskState {
     // Actions
     setTasks: (tasks: Task[]) => void;
     setRelations: (relations: Relation[]) => void;
+    setVersions: (versions: Version[]) => void;
+    setShowVersions: (show: boolean) => void;
     addRelation: (relation: Relation) => void;
     removeRelation: (relationId: string) => void;
     selectTask: (id: string | null) => void;
@@ -49,6 +54,7 @@ interface TaskState {
     setShowSubprojects: (enabled: boolean) => void;
     setCurrentProjectId: (id: string) => void;
     toggleProjectExpansion: (projectId: string) => void;
+    toggleVersionExpansion: (versionId: string) => void;
     toggleTaskExpansion: (taskId: string) => void;
     toggleAllExpansion: () => void;
     expandAll: () => void;
@@ -76,9 +82,12 @@ const DEFAULT_VIEWPORT: Viewport = {
 const buildLayout = (
     tasks: Task[],
     relations: Relation[],
+    versions: Version[],
     groupByProject: boolean,
+    showVersions: boolean,
     organizeByDependency: boolean,
     projectExpansion: Record<string, boolean>,
+    versionExpansion: Record<string, boolean>,
     taskExpansion: Record<string, boolean>,
     sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null
 ): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
@@ -241,10 +250,82 @@ const buildLayout = (
         }
 
         const hideDescendants = groupByProject ? !expanded : false;
-        roots.forEach((rootId, idx) => {
-            const isLast = idx === roots.length - 1;
-            traverse(rootId, 0, hideDescendants, [], isLast);
-        });
+
+        if (groupByProject && showVersions) {
+            const versionMap = new Map<string | undefined, string[]>();
+            roots.forEach(rootId => {
+                const t = nodeMap.get(rootId)?.task;
+                const vId = t?.fixedVersionId;
+                const key = vId || undefined;
+                if (!versionMap.has(key)) versionMap.set(key, []);
+                versionMap.get(key)?.push(rootId);
+            });
+
+            const usedVersionIds = new Set<string>();
+            versionMap.forEach((_, vId) => {
+                if (vId) usedVersionIds.add(String(vId));
+            });
+
+            const projectVersions = versions.filter(v => usedVersionIds.has(v.id));
+            projectVersions.sort((a, b) => (a.effectiveDate - b.effectiveDate));
+
+            projectVersions.forEach(v => {
+                const vRoots = versionMap.get(v.id) || [];
+                const vExpanded = versionExpansion[v.id] ?? true;
+
+                let vStart = v.startDate;
+                if (!Number.isFinite(vStart)) {
+                    if (vRoots.length > 0) {
+                        let minS = Infinity;
+                        vRoots.forEach(rid => {
+                            const t = nodeMap.get(rid)?.task;
+                            if (t && Number.isFinite(t.startDate)) minS = Math.min(minS, t.startDate);
+                        });
+                        if (minS !== Infinity) vStart = minS;
+                        else vStart = v.effectiveDate;
+                    } else {
+                        vStart = v.effectiveDate;
+                    }
+                }
+
+                if (!hideDescendants) {
+                    layoutRows.push({
+                        type: 'version',
+                        id: v.id,
+                        name: v.name,
+                        rowIndex,
+                        startDate: vStart,
+                        dueDate: v.effectiveDate,
+                        ratioDone: v.ratioDone,
+                        projectId
+                    });
+                    rowIndex += 1;
+                }
+
+                const hideVersionChildren = hideDescendants || !vExpanded;
+                vRoots.forEach((rootId, idx) => {
+                    const isLast = idx === vRoots.length - 1;
+                    traverse(rootId, 0, hideVersionChildren, [], isLast);
+                });
+
+                versionMap.delete(v.id);
+            });
+
+            // Render remaining roots (those with no version, or versions not found in the metadata)
+            const remainingEntries = Array.from(versionMap.entries());
+            remainingEntries.forEach(([_vId, vRoots], entryIdx) => {
+                const isLastEntry = entryIdx === remainingEntries.length - 1;
+                vRoots.forEach((rootId, idx) => {
+                    const isLast = isLastEntry && (idx === vRoots.length - 1);
+                    traverse(rootId, 0, hideDescendants, [], isLast);
+                });
+            });
+        } else {
+            roots.forEach((rootId, idx) => {
+                const isLast = idx === roots.length - 1;
+                traverse(rootId, 0, hideDescendants, [], isLast);
+            });
+        }
     });
 
     return { tasks: arrangedTasks, layoutRows, rowCount: rowIndex };
@@ -363,18 +444,21 @@ export const useTaskStore = create<TaskState>((set) => ({
     allTasks: [],
     tasks: [],
     relations: [],
+    versions: [],
     viewport: DEFAULT_VIEWPORT,
     viewMode: preferences.viewMode ?? 'Week',
     zoomLevel: preferences.zoomLevel ?? 1,
     layoutRows: [],
     rowCount: 0,
     groupByProject: preferences.groupByProject ?? true,
+    showVersions: preferences.showVersions ?? true,
     organizeByDependency: preferences.organizeByDependency ?? false,
     viewportFromStorage: Boolean(preferences.viewport),
     selectedTaskId: null,
     hoveredTaskId: null,
     contextMenu: null,
     projectExpansion: {},
+    versionExpansion: {},
     taskExpansion: {},
     filterText: '',
     selectedAssigneeIds: preferences.selectedAssigneeIds ?? [],
@@ -386,20 +470,25 @@ export const useTaskStore = create<TaskState>((set) => ({
     setTasks: (tasks) => set((state) => {
         const projectExpansion = { ...state.projectExpansion };
         const taskExpansion = { ...state.taskExpansion };
+        const versionExpansion = { ...state.versionExpansion };
 
         tasks.forEach((task) => {
             const projectId = task.projectId ?? 'default_project';
             if (projectExpansion[projectId] === undefined) projectExpansion[projectId] = true;
             if (taskExpansion[task.id] === undefined) taskExpansion[task.id] = true;
+            if (task.fixedVersionId && versionExpansion[task.fixedVersionId] === undefined) versionExpansion[task.fixedVersionId] = true;
         });
 
         const filteredTasks = applyFilters(tasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             projectExpansion,
+            versionExpansion,
             taskExpansion,
             state.sortConfig
         );
@@ -410,6 +499,7 @@ export const useTaskStore = create<TaskState>((set) => ({
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount,
             projectExpansion,
+            versionExpansion,
             taskExpansion
         };
     }),
@@ -418,14 +508,59 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
         return {
             relations,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+    setVersions: (versions) => set((state) => {
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            versions,
+            state.groupByProject,
+            state.showVersions,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.versionExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
+        return {
+            versions,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+    setShowVersions: (show) => set((state) => {
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.versions,
+            state.groupByProject,
+            show,
+            state.organizeByDependency,
+            state.projectExpansion,
+            state.versionExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
+        return {
+            showVersions: show,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -439,9 +574,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             nextRelations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
@@ -458,9 +596,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             nextRelations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
@@ -532,9 +673,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
@@ -553,9 +697,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
@@ -630,9 +777,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             grouped,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
@@ -648,9 +798,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             enabled,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
@@ -667,9 +820,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
@@ -689,14 +845,40 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
         return {
             projectExpansion,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+
+    toggleVersionExpansion: (versionId) => set((state) => {
+        const versionExpansion = { ...state.versionExpansion, [versionId]: !(state.versionExpansion[versionId] ?? true) };
+        const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
+        const layout = buildLayout(
+            filteredTasks,
+            state.relations,
+            state.versions,
+            state.groupByProject,
+            state.showVersions,
+            state.organizeByDependency,
+            state.projectExpansion,
+            versionExpansion,
+            state.taskExpansion,
+            state.sortConfig
+        );
+        return {
+            versionExpansion,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -709,9 +891,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             taskExpansion,
             state.sortConfig
         );
@@ -729,32 +914,42 @@ export const useTaskStore = create<TaskState>((set) => ({
             Object.keys(state.projectExpansion).length > 0 &&
             Object.values(state.projectExpansion).some(v => v === false);
 
+        const anyVersionCollapsed = state.showVersions &&
+            Object.keys(state.versionExpansion).length > 0 &&
+            Object.values(state.versionExpansion).some(v => v === false);
+
         const anyTaskCollapsed = state.tasks.some(t => t.hasChildren && state.taskExpansion[t.id] === false);
 
-        const shouldExpand = anyProjectCollapsed || anyTaskCollapsed;
+        const shouldExpand = anyProjectCollapsed || anyVersionCollapsed || anyTaskCollapsed;
 
         const projectExpansion: Record<string, boolean> = {};
+        const versionExpansion: Record<string, boolean> = {};
         const taskExpansion: Record<string, boolean> = {};
 
         state.allTasks.forEach((task) => {
             const projectId = task.projectId ?? 'default_project';
             projectExpansion[projectId] = shouldExpand;
             taskExpansion[task.id] = shouldExpand;
+            if (task.fixedVersionId) versionExpansion[task.fixedVersionId] = shouldExpand;
         });
 
         const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             projectExpansion,
+            versionExpansion,
             taskExpansion,
             state.sortConfig
         );
 
         return {
             projectExpansion,
+            versionExpansion,
             taskExpansion,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -764,27 +959,33 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     expandAll: () => set((state) => {
         const projectExpansion: Record<string, boolean> = {};
+        const versionExpansion: Record<string, boolean> = {};
         const taskExpansion: Record<string, boolean> = {};
 
         state.allTasks.forEach((task) => {
             const projectId = task.projectId ?? 'default_project';
             projectExpansion[projectId] = true;
             taskExpansion[task.id] = true;
+            if (task.fixedVersionId) versionExpansion[task.fixedVersionId] = true;
         });
 
         const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             projectExpansion,
+            versionExpansion,
             taskExpansion,
             state.sortConfig
         );
 
         return {
             projectExpansion,
+            versionExpansion,
             taskExpansion,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -794,27 +995,33 @@ export const useTaskStore = create<TaskState>((set) => ({
 
     collapseAll: () => set((state) => {
         const projectExpansion: Record<string, boolean> = {};
+        const versionExpansion: Record<string, boolean> = {};
         const taskExpansion: Record<string, boolean> = {};
 
         state.allTasks.forEach((task) => {
             const projectId = task.projectId ?? 'default_project';
             projectExpansion[projectId] = false;
             taskExpansion[task.id] = false;
+            if (task.fixedVersionId) versionExpansion[task.fixedVersionId] = false;
         });
 
         const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             projectExpansion,
+            versionExpansion,
             taskExpansion,
             state.sortConfig
         );
 
         return {
             projectExpansion,
+            versionExpansion,
             taskExpansion,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -827,9 +1034,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
@@ -846,9 +1056,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             state.sortConfig
         );
@@ -909,9 +1122,12 @@ export const useTaskStore = create<TaskState>((set) => ({
         const layout = buildLayout(
             filteredTasks,
             state.relations,
+            state.versions,
             state.groupByProject,
+            state.showVersions,
             state.organizeByDependency,
             state.projectExpansion,
+            state.versionExpansion,
             state.taskExpansion,
             newSort
         );
@@ -926,8 +1142,9 @@ export const useTaskStore = create<TaskState>((set) => ({
     refreshData: async () => {
         const { apiClient } = await import('../api/client');
         const data = await apiClient.fetchData();
-        const { setTasks, setRelations } = useTaskStore.getState();
+        const { setTasks, setRelations, setVersions } = useTaskStore.getState();
         setTasks(data.tasks);
         setRelations(data.relations);
+        setVersions(data.versions);
     }
 }));

@@ -7,6 +7,7 @@ export interface StoredPreferences {
     viewMode?: ViewMode;
     viewport?: Partial<StoredViewport>;
     showProgressLine?: boolean;
+    showVersions?: boolean;
     visibleColumns?: string[];
     groupByProject?: boolean;
     organizeByDependency?: boolean;

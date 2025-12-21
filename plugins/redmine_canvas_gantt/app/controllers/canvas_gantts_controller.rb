@@ -73,7 +73,8 @@ class CanvasGanttsController < ApplicationController
       label_no: l(:general_text_no),
       button_expand_all: l(:button_expand_all),
       button_collapse_all: l(:button_collapse_all),
-      label_show_subprojects: l(:label_show_subprojects)
+      label_show_subprojects: l(:label_show_subprojects),
+      label_version_plural: l(:label_version_plural)
     }
 
     @settings = Setting.plugin_redmine_canvas_gantt || {}
@@ -104,7 +105,8 @@ class CanvasGanttsController < ApplicationController
           lock_version: issue.lock_version, # Critical for Optimistic Locking
           editable: User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?,
           tracker_id: issue.tracker_id,
-          tracker_name: issue.tracker&.name
+          tracker_name: issue.tracker&.name,
+          fixed_version_id: issue.fixed_version_id
         }
       end
 
@@ -117,9 +119,22 @@ class CanvasGanttsController < ApplicationController
         }
       end
 
+      versions = Version.visible.where(project_id: project_ids).where.not(effective_date: nil).map do |v|
+        {
+          id: v.id,
+          name: v.name,
+          effective_date: v.effective_date,
+          start_date: v.try(:start_date),
+          completed_percent: v.completed_percent,
+          project_id: v.project_id,
+          status: v.status
+        }
+      end
+
       render json: {
         tasks: tasks,
         relations: relations,
+        versions: versions,
         project: {
           id: @project.id,
           name: @project.name,
