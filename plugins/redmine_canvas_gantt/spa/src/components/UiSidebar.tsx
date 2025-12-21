@@ -236,6 +236,21 @@ export const UiSidebar: React.FC = () => {
             return 20 + 6 + measure(String(t.ratioDone) + '%') + 12;
         }));
 
+        const addAutoWidth = (key: string, title: string, accessor: (t: Task) => string) => {
+            newWidths[key] = getColWidth(title, accessor);
+        };
+
+        addAutoWidth('project', i18n.t('field_project') || 'Project', (t) => t.projectName || '');
+        addAutoWidth('tracker', i18n.t('field_tracker') || 'Tracker', (t) => t.trackerName || '');
+        addAutoWidth('priority', i18n.t('field_priority') || 'Priority', (t) => t.priorityName || '');
+        addAutoWidth('author', i18n.t('field_author') || 'Author', (t) => t.authorName || '');
+        addAutoWidth('category', i18n.t('field_category') || 'Category', (t) => t.categoryName || '');
+        addAutoWidth('estimatedHours', i18n.t('field_estimated_hours') || 'Estimated Time', (t) => t.estimatedHours !== undefined ? `${t.estimatedHours}h` : '');
+        addAutoWidth('createdOn', i18n.t('field_created_on') || 'Created', (t) => t.createdOn ? new Date(t.createdOn).toLocaleString() : '');
+        addAutoWidth('updatedOn', i18n.t('field_updated_on') || 'Updated', (t) => t.updatedOn ? new Date(t.updatedOn).toLocaleString() : '');
+        addAutoWidth('spentHours', i18n.t('field_spent_hours') || 'Spent Time', (t) => t.spentHours !== undefined ? `${t.spentHours}h` : '');
+        addAutoWidth('version', i18n.t('field_version') || 'Target Version', (t) => t.fixedVersionName || '');
+
         // Apply
         Object.keys(newWidths).forEach(key => {
             setColumnWidth(key, newWidths[key]);
@@ -509,9 +524,69 @@ export const UiSidebar: React.FC = () => {
             key: 'ratioDone',
             title: i18n.t('field_done_ratio') || 'Progress',
             width: columnWidths['ratioDone'] ?? 80,
-            render: (t: Task) => renderEditableCell(t, 'doneRatio', (
+            render: (t: Task) => renderEditableCell(t, 'ratioDone', (
                 <ProgressCircle ratio={t.ratioDone} statusId={t.statusId} />
             ))
+        },
+        {
+            key: 'project',
+            title: i18n.t('field_project') || 'Project',
+            width: columnWidths['project'] ?? 120,
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.projectName}</span>
+        },
+        {
+            key: 'tracker',
+            title: i18n.t('field_tracker') || 'Tracker',
+            width: columnWidths['tracker'] ?? 100,
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.trackerName}</span>
+        },
+        {
+            key: 'priority',
+            title: i18n.t('field_priority') || 'Priority',
+            width: columnWidths['priority'] ?? 90,
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.priorityName}</span>
+        },
+        {
+            key: 'author',
+            title: i18n.t('field_author') || 'Author',
+            width: columnWidths['author'] ?? 100,
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.authorName}</span>
+        },
+        {
+            key: 'category',
+            title: i18n.t('field_category') || 'Category',
+            width: columnWidths['category'] ?? 100,
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.categoryName}</span>
+        },
+        {
+            key: 'estimatedHours',
+            title: i18n.t('field_estimated_hours') || 'Estimated Time',
+            width: columnWidths['estimatedHours'] ?? 80,
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.estimatedHours !== undefined ? `${t.estimatedHours}h` : ''}</span>
+        },
+        {
+            key: 'createdOn',
+            title: i18n.t('field_created_on') || 'Created',
+            width: columnWidths['createdOn'] ?? 120,
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.createdOn ? new Date(t.createdOn).toLocaleString() : ''}</span>
+        },
+        {
+            key: 'updatedOn',
+            title: i18n.t('field_updated_on') || 'Updated',
+            width: columnWidths['updatedOn'] ?? 120,
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.updatedOn ? new Date(t.updatedOn).toLocaleString() : ''}</span>
+        },
+        {
+            key: 'spentHours',
+            title: i18n.t('field_spent_hours') || 'Spent Time',
+            width: columnWidths['spentHours'] ?? 80,
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.spentHours !== undefined ? `${t.spentHours}h` : ''}</span>
+        },
+        {
+            key: 'version',
+            title: i18n.t('field_version') || 'Target Version',
+            width: columnWidths['version'] ?? 120,
+            render: (t: Task) => <span style={{ color: '#666', fontSize: '12px' }}>{t.fixedVersionName}</span>
         },
     ];
 
@@ -531,9 +606,17 @@ export const UiSidebar: React.FC = () => {
         if (columnKey === 'subject') return 'subject';
         if (columnKey === 'assignee') return 'assignedToId';
         if (columnKey === 'status') return 'statusId';
-        if (columnKey === 'ratioDone') return 'doneRatio';
+        if (columnKey === 'ratioDone') return 'ratioDone';
         if (columnKey === 'dueDate') return 'dueDate';
         if (columnKey === 'startDate') return 'startDate';
+        if (columnKey === 'estimatedHours') return 'estimatedHours';
+        if (columnKey === 'priority') return 'priorityId';
+        if (columnKey === 'author') return 'authorId';
+        if (columnKey === 'category') return 'categoryId';
+        if (columnKey === 'project') return 'projectId';
+        if (columnKey === 'tracker') return 'trackerId';
+        if (columnKey === 'spentHours') return 'spentHours';
+        if (columnKey === 'version') return 'fixedVersionId';
         return null;
     }, []);
 
@@ -541,7 +624,7 @@ export const UiSidebar: React.FC = () => {
         if (field === 'subject') return isInlineEditEnabled('inline_edit_subject', true);
         if (field === 'assignedToId') return isInlineEditEnabled('inline_edit_assigned_to', true);
         if (field === 'statusId') return isInlineEditEnabled('inline_edit_status', true);
-        if (field === 'doneRatio') return isInlineEditEnabled('inline_edit_done_ratio', true);
+        if (field === 'ratioDone') return isInlineEditEnabled('inline_edit_done_ratio', true);
         if (field === 'dueDate') return isInlineEditEnabled('inline_edit_due_date', true);
         if (field === 'startDate') return isInlineEditEnabled('inline_edit_start_date', true);
         return false;
@@ -614,7 +697,10 @@ export const UiSidebar: React.FC = () => {
                                     userSelect: 'none',
                                     justifyContent: 'space-between'
                                 }}
-                                onClick={() => useTaskStore.getState().setSortConfig(col.key as keyof Task)}
+                                onClick={() => {
+                                    const field = mapColumnToField(col.key);
+                                    useTaskStore.getState().setSortConfig(field ? (field as keyof Task) : (col.key as keyof Task));
+                                }}
                             >
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {col.title}
@@ -951,7 +1037,7 @@ export const UiSidebar: React.FC = () => {
                                                     );
                                                 }
 
-                                                if (field === 'doneRatio') {
+                                                if (field === 'ratioDone') {
                                                     return (
                                                         <DoneRatioEditor
                                                             initialValue={task.ratioDone}

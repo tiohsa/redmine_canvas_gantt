@@ -173,6 +173,18 @@ export const apiClient = {
                 trackerId: typeof t.tracker_id === 'number' ? t.tracker_id : undefined,
                 trackerName: typeof t.tracker_name === 'string' ? t.tracker_name : undefined,
                 fixedVersionId: t.fixed_version_id ? String(t.fixed_version_id) : undefined,
+                priorityId: typeof t.priority_id === 'number' ? t.priority_id : undefined,
+                priorityName: typeof t.priority_name === 'string' ? t.priority_name : undefined,
+                authorId: typeof t.author_id === 'number' ? t.author_id : undefined,
+                authorName: typeof t.author_name === 'string' ? t.author_name : undefined,
+                categoryId: typeof t.category_id === 'number' ? t.category_id : undefined,
+                categoryName: typeof t.category_name === 'string' ? t.category_name : undefined,
+                estimatedHours: typeof t.estimated_hours === 'number' ? t.estimated_hours : undefined,
+                createdOn: typeof t.created_on === 'string' ? t.created_on : undefined,
+                updatedOn: typeof t.updated_on === 'string' ? t.updated_on : undefined,
+                statusName: typeof t.status_name === 'string' ? t.status_name : undefined,
+                spentHours: typeof t.spent_hours === 'number' ? t.spent_hours : undefined,
+                fixedVersionName: typeof t.fixed_version_name === 'string' ? t.fixed_version_name : undefined,
                 rowIndex: index, // Simplify for now: default order
                 hasChildren: false // Will be updated below
             };

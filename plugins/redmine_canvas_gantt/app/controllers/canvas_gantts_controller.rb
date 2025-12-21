@@ -75,7 +75,17 @@ class CanvasGanttsController < ApplicationController
       button_collapse_all: l(:button_collapse_all),
       label_show_subprojects: l(:label_show_subprojects),
       label_version_plural: l(:label_version_plural),
-      label_project_plural: l(:label_project_plural)
+      label_project_plural: l(:label_project_plural),
+      field_project: l(:field_project),
+      field_tracker: l(:field_tracker),
+      field_priority: l(:field_priority),
+      field_author: l(:field_author),
+      field_updated_on: l(:field_updated_on),
+      field_category: l(:field_category),
+      field_estimated_hours: l(:field_estimated_hours),
+      field_created_on: l(:field_created_on),
+      field_spent_hours: l(:field_spent_hours),
+      field_version: l(:field_fixed_version)
     }
 
     @settings = Setting.plugin_redmine_canvas_gantt || {}
@@ -87,7 +97,7 @@ class CanvasGanttsController < ApplicationController
       # Fetch issues, relations, and versions
       # This is a simplified fetch logic. Real implementation needs recursive query or similar for subtasks.
       project_ids = @project.self_and_descendants.pluck(:id)
-      issues = Issue.visible.where(project_id: project_ids).includes(:relations_to, :relations_from, :status, :tracker, :assigned_to).all
+      issues = Issue.visible.where(project_id: project_ids).includes(:relations_to, :relations_from, :status, :tracker, :assigned_to, :priority, :author, :category, :project, :fixed_version).all
       
       tasks = issues.each_with_index.map do |issue, idx|
         {
@@ -100,6 +110,7 @@ class CanvasGanttsController < ApplicationController
           due_date: issue.due_date,
           ratio_done: issue.done_ratio,
           status_id: issue.status_id,
+          status_name: issue.status.name,
           assigned_to_id: issue.assigned_to_id,
           assigned_to_name: issue.assigned_to&.name,
           parent_id: issue.parent_id,
@@ -107,7 +118,18 @@ class CanvasGanttsController < ApplicationController
           editable: User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?,
           tracker_id: issue.tracker_id,
           tracker_name: issue.tracker&.name,
-          fixed_version_id: issue.fixed_version_id
+          fixed_version_id: issue.fixed_version_id,
+          priority_id: issue.priority_id,
+          priority_name: issue.priority&.name,
+          author_id: issue.author_id,
+          author_name: issue.author&.name,
+          category_id: issue.category_id,
+          category_name: issue.category&.name,
+          estimated_hours: issue.estimated_hours,
+          created_on: issue.created_on,
+          updated_on: issue.updated_on,
+          spent_hours: issue.spent_hours,
+          fixed_version_name: issue.fixed_version&.name
         }
       end
 

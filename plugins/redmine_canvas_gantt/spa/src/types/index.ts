@@ -16,6 +16,18 @@ export interface Task {
     trackerId?: number;
     trackerName?: string;
     fixedVersionId?: string;
+    priorityId?: number;
+    priorityName?: string;
+    authorId?: number;
+    authorName?: string;
+    categoryId?: number;
+    categoryName?: string;
+    estimatedHours?: number;
+    createdOn?: string;
+    updatedOn?: string;
+    statusName?: string;
+    spentHours?: number;
+    fixedVersionName?: string;
 
     // Computed for layout (cached)
     rowIndex: number;

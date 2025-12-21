@@ -100,11 +100,21 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
     const columnOptions = [
         { key: 'id', label: 'ID' },
+        { key: 'project', label: i18n.t('field_project') || 'Project' },
+        { key: 'tracker', label: i18n.t('field_tracker') || 'Tracker' },
         { key: 'status', label: i18n.t('field_status') || 'Status' },
+        { key: 'priority', label: i18n.t('field_priority') || 'Priority' },
         { key: 'assignee', label: i18n.t('field_assigned_to') || 'Assignee' },
+        { key: 'author', label: i18n.t('field_author') || 'Author' },
         { key: 'startDate', label: i18n.t('field_start_date') || 'Start Date' },
         { key: 'dueDate', label: i18n.t('field_due_date') || 'Due Date' },
-        { key: 'ratioDone', label: i18n.t('field_done_ratio') || 'Progress' }
+        { key: 'estimatedHours', label: i18n.t('field_estimated_hours') || 'Estimated Time' },
+        { key: 'ratioDone', label: i18n.t('field_done_ratio') || 'Progress' },
+        { key: 'spentHours', label: i18n.t('field_spent_hours') || 'Spent Time' },
+        { key: 'version', label: i18n.t('field_version') || 'Target Version' },
+        { key: 'category', label: i18n.t('field_category') || 'Category' },
+        { key: 'createdOn', label: i18n.t('field_created_on') || 'Created' },
+        { key: 'updatedOn', label: i18n.t('field_updated_on') || 'Updated' }
     ];
 
     const assignees = React.useMemo(() => {
