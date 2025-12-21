@@ -615,7 +615,6 @@ export const UiSidebar: React.FC = () => {
                                     justifyContent: 'space-between'
                                 }}
                                 onClick={() => useTaskStore.getState().setSortConfig(col.key as keyof Task)}
-                                title={`${i18n.t('label_sort_by') || '並び替え:'} ${col.title}`}
                             >
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {col.title}
