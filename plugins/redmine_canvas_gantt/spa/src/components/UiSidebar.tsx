@@ -224,8 +224,8 @@ export const UiSidebar: React.FC = () => {
 
         newWidths['assignee'] = Math.max(measure(i18n.t('field_assigned_to') || 'Assignee') + 24, ...tasks.slice(0, 50).map(t => {
             if (!t.assignedToName) return 0;
-            // Icon 24 + gap 4 + text
-            return 24 + 4 + measure(t.assignedToName) + 12;
+            // Icon 24 + padding
+            return 24 + 12;
         }));
 
         newWidths['startDate'] = getColWidth(i18n.t('field_start_date') || 'Start Date', (t: Task) => Number.isFinite(t.startDate) ? new Date(t.startDate).toLocaleDateString() : '-');
@@ -494,13 +494,11 @@ export const UiSidebar: React.FC = () => {
                         <>
                             <div
                                 className="assignee-avatar"
-                                style={{ backgroundColor: getAvatarColor(t.assignedToName || ''), width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '10px', marginRight: 4, flexShrink: 0 }}
+                                title={t.assignedToName}
+                                style={{ backgroundColor: getAvatarColor(t.assignedToName || ''), width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '10px', flexShrink: 0 }}
                             >
                                 {getInitials(t.assignedToName)}
                             </div>
-                            <span style={{ fontSize: 12, color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {t.assignedToName}
-                            </span>
                         </>
                     ) : (
                         <span style={{ color: '#ccc', fontSize: '12px' }}>-</span>
