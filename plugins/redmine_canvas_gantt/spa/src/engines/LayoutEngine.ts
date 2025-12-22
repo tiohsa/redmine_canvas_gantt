@@ -20,7 +20,8 @@ export class LayoutEngine {
     /**
      * Returns the screen bounding box for a task bar.
      */
-    public static snapDate(timestamp: number, zoomLevel?: ZoomLevel): number {
+    public static snapDate(timestamp: number | undefined, zoomLevel?: ZoomLevel): number {
+        if (timestamp === undefined || !Number.isFinite(timestamp)) return NaN;
         if (zoomLevel === 0) return snapToLocalMonth(timestamp);
         if (zoomLevel === 1) return snapToLocalWeek(timestamp);
         return snapToLocalDay(timestamp);
@@ -28,8 +29,16 @@ export class LayoutEngine {
 
     static getTaskBounds(task: Task, viewport: Viewport, kind: 'bar' | 'hit' = 'bar', zoomLevel?: ZoomLevel): Bounds {
         const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-        const snappedStart = this.snapDate(task.startDate, zoomLevel);
-        const snappedDue = Math.max(snappedStart, this.snapDate(task.dueDate, zoomLevel));
+        const start = task.startDate;
+        const due = task.dueDate;
+
+        if (!Number.isFinite(start) || !Number.isFinite(due)) {
+            // Return empty bounds if dates are missing
+            return { x: 0, y: 0, width: 0, height: 0 };
+        }
+
+        const snappedStart = this.snapDate(start, zoomLevel);
+        const snappedDue = Math.max(snappedStart, this.snapDate(due, zoomLevel));
         // Add 1 day to make due date inclusive (bar ends at the END of due date, not the start)
         const snappedDueInclusive = snappedDue + ONE_DAY_MS;
         const x = this.dateToX(snappedStart, viewport) - viewport.scrollX;

@@ -233,10 +233,10 @@ const buildLayout = (
                 if (node.task.projectId === projectId) {
                     const ts = node.task.startDate;
                     const td = node.task.dueDate;
-                    if (Number.isFinite(ts)) {
+                    if (ts !== undefined && Number.isFinite(ts)) {
                         pStart = pStart === undefined ? ts : Math.min(pStart, ts);
                     }
-                    if (Number.isFinite(td)) {
+                    if (td !== undefined && Number.isFinite(td)) {
                         pDue = pDue === undefined ? td : Math.max(pDue, td);
                     }
                 }
@@ -283,7 +283,7 @@ const buildLayout = (
                         let minS = Infinity;
                         vRoots.forEach(rid => {
                             const t = nodeMap.get(rid)?.task;
-                            if (t && Number.isFinite(t.startDate)) minS = Math.min(minS, t.startDate);
+                            if (t && t.startDate !== undefined && Number.isFinite(t.startDate)) minS = Math.min(minS, t.startDate);
                         });
                         if (minS !== Infinity) vStart = minS;
                         else vStart = v.effectiveDate;
@@ -654,8 +654,8 @@ export const useTaskStore = create<TaskState>((set) => ({
                 currentTasks,
                 state.relations,
                 id,
-                updatedTask.startDate,
-                updatedTask.dueDate
+                updatedTask.startDate!,
+                updatedTask.dueDate!
             );
             depUpdates.forEach((v, k) => pendingUpdates.set(k, v));
         }

@@ -4,8 +4,8 @@ export interface Task {
     projectId?: string;
     projectName?: string;
     displayOrder?: number;
-    startDate: number; // Timestamp
-    dueDate: number; // Timestamp
+    startDate?: number; // Timestamp
+    dueDate?: number; // Timestamp
     ratioDone: number;
     statusId: number;
     assignedToId?: number;

@@ -52,7 +52,7 @@ export const A11yLayer: React.FC = () => {
                     data-id={task.id}
                     onFocus={() => handleFocus(task.id)}
                     onKeyDown={(e) => handleKeyDown(e, task)}
-                    aria-label={`Task: ${task.subject}. Start: ${new Date(task.startDate).toLocaleDateString()}. End: ${new Date(task.dueDate).toLocaleDateString()}. Status: ${task.ratioDone}%`}
+                    aria-label={`Task: ${task.subject}. Start: ${(task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toLocaleDateString() : 'Not set'}. End: ${(task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}. Status: ${task.ratioDone}%`}
                 >
                     {task.subject}
                 </li>

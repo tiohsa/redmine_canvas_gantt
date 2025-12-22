@@ -11,8 +11,8 @@ interface DragState {
     startX: number;
     startY: number;
     taskId: string | null;
-    originalStartDate: number;
-    originalDueDate: number;
+    originalStartDate: number | undefined;
+    originalDueDate: number | undefined;
     snapshot: Task[] | null;
 }
 
@@ -23,8 +23,8 @@ export class InteractionEngine {
         startX: 0,
         startY: 0,
         taskId: null,
-        originalStartDate: 0,
-        originalDueDate: 0,
+        originalStartDate: undefined,
+        originalDueDate: undefined,
         snapshot: null
     };
 
@@ -252,8 +252,8 @@ export class InteractionEngine {
             this.drag.startY = e.clientY;
         } else if (this.drag.mode === 'task-move' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
-            const newStart = this.snapToDate(this.drag.originalStartDate + timeDelta);
-            const duration = this.drag.originalDueDate - this.drag.originalStartDate;
+            const newStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
+            const duration = this.drag.originalDueDate! - this.drag.originalStartDate!;
 
             // Only update if changed to avoid thrashing
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
@@ -265,20 +265,20 @@ export class InteractionEngine {
             }
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
-            const newStart = this.snapToDate(this.drag.originalStartDate + timeDelta);
+            const newStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
 
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
 
-            if (currentTask && newStart < this.drag.originalDueDate && currentTask.startDate !== newStart) {
+            if (currentTask && newStart < this.drag.originalDueDate! && currentTask.startDate !== newStart) {
                 updateTask(this.drag.taskId, { startDate: newStart });
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
-            const newEnd = this.snapToDate(this.drag.originalDueDate + timeDelta);
+            const newEnd = this.snapToDate(this.drag.originalDueDate! + timeDelta);
 
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
 
-            if (currentTask && newEnd > this.drag.originalStartDate && currentTask.dueDate !== newEnd) {
+            if (currentTask && newEnd > this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
                 updateTask(this.drag.taskId, { dueDate: newEnd });
             }
         }
@@ -289,7 +289,7 @@ export class InteractionEngine {
         const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && draggedTaskId;
         const snapshot = this.drag.snapshot;
 
-        this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: 0, originalDueDate: 0, snapshot: null };
+        this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: undefined, originalDueDate: undefined, snapshot: null };
         this.container.style.cursor = 'default';
 
         if (wasDragging && draggedTaskId) {

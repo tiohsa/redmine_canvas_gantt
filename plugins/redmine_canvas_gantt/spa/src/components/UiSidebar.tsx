@@ -228,8 +228,8 @@ export const UiSidebar: React.FC = () => {
             return 24 + 12;
         }));
 
-        newWidths['startDate'] = getColWidth(i18n.t('field_start_date') || 'Start Date', (t: Task) => Number.isFinite(t.startDate) ? new Date(t.startDate).toLocaleDateString() : '-');
-        newWidths['dueDate'] = getColWidth(i18n.t('field_due_date') || 'Due Date', (t: Task) => Number.isFinite(t.dueDate) ? new Date(t.dueDate).toLocaleDateString() : '-');
+        newWidths['startDate'] = getColWidth(i18n.t('field_start_date') || 'Start Date', (t: Task) => (t.startDate !== undefined && Number.isFinite(t.startDate)) ? new Date(t.startDate).toLocaleDateString() : '-');
+        newWidths['dueDate'] = getColWidth(i18n.t('field_due_date') || 'Due Date', (t: Task) => (t.dueDate !== undefined && Number.isFinite(t.dueDate)) ? new Date(t.dueDate).toLocaleDateString() : '-');
 
         newWidths['ratioDone'] = Math.max(measure(i18n.t('field_done_ratio') || 'Progress') + 24, ...tasks.slice(0, 50).map(t => {
             // Icon 20 + gap 6 + text
@@ -511,7 +511,7 @@ export const UiSidebar: React.FC = () => {
             title: i18n.t('field_start_date') || 'Start Date',
             width: columnWidths['startDate'] ?? 90,
             render: (t: Task) => renderEditableCell(t, 'startDate', (
-                <span style={{ color: '#666' }}>{Number.isFinite(t.startDate) ? new Date(t.startDate).toLocaleDateString() : '-'}</span>
+                <span style={{ color: '#666' }}>{(t.startDate !== undefined && Number.isFinite(t.startDate)) ? new Date(t.startDate).toLocaleDateString() : '-'}</span>
             ))
         },
         {
@@ -519,7 +519,7 @@ export const UiSidebar: React.FC = () => {
             title: i18n.t('field_due_date') || 'Due Date',
             width: columnWidths['dueDate'] ?? 90,
             render: (t: Task) => renderEditableCell(t, 'dueDate', (
-                <span style={{ color: '#666' }}>{Number.isFinite(t.dueDate) ? new Date(t.dueDate).toLocaleDateString() : '-'}</span>
+                <span style={{ color: '#666' }}>{(t.dueDate !== undefined && Number.isFinite(t.dueDate)) ? new Date(t.dueDate).toLocaleDateString() : '-'}</span>
             ))
         },
         {
@@ -629,8 +629,13 @@ export const UiSidebar: React.FC = () => {
         return String(value) === '1';
     }, [settings]);
 
-    const toDateInputValue = React.useCallback((timestamp: number) => {
-        return new Date(timestamp).toISOString().split('T')[0];
+    const toDateInputValue = React.useCallback((timestamp: number | undefined) => {
+        if (timestamp === undefined || !Number.isFinite(timestamp)) return '';
+        try {
+            return new Date(timestamp).toISOString().split('T')[0];
+        } catch (e) {
+            return '';
+        }
     }, []);
 
     const getSortField = React.useCallback((columnKey: string): keyof Task | null => {
@@ -1146,7 +1151,7 @@ export const UiSidebar: React.FC = () => {
                                                             onCommit={async (next) => {
                                                                 const nextTs = new Date(next).getTime();
                                                                 if (!Number.isFinite(nextTs)) return;
-                                                                if (Number.isFinite(task.startDate) && task.startDate > nextTs) {
+                                                                if (task.startDate !== undefined && Number.isFinite(task.startDate) && task.startDate! > nextTs) {
                                                                     useUIStore.getState().addNotification('Invalid date range', 'warning');
                                                                     return;
                                                                 }
@@ -1170,7 +1175,7 @@ export const UiSidebar: React.FC = () => {
                                                             onCommit={async (next) => {
                                                                 const nextTs = new Date(next).getTime();
                                                                 if (!Number.isFinite(nextTs)) return;
-                                                                if (Number.isFinite(task.dueDate) && nextTs > task.dueDate) {
+                                                                if (task.dueDate !== undefined && Number.isFinite(task.dueDate) && nextTs > task.dueDate!) {
                                                                     useUIStore.getState().addNotification('Invalid date range', 'warning');
                                                                     return;
                                                                 }

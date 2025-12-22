@@ -150,19 +150,14 @@ export const apiClient = {
             const start = parseDate(typeof t.start_date === 'string' ? t.start_date : null);
             const due = parseDate(typeof t.due_date === 'string' ? t.due_date : null);
 
-            // Fallbacks to keep rendering even when dates are missing/invalid
-            const safeStart = start ?? due ?? new Date().setHours(0, 0, 0, 0);
-            const safeDue = due ?? start ?? safeStart;
-            const normalizedDue = safeDue < safeStart ? safeStart : safeDue;
-
             return {
                 id: String(t.id),
                 subject: String(t.subject ?? ''),
                 projectId: t.project_id ? String(t.project_id) : undefined,
                 projectName: typeof t.project_name === 'string' ? t.project_name : undefined,
                 displayOrder: typeof t.display_order === 'number' ? t.display_order : index,
-                startDate: safeStart,
-                dueDate: normalizedDue,
+                startDate: start ?? undefined,
+                dueDate: due ?? undefined,
                 ratioDone: typeof t.ratio_done === 'number' ? t.ratio_done : 0,
                 statusId: typeof t.status_id === 'number' ? t.status_id : 0,
                 assignedToId: typeof t.assigned_to_id === 'number' ? t.assigned_to_id : undefined,
@@ -379,8 +374,8 @@ export const apiClient = {
             },
             body: JSON.stringify({
                 task: {
-                    start_date: new Date(task.startDate).toISOString().split('T')[0],
-                    due_date: new Date(task.dueDate).toISOString().split('T')[0],
+                    start_date: (task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toISOString().split('T')[0] : null,
+                    due_date: (task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toISOString().split('T')[0] : null,
                     lock_version: task.lockVersion
                 }
             })

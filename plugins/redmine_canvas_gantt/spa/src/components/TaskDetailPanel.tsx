@@ -19,8 +19,13 @@ const isEnabled = (settings: InlineEditSettings, key: keyof InlineEditSettings, 
     return String(value) === '1';
 };
 
-const toDateInputValue = (timestamp: number): string => {
-    return new Date(timestamp).toISOString().split('T')[0];
+const toDateInputValue = (timestamp: number | undefined): string => {
+    if (timestamp === undefined || !Number.isFinite(timestamp)) return '';
+    try {
+        return new Date(timestamp).toISOString().split('T')[0];
+    } catch (e) {
+        return '';
+    }
 };
 
 const toTimestampFromDateInput = (value: string): number | null => {
@@ -259,7 +264,7 @@ export const TaskDetailPanel: React.FC = () => {
                                 onCommit={async (next) => {
                                     const nextTs = toTimestampFromDateInput(next);
                                     if (nextTs === null) return;
-                                    if (Number.isFinite(task.startDate) && task.startDate > nextTs) {
+                                    if (task.startDate !== undefined && Number.isFinite(task.startDate) && task.startDate! > nextTs) {
                                         addNotification(i18n.t('label_invalid_date_range') || 'Invalid date range', 'warning');
                                         return;
                                     }

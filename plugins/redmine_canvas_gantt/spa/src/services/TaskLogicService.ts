@@ -19,7 +19,7 @@ export class TaskLogicService {
      */
     static validateDates(task: Task): string[] {
         const errors: string[] = [];
-        if (task.startDate && task.dueDate && task.startDate > task.dueDate) {
+        if (task.startDate !== undefined && task.dueDate !== undefined && Number.isFinite(task.startDate) && Number.isFinite(task.dueDate) && task.startDate! > task.dueDate!) {
             errors.push('Start date cannot be after due date');
         }
         return errors;
@@ -49,11 +49,11 @@ export class TaskLogicService {
             // But if children were just updated, we should pass the updated list or map.
             // For now assuming 'tasks' contains the latest state of children.
 
-            if (child.startDate) {
+            if (child.startDate !== undefined && Number.isFinite(child.startDate)) {
                 minStart = Math.min(minStart, child.startDate);
                 validStartFound = true;
             }
-            if (child.dueDate) {
+            if (child.dueDate !== undefined && Number.isFinite(child.dueDate)) {
                 maxDue = Math.max(maxDue, child.dueDate);
                 validDueFound = true;
             }
@@ -115,9 +115,9 @@ export class TaskLogicService {
             const minStart = newDue + delay; // Assuming newDue is end of day or similar? Timestamps usually exact.
 
             // If successor starts before the required minimum start
-            if (successor.startDate < minStart) {
+            if (successor.startDate !== undefined && Number.isFinite(successor.startDate) && successor.startDate! < minStart) {
                 // We need to move the successor
-                const duration = successor.dueDate - successor.startDate;
+                const duration = (successor.dueDate !== undefined && Number.isFinite(successor.dueDate)) ? successor.dueDate! - successor.startDate! : 0;
                 const newSuccessorStart = minStart;
                 const newSuccessorDue = newSuccessorStart + duration;
 
