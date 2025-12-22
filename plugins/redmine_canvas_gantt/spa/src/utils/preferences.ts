@@ -16,6 +16,7 @@ export interface StoredPreferences {
     selectedAssigneeIds?: (number | null)[];
     customScales?: Record<number, number>;
     rowHeight?: number;
+    selectedStatusIds?: number[];
 }
 
 const STORAGE_KEY = 'canvasGantt:preferences';

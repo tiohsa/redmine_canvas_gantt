@@ -24,7 +24,8 @@ const persistSelections = () => {
         sidebarWidth: uiState.sidebarWidth,
         selectedAssigneeIds: taskState.selectedAssigneeIds,
         customScales: taskState.customScales,
-        rowHeight: taskState.viewport.rowHeight
+        rowHeight: taskState.viewport.rowHeight,
+        selectedStatusIds: taskState.selectedStatusIds
     });
 };
 

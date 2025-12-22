@@ -111,10 +111,12 @@ export const GanttContainer: React.FC = () => {
     useEffect(() => {
         // Initial fetch
         import('../api/client').then(({ apiClient }) => {
-            apiClient.fetchData().then(data => {
+            const savedStatusIds = useTaskStore.getState().selectedStatusIds;
+            apiClient.fetchData({ statusIds: savedStatusIds }).then(data => {
                 setTasks(data.tasks);
                 setRelations(data.relations);
                 setVersions(data.versions);
+                useTaskStore.getState().setTaskStatuses(data.statuses);
 
                 if (!viewportFromStorage) {
                     // Fit timeline start to the earliest available date so tasks are visible

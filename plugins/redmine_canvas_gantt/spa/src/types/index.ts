@@ -62,6 +62,11 @@ export interface Project {
     dueDate?: string;
 }
 
+export interface TaskStatus {
+    id: number;
+    name: string;
+}
+
 export interface Viewport {
     startDate: number; // Timestamp of left edge
     scrollX: number; // Horizontal scroll offset (pixels)

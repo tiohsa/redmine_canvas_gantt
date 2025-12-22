@@ -97,7 +97,14 @@ class CanvasGanttsController < ApplicationController
       # Fetch issues, relations, and versions
       # This is a simplified fetch logic. Real implementation needs recursive query or similar for subtasks.
       project_ids = @project.self_and_descendants.pluck(:id)
-      issues = Issue.visible.where(project_id: project_ids).includes(:relations_to, :relations_from, :status, :tracker, :assigned_to, :priority, :author, :category, :project, :fixed_version).all
+
+      scope = Issue.visible.where(project_id: project_ids).includes(:relations_to, :relations_from, :status, :tracker, :assigned_to, :priority, :author, :category, :project, :fixed_version)
+
+      if params[:status_ids].present?
+        scope = scope.where(status_id: params[:status_ids])
+      end
+
+      issues = scope.all
       
       tasks = issues.each_with_index.map do |issue, idx|
         {
@@ -158,6 +165,7 @@ class CanvasGanttsController < ApplicationController
         tasks: tasks,
         relations: relations,
         versions: versions,
+        statuses: IssueStatus.sorted.collect { |s| { id: s.id, name: s.name } },
         project: {
           id: @project.id,
           name: @project.name,

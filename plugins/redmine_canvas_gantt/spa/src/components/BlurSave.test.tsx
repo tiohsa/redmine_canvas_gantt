@@ -81,7 +81,13 @@ describe('UiSidebar Blur-to-Save', () => {
                             done_ratio: true,
                             due_date: true,
                             custom_field_values: false,
-                            start_date: true
+                            start_date: true,
+                            priority_id: true,
+                            category_id: true,
+                            estimated_hours: true,
+                            project_id: true,
+                            tracker_id: true,
+                            fixed_version_id: true
                         },
                         options: { statuses: [{ id: 1, name: 'New' }, { id: 2, name: 'In Progress' }], assignees: [], custom_fields: [] },
                         custom_field_values: {}

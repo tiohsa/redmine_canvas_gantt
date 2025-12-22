@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version } from '../types';
+import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences } from '../utils/preferences';
@@ -10,6 +10,8 @@ interface TaskState {
     tasks: Task[];
     relations: Relation[];
     versions: Version[];
+    taskStatuses: TaskStatus[];
+    selectedStatusIds: number[];
     viewport: Viewport;
     viewMode: ViewMode;
     zoomLevel: ZoomLevel;
@@ -40,6 +42,8 @@ interface TaskState {
     setTasks: (tasks: Task[]) => void;
     setRelations: (relations: Relation[]) => void;
     setVersions: (versions: Version[]) => void;
+    setTaskStatuses: (statuses: TaskStatus[]) => void;
+    setSelectedStatusFromServer: (ids: number[]) => void;
     setShowVersions: (show: boolean) => void;
     addRelation: (relation: Relation) => void;
     removeRelation: (relationId: string) => void;
@@ -456,11 +460,13 @@ const buildDependencyComponents = (tasks: Task[], relations: Relation[]): Map<st
     return components;
 };
 
-export const useTaskStore = create<TaskState>((set) => ({
+export const useTaskStore = create<TaskState>((set, get) => ({
     allTasks: [],
     tasks: [],
     relations: [],
     versions: [],
+    taskStatuses: [],
+    selectedStatusIds: preferences.selectedStatusIds ?? [],
     viewport: DEFAULT_VIEWPORT,
     viewMode: preferences.viewMode ?? 'Week',
     zoomLevel: preferences.zoomLevel ?? 1,
@@ -563,6 +569,11 @@ export const useTaskStore = create<TaskState>((set) => ({
             rowCount: layout.rowCount
         };
     }),
+    setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
+    setSelectedStatusFromServer: (ids) => {
+        set({ selectedStatusIds: ids });
+        get().refreshData();
+    },
     setShowVersions: (show) => set((state) => {
         const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
@@ -1186,10 +1197,12 @@ export const useTaskStore = create<TaskState>((set) => ({
     }),
     refreshData: async () => {
         const { apiClient } = await import('../api/client');
-        const data = await apiClient.fetchData();
-        const { setTasks, setRelations, setVersions } = useTaskStore.getState();
+        const state = get();
+        const data = await apiClient.fetchData({ statusIds: state.selectedStatusIds });
+        const { setTasks, setRelations, setVersions, setTaskStatuses } = state;
         setTasks(data.tasks);
         setRelations(data.relations);
         setVersions(data.versions);
+        setTaskStatuses(data.statuses);
     }
 }));

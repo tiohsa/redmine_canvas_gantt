@@ -15,7 +15,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
-        setRowHeight
+        setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer
     } = useTaskStore();
     const {
         showProgressLine,
@@ -33,12 +33,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [showAssigneeMenu, setShowAssigneeMenu] = React.useState(false);
     const [showProjectMenu, setShowProjectMenu] = React.useState(false);
     const [showVersionMenu, setShowVersionMenu] = React.useState(false);
+    const [showStatusMenu, setShowStatusMenu] = React.useState(false);
 
     const filterMenuRef = React.useRef<HTMLDivElement>(null);
     const columnMenuRef = React.useRef<HTMLDivElement>(null);
     const assigneeMenuRef = React.useRef<HTMLDivElement>(null);
     const projectMenuRef = React.useRef<HTMLDivElement>(null);
     const versionMenuRef = React.useRef<HTMLDivElement>(null);
+    const statusMenuRef = React.useRef<HTMLDivElement>(null);
 
     // Click outside handler to close all dropdowns
     React.useEffect(() => {
@@ -59,11 +61,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             if (showVersionMenu && versionMenuRef.current && !versionMenuRef.current.contains(target)) {
                 setShowVersionMenu(false);
             }
+            if (showStatusMenu && statusMenuRef.current && !statusMenuRef.current.contains(target)) {
+                setShowStatusMenu(false);
+            }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu]);
+    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu, showStatusMenu]);
 
     const handleTodayClick = () => {
         const now = Date.now();
@@ -168,6 +173,13 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             ? selectedVersionIds.filter(i => i !== id)
             : [...selectedVersionIds, id];
         setSelectedVersionIds(next);
+    };
+
+    const toggleStatus = (id: number) => {
+        const next = selectedStatusIds.includes(id)
+            ? selectedStatusIds.filter(i => i !== id)
+            : [...selectedStatusIds, id];
+        setSelectedStatusFromServer(next);
     };
 
     const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
@@ -605,6 +617,77 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             ))}
                             <button
                                 onClick={() => setSelectedVersionIds([])}
+                                style={{
+                                    marginTop: '8px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: '#1a73e8',
+                                    cursor: 'pointer',
+                                    padding: 0
+                                }}
+                            >
+                                {i18n.t('label_clear_filter') || 'クリア'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                    <button
+                        onClick={() => setShowStatusMenu(prev => !prev)}
+                        title={i18n.t('field_status') || 'ステータスでフィルタ'}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '0 10px',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: selectedStatusIds.length > 0 ? '#e8f0fe' : '#fff',
+                            color: selectedStatusIds.length > 0 ? '#1a73e8' : '#333',
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            height: '32px'
+                        }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                        </svg>
+                        {'ステータス'}
+                    </button>
+                    {showStatusMenu && (
+                        <div
+                            ref={statusMenuRef}
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                background: '#fff',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                padding: '12px',
+                                zIndex: 20,
+                                minWidth: '200px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}
+                        >
+                            <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('field_status') || 'Status'}</div>
+                            {taskStatuses.map(status => (
+                                <label key={status.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedStatusIds.includes(status.id)}
+                                        onChange={() => toggleStatus(status.id)}
+                                    />
+                                    {status.name}
+                                </label>
+                            ))}
+                            <button
+                                onClick={() => setSelectedStatusFromServer([])}
                                 style={{
                                     marginTop: '8px',
                                     border: 'none',

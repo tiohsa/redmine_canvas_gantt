@@ -1,4 +1,4 @@
-import type { Relation, Project, Task, Version } from '../types';
+import type { Relation, Project, Task, Version, TaskStatus } from '../types';
 import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption } from '../types/editMeta';
 
 type ApiTask = Record<string, unknown>;
@@ -38,6 +38,7 @@ interface ApiData {
     relations: Relation[];
     versions: Version[];
     project: Project;
+    statuses: TaskStatus[];
     permissions: { editable: boolean; viewable: boolean };
 }
 
@@ -119,7 +120,7 @@ const parseCustomFieldMeta = (value: unknown): CustomFieldMeta | null => {
 };
 
 export const apiClient = {
-    fetchData: async (): Promise<ApiData> => {
+    fetchData: async (params?: { statusIds?: number[] }): Promise<ApiData> => {
         const config = window.RedmineCanvasGantt;
 
         if (!config) {
@@ -132,7 +133,14 @@ export const apiClient = {
             return Number.isFinite(ts) ? ts : null;
         };
 
-        const response = await fetch(`${config.apiBase}/data.json`, {
+        const query = new URLSearchParams();
+        if (params?.statusIds && params.statusIds.length > 0) {
+            params.statusIds.forEach(id => query.append('status_ids[]', String(id)));
+        }
+        const qs = query.toString();
+        const url = `${config.apiBase}/data.json` + (qs ? `?${qs}` : '');
+
+        const response = await fetch(url, {
             headers: {
                 'X-Redmine-API-Key': config.apiKey,
                 'Content-Type': 'application/json'
@@ -221,7 +229,14 @@ export const apiClient = {
             } as Version;
         }).filter((v): v is Version => v !== null) : [];
 
-        return { ...data, tasks, relations, versions };
+        const statuses: TaskStatus[] = Array.isArray(data.statuses)
+            ? (data.statuses as any[]).map((s) => ({
+                id: typeof s.id === 'number' ? s.id : Number(s.id),
+                name: String(s.name)
+            }))
+            : [];
+
+        return { ...data, tasks, relations, versions, statuses };
     },
 
     fetchEditMeta: async (taskId: string): Promise<TaskEditMeta> => {
