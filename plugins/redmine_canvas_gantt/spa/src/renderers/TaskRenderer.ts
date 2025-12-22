@@ -17,7 +17,7 @@ export class TaskRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: any[] = []) {
+    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: any[] = [], showVersions: boolean = true) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -48,7 +48,7 @@ export class TaskRenderer {
                         this.drawProjectSummaryBar(ctx, x1, x2, y, viewport.rowHeight);
                     }
                 } else if (row.type === 'version') {
-                    if (row.startDate !== undefined && row.dueDate !== undefined) {
+                    if (showVersions && row.startDate !== undefined && row.dueDate !== undefined) {
                         const s = LayoutEngine.snapDate(row.startDate, zoomLevel);
                         const d = LayoutEngine.snapDate(row.dueDate, zoomLevel);
                         const x1 = LayoutEngine.dateToX(s, viewport) - viewport.scrollX;
