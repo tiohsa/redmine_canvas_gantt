@@ -12,7 +12,7 @@ interface GanttToolbarProps {
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const {
-        viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
+        viewport, updateViewport, groupByProject, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
         setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer
@@ -145,6 +145,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setSelectedAssigneeIds(next);
     };
 
+    const isAllAssigneesSelected = assignees.length > 0 && selectedAssigneeIds.length === assignees.length;
+
+    const toggleAllAssignees = () => {
+        if (isAllAssigneesSelected) {
+            setSelectedAssigneeIds([]);
+        } else {
+            setSelectedAssigneeIds(assignees.map(a => a.id));
+        }
+    };
+
     const projects = React.useMemo(() => {
         const map = new Map<string, string>();
         allTasks.forEach(t => {
@@ -160,6 +170,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             ? selectedProjectIds.filter(i => i !== id)
             : [...selectedProjectIds, id];
         setSelectedProjectIds(next);
+    };
+
+    const isAllProjectsSelected = projects.length > 0 && selectedProjectIds.length === projects.length;
+
+    const toggleAllProjects = () => {
+        if (isAllProjectsSelected) {
+            setSelectedProjectIds([]);
+        } else {
+            setSelectedProjectIds(projects.map(p => p.id));
+        }
     };
 
     const versionsList = React.useMemo(() => {
@@ -189,6 +209,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             ? selectedStatusIds.filter(i => i !== id)
             : [...selectedStatusIds, id];
         setSelectedStatusFromServer(next);
+    };
+
+    const isAllStatusesSelected = taskStatuses.length > 0 && selectedStatusIds.length === taskStatuses.length;
+
+    const toggleAllStatuses = () => {
+        if (isAllStatusesSelected) {
+            setSelectedStatusFromServer([]);
+        } else {
+            setSelectedStatusFromServer(taskStatuses.map(s => s.id));
+        }
     };
 
     const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
@@ -454,6 +484,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             }}
                         >
                             <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('field_assigned_to') || 'Assignee'}</div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#333', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', marginBottom: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={isAllAssigneesSelected}
+                                    onChange={toggleAllAssignees}
+                                />
+                                <span style={{ fontWeight: 500 }}>{'全選択'}</span>
+                            </label>
                             {assignees.map(assignee => (
                                 <label key={assignee.id ?? 'none'} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
                                     <input
@@ -529,10 +567,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#333', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', marginBottom: '8px' }}>
                                 <input
                                     type="checkbox"
-                                    checked={groupByProject}
-                                    onChange={() => setGroupByProject(!groupByProject)}
+                                    checked={isAllProjectsSelected}
+                                    onChange={toggleAllProjects}
                                 />
-                                <span style={{ fontWeight: 500 }}>{'PJ軸で表示'}</span>
+                                <span style={{ fontWeight: 500 }}>{'全選択'}</span>
                             </label>
                             {projects.map(project => (
                                 <label key={project.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
@@ -685,6 +723,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             }}
                         >
                             <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('field_status') || 'Status'}</div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#333', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', marginBottom: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={isAllStatusesSelected}
+                                    onChange={toggleAllStatuses}
+                                />
+                                <span style={{ fontWeight: 500 }}>{'全選択'}</span>
+                            </label>
                             {taskStatuses.map(status => (
                                 <label key={status.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
                                     <input
