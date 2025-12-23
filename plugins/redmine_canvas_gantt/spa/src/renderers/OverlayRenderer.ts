@@ -20,13 +20,18 @@ export class OverlayRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport) {
-        const ctx = this.canvas.getContext('2d');
+    render(viewport: Viewport, overrideCtx?: CanvasRenderingContext2D | any, overrideSize?: { width: number, height: number }, options?: { selectedTaskId?: string | null }) {
+        const ctx = overrideCtx || this.canvas.getContext('2d');
+        const width = overrideSize?.width || this.canvas.width;
+        const height = overrideSize?.height || this.canvas.height;
         if (!ctx) return;
 
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        if (!overrideCtx) {
+            ctx.clearRect(0, 0, width, height);
+        }
 
-        const { tasks, relations, selectedTaskId, rowCount, zoomLevel } = useTaskStore.getState();
+        const { tasks, relations, selectedTaskId: storeSelectedTaskId, rowCount, zoomLevel } = useTaskStore.getState();
+        const selectedTaskId = options?.selectedTaskId !== undefined ? options.selectedTaskId : storeSelectedTaskId;
         const totalRows = rowCount || tasks.length;
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, totalRows);
 
@@ -68,13 +73,13 @@ export class OverlayRenderer {
         }
 
         // Draw Inazuma line (Progress Line)
-        this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel);
+        this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel, height);
 
         // Draw "Today" line
-        this.drawTodayLine(ctx, viewport);
+        this.drawTodayLine(ctx, viewport, width, height);
     }
 
-    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[], zoomLevel: ZoomLevel) {
+    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[], zoomLevel: ZoomLevel, height: number) {
         const { showProgressLine } = useUIStore.getState();
         if (!showProgressLine) return;
 
@@ -112,7 +117,7 @@ export class OverlayRenderer {
         });
 
         // End at Today Line at Bottom
-        ctx.lineTo(xToday, this.canvas.height);
+        ctx.lineTo(xToday, height);
 
         ctx.stroke();
         ctx.restore();
@@ -278,19 +283,19 @@ export class OverlayRenderer {
         ctx.setLineDash([]);
     }
 
-    private drawTodayLine(ctx: CanvasRenderingContext2D, viewport: Viewport) {
+    private drawTodayLine(ctx: CanvasRenderingContext2D, viewport: Viewport, width: number, height: number) {
         const today = new Date().setHours(0, 0, 0, 0);
         const ONE_DAY = 24 * 60 * 60 * 1000;
         // Redmine standard: draw at the right edge of "today" column.
         const x = LayoutEngine.dateToX(today + ONE_DAY, viewport) - viewport.scrollX;
 
-        if (x >= 0 && x <= this.canvas.width) {
+        if (x >= 0 && x <= width) {
             ctx.strokeStyle = '#e53935';
             ctx.lineWidth = 2;
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
             ctx.moveTo(x, 0);
-            ctx.lineTo(x, this.canvas.height);
+            ctx.lineTo(x, height);
             ctx.stroke();
             ctx.setLineDash([]);
         }
