@@ -97,6 +97,7 @@ const buildLayout = (
     projectExpansion: Record<string, boolean>,
     versionExpansion: Record<string, boolean>,
     taskExpansion: Record<string, boolean>,
+    selectedVersionIds: string[],
     sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null
 ): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
     const normalizedTasks = tasks.map((task) => ({ ...task, hasChildren: false }));
@@ -194,6 +195,7 @@ const buildLayout = (
     let rowIndex = 0;
     const arrangedTasks: Task[] = [];
     const layoutRows: LayoutRow[] = [];
+    const shouldShowVersionName = selectedVersionIds.length > 0;
 
     const traverse = (taskId: string, depth: number, hiddenByAncestor: boolean, guides: boolean[], isLast: boolean) => {
         const node = nodeMap.get(taskId);
@@ -300,7 +302,7 @@ const buildLayout = (
                     layoutRows.push({
                         type: 'version',
                         id: v.id,
-                        name: v.name,
+                        name: shouldShowVersionName ? v.name : '',
                         rowIndex,
                         startDate: vStart,
                         dueDate: v.effectiveDate,
@@ -514,6 +516,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             projectExpansion,
             versionExpansion,
             taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
 
@@ -539,6 +542,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -560,6 +564,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -586,6 +591,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -610,6 +616,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -632,6 +639,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -709,6 +717,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
 
@@ -733,6 +742,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -817,6 +827,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -839,6 +850,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -865,6 +877,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -888,6 +901,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -911,6 +925,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -957,6 +972,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             projectExpansion,
             versionExpansion,
             taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
 
@@ -993,6 +1009,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             projectExpansion,
             versionExpansion,
             taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
 
@@ -1029,6 +1046,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             projectExpansion,
             versionExpansion,
             taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
 
@@ -1054,6 +1072,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -1076,6 +1095,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -1098,6 +1118,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             state.sortConfig
         );
         return {
@@ -1119,6 +1140,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            ids,
             state.sortConfig
         );
         return {

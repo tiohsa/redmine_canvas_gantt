@@ -155,6 +155,50 @@ describe('TaskStore assignee filter', () => {
     });
 });
 
+describe('TaskStore version label visibility', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('バージョン未選択時はバージョン名を空にする', () => {
+        const { setTasks, setVersions, setSelectedVersionIds } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            {
+                id: 'v1',
+                name: 'Version 1',
+                effectiveDate: 0,
+                startDate: 0,
+                ratioDone: 0,
+                projectId: 'p1',
+                status: 'open'
+            }
+        ]);
+
+        setTasks([
+            buildTask({
+                id: 't1',
+                projectId: 'p1',
+                fixedVersionId: 'v1',
+                startDate: 0,
+                dueDate: 0
+            })
+        ]);
+
+        const versionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version');
+        expect(versionRow?.name).toBe('');
+
+        setSelectedVersionIds(['v1']);
+        const selectedVersionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version');
+        expect(selectedVersionRow?.name).toBe('Version 1');
+    });
+});
+
 describe('TaskStore filter hierarchy', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
