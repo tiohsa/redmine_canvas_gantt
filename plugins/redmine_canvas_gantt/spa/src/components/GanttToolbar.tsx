@@ -21,7 +21,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         showProgressLine,
         toggleProgressLine,
         showVersions,
-        toggleVersions,
         visibleColumns,
         setVisibleColumns,
         toggleLeftPane,
@@ -173,6 +172,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             ? selectedVersionIds.filter(i => i !== id)
             : [...selectedVersionIds, id];
         setSelectedVersionIds(next);
+    };
+
+    const isAllVersionsSelected = versionsList.length > 0 && selectedVersionIds.length === versionsList.length;
+
+    const toggleAllVersions = () => {
+        if (isAllVersionsSelected) {
+            setSelectedVersionIds([]);
+        } else {
+            setSelectedVersionIds(versionsList.map(v => v.id));
+        }
     };
 
     const toggleStatus = (id: number) => {
@@ -563,8 +572,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             padding: '0 10px',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
-                            backgroundColor: (selectedVersionIds.length > 0 || showVersions) ? '#e8f0fe' : '#fff',
-                            color: (selectedVersionIds.length > 0 || showVersions) ? '#1a73e8' : '#333',
+                            backgroundColor: selectedVersionIds.length > 0 ? '#e8f0fe' : '#fff',
+                            color: selectedVersionIds.length > 0 ? '#1a73e8' : '#333',
                             fontSize: '13px',
                             fontWeight: 500,
                             cursor: 'pointer',
@@ -600,10 +609,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#333', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', marginBottom: '8px' }}>
                                 <input
                                     type="checkbox"
-                                    checked={showVersions}
-                                    onChange={toggleVersions}
+                                    checked={isAllVersionsSelected}
+                                    onChange={toggleAllVersions}
                                 />
-                                <span style={{ fontWeight: 500 }}>{'Ver.表示'}</span>
+                                <span style={{ fontWeight: 500 }}>{'全選択'}</span>
                             </label>
                             {versionsList.map(version => (
                                 <label key={version.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>

@@ -101,8 +101,6 @@ const buildLayout = (
     sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null
 ): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
     const normalizedTasks = tasks.map((task) => ({ ...task, hasChildren: false }));
-    // selectedVersionIds はフィルタ処理で既に適用済み。将来の拡張用に受け取るがここでは使用しない。
-    void selectedVersionIds;
 
     const nodeMap = new Map<string, { task: Task; children: string[] }>();
     normalizedTasks.forEach((task) => nodeMap.set(task.id, { task, children: [] }));
@@ -227,8 +225,25 @@ const buildLayout = (
 
     orderedProjects.forEach((projectId) => {
         const roots = projectRoots.get(projectId) ?? [];
-        const projectName = nodeMap.get(roots[0] ?? '')?.task.projectName;
+
+        // Find project name more robustly
+        let projectName = '';
+        const projectNode = nodeMap.get(roots[0] ?? '');
+        if (projectNode?.task.projectName) {
+            projectName = projectNode.task.projectName;
+        } else {
+            // Search all tasks in this project
+            for (const node of nodeMap.values()) {
+                if (node.task.projectId === projectId && node.task.projectName) {
+                    projectName = node.task.projectName;
+                    break;
+                }
+            }
+        }
+        if (!projectName) projectName = projectId === 'default_project' ? '' : projectId;
+
         const expanded = projectExpansion[projectId] ?? true;
+        const shouldShowVersions = showVersions || selectedVersionIds.length > 0;
 
         if (groupByProject) {
             // Find min/max dates for this project to draw the summary bar
@@ -260,9 +275,9 @@ const buildLayout = (
             rowIndex += 1;
         }
 
-        const hideDescendants = groupByProject ? !expanded : false;
+        const hideDescendants = (groupByProject && !expanded) ? true : false;
 
-        if (groupByProject && showVersions) {
+        if (shouldShowVersions) {
             const versionMap = new Map<string | undefined, string[]>();
             roots.forEach(rootId => {
                 const t = nodeMap.get(rootId)?.task;
