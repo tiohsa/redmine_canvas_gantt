@@ -97,7 +97,10 @@ const buildLayout = (
     projectExpansion: Record<string, boolean>,
     versionExpansion: Record<string, boolean>,
     taskExpansion: Record<string, boolean>,
-    sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null
+    selectedVersionIds: string[],
+    selectedProjectIds: string[],
+    sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null,
+    allTasks: Task[]
 ): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
     const normalizedTasks = tasks.map((task) => ({ ...task, hasChildren: false }));
 
@@ -107,25 +110,59 @@ const buildLayout = (
     const projectOrder = new Map<string, number>();
     const projectRoots = new Map<string, string[]>();
 
+    const effectiveGroupByProject = groupByProject || selectedProjectIds.length > 0;
+
     normalizedTasks.forEach((task, index) => {
         const projectId = task.projectId ?? 'default_project';
         if (!projectOrder.has(projectId)) {
             projectOrder.set(projectId, index);
         }
 
+        let treatedAsChild = false;
+
         if (task.parentId && nodeMap.has(task.parentId)) {
             const parentNode = nodeMap.get(task.parentId);
-            parentNode?.children.push(task.id);
-            if (parentNode) {
-                parentNode.task.hasChildren = true;
+            const pId = parentNode?.task.projectId ?? 'default_project';
+            // If grouping by project is active, separate tasks if they belong to different projects
+            const sameProject = pId === projectId;
+
+            if (!effectiveGroupByProject || sameProject) {
+                parentNode?.children.push(task.id);
+                if (parentNode) {
+                    parentNode.task.hasChildren = true;
+                }
+                treatedAsChild = true;
             }
-        } else {
+        }
+
+        if (!treatedAsChild) {
             if (!projectRoots.has(projectId)) {
                 projectRoots.set(projectId, []);
             }
             projectRoots.get(projectId)?.push(task.id);
         }
     });
+
+    // Ensure selected projects are included even if they have no visible tasks
+    selectedProjectIds.forEach(pid => {
+        if (!projectRoots.has(pid)) {
+            projectRoots.set(pid, []);
+            if (!projectOrder.has(pid)) {
+                // If the project is not in the filtered tasks, we try to find its order from allTasks
+                // Or just append it to the end
+                const originalTask = allTasks.find(t => t.projectId === pid);
+                if (originalTask) {
+                    // We don't have a reliable index from filtered tasks, so we might just put it at the end
+                    // or try to match displayOrder if possible. 
+                    // For simplicity, let's append to the end.
+                    projectOrder.set(pid, Number.MAX_SAFE_INTEGER);
+                } else {
+                    projectOrder.set(pid, Number.MAX_SAFE_INTEGER);
+                }
+            }
+        }
+    });
+
 
     // Helper to sort task IDs by configured sort or default displayOrder
     const sortTaskIds = (ids: string[]) => {
@@ -224,10 +261,36 @@ const buildLayout = (
 
     orderedProjects.forEach((projectId) => {
         const roots = projectRoots.get(projectId) ?? [];
-        const projectName = nodeMap.get(roots[0] ?? '')?.task.projectName;
-        const expanded = projectExpansion[projectId] ?? true;
 
-        if (groupByProject) {
+        // Find project name more robustly
+        let projectName = '';
+        const projectNode = nodeMap.get(roots[0] ?? '');
+        if (projectNode?.task.projectName) {
+            projectName = projectNode.task.projectName;
+        } else {
+            // Search all tasks in this project
+            for (const node of nodeMap.values()) {
+                if (node.task.projectId === projectId && node.task.projectName) {
+                    projectName = node.task.projectName;
+                    break;
+                }
+            }
+        }
+
+
+        // Fallback: look up project name in allTasks if not found in filtered nodes
+        if (!projectName) {
+            const t = allTasks.find(t => t.projectId === projectId && t.projectName);
+            if (t && t.projectName) projectName = t.projectName;
+        }
+
+        if (!projectName) projectName = projectId === 'default_project' ? '' : projectId;
+
+        const expanded = projectExpansion[projectId] ?? true;
+        const shouldShowVersions = showVersions || selectedVersionIds.length > 0;
+        const shouldGroupByProject = groupByProject || selectedProjectIds.length > 0;
+
+        if (shouldGroupByProject) {
             // Find min/max dates for this project to draw the summary bar
             let pStart: number | undefined;
             let pDue: number | undefined;
@@ -257,9 +320,9 @@ const buildLayout = (
             rowIndex += 1;
         }
 
-        const hideDescendants = groupByProject ? !expanded : false;
+        const hideDescendants = (shouldGroupByProject && !expanded) ? true : false;
 
-        if (groupByProject && showVersions) {
+        if (shouldShowVersions) {
             const versionMap = new Map<string | undefined, string[]>();
             roots.forEach(rootId => {
                 const t = nodeMap.get(rootId)?.task;
@@ -353,7 +416,7 @@ const applyFilters = (
     const hasAssigneeFilter = selectedAssigneeIds.length > 0;
     const hasProjectFilter = selectedProjectIds.length > 0;
     const hasVersionFilter = selectedVersionIds.length > 0;
-    const hasSubprojectFilter = !showSubprojects && currentProjectId !== null;
+    const hasSubprojectFilter = !showSubprojects && currentProjectId !== null && !hasProjectFilter;
 
     if (!hasTextFilter && !hasAssigneeFilter && !hasProjectFilter && !hasVersionFilter && !hasSubprojectFilter) {
         return tasks;
@@ -514,7 +577,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             projectExpansion,
             versionExpansion,
             taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            tasks
         );
 
         return {
@@ -539,7 +605,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             relations,
@@ -560,7 +629,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             versions,
@@ -586,7 +658,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             showVersions: show,
@@ -610,7 +685,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             relations: nextRelations,
@@ -632,7 +710,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             relations: nextRelations,
@@ -709,7 +790,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            finalTasks
         );
 
         return {
@@ -733,7 +817,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            finalTasks
         );
         return {
             allTasks: finalTasks,
@@ -817,7 +904,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             groupByProject: grouped,
@@ -839,7 +929,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             organizeByDependency: enabled,
@@ -865,7 +958,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             projectExpansion,
@@ -888,7 +984,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             versionExpansion,
@@ -911,7 +1010,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             taskExpansion,
@@ -957,7 +1059,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             projectExpansion,
             versionExpansion,
             taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
 
         return {
@@ -993,7 +1098,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             projectExpansion,
             versionExpansion,
             taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
 
         return {
@@ -1029,7 +1137,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             projectExpansion,
             versionExpansion,
             taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
 
         return {
@@ -1054,7 +1165,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             filterText: text,
@@ -1076,7 +1190,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             selectedAssigneeIds: ids,
@@ -1098,7 +1215,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            state.selectedVersionIds,
+            ids,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             selectedProjectIds: ids,
@@ -1119,7 +1239,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            state.sortConfig
+            ids,
+            state.selectedProjectIds,
+            state.sortConfig,
+            state.allTasks
         );
         return {
             selectedVersionIds: ids,
@@ -1185,7 +1308,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
-            newSort
+            state.selectedVersionIds,
+            state.selectedProjectIds,
+            newSort,
+            state.allTasks
         );
 
         return {

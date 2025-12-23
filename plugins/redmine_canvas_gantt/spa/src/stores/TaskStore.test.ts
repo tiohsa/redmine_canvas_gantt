@@ -155,6 +155,50 @@ describe('TaskStore assignee filter', () => {
     });
 });
 
+describe('TaskStore version label visibility', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('Ver表示ONなら選択なしでもバージョン名を表示する', () => {
+        const { setTasks, setVersions, setSelectedVersionIds } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            {
+                id: 'v1',
+                name: 'Version 1',
+                effectiveDate: 0,
+                startDate: 0,
+                ratioDone: 0,
+                projectId: 'p1',
+                status: 'open'
+            }
+        ]);
+
+        setTasks([
+            buildTask({
+                id: 't1',
+                projectId: 'p1',
+                fixedVersionId: 'v1',
+                startDate: 0,
+                dueDate: 0
+            })
+        ]);
+
+        const versionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version');
+        expect(versionRow?.name).toBe('Version 1');
+
+        setSelectedVersionIds(['v1']);
+        const selectedVersionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version');
+        expect(selectedVersionRow?.name).toBe('Version 1');
+    });
+});
+
 describe('TaskStore filter hierarchy', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -172,6 +216,31 @@ describe('TaskStore filter hierarchy', () => {
 
         const visibleTasks = useTaskStore.getState().tasks;
         expect(visibleTasks.map(task => task.id)).toEqual(['parent', 'child']);
+    });
+});
+
+describe('TaskStore project filter with subproject toggle', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('サブプロジェクト非表示でもPJフィルタ選択は表示する', () => {
+        const { setTasks, setSelectedProjectIds } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            showSubprojects: false,
+            currentProjectId: 'p1'
+        });
+
+        setTasks([
+            buildTask({ id: 't1', projectId: 'p1', projectName: 'P1' }),
+            buildTask({ id: 't2', projectId: 'p2', projectName: 'P2' })
+        ]);
+
+        setSelectedProjectIds(['p2']);
+
+        const visibleIds = useTaskStore.getState().tasks.map(t => t.id);
+        expect(visibleIds).toEqual(['t2']);
     });
 });
 
