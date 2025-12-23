@@ -455,9 +455,6 @@ export const UiSidebar: React.FC = () => {
                                     }}
                                 >
                                     {t.subject}
-                                    <span style={{ color: '#9aa0a6', marginLeft: 8, fontSize: '11px', fontWeight: 400, flexShrink: 0 }}>
-                                        {t.projectName}{t.fixedVersionName ? ` / ${t.fixedVersionName}` : ''}
-                                    </span>
                                 </a>
                             </>
                         );
