@@ -5,6 +5,14 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { useEditMetaStore } from '../stores/EditMetaStore';
 import type { Task } from '../types';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
+
+const queryClient = new QueryClient();
+
+const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+);
 
 describe('UiSidebar Blur-to-Save', () => {
     const taskId = '123';
@@ -104,30 +112,16 @@ describe('UiSidebar Blur-to-Save', () => {
         }) as unknown as typeof fetch);
     });
 
-    it('saves Subject on blur when changed', async () => {
-        render(<UiSidebar />);
-
-        // Subject cell index usually 1 (ID is 0)
-        // Actually we use data-testid={`cell-${task.id}-${col.key}`}
-        await screen.findByTestId(`cell-${taskId}-subject`);
-
-        // Double click is prevented for subject in code? 
-        // L693: if (col.key === 'subject') return;
-        // Subject in sidebar has a link, doesn't seem to have double click edit in UiSidebar.tsx!
-        // Wait, TaskDetailPanel has SubjectEditor.
-        // Let's check status instead.
-    });
-
     it('saves Status on blur when changed', async () => {
-        render(<UiSidebar />);
+        render(
+            <Wrapper>
+                <UiSidebar />
+            </Wrapper>
+        );
 
         const cell = await screen.findByTestId(`cell-${taskId}-status`);
-        // The component uses task.id and col.key to find the field.
-        // It also checks task.editable.
-
         fireEvent.doubleClick(cell);
 
-        // Wait for Loading... then the combobox
         const select = await screen.findByRole('combobox', {}, { timeout: 3000 });
         fireEvent.change(select, { target: { value: '2' } });
         fireEvent.blur(select);
@@ -141,7 +135,11 @@ describe('UiSidebar Blur-to-Save', () => {
     });
 
     it('reverts Status on blur when unchanged', async () => {
-        render(<UiSidebar />);
+        render(
+            <Wrapper>
+                <UiSidebar />
+            </Wrapper>
+        );
 
         const cell = await screen.findByTestId(`cell-${taskId}-status`);
         fireEvent.doubleClick(cell);
@@ -149,12 +147,10 @@ describe('UiSidebar Blur-to-Save', () => {
         const select = await screen.findByRole('combobox', {}, { timeout: 3000 });
         fireEvent.blur(select);
 
-        // Editor should be closed
         await waitFor(() => {
             expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
         });
 
-        // Should NOT call fetch for PATCH
         const patchCalls = (fetch as any).mock.calls.filter((call: any) =>
             call[1]?.method === 'PATCH'
         );

@@ -374,10 +374,30 @@ export const apiClient = {
         };
     },
 
-    updateTask: async (task: Task): Promise<UpdateTaskResult> => {
+    updateTask: async (task: Task & { customFieldValues?: Record<string, string> }): Promise<UpdateTaskResult> => {
         const config = window.RedmineCanvasGantt;
         if (!config) {
             throw new Error("Configuration not found");
+        }
+
+        const payload: Record<string, any> = {
+            lock_version: task.lockVersion,
+            subject: task.subject,
+            assigned_to_id: task.assignedToId,
+            status_id: task.statusId,
+            done_ratio: task.ratioDone,
+            priority_id: task.priorityId,
+            category_id: task.categoryId,
+            estimated_hours: task.estimatedHours,
+            project_id: task.projectId ? Number(task.projectId) : undefined,
+            tracker_id: task.trackerId,
+            fixed_version_id: task.fixedVersionId,
+            start_date: (task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toISOString().split('T')[0] : null,
+            due_date: (task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toISOString().split('T')[0] : null,
+        };
+
+        if (task.customFieldValues) {
+            payload.custom_field_values = task.customFieldValues;
         }
 
         const response = await fetch(`${config.apiBase}/tasks/${task.id}.json`, {
@@ -387,13 +407,7 @@ export const apiClient = {
                 'Content-Type': 'application/json',
                 'X-CSRF-Token': config.authToken
             },
-            body: JSON.stringify({
-                task: {
-                    start_date: (task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toISOString().split('T')[0] : null,
-                    due_date: (task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toISOString().split('T')[0] : null,
-                    lock_version: task.lockVersion
-                }
-            })
+            body: JSON.stringify({ task: payload })
         });
 
         if (response.status === 409) {

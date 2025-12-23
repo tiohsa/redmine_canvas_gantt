@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
+import { useTasks, useUpdateTask } from '../queries/tasks';
 import { InteractionEngine } from '../engines/InteractionEngine';
 import { BackgroundRenderer } from '../renderers/BackgroundRenderer';
 import { TaskRenderer } from '../renderers/TaskRenderer';
@@ -25,8 +26,16 @@ export const GanttContainer: React.FC = () => {
     const taskCanvasRef = useRef<HTMLCanvasElement>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    const { viewport, tasks, relations, versions, setTasks, setRelations, setVersions, setShowVersions, updateViewport, zoomLevel, rowCount, viewportFromStorage, selectedTaskId, layoutRows } = useTaskStore();
+    const { viewport, tasks, relations, versions, setAllData, setShowVersions, updateViewport, zoomLevel, rowCount, viewportFromStorage, selectedTaskId, layoutRows } = useTaskStore();
     const { showProgressLine, showVersions, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
+    const { data: taskData, isLoading, error } = useTasks();
+    const updateTaskMutation = useUpdateTask();
+
+    useEffect(() => {
+        if (taskData) {
+            setAllData(taskData);
+        }
+    }, [taskData, setAllData]);
 
     useEffect(() => {
         setShowVersions(showVersions);
@@ -109,34 +118,24 @@ export const GanttContainer: React.FC = () => {
     }>({});
 
     useEffect(() => {
-        // Initial fetch
-        import('../api/client').then(({ apiClient }) => {
-            const savedStatusIds = useTaskStore.getState().selectedStatusIds;
-            apiClient.fetchData({ statusIds: savedStatusIds }).then(data => {
-                setTasks(data.tasks);
-                setRelations(data.relations);
-                setVersions(data.versions);
-                useTaskStore.getState().setTaskStatuses(data.statuses);
+        if (taskData && !viewportFromStorage) {
+             // Only run once when data is first loaded and no saved viewport
+             const minStart = getMinFiniteStartDate(taskData.tasks);
+             const oneYearAgo = new Date();
+             oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+             oneYearAgo.setHours(0, 0, 0, 0);
 
-                if (!viewportFromStorage) {
-                    // Fit timeline start to the earliest available date so tasks are visible
-                    const minStart = getMinFiniteStartDate(data.tasks);
-                    const oneYearAgo = new Date();
-                    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-                    oneYearAgo.setHours(0, 0, 0, 0);
+             const startDate = Math.min(minStart ?? oneYearAgo.getTime(), oneYearAgo.getTime());
+             const currentViewport = useTaskStore.getState().viewport;
+             const now = new Date().setHours(0, 0, 0, 0);
+             const scrollX = Math.max(0, (now - startDate) * currentViewport.scale - 100);
 
-                    const startDate = Math.min(minStart ?? oneYearAgo.getTime(), oneYearAgo.getTime());
-
-                    // Calculate scroll position to center "today" (or start at today with some padding)
-                    const currentViewport = useTaskStore.getState().viewport;
-                    const now = new Date().setHours(0, 0, 0, 0);
-                    const scrollX = Math.max(0, (now - startDate) * currentViewport.scale - 100);
-
-                    updateViewport({ startDate, scrollX });
-                }
-            }).catch(err => console.error("Failed to load Gantt data", err));
-        });
-    }, []);
+             updateViewport({ startDate, scrollX });
+        }
+        // Dependency array: intentionally empty (or just taskData) to mimic "on mount + load" behavior without re-triggering constantly.
+        // We use a ref to track if we already centered? viewportFromStorage handles persistence.
+        // But if viewportFromStorage is false, we want to center when data arrives.
+    }, [taskData ? true : false]); // Run when data presence changes
 
     useEffect(() => {
         // We attach interaction engine to the MAIN PANE (timeline), not the whole container
@@ -144,7 +143,9 @@ export const GanttContainer: React.FC = () => {
         if (!mainPaneRef.current || !bgCanvasRef.current || !taskCanvasRef.current || !overlayCanvasRef.current) return;
 
         // Initialize Engines
-        engines.current.interaction = new InteractionEngine(mainPaneRef.current);
+        engines.current.interaction = new InteractionEngine(mainPaneRef.current, {
+            onTaskDrop: (task) => updateTaskMutation.mutate(task)
+        });
         engines.current.bg = new BackgroundRenderer(bgCanvasRef.current);
         engines.current.task = new TaskRenderer(taskCanvasRef.current);
         engines.current.overlay = new OverlayRenderer(overlayCanvasRef.current);
@@ -152,7 +153,7 @@ export const GanttContainer: React.FC = () => {
         return () => {
             engines.current.interaction?.detach();
         };
-    }, []);
+    }, [updateTaskMutation]);
 
     // Responsive Canvas Size - Observe the viewportWrapperRef (the visible scrollport)
     useEffect(() => {

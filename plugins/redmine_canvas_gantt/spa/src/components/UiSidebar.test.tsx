@@ -6,6 +6,14 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import type { Task } from '../types';
 import { useEditMetaStore } from '../stores/EditMetaStore';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
+
+const queryClient = new QueryClient();
+
+const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+);
 
 describe('UiSidebar', () => {
     it('shows task id column', () => {
@@ -39,7 +47,7 @@ describe('UiSidebar', () => {
 
         useTaskStore.getState().setTasks([task]);
 
-        render(<UiSidebar />);
+        render(<Wrapper><UiSidebar /></Wrapper>);
 
         expect(screen.getByText('ID')).toBeInTheDocument();
         expect(screen.getByTestId('task-id-123')).toHaveTextContent('123');
@@ -113,6 +121,9 @@ describe('UiSidebar', () => {
                 } as unknown as Response;
             }
             if (url.endsWith(`/tasks/${taskId}.json`) && init?.method === 'PATCH') {
+                // Mock successful response from mutation query invalidation?
+                // The mutation calls invalidate, which calls useTasks -> fetch.
+                // But here we are just testing the mutation triggers PATCH.
                 return {
                     ok: true,
                     json: async () => ({ lock_version: 2 })
@@ -125,7 +136,7 @@ describe('UiSidebar', () => {
             } as unknown as Response;
         }) as unknown as typeof fetch);
 
-        render(<UiSidebar />);
+        render(<Wrapper><UiSidebar /></Wrapper>);
 
         const cell = await screen.findByTestId(`cell-${taskId}-startDate`);
         fireEvent.doubleClick(cell);
@@ -142,10 +153,11 @@ describe('UiSidebar', () => {
         fireEvent.keyDown(input, { key: 'Enter' });
 
         await waitFor(() => {
-            const t = useTaskStore.getState().allTasks[0];
-            // 2025-01-02 UTC is ... wait, input value is string.
-            // Check if the store was updated.
-            expect(t?.lockVersion).toBe(2);
+            // Verify patch was called
+             expect(fetch).toHaveBeenCalledWith(expect.stringContaining(`/tasks/${taskId}.json`), expect.objectContaining({
+                method: 'PATCH',
+                body: expect.stringContaining('"start_date":"2025-01-02"')
+            }));
         });
     });
 });

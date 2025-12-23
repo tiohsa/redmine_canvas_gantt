@@ -9,7 +9,7 @@ import { loadPreferences } from '../utils/preferences';
 import { DoneRatioEditor, DueDateEditor, SelectEditor, SubjectEditor } from './TaskDetailPanel';
 import { useEditMetaStore } from '../stores/EditMetaStore';
 import type { InlineEditSettings, TaskEditMeta } from '../types/editMeta';
-import { InlineEditService } from '../services/InlineEditService';
+import { useUpdateTask } from '../queries/tasks';
 import { i18n } from '../utils/i18n';
 
 const getAvatarColor = (name: string) => {
@@ -146,6 +146,8 @@ export const UiSidebar: React.FC = () => {
     const activeInlineEdit = useUIStore(state => state.activeInlineEdit);
     const columnWidths = useUIStore(state => state.columnWidths);
     const setColumnWidth = useUIStore(state => state.setColumnWidth);
+
+    const updateTaskMutation = useUpdateTask();
 
     const resizeRef = React.useRef<{ key: string; startX: number; startWidth: number } | null>(null);
 
@@ -735,9 +737,11 @@ export const UiSidebar: React.FC = () => {
         setActiveInlineEdit({ taskId: task.id, field, source: 'cell' });
     }, [ensureEditMeta, selectTask, setActiveInlineEdit, shouldEnableField]);
 
-    const save = React.useCallback(async (params: Parameters<typeof InlineEditService.saveTaskFields>[0]) => {
-        await InlineEditService.saveTaskFields(params);
-    }, []);
+    // Refactored to use mutation
+    const save = React.useCallback(async (task: Task, updates: Partial<Task>) => {
+        const merged = { ...task, ...updates };
+        await updateTaskMutation.mutateAsync(merged);
+    }, [updateTaskMutation]);
 
     return (
         <div
@@ -1064,12 +1068,7 @@ export const UiSidebar: React.FC = () => {
                                                             initialValue={task.subject}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { subject: next },
-                                                                    rollbackTaskUpdates: { subject: task.subject },
-                                                                    fields: { subject: next }
-                                                                });
+                                                                await save(task, { subject: next });
                                                                 close();
                                                             }}
                                                         />
@@ -1087,15 +1086,8 @@ export const UiSidebar: React.FC = () => {
                                                             includeUnassigned
                                                             onCancel={close}
                                                             onCommit={async (next) => {
-                                                                const prevId = task.assignedToId ?? null;
-                                                                const prevName = task.assignedToName;
-                                                                const name = next === null ? undefined : meta.options.assignees.find((o) => o.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { assignedToId: next ?? undefined, assignedToName: next === null ? undefined : name },
-                                                                    rollbackTaskUpdates: { assignedToId: prevId ?? undefined, assignedToName: prevName },
-                                                                    fields: { assigned_to_id: next }
-                                                                });
+                                                                const nextName = next === null ? undefined : meta.options.assignees.find((o) => o.id === next)?.name;
+                                                                await save(task, { assignedToId: next ?? undefined, assignedToName: next === null ? undefined : nextName });
                                                                 close();
                                                             }}
                                                         />
@@ -1113,12 +1105,7 @@ export const UiSidebar: React.FC = () => {
                                                             onCommit={async (next) => {
                                                                 if (next === null) return;
                                                                 const nextName = meta.options.statuses.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { statusId: next, statusName: nextName },
-                                                                    rollbackTaskUpdates: { statusId: task.statusId, statusName: task.statusName },
-                                                                    fields: { status_id: next }
-                                                                });
+                                                                await save(task, { statusId: next, statusName: nextName });
                                                                 close();
                                                             }}
                                                         />
@@ -1131,12 +1118,7 @@ export const UiSidebar: React.FC = () => {
                                                             initialValue={task.ratioDone}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { ratioDone: next },
-                                                                    rollbackTaskUpdates: { ratioDone: task.ratioDone },
-                                                                    fields: { done_ratio: next }
-                                                                });
+                                                                await save(task, { ratioDone: next });
                                                                 close();
                                                             }}
                                                         />
@@ -1155,12 +1137,7 @@ export const UiSidebar: React.FC = () => {
                                                                     useUIStore.getState().addNotification('Invalid date range', 'warning');
                                                                     return;
                                                                 }
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { dueDate: nextTs },
-                                                                    rollbackTaskUpdates: { dueDate: task.dueDate },
-                                                                    fields: { due_date: next }
-                                                                });
+                                                                await save(task, { dueDate: nextTs });
                                                                 close();
                                                             }}
                                                         />
@@ -1179,12 +1156,7 @@ export const UiSidebar: React.FC = () => {
                                                                     useUIStore.getState().addNotification('Invalid date range', 'warning');
                                                                     return;
                                                                 }
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { startDate: nextTs },
-                                                                    rollbackTaskUpdates: { startDate: task.startDate },
-                                                                    fields: { start_date: next }
-                                                                });
+                                                                await save(task, { startDate: nextTs });
                                                                 close();
                                                             }}
                                                         />
@@ -1202,12 +1174,7 @@ export const UiSidebar: React.FC = () => {
                                                             onCommit={async (next) => {
                                                                 if (next === null) return;
                                                                 const nextName = meta.options.priorities?.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { priorityId: next, priorityName: nextName },
-                                                                    rollbackTaskUpdates: { priorityId: task.priorityId, priorityName: task.priorityName },
-                                                                    fields: { priority_id: next }
-                                                                });
+                                                                await save(task, { priorityId: next, priorityName: nextName });
                                                                 close();
                                                             }}
                                                         />
@@ -1224,12 +1191,7 @@ export const UiSidebar: React.FC = () => {
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 const nextName = meta.options.assignees.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { authorId: next ?? undefined, authorName: nextName },
-                                                                    rollbackTaskUpdates: { authorId: task.authorId, authorName: task.authorName },
-                                                                    fields: { author_id: next }
-                                                                });
+                                                                await save(task, { authorId: next ?? undefined, authorName: nextName });
                                                                 close();
                                                             }}
                                                         />
@@ -1247,12 +1209,7 @@ export const UiSidebar: React.FC = () => {
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 const nextName = meta.options.categories?.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { categoryId: next ?? undefined, categoryName: nextName },
-                                                                    rollbackTaskUpdates: { categoryId: task.categoryId, categoryName: task.categoryName },
-                                                                    fields: { category_id: next }
-                                                                });
+                                                                await save(task, { categoryId: next ?? undefined, categoryName: nextName });
                                                                 close();
                                                             }}
                                                         />
@@ -1265,12 +1222,7 @@ export const UiSidebar: React.FC = () => {
                                                             initialValue={task.estimatedHours || 0}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { estimatedHours: next },
-                                                                    rollbackTaskUpdates: { estimatedHours: task.estimatedHours },
-                                                                    fields: { estimated_hours: next }
-                                                                });
+                                                                await save(task, { estimatedHours: next });
                                                                 close();
                                                             }}
                                                         />
@@ -1288,12 +1240,7 @@ export const UiSidebar: React.FC = () => {
                                                             onCommit={async (next) => {
                                                                 if (next === null) return;
                                                                 const nextName = meta.options.projects?.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { projectId: next !== null ? String(next) : undefined, projectName: nextName },
-                                                                    rollbackTaskUpdates: { projectId: task.projectId, projectName: task.projectName },
-                                                                    fields: { project_id: next }
-                                                                });
+                                                                await save(task, { projectId: next !== null ? String(next) : undefined, projectName: nextName });
                                                                 close();
                                                             }}
                                                         />
@@ -1311,12 +1258,7 @@ export const UiSidebar: React.FC = () => {
                                                             onCommit={async (next) => {
                                                                 if (next === null) return;
                                                                 const nextName = meta.options.trackers?.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { trackerId: next, trackerName: nextName },
-                                                                    rollbackTaskUpdates: { trackerId: task.trackerId, trackerName: task.trackerName },
-                                                                    fields: { tracker_id: next }
-                                                                });
+                                                                await save(task, { trackerId: next, trackerName: nextName });
                                                                 close();
                                                             }}
                                                         />
@@ -1334,12 +1276,7 @@ export const UiSidebar: React.FC = () => {
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 const nextName = meta.options.versions?.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { fixedVersionId: next !== null ? String(next) : undefined, fixedVersionName: nextName },
-                                                                    rollbackTaskUpdates: { fixedVersionId: task.fixedVersionId, fixedVersionName: task.fixedVersionName },
-                                                                    fields: { fixed_version_id: next }
-                                                                });
+                                                                await save(task, { fixedVersionId: next !== null ? String(next) : undefined, fixedVersionName: nextName });
                                                                 close();
                                                             }}
                                                         />

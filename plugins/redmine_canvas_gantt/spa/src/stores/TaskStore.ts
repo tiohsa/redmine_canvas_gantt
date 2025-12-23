@@ -39,6 +39,7 @@ interface TaskState {
     showSubprojects: boolean;
 
     // Actions
+    setAllData: (data: { tasks: Task[]; relations: Relation[]; versions: Version[]; statuses: TaskStatus[] }) => void;
     setTasks: (tasks: Task[]) => void;
     setRelations: (relations: Relation[]) => void;
     setVersions: (versions: Version[]) => void;
@@ -72,7 +73,7 @@ interface TaskState {
     setSelectedVersionIds: (ids: string[]) => void;
     scrollToTask: (taskId: string) => void;
     setSortConfig: (key: keyof Task | null) => void;
-    refreshData: () => Promise<void>;
+    // refreshData removed in favor of React Query
 }
 
 const preferences = loadPreferences();
@@ -491,6 +492,46 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     currentProjectId: (window as any).RedmineCanvasGantt?.projectId?.toString() || null,
     showSubprojects: preferences.groupByProject ?? true,
 
+    setAllData: (data) => set((state) => {
+        const { tasks, relations, versions, statuses } = data;
+        const projectExpansion = { ...state.projectExpansion };
+        const taskExpansion = { ...state.taskExpansion };
+        const versionExpansion = { ...state.versionExpansion };
+
+        tasks.forEach((task) => {
+            const projectId = task.projectId ?? 'default_project';
+            if (projectExpansion[projectId] === undefined) projectExpansion[projectId] = true;
+            if (taskExpansion[task.id] === undefined) taskExpansion[task.id] = true;
+            if (task.fixedVersionId && versionExpansion[task.fixedVersionId] === undefined) versionExpansion[task.fixedVersionId] = true;
+        });
+
+        const filteredTasks = applyFilters(tasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
+        const layout = buildLayout(
+            filteredTasks,
+            relations,
+            versions,
+            state.groupByProject,
+            state.showVersions,
+            state.organizeByDependency,
+            projectExpansion,
+            versionExpansion,
+            taskExpansion,
+            state.sortConfig
+        );
+
+        return {
+            allTasks: tasks,
+            relations,
+            versions,
+            taskStatuses: statuses,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount,
+            projectExpansion,
+            versionExpansion,
+            taskExpansion
+        };
+    }),
     setTasks: (tasks) => set((state) => {
         const projectExpansion = { ...state.projectExpansion };
         const taskExpansion = { ...state.taskExpansion };
@@ -572,7 +613,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
     setSelectedStatusFromServer: (ids) => {
         set({ selectedStatusIds: ids });
-        get().refreshData();
+        // Triggering refetch is now responsibility of the component via React Query keys
     },
     setShowVersions: (show) => set((state) => {
         const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
@@ -1195,14 +1236,4 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             rowCount: layout.rowCount
         };
     }),
-    refreshData: async () => {
-        const { apiClient } = await import('../api/client');
-        const state = get();
-        const data = await apiClient.fetchData({ statusIds: state.selectedStatusIds });
-        const { setTasks, setRelations, setVersions, setTaskStatuses } = state;
-        setTasks(data.tasks);
-        setRelations(data.relations);
-        setVersions(data.versions);
-        setTaskStatuses(data.statuses);
-    }
 }));

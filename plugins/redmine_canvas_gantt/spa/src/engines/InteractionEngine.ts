@@ -18,6 +18,7 @@ interface DragState {
 
 export class InteractionEngine {
     private container: HTMLElement;
+    private options: { onTaskDrop?: (task: Task) => void };
     private drag: DragState = {
         mode: 'none',
         startX: 0,
@@ -28,8 +29,9 @@ export class InteractionEngine {
         snapshot: null
     };
 
-    constructor(container: HTMLElement) {
+    constructor(container: HTMLElement, options: { onTaskDrop?: (task: Task) => void } = {}) {
         this.container = container;
+        this.options = options;
         this.attachEvents();
     }
 
@@ -293,46 +295,23 @@ export class InteractionEngine {
         this.container.style.cursor = 'default';
 
         if (wasDragging && draggedTaskId) {
-            // Persist the change to backend
-            const { tasks, updateTask, relations, refreshData } = useTaskStore.getState();
+            const { tasks } = useTaskStore.getState();
             const task = tasks.find(t => t.id === draggedTaskId);
             if (!task) return;
 
-            try {
-                const { apiClient } = await import('../api/client');
-                const result = await apiClient.updateTask(task);
-
-                if (result.status === 'ok' && result.lockVersion !== undefined) {
-                    // Update lockVersion in store
-                    updateTask(draggedTaskId, { lockVersion: result.lockVersion });
-                    if (relations.some(r => r.from === draggedTaskId || r.to === draggedTaskId)) {
-                        try {
-                            await refreshData();
-                        } catch (refreshError) {
-                            console.error('Failed to refresh data after update:', refreshError);
-                            useUIStore.getState().addNotification('Failed to refresh data after update.', 'warning');
-                        }
-                    }
-                } else {
-                    const errorMsg = result.status === 'conflict'
-                        ? (result.error || 'Conflict detected. Please reload.')
-                        : ('Failed to save: ' + (result.error || 'Unknown error'));
-
-                    useUIStore.getState().addNotification(errorMsg, 'warning');
-
-                    // Revert changes
-                    if (snapshot) {
-                        useTaskStore.getState().setTasks(snapshot);
-                    }
-                }
-            } catch (err) {
-                console.error('API error:', err);
-                useUIStore.getState().addNotification('Failed to save task changes.', 'error');
-
-                // Revert changes
-                if (snapshot) {
-                    useTaskStore.getState().setTasks(snapshot);
-                }
+            if (this.options.onTaskDrop) {
+                // Delegate to mutation
+                // If mutation fails, React Query's onError should handle rollback using snapshot mechanism
+                // But wait, React Query's onMutate snapshot is global query cache.
+                // Here we modified local store state via `updateTask` during drag.
+                // We should rely on React Query's mutation flow.
+                // The `onMutate` in `useUpdateTask` will snapshot the *Server State*.
+                // However, the `TaskStore` is currently holding the "UI State" (dragged position).
+                // The mutation call will trigger `onMutate`, which updates the *React Query Cache*.
+                // The `GanttContainer` listens to `taskData` and calls `setAllData`.
+                // So if we call mutate, it updates cache -> triggers `useEffect` in GanttContainer -> updates TaskStore.
+                // This seems correct flow.
+                this.options.onTaskDrop(task);
             }
         }
     };

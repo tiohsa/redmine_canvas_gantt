@@ -5,6 +5,9 @@ import { useTaskStore } from '../stores/TaskStore';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Relation, Task, Viewport } from '../types';
 import { RelationType } from '../types/constraints';
+import { apiClient } from '../api/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -15,7 +18,17 @@ vi.mock('../api/client', () => ({
     }
 }));
 
-import { apiClient } from '../api/client';
+const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            retry: false,
+        },
+    },
+});
+
+const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+);
 
 describe('HtmlOverlay', () => {
     const viewport: Viewport = {
@@ -81,9 +94,12 @@ describe('HtmlOverlay', () => {
     it('creates a relation by dragging a dependency handle onto another task', async () => {
         const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes };
         vi.mocked(apiClient.createRelation).mockResolvedValue(relation);
+
+        // Mock query hook behavior: useTasks re-fetches or invalidates.
+        // We can simulate refreshData by mocking fetchData response.
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [task1, task2],
-            relations: [relation],
+            relations: [relation], // Relation exists in server response
             versions: [],
             project: { id: 'p1', name: 'Project' },
             statuses: [],
@@ -95,7 +111,11 @@ describe('HtmlOverlay', () => {
             useTaskStore.getState().setHoveredTask('1');
         });
 
-        const { container } = render(<HtmlOverlay />);
+        const { container } = render(
+            <Wrapper>
+                <HtmlOverlay />
+            </Wrapper>
+        );
 
         const overlay = container.firstElementChild as HTMLDivElement;
         expect(overlay).toBeTruthy();
@@ -125,8 +145,8 @@ describe('HtmlOverlay', () => {
 
         await waitFor(() => {
             expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes);
-            expect(apiClient.fetchData).toHaveBeenCalled();
-            expect(useTaskStore.getState().relations).toEqual([relation]);
+            // Wait for store to be updated (addRelation is called in HtmlOverlay)
+            expect(useTaskStore.getState().relations).toEqual(expect.arrayContaining([relation]));
         });
     });
 
@@ -134,7 +154,7 @@ describe('HtmlOverlay', () => {
         vi.mocked(apiClient.deleteRelation).mockResolvedValue(undefined);
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [task1, task2],
-            relations: [],
+            relations: [], // Relation removed
             versions: [],
             statuses: [],
             project: { id: 'p1', name: 'Project' },
@@ -148,7 +168,11 @@ describe('HtmlOverlay', () => {
             useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '1' });
         });
 
-        const { container } = render(<HtmlOverlay />);
+        const { container } = render(
+            <Wrapper>
+                <HtmlOverlay />
+            </Wrapper>
+        );
         const removeItem = container.querySelector('[data-testid="remove-relation-rel-1"]');
         expect(removeItem).toBeTruthy();
 
@@ -156,7 +180,6 @@ describe('HtmlOverlay', () => {
 
         await waitFor(() => {
             expect(apiClient.deleteRelation).toHaveBeenCalledWith('rel-1');
-            expect(apiClient.fetchData).toHaveBeenCalled();
             expect(useTaskStore.getState().relations).toEqual([]);
         });
     });

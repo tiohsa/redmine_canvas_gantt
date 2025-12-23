@@ -21,7 +21,14 @@ describe('apiClient.fetchEditMeta', () => {
                     status_id: 1,
                     done_ratio: 10,
                     due_date: '2025-01-02',
-                    lock_version: 3
+                    lock_version: 3,
+                    start_date: '2025-01-01',
+                    priority_id: 1,
+                    project_id: 1,
+                    tracker_id: 1,
+                    category_id: null,
+                    fixed_version_id: null,
+                    estimated_hours: 5.5
                 },
                 editable: {
                     subject: true,
@@ -29,6 +36,13 @@ describe('apiClient.fetchEditMeta', () => {
                     status_id: true,
                     done_ratio: true,
                     due_date: true,
+                    start_date: true,
+                    priority_id: true,
+                    category_id: true,
+                    estimated_hours: true,
+                    project_id: true,
+                    tracker_id: true,
+                    fixed_version_id: true,
                     custom_field_values: false
                 },
                 options: {
@@ -50,7 +64,14 @@ describe('apiClient.fetchEditMeta', () => {
             statusId: 1,
             doneRatio: 10,
             dueDate: '2025-01-02',
-            lockVersion: 3
+            startDate: '2025-01-01',
+            lockVersion: 3,
+            priorityId: 1,
+            projectId: 1,
+            trackerId: 1,
+            categoryId: null,
+            fixedVersionId: null,
+            estimatedHours: 5.5
         });
         expect(meta.options.statuses).toEqual([{ id: 1, name: 'New' }]);
         expect(meta.options.assignees).toEqual([{ id: 2, name: 'Alice' }]);

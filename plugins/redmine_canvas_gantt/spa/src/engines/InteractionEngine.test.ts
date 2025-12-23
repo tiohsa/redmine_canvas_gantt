@@ -122,10 +122,11 @@ describe('InteractionEngine viewport panning', () => {
 });
 
 describe('InteractionEngine task updates', () => {
-    it('依存関係があるタスク更新後にデータを再取得する', async () => {
+    it('タスクドロップ時に onTaskDrop コールバックを呼ぶ', async () => {
         setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
         const container = createContainer();
-        const engine = new InteractionEngine(container);
+        const onTaskDrop = vi.fn();
+        const engine = new InteractionEngine(container, { onTaskDrop });
 
         const task1 = baseTask({ id: '1', rowIndex: 0 });
         const task2 = baseTask({ id: '2', rowIndex: 1, startDate: 20, dueDate: 30 });
@@ -144,16 +145,6 @@ describe('InteractionEngine task updates', () => {
             sortConfig: null
         });
 
-        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 1 });
-        vi.mocked(apiClient.fetchData).mockResolvedValue({
-            tasks: [task1, task2],
-            relations,
-            versions: [],
-            statuses: [],
-            project: { id: 'p1', name: 'Project' },
-            permissions: { editable: true, viewable: true }
-        });
-
         const { viewport, zoomLevel } = useTaskStore.getState();
         const bounds = LayoutEngine.getTaskBounds(task1, viewport, 'hit', zoomLevel);
         container.dispatchEvent(new MouseEvent('mousedown', { clientX: bounds.x + 1, clientY: bounds.y + 1, bubbles: true }));
@@ -162,8 +153,10 @@ describe('InteractionEngine task updates', () => {
 
         await new Promise(resolve => setTimeout(resolve, 0));
 
-        expect(apiClient.updateTask).toHaveBeenCalled();
-        expect(apiClient.fetchData).toHaveBeenCalled();
+        // Expect apiClient.updateTask NOT to be called directly by InteractionEngine anymore
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        // Expect callback to be called
+        expect(onTaskDrop).toHaveBeenCalled();
 
         engine.detach();
         container.remove();
