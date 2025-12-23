@@ -219,6 +219,31 @@ describe('TaskStore filter hierarchy', () => {
     });
 });
 
+describe('TaskStore project filter with subproject toggle', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('サブプロジェクト非表示でもPJフィルタ選択は表示する', () => {
+        const { setTasks, setSelectedProjectIds } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            showSubprojects: false,
+            currentProjectId: 'p1'
+        });
+
+        setTasks([
+            buildTask({ id: 't1', projectId: 'p1', projectName: 'P1' }),
+            buildTask({ id: 't2', projectId: 'p2', projectName: 'P2' })
+        ]);
+
+        setSelectedProjectIds(['p2']);
+
+        const visibleIds = useTaskStore.getState().tasks.map(t => t.id);
+        expect(visibleIds).toEqual(['t2']);
+    });
+});
+
 describe('TaskStore dependency grouping', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
