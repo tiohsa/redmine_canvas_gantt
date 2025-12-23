@@ -101,6 +101,8 @@ const buildLayout = (
     sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null
 ): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
     const normalizedTasks = tasks.map((task) => ({ ...task, hasChildren: false }));
+    // selectedVersionIds はフィルタ処理で既に適用済み。将来の拡張用に受け取るがここでは使用しない。
+    void selectedVersionIds;
 
     const nodeMap = new Map<string, { task: Task; children: string[] }>();
     normalizedTasks.forEach((task) => nodeMap.set(task.id, { task, children: [] }));
@@ -195,7 +197,6 @@ const buildLayout = (
     let rowIndex = 0;
     const arrangedTasks: Task[] = [];
     const layoutRows: LayoutRow[] = [];
-    const shouldShowVersionName = selectedVersionIds.length > 0;
 
     const traverse = (taskId: string, depth: number, hiddenByAncestor: boolean, guides: boolean[], isLast: boolean) => {
         const node = nodeMap.get(taskId);
@@ -302,7 +303,7 @@ const buildLayout = (
                     layoutRows.push({
                         type: 'version',
                         id: v.id,
-                        name: shouldShowVersionName ? v.name : '',
+                        name: v.name,
                         rowIndex,
                         startDate: vStart,
                         dueDate: v.effectiveDate,
@@ -1207,6 +1208,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.projectExpansion,
             state.versionExpansion,
             state.taskExpansion,
+            state.selectedVersionIds,
             newSort
         );
 

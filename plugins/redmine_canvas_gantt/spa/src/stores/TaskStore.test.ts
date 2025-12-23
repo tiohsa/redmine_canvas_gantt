@@ -160,7 +160,7 @@ describe('TaskStore version label visibility', () => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
     });
 
-    it('バージョン未選択時はバージョン名を空にする', () => {
+    it('Ver表示ONなら選択なしでもバージョン名を表示する', () => {
         const { setTasks, setVersions, setSelectedVersionIds } = useTaskStore.getState();
 
         useTaskStore.setState({
@@ -191,7 +191,7 @@ describe('TaskStore version label visibility', () => {
         ]);
 
         const versionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version');
-        expect(versionRow?.name).toBe('');
+        expect(versionRow?.name).toBe('Version 1');
 
         setSelectedVersionIds(['v1']);
         const selectedVersionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version');
