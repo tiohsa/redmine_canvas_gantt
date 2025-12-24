@@ -547,7 +547,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     taskExpansion: {},
     filterText: '',
     selectedAssigneeIds: preferences.selectedAssigneeIds ?? [],
-    selectedProjectIds: [],
+    selectedProjectIds: preferences.selectedProjectIds ?? [],
     selectedVersionIds: [],
     sortConfig: null,
     customScales: preferences.customScales ?? {},

@@ -64,13 +64,13 @@ export const IssueIframeDialog: React.FC = () => {
         >
             <div
                 style={{
-                    width: '90%',
-                    height: '90%',
-                    maxWidth: 1200,
-                    maxHeight: 800,
+                    width: '100%',
+                    height: '100%',
+                    maxWidth: 'none',
+                    maxHeight: 'none',
                     backgroundColor: 'white',
-                    borderRadius: 8,
-                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+                    borderRadius: 0,
+                    boxShadow: 'none',
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden'

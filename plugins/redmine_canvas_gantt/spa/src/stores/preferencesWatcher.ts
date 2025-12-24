@@ -23,6 +23,7 @@ const persistSelections = () => {
         columnWidths: uiState.columnWidths,
         sidebarWidth: uiState.sidebarWidth,
         selectedAssigneeIds: taskState.selectedAssigneeIds,
+        selectedProjectIds: taskState.selectedProjectIds,
         customScales: taskState.customScales,
         rowHeight: taskState.viewport.rowHeight,
         selectedStatusIds: taskState.selectedStatusIds

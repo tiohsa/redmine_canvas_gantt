@@ -14,6 +14,7 @@ export interface StoredPreferences {
     columnWidths?: Record<string, number>;
     sidebarWidth?: number;
     selectedAssigneeIds?: (number | null)[];
+    selectedProjectIds?: string[];
     customScales?: Record<number, number>;
     rowHeight?: number;
     selectedStatusIds?: number[];
