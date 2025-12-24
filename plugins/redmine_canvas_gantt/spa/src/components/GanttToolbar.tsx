@@ -4,6 +4,7 @@ import type { ZoomLevel } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
+import { GanttSvgExportService } from '../services/GanttSvgExportService';
 
 interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
@@ -15,7 +16,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         viewport, updateViewport, groupByProject, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
-        setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer
+        setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer,
+        tasks, relations, layoutRows
     } = useTaskStore();
     const {
         showProgressLine,
@@ -25,7 +27,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setVisibleColumns,
         toggleLeftPane,
         isFullScreen,
-        toggleFullScreen
+        toggleFullScreen,
+        columnWidths,
+        sidebarWidth,
+        addNotification
     } = useUIStore();
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
     const [showFilterMenu, setShowFilterMenu] = React.useState(false);
@@ -219,6 +224,92 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         } else {
             setSelectedStatusFromServer(taskStatuses.map(s => s.id));
         }
+    };
+
+    const buildFilterSummary = () => {
+        const parts: string[] = [];
+        if (filterText.trim()) {
+            parts.push(`検索: ${filterText.trim()}`);
+        }
+
+        if (selectedAssigneeIds.length > 0) {
+            const nameMap = new Map<number | null, string>();
+            nameMap.set(null, '未割当');
+            tasks.forEach(task => {
+                if (task.assignedToId !== undefined && task.assignedToId !== null) {
+                    nameMap.set(task.assignedToId, task.assignedToName || `担当者 #${task.assignedToId}`);
+                }
+            });
+            const names = selectedAssigneeIds.map(id => nameMap.get(id) || String(id));
+            parts.push(`担当者: ${names.join(', ')}`);
+        }
+
+        if (selectedProjectIds.length > 0) {
+            const projectMap = new Map<string, string>();
+            tasks.forEach(task => {
+                if (task.projectId && task.projectName) {
+                    projectMap.set(task.projectId, task.projectName);
+                }
+            });
+            const names = selectedProjectIds.map(id => projectMap.get(id) || id);
+            parts.push(`プロジェクト: ${names.join(', ')}`);
+        }
+
+        if (selectedVersionIds.length > 0) {
+            const versionMap = new Map<string, string>(versions.map(v => [v.id, v.name]));
+            const names = selectedVersionIds.map(id => versionMap.get(id) || id);
+            parts.push(`バージョン: ${names.join(', ')}`);
+        }
+
+        if (selectedStatusIds.length > 0) {
+            const statusMap = new Map<number, string>(taskStatuses.map(s => [s.id, s.name]));
+            const names = selectedStatusIds.map(id => statusMap.get(id) || String(id));
+            parts.push(`ステータス: ${names.join(', ')}`);
+        }
+
+        return parts.length > 0 ? parts.join(' / ') : 'フィルタ: なし';
+    };
+
+    const resolveProjectLabel = () => {
+        const uniqueProjects = Array.from(new Set(tasks.map(task => task.projectName).filter(Boolean)));
+        if (uniqueProjects.length === 1) return uniqueProjects[0] as string;
+        if (uniqueProjects.length > 1) return '複数プロジェクト';
+        return i18n.t('label_project') || 'Project';
+    };
+
+    const handleSvgExport = () => {
+        const visibleStart = viewport.startDate + viewport.scrollX / viewport.scale;
+        const visibleEnd = visibleStart + viewport.width / viewport.scale;
+        const dateRangeLabel = `${new Date(visibleStart).toLocaleDateString()} - ${new Date(visibleEnd).toLocaleDateString()}`;
+        const zoomLabel = zoomLevel === 0 ? '月' : zoomLevel === 1 ? '週' : '日';
+        const meta = {
+            projectLabel: resolveProjectLabel(),
+            generatedAt: `出力: ${new Date().toLocaleString()}`,
+            dateRangeLabel: `期間: ${dateRangeLabel}`,
+            zoomLabel: `粒度: ${zoomLabel}`,
+            filterSummary: buildFilterSummary()
+        };
+
+        const pages = GanttSvgExportService.buildSvgPages({
+            tasks,
+            layoutRows,
+            relations,
+            versions: showVersions ? versions : [],
+            viewport,
+            zoomLevel,
+            columnWidths,
+            visibleColumns,
+            sidebarWidth,
+            meta
+        });
+
+        if (pages.length === 0) {
+            addNotification('SVG出力対象がありません', 'warning');
+            return;
+        }
+
+        GanttSvgExportService.downloadPages(pages);
+        addNotification(`SVGを${pages.length}枚出力しました`, 'success');
     };
 
     const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
@@ -946,6 +1037,30 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <option value={52}>大</option>
                     </select>
                 </div>
+
+                <button
+                    onClick={handleSvgExport}
+                    title="SVG出力"
+                    style={{
+                        padding: '0',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: '#fff',
+                        color: '#333',
+                        cursor: 'pointer',
+                        height: '32px',
+                        width: '32px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                </button>
 
                 <button
                     onClick={toggleFullScreen}
