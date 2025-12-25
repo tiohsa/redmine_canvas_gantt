@@ -11,9 +11,25 @@ export const IssueIframeDialog: React.FC = () => {
     const iframeRef = React.useRef<HTMLIFrameElement>(null);
     const [iframeError, setIframeError] = React.useState<string | null>(null);
 
-    const issueLabel = issueDialogUrl?.split('/').pop()?.split('?')[0]
-        || i18n.t('button_edit')
-        || 'Edit';
+    const issueLabel = React.useMemo(() => {
+        if (!issueDialogUrl) return '';
+
+        const url = issueDialogUrl.split('?')[0];
+
+        // 1. Try to extract issue ID from /issues/123 or /issues/123/edit
+        const issueMatch = url.match(/\/issues\/(\d+)(?:\/edit)?/);
+        if (issueMatch) {
+            return '';
+        }
+
+        // 2. Handle new issue
+        if (url.includes('/issues/new')) {
+            return i18n.t('label_issue_new') || (i18n.t('label_new') ? `${i18n.t('label_new')} ${i18n.t('label_issue')}` : 'New Issue');
+        }
+
+        // 3. General "Edit" fallback
+        return i18n.t('button_edit') || 'Edit';
+    }, [issueDialogUrl]);
 
     React.useEffect(() => {
         setIframeError(null);
@@ -107,12 +123,12 @@ export const IssueIframeDialog: React.FC = () => {
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '10px 20px',
-                        borderBottom: '1px solid #e0e0e0',
-                        backgroundColor: '#ffffff'
+                        borderBottom: '1px solid #cbd5e1',
+                        backgroundColor: '#e2e8f0'
                     }}
                 >
                     <span style={{ fontWeight: 600, color: '#333' }}>
-                        #{issueLabel}
+                        {issueLabel}
                     </span>
                     <div style={{ display: 'flex', gap: 8 }}>
                         <a
