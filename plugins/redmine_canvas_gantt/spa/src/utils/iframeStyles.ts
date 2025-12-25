@@ -10,7 +10,8 @@ const ISSUE_DIALOG_HIDE_SELECTORS = [
     '#content > .tabs > ul',
     '#content > .tabs > ul li',
     '#content .tabs > ul',
-    '#content .tabs > ul li'
+    '#content .tabs > ul li',
+    '#content > h2'
 ];
 
 const ISSUE_DIALOG_CSS = `

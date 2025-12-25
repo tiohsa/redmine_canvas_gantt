@@ -19,7 +19,13 @@ export const IssueIframeDialog: React.FC = () => {
         // 1. Try to extract issue ID from /issues/123 or /issues/123/edit
         const issueMatch = url.match(/\/issues\/(\d+)(?:\/edit)?/);
         if (issueMatch) {
-            return '';
+            const issueId = issueMatch[1];
+            // Try to find the task in the store to get more info (Tracker, etc.)
+            const task = useTaskStore.getState().tasks.find(t => String(t.id) === issueId);
+            if (task) {
+                return `${task.trackerName || i18n.t('label_issue') || 'Issue'} #${task.id}`;
+            }
+            return `${i18n.t('label_issue') || 'Issue'} #${issueId}`;
         }
 
         // 2. Handle new issue
@@ -104,13 +110,12 @@ export const IssueIframeDialog: React.FC = () => {
         >
             <div
                 style={{
-                    width: '100%',
-                    height: '100%',
-                    maxWidth: 'none',
-                    maxHeight: 'none',
+                    width: '1600px',
+                    maxWidth: '98vw',
+                    height: '95vh',
                     backgroundColor: 'white',
-                    borderRadius: 0,
-                    boxShadow: 'none',
+                    borderRadius: '6px',
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.05)',
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden'
@@ -122,12 +127,11 @@ export const IssueIframeDialog: React.FC = () => {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '10px 20px',
-                        borderBottom: '1px solid #cbd5e1',
-                        backgroundColor: '#e2e8f0'
+                        padding: '16px 24px',
+                        backgroundColor: '#ffffff'
                     }}
                 >
-                    <span style={{ fontWeight: 600, color: '#333' }}>
+                    <span style={{ fontWeight: 700, fontSize: '18px', color: '#333' }}>
                         {issueLabel}
                     </span>
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -135,6 +139,10 @@ export const IssueIframeDialog: React.FC = () => {
                             href={issueDialogUrl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={() => {
+                                // Close the dialog when opening in a new tab
+                                handleClose();
+                            }}
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
