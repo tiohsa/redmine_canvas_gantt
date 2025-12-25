@@ -1,0 +1,8 @@
+.git/
+node_modules/
+plugins/redmine_canvas_gantt/spa/node_modules/
+plugins/redmine_canvas_gantt/spa/dist/
+plugins/redmine_canvas_gantt/spa/build/
+coverage/
+*.log*
+.env*

@@ -2,12 +2,22 @@ import React from 'react';
 import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
+import { applyIssueDialogStyles, findIssueDialogErrorElement, getIssueDialogErrorMessage } from '../utils/iframeStyles';
 
 export const IssueIframeDialog: React.FC = () => {
     const issueDialogUrl = useUIStore(state => state.issueDialogUrl);
     const closeIssueDialog = useUIStore(state => state.closeIssueDialog);
     const refreshData = useTaskStore(state => state.refreshData);
     const iframeRef = React.useRef<HTMLIFrameElement>(null);
+    const [iframeError, setIframeError] = React.useState<string | null>(null);
+
+    const issueLabel = issueDialogUrl?.split('/').pop()?.split('?')[0]
+        || i18n.t('button_edit')
+        || 'Edit';
+
+    React.useEffect(() => {
+        setIframeError(null);
+    }, [issueDialogUrl]);
 
     if (!issueDialogUrl) return null;
 
@@ -20,6 +30,20 @@ export const IssueIframeDialog: React.FC = () => {
         try {
             const iframe = iframeRef.current;
             if (!iframe) return;
+
+            const iframeDocument = iframe.contentDocument ?? iframe.contentWindow?.document;
+            if (iframeDocument) {
+                applyIssueDialogStyles(iframeDocument);
+                const errorElement = findIssueDialogErrorElement(iframeDocument);
+                if (errorElement) {
+                    const message = getIssueDialogErrorMessage(iframeDocument)
+                        || i18n.t('label_issue_dialog_error')
+                        || 'Unable to load the issue editor';
+                    setIframeError(message);
+                } else {
+                    setIframeError(null);
+                }
+            }
 
             // Only works if same-origin. 
             // If it redirected to an issue page (view mode instead of edit/new), 
@@ -88,7 +112,7 @@ export const IssueIframeDialog: React.FC = () => {
                     }}
                 >
                     <span style={{ fontWeight: 600, color: '#333' }}>
-                        #{issueDialogUrl.split('/').pop()?.split('?')[0] || i18n.t('button_edit')}
+                        #{issueLabel}
                     </span>
                     <div style={{ display: 'flex', gap: 8 }}>
                         <a
@@ -142,6 +166,20 @@ export const IssueIframeDialog: React.FC = () => {
 
                 {/* Iframe Content */}
                 <div style={{ flex: 1, position: 'relative' }}>
+                    {iframeError ? (
+                        <div
+                            data-testid="issue-dialog-error"
+                            style={{
+                                padding: '12px 16px',
+                                backgroundColor: '#fdecea',
+                                color: '#b71c1c',
+                                borderBottom: '1px solid #f5c6cb',
+                                fontSize: 13
+                            }}
+                        >
+                            {iframeError}
+                        </div>
+                    ) : null}
                     <iframe
                         ref={iframeRef}
                         src={issueDialogUrl}

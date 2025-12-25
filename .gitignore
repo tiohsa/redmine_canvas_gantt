@@ -1,3 +1,6 @@
+/.codex
+/.specify
+specs/
 /.project
 /.idea
 /.vscode
@@ -48,3 +51,11 @@
 
 /node_modules
 yarn-error.log
+dist/
+build/
+*.log
+.env*
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp

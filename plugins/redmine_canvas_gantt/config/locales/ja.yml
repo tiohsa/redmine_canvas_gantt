@@ -23,6 +23,7 @@ ja:
   label_delete_task_failed: "タスクの削除に失敗しました"
   label_select_task_to_view_details: "タスクを選択して詳細を表示します。"
   label_failed_to_load_edit_options: "編集オプションの読み込みに失敗しました"
+  label_issue_dialog_error: "チケット編集画面を開けませんでした"
   label_invalid_date_range: "期間が不正です"
   label_custom_field_plural: "カスタムフィールド"
   label_must_be_0_100: "0-100の間で入力してください"

@@ -21,6 +21,7 @@ en:
   label_delete_task_failed: "Failed to delete task"
   label_select_task_to_view_details: "Select a task to view details."
   label_failed_to_load_edit_options: "Failed to load edit options"
+  label_issue_dialog_error: "Unable to open the issue editor"
   label_invalid_date_range: "Invalid date range"
   label_custom_field_plural: "Custom fields"
   label_must_be_0_100: "Must be 0-100"

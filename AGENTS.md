@@ -263,3 +263,10 @@ redmine-gantt/
 ```
 <type>: <subject> (日本語可)
 ```
+
+## Active Technologies
+- Ruby 3.x, TypeScript (React 19) + Redmine (deployed version), Vite 7, Zustand, TanStack Query (001-issue-edit-header)
+- MariaDB 10 (via Redmine), localStorage (UI settings) (001-issue-edit-header)
+
+## Recent Changes
+- 001-issue-edit-header: Added Ruby 3.x, TypeScript (React 19) + Redmine (deployed version), Vite 7, Zustand, TanStack Query
