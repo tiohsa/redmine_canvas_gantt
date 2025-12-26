@@ -52,7 +52,6 @@ specs/
 /node_modules
 yarn-error.log
 dist/
-build/
 *.log
 .env*
 .DS_Store
