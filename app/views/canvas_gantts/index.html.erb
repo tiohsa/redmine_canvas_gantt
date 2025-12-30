@@ -1,0 +1,30 @@
+<% content_for :header_tags do %>
+  <%= javascript_tag do %>
+    window.RedmineCanvasGantt = {
+      projectId: <%= @project.id %>,
+      apiBase: '<%= project_path(@project) %>/canvas_gantt',
+      redmineBase: '<%= Redmine::Utils.relative_url_root %>',
+      authToken: '<%= form_authenticity_token %>',
+      apiKey: '<%= User.current.api_key %>',
+      i18n: <%= @i18n.to_json.html_safe %>,
+      settings: <%= (@settings || {}).to_json.html_safe %>
+    };
+  <% end %>
+  <!-- In development, we use the Vite dev server. In production, we use the manifest. -->
+  <% if Rails.env.development? %>
+    <%= vite_react_refresh_tag %>
+    <%= vite_client_tag %>
+    <%= javascript_include_tag "http://localhost:5173/src/main.tsx", type: "module" %>
+  <% else %>
+    <!-- Production assets will be injected here via manifest -->
+    <% vite_stylesheet_path("src/main.tsx")&.each do |css_path| %>
+      <%= stylesheet_link_tag css_path %>
+    <% end %>
+    <%= javascript_include_tag vite_javascript_path("src/main.tsx"), type: "module" %>
+  <% end %>
+<% end %>
+
+<div id="redmine-canvas-gantt-root" style="width: 100%; height: 800px; border: 1px solid #ddd;">
+  <!-- React App Mount Point -->
+  Loading Canvas Gantt...
+</div>
