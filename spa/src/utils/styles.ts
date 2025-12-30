@@ -17,11 +17,11 @@ export const getPriorityColor = (priorityId: number, priorityName?: string) => {
     const name = priorityName?.toLowerCase() || '';
 
     // Immediate / Urgent
-    if (name.includes('immediate') || name.includes('急') || priorityId >= 5) {
+    if (name.includes('immediate') || name.includes('urgent') || priorityId >= 6) {
         return { bg: '#ffebee', text: '#c62828' };
     }
     // High
-    if (name.includes('high') || name.includes('高') || priorityId === 4) {
+    if (name.includes('high') || priorityId === 5) {
         return { bg: '#fff3e0', text: '#ef6c00' };
     }
     // Low or Normal (Normal and below)

@@ -85,7 +85,29 @@ class CanvasGanttsController < ApplicationController
       field_estimated_hours: l(:field_estimated_hours),
       field_created_on: l(:field_created_on),
       field_spent_hours: l(:label_spent_time),
-      field_version: l(:field_fixed_version)
+      field_version: l(:field_fixed_version),
+      label_all_select: l(:label_all_select),
+      label_unassigned: l(:label_unassigned),
+      label_assigned_to_filter: l(:label_assigned_to_filter),
+      label_project_filter: l(:label_project_filter),
+      label_version_filter: l(:label_version_filter),
+      label_status_filter: l(:label_status_filter),
+      label_organize_by_dependency: l(:label_organize_by_dependency),
+      label_row_height_xs: l(:label_row_height_xs),
+      label_row_height_s: l(:label_row_height_s),
+      label_row_height_m: l(:label_row_height_m),
+      label_row_height_l: l(:label_row_height_l),
+      label_row_height_xl: l(:label_row_height_xl),
+      label_assigned_to_short: l(:label_assigned_to_short),
+      label_project_short: l(:label_project_short),
+      label_version_short: l(:label_version_short),
+      label_status_short: l(:label_status_short),
+      label_progress_short: l(:label_progress_short),
+      label_column_short: l(:label_column_short),
+      label_dependencies_short: l(:label_dependencies_short),
+      label_refresh_failed: l(:label_refresh_failed),
+      label_relation_add_failed: l(:label_relation_add_failed),
+      label_add_new_ticket: l(:label_issue_new)
     }
 
     @settings = Setting.plugin_redmine_canvas_gantt || {}

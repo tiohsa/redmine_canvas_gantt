@@ -124,10 +124,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const assignees = React.useMemo(() => {
         const map = new Map<number | null, string>();
         // 未割当を明示的に追加
-        map.set(null, '未割当');
+        map.set(null, i18n.t('label_unassigned') || 'Unassigned');
         allTasks.forEach(task => {
             if (task.assignedToId !== undefined && task.assignedToId !== null) {
-                map.set(task.assignedToId, task.assignedToName || `担当者 #${task.assignedToId}`);
+                map.set(task.assignedToId, task.assignedToName || (i18n.t('field_assigned_to') || 'Assignee') + ` #${task.assignedToId}`);
             }
         });
         return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => {
@@ -295,7 +295,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <button
                     onClick={() => setShowFilterMenu(prev => !prev)}
-                    title={i18n.t('label_filter_tasks') || 'フィルタ設定'}
+                    title={i18n.t('label_filter_tasks') || 'Filter Tasks'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -360,7 +360,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     fontSize: 13
                                 }}
                             >
-                                {i18n.t('label_clear_filter') || 'クリア'}
+                                {i18n.t('label_clear_filter') || 'Clear'}
                             </button>
                         )}
                     </div>
@@ -369,7 +369,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowColumnMenu(prev => !prev)}
-                        title={i18n.t('label_column_plural') || 'カラム設定'}
+                        title={i18n.t('label_column_plural') || 'Columns'}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -390,7 +390,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <line x1="9" y1="3" x2="9" y2="21" />
                             <line x1="15" y1="3" x2="15" y2="21" />
                         </svg>
-                        {'カラム'}
+                        {i18n.t('label_column_short') || 'Cols'}
                     </button>
 
                     {showColumnMenu && (
@@ -441,7 +441,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowAssigneeMenu(prev => !prev)}
-                        title={i18n.t('field_assigned_to') || '担当者フィルタ'}
+                        title={i18n.t('field_assigned_to') || 'Assignee Filter'}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -461,7 +461,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                             <circle cx="12" cy="7" r="4" />
                         </svg>
-                        {'担当'}
+                        {i18n.t('label_assigned_to_short') || 'Assign'}
                     </button>
 
                     {showAssigneeMenu && (
@@ -490,7 +490,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     checked={isAllAssigneesSelected}
                                     onChange={toggleAllAssignees}
                                 />
-                                <span style={{ fontWeight: 500 }}>{'全選択'}</span>
+                                <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
                             </label>
                             {assignees.map(assignee => (
                                 <label key={assignee.id ?? 'none'} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
@@ -513,7 +513,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     padding: 0
                                 }}
                             >
-                                {i18n.t('label_clear_filter') || 'クリア'}
+                                {i18n.t('label_clear_filter') || 'Clear'}
                             </button>
                         </div>
                     )}
@@ -522,7 +522,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowProjectMenu(prev => !prev)}
-                        title={i18n.t('label_project_plural') || 'プロジェクト軸でフィルタ / PJ軸表示切替'}
+                        title={i18n.t('label_project_plural') || 'Filter by project'}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -542,7 +542,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                             {groupByProject && <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" opacity="0.5" />}
                         </svg>
-                        {'PJ'}
+                        {i18n.t('label_project_short') || 'PJ'}
                     </button>
                     {showProjectMenu && (
                         <div
@@ -570,7 +570,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     checked={isAllProjectsSelected}
                                     onChange={toggleAllProjects}
                                 />
-                                <span style={{ fontWeight: 500 }}>{'全選択'}</span>
+                                <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
                             </label>
                             {projects.map(project => (
                                 <label key={project.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
@@ -593,7 +593,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     padding: 0
                                 }}
                             >
-                                {i18n.t('label_clear_filter') || 'クリア'}
+                                {i18n.t('label_clear_filter') || 'Clear'}
                             </button>
                         </div>
                     )}
@@ -602,7 +602,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowVersionMenu(prev => !prev)}
-                        title={i18n.t('label_version_plural') || 'バージョン軸でフィルタ'}
+                        title={i18n.t('label_version_plural') || 'Filter by version'}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -622,7 +622,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
                             {showVersions && <line x1="4" y1="22" x2="4" y2="15" />}
                         </svg>
-                        {'Ver'}
+                        {i18n.t('label_version_short') || 'Ver'}
                     </button>
                     {showVersionMenu && (
                         <div
@@ -650,7 +650,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     checked={isAllVersionsSelected}
                                     onChange={toggleAllVersions}
                                 />
-                                <span style={{ fontWeight: 500 }}>{'全選択'}</span>
+                                <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
                             </label>
                             {versionsList.map(version => (
                                 <label key={version.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
@@ -673,7 +673,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     padding: 0
                                 }}
                             >
-                                {i18n.t('label_clear_filter') || 'クリア'}
+                                {i18n.t('label_clear_filter') || 'Clear'}
                             </button>
                         </div>
                     )}
@@ -682,7 +682,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <div style={{ position: 'relative' }}>
                     <button
                         onClick={() => setShowStatusMenu(prev => !prev)}
-                        title={i18n.t('field_status') || 'ステータスでフィルタ'}
+                        title={i18n.t('field_status') || 'Filter by status'}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -701,7 +701,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                         </svg>
-                        {'ステータス'}
+                        {i18n.t('label_status_short') || 'Status'}
                     </button>
                     {showStatusMenu && (
                         <div
@@ -729,7 +729,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     checked={isAllStatusesSelected}
                                     onChange={toggleAllStatuses}
                                 />
-                                <span style={{ fontWeight: 500 }}>{'全選択'}</span>
+                                <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
                             </label>
                             {taskStatuses.map(status => (
                                 <label key={status.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
@@ -752,7 +752,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     padding: 0
                                 }}
                             >
-                                {i18n.t('label_clear_filter') || 'クリア'}
+                                {i18n.t('label_clear_filter') || 'Clear'}
                             </button>
                         </div>
                     )}
@@ -760,7 +760,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <button
                     onClick={toggleProgressLine}
-                    title={i18n.t('label_progress_line') || '進捗ライン表示の切替'}
+                    title={i18n.t('label_progress_line') || 'Progress Line'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -779,7 +779,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
                     </svg>
-                    {'進捗'}
+                    {i18n.t('label_progress_short') || 'Prog'}
                 </button>
 
 
@@ -787,7 +787,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <button
                     onClick={() => setOrganizeByDependency(!organizeByDependency)}
-                    title={i18n.t('label_organize_by_dependency') || '依存関係に基づいてタスク順序を整理'}
+                    title={i18n.t('label_organize_by_dependency') || 'Organize by dependency'}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -809,7 +809,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <path d="M11 9l2 2" />
                         <path d="M7 12l6-6" />
                     </svg>
-                    {'依存整理'}
+                    {i18n.t('label_dependencies_short') || 'Dep'}
                 </button>
             </div>
 
@@ -879,7 +879,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <line x1="8" y1="2" x2="8" y2="6" />
                         <line x1="3" y1="10" x2="21" y2="10" />
                     </svg>
-                    {'今日'}
+                    {i18n.t('label_today') || 'Today'}
                 </button>
 
 
@@ -925,7 +925,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <select
                         value={viewport.rowHeight}
                         onChange={(e) => setRowHeight(Number(e.target.value))}
-                        title="行の高さ"
+                        title={i18n.t('label_row_height') || 'Row height'}
                         style={{
                             padding: '0 8px',
                             borderRadius: '6px',
@@ -939,11 +939,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             outline: 'none'
                         }}
                     >
-                        <option value={20}>極小</option>
-                        <option value={28}>小</option>
-                        <option value={36}>標準</option>
-                        <option value={44}>中</option>
-                        <option value={52}>大</option>
+                        <option value={20}>{i18n.t('label_row_height_xs') || 'XS'}</option>
+                        <option value={28}>{i18n.t('label_row_height_s') || 'S'}</option>
+                        <option value={36}>{i18n.t('label_row_height_m') || 'M'}</option>
+                        <option value={44}>{i18n.t('label_row_height_l') || 'L'}</option>
+                        <option value={52}>{i18n.t('label_row_height_xl') || 'XL'}</option>
                     </select>
                 </div>
 

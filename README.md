@@ -18,6 +18,8 @@ A high-performance Gantt chart plugin for Redmine, built with React, TypeScript,
 *   **Customizable UI**: Adjustable task row height (20px to 52px) and persistent column widths. Customizable column display and grouping.
 *   **Theme Support**: Integrates with Redmine's theming.
 
+![alt text](./images/gantt.png)
+
 ## Requirements
 
 *   **Redmine**: 6.x

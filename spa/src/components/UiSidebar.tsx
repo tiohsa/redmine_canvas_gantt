@@ -76,7 +76,7 @@ const TrackerIcon = ({ name }: { name?: string }) => {
     const lowerName = name?.toLowerCase() || '';
 
     // Bug icon
-    if (lowerName.includes('bug') || lowerName.includes('バグ')) {
+    if (lowerName.includes('bug')) {
         return (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d93025" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                 <circle cx="12" cy="12" r="8" fill="#d93025" fillOpacity="0.1" />
@@ -86,7 +86,7 @@ const TrackerIcon = ({ name }: { name?: string }) => {
     }
 
     // Feature icon
-    if (lowerName.includes('feature') || lowerName.includes('機能')) {
+    if (lowerName.includes('feature')) {
         return (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#188038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                 <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" fill="#188038" fillOpacity="0.1" />
@@ -95,7 +95,7 @@ const TrackerIcon = ({ name }: { name?: string }) => {
     }
 
     // Support icon
-    if (lowerName.includes('support') || lowerName.includes('サポート')) {
+    if (lowerName.includes('support')) {
         return (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a73e8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                 <circle cx="12" cy="12" r="10" fill="#1a73e8" fillOpacity="0.1" />

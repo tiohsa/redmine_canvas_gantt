@@ -18,6 +18,8 @@ React、TypeScript、そしてHTML5 Canvas APIで構築された、Redmine向け
 *   **柔軟なUI設定**: 行の高さ（20px〜52px）の調整や、列幅の保存が可能です。
 *   **テーマ対応**: Redmineの各種テーマと調和するデザインを採用しています。
 
+![alt text](./images/gantt.png)
+
 ## 動作環境
 
 *   **Redmine**: 6.x
