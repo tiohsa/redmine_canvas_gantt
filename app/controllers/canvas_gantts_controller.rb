@@ -1,4 +1,5 @@
 class CanvasGanttsController < ApplicationController
+  menu_item :canvas_gantt
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'vite_asset_helper').to_s
 
   helper RedmineCanvasGantt::ViteAssetHelper
