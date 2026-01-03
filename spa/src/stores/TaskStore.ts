@@ -97,7 +97,7 @@ const buildLayout = (
     projectExpansion: Record<string, boolean>,
     versionExpansion: Record<string, boolean>,
     taskExpansion: Record<string, boolean>,
-    selectedVersionIds: string[],
+    _selectedVersionIds: string[],
     selectedProjectIds: string[],
     sortConfig: { key: keyof Task; direction: 'asc' | 'desc' } | null,
     allTasks: Task[]
@@ -287,7 +287,7 @@ const buildLayout = (
         if (!projectName) projectName = projectId === 'default_project' ? '' : projectId;
 
         const expanded = projectExpansion[projectId] ?? true;
-        const shouldShowVersions = showVersions || selectedVersionIds.length > 0;
+        const shouldShowVersions = showVersions;
         const shouldGroupByProject = groupByProject;
 
         if (shouldGroupByProject) {
