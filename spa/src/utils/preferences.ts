@@ -1,4 +1,4 @@
-import type { ViewMode, Viewport, ZoomLevel } from '../types';
+import type { Task, ViewMode, Viewport, ZoomLevel } from '../types';
 
 type StoredViewport = Pick<Viewport, 'startDate' | 'scrollX' | 'scrollY' | 'scale'>;
 
@@ -18,6 +18,7 @@ export interface StoredPreferences {
     customScales?: Record<number, number>;
     rowHeight?: number;
     selectedStatusIds?: number[];
+    sortConfig?: { key: keyof Task; direction: 'asc' | 'desc' } | null;
 }
 
 const STORAGE_KEY = 'canvasGantt:preferences';

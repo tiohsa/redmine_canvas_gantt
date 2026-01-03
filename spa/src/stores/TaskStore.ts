@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
-import { loadPreferences } from '../utils/preferences';
+import { loadPreferences, savePreferences } from '../utils/preferences';
 import { getMaxFiniteDueDate } from '../utils/taskRange';
 
 interface TaskState {
@@ -549,7 +549,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     selectedAssigneeIds: preferences.selectedAssigneeIds ?? [],
     selectedProjectIds: preferences.selectedProjectIds ?? [],
     selectedVersionIds: [],
-    sortConfig: { key: 'startDate', direction: 'asc' },
+    sortConfig: preferences.sortConfig !== undefined ? preferences.sortConfig : { key: 'startDate', direction: 'asc' },
     customScales: preferences.customScales ?? {},
     currentProjectId: (window as any).RedmineCanvasGantt?.projectId?.toString() || null,
     showSubprojects: preferences.groupByProject ?? true,
@@ -1314,6 +1314,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.allTasks
         );
 
+        savePreferences({ sortConfig: newSort });
         return {
             sortConfig: newSort,
             tasks: layout.tasks,
