@@ -33,3 +33,12 @@
     <%= number_field_tag 'settings[row_height]', settings['row_height'], min: 20, max: 100 %>
   </p>
 </fieldset>
+
+<fieldset class="box tabular">
+  <legend>Development Settings</legend>
+  <p>
+    <label>Use Vite Dev Server (localhost:5173)</label>
+    <%= check_box_tag 'settings[use_vite_dev_server]', '1', settings['use_vite_dev_server'].to_s == '1' %>
+    <em class="info">Enable this only for local development. Requires running `npm run dev` in the spa directory.</em>
+  </p>
+</fieldset>
