@@ -548,7 +548,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     filterText: '',
     selectedAssigneeIds: preferences.selectedAssigneeIds ?? [],
     selectedProjectIds: preferences.selectedProjectIds ?? [],
-    selectedVersionIds: [],
+    selectedVersionIds: preferences.selectedVersionIds ?? [],
     sortConfig: preferences.sortConfig !== undefined ? preferences.sortConfig : { key: 'startDate', direction: 'asc' },
     customScales: preferences.customScales ?? {},
     currentProjectId: (window as any).RedmineCanvasGantt?.projectId?.toString() || null,
@@ -663,6 +663,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.sortConfig,
             state.allTasks
         );
+        savePreferences({ showVersions: show });
         return {
             showVersions: show,
             tasks: layout.tasks,
@@ -1244,6 +1245,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             state.sortConfig,
             state.allTasks
         );
+        savePreferences({ selectedVersionIds: ids });
         return {
             selectedVersionIds: ids,
             tasks: layout.tasks,

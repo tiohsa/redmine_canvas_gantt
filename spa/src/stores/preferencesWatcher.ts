@@ -16,7 +16,7 @@ const persistSelections = () => {
             scale: taskState.viewport.scale
         },
         showProgressLine: uiState.showProgressLine,
-        showVersions: uiState.showVersions,
+        showVersions: taskState.showVersions,
         visibleColumns: uiState.visibleColumns,
         groupByProject: taskState.groupByProject,
         organizeByDependency: taskState.organizeByDependency,
@@ -24,9 +24,11 @@ const persistSelections = () => {
         sidebarWidth: uiState.sidebarWidth,
         selectedAssigneeIds: taskState.selectedAssigneeIds,
         selectedProjectIds: taskState.selectedProjectIds,
+        selectedVersionIds: taskState.selectedVersionIds,
         customScales: taskState.customScales,
         rowHeight: taskState.viewport.rowHeight,
-        selectedStatusIds: taskState.selectedStatusIds
+        selectedStatusIds: taskState.selectedStatusIds,
+        sortConfig: taskState.sortConfig
     });
 };
 

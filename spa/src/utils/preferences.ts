@@ -19,6 +19,7 @@ export interface StoredPreferences {
     rowHeight?: number;
     selectedStatusIds?: number[];
     sortConfig?: { key: keyof Task; direction: 'asc' | 'desc' } | null;
+    selectedVersionIds?: string[];
 }
 
 const STORAGE_KEY = 'canvasGantt:preferences';
