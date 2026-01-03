@@ -67,3 +67,4 @@ en:
   label_refresh_failed: "Failed to refresh data"
   label_relation_add_failed: "Failed to create relation"
   label_row_height: "Row height"
+  label_show_versions: "Show version headers"

@@ -69,3 +69,4 @@ ja:
   label_refresh_failed: "データの更新に失敗しました"
   label_relation_add_failed: "関連の作成に失敗しました"
   label_row_height: "行の高さ"
+  label_show_versions: "バージョンヘッダーを表示"
