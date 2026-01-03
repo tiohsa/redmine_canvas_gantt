@@ -439,7 +439,10 @@ const applyFilters = (
         const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
         const matchesAssignee = !hasAssigneeFilter || selectedAssigneeIds.includes(taskAssignee);
         const matchesProject = !hasProjectFilter || (t.projectId && selectedProjectIds.includes(t.projectId));
-        const matchesVersion = !hasVersionFilter || (t.fixedVersionId && selectedVersionIds.includes(t.fixedVersionId));
+        const matchesVersion = !hasVersionFilter || (
+            (selectedVersionIds.includes('_none') && !t.fixedVersionId) ||
+            (t.fixedVersionId && selectedVersionIds.includes(t.fixedVersionId))
+        );
         const matchesSubproject = !hasSubprojectFilter || t.projectId === currentProjectId;
         return matchesText && matchesAssignee && matchesProject && matchesVersion && matchesSubproject;
     });

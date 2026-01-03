@@ -193,13 +193,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setSelectedVersionIds(next);
     };
 
-    const isAllVersionsSelected = versionsList.length > 0 && selectedVersionIds.length === versionsList.length;
+    const allVersionIdsWithNone = ['_none', ...versionsList.map(v => v.id)];
+    const isAllVersionsSelected = versionsList.length > 0 && selectedVersionIds.length === allVersionIdsWithNone.length && selectedVersionIds.includes('_none');
 
     const toggleAllVersions = () => {
         if (isAllVersionsSelected) {
             setSelectedVersionIds([]);
         } else {
-            setSelectedVersionIds(versionsList.map(v => v.id));
+            setSelectedVersionIds(allVersionIdsWithNone);
         }
     };
 
@@ -659,6 +660,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     onChange={toggleAllVersions}
                                 />
                                 <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer', fontStyle: 'italic' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={selectedVersionIds.includes('_none')}
+                                    onChange={() => toggleVersion('_none')}
+                                />
+                                {i18n.t('label_none') || '(No version)'}
                             </label>
                             {versionsList.map(version => (
                                 <label key={version.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
