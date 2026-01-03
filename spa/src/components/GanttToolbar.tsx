@@ -15,12 +15,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
-        setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer
+        setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions
     } = useTaskStore();
     const {
         showProgressLine,
         toggleProgressLine,
-        showVersions,
         visibleColumns,
         setVisibleColumns,
         toggleLeftPane,
@@ -672,6 +671,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     {version.name}
                                 </label>
                             ))}
+                            <div style={{ borderTop: '1px solid #f0f0f0', marginTop: '8px', paddingTop: '8px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={showVersions}
+                                        onChange={() => setShowVersions(!showVersions)}
+                                    />
+                                    {i18n.t('label_show_versions') || 'Show version headers'}
+                                </label>
+                            </div>
                             <button
                                 onClick={() => setSelectedVersionIds([])}
                                 style={{
