@@ -110,7 +110,7 @@ const buildLayout = (
     const projectOrder = new Map<string, number>();
     const projectRoots = new Map<string, string[]>();
 
-    const effectiveGroupByProject = groupByProject || selectedProjectIds.length > 0;
+    const effectiveGroupByProject = groupByProject;
 
     normalizedTasks.forEach((task, index) => {
         const projectId = task.projectId ?? 'default_project';
@@ -288,7 +288,7 @@ const buildLayout = (
 
         const expanded = projectExpansion[projectId] ?? true;
         const shouldShowVersions = showVersions || selectedVersionIds.length > 0;
-        const shouldGroupByProject = groupByProject || selectedProjectIds.length > 0;
+        const shouldGroupByProject = groupByProject;
 
         if (shouldGroupByProject) {
             // Find min/max dates for this project to draw the summary bar

@@ -12,7 +12,7 @@ interface GanttToolbarProps {
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const {
-        viewport, updateViewport, groupByProject, organizeByDependency, setOrganizeByDependency,
+        viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
         setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer
@@ -582,6 +582,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     {project.name}
                                 </label>
                             ))}
+                            <div style={{ borderTop: '1px solid #f0f0f0', marginTop: '8px', paddingTop: '8px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={groupByProject}
+                                        onChange={() => setGroupByProject(!groupByProject)}
+                                    />
+                                    {i18n.t('label_group_by_project') || 'Group by project'}
+                                </label>
+                            </div>
                             <button
                                 onClick={() => setSelectedProjectIds([])}
                                 style={{
