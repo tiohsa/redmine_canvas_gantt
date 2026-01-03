@@ -1,7 +1,7 @@
 module RedmineCanvasGantt
   module ViteAssetHelper
     def vite_javascript_path(entry)
-      if Rails.env.development?
+      if use_vite_dev_server?
         "http://localhost:5173/#{entry}"
       else
         manifest = vite_manifest
@@ -11,7 +11,7 @@ module RedmineCanvasGantt
     end
 
     def vite_stylesheet_path(entry)
-      if Rails.env.development?
+      if use_vite_dev_server?
         nil # Vite injects CSS via JS in dev mode
       else
         manifest = vite_manifest
@@ -22,7 +22,7 @@ module RedmineCanvasGantt
     end
 
     def vite_client_tag
-      if Rails.env.development?
+      if use_vite_dev_server?
         javascript_include_tag("http://localhost:5173/@vite/client", type: "module")
       else
         ""
@@ -30,7 +30,7 @@ module RedmineCanvasGantt
     end
 
     def vite_react_refresh_tag
-      if Rails.env.development?
+      if use_vite_dev_server?
         content_tag(:script, type: "module") do
           <<-JS.html_safe
             import RefreshRuntime from 'http://localhost:5173/@react-refresh'
@@ -46,6 +46,11 @@ module RedmineCanvasGantt
     end
 
     private
+
+    def use_vite_dev_server?
+      settings = Setting.plugin_redmine_canvas_gantt || {}
+      settings['use_vite_dev_server'].to_s == '1'
+    end
 
     def vite_manifest
       manifest_path = Rails.root.join('plugins', 'redmine_canvas_gantt', 'assets', 'build', '.vite', 'manifest.json')
