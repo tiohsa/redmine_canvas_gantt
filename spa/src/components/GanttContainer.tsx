@@ -25,12 +25,8 @@ export const GanttContainer: React.FC = () => {
     const taskCanvasRef = useRef<HTMLCanvasElement>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    const { viewport, tasks, relations, versions, setTasks, setRelations, setVersions, setShowVersions, updateViewport, zoomLevel, rowCount, viewportFromStorage, selectedTaskId, layoutRows } = useTaskStore();
-    const { showProgressLine, showVersions, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
-
-    useEffect(() => {
-        setShowVersions(showVersions);
-    }, [showVersions, setShowVersions]);
+    const { viewport, tasks, relations, versions, setTasks, setRelations, setVersions, updateViewport, zoomLevel, rowCount, viewportFromStorage, selectedTaskId, layoutRows, showVersions } = useTaskStore();
+    const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
 
     const isResizing = useRef(false);
     const isSyncingScroll = useRef(false);
