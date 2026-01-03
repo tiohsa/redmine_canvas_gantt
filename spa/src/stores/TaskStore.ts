@@ -226,6 +226,18 @@ const buildLayout = (
         });
     }
 
+    // When not grouping by project, combine all roots and sort globally
+    if (!groupByProject && sortConfig) {
+        const allRoots: string[] = [];
+        projectRoots.forEach((roots) => {
+            allRoots.push(...roots);
+        });
+        sortTaskIds(allRoots);
+        // Clear and refill with global order under a single "virtual" project
+        projectRoots.clear();
+        projectRoots.set('_global', allRoots);
+    }
+
     const orderedProjects = Array.from(projectRoots.keys()).sort((a, b) => (projectOrder.get(a) ?? 0) - (projectOrder.get(b) ?? 0));
 
     let rowIndex = 0;
