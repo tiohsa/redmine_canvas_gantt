@@ -549,7 +549,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     selectedAssigneeIds: preferences.selectedAssigneeIds ?? [],
     selectedProjectIds: preferences.selectedProjectIds ?? [],
     selectedVersionIds: [],
-    sortConfig: null,
+    sortConfig: { key: 'startDate', direction: 'asc' },
     customScales: preferences.customScales ?? {},
     currentProjectId: (window as any).RedmineCanvasGantt?.projectId?.toString() || null,
     showSubprojects: preferences.groupByProject ?? true,
