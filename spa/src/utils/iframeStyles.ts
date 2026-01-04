@@ -7,10 +7,10 @@ const ISSUE_DIALOG_HIDE_SELECTORS = [
     '#sidebar',
     '#footer',
     '#quick-search',
-    '#content > .tabs > ul',
-    '#content > .tabs > ul li',
-    '#content .tabs > ul',
-    '#content .tabs > ul li',
+    // '#content > .tabs > ul', // May hide "Preview" tabs
+    // '#content > .tabs > ul li',
+    // '#content .tabs > ul',
+    // '#content .tabs > ul li',
     '#content > h2'
 ];
 
