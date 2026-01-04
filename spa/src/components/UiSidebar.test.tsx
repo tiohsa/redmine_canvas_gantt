@@ -148,4 +148,41 @@ describe('UiSidebar', () => {
             expect(t?.lockVersion).toBe(2);
         });
     });
+
+    it('shows tooltip on task subject hover', () => {
+        useUIStore.setState({ visibleColumns: ['subject'] });
+
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false
+        });
+
+        const task: Task = {
+            id: '124',
+            subject: 'Long Task Subject For Tooltip Test',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+
+        useTaskStore.getState().setTasks([task]);
+
+        render(<UiSidebar />);
+
+        const subjectLink = screen.getByText('Long Task Subject For Tooltip Test');
+        expect(subjectLink).toHaveAttribute('data-tooltip', 'Long Task Subject For Tooltip Test');
+    });
 });

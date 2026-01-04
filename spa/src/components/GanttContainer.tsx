@@ -11,6 +11,7 @@ import { UiSidebar } from './UiSidebar';
 import { TimelineHeader } from './TimelineHeader';
 import { IssueIframeDialog } from './IssueIframeDialog';
 import { getMaxFiniteDueDate, getMinFiniteStartDate } from '../utils/taskRange';
+import { GlobalTooltip } from './GlobalTooltip';
 
 export const GanttContainer: React.FC = () => {
     // containerRef is the root flex container
@@ -294,6 +295,7 @@ export const GanttContainer: React.FC = () => {
                 </div>
             </div>
             <IssueIframeDialog />
+            <GlobalTooltip />
         </>
     );
 };

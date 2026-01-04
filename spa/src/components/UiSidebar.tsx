@@ -453,6 +453,8 @@ export const UiSidebar: React.FC = () => {
                                         cursor: 'pointer',
                                         textAlign: 'left'
                                     }}
+                                    title={undefined}
+                                    data-tooltip={t.subject}
                                 >
                                     {t.subject}
                                 </a>
