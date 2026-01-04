@@ -83,9 +83,9 @@ export class OverlayRenderer {
         if (drawableTasks.length === 0) return;
 
         // Calculate Today X
-        const today = new Date().setHours(0, 0, 0, 0);
+        const todayStart = new Date().setHours(0, 0, 0, 0);
         const ONE_DAY = 24 * 60 * 60 * 1000;
-        const xToday = LayoutEngine.dateToX(today + ONE_DAY, viewport) - viewport.scrollX;
+        const xToday = LayoutEngine.dateToX(todayStart + ONE_DAY, viewport) - viewport.scrollX;
 
         ctx.save();
         ctx.beginPath();
@@ -99,14 +99,17 @@ export class OverlayRenderer {
 
         drawableTasks.forEach(task => {
             const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
-
-            // X position based on progress
-            // bounds.x is start, bounds.width is total width
-            const ratio = Math.max(0, Math.min(100, task.ratioDone));
-            const pointX = bounds.x + bounds.width * (ratio / 100);
-
-            // Y position: vertically centered in the task row
             const pointY = bounds.y + bounds.height / 2;
+            let pointX: number;
+
+            // If task starts in the future (after today) AND has no progress, snap to Today line
+            if (task.startDate! > todayStart && task.ratioDone === 0) {
+                pointX = xToday;
+            } else {
+                // X position based on progress
+                const ratio = Math.max(0, Math.min(100, task.ratioDone));
+                pointX = bounds.x + bounds.width * (ratio / 100);
+            }
 
             ctx.lineTo(pointX, pointY);
         });
