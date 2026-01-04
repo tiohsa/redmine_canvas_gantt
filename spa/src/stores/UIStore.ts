@@ -41,7 +41,7 @@ export const useUIStore = create<UIState>((set) => ({
     showProgressLine: preferences.showProgressLine ?? false,
     leftPaneVisible: true,
     visibleColumns: preferences.visibleColumns
-        ? Array.from(new Set([...preferences.visibleColumns, 'id']))
+        ? preferences.visibleColumns
         : ['id', ...DEFAULT_COLUMNS],
     columnWidths: preferences.columnWidths ?? {
         id: 72,
