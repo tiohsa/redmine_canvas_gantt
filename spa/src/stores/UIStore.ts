@@ -19,6 +19,7 @@ interface UIState {
     columnWidths: Record<string, number>;
     sidebarWidth: number;
     leftPaneVisible: boolean;
+    rightPaneVisible: boolean;
     activeInlineEdit: { taskId: string; field: string; source?: 'cell' | 'panel' } | null;
     isFullScreen: boolean;
     issueDialogUrl: string | null;
@@ -26,6 +27,7 @@ interface UIState {
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
     toggleLeftPane: () => void;
+    toggleRightPane: () => void;
     setVisibleColumns: (cols: string[]) => void;
     setColumnWidth: (key: string, width: number) => void;
     setSidebarWidth: (width: number) => void;
@@ -40,6 +42,7 @@ export const useUIStore = create<UIState>((set) => ({
     notifications: [],
     showProgressLine: preferences.showProgressLine ?? false,
     leftPaneVisible: true,
+    rightPaneVisible: true,
     visibleColumns: preferences.visibleColumns
         ? preferences.visibleColumns
         : ['id', ...DEFAULT_COLUMNS],
@@ -75,6 +78,7 @@ export const useUIStore = create<UIState>((set) => ({
         })),
     toggleProgressLine: () => set((state) => ({ showProgressLine: !state.showProgressLine })),
     toggleLeftPane: () => set((state) => ({ leftPaneVisible: !state.leftPaneVisible })),
+    toggleRightPane: () => set((state) => ({ rightPaneVisible: !state.rightPaneVisible })),
     setVisibleColumns: (cols) => set(() => ({ visibleColumns: cols })),
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),
     setSidebarWidth: (width) => set(() => ({ sidebarWidth: width })),

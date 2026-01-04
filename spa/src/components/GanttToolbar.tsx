@@ -23,6 +23,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         visibleColumns,
         setVisibleColumns,
         toggleLeftPane,
+        toggleRightPane,
         isFullScreen,
         toggleFullScreen
     } = useUIStore();
@@ -260,6 +261,29 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                         <line x1="9" y1="3" x2="9" y2="21" />
+                    </svg>
+                </button>
+
+                <button
+                    onClick={toggleRightPane}
+                    title={i18n.t('label_toggle_chart') || "Toggle Chart"}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: '#fff',
+                        color: '#333',
+                        cursor: 'pointer',
+                        width: '32px',
+                        height: '32px'
+                    }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <line x1="15" y1="3" x2="15" y2="21" />
                     </svg>
                 </button>
 

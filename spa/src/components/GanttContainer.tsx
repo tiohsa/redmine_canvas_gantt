@@ -27,7 +27,7 @@ export const GanttContainer: React.FC = () => {
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const { viewport, tasks, relations, versions, setTasks, setRelations, setVersions, updateViewport, zoomLevel, rowCount, viewportFromStorage, selectedTaskId, layoutRows, showVersions } = useTaskStore();
-    const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
+    const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible, rightPaneVisible } = useUIStore();
 
     const isResizing = useRef(false);
     const isSyncingScroll = useRef(false);
@@ -240,59 +240,69 @@ export const GanttContainer: React.FC = () => {
                 {/* Resizable Sidebar Wrapper */}
                 {leftPaneVisible && (
                     <>
-                        <div style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
+                        <div style={{
+                            width: rightPaneVisible ? sidebarWidth : '100%',
+                            flexShrink: 0,
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flex: rightPaneVisible ? 'none' : 1
+                        }}>
                             <UiSidebar />
                         </div>
 
                         {/* Resize Handle */}
-                        <div
-                            onMouseDown={startResize}
-                            style={{
-                                width: 4,
-                                cursor: 'col-resize',
-                                backgroundColor: '#f0f0f0',
-                                borderRight: '1px solid #e0e0e0',
-                                borderLeft: '1px solid #e0e0e0',
-                                zIndex: 10
-                            }}
-                        />
+                        {rightPaneVisible && (
+                            <div
+                                onMouseDown={startResize}
+                                style={{
+                                    width: 4,
+                                    cursor: 'col-resize',
+                                    backgroundColor: '#f0f0f0',
+                                    borderRight: '1px solid #e0e0e0',
+                                    borderLeft: '1px solid #e0e0e0',
+                                    zIndex: 10
+                                }}
+                            />
+                        )}
                     </>
                 )}
 
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                    <TimelineHeader />
-                    {/* Timeline Pane */}
-                    <div ref={viewportWrapperRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-                        <div
-                            ref={scrollPaneRef}
-                            className="rcg-scroll rcg-gantt-scroll-pane"
-                            style={{ position: 'absolute', inset: 0, overflow: 'auto', display: 'grid' }}
-                        >
-                            {/* Spacer that defines the scrollable range */}
-                            <div style={{ gridArea: '1 / 1', width: scrollContentSize.width, height: scrollContentSize.height }} />
-                            {/* Sticky viewport overlay (keeps canvases fixed while scrollbars move) */}
+                {rightPaneVisible && (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                        <TimelineHeader />
+                        {/* Timeline Pane */}
+                        <div ref={viewportWrapperRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                             <div
-                                ref={mainPaneRef}
-                                className="rcg-gantt-viewport"
-                                style={{
-                                    gridArea: '1 / 1',
-                                    position: 'sticky',
-                                    top: 0,
-                                    left: 0,
-                                    width: viewport.width,   // Explicitly set size to match viewport
-                                    height: viewport.height, // preventing it from stretching to content size
-                                    overflow: 'hidden'
-                                }}
+                                ref={scrollPaneRef}
+                                className="rcg-scroll rcg-gantt-scroll-pane"
+                                style={{ position: 'absolute', inset: 0, overflow: 'auto', display: 'grid' }}
                             >
-                                <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
-                                <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
-                                <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
-                                <HtmlOverlay />
-                                <A11yLayer />
+                                {/* Spacer that defines the scrollable range */}
+                                <div style={{ gridArea: '1 / 1', width: scrollContentSize.width, height: scrollContentSize.height }} />
+                                {/* Sticky viewport overlay (keeps canvases fixed while scrollbars move) */}
+                                <div
+                                    ref={mainPaneRef}
+                                    className="rcg-gantt-viewport"
+                                    style={{
+                                        gridArea: '1 / 1',
+                                        position: 'sticky',
+                                        top: 0,
+                                        left: 0,
+                                        width: viewport.width,   // Explicitly set size to match viewport
+                                        height: viewport.height, // preventing it from stretching to content size
+                                        overflow: 'hidden'
+                                    }}
+                                >
+                                    <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+                                    <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
+                                    <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
+                                    <HtmlOverlay />
+                                    <A11yLayer />
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                )}
             </div>
             <IssueIframeDialog />
             <GlobalTooltip />
