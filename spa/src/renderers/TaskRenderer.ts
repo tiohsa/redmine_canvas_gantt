@@ -13,14 +13,7 @@ export class TaskRenderer {
 
 
 
-    // Priority colors
-    private static readonly PRIORITY_COLORS: { [key: number]: string } = {
-        3: '#e2e8f0', // Low
-        4: '#dddddd', // Normal (Default)
-        5: '#f6ad55', // High
-        6: '#fc8181', // Urgent
-        7: '#e53e3e'  // Immediate
-    };
+
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -248,9 +241,8 @@ export class TaskRenderer {
         }
 
         // === 2. Drawing (Z-Order) ===
-        // 1. Base Bar (Planned Duration) - Color based on Priority
-        const priorityColor = TaskRenderer.PRIORITY_COLORS[task.priorityId ?? 0] || TaskRenderer.PLAN_GRAY;
-        ctx.fillStyle = priorityColor;
+        // 1. Base Bar (Planned Duration) - Standard Color
+        ctx.fillStyle = TaskRenderer.PLAN_GRAY;
         ctx.fillRect(baseX, barY, baseWidth, currentBarHeight);
 
         // 2. Progress Bar - Green
