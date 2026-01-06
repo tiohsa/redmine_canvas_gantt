@@ -36,12 +36,11 @@ const ProgressCircle = ({ ratio }: { ratio: number, statusId: number }) => {
     const color = '#50c878';
 
     return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
             <svg width="20" height="20" viewBox="0 0 20 20" style={{ transform: 'rotate(-90deg)' }}>
                 <circle cx="10" cy="10" r={r} fill="none" stroke="#e0e0e0" strokeWidth="3" />
                 <circle cx="10" cy="10" r={r} fill="none" stroke={color} strokeWidth="3" strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round" />
             </svg>
-            <span style={{ fontSize: '12px', color: '#666' }}>{ratio}%</span>
         </div>
     );
 };
@@ -231,9 +230,9 @@ export const UiSidebar: React.FC = () => {
         newWidths['startDate'] = getColWidth(i18n.t('field_start_date') || 'Start Date', (t: Task) => (t.startDate !== undefined && Number.isFinite(t.startDate)) ? new Date(t.startDate).toLocaleDateString() : '-');
         newWidths['dueDate'] = getColWidth(i18n.t('field_due_date') || 'Due Date', (t: Task) => (t.dueDate !== undefined && Number.isFinite(t.dueDate)) ? new Date(t.dueDate).toLocaleDateString() : '-');
 
-        newWidths['ratioDone'] = Math.max(measure(i18n.t('field_done_ratio') || 'Progress') + 24, ...tasks.slice(0, 50).map(t => {
-            // Icon 20 + gap 6 + text
-            return 20 + 6 + measure(String(t.ratioDone) + '%') + 12;
+        newWidths['ratioDone'] = Math.max(measure(i18n.t('field_done_ratio') || 'Progress') + 24, ...tasks.slice(0, 50).map(() => {
+            // Icon 20 + padding
+            return 20 + 12;
         }));
 
         const addAutoWidth = (key: string, title: string, accessor: (t: Task) => string) => {

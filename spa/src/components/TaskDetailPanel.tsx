@@ -503,7 +503,7 @@ export const DoneRatioEditor: React.FC<{
                             void commit();
                         }
                     }}
-                    style={{ width: '80px', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
+                    style={{ width: '54px', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
                 />
                 <span style={{ fontSize: 12, color: '#444' }}>%</span>
                 {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
