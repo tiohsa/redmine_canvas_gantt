@@ -36,7 +36,10 @@ const ProgressCircle = ({ ratio }: { ratio: number, statusId: number }) => {
     const color = '#50c878';
 
     return (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+        <div
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}
+            data-tooltip={`${ratio}%`}
+        >
             <svg width="20" height="20" viewBox="0 0 20 20" style={{ transform: 'rotate(-90deg)' }}>
                 <circle cx="10" cy="10" r={r} fill="none" stroke="#e0e0e0" strokeWidth="3" />
                 <circle cx="10" cy="10" r={r} fill="none" stroke={color} strokeWidth="3" strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round" />
