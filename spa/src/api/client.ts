@@ -232,7 +232,8 @@ export const apiClient = {
         const statuses: TaskStatus[] = Array.isArray(data.statuses)
             ? (data.statuses as any[]).map((s) => ({
                 id: typeof s.id === 'number' ? s.id : Number(s.id),
-                name: String(s.name)
+                name: String(s.name),
+                isClosed: Boolean(s.is_closed)
             }))
             : [];
 

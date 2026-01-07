@@ -65,6 +65,7 @@ export interface Project {
 export interface TaskStatus {
     id: number;
     name: string;
+    isClosed: boolean;
 }
 
 export interface Viewport {

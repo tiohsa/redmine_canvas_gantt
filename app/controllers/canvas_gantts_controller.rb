@@ -190,7 +190,7 @@ class CanvasGanttsController < ApplicationController
         tasks: tasks,
         relations: relations,
         versions: versions,
-        statuses: IssueStatus.sorted.collect { |s| { id: s.id, name: s.name } },
+        statuses: IssueStatus.sorted.collect { |s| { id: s.id, name: s.name, is_closed: s.is_closed? } },
         project: {
           id: @project.id,
           name: @project.name,

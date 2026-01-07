@@ -97,13 +97,21 @@ export class OverlayRenderer {
         // Start from Today Line at Top
         ctx.moveTo(xToday, 0);
 
+        const { taskStatuses } = useTaskStore.getState();
+        const closedStatusIds = new Set(
+            taskStatuses.filter(s => s.isClosed).map(s => s.id)
+        );
+
         drawableTasks.forEach(task => {
             const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
             const pointY = bounds.y + bounds.height / 2;
             let pointX: number;
 
+            const isClosed = closedStatusIds.has(task.statusId);
+
             // If task starts in the future (after today) AND has no progress, snap to Today line
-            if (task.startDate! > todayStart && task.ratioDone === 0) {
+            // OR if the task is closed/rejected, snap to Today line
+            if (isClosed || (task.startDate! > todayStart && task.ratioDone === 0)) {
                 pointX = xToday;
             } else {
                 // X position based on progress
