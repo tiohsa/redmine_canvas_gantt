@@ -140,6 +140,9 @@ export class InteractionEngine {
             }
 
             useTaskStore.getState().selectTask(hit.task.id);
+            // Suspend sorting during interaction
+            useTaskStore.getState().setSortingSuspended(true);
+
             if (hit.region === 'body') {
                 this.drag = {
                     mode: 'task-move',
@@ -288,6 +291,9 @@ export class InteractionEngine {
         const draggedTaskId = this.drag.taskId;
         const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && draggedTaskId;
         const snapshot = this.drag.snapshot;
+
+        // Resume sorting (will trigger re-layout)
+        useTaskStore.getState().setSortingSuspended(false);
 
         this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: undefined, originalDueDate: undefined, snapshot: null };
         this.container.style.cursor = 'default';

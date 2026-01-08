@@ -38,6 +38,8 @@ interface TaskState {
     currentProjectId: string | null;
     showSubprojects: boolean;
 
+    isSortingSuspended: boolean;
+
     // Actions
     setTasks: (tasks: Task[]) => void;
     setRelations: (relations: Relation[]) => void;
@@ -73,6 +75,7 @@ interface TaskState {
     scrollToTask: (taskId: string) => void;
     setSortConfig: (key: keyof Task | null) => void;
     refreshData: () => Promise<void>;
+    setSortingSuspended: (suspended: boolean) => void;
 }
 
 const preferences = loadPreferences();
@@ -568,6 +571,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     customScales: preferences.customScales ?? {},
     currentProjectId: (window as any).RedmineCanvasGantt?.projectId?.toString() || null,
     showSubprojects: preferences.groupByProject ?? true,
+    isSortingSuspended: false,
 
     setTasks: (tasks) => set((state) => {
         const projectExpansion = { ...state.projectExpansion };
@@ -741,6 +745,34 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     selectTask: (id) => set({ selectedTaskId: id }),
     setHoveredTask: (id) => set({ hoveredTaskId: id }),
     setContextMenu: (menu) => set({ contextMenu: menu }),
+    setSortingSuspended: (suspended) => set((state) => {
+        if (!suspended && state.isSortingSuspended) {
+            // Turning it off -> trigger re-layout
+            const filteredTasks = applyFilters(state.allTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
+            const layout = buildLayout(
+                filteredTasks,
+                state.relations,
+                state.versions,
+                state.groupByProject,
+                state.showVersions,
+                state.organizeByDependency,
+                state.projectExpansion,
+                state.versionExpansion,
+                state.taskExpansion,
+                state.selectedVersionIds,
+                state.selectedProjectIds,
+                state.sortConfig,
+                state.allTasks
+            );
+            return {
+                isSortingSuspended: false,
+                tasks: layout.tasks,
+                layoutRows: layout.layoutRows,
+                rowCount: layout.rowCount
+            };
+        }
+        return { isSortingSuspended: suspended };
+    }),
 
     updateTask: (id, updates) => set((state) => {
         const task = state.allTasks.find(t => t.id === id);
@@ -794,6 +826,30 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             if (pendingUpdates.has(t.id)) return { ...t, ...pendingUpdates.get(t.id) };
             return t;
         });
+
+        if (state.isSortingSuspended) {
+            // Just update the view 'tasks' without re-layout (preserving order)
+            const newViewTasks = state.tasks.map(t => {
+                const updated = finalTasks.find(ft => ft.id === t.id);
+                if (updated) {
+                    // Keep layout-specific props from 't', update data from 'updated'
+                    return {
+                        ...updated,
+                        rowIndex: t.rowIndex,
+                        indentLevel: t.indentLevel,
+                        treeLevelGuides: t.treeLevelGuides,
+                        isLastChild: t.isLastChild,
+                        hasChildren: t.hasChildren
+                    };
+                }
+                return t;
+            });
+
+            return {
+                allTasks: finalTasks,
+                tasks: newViewTasks
+            };
+        }
 
         const filteredTasks = applyFilters(finalTasks, state.filterText, state.selectedAssigneeIds, state.selectedProjectIds, state.selectedVersionIds, state.showSubprojects, state.currentProjectId);
         const layout = buildLayout(
