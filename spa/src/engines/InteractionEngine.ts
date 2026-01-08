@@ -290,7 +290,7 @@ export class InteractionEngine {
     private handleMouseUp = async () => {
         const draggedTaskId = this.drag.taskId;
         const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && draggedTaskId;
-        const snapshot = this.drag.snapshot;
+
 
         // Resume sorting (will trigger re-layout)
         useTaskStore.getState().setSortingSuspended(false);
@@ -299,47 +299,9 @@ export class InteractionEngine {
         this.container.style.cursor = 'default';
 
         if (wasDragging && draggedTaskId) {
-            // Persist the change to backend
-            const { tasks, updateTask, relations, refreshData } = useTaskStore.getState();
-            const task = tasks.find(t => t.id === draggedTaskId);
-            if (!task) return;
-
-            try {
-                const { apiClient } = await import('../api/client');
-                const result = await apiClient.updateTask(task);
-
-                if (result.status === 'ok' && result.lockVersion !== undefined) {
-                    // Update lockVersion in store
-                    updateTask(draggedTaskId, { lockVersion: result.lockVersion });
-                    if (relations.some(r => r.from === draggedTaskId || r.to === draggedTaskId)) {
-                        try {
-                            await refreshData();
-                        } catch (refreshError) {
-                            console.error('Failed to refresh data after update:', refreshError);
-                            useUIStore.getState().addNotification('Failed to refresh data after update.', 'warning');
-                        }
-                    }
-                } else {
-                    const errorMsg = result.status === 'conflict'
-                        ? (result.error || 'Conflict detected. Please reload.')
-                        : ('Failed to save: ' + (result.error || 'Unknown error'));
-
-                    useUIStore.getState().addNotification(errorMsg, 'warning');
-
-                    // Revert changes
-                    if (snapshot) {
-                        useTaskStore.getState().setTasks(snapshot);
-                    }
-                }
-            } catch (err) {
-                console.error('API error:', err);
-                useUIStore.getState().addNotification('Failed to save task changes.', 'error');
-
-                // Revert changes
-                if (snapshot) {
-                    useTaskStore.getState().setTasks(snapshot);
-                }
-            }
+            // Persist the change to backend -- REMOVED for batch save
+            // Changes are already in the store (TaskStore state)
+            // They will be saved when user clicks "Save" button in toolbar.
         }
     };
 

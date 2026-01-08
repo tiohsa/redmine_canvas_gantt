@@ -15,7 +15,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
-        setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions
+        setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
+        modifiedTaskIds, saveChanges, discardChanges
     } = useTaskStore();
     const {
         showProgressLine,
@@ -290,6 +291,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
                 </button>
+
+
 
                 <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
 
@@ -1032,7 +1035,53 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <line x1="5" y1="5" x2="19" y2="5"></line>
                     </svg>
                 </button>
+
+                {modifiedTaskIds.size > 0 && (
+                    <>
+                        <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
+                        <button
+                            onClick={() => saveChanges()}
+                            title="Save changes"
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '0 12px',
+                                borderRadius: '6px',
+                                border: '1px solid #1a73e8',
+                                backgroundColor: '#1a73e8',
+                                color: '#fff',
+                                cursor: 'pointer',
+                                height: '32px',
+                                fontSize: '13px',
+                                fontWeight: 600
+                            }}
+                        >
+                            {i18n.t('button_save') || "Save"}
+                        </button>
+                        <button
+                            onClick={() => discardChanges()}
+                            title="Discard changes"
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '0 12px',
+                                borderRadius: '6px',
+                                border: '1px solid #d32f2f',
+                                backgroundColor: '#fff',
+                                color: '#d32f2f',
+                                cursor: 'pointer',
+                                height: '32px',
+                                fontSize: '13px',
+                                fontWeight: 500
+                            }}
+                        >
+                            {i18n.t('button_cancel') || "Cancel"}
+                        </button>
+                    </>
+                )}
             </div>
-        </div>
+        </div >
     );
 };

@@ -39,6 +39,7 @@ interface TaskState {
     showSubprojects: boolean;
 
     isSortingSuspended: boolean;
+    modifiedTaskIds: Set<string>;
 
     // Actions
     setTasks: (tasks: Task[]) => void;
@@ -76,6 +77,8 @@ interface TaskState {
     setSortConfig: (key: keyof Task | null) => void;
     refreshData: () => Promise<void>;
     setSortingSuspended: (suspended: boolean) => void;
+    saveChanges: () => Promise<void>;
+    discardChanges: () => Promise<void>;
 }
 
 const preferences = loadPreferences();
@@ -572,6 +575,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     currentProjectId: (window as any).RedmineCanvasGantt?.projectId?.toString() || null,
     showSubprojects: preferences.groupByProject ?? true,
     isSortingSuspended: false,
+    modifiedTaskIds: new Set(),
 
     setTasks: (tasks) => set((state) => {
         const projectExpansion = { ...state.projectExpansion };
@@ -827,6 +831,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             return t;
         });
 
+
+
+        // Add modified task IDs
+        const newModifiedIds = new Set(state.modifiedTaskIds);
+        newModifiedIds.add(id);
+        pendingUpdates.forEach((_, key) => newModifiedIds.add(key));
+
         if (state.isSortingSuspended) {
             // Just update the view 'tasks' without re-layout (preserving order)
             const newViewTasks = state.tasks.map(t => {
@@ -847,7 +858,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
             return {
                 allTasks: finalTasks,
-                tasks: newViewTasks
+                tasks: newViewTasks,
+                modifiedTaskIds: newModifiedIds // Add here for suspended case
             };
         }
 
@@ -872,9 +884,12 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             allTasks: finalTasks,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
+            rowCount: layout.rowCount,
+            modifiedTaskIds: newModifiedIds // Add here for normal case
         };
     }),
+
+
 
     removeTask: (id) => set((state) => {
         const finalTasks = state.allTasks.filter(t => t.id !== id);
@@ -1404,5 +1419,22 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         setRelations(data.relations);
         setVersions(data.versions);
         setTaskStatuses(data.statuses);
+        set({ modifiedTaskIds: new Set() });
+    },
+
+    saveChanges: async () => {
+        const { apiClient } = await import('../api/client');
+        const state = get();
+        const tasksToUpdate = state.allTasks.filter(t => state.modifiedTaskIds.has(t.id));
+
+        // Parallel updates (could be batched API if supported, but loop is standard for now)
+        await Promise.all(tasksToUpdate.map(t => apiClient.updateTask(t)));
+
+        await state.refreshData();
+    },
+
+    discardChanges: async () => {
+        const state = get();
+        await state.refreshData();
     }
 }));
