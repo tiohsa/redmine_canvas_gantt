@@ -269,7 +269,7 @@ export class InteractionEngine {
 
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
 
-            if (currentTask && newStart < this.drag.originalDueDate! && currentTask.startDate !== newStart) {
+            if (currentTask && newStart <= this.drag.originalDueDate! && currentTask.startDate !== newStart) {
                 updateTask(this.drag.taskId, { startDate: newStart });
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
@@ -278,7 +278,7 @@ export class InteractionEngine {
 
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
 
-            if (currentTask && newEnd > this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
+            if (currentTask && newEnd >= this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
                 updateTask(this.drag.taskId, { dueDate: newEnd });
             }
         }
