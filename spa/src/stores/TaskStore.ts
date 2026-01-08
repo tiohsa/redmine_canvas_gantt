@@ -40,8 +40,10 @@ interface TaskState {
 
     isSortingSuspended: boolean;
     modifiedTaskIds: Set<string>;
+    autoSave: boolean;
 
     // Actions
+    setAutoSave: (enabled: boolean) => void;
     setTasks: (tasks: Task[]) => void;
     setRelations: (relations: Relation[]) => void;
     setVersions: (versions: Version[]) => void;
@@ -576,6 +578,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     showSubprojects: preferences.groupByProject ?? true,
     isSortingSuspended: false,
     modifiedTaskIds: new Set(),
+    autoSave: false,
+
+    setAutoSave: (enabled) => set({ autoSave: enabled }),
 
     setTasks: (tasks) => set((state) => {
         const projectExpansion = { ...state.projectExpansion };

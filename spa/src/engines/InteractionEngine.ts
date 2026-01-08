@@ -299,9 +299,10 @@ export class InteractionEngine {
         this.container.style.cursor = 'default';
 
         if (wasDragging && draggedTaskId) {
-            // Persist the change to backend -- REMOVED for batch save
-            // Changes are already in the store (TaskStore state)
-            // They will be saved when user clicks "Save" button in toolbar.
+            const { autoSave, saveChanges } = useTaskStore.getState();
+            if (autoSave) {
+                saveChanges().catch(console.error);
+            }
         }
     };
 
