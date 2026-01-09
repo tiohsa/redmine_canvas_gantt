@@ -141,7 +141,9 @@ describe('InteractionEngine task updates', () => {
             projectExpansion: {},
             taskExpansion: {},
             filterText: '',
-            sortConfig: null
+            sortConfig: null,
+            autoSave: true,
+            modifiedTaskIds: new Set(['1'])
         });
 
         vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 1 });
@@ -160,7 +162,7 @@ describe('InteractionEngine task updates', () => {
         window.dispatchEvent(new MouseEvent('mousemove', { clientX: bounds.x + 11, clientY: bounds.y + 1, bubbles: true }));
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
 
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         expect(apiClient.updateTask).toHaveBeenCalled();
         expect(apiClient.fetchData).toHaveBeenCalled();

@@ -11,7 +11,7 @@ describe('iframeStyles', () => {
         const styleTags = doc.querySelectorAll(`#${ISSUE_DIALOG_STYLE_ID}`);
         expect(styleTags.length).toBe(1);
         expect(styleTags[0]?.textContent).toContain('#top-menu');
-        expect(styleTags[0]?.textContent).toContain('#content > .tabs > ul');
+        expect(styleTags[0]?.textContent).toContain('#content > h2');
     });
 
     it('detects error message from standard error elements', () => {

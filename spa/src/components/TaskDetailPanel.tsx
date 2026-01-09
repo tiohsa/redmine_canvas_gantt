@@ -520,7 +520,23 @@ export const DueDateEditor: React.FC<{
 }> = ({ initialValue, onCommit, onCancel }) => {
     const [value, setValue] = React.useState(initialValue);
     const [saving, setSaving] = React.useState(false);
-    const [error, setError] = React.useState<string | null>(null);
+    const inputRef = React.useRef<HTMLInputElement>(null);
+
+    React.useEffect(() => {
+        // Auto-open the picker
+        // Delay slightly to ensure layout is computed for positioning (fixes top-left issue)
+        const timer = setTimeout(() => {
+            if (inputRef.current && typeof inputRef.current.showPicker === 'function') {
+                try {
+                    inputRef.current.showPicker();
+                } catch {
+                    // Ignore errors
+                }
+            }
+            inputRef.current?.focus();
+        }, 100);
+        return () => clearTimeout(timer);
+    }, []);
 
     const commit = async (next: string) => {
         if (next === initialValue) {
@@ -528,18 +544,24 @@ export const DueDateEditor: React.FC<{
             return;
         }
         setSaving(true);
-        setError(null);
         try {
             await onCommit(next);
         } catch (e) {
-            setError(e instanceof Error ? e.message : (i18n.t('label_failed_to_save') || 'Failed to save'));
+            useUIStore.getState().addNotification(
+                e instanceof Error ? e.message : (i18n.t('label_failed_to_save') || 'Failed to save'),
+                'error'
+            );
             setSaving(false);
         }
     };
 
+    const displayValue = value ? value.replace(/-/g, '/') : '';
+
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <span style={{ color: '#666', padding: '0 4px', fontSize: 13 }}>{displayValue}</span>
             <input
+                ref={inputRef}
                 type="date"
                 value={value}
                 disabled={saving}
@@ -558,9 +580,19 @@ export const DueDateEditor: React.FC<{
                         void commit(value);
                     }
                 }}
-                style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    opacity: 0,
+                    border: 'none',
+                    margin: 0,
+                    padding: 0,
+                    cursor: 'pointer'
+                }}
             />
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
         </div>
     );
 };
