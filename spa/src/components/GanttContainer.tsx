@@ -32,8 +32,10 @@ export const GanttContainer: React.FC = () => {
     const isResizing = useRef(false);
     const isSyncingScroll = useRef(false);
 
+
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
     const MAX_SCROLL_AREA_PX = 10_000_000;
+    const BOTTOM_PADDING_PX = 40; // Buffer for horizontal scrollbar and bottom margin
     const tasksMaxDue = useMemo(() => getMaxFiniteDueDate(tasks), [tasks]);
     const computeScrollContentSize = (): { width: number; height: number } => {
         const scale = viewport.scale || 0.00000001;
@@ -45,7 +47,7 @@ export const GanttContainer: React.FC = () => {
         const rangeEnd = Math.max(tasksMaxDue ?? visibleEnd, visibleEnd) + paddingMs;
 
         const realWidth = Math.max(viewport.width, Math.ceil((rangeEnd - viewport.startDate) * scale));
-        const realHeight = Math.max(viewport.height, Math.ceil(rowCount * viewport.rowHeight));
+        const realHeight = Math.max(viewport.height, Math.ceil(rowCount * viewport.rowHeight) + BOTTOM_PADDING_PX);
 
         // Browsers have practical limits for scrollable dimensions; cap the DOM scroll area
         // and map it to the "virtual" viewport scroll offsets.
@@ -65,7 +67,7 @@ export const GanttContainer: React.FC = () => {
         const rangeEnd = Math.max(tasksMaxDue ?? visibleEnd, visibleEnd) + paddingMs;
 
         const width = Math.max(viewport.width, Math.ceil((rangeEnd - viewport.startDate) * scale));
-        const height = Math.max(viewport.height, Math.ceil(rowCount * viewport.rowHeight));
+        const height = Math.max(viewport.height, Math.ceil(rowCount * viewport.rowHeight) + BOTTOM_PADDING_PX);
         return { width, height };
     };
     const realContentSize = computeRealContentSize();

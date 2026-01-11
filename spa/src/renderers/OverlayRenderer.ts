@@ -27,6 +27,9 @@ export class OverlayRenderer {
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
         const { tasks, relations, selectedTaskId, rowCount, zoomLevel } = useTaskStore.getState();
+
+        // Clean up stale cache entries for removed relations
+        this.cleanupDependencyCache(relations);
         const totalRows = rowCount || tasks.length;
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, totalRows);
 
@@ -304,6 +307,19 @@ export class OverlayRenderer {
             ctx.lineTo(x, this.canvas.height);
             ctx.stroke();
             ctx.setLineDash([]);
+        }
+    }
+
+    /**
+     * Removes stale cache entries for relations that no longer exist.
+     * This prevents memory leaks when relations are deleted.
+     */
+    private cleanupDependencyCache(currentRelations: Relation[]) {
+        const activeIds = new Set(currentRelations.map(r => r.id));
+        for (const cachedId of this.dependencyCache.keys()) {
+            if (!activeIds.has(cachedId)) {
+                this.dependencyCache.delete(cachedId);
+            }
         }
     }
 }

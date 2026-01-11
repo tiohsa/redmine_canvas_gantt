@@ -84,40 +84,59 @@ export class TaskLogicService {
     /**
      * Checks if moving a task violates dependency constraints.
      * Requirement 6.2: Precedes/follows.
-     * Returns true if valid, false if invalid (or handled).
-     * In this implementation, we will return a list of affected tasks if we want to "snap" them.
+     * Returns a map of updates for affected tasks.
+     * 
+     * Supported relation types:
+     * - precedes: Finish-to-Start, successor.start >= predecessor.end + delay
+     * - follows: Inverse of precedes, predecessor.end <= successor.start - delay
+     * - blocks/blocked: Treated same as precedes for date constraints
+     * 
+     * @param visitedIds - Set of already visited task IDs to prevent infinite loops in circular dependencies
      */
     static checkDependencies(
         tasks: Task[],
         relations: Relation[],
         movedTaskId: string,
-        _newStart: number,
-        newDue: number
+        newStart: number,
+        newDue: number,
+        visitedIds: Set<string> = new Set()
     ): Map<string, Partial<Task>> {
         const updates = new Map<string, Partial<Task>>();
 
-        // Find relations where movedTask is the predecessor (source)
-        // If A precedes B, and we moved A.
-        // We need to check if B.start < A.end.
-        // If so, we might need to push B.
+        // Circular dependency prevention: skip if already visited
+        if (visitedIds.has(movedTaskId)) {
+            return updates;
+        }
+        visitedIds.add(movedTaskId);
 
-        const outgoingRelations = relations.filter(r => r.from === movedTaskId && r.type === RelationType.Precedes);
+        // Helper to calculate day boundary aligned timestamp
+        // Redmine delay is in days, and dates typically represent "start of day"
+        const dayInMs = 24 * 60 * 60 * 1000;
 
-        outgoingRelations.forEach(rel => {
+        // ===== 1. PRECEDES relations (A precedes B) =====
+        // When A moves, check if B.start needs to be pushed forward
+        // Finish-to-Start: B.start >= A.end + delay
+        const precedesRelations = relations.filter(
+            r => r.from === movedTaskId &&
+                (r.type === RelationType.Precedes || r.type === RelationType.Blocks)
+        );
+
+        for (const rel of precedesRelations) {
             const successor = tasks.find(t => t.id === rel.to);
-            if (!successor) return;
+            if (!successor) continue;
 
-            // Simple "Finish to Start" assumption for 'precedes'
-            // successor.start must be >= newDue + delay
-            // (Note: Redmine 'precedes' usually means Finish-to-Start)
+            const delay = (rel.delay || 0) * dayInMs;
+            // End of predecessor + delay = minimum start for successor
+            // Note: newDue represents the END date timestamp (typically start of that day)
+            const minStart = newDue + delay;
 
-            const delay = (rel.delay || 0) * 24 * 60 * 60 * 1000;
-            const minStart = newDue + delay; // Assuming newDue is end of day or similar? Timestamps usually exact.
+            if (successor.startDate !== undefined &&
+                Number.isFinite(successor.startDate) &&
+                successor.startDate < minStart) {
 
-            // If successor starts before the required minimum start
-            if (successor.startDate !== undefined && Number.isFinite(successor.startDate) && successor.startDate! < minStart) {
-                // We need to move the successor
-                const duration = (successor.dueDate !== undefined && Number.isFinite(successor.dueDate)) ? successor.dueDate! - successor.startDate! : 0;
+                const duration = (successor.dueDate !== undefined && Number.isFinite(successor.dueDate))
+                    ? successor.dueDate - successor.startDate
+                    : 0;
                 const newSuccessorStart = minStart;
                 const newSuccessorDue = newSuccessorStart + duration;
 
@@ -126,30 +145,65 @@ export class TaskLogicService {
                     dueDate: newSuccessorDue
                 });
 
-                // Recursively check dependencies for the successor
-                // We need to merge updates
-                // Construct a temporary task list with the update
+                // Cascade: check this successor's dependencies
                 const tempSuccessor = { ...successor, startDate: newSuccessorStart, dueDate: newSuccessorDue };
                 const tempTasks = tasks.map(t => t.id === successor.id ? tempSuccessor : t);
 
-                const cascadingUpdates = this.checkDependencies(tempTasks, relations, successor.id, newSuccessorStart, newSuccessorDue);
+                const cascadingUpdates = this.checkDependencies(
+                    tempTasks, relations, successor.id, newSuccessorStart, newSuccessorDue, visitedIds
+                );
                 cascadingUpdates.forEach((v, k) => updates.set(k, v));
             }
-        });
+        }
+
+        // ===== 2. FOLLOWS relations (A follows B) =====
+        // When A moves, check if B (predecessor of A) needs adjustment
+        // This is the inverse: A.start >= B.end + delay
+        // If we moved A backward, B might need to move backward too
+        const followsRelations = relations.filter(
+            r => r.from === movedTaskId &&
+                (r.type === RelationType.Follows || r.type === RelationType.Blocked)
+        );
+
+        for (const rel of followsRelations) {
+            const predecessor = tasks.find(t => t.id === rel.to);
+            if (!predecessor) continue;
+
+            const delay = (rel.delay || 0) * dayInMs;
+            // A follows B means: A.start >= B.end + delay
+            // So B.end <= A.start - delay (maximum end for predecessor)
+            const maxEnd = newStart - delay;
+
+            if (predecessor.dueDate !== undefined &&
+                Number.isFinite(predecessor.dueDate) &&
+                predecessor.dueDate > maxEnd) {
+
+                const duration = (predecessor.startDate !== undefined && Number.isFinite(predecessor.startDate))
+                    ? predecessor.dueDate - predecessor.startDate
+                    : 0;
+                const newPredecessorDue = maxEnd;
+                const newPredecessorStart = newPredecessorDue - duration;
+
+                // Don't push start date into negative
+                if (newPredecessorStart >= 0) {
+                    updates.set(predecessor.id, {
+                        startDate: newPredecessorStart,
+                        dueDate: newPredecessorDue
+                    });
+
+                    // Cascade: check this predecessor's dependencies
+                    const tempPredecessor = { ...predecessor, startDate: newPredecessorStart, dueDate: newPredecessorDue };
+                    const tempTasks = tasks.map(t => t.id === predecessor.id ? tempPredecessor : t);
+
+                    const cascadingUpdates = this.checkDependencies(
+                        tempTasks, relations, predecessor.id, newPredecessorStart, newPredecessorDue, visitedIds
+                    );
+                    cascadingUpdates.forEach((v, k) => updates.set(k, v));
+                }
+            }
+        }
 
         return updates;
     }
-
-    /**
-     * Handles the "blocks" constraint.
-     * If A blocks B, B cannot be started/completed until A is done.
-     * This is more of a state constraint than date constraint usually, but can be treated as date constraint (End-to-Start or End-to-End).
-     * Redmine 'blocks' usually implies B is blocked by A. A must be closed before B can be closed.
-     * For Gantt, we might treat it as A.end <= B.start?
-     * Requirement says: "blocks: If blocker is incomplete, blocked cannot start/finish".
-     * This might be just a visual warning or status check.
-     *
-     * For "precedes" (most common in Gantt):
-     * "Successor start date >= Predecessor end date"
-     */
 }
+
