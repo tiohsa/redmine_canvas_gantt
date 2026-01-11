@@ -925,7 +925,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     updateViewport: (updates) => set((state) => {
         const nextViewport = { ...state.viewport, ...updates };
 
-        const totalHeight = Math.max(0, state.rowCount * nextViewport.rowHeight);
+        // Must match BOTTOM_PADDING_PX in GanttContainer.tsx
+        const BOTTOM_PADDING_PX = 40;
+        const totalHeight = Math.max(0, state.rowCount * nextViewport.rowHeight + BOTTOM_PADDING_PX);
         const maxScrollY = Math.max(0, totalHeight - nextViewport.height);
         const nextScrollY = Math.max(0, Math.min(maxScrollY, nextViewport.scrollY));
 
