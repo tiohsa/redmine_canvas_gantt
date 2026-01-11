@@ -163,6 +163,12 @@ export class OverlayRenderer {
             const toTask = taskById.get(rel.to);
             if (!fromTask || !toTask) continue;
 
+            // Skip drawing if dates are missing (prevents drawing lines from (0,0))
+            if (!Number.isFinite(fromTask.startDate) || !Number.isFinite(fromTask.dueDate) ||
+                !Number.isFinite(toTask.startDate) || !Number.isFinite(toTask.dueDate)) {
+                continue;
+            }
+
             const fromRect = rectById.get(rel.from);
             const toRect = rectById.get(rel.to);
             if (!fromRect || !toRect) continue;
