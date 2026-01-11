@@ -82,7 +82,8 @@ export class OverlayRenderer {
         if (!showProgressLine) return;
 
         // Tasks are already ordered by rowIndex (TaskStore layout).
-        const drawableTasks = tasks.filter(t => Number.isFinite(t.startDate) && Number.isFinite(t.dueDate) && Number.isFinite(t.ratioDone));
+        // Include tasks even if dates are missing (they will snap to Today line)
+        const drawableTasks = tasks;
         if (drawableTasks.length === 0) return;
 
         // Calculate Today X
@@ -106,27 +107,39 @@ export class OverlayRenderer {
         );
 
         drawableTasks.forEach(task => {
-            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
-            const pointY = bounds.y + bounds.height / 2;
-            let pointX: number;
-
             const isClosed = closedStatusIds.has(task.statusId);
+            const hasValidDates = Number.isFinite(task.startDate) && Number.isFinite(task.dueDate);
+            const hasProgress = Number.isFinite(task.ratioDone);
 
-            // If task starts in the future (after today) AND has no progress, snap to Today line
-            // OR if the task is closed/rejected, snap to Today line
-            if (isClosed || (task.startDate! > todayStart && task.ratioDone === 0)) {
-                pointX = xToday;
+            let pointX: number;
+            let pointY: number;
+
+            if (hasValidDates) {
+                const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
+                pointY = bounds.y + bounds.height / 2;
+
+                if (isClosed || (task.startDate! > todayStart && (task.ratioDone === 0 || !hasProgress))) {
+                    pointX = xToday;
+                } else {
+                    const ratio = hasProgress ? Math.max(0, Math.min(100, task.ratioDone)) : 0;
+                    pointX = bounds.x + bounds.width * (ratio / 100);
+                }
             } else {
-                // X position based on progress
-                const ratio = Math.max(0, Math.min(100, task.ratioDone));
-                pointX = bounds.x + bounds.width * (ratio / 100);
+                // Determine Y based on row index directly since getTaskBounds returns 0,0 for invalid dates
+                const rowY = task.rowIndex * viewport.rowHeight - viewport.scrollY;
+                const barHeight = Math.max(2, Math.round(viewport.rowHeight * 0.4));
+                const yOffset = Math.round((viewport.rowHeight - barHeight) / 2);
+                pointY = rowY + yOffset + barHeight / 2;
+
+                // Snap to Today line
+                pointX = xToday;
             }
 
             ctx.lineTo(pointX, pointY);
         });
 
-        // End at Today Line at Bottom
-        ctx.lineTo(xToday, this.canvas.height);
+        // Removed "End at Today Line at Bottom" per user request
+        // ctx.lineTo(xToday, this.canvas.height);
 
         ctx.stroke();
         ctx.restore();
