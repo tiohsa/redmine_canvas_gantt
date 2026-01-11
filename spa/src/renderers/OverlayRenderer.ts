@@ -318,14 +318,20 @@ export class OverlayRenderer {
         const x = LayoutEngine.dateToX(today + ONE_DAY, viewport) - viewport.scrollX;
 
         if (x >= 0 && x <= this.canvas.width) {
-            ctx.strokeStyle = '#e53935';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([4, 4]);
+            const COLOR = '#4285f4'; // Blue like the reference image
+
+            ctx.save();
+            ctx.strokeStyle = COLOR;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([]); // Solid line
+
+            // Draw Line
             ctx.beginPath();
             ctx.moveTo(x, 0);
             ctx.lineTo(x, this.canvas.height);
             ctx.stroke();
-            ctx.setLineDash([]);
+
+            ctx.restore();
         }
     }
 
