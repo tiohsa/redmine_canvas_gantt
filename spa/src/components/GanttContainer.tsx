@@ -13,6 +13,8 @@ import { IssueIframeDialog } from './IssueIframeDialog';
 import { getMaxFiniteDueDate, getMinFiniteStartDate } from '../utils/taskRange';
 import { GlobalTooltip } from './GlobalTooltip';
 
+import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, BOTTOM_PADDING_PX } from '../constants';
+
 export const GanttContainer: React.FC = () => {
     // containerRef is the root flex container
     const containerRef = useRef<HTMLDivElement>(null);
@@ -26,16 +28,20 @@ export const GanttContainer: React.FC = () => {
     const taskCanvasRef = useRef<HTMLCanvasElement>(null);
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    const { viewport, tasks, relations, versions, setTasks, setRelations, setVersions, updateViewport, zoomLevel, rowCount, viewportFromStorage, selectedTaskId, layoutRows, showVersions } = useTaskStore();
-    const { showProgressLine, sidebarWidth, setSidebarWidth, leftPaneVisible } = useUIStore();
-
     const isResizing = useRef(false);
     const isSyncingScroll = useRef(false);
 
-
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-    const MAX_SCROLL_AREA_PX = 10_000_000;
-    const BOTTOM_PADDING_PX = 40; // Buffer for horizontal scrollbar and bottom margin
+    const { viewport, tasks, relations, selectedTaskId, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, setTasks, setRelations, setVersions } = useTaskStore();
+    const { sidebarWidth, setSidebarWidth, leftPaneVisible, showProgressLine } = useUIStore();
+    // Removed unused row calculations and task slicing
+    // const totalRows = rowCount || tasks.length;
+    // const [startRow, endRow] = getVisibleRowRange(viewport, totalRows);
+    // const visibleTasks = sliceTasksInRowRange(tasks, startRow, endRow);
+    // const bufferedTasks = sliceTasksInRowRange(
+    //     tasks,
+    //     Math.max(0, startRow - DEPENDENCY_ROW_BUFFER),
+    //     Math.min(totalRows - 1, endRow + DEPENDENCY_ROW_BUFFER)
+    // );
     const tasksMaxDue = useMemo(() => getMaxFiniteDueDate(tasks), [tasks]);
     const computeScrollContentSize = (): { width: number; height: number } => {
         const scale = viewport.scale || 0.00000001;
@@ -76,7 +82,7 @@ export const GanttContainer: React.FC = () => {
         const handleMouseMove = (e: MouseEvent) => {
             if (!isResizing.current) return;
             // Constrain width
-            const newWidth = Math.max(200, Math.min(800, e.clientX)); // Simple clientX mapping assuming sidebar starts at 0
+            const newWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, e.clientX)); // Simple clientX mapping assuming sidebar starts at 0
             setSidebarWidth(newWidth);
         };
 
@@ -92,7 +98,7 @@ export const GanttContainer: React.FC = () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [viewportFromStorage]);
+    }, [viewportFromStorage, setSidebarWidth]);
 
     const startResize = () => {
         isResizing.current = true;
@@ -234,7 +240,7 @@ export const GanttContainer: React.FC = () => {
         if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel, selectedTaskId, tasks);
         if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
-    }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations, selectedTaskId, layoutRows, versions, showVersions]);
+    }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations, selectedTaskId, layoutRows, showVersions]);
 
     return (
         <>
