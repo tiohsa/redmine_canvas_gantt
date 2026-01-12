@@ -25,7 +25,9 @@ interface UIState {
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
+    togglePointsOrphans: () => void;
     toggleLeftPane: () => void;
+    showPointsOrphans: boolean;
     setVisibleColumns: (cols: string[]) => void;
     setColumnWidth: (key: string, width: number) => void;
     setSidebarWidth: (width: number) => void;
@@ -39,6 +41,7 @@ interface UIState {
 export const useUIStore = create<UIState>((set) => ({
     notifications: [],
     showProgressLine: preferences.showProgressLine ?? false,
+    showPointsOrphans: preferences.showPointsOrphans ?? true, // Default to true
     leftPaneVisible: true,
     visibleColumns: preferences.visibleColumns
         ? preferences.visibleColumns
@@ -74,6 +77,7 @@ export const useUIStore = create<UIState>((set) => ({
             notifications: state.notifications.filter((n) => n.id !== id)
         })),
     toggleProgressLine: () => set((state) => ({ showProgressLine: !state.showProgressLine })),
+    togglePointsOrphans: () => set((state) => ({ showPointsOrphans: !state.showPointsOrphans })),
     toggleLeftPane: () => set((state) => ({ leftPaneVisible: !state.leftPaneVisible })),
     setVisibleColumns: (cols) => set(() => ({ visibleColumns: cols })),
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),

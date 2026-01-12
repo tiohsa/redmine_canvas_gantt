@@ -19,7 +19,7 @@ export class TaskRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: any[] = []) {
+    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: any[] = [], showPointsOrphans: boolean = true) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -65,26 +65,53 @@ export class TaskRenderer {
         });
 
         visibleTasks.forEach(task => {
-            if (!Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) return;
+            // If neither start nor due date is finite, we can't draw anything (or maybe background only).
+            // But logic below handles one-side finite cases.
+            if (!Number.isFinite(task.startDate) && !Number.isFinite(task.dueDate)) return;
 
-            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
-            // Requirement 6.1: Parent tasks drawn as Redmine standard summary bar (bracket style replaced by cap bar)
-            // Cap bar or leaf bar drawing logic
-            const barBounds = this.drawRedmineTaskBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height, xTodayLine);
+            // Calculate basic Y position
+            const rowY = task.rowIndex * viewport.rowHeight - viewport.scrollY;
 
-            if (showDependencyIndicators && dependencySummary) {
-                const summary = dependencySummary.get(task.id);
-                if (summary) {
-                    const showIncoming = summary.incoming > 0;
-                    const showOutgoing = summary.outgoing > 0;
-                    const incomingVisible = zoomLevel === 1 ? showIncoming : false;
-                    const outgoingVisible = showOutgoing;
-                    this.drawDependencyIndicators(ctx, barBounds, incomingVisible, outgoingVisible);
+            // Check if we have BOTH valid dates to draw a bar
+            if (Number.isFinite(task.startDate) && Number.isFinite(task.dueDate)) {
+                const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
+                // Requirement 6.1: Parent tasks drawn as Redmine standard summary bar
+                const barBounds = this.drawRedmineTaskBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height, xTodayLine);
+
+                if (showDependencyIndicators && dependencySummary) {
+                    const summary = dependencySummary.get(task.id);
+                    if (summary) {
+                        const showIncoming = summary.incoming > 0;
+                        const showOutgoing = summary.outgoing > 0;
+                        const incomingVisible = zoomLevel === 1 ? showIncoming : false;
+                        const outgoingVisible = showOutgoing;
+                        this.drawDependencyIndicators(ctx, barBounds, incomingVisible, outgoingVisible);
+                    }
                 }
-            }
 
-            // Draw Subject BEFORE the bar (to the left)
-            this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
+                // Draw Subject BEFORE the bar (to the left)
+                this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
+            } else if (showPointsOrphans && Number.isFinite(task.startDate)) {
+                // Only Start Date -> Draw as a point (diamond)
+                const startX = LayoutEngine.dateToX(LayoutEngine.snapDate(task.startDate, zoomLevel), viewport) - viewport.scrollX;
+                this.drawTaskAsPoint(ctx, task, startX, rowY, viewport.rowHeight, 'diamond');
+
+                // Draw Subject BEFORE the point
+                this.drawSubjectBeforeBar(ctx, task, startX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
+            } else if (showPointsOrphans && Number.isFinite(task.dueDate)) {
+                // Only Due Date -> Draw as a point (left triangle)
+                // We assume due date needs to be calculated by dateToX similarly.
+                // Note: due dates are usually inclusive at end of day, but for a point/milestone view, snapping to the date itself is usually expected.
+                // However, LayoutEngine.snapDate snaps to start of day.
+                // If we want it to look like "End of Day", we might add ONE_DAY.
+                // But for a single point, start of day (or center of day) is visually consistent with start date points.
+                // Let's stick to snapDate (start of day) for consistent alignment with grid lines.
+                const dueX = LayoutEngine.dateToX(LayoutEngine.snapDate(task.dueDate, zoomLevel), viewport) - viewport.scrollX;
+                this.drawTaskAsPoint(ctx, task, dueX, rowY, viewport.rowHeight, 'triangle_left');
+
+                // Draw Subject BEFORE the point
+                this.drawSubjectBeforeBar(ctx, task, dueX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
+            }
         });
     }
 
@@ -338,4 +365,56 @@ export class TaskRenderer {
         ctx.restore();
     }
 
+
+    private drawTaskAsPoint(
+        ctx: CanvasRenderingContext2D,
+        task: Task,
+        x: number,
+        y: number,
+        rowHeight: number,
+        shape: 'diamond' | 'triangle_left' = 'diamond'
+    ) {
+        if (!Number.isFinite(x)) return;
+
+        const centerY = Math.floor(y + rowHeight / 2);
+        const diamondSize = 12; // Visible size
+
+        ctx.save();
+
+        // Color determination
+        let color = TaskRenderer.PLAN_GRAY;
+        const now = new Date().setHours(0, 0, 0, 0);
+
+        if (task.ratioDone === 100) {
+            color = TaskRenderer.DONE_GREEN;
+        } else if (task.startDate && task.startDate < now) {
+            // Start date is in the past and not done
+            color = TaskRenderer.DELAY_RED;
+        }
+
+        ctx.fillStyle = color;
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 1;
+
+        if (shape === 'triangle_left') {
+            this.drawLeftTriangle(ctx, x, centerY, diamondSize);
+        } else {
+            this.drawDiamond(ctx, x, centerY, diamondSize);
+        }
+
+        ctx.restore();
+    }
+
+    private drawLeftTriangle(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+        ctx.beginPath();
+        // Pointing Left: Tip at (x - size/2, y)
+        ctx.moveTo(x - size / 2, y);
+        // Top Right: (x + size/2, y - size/2)
+        ctx.lineTo(x + size / 2, y - size / 2);
+        // Bottom Right: (x + size / 2, y + size/2)
+        ctx.lineTo(x + size / 2, y + size / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
 }

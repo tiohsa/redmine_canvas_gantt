@@ -24,6 +24,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         visibleColumns,
         setVisibleColumns,
         toggleLeftPane,
+        showPointsOrphans,
+        togglePointsOrphans,
         isFullScreen,
         toggleFullScreen
     } = useUIStore();
@@ -291,10 +293,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <line x1="5" y1="12" x2="19" y2="12" />
                     </svg>
                 </button>
-
-
-
-                <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
 
                 <button
                     onClick={() => setShowFilterMenu(prev => !prev)}
@@ -840,6 +838,30 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <path d="M7 12l6-6" />
                     </svg>
                     {i18n.t('label_dependencies_short') || 'Dep'}
+                </button>
+
+                <button
+                    onClick={togglePointsOrphans}
+                    title={i18n.t('label_toggle_points_orphans') || 'Toggle Orphan Date Points'}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '0 10px',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: showPointsOrphans ? '#e8f0fe' : '#fff',
+                        color: showPointsOrphans ? '#1a73e8' : '#333',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        height: '32px'
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2l3 5h6l-5 4 2 6-6-4-6 4 2-6-5-4h6z" />
+                    </svg>
+                    {i18n.t('label_points_short') || 'Pts'}
                 </button>
             </div>
 

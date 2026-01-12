@@ -32,7 +32,7 @@ export const GanttContainer: React.FC = () => {
     const isSyncingScroll = useRef(false);
 
     const { viewport, tasks, relations, selectedTaskId, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, setTasks, setRelations, setVersions } = useTaskStore();
-    const { sidebarWidth, setSidebarWidth, leftPaneVisible, showProgressLine } = useUIStore();
+    const { sidebarWidth, setSidebarWidth, leftPaneVisible, showProgressLine, showPointsOrphans } = useUIStore();
     // Removed unused row calculations and task slicing
     // const totalRows = rowCount || tasks.length;
     // const [startRow, endRow] = getVisibleRowRange(viewport, totalRows);
@@ -238,9 +238,9 @@ export const GanttContainer: React.FC = () => {
     useEffect(() => {
         // console.log('Render Loop:', { width: viewport.width, height: viewport.height, scrollX: viewport.scrollX, scrollY: viewport.scrollY, rowCount, tasks: tasks.length });
         if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel, selectedTaskId, tasks);
-        if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows);
+        if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows, showPointsOrphans);
         if (engines.current.overlay) engines.current.overlay.render(viewport);
-    }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations, selectedTaskId, layoutRows, showVersions]);
+    }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations, selectedTaskId, layoutRows, showVersions, showPointsOrphans]);
 
     return (
         <>

@@ -110,7 +110,9 @@ class CanvasGanttsController < ApplicationController
       label_relation_add_failed: l(:label_relation_add_failed),
       label_add_new_ticket: l(:label_issue_new),
       label_show_versions: l(:label_show_versions),
-      label_none: l(:label_none)
+      label_none: l(:label_none),
+      label_toggle_points_orphans: l(:label_toggle_points_orphans),
+      label_points_short: l(:label_points_short)
     }
 
     @settings = Setting.plugin_redmine_canvas_gantt || {}

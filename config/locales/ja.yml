@@ -71,3 +71,5 @@ ja:
   label_row_height: "行の高さ"
   label_show_versions: "バージョンヘッダーを表示"
   label_none: "(未設定)"
+  label_toggle_points_orphans: "開始日のみ・期日のみタスクの表示切替"
+  label_points_short: "Pts"

@@ -69,3 +69,5 @@ en:
   label_row_height: "Row height"
   label_show_versions: "Show version headers"
   label_none: "(No version)"
+  label_toggle_points_orphans: "Toggle Orphan Date Points"
+  label_points_short: "Pts"
