@@ -92,14 +92,14 @@ export class TaskRenderer {
                 // Draw Subject BEFORE the bar (to the left)
                 this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
             } else if (showPointsOrphans && Number.isFinite(task.startDate)) {
-                // Only Start Date -> Draw as a point (diamond)
+                // Only Start Date -> Draw as a point (triangle_right)
                 const startX = LayoutEngine.dateToX(LayoutEngine.snapDate(task.startDate, zoomLevel), viewport) - viewport.scrollX;
-                this.drawTaskAsPoint(ctx, task, startX, rowY, viewport.rowHeight, 'diamond');
+                this.drawTaskAsPoint(ctx, task, startX, rowY, viewport.rowHeight, 'triangle_right');
 
                 // Draw Subject BEFORE the point
                 this.drawSubjectBeforeBar(ctx, task, startX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
             } else if (showPointsOrphans && Number.isFinite(task.dueDate)) {
-                // Only Due Date -> Draw as a point (left triangle)
+                // Only Due Date -> Draw as a point (diamond)
                 // We assume due date needs to be calculated by dateToX similarly.
                 // Note: due dates are usually inclusive at end of day, but for a point/milestone view, snapping to the date itself is usually expected.
                 // However, LayoutEngine.snapDate snaps to start of day.
@@ -107,7 +107,7 @@ export class TaskRenderer {
                 // But for a single point, start of day (or center of day) is visually consistent with start date points.
                 // Let's stick to snapDate (start of day) for consistent alignment with grid lines.
                 const dueX = LayoutEngine.dateToX(LayoutEngine.snapDate(task.dueDate, zoomLevel), viewport) - viewport.scrollX;
-                this.drawTaskAsPoint(ctx, task, dueX, rowY, viewport.rowHeight, 'triangle_left');
+                this.drawTaskAsPoint(ctx, task, dueX, rowY, viewport.rowHeight, 'diamond');
 
                 // Draw Subject BEFORE the point
                 this.drawSubjectBeforeBar(ctx, task, dueX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
@@ -199,15 +199,11 @@ export class TaskRenderer {
         ctx.restore();
     }
 
-    private drawDiamond(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+    private drawDiamond(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, stroke = true) {
         ctx.beginPath();
-        ctx.moveTo(x, y - size / 2);
-        ctx.lineTo(x + size / 2, y);
-        ctx.lineTo(x, y + size / 2);
-        ctx.lineTo(x - size / 2, y);
-        ctx.closePath();
+        this.defineDiamondPath(ctx, x, y, size);
         ctx.fill();
-        ctx.stroke();
+        if (stroke) ctx.stroke();
     }
 
     private drawSubjectBeforeBar(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number) {
@@ -314,9 +310,7 @@ export class TaskRenderer {
         ctx.rect(x, y, width, height);
         ctx.clip();
 
-        ctx.fillStyle = TaskRenderer.DELAY_RED; // Use a reddish background or just pattern?
-        // Usually hatched is pattern over background. 
-        // Let's draw stripes.
+        ctx.fillStyle = TaskRenderer.DELAY_RED;
         ctx.strokeStyle = '#e03e3e'; // Darker red for stripes
         ctx.lineWidth = 1;
 
@@ -372,7 +366,7 @@ export class TaskRenderer {
         x: number,
         y: number,
         rowHeight: number,
-        shape: 'diamond' | 'triangle_left' = 'diamond'
+        shape: 'diamond' | 'triangle_left' | 'triangle_right' = 'diamond'
     ) {
         if (!Number.isFinite(x)) return;
 
@@ -384,37 +378,103 @@ export class TaskRenderer {
         // Color determination
         let color = TaskRenderer.PLAN_GRAY;
         const now = new Date().setHours(0, 0, 0, 0);
+        let isDelayed = false;
+
+        const taskDate = Number.isFinite(task.startDate) ? task.startDate : task.dueDate;
 
         if (task.ratioDone === 100) {
             color = TaskRenderer.DONE_GREEN;
-        } else if (task.startDate && task.startDate < now) {
-            // Start date is in the past and not done
+        } else if (taskDate && taskDate < now) {
+            // date is in the past and not done
             color = TaskRenderer.DELAY_RED;
+            isDelayed = true;
         }
 
         ctx.fillStyle = color;
         ctx.strokeStyle = '#555';
         ctx.lineWidth = 1;
 
-        if (shape === 'triangle_left') {
-            this.drawLeftTriangle(ctx, x, centerY, diamondSize);
+        if (isDelayed) {
+            const path = new Path2D();
+            if (shape === 'triangle_left') {
+                this.defineLeftTrianglePath(path, x, centerY, diamondSize);
+            } else if (shape === 'triangle_right') {
+                this.defineRightTrianglePath(path, x, centerY, diamondSize);
+            } else {
+                this.defineDiamondPath(path, x, centerY, diamondSize);
+            }
+            this.drawHatchedPath(ctx, path, x, centerY, diamondSize);
         } else {
-            this.drawDiamond(ctx, x, centerY, diamondSize);
+            const showBorder = false;
+            if (shape === 'triangle_left') {
+                this.drawLeftTriangle(ctx, x, centerY, diamondSize, showBorder);
+            } else if (shape === 'triangle_right') {
+                this.drawRightTriangle(ctx, x, centerY, diamondSize, showBorder);
+            } else {
+                this.drawDiamond(ctx, x, centerY, diamondSize, showBorder);
+            }
         }
 
         ctx.restore();
     }
 
-    private drawLeftTriangle(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+    private drawLeftTriangle(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, stroke = true) {
         ctx.beginPath();
-        // Pointing Left: Tip at (x - size/2, y)
-        ctx.moveTo(x - size / 2, y);
-        // Top Right: (x + size/2, y - size/2)
-        ctx.lineTo(x + size / 2, y - size / 2);
-        // Bottom Right: (x + size / 2, y + size/2)
-        ctx.lineTo(x + size / 2, y + size / 2);
-        ctx.closePath();
+        this.defineLeftTrianglePath(ctx, x, y, size);
         ctx.fill();
-        ctx.stroke();
+        if (stroke) ctx.stroke();
+    }
+
+    private defineLeftTrianglePath(path: CanvasRenderingContext2D | Path2D, x: number, y: number, size: number) {
+        // Pointing Left: Tip at (x - size/2, y)
+        path.moveTo(x - size / 2, y);
+        // Top Right: (x + size/2, y - size/2)
+        path.lineTo(x + size / 2, y - size / 2);
+        // Bottom Right: (x + size / 2, y + size/2)
+        path.lineTo(x + size / 2, y + size / 2);
+        path.closePath();
+    }
+
+    private drawRightTriangle(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, stroke = true) {
+        ctx.beginPath();
+        this.defineRightTrianglePath(ctx, x, y, size);
+        ctx.fill();
+        if (stroke) ctx.stroke();
+    }
+
+    private defineRightTrianglePath(path: CanvasRenderingContext2D | Path2D, x: number, y: number, size: number) {
+        // Pointing Right: Tip at (x + size/2, y)
+        path.moveTo(x + size / 2, y);
+        // Top Left: (x - size/2, y - size/2)
+        path.lineTo(x - size / 2, y - size / 2);
+        // Bottom Left: (x - size / 2, y + size/2)
+        path.lineTo(x - size / 2, y + size / 2);
+        path.closePath();
+    }
+
+    private defineDiamondPath(path: CanvasRenderingContext2D | Path2D, x: number, y: number, size: number) {
+        path.moveTo(x, y - size / 2);
+        path.lineTo(x + size / 2, y);
+        path.lineTo(x, y + size / 2);
+        path.lineTo(x - size / 2, y);
+        path.closePath();
+    }
+
+    private drawHatchedPath(ctx: CanvasRenderingContext2D, path: Path2D, x: number, y: number, size: number) {
+        ctx.save();
+        ctx.clip(path);
+
+        ctx.strokeStyle = '#e03e3e'; // Darker red for stripes
+        ctx.lineWidth = 1;
+
+        const step = 4;
+        const halfSize = size / 2;
+        for (let i = -size; i < size; i += step) {
+            ctx.beginPath();
+            ctx.moveTo(x + i - halfSize, y + halfSize);
+            ctx.lineTo(x + i + halfSize, y - halfSize);
+            ctx.stroke();
+        }
+        ctx.restore();
     }
 }
