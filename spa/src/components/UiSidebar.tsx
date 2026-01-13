@@ -1160,8 +1160,12 @@ export const UiSidebar: React.FC = () => {
                                                                     useUIStore.getState().addNotification('Invalid date range', 'warning');
                                                                     return;
                                                                 }
-                                                                // Update local state only - will be saved with batch save
-                                                                useTaskStore.getState().updateTask(task.id, { dueDate: nextTs });
+                                                                // Update local state - will be saved with batch save or auto-save
+                                                                const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
+                                                                updateTask(task.id, { dueDate: nextTs });
+                                                                if (autoSave) {
+                                                                    saveChanges().catch(console.error);
+                                                                }
                                                                 close();
                                                             }}
                                                         />
@@ -1181,8 +1185,12 @@ export const UiSidebar: React.FC = () => {
                                                                     useUIStore.getState().addNotification('Invalid date range', 'warning');
                                                                     return;
                                                                 }
-                                                                // Update local state only - will be saved with batch save
-                                                                useTaskStore.getState().updateTask(task.id, { startDate: nextTs });
+                                                                // Update local state - will be saved with batch save or auto-save
+                                                                const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
+                                                                updateTask(task.id, { startDate: nextTs });
+                                                                if (autoSave) {
+                                                                    saveChanges().catch(console.error);
+                                                                }
                                                                 close();
                                                             }}
                                                         />
