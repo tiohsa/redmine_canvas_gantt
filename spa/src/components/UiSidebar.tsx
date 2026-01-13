@@ -1151,6 +1151,7 @@ export const UiSidebar: React.FC = () => {
                                                     return (
                                                         <DueDateEditor
                                                             initialValue={toDateInputValue(task.dueDate)}
+                                                            min={toDateInputValue(task.startDate)}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 const nextTs = new Date(next).getTime();
@@ -1175,6 +1176,7 @@ export const UiSidebar: React.FC = () => {
                                                     return (
                                                         <DueDateEditor
                                                             initialValue={toDateInputValue(task.startDate)}
+                                                            max={toDateInputValue(task.dueDate)}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 const nextTs = new Date(next).getTime();

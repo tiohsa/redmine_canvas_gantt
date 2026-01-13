@@ -260,6 +260,7 @@ export const TaskDetailPanel: React.FC = () => {
                         editor={({ onClose }) => (
                             <DueDateEditor
                                 initialValue={toDateInputValue(task.dueDate)}
+                                min={toDateInputValue(task.startDate)}
                                 onCancel={onClose}
                                 onCommit={async (next) => {
                                     const nextTs = toTimestampFromDateInput(next);
@@ -517,7 +518,9 @@ export const DueDateEditor: React.FC<{
     initialValue: string;
     onCommit: (value: string) => Promise<void>;
     onCancel: () => void;
-}> = ({ initialValue, onCommit, onCancel }) => {
+    min?: string;
+    max?: string;
+}> = ({ initialValue, onCommit, onCancel, min, max }) => {
     const [value, setValue] = React.useState(initialValue);
     const [saving, setSaving] = React.useState(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
@@ -563,6 +566,8 @@ export const DueDateEditor: React.FC<{
             <input
                 ref={inputRef}
                 type="date"
+                min={min}
+                max={max}
                 value={value}
                 disabled={saving}
                 onChange={(e) => {
