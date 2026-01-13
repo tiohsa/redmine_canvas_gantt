@@ -516,7 +516,7 @@ export const DoneRatioEditor: React.FC<{
 
 export const DueDateEditor: React.FC<{
     initialValue: string;
-    onCommit: (value: string) => Promise<void>;
+    onCommit: (value: string) => Promise<void> | void;
     onCancel: () => void;
     min?: string;
     max?: string;

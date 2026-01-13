@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { fireEvent, waitFor } from '@testing-library/react';
 import { UiSidebar } from './UiSidebar';
@@ -72,7 +72,8 @@ describe('UiSidebar', () => {
                 rowHeight: 32
             },
             groupByProject: false,
-            selectedTaskId: null
+            selectedTaskId: null,
+            modifiedTaskIds: new Set()
         });
 
         const task: Task = {
@@ -90,41 +91,6 @@ describe('UiSidebar', () => {
 
         useTaskStore.getState().setTasks([task]);
 
-        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init?: RequestInit) => {
-            const url = String(input);
-            if (url.includes('edit_meta.json')) {
-                return {
-                    ok: true,
-                    json: async () => ({
-                        task: {
-                            id: 123,
-                            subject: 'Old',
-                            assigned_to_id: null,
-                            status_id: 1,
-                            done_ratio: 0,
-                            start_date: '2025-01-01',
-                            due_date: '2025-01-05',
-                            lock_version: 1
-                        },
-                        editable: { subject: true, assigned_to_id: true, status_id: true, done_ratio: true, due_date: true, start_date: true, custom_field_values: false },
-                        options: { statuses: [{ id: 1, name: 'New' }], assignees: [], custom_fields: [] },
-                        custom_field_values: {}
-                    })
-                } as unknown as Response;
-            }
-            if (url.endsWith(`/tasks/${taskId}.json`) && init?.method === 'PATCH') {
-                return {
-                    ok: true,
-                    json: async () => ({ lock_version: 2 })
-                } as unknown as Response;
-            }
-            return {
-                ok: false,
-                statusText: 'Not Found',
-                json: async () => ({ error: 'Not Found' })
-            } as unknown as Response;
-        }) as unknown as typeof fetch);
-
         render(<UiSidebar />);
 
         const cell = await screen.findByTestId(`cell-${taskId}-startDate`);
@@ -141,12 +107,15 @@ describe('UiSidebar', () => {
         fireEvent.change(input, { target: { value: '2025-01-02' } });
         fireEvent.keyDown(input, { key: 'Enter' });
 
+        // Date changes should update local state only (for batch save)
         await waitFor(() => {
             const t = useTaskStore.getState().allTasks[0];
-            // 2025-01-02 UTC is ... wait, input value is string.
-            // Check if the store was updated.
-            expect(t?.lockVersion).toBe(2);
+            const expectedDate = new Date('2025-01-02').getTime();
+            expect(t?.startDate).toBe(expectedDate);
         });
+
+        // Verify task is marked for batch save
+        expect(useTaskStore.getState().modifiedTaskIds.has(taskId)).toBe(true);
     });
 
     it('shows tooltip on task subject hover', () => {

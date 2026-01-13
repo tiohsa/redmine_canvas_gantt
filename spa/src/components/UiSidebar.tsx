@@ -1153,19 +1153,15 @@ export const UiSidebar: React.FC = () => {
                                                             initialValue={toDateInputValue(task.dueDate)}
                                                             min={toDateInputValue(task.startDate)}
                                                             onCancel={close}
-                                                            onCommit={async (next) => {
+                                                            onCommit={(next) => {
                                                                 const nextTs = new Date(next).getTime();
                                                                 if (!Number.isFinite(nextTs)) return;
                                                                 if (task.startDate !== undefined && Number.isFinite(task.startDate) && task.startDate! > nextTs) {
                                                                     useUIStore.getState().addNotification('Invalid date range', 'warning');
                                                                     return;
                                                                 }
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { dueDate: nextTs },
-                                                                    rollbackTaskUpdates: { dueDate: task.dueDate },
-                                                                    fields: { due_date: next }
-                                                                });
+                                                                // Update local state only - will be saved with batch save
+                                                                useTaskStore.getState().updateTask(task.id, { dueDate: nextTs });
                                                                 close();
                                                             }}
                                                         />
@@ -1178,19 +1174,15 @@ export const UiSidebar: React.FC = () => {
                                                             initialValue={toDateInputValue(task.startDate)}
                                                             max={toDateInputValue(task.dueDate)}
                                                             onCancel={close}
-                                                            onCommit={async (next) => {
+                                                            onCommit={(next) => {
                                                                 const nextTs = new Date(next).getTime();
                                                                 if (!Number.isFinite(nextTs)) return;
                                                                 if (task.dueDate !== undefined && Number.isFinite(task.dueDate) && nextTs > task.dueDate!) {
                                                                     useUIStore.getState().addNotification('Invalid date range', 'warning');
                                                                     return;
                                                                 }
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { startDate: nextTs },
-                                                                    rollbackTaskUpdates: { startDate: task.startDate },
-                                                                    fields: { start_date: next }
-                                                                });
+                                                                // Update local state only - will be saved with batch save
+                                                                useTaskStore.getState().updateTask(task.id, { startDate: nextTs });
                                                                 close();
                                                             }}
                                                         />
