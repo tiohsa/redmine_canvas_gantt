@@ -32,9 +32,27 @@ export class LayoutEngine {
         const start = task.startDate;
         const due = task.dueDate;
 
-        if (!Number.isFinite(start) || !Number.isFinite(due)) {
-            // Return empty bounds if dates are missing
+        // Logic for single date tasks
+        const POINT_SIZE = 12;
+
+        if (!Number.isFinite(start) && !Number.isFinite(due)) {
+            // Return empty bounds if both dates are missing
             return { x: 0, y: 0, width: 0, height: 0 };
+        } else if (!Number.isFinite(start) || !Number.isFinite(due)) {
+            // Processing for single date tasks
+            const date = Number.isFinite(start) ? start! : due!;
+            const snappedDate = this.snapDate(date, zoomLevel);
+            const cx = this.dateToX(snappedDate, viewport) - viewport.scrollX;
+            const x = cx - POINT_SIZE / 2;
+
+            if (kind === 'hit') {
+                return { x, y: task.rowIndex * viewport.rowHeight - viewport.scrollY, width: POINT_SIZE, height: viewport.rowHeight };
+            }
+
+            // For rendering (not currently used by TaskRenderer for points, but good for completeness)
+            const height = POINT_SIZE;
+            const yOffset = Math.round((viewport.rowHeight - height) / 2);
+            return { x, y: task.rowIndex * viewport.rowHeight - viewport.scrollY + yOffset, width: POINT_SIZE, height };
         }
 
         const snappedStart = this.snapDate(start, zoomLevel);
