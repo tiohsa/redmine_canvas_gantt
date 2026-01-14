@@ -210,7 +210,8 @@ class CanvasGanttsController < ApplicationController
   def edit_meta
     issue = Issue.visible.find(params[:id])
 
-    if issue.project_id != @project.id
+    project_ids = @project.self_and_descendants.pluck(:id)
+    if !project_ids.include?(issue.project_id)
       render json: { error: 'Issue not found in this project' }, status: :not_found
       return
     end
