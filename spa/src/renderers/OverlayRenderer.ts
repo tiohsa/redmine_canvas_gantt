@@ -108,23 +108,61 @@ export class OverlayRenderer {
 
         drawableTasks.forEach(task => {
             const isClosed = closedStatusIds.has(task.statusId);
-            const hasValidDates = Number.isFinite(task.startDate) && Number.isFinite(task.dueDate);
+            const hasStart = Number.isFinite(task.startDate);
+            const hasDue = Number.isFinite(task.dueDate);
+            const hasDates = hasStart || hasDue;
             const hasProgress = Number.isFinite(task.ratioDone);
+
 
             let pointX: number;
             let pointY: number;
 
-            if (hasValidDates) {
+            if (hasDates) {
                 const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
+                // Use the center of the bar (or point) as the Y anchor
                 pointY = bounds.y + bounds.height / 2;
 
-                if (isClosed || (task.startDate! > todayStart && (task.ratioDone === 0 || !hasProgress))) {
+                // Determine effective start and end dates for progress calculation
+                let effectiveStart: number;
+                let effectiveEnd: number;
+                const isSingleDate = (hasStart && !hasDue) || (!hasStart && hasDue);
+
+                if (hasStart && hasDue) {
+                    effectiveStart = LayoutEngine.snapDate(task.startDate, zoomLevel);
+                    // For bars, the end is inclusive, so detailed end is due + 1 day
+                    effectiveEnd = Math.max(effectiveStart, LayoutEngine.snapDate(task.dueDate, zoomLevel)) + ONE_DAY;
+                } else if (hasStart) {
+                    // Only Start: Treat as 1 day at Start Date
+                    effectiveStart = LayoutEngine.snapDate(task.startDate, zoomLevel);
+                    effectiveEnd = effectiveStart + ONE_DAY;
+                } else {
+                    // Only Due: Treat as 1 day at Due Date
+                    effectiveStart = LayoutEngine.snapDate(task.dueDate, zoomLevel);
+                    effectiveEnd = effectiveStart + ONE_DAY;
+                }
+
+                if (isClosed) {
                     pointX = xToday;
+                } else if (effectiveStart > todayStart && (task.ratioDone === 0 || !hasProgress)) {
+                    // Future task not started: Snap to Today line check
+                    pointX = xToday;
+                } else if (isSingleDate) {
+                    // For single date tasks that are active (past or started), always pass through the marker position
+                    // regardless of progress rate.
+                    pointX = bounds.x + bounds.width / 2;
                 } else {
                     const ratio = hasProgress ? Math.max(0, Math.min(100, task.ratioDone)) : 0;
-                    pointX = bounds.x + bounds.width * (ratio / 100);
+
+                    // X coordinate corresponding to the % completion
+                    // pointX = StartX + (Width * Ratio)
+                    const startX = LayoutEngine.dateToX(effectiveStart, viewport) - viewport.scrollX;
+                    const endX = LayoutEngine.dateToX(effectiveEnd, viewport) - viewport.scrollX;
+                    const width = endX - startX;
+
+                    pointX = startX + width * (ratio / 100);
                 }
             } else {
+                // No dates: Snap to Today line
                 // Determine Y based on row index directly since getTaskBounds returns 0,0 for invalid dates
                 const rowY = task.rowIndex * viewport.rowHeight - viewport.scrollY;
                 const barHeight = Math.max(2, Math.round(viewport.rowHeight * 0.4));
