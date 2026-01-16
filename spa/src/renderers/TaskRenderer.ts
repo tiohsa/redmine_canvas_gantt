@@ -93,20 +93,18 @@ export class TaskRenderer {
                 this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
             } else if (showPointsOrphans && Number.isFinite(task.startDate)) {
                 // Only Start Date -> Draw as a point (triangle_right)
-                const startX = LayoutEngine.dateToX(LayoutEngine.snapDate(task.startDate, zoomLevel), viewport) - viewport.scrollX;
+                // Shift by one day so single-date points align to the next grid column.
+                const startDate = LayoutEngine.snapDate(task.startDate, zoomLevel) + ONE_DAY;
+                const startX = LayoutEngine.dateToX(startDate, viewport) - viewport.scrollX;
                 this.drawTaskAsPoint(ctx, task, startX, rowY, viewport.rowHeight, 'triangle_right');
 
                 // Draw Subject BEFORE the point
                 this.drawSubjectBeforeBar(ctx, task, startX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
             } else if (showPointsOrphans && Number.isFinite(task.dueDate)) {
                 // Only Due Date -> Draw as a point (diamond)
-                // We assume due date needs to be calculated by dateToX similarly.
-                // Note: due dates are usually inclusive at end of day, but for a point/milestone view, snapping to the date itself is usually expected.
-                // However, LayoutEngine.snapDate snaps to start of day.
-                // If we want it to look like "End of Day", we might add ONE_DAY.
-                // But for a single point, start of day (or center of day) is visually consistent with start date points.
-                // Let's stick to snapDate (start of day) for consistent alignment with grid lines.
-                const dueX = LayoutEngine.dateToX(LayoutEngine.snapDate(task.dueDate, zoomLevel), viewport) - viewport.scrollX;
+                // Shift by one day so single-date points align to the next grid column.
+                const dueDate = LayoutEngine.snapDate(task.dueDate, zoomLevel) + ONE_DAY;
+                const dueX = LayoutEngine.dateToX(dueDate, viewport) - viewport.scrollX;
                 this.drawTaskAsPoint(ctx, task, dueX, rowY, viewport.rowHeight, 'diamond');
 
                 // Draw Subject BEFORE the point

@@ -42,7 +42,8 @@ export class LayoutEngine {
             // Processing for single date tasks
             const date = Number.isFinite(start) ? start! : due!;
             const snappedDate = this.snapDate(date, zoomLevel);
-            const cx = this.dateToX(snappedDate, viewport) - viewport.scrollX;
+            const shiftedDate = snappedDate + ONE_DAY_MS;
+            const cx = this.dateToX(shiftedDate, viewport) - viewport.scrollX;
             const x = cx - POINT_SIZE / 2;
 
             if (kind === 'hit') {

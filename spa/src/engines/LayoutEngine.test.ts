@@ -41,6 +41,30 @@ describe('LayoutEngine', () => {
         expect(bounds.y).toBe(12);
     });
 
+    it('getTaskBounds shifts single-date tasks by one day', () => {
+        const task: Task = {
+            id: '1',
+            subject: 'Single Date',
+            startDate: new Date(2024, 0, 1, 12, 0, 0, 0).getTime(),
+            dueDate: undefined,
+            rowIndex: 0,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            hasChildren: false
+        };
+
+        const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
+        const ONE_DAY = 24 * 60 * 60 * 1000;
+        const expectedCenter = LayoutEngine.dateToX(
+            LayoutEngine['snapDate'](task.startDate, 2) + ONE_DAY,
+            mockViewport
+        );
+
+        expect(bounds.x + bounds.width / 2).toBe(expectedCenter);
+    });
+
     it('getTaskBounds snaps start/end to local day grid', () => {
         const task: Task = {
             id: '1',
