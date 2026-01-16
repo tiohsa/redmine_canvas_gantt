@@ -1154,6 +1154,17 @@ export const UiSidebar: React.FC = () => {
                                                             min={toDateInputValue(task.startDate)}
                                                             onCancel={close}
                                                             onCommit={(next) => {
+                                                                // Handle clearing the date
+                                                                if (next === '') {
+                                                                    const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
+                                                                    updateTask(task.id, { dueDate: undefined });
+                                                                    if (autoSave) {
+                                                                        saveChanges().catch(console.error);
+                                                                    }
+                                                                    close();
+                                                                    return;
+                                                                }
+
                                                                 const nextTs = new Date(next).getTime();
                                                                 if (!Number.isFinite(nextTs)) return;
                                                                 if (task.startDate !== undefined && Number.isFinite(task.startDate) && task.startDate! > nextTs) {
@@ -1179,6 +1190,17 @@ export const UiSidebar: React.FC = () => {
                                                             max={toDateInputValue(task.dueDate)}
                                                             onCancel={close}
                                                             onCommit={(next) => {
+                                                                // Handle clearing the date
+                                                                if (next === '') {
+                                                                    const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
+                                                                    updateTask(task.id, { startDate: undefined });
+                                                                    if (autoSave) {
+                                                                        saveChanges().catch(console.error);
+                                                                    }
+                                                                    close();
+                                                                    return;
+                                                                }
+
                                                                 const nextTs = new Date(next).getTime();
                                                                 if (!Number.isFinite(nextTs)) return;
                                                                 if (task.dueDate !== undefined && Number.isFinite(task.dueDate) && nextTs > task.dueDate!) {
