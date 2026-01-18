@@ -31,7 +31,8 @@ describe('TaskStore viewport clamping', () => {
         // Wait, if rowCount=10, height=600, rowHeight=32 -> content=320. 320 < 600. maxScroll=0.
 
         useTaskStore.setState({ rowCount: 100 }); // 3200px
-        const maxScroll2 = 100 * 32 - 600; // 2600
+        const BOTTOM_PADDING_PX = 40;
+        const maxScroll2 = 100 * 32 + BOTTOM_PADDING_PX - 600; // 2640
 
         updateViewport({ scrollY: 5000 });
         expect(useTaskStore.getState().viewport.scrollY).toBe(maxScroll2);
