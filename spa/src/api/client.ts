@@ -245,7 +245,7 @@ export const apiClient = {
         }).filter((v): v is Version => v !== null) : [];
 
         const statuses: TaskStatus[] = Array.isArray(data.statuses)
-            ? data.statuses.map(parseStatus).filter((s): s is TaskStatus => s !== null)
+            ? (data.statuses as unknown[]).map(parseStatus).filter((s): s is TaskStatus => s !== null)
             : [];
 
         return { ...data, tasks, relations, versions, statuses };

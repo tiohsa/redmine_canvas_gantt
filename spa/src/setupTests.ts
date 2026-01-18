@@ -29,6 +29,11 @@ if (typeof window !== 'undefined') {
 
 // Mock RedmineCanvasGantt global object
 window.RedmineCanvasGantt = {
+    projectId: 1,
+    apiBase: '',
+    redmineBase: '',
+    authToken: '',
+    apiKey: '',
     i18n: {
         field_id: 'ID',
         field_subject: 'Task Name',
