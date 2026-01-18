@@ -56,7 +56,7 @@ declare global {
             redmineBase: string;
             authToken: string;
             apiKey: string;
-            settings?: InlineEditSettings;
+            settings?: InlineEditSettings & { row_height?: string };
             i18n?: Record<string, string>;
         };
     }
@@ -83,6 +83,21 @@ const parseEditOption = (value: unknown): EditOption | null => {
     const name = record.name;
     if (typeof id !== 'number' || typeof name !== 'string') return null;
     return { id, name };
+};
+
+const parseStatus = (value: unknown): TaskStatus | null => {
+    const record = asRecord(value);
+    if (!record) return null;
+    const idValue = record.id;
+    const nameValue = record.name;
+    const isClosedValue = record.is_closed;
+    if ((typeof idValue !== 'number' && typeof idValue !== 'string') || typeof nameValue !== 'string') return null;
+
+    return {
+        id: typeof idValue === 'number' ? idValue : Number(idValue),
+        name: nameValue,
+        isClosed: Boolean(isClosedValue)
+    };
 };
 
 const parseCustomFieldMeta = (value: unknown): CustomFieldMeta | null => {
@@ -230,11 +245,7 @@ export const apiClient = {
         }).filter((v): v is Version => v !== null) : [];
 
         const statuses: TaskStatus[] = Array.isArray(data.statuses)
-            ? (data.statuses as any[]).map((s) => ({
-                id: typeof s.id === 'number' ? s.id : Number(s.id),
-                name: String(s.name),
-                isClosed: Boolean(s.is_closed)
-            }))
+            ? data.statuses.map(parseStatus).filter((s): s is TaskStatus => s !== null)
             : [];
 
         return { ...data, tasks, relations, versions, statuses };
@@ -502,7 +513,7 @@ export const apiClient = {
             throw new Error("Configuration not found");
         }
 
-        const body: Record<string, any> = {
+        const body: Record<string, unknown> = {
             subject: task.subject,
             project_id: task.projectId ? Number(task.projectId) : config.projectId,
             tracker_id: task.trackerId,

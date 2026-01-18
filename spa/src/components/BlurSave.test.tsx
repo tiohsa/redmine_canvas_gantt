@@ -155,9 +155,8 @@ describe('UiSidebar Blur-to-Save', () => {
         });
 
         // Should NOT call fetch for PATCH
-        const patchCalls = (fetch as any).mock.calls.filter((call: any) =>
-            call[1]?.method === 'PATCH'
-        );
+        const fetchMock = vi.mocked(fetch);
+        const patchCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH');
         expect(patchCalls.length).toBe(0);
     });
 });

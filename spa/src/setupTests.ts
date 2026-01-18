@@ -28,7 +28,7 @@ if (typeof window !== 'undefined') {
 }
 
 // Mock RedmineCanvasGantt global object
-(window as any).RedmineCanvasGantt = {
+window.RedmineCanvasGantt = {
     i18n: {
         field_id: 'ID',
         field_subject: 'Task Name',

@@ -1,4 +1,4 @@
-import type { Viewport, Task, ZoomLevel, Relation } from '../types';
+import type { Viewport, Task, ZoomLevel, Relation, LayoutRow } from '../types';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { buildDependencySummary } from './dependencyIndicators';
 
@@ -19,7 +19,7 @@ export class TaskRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: any[] = [], showPointsOrphans: boolean = true) {
+    render(viewport: Viewport, tasks: Task[], rowCount: number, zoomLevel: ZoomLevel, relations: Relation[], layoutRows: LayoutRow[] = [], showPointsOrphans: boolean = true) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 

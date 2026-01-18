@@ -65,7 +65,7 @@ export function routeDependencyFS(
 
     if (maxX > minX) {
         // Start from the column containing the target start
-        let colIndex = Math.floor(toPort.x / context.columnWidth);
+        const colIndex = Math.floor(toPort.x / context.columnWidth);
 
         // Look backwards for a few columns to find one that fits
         for (let i = 0; i < 5; i++) {

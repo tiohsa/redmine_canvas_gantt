@@ -32,7 +32,7 @@ export const HtmlOverlay: React.FC = () => {
     const setDraftState = React.useCallback((next: typeof draft) => {
         draftRef.current = next;
         setDraft(next);
-    }, [zoomLevel]);
+    }, []);
 
     const toLocalPoint = React.useCallback((clientX: number, clientY: number) => {
         const rect = overlayRef.current?.getBoundingClientRect();
@@ -52,7 +52,7 @@ export const HtmlOverlay: React.FC = () => {
             }
         }
         return null;
-    }, []);
+    }, [zoomLevel]);
 
     const handleMouseMove = React.useCallback((e: MouseEvent) => {
         const currentDraft = draftRef.current;

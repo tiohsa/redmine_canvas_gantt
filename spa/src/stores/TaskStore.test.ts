@@ -130,11 +130,11 @@ describe('TaskStore assignee filter', () => {
     });
 
     it('setSelectedAssigneeIds はタスクをフィルタリングする', () => {
-        const mockTasks = [
-            { id: '1', subject: 'Task 1', assignedToId: 10, assignedToName: 'User A', startDate: 0, dueDate: 0 },
-            { id: '2', subject: 'Task 2', assignedToId: 11, assignedToName: 'User B', startDate: 0, dueDate: 0 },
-            { id: '3', subject: 'Task 3', assignedToId: null, assignedToName: 'None', startDate: 0, dueDate: 0 },
-        ] as any;
+        const mockTasks: Task[] = [
+            buildTask({ id: '1', subject: 'Task 1', assignedToId: 10, assignedToName: 'User A' }),
+            buildTask({ id: '2', subject: 'Task 2', assignedToId: 11, assignedToName: 'User B' }),
+            buildTask({ id: '3', subject: 'Task 3', assignedToId: undefined, assignedToName: 'None' }),
+        ];
 
         const { setTasks, setSelectedAssigneeIds } = useTaskStore.getState();
         setTasks(mockTasks);
@@ -275,11 +275,11 @@ describe('TaskStore filter persistence', () => {
 
     it('updateTask preserves assignee filter', () => {
         const { setTasks, setSelectedAssigneeIds, updateTask } = useTaskStore.getState();
-        const initialTasks = [
-            { id: '1', subject: 'Task A', assignedToId: 10, assignedToName: 'User A', startDate: 0, dueDate: 0, editable: true },
-            { id: '2', subject: 'Task B', assignedToId: 11, assignedToName: 'User B', startDate: 0, dueDate: 0, editable: true },
-            { id: '3', subject: 'Task C', assignedToId: 10, assignedToName: 'User A', startDate: 0, dueDate: 0, editable: true },
-        ] as any[];
+        const initialTasks: Task[] = [
+            buildTask({ id: '1', subject: 'Task A', assignedToId: 10, assignedToName: 'User A' }),
+            buildTask({ id: '2', subject: 'Task B', assignedToId: 11, assignedToName: 'User B' }),
+            buildTask({ id: '3', subject: 'Task C', assignedToId: 10, assignedToName: 'User A' }),
+        ];
 
         setTasks(initialTasks);
         setSelectedAssigneeIds([10]); // Filter for User A (Task 1 & 3)
@@ -303,11 +303,11 @@ describe('TaskStore filter persistence', () => {
 
     it('removeTask respects active filters', () => {
         const { setTasks, setSelectedAssigneeIds, removeTask } = useTaskStore.getState();
-        const initialTasks = [
-            { id: '1', subject: 'Task A', assignedToId: 10, editable: true },
-            { id: '2', subject: 'Task B', assignedToId: 11, editable: true },
-            { id: '3', subject: 'Task C', assignedToId: 10, editable: true },
-        ] as any[];
+        const initialTasks: Task[] = [
+            buildTask({ id: '1', subject: 'Task A', assignedToId: 10 }),
+            buildTask({ id: '2', subject: 'Task B', assignedToId: 11 }),
+            buildTask({ id: '3', subject: 'Task C', assignedToId: 10 }),
+        ];
 
         setTasks(initialTasks);
         setSelectedAssigneeIds([10]); // Filter [1, 3]

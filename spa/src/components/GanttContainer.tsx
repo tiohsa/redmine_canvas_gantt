@@ -30,6 +30,7 @@ export const GanttContainer: React.FC = () => {
 
     const isResizing = useRef(false);
     const isSyncingScroll = useRef(false);
+    const hasFetched = useRef(false);
 
     const { viewport, tasks, relations, selectedTaskId, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, setTasks, setRelations, setVersions } = useTaskStore();
     const { sidebarWidth, setSidebarWidth, leftPaneVisible, showProgressLine, showPointsOrphans } = useUIStore();
@@ -114,6 +115,8 @@ export const GanttContainer: React.FC = () => {
     }>({});
 
     useEffect(() => {
+        if (hasFetched.current) return;
+        hasFetched.current = true;
         // Initial fetch
         import('../api/client').then(({ apiClient }) => {
             const savedStatusIds = useTaskStore.getState().selectedStatusIds;
@@ -141,7 +144,7 @@ export const GanttContainer: React.FC = () => {
                 }
             }).catch(err => console.error("Failed to load Gantt data", err));
         });
-    }, []);
+    }, [setRelations, setTasks, setVersions, updateViewport, viewportFromStorage]);
 
     useEffect(() => {
         // We attach interaction engine to the MAIN PANE (timeline), not the whole container
@@ -149,13 +152,14 @@ export const GanttContainer: React.FC = () => {
         if (!mainPaneRef.current || !bgCanvasRef.current || !taskCanvasRef.current || !overlayCanvasRef.current) return;
 
         // Initialize Engines
-        engines.current.interaction = new InteractionEngine(mainPaneRef.current);
+        const interaction = new InteractionEngine(mainPaneRef.current);
+        engines.current.interaction = interaction;
         engines.current.bg = new BackgroundRenderer(bgCanvasRef.current);
         engines.current.task = new TaskRenderer(taskCanvasRef.current);
         engines.current.overlay = new OverlayRenderer(overlayCanvasRef.current);
 
         return () => {
-            engines.current.interaction?.detach();
+            interaction.detach();
         };
     }, []);
 

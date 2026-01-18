@@ -94,7 +94,7 @@ const DEFAULT_VIEWPORT: Viewport = {
     scale: preferences.viewport?.scale ?? preferences.customScales?.[preferences.zoomLevel ?? 1] ?? ZOOM_SCALES[preferences.zoomLevel ?? 1],
     width: 800,
     height: 600,
-    rowHeight: preferences.rowHeight ?? (Number((window as any).RedmineCanvasGantt?.settings?.row_height) || 36)
+    rowHeight: preferences.rowHeight ?? (Number(window.RedmineCanvasGantt?.settings?.row_height) || 36)
 };
 
 type LayoutState = {
@@ -425,7 +425,7 @@ const buildLayout = (
 
             // Render remaining roots (those with no version, or versions not found in the metadata)
             const remainingEntries = Array.from(versionMap.entries());
-            remainingEntries.forEach(([_vId, vRoots], entryIdx) => {
+            remainingEntries.forEach(([, vRoots], entryIdx) => {
                 const isLastEntry = entryIdx === remainingEntries.length - 1;
                 vRoots.forEach((rootId, idx) => {
                     const isLast = isLastEntry && (idx === vRoots.length - 1);
@@ -643,7 +643,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     selectedVersionIds: preferences.selectedVersionIds ?? [],
     sortConfig: preferences.sortConfig !== undefined ? preferences.sortConfig : { key: 'startDate', direction: 'asc' },
     customScales: preferences.customScales ?? {},
-    currentProjectId: (window as any).RedmineCanvasGantt?.projectId?.toString() || null,
+    currentProjectId: window.RedmineCanvasGantt?.projectId?.toString() || null,
     showSubprojects: preferences.groupByProject ?? true,
     isSortingSuspended: false,
     modifiedTaskIds: new Set(),

@@ -150,6 +150,8 @@ export const UiSidebar: React.FC = () => {
     const setColumnWidth = useUIStore(state => state.setColumnWidth);
 
     const resizeRef = React.useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+    const [isResizingColumn, setIsResizingColumn] = React.useState(false);
+    const bodyStyleRef = React.useRef<{ cursor: string; userSelect: string } | null>(null);
 
     React.useEffect(() => {
         const onMouseMove = (e: MouseEvent) => {
@@ -162,8 +164,7 @@ export const UiSidebar: React.FC = () => {
         const onMouseUp = () => {
             if (resizeRef.current) {
                 resizeRef.current = null;
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
+                setIsResizingColumn(false);
             }
         };
 
@@ -174,6 +175,30 @@ export const UiSidebar: React.FC = () => {
             window.removeEventListener('mouseup', onMouseUp);
         };
     }, [setColumnWidth]);
+
+    React.useEffect(() => {
+        if (typeof document === 'undefined') return;
+        if (isResizingColumn) {
+            if (!bodyStyleRef.current) {
+                bodyStyleRef.current = {
+                    cursor: document.body.style.cursor,
+                    userSelect: document.body.style.userSelect
+                };
+            }
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            return;
+        }
+
+        if (bodyStyleRef.current) {
+            document.body.style.cursor = bodyStyleRef.current.cursor;
+            document.body.style.userSelect = bodyStyleRef.current.userSelect;
+            bodyStyleRef.current = null;
+        } else {
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    }, [isResizingColumn]);
 
     // Auto-size columns on load (skip if user has saved column widths)
     const calculatedRef = React.useRef(false);
@@ -266,8 +291,7 @@ export const UiSidebar: React.FC = () => {
         e.preventDefault();
         e.stopPropagation();
         resizeRef.current = { key, startX: e.clientX, startWidth: currentWidth };
-        document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
+        setIsResizingColumn(true);
     };
 
     const editMetaByTaskId = useEditMetaStore((s) => s.metaByTaskId);
@@ -637,7 +661,7 @@ export const UiSidebar: React.FC = () => {
         if (timestamp === undefined || !Number.isFinite(timestamp)) return '';
         try {
             return new Date(timestamp).toISOString().split('T')[0];
-        } catch (e) {
+        } catch {
             return '';
         }
     }, []);
@@ -718,7 +742,7 @@ export const UiSidebar: React.FC = () => {
         }
     }, [editMetaByTaskId, fetchEditMeta]);
 
-    const startCellEdit = React.useCallback(async (task: Task, field: string) => {
+    const startCellEdit = async (task: Task, field: string) => {
         if (!shouldEnableField(field, task)) return;
         selectTask(task.id);
 
@@ -737,7 +761,7 @@ export const UiSidebar: React.FC = () => {
         }
 
         setActiveInlineEdit({ taskId: task.id, field, source: 'cell' });
-    }, [ensureEditMeta, selectTask, setActiveInlineEdit, shouldEnableField]);
+    };
 
     const save = React.useCallback(async (params: Parameters<typeof InlineEditService.saveTaskFields>[0]) => {
         await InlineEditService.saveTaskFields(params);

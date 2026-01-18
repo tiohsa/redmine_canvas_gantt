@@ -1,4 +1,4 @@
-import type { Viewport, ZoomLevel } from '../types';
+import type { Task, Viewport, ZoomLevel } from '../types';
 import { getGridScales } from '../utils/grid';
 
 export class BackgroundRenderer {
@@ -9,7 +9,7 @@ export class BackgroundRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport, zoomLevel: ZoomLevel, selectedTaskId: string | null, tasks: any[]) {
+    render(viewport: Viewport, zoomLevel: ZoomLevel, selectedTaskId: string | null, tasks: Task[]) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 

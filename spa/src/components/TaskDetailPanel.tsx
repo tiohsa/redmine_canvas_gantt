@@ -23,7 +23,7 @@ const toDateInputValue = (timestamp: number | undefined): string => {
     if (timestamp === undefined || !Number.isFinite(timestamp)) return '';
     try {
         return new Date(timestamp).toISOString().split('T')[0];
-    } catch (e) {
+    } catch {
         return '';
     }
 };
