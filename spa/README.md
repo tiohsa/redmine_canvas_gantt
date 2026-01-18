@@ -1,73 +1,96 @@
-# React + TypeScript + Vite
+# Redmine Canvas Gantt SPA
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+English | [日本語](README_ja.md)
 
-Currently, two official plugins are available:
+Single Page Application frontend for the Redmine Canvas Gantt plugin. Built with React, TypeScript, and Vite to render an interactive Gantt chart inside Redmine.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Highlights
 
-## React Compiler
+- Interactive Gantt chart focused on tasks, relations, and versions
+- Inline edits and rescheduling backed by Redmine APIs
+- Canvas-based rendering for large timelines
+- Clean state separation with Zustand stores
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech Stack
 
-## Expanding the ESLint configuration
+- React 19
+- TypeScript 5
+- Vite 7
+- Zustand 5
+- Vitest
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Requirements
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- Node.js (LTS recommended)
+- npm or pnpm
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Quick Start
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+The dev server runs at `http://localhost:5173` with CORS enabled (see `vite.config.ts`).
+
+## Scripts
+
+```bash
+npm run dev      # start Vite dev server
+npm run build    # build to ../assets/build with manifest
+npm run test     # run unit tests (Vitest)
+npm run lint     # run ESLint
+```
+
+## Build Output
+
+- Output directory: `../assets/build`
+- Manifest: `../assets/build/.vite/manifest.json`
+
+These assets are consumed by the Redmine plugin and injected into the page.
+
+## Integration with Redmine
+
+1. Build the SPA from this directory.
+2. The Redmine plugin serves the compiled assets.
+3. The host page injects a `window.RedmineCanvasGantt` object for configuration.
+
+```ts
+window.RedmineCanvasGantt = {
+  projectId: 1,
+  apiBase: '/projects/1/canvas_gantt',
+  redmineBase: '',
+  authToken: 'csrf-token',
+  apiKey: 'api-key',
+  settings: {
+    row_height: '32',
+    inline_edit_subject: '1',
+    inline_edit_status: '1',
+    inline_edit_start_date: '1'
+  },
+  i18n: {
+    field_subject: 'Subject',
+    field_assigned_to: 'Assignee'
+  }
+}
+```
+
+## Project Structure
+
+- `src/api/` API client for Redmine endpoints
+- `src/components/` UI components
+- `src/engines/` layout and interaction logic
+- `src/renderers/` canvas renderers
+- `src/stores/` Zustand stores
+- `src/types/` shared types
+
+## Testing Notes
+
+Some tests may log `HTMLCanvasElement.getContext()` warnings in jsdom. This does not fail tests.
+
+## License
+
+This SPA is part of the Redmine Canvas Gantt plugin. See the root project for licensing details.
