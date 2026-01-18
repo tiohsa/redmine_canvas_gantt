@@ -1,78 +1,92 @@
-# Redmine Canvas Gantt Plugin
+<div align="center">
 
-React、TypeScript、そしてHTML5 Canvas APIで構築された、Redmine向けの高性能ガントチャートプラグインです。
+# Redmine Canvas Gantt
 
-## 主な機能
+Redmine向けの高性能 Canvas ガントチャートプラグイン。
 
-*   **高いパフォーマンス**: HTML5 Canvasを使用し、大量のチケットデータもスムーズに描画します。
-*   **直感的な操作**: ドラッグ＆ドロップによるスケジュールの変更や、依存関係の作成が可能です。
-*   **カスタマイズ可能な列**: プロジェクト、トラッカー、ステータス、優先度、作成者、カテゴリ、ターゲットバージョンなど、Redmineの標準フィールドをサイドパネルに自由に表示できます。
-*   **高度なソート**: 列ヘッダーをクリックすることで、チケットを並び替えできます。文字列、数値、およびRedmine内部の表示順（ステータスや優先度）に基づいたソートに対応しています。
-*   **プロジェクト・バージョンの集約**: プロジェクトやバージョンごとのフィルタリング、階層表示の切り替えなどを1つのメニューに統合しています。フィルタで選択されたプロジェクトは、該当するチケットがない場合でも必ず表示されるようになりました。
-*   **スマートなプロジェクト集約**: プロジェクトを跨ぐ親子関係がある場合でも、各チケットを適切なプロジェクトヘッダーの下に配置して表示します。
-*   **インライン編集**: 件名、ステータス、優先度、日付、カテゴリ、プロジェクト、工数などをサイドパネルから直接編集できます。権限や親タスクによる制約を考慮した安全なガード機能を備えています。
-*   **整理されたサイドバー**: 件名の横に表示されていた不要なプロジェクト・バージョン名を削除し、階層構造による文脈のみに頼ることで画面をすっきりさせました。
-*   **データの視認性向上**: ステータスや優先度をカラーバッジで表示。未設定の項目にはハイフン（`-`）を表示し、クリック領域を確保することで編集しやすさを向上させています。
-*   **スマートな依存関係**: 直角に折れ曲がるマンハッタンパスを用いて、依存関係を視覚的に分かりやすく描画します。
-*   **ズームレベル**: 月・週・日の3段階の表示切り替えに対応しています。
-*   **柔軟なUI設定**: 行の高さ（20px〜52px）の調整や、列幅の保存が可能です。
-*   **テーマ対応**: Redmineの各種テーマと調和するデザインを採用しています。
+[![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE.md)
+[![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#動作環境)
+[![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#動作環境)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933)](#動作環境)
 
-![alt text](./images/gantt.png)
+[English README](README.md) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
 
+</div>
+
+---
+
+## 概要
+
+Redmine Canvas Gantt は、HTML5 Canvas を活用して高速にタイムラインを描画し、サイドバーからの直接編集も可能にしたガントチャートです。大量チケットを扱うプロジェクトでも、滑らかな操作感と高い視認性を提供します。
+
+### 主な特長
+
+- **高パフォーマンス**: Canvas 描画により、大規模データでもスクロールやズームが軽快です。
+- **直感的なスケジューリング**: ドラッグで移動・期間変更、端点ドラッグで依存関係を作成できます。
+- **リッチなサイドバー**: 件名、ステータス、優先度、日付、トラッカー、プロジェクトなどをインライン編集。
+- **スマートな集約表示**: プロジェクトを跨ぐ親子関係でも正しい階層で表示します。
+- **柔軟なレイアウト**: 行高の調整、列幅の保存、表示列のカスタマイズに対応。
+- **テーマ対応**: Redmine のテーマと自然に馴染みます。
+
+## スクリーンショット
+
+![Canvas Gantt](./images/gantt.png)
 ## 動作環境
 
-*   **Redmine**: 6.x
-*   **Ruby**: 3.x
-*   **Node.js**: 18以上（フロントエンドのビルドに必要）
-*   **pnpm**:（フロントエンドのパッケージ管理に必要）
+- **Redmine**: 6.x
+- **Ruby**: 3.x
+- **Node.js**: 18以上（フロントエンドビルド用）
+- **pnpm**: フロントエンド依存管理に必要
 
-## インストール方法
+## インストール
 
-1.  **リポジトリのクローン**
-    Redmineの `plugins` ディレクトリへ移動し、リポジトリをクローンします：
-    ```bash
-    cd /path/to/redmine/plugins
-    git clone https://github.com/your-repo/redmine_canvas_gantt.git
-    ```
+1. **plugins 配下にクローン**
+   ```bash
+   cd /path/to/redmine/plugins
+   git clone https://github.com/tiohsa/redmine_canvas_gantt.git
+   ```
 
-2.  **フロントエンドのビルド**
-    フロントエンドはReact SPAとして構築されており、ビルドが必要です：
-    ```bash
-    cd redmine_canvas_gantt/spa
-    pnpm install
-    pnpm run build
-    ```
+2. **フロントエンドのビルド**
+   ```bash
+   cd redmine_canvas_gantt/spa
+   pnpm install
+   pnpm run build
+   ```
 
-3.  **マイグレーションの実行**
-    Redmineのプラグインマイグレーションを実行します：
-    ```bash
-    cd /path/to/redmine
-    bundle exec rake redmine:plugins:migrate
-    ```
+3. **プラグインマイグレーション**
+   ```bash
+   cd /path/to/redmine
+   bundle exec rake redmine:plugins:migrate
+   ```
 
-4.  **Redmineの再起動**
-    Redmineを稼働させているサーバー（Puma、Passenger等）を再起動してください。
+4. **Redmine の再起動**
+   Puma/Passenger などのアプリサーバーを再起動してください。
 
 ## 使い方
 
-1.  **モジュールの有効化**
-    *   各プロジェクトの「設定」 > 「モジュール」を開きます。
-    *   **Canvas Gantt** にチェックを入れて保存します。
+1. **モジュールを有効化**
+   - プロジェクトの **設定** → **モジュール** で **Canvas Gantt** を有効化。
 
-2.  **権限の設定**
-    *   「管理」 > 「ロールと権限」を開きます。
-    *   対象のロールに対して「View canvas gantt」および「Edit canvas gantt」の権限を付与します。
+2. **権限の付与**
+   - **管理** → **ロールと権限** から **View canvas gantt** と **Edit canvas gantt** を設定。
 
-3.  **チャートの表示**
-    *   プロジェクトメニューの「Canvas Gantt」タブをクリックします。
-    *   マウスホイール（Ctrl/Cmd押下）やツールバーのボタンでズームできます。
-    *   チケットの端をドラッグすると期間を変更、中央をドラッグすると移動できます。
-    *   チケットの末端にあるドットを他のチケットへドラッグすると、依存関係を作成できます。
+3. **チャートを開く**
+   - プロジェクトメニューの **Canvas Gantt** をクリック。
 
-## 開発について
+4. **基本操作**
+   - Ctrl/Cmd + ホイール、またはツールバーでズーム。
+   - チケットをドラッグして移動、端をドラッグして期間変更。
+   - 端点のドットからドラッグして依存関係を作成。
 
-フロントエンドのソースコードは `plugins/redmine_canvas_gantt/spa` にあります。
+## 設定
+
+- **インライン編集項目**: **管理 → プラグイン → Canvas Gantt → 設定** で編集可能項目を切り替え。
+- **行の高さ**: 同じ画面でデフォルト行高を設定。
+- **Vite dev server**: 開発時は **Use Vite dev server** を有効化し、`http://localhost:5173` から読み込み。
+
+## 開発
+
+フロントエンドは `plugins/redmine_canvas_gantt/spa` にあります。
 
 ### セットアップ
 
@@ -81,15 +95,24 @@ cd plugins/redmine_canvas_gantt/spa
 pnpm install
 ```
 
-### 開発用サーバーの起動
+### Vite dev server（ホットリロード）
 
-```bash
-pnpm run dev
-```
+1. Dev サーバー起動:
+   ```bash
+   pnpm run dev
+   ```
+2. Redmine の設定画面で **Use Vite dev server** を有効化。
 
-**注意**: スタンドアロンモードで動作させるには、`main.tsx` 等で `window.RedmineCanvasGantt` をモックし、APIエンドポイントやトークンを供給する必要があります。
+### アーキテクチャ概要
+
+- **状態管理**: Zustand ストア（`TaskStore`, `UIStore`）。
+- **Canvas 描画**: `TaskRenderer`, `OverlayRenderer`, `BackgroundRenderer`。
+- **スケジューリング**: `TaskLogicService` で制約と日付伝播を管理。
+
+## ビルド成果物と配信
+
+`pnpm run build` の成果物は `plugins/redmine_canvas_gantt/assets/build` に出力されます。起動時に `public/plugin_assets/redmine_canvas_gantt/build` へリンクされ、Redmine から配信されます。
 
 ## ライセンス
 
-MIT License
-Copyright (c) 2024 tiohsa
+MIT License. 詳細は [LICENSE.md](LICENSE.md) を参照してください。

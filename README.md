@@ -1,78 +1,94 @@
-# Redmine Canvas Gantt Plugin
+<div align="center">
 
-A high-performance Gantt chart plugin for Redmine, built with React, TypeScript, and the HTML5 Canvas API.
+# Redmine Canvas Gantt
 
-## Features
+High-performance Canvas-based Gantt chart plugin for Redmine.
 
-*   **High Performance**: Efficiently renders large datasets using HTML5 Canvas.
-*   **Smooth Interaction**: Drag & drop tasks for rescheduling, dependency creation.
-*   **Customizable Columns**: Choose from standard Redmine fields (Project, Tracker, Status, Priority, Author, Category, etc.) to display in the side panel.
-*   **Smart Sorting**: Sort tasks by clicking column headers. Supports alphabetical, numeric, and logical (Redmine position-based) sorting.
-*   **Project & Version Management**: Consolidated filter and display toggles for projects and versions. Ensures all selected projects are visible, even if they have no tasks matching active filters.
-*   **Smart Project Grouping**: Correctly handles cross-project parent-child relationships, ensuring tasks always appear under their respective project headers when grouping is active.
-*   **Inline Editing**: Edit subject, status, priority, dates, category, project, tracker, version, and estimated hours directly in the sidebar. Features permission-aware safeguards and contextual dropdowns.
-*   **Clutter-Free Sidebar**: Simplified task display by removing redundant project/version text next to subjects, relying on the hierarchical grouping for context.
-*   **Enhanced Data Visibility**: Color-coded badges for status and priority. Automatic placeholders (`-`) and click-targets for unset fields to improve readability and editability.
-*   **Manhattan-style Dependencies**: Visualizes dependencies with smart Manhattan-style (orthogonal) paths.
-*   **Zoom Levels**: Supports Month, Week, and Day views.
-*   **Customizable UI**: Adjustable task row height (20px to 52px) and persistent column widths. Customizable column display and grouping.
-*   **Theme Support**: Integrates with Redmine's theming.
+[![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE.md)
+[![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#requirements)
+[![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#requirements)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933)](#requirements)
 
-![alt text](./images/gantt.png)
+[日本語 README](README_ja.md) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
+
+</div>
+
+---
+
+## Overview
+
+Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering the timeline on HTML5 Canvas and keeping the sidebar fully editable. It is designed for large projects where Redmine's default Gantt slows down or becomes hard to read.
+
+### Highlights
+
+- **High performance**: Canvas rendering keeps scrolling and zooming smooth even with large datasets.
+- **Interactive scheduling**: Drag tasks to move or resize; drag endpoints to create dependencies.
+- **Rich sidebar**: Inline editing for subject, status, priority, dates, tracker, project, version, and more.
+- **Smart grouping**: Correctly preserves cross-project parent/child relationships.
+- **Flexible layout**: Adjustable row height, persistent column widths, and configurable columns.
+- **Theme-friendly**: Blends into existing Redmine themes.
+
+## Screenshot
+
+![Canvas Gantt](./images/gantt.png)
 
 ## Requirements
 
-*   **Redmine**: 6.x
-*   **Ruby**: 3.x
-*   **Node.js**: 18+ (required for building the frontend)
-*   **pnpm**: (required for frontend package management)
+- **Redmine**: 6.x
+- **Ruby**: 3.x
+- **Node.js**: 18+ (frontend build)
+- **pnpm**: required for frontend dependencies
 
 ## Installation
 
-1.  **Clone the Repository**
-    Navigate to your Redmine `plugins` directory and clone the repository:
-    ```bash
-    cd /path/to/redmine/plugins
-    git clone https://github.com/your-repo/redmine_canvas_gantt.git
-    ```
+1. **Clone into Redmine plugins**
+   ```bash
+   cd /path/to/redmine/plugins
+   git clone https://github.com/tiohsa/redmine_canvas_gantt.git
+   ```
 
-2.  **Build the Frontend**
-    The frontend is a React SPA that needs to be built before use.
-    ```bash
-    cd redmine_canvas_gantt/spa
-    pnpm install
-    pnpm run build
-    ```
+2. **Build the frontend**
+   ```bash
+   cd redmine_canvas_gantt/spa
+   pnpm install
+   pnpm run build
+   ```
 
-3.  **Run Migrations**
-    Run the Redmine plugin migration command.
-    ```bash
-    cd /path/to/redmine
-    bundle exec rake redmine:plugins:migrate
-    ```
+3. **Run plugin migrations**
+   ```bash
+   cd /path/to/redmine
+   bundle exec rake redmine:plugins:migrate
+   ```
 
-4.  **Restart Redmine**
-    Restart your Redmine application server (e.g., Puma, Passenger).
+4. **Restart Redmine**
+   Restart your app server (Puma, Passenger, etc.).
 
 ## Usage
 
-1.  **Enable the Module**
-    *   Go to your Project's **Settings** > **Modules**.
-    *   Check **Canvas Gantt** and save.
+1. **Enable the module**
+   - Project **Settings** → **Modules** → enable **Canvas Gantt**.
 
-2.  **Configure Permissions**
-    *   Go to **Administration** > **Roles and permissions**.
-    *   Grant **View canvas gantt** and **Edit canvas gantt** permissions to the appropriate roles.
+2. **Grant permissions**
+   - **Administration** → **Roles and permissions**.
+   - Enable **View canvas gantt** and **Edit canvas gantt** as needed.
 
-3.  **Access the Chart**
-    *   Click the **Canvas Gantt** tab in the project menu.
-    *   Use the mouse wheel (with Ctrl/Cmd) or toolbar buttons to zoom.
-    *   Drag tasks to move them. Drag the ends of tasks to resize.
-    *   Drag from the dot at the end of a task to another task to create a dependency.
+3. **Open the chart**
+   - Click **Canvas Gantt** in the project menu.
+
+4. **Interact**
+   - Zoom with Ctrl/Cmd + mouse wheel or toolbar buttons.
+   - Drag tasks to move; drag edges to resize.
+   - Drag from the endpoint dot to create dependencies.
+
+## Configuration
+
+- **Inline quick edit**: Toggle which fields are editable in **Administration → Plugins → Canvas Gantt → Configure**.
+- **Row height**: Set the default row height in the same settings page.
+- **Vite dev server**: Enable **Use Vite dev server** to load assets from `http://localhost:5173` during development.
 
 ## Development
 
-The frontend code is located in `plugins/redmine_canvas_gantt/spa`.
+The frontend lives in `plugins/redmine_canvas_gantt/spa`.
 
 ### Setup
 
@@ -81,42 +97,24 @@ cd plugins/redmine_canvas_gantt/spa
 pnpm install
 ```
 
-### Development Server
+### Vite dev server (hot reload)
 
-You can run the standalone frontend development server:
+1. Start the dev server:
+   ```bash
+   pnpm run dev
+   ```
+2. In Redmine, enable **Use Vite dev server** in the plugin settings.
 
-```bash
-pnpm run dev
-```
+### Architecture at a glance
 
-**Note**: To run in standalone mode, you may need to mock the `window.RedmineCanvasGantt` configuration object in `main.tsx` or `index.html` to provide necessary API endpoints and tokens.
+- **State**: Zustand stores (`TaskStore`, `UIStore`).
+- **Canvas rendering**: `TaskRenderer`, `OverlayRenderer`, `BackgroundRenderer`.
+- **Scheduling logic**: `TaskLogicService` for constraints and date propagation.
 
-### Architecture Overview
+## Build Output and Assets
 
-*   **State Management**: Zustand (`TaskStore`, `UIStore`).
-*   **Rendering**: Custom Canvas renderers (`TaskRenderer`, `OverlayRenderer`, `BackgroundRenderer`).
-*   **Logic**: `TaskLogicService` handles constraints and date propagation.
+`pnpm run build` outputs to `plugins/redmine_canvas_gantt/assets/build`. On boot, the plugin links this directory into `public/plugin_assets/redmine_canvas_gantt/build` so Redmine can serve the assets.
 
 ## License
 
-MIT License
-
-Copyright (c) 2024 tiohsa
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+MIT License. See [LICENSE.md](LICENSE.md).
