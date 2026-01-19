@@ -571,11 +571,10 @@ export const DueDateEditor: React.FC<{
                 value={value}
                 disabled={saving}
                 onChange={(e) => {
-                    const next = e.target.value;
-                    setValue(next);
-                    void commit(next);
+                    setValue(e.target.value);
                 }}
                 onKeyDown={(e) => {
+                    if (e.key === 'Enter') void commit(value);
                     if (e.key === 'Escape') onCancel();
                 }}
                 onBlur={() => {
