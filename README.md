@@ -103,6 +103,20 @@ docker compose exec -e REDMINE_LANG=en redmine bundle exec rake redmine:load_def
 docker compose exec redmine bundle exec rake db:fixtures:load
 ```
 
+### Enable REST web service
+
+The plugin requires the Redmine REST API to be enabled:
+
+1. Log in as an administrator.
+2. Go to **Administration** → **Settings** → **API**.
+3. Check **Enable REST web service** and save.
+
+### Enable the plugin in your project
+
+1. Open your project's **Settings** → **Modules**.
+2. Check **Canvas Gantt** and save.
+3. The **Canvas Gantt** menu item will appear in the project menu.
+
 ### Stop the containers
 
 ```bash

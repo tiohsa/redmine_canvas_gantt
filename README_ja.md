@@ -101,6 +101,20 @@ docker compose exec -e REDMINE_LANG=ja redmine bundle exec rake redmine:load_def
 docker compose exec redmine bundle exec rake db:fixtures:load
 ```
 
+### REST APIの有効化
+
+本プラグインの動作にはRedmine REST APIが必要です：
+
+1. 管理者としてログイン。
+2. **管理** → **設定** → **API** を開く。
+3. **RESTによるWebサービスを有効にする** にチェックを入れて保存。
+
+### プロジェクトでプラグインを有効化
+
+1. プロジェクトの **設定** → **モジュール** を開く。
+2. **Canvas Gantt** にチェックを入れて保存。
+3. プロジェクトメニューに **Canvas Gantt** が表示されます。
+
 ### コンテナの停止
 
 ```bash
