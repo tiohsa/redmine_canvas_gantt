@@ -1,0 +1,30 @@
+services:
+  redmine:
+    image: redmine:latest
+    container_name: redmine-canvas-gantt
+    ports:
+      - "3000:3000"
+    environment:
+      RAILS_ENV: production
+      REDMINE_DB_MYSQL: db
+      REDMINE_DB_PASSWORD: password
+      REDMINE_SECRET_KEY_BASE: supersecretkey
+      SECRET_KEY_BASE: supersecretkey
+    volumes:
+      - ./:/usr/src/redmine/plugins/redmine_canvas_gantt
+    depends_on:
+      - db
+
+  db:
+    image: mariadb:10
+    container_name: redmine-canvas-gantt-db
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: redmine
+      MYSQL_USER: redmine
+      MYSQL_PASSWORD: password
+    volumes:
+      - db-data:/var/lib/mysql
+
+volumes:
+  db-data:
