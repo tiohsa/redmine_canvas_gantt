@@ -28,7 +28,7 @@ Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering 
 - **Flexible layout**: Adjustable row height, persistent column widths, and configurable columns.
 - **Theme-friendly**: Blends into existing Redmine themes.
 
-## Screenshot
+## Demo
 
 ![Canvas Gantt Demo](./media/demo.gif)
 

@@ -28,7 +28,7 @@ Redmine Canvas Gantt は、HTML5 Canvas を活用して高速にタイムライ�
 - **柔軟なレイアウト**: 行高の調整、列幅の保存、表示列のカスタマイズに対応。
 - **テーマ対応**: Redmine のテーマと自然に馴染みます。
 
-## スクリーンショット
+## Demo
 
 ![Canvas Gantt Demo](./media/demo.gif)
 
