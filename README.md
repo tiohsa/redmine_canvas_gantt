@@ -32,6 +32,12 @@ Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering 
 
 ![Canvas Gantt Demo](./media/demo.gif)
 
+### Security & Impact
+- DB migration: none
+- New permissions: `view_canvas_gantt`, `edit_canvas_gantt`
+- Uninstall: remove plugin directory and restart Redmine
+- Supported Redmine versions: 6.x
+
 ## Requirements
 
 - **Redmine**: 6.x
