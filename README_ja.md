@@ -30,7 +30,8 @@ Redmine Canvas Gantt は、HTML5 Canvas を活用して高速にタイムライ�
 
 ## スクリーンショット
 
-![Canvas Gantt](./images/gantt.png)
+![Canvas Gantt Demo](./media/demo.gif)
+
 ## 動作環境
 
 - **Redmine**: 6.x

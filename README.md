@@ -30,7 +30,7 @@ Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering 
 
 ## Screenshot
 
-![Canvas Gantt](./images/gantt.png)
+![Canvas Gantt Demo](./media/demo.gif)
 
 ## Requirements
 
