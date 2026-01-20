@@ -84,6 +84,35 @@ Redmine Canvas Gantt は、HTML5 Canvas を活用して高速にタイムライ�
 - **行の高さ**: 同じ画面でデフォルト行高を設定。
 - **Vite dev server**: 開発時は **Use Vite dev server** を有効化し、`http://localhost:5173` から読み込み。
 
+## Docker Compose（クイックスタート）
+
+プラグインに `docker-compose.yml` が含まれており、Redmine 環境を素早く起動できます。
+
+### コンテナの起動
+
+```bash
+cd plugins/redmine_canvas_gantt
+docker compose up -d
+```
+
+`http://localhost:3000` で Redmine にアクセスできます。
+
+### 初期データの投入（任意）
+
+```bash
+# デフォルトデータ（トラッカー、ステータス、優先度など）をロード
+docker compose exec -e REDMINE_LANG=ja redmine bundle exec rake redmine:load_default_data
+
+# テストフィクスチャをロード（開発用、任意）
+docker compose exec redmine bundle exec rake db:fixtures:load
+```
+
+### コンテナの停止
+
+```bash
+docker compose down
+```
+
 ## 開発
 
 フロントエンドは `plugins/redmine_canvas_gantt/spa` にあります。

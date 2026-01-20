@@ -86,6 +86,35 @@ Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering 
 - **Row height**: Set the default row height in the same settings page.
 - **Vite dev server**: Enable **Use Vite dev server** to load assets from `http://localhost:5173` during development.
 
+## Docker Compose (Quick Start)
+
+A `docker-compose.yml` is included for quick testing with a full Redmine environment.
+
+### Start the containers
+
+```bash
+cd plugins/redmine_canvas_gantt
+docker compose up -d
+```
+
+Access Redmine at `http://localhost:3000`.
+
+### Initial data setup (optional)
+
+```bash
+# Load default Redmine data (trackers, statuses, priorities, etc.)
+docker compose exec -e REDMINE_LANG=en redmine bundle exec rake redmine:load_default_data
+
+# Load test fixtures (optional, for development)
+docker compose exec redmine bundle exec rake db:fixtures:load
+```
+
+### Stop the containers
+
+```bash
+docker compose down
+```
+
 ## Development
 
 The frontend lives in `plugins/redmine_canvas_gantt/spa`.
