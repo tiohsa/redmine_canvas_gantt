@@ -53,13 +53,7 @@ Redmine Canvas Gantt は、HTML5 Canvas を活用して高速にタイムライ�
    pnpm run build
    ```
 
-3. **プラグインマイグレーション**
-   ```bash
-   cd /path/to/redmine
-   bundle exec rake redmine:plugins:migrate
-   ```
-
-4. **Redmine の再起動**
+3. **Redmine の再起動**
    Puma/Passenger などのアプリサーバーを再起動してください。
 
 ## 使い方

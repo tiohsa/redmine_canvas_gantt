@@ -54,13 +54,7 @@ Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering 
    pnpm run build
    ```
 
-3. **Run plugin migrations**
-   ```bash
-   cd /path/to/redmine
-   bundle exec rake redmine:plugins:migrate
-   ```
-
-4. **Restart Redmine**
+3. **Restart Redmine**
    Restart your app server (Puma, Passenger, etc.).
 
 ## Usage
