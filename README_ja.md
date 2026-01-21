@@ -30,7 +30,7 @@ Redmine Canvas Gantt は、HTML5 Canvas を活用して高速にタイムライ�
 
 ## Demo
 
-![Canvas Gantt Demo](./media/demo.gif)
+![Canvas Gantt Demo](./docs/demo.gif)
 
 ### 安全性・影響範囲
 - DBマイグレーション: なし

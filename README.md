@@ -30,7 +30,7 @@ Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering 
 
 ## Demo
 
-![Canvas Gantt Demo](./media/demo.gif)
+![Canvas Gantt Demo](./docs/demo.gif)
 
 ### Security & Impact
 - DB migration: none
