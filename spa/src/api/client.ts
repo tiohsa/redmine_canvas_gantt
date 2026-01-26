@@ -454,7 +454,8 @@ export const apiClient = {
             throw new Error("Configuration not found");
         }
 
-        const response = await fetch(`/issues/${fromId}/relations.json`, {
+        const redmineBase = config.redmineBase || '';
+        const response = await fetch(`${redmineBase}/issues/${fromId}/relations.json`, {
             method: 'POST',
             headers: {
                 'X-Redmine-API-Key': config.apiKey,
