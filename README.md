@@ -162,4 +162,4 @@ pnpm install
 
 ## License
 
-MIT License. See [LICENSE.md](LICENSE.md).
+GNU General Public License v2.0 (GPL v2). See [LICENSE](LICENSE) for the full license text.

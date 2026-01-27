@@ -161,4 +161,4 @@ pnpm install
 
 ## ライセンス
 
-MIT License. 詳細は [LICENSE.md](LICENSE.md) を参照してください。
+GNU General Public License v2.0 (GPL v2). 詳細は [LICENSE](LICENSE) を参照してください。
