@@ -59,14 +59,7 @@ Redmine Canvas Gantt は、HTML5 Canvas を活用して高速にタイムライ�
    git clone https://github.com/tiohsa/redmine_canvas_gantt.git
    ```
 
-2. **フロントエンドのビルド**
-   ```bash
-   cd redmine_canvas_gantt/spa
-   pnpm install
-   pnpm run build
-   ```
-
-3. **Redmine の再起動**
+2. **Redmine の再起動**
    Puma/Passenger などのアプリサーバーを再起動してください。
 
 ## 使い方

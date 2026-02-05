@@ -59,14 +59,7 @@ Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering 
    git clone https://github.com/tiohsa/redmine_canvas_gantt.git
    ```
 
-2. **Build the frontend**
-   ```bash
-   cd redmine_canvas_gantt/spa
-   pnpm install
-   pnpm run build
-   ```
-
-3. **Restart Redmine**
+2. **Restart Redmine**
    Restart your app server (Puma, Passenger, etc.).
 
 ## Usage
