@@ -4,6 +4,10 @@ English | [日本語](README_ja.md)
 
 Single Page Application frontend for the Redmine Canvas Gantt plugin. Built with React, TypeScript, and Vite to render an interactive Gantt chart inside Redmine.
 
+Listed on Redmine Plugins Directory:
+https://www.redmine.org/plugins/redmine_canvas_gantt
+
+
 ## Highlights
 
 - Interactive Gantt chart focused on tasks, relations, and versions

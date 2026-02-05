@@ -4,6 +4,10 @@
 
 High-performance Canvas-based Gantt chart plugin for Redmine.
 
+Listed on Redmine Plugins Directory:
+https://www.redmine.org/plugins/redmine_canvas_gantt
+
+
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE.md)
 [![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#requirements)
 [![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#requirements)

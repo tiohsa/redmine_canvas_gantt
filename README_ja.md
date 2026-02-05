@@ -4,6 +4,10 @@
 
 Redmine向けの高性能 Canvas ガントチャートプラグイン。
 
+Listed on Redmine Plugins Directory:
+https://www.redmine.org/plugins/redmine_canvas_gantt
+
+
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE.md)
 [![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#動作環境)
 [![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#動作環境)
