@@ -64,16 +64,21 @@ Redmine Canvas Gantt は、HTML5 Canvas を活用して高速にタイムライ�
 
 ## 使い方
 
-1. **モジュールを有効化**
+1. **REST APIの有効化**
+   - 管理者としてログイン。
+   - **管理** → **設定** → **API** を開く。
+   - **RESTによるWebサービスを有効にする** にチェックを入れて保存。
+
+2. **モジュールを有効化**
    - プロジェクトの **設定** → **モジュール** で **Canvas Gantt** を有効化。
 
-2. **権限の付与**
+3. **権限の付与**
    - **管理** → **ロールと権限** から **View canvas gantt** と **Edit canvas gantt** を設定。
 
-3. **チャートを開く**
+4. **チャートを開く**
    - プロジェクトメニューの **Canvas Gantt** をクリック。
 
-4. **基本操作**
+5. **基本操作**
    - Ctrl/Cmd + ホイール、またはツールバーでズーム。
    - チケットをドラッグして移動、端をドラッグして期間変更。
    - 端点のドットからドラッグして依存関係を作成。
@@ -106,14 +111,6 @@ docker compose exec -e REDMINE_LANG=ja redmine bundle exec rake redmine:load_def
 # テストフィクスチャをロード（開発用、任意）
 docker compose exec redmine bundle exec rake db:fixtures:load
 ```
-
-### REST APIの有効化
-
-本プラグインの動作にはRedmine REST APIが必要です：
-
-1. 管理者としてログイン。
-2. **管理** → **設定** → **API** を開く。
-3. **RESTによるWebサービスを有効にする** にチェックを入れて保存。
 
 ### プロジェクトでプラグインを有効化
 

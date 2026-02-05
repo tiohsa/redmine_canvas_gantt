@@ -64,17 +64,22 @@ Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering 
 
 ## Usage
 
-1. **Enable the module**
+1. **Enable REST web service**
+   - Log in as an administrator.
+   - Go to **Administration** → **Settings** → **API**.
+   - Check **Enable REST web service** and save.
+
+2. **Enable the module**
    - Project **Settings** → **Modules** → enable **Canvas Gantt**.
 
-2. **Grant permissions**
+3. **Grant permissions**
    - **Administration** → **Roles and permissions**.
    - Enable **View canvas gantt** and **Edit canvas gantt** as needed.
 
-3. **Open the chart**
+4. **Open the chart**
    - Click **Canvas Gantt** in the project menu.
 
-4. **Interact**
+5. **Interact**
    - Zoom with Ctrl/Cmd + mouse wheel or toolbar buttons.
    - Drag tasks to move; drag edges to resize.
    - Drag from the endpoint dot to create dependencies.
@@ -107,14 +112,6 @@ docker compose exec -e REDMINE_LANG=en redmine bundle exec rake redmine:load_def
 # Load test fixtures (optional, for development)
 docker compose exec redmine bundle exec rake db:fixtures:load
 ```
-
-### Enable REST web service
-
-The plugin requires the Redmine REST API to be enabled:
-
-1. Log in as an administrator.
-2. Go to **Administration** → **Settings** → **API**.
-3. Check **Enable REST web service** and save.
 
 ### Enable the plugin in your project
 
