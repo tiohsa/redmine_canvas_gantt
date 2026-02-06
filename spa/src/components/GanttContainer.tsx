@@ -10,6 +10,7 @@ import { HtmlOverlay } from './HtmlOverlay';
 import { UiSidebar } from './UiSidebar';
 import { TimelineHeader } from './TimelineHeader';
 import { IssueIframeDialog } from './IssueIframeDialog';
+import { TaskDetailPanel } from './TaskDetailPanel';
 import { getMaxFiniteDueDate, getMinFiniteStartDate } from '../utils/taskRange';
 import { GlobalTooltip } from './GlobalTooltip';
 
@@ -252,12 +253,13 @@ export const GanttContainer: React.FC = () => {
                 {/* Resizable Sidebar Wrapper */}
                 {leftPaneVisible && (
                     <>
-                        <div style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
+                        <div data-testid="left-pane" style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
                             <UiSidebar />
                         </div>
 
                         {/* Resize Handle */}
                         <div
+                            data-testid="sidebar-resize-handle"
                             onMouseDown={startResize}
                             style={{
                                 width: 4,
@@ -304,6 +306,7 @@ export const GanttContainer: React.FC = () => {
                             </div>
                         </div>
                     </div>
+                    <TaskDetailPanel />
                 </div>
             </div>
             <IssueIframeDialog />

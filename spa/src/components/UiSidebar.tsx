@@ -798,6 +798,7 @@ export const UiSidebar: React.FC = () => {
                         return (
                             <div
                                 key={idx}
+                                data-testid={`sidebar-header-${col.key}`}
                                 style={{
                                     width: col.width,
                                     flexShrink: 0,
@@ -1020,6 +1021,7 @@ export const UiSidebar: React.FC = () => {
                         return (
                             <div
                                 key={task.id}
+                                data-testid={`task-row-${task.id}`}
                                 onClick={() => {
                                     if (activeInlineEdit && activeInlineEdit.taskId !== task.id) {
                                         setActiveInlineEdit(null);

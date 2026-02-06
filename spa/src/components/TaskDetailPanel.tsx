@@ -7,7 +7,7 @@ import type { Task } from '../types';
 import type { InlineEditSettings, TaskEditMeta, CustomFieldMeta } from '../types/editMeta';
 import { InlineEditService } from '../services/InlineEditService';
 
-type FieldKey = 'subject' | 'assignedToId' | 'statusId' | 'doneRatio' | 'dueDate' | `cf:${number}`;
+type FieldKey = 'subject' | 'assignedToId' | 'statusId' | 'doneRatio' | 'startDate' | 'dueDate' | `cf:${number}`;
 
 const getSettings = (): InlineEditSettings => {
     return (window as unknown as { RedmineCanvasGantt?: { settings?: InlineEditSettings } }).RedmineCanvasGantt?.settings ?? {};
@@ -61,6 +61,7 @@ const InlineRow: React.FC<{
 
     return (
         <div
+            data-testid={`detail-row-${fieldKey}`}
             style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8, alignItems: 'center', padding: '6px 0', cursor: editable ? 'pointer' : 'default' }}
             onClick={() => !isActive && open()}
         >
@@ -132,7 +133,7 @@ export const TaskDetailPanel: React.FC = () => {
 
     if (!selectedTaskId || !task) {
         return (
-            <div style={{ padding: 12, color: '#666', fontSize: 13 }}>
+            <div data-testid="task-detail-panel" style={{ padding: 12, color: '#666', fontSize: 13 }}>
                 {i18n.t('label_select_task_to_view_details') || 'Select a task to view details.'}
             </div>
         );
@@ -141,7 +142,7 @@ export const TaskDetailPanel: React.FC = () => {
     const isLoading = loadingTaskId === selectedTaskId && !meta;
 
     return (
-        <div style={{ padding: 12, borderTop: '1px solid #e0e0e0', background: '#fff' }}>
+        <div data-testid="task-detail-panel" style={{ padding: 12, borderTop: '1px solid #e0e0e0', background: '#fff' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline' }}>
                 <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 12, color: '#777' }}>#{task.id}</div>
@@ -244,6 +245,32 @@ export const TaskDetailPanel: React.FC = () => {
                                 onCancel={onClose}
                                 onCommit={async (next) => {
                                     await saveFields(task.id, { ratioDone: next }, { ratioDone: task.ratioDone }, { done_ratio: next });
+                                    onClose();
+                                }}
+                            />
+                        )}
+                    />
+                ) : null}
+
+                {enabledDueDate ? (
+                    <InlineRow
+                        label={i18n.t('field_start_date') || 'Start Date'}
+                        value={toDateInputValue(task.startDate)}
+                        editable={Boolean(meta?.editable.startDate)}
+                        fieldKey="startDate"
+                        editor={({ onClose }) => (
+                            <DueDateEditor
+                                initialValue={toDateInputValue(task.startDate)}
+                                max={toDateInputValue(task.dueDate)}
+                                onCancel={onClose}
+                                onCommit={async (next) => {
+                                    const nextTs = toTimestampFromDateInput(next);
+                                    if (nextTs === null) return;
+                                    if (task.dueDate !== undefined && Number.isFinite(task.dueDate) && nextTs > task.dueDate) {
+                                        addNotification(i18n.t('label_invalid_date_range') || 'Invalid date range', 'warning');
+                                        return;
+                                    }
+                                    await saveFields(task.id, { startDate: nextTs }, { startDate: task.startDate }, { start_date: next });
                                     onClose();
                                 }}
                             />
