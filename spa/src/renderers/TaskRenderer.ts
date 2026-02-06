@@ -93,8 +93,8 @@ export class TaskRenderer {
                 this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
             } else if (showPointsOrphans && Number.isFinite(task.startDate)) {
                 // Only Start Date -> Draw as a point (triangle_right)
-                // Shift by one day so single-date points align to the next grid column.
-                const startDate = LayoutEngine.snapDate(task.startDate, zoomLevel) + ONE_DAY;
+                // Position orphan points at the center of the day cell.
+                const startDate = LayoutEngine.snapDate(task.startDate, zoomLevel) + ONE_DAY / 2;
                 const startX = LayoutEngine.dateToX(startDate, viewport) - viewport.scrollX;
                 this.drawTaskAsPoint(ctx, task, startX, rowY, viewport.rowHeight, 'triangle_right');
 
@@ -102,8 +102,8 @@ export class TaskRenderer {
                 this.drawSubjectBeforeBar(ctx, task, startX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
             } else if (showPointsOrphans && Number.isFinite(task.dueDate)) {
                 // Only Due Date -> Draw as a point (diamond)
-                // Shift by one day so single-date points align to the next grid column.
-                const dueDate = LayoutEngine.snapDate(task.dueDate, zoomLevel) + ONE_DAY;
+                // Position orphan points at the center of the day cell.
+                const dueDate = LayoutEngine.snapDate(task.dueDate, zoomLevel) + ONE_DAY / 2;
                 const dueX = LayoutEngine.dateToX(dueDate, viewport) - viewport.scrollX;
                 this.drawTaskAsPoint(ctx, task, dueX, rowY, viewport.rowHeight, 'diamond');
 

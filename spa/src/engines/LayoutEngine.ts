@@ -42,7 +42,8 @@ export class LayoutEngine {
             // Processing for single date tasks
             const date = Number.isFinite(start) ? start! : due!;
             const snappedDate = this.snapDate(date, zoomLevel);
-            const shiftedDate = snappedDate + ONE_DAY_MS;
+            // Center single-date markers in the corresponding day cell.
+            const shiftedDate = snappedDate + ONE_DAY_MS / 2;
             const cx = this.dateToX(shiftedDate, viewport) - viewport.scrollX;
             const x = cx - POINT_SIZE / 2;
 

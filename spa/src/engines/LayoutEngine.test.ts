@@ -41,7 +41,7 @@ describe('LayoutEngine', () => {
         expect(bounds.y).toBe(12);
     });
 
-    it('getTaskBounds shifts single-date tasks by one day', () => {
+    it('getTaskBounds centers single-date tasks in the day cell', () => {
         const task: Task = {
             id: '1',
             subject: 'Single Date',
@@ -58,7 +58,7 @@ describe('LayoutEngine', () => {
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
         const ONE_DAY = 24 * 60 * 60 * 1000;
         const expectedCenter = LayoutEngine.dateToX(
-            LayoutEngine['snapDate'](task.startDate, 2) + ONE_DAY,
+            LayoutEngine['snapDate'](task.startDate, 2) + ONE_DAY / 2,
             mockViewport
         );
 
