@@ -26,7 +26,6 @@ Redmine::Plugin.register :redmine_canvas_gantt do
     'use_vite_dev_server' => '0'
   }, partial: 'settings/redmine_canvas_gantt'
 
-  license 'GPL v2'
 end
 
 # Ensure built frontend assets are available under public/plugin_assets/.
