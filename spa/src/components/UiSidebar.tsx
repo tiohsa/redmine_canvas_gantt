@@ -787,7 +787,8 @@ export const UiSidebar: React.FC = () => {
                 fontWeight: 600,
                 backgroundColor: '#f8f9fa',
                 color: '#444',
-                fontSize: '13px'
+                fontSize: '13px',
+                overflow: 'hidden'
             }}>
                 {
                     activeColumns.map((col, idx) => {
@@ -799,6 +800,7 @@ export const UiSidebar: React.FC = () => {
                                 key={idx}
                                 style={{
                                     width: col.width,
+                                    flexShrink: 0,
                                     padding: '0 8px',
                                     display: 'flex',
                                     alignItems: 'center',
@@ -1053,6 +1055,7 @@ export const UiSidebar: React.FC = () => {
                                 {activeColumns.map((col, idx) => (
                                     <div key={idx} style={{
                                         width: col.width,
+                                        flexShrink: 0,
                                         padding: '0 8px',
                                         borderRight: '1px solid #f9f9f9',
                                         display: 'flex',
