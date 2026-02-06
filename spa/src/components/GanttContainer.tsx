@@ -10,7 +10,6 @@ import { HtmlOverlay } from './HtmlOverlay';
 import { UiSidebar } from './UiSidebar';
 import { TimelineHeader } from './TimelineHeader';
 import { IssueIframeDialog } from './IssueIframeDialog';
-import { TaskDetailPanel } from './TaskDetailPanel';
 import { getMaxFiniteDueDate, getMinFiniteStartDate } from '../utils/taskRange';
 import { GlobalTooltip } from './GlobalTooltip';
 
@@ -306,7 +305,6 @@ export const GanttContainer: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    <TaskDetailPanel />
                 </div>
             </div>
             <IssueIframeDialog />

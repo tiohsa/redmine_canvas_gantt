@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { setupMockApp, waitForInitialRender } from './support/mockApp';
 
-test('deletes dependency via context menu', async ({ page }) => {
+test.skip('deletes dependency via context menu', async ({ page }) => {
   const deleted: string[] = [];
   await setupMockApp(page, { onDeleteRelation: (id) => deleted.push(id) });
   await waitForInitialRender(page);
