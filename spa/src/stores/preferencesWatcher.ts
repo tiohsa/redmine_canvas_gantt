@@ -20,6 +20,7 @@ const persistSelections = () => {
         showVersions: taskState.showVersions,
         visibleColumns: uiState.visibleColumns,
         groupByProject: taskState.groupByProject,
+        groupByAssignee: taskState.groupByAssignee,
         organizeByDependency: taskState.organizeByDependency,
         columnWidths: uiState.columnWidths,
         sidebarWidth: uiState.sidebarWidth,

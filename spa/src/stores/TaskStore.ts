@@ -4,6 +4,7 @@ import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences, savePreferences } from '../utils/preferences';
 import { getMaxFiniteDueDate } from '../utils/taskRange';
+import { i18n } from '../utils/i18n';
 
 type SortConfig = { key: keyof Task; direction: 'asc' | 'desc' } | null;
 
@@ -20,6 +21,7 @@ interface TaskState {
     layoutRows: LayoutRow[];
     rowCount: number;
     groupByProject: boolean;
+    groupByAssignee: boolean;
     showVersions: boolean;
     organizeByDependency: boolean;
     viewportFromStorage: boolean;
@@ -64,6 +66,7 @@ interface TaskState {
     setViewMode: (mode: ViewMode) => void;
     setZoomLevel: (level: ZoomLevel) => void;
     setGroupByProject: (grouped: boolean) => void;
+    setGroupByAssignee: (grouped: boolean) => void;
     setOrganizeByDependency: (enabled: boolean) => void;
     setCurrentProjectId: (id: string) => void;
     toggleProjectExpansion: (projectId: string) => void;
@@ -102,6 +105,7 @@ type LayoutState = {
     relations: Relation[];
     versions: Version[];
     groupByProject: boolean;
+    groupByAssignee: boolean;
     showVersions: boolean;
     organizeByDependency: boolean;
     projectExpansion: Record<string, boolean>;
@@ -121,6 +125,7 @@ const buildLayout = (
     relations: Relation[],
     versions: Version[],
     groupByProject: boolean,
+    groupByAssignee: boolean,
     showVersions: boolean,
     organizeByDependency: boolean,
     projectExpansion: Record<string, boolean>,
@@ -131,31 +136,47 @@ const buildLayout = (
     sortConfig: SortConfig,
     allTasks: Task[]
 ): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
+    const ASSIGNEE_GROUP_PREFIX = 'assignee:';
+    const UNASSIGNED_GROUP_ID = 'none';
+    const groupingMode: 'none' | 'project' | 'assignee' = groupByAssignee ? 'assignee' : (groupByProject ? 'project' : 'none');
+
+    const toAssigneeId = (task: Task) => (task.assignedToId === undefined || task.assignedToId === null ? UNASSIGNED_GROUP_ID : String(task.assignedToId));
+    const toAssigneeGroupKey = (assigneeId: string) => `${ASSIGNEE_GROUP_PREFIX}${assigneeId}`;
+    const toGroupKey = (task: Task) => {
+        if (groupingMode === 'project') return task.projectId ?? 'default_project';
+        if (groupingMode === 'assignee') return toAssigneeGroupKey(toAssigneeId(task));
+        return '_global';
+    };
+    const toHeaderKind = () => groupingMode === 'assignee' ? 'assignee' : 'project';
+
+    const assigneeNameById = new Map<string, string>();
+    assigneeNameById.set(UNASSIGNED_GROUP_ID, i18n.t('label_unassigned') || 'Unassigned');
+    allTasks.forEach((task) => {
+        if (task.assignedToId === undefined || task.assignedToId === null) return;
+        assigneeNameById.set(String(task.assignedToId), task.assignedToName || `${i18n.t('field_assigned_to') || 'Assignee'} #${task.assignedToId}`);
+    });
+
     const normalizedTasks = tasks.map((task) => ({ ...task, hasChildren: false }));
 
     const nodeMap = new Map<string, { task: Task; children: string[] }>();
     normalizedTasks.forEach((task) => nodeMap.set(task.id, { task, children: [] }));
 
-    const projectOrder = new Map<string, number>();
-    const projectRoots = new Map<string, string[]>();
-
-    const effectiveGroupByProject = groupByProject;
+    const groupOrder = new Map<string, number>();
+    const groupRoots = new Map<string, string[]>();
 
     normalizedTasks.forEach((task, index) => {
-        const projectId = task.projectId ?? 'default_project';
-        if (!projectOrder.has(projectId)) {
-            projectOrder.set(projectId, index);
+        const groupKey = toGroupKey(task);
+        if (!groupOrder.has(groupKey)) {
+            groupOrder.set(groupKey, index);
         }
 
         let treatedAsChild = false;
 
         if (task.parentId && nodeMap.has(task.parentId)) {
             const parentNode = nodeMap.get(task.parentId);
-            const pId = parentNode?.task.projectId ?? 'default_project';
-            // If grouping by project is active, separate tasks if they belong to different projects
-            const sameProject = pId === projectId;
+            const sameGroup = parentNode && toGroupKey(parentNode.task) === groupKey;
 
-            if (!effectiveGroupByProject || sameProject) {
+            if (groupingMode === 'none' || sameGroup) {
                 parentNode?.children.push(task.id);
                 if (parentNode) {
                     parentNode.task.hasChildren = true;
@@ -165,32 +186,34 @@ const buildLayout = (
         }
 
         if (!treatedAsChild) {
-            if (!projectRoots.has(projectId)) {
-                projectRoots.set(projectId, []);
+            if (!groupRoots.has(groupKey)) {
+                groupRoots.set(groupKey, []);
             }
-            projectRoots.get(projectId)?.push(task.id);
+            groupRoots.get(groupKey)?.push(task.id);
         }
     });
 
     // Ensure selected projects are included even if they have no visible tasks
-    selectedProjectIds.forEach(pid => {
-        if (!projectRoots.has(pid)) {
-            projectRoots.set(pid, []);
-            if (!projectOrder.has(pid)) {
+    if (groupingMode === 'project') {
+        selectedProjectIds.forEach(pid => {
+            if (!groupRoots.has(pid)) {
+                groupRoots.set(pid, []);
+                if (!groupOrder.has(pid)) {
                 // If the project is not in the filtered tasks, we try to find its order from allTasks
                 // Or just append it to the end
-                const originalTask = allTasks.find(t => t.projectId === pid);
-                if (originalTask) {
+                    const originalTask = allTasks.find(t => t.projectId === pid);
+                    if (originalTask) {
                     // We don't have a reliable index from filtered tasks, so we might just put it at the end
                     // or try to match displayOrder if possible. 
                     // For simplicity, let's append to the end.
-                    projectOrder.set(pid, Number.MAX_SAFE_INTEGER);
-                } else {
-                    projectOrder.set(pid, Number.MAX_SAFE_INTEGER);
+                        groupOrder.set(pid, Number.MAX_SAFE_INTEGER);
+                    } else {
+                        groupOrder.set(pid, Number.MAX_SAFE_INTEGER);
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 
 
     // Helper to sort task IDs by configured sort or default displayOrder
@@ -224,14 +247,14 @@ const buildLayout = (
         sortTaskIds(node.children);
     });
 
-    projectRoots.forEach((roots) => {
+    groupRoots.forEach((roots) => {
         sortTaskIds(roots);
     });
 
     const componentMap = organizeByDependency ? buildDependencyComponents(normalizedTasks, relations) : null;
 
     if (organizeByDependency && componentMap) {
-        projectRoots.forEach((roots) => {
+        groupRoots.forEach((roots) => {
             const rootIndex = new Map(roots.map((id, index) => [id, index]));
             const componentOrder = new Map<string, number>();
             let order = 0;
@@ -255,19 +278,19 @@ const buildLayout = (
         });
     }
 
-    // When not grouping by project, combine all roots and sort globally
-    if (!groupByProject && sortConfig) {
+    // When not grouping, combine all roots and sort globally
+    if (groupingMode === 'none' && sortConfig) {
         const allRoots: string[] = [];
-        projectRoots.forEach((roots) => {
+        groupRoots.forEach((roots) => {
             allRoots.push(...roots);
         });
         sortTaskIds(allRoots);
         // Clear and refill with global order under a single "virtual" project
-        projectRoots.clear();
-        projectRoots.set('_global', allRoots);
+        groupRoots.clear();
+        groupRoots.set('_global', allRoots);
     }
 
-    const orderedProjects = Array.from(projectRoots.keys()).sort((a, b) => (projectOrder.get(a) ?? 0) - (projectOrder.get(b) ?? 0));
+    const orderedGroups = Array.from(groupRoots.keys()).sort((a, b) => (groupOrder.get(a) ?? 0) - (groupOrder.get(b) ?? 0));
 
     let rowIndex = 0;
     const arrangedTasks: Task[] = [];
@@ -300,45 +323,45 @@ const buildLayout = (
         });
     };
 
-    orderedProjects.forEach((projectId) => {
-        const roots = projectRoots.get(projectId) ?? [];
+    orderedGroups.forEach((groupId) => {
+        const roots = groupRoots.get(groupId) ?? [];
 
-        // Find project name more robustly
         let projectName = '';
-        const projectNode = nodeMap.get(roots[0] ?? '');
-        if (projectNode?.task.projectName) {
-            projectName = projectNode.task.projectName;
+        if (groupingMode === 'assignee') {
+            const assigneeId = groupId.replace(ASSIGNEE_GROUP_PREFIX, '');
+            projectName = assigneeNameById.get(assigneeId) || (i18n.t('label_unassigned') || 'Unassigned');
         } else {
-            // Search all tasks in this project
-            for (const node of nodeMap.values()) {
-                if (node.task.projectId === projectId && node.task.projectName) {
-                    projectName = node.task.projectName;
-                    break;
+            const projectNode = nodeMap.get(roots[0] ?? '');
+            if (projectNode?.task.projectName) {
+                projectName = projectNode.task.projectName;
+            } else {
+                for (const node of nodeMap.values()) {
+                    if (node.task.projectId === groupId && node.task.projectName) {
+                        projectName = node.task.projectName;
+                        break;
+                    }
                 }
             }
+
+
+            if (!projectName) {
+                const t = allTasks.find(t => t.projectId === groupId && t.projectName);
+                if (t && t.projectName) projectName = t.projectName;
+            }
+
+            if (!projectName) projectName = groupId === 'default_project' ? '' : groupId;
         }
 
-
-        // Fallback: look up project name in allTasks if not found in filtered nodes
-        if (!projectName) {
-            const t = allTasks.find(t => t.projectId === projectId && t.projectName);
-            if (t && t.projectName) projectName = t.projectName;
-        }
-
-        if (!projectName) projectName = projectId === 'default_project' ? '' : projectId;
-
-        const expanded = projectExpansion[projectId] ?? true;
+        const expanded = projectExpansion[groupId] ?? true;
         const shouldShowVersions = showVersions;
-        const shouldGroupByProject = groupByProject;
+        const shouldGroupByGroup = groupingMode !== 'none';
 
-        if (shouldGroupByProject) {
-            // Find min/max dates for this project to draw the summary bar
+        if (shouldGroupByGroup) {
             let pStart: number | undefined;
             let pDue: number | undefined;
 
-            // We iterate all tasks belonging to this project in nodeMap
             nodeMap.forEach(node => {
-                if (node.task.projectId === projectId) {
+                if (toGroupKey(node.task) === groupId) {
                     const ts = node.task.startDate;
                     const td = node.task.dueDate;
                     if (ts !== undefined && Number.isFinite(ts)) {
@@ -352,8 +375,9 @@ const buildLayout = (
 
             layoutRows.push({
                 type: 'header',
-                projectId,
+                projectId: groupId,
                 projectName,
+                groupKind: toHeaderKind(),
                 rowIndex,
                 startDate: pStart,
                 dueDate: pDue
@@ -361,7 +385,7 @@ const buildLayout = (
             rowIndex += 1;
         }
 
-        const hideDescendants = (shouldGroupByProject && !expanded) ? true : false;
+        const hideDescendants = (shouldGroupByGroup && !expanded) ? true : false;
 
         if (shouldShowVersions) {
             const versionMap = new Map<string | undefined, string[]>();
@@ -409,7 +433,7 @@ const buildLayout = (
                         startDate: vStart,
                         dueDate: v.effectiveDate,
                         ratioDone: v.ratioDone,
-                        projectId
+                        projectId: groupId
                     });
                     rowIndex += 1;
                 }
@@ -499,6 +523,7 @@ const resolveLayoutState = (state: TaskState, overrides: Partial<LayoutState> = 
     relations: overrides.relations ?? state.relations,
     versions: overrides.versions ?? state.versions,
     groupByProject: overrides.groupByProject ?? state.groupByProject,
+    groupByAssignee: overrides.groupByAssignee ?? state.groupByAssignee,
     showVersions: overrides.showVersions ?? state.showVersions,
     organizeByDependency: overrides.organizeByDependency ?? state.organizeByDependency,
     projectExpansion: overrides.projectExpansion ?? state.projectExpansion,
@@ -530,6 +555,7 @@ const buildLayoutFromState = (state: TaskState, overrides: Partial<LayoutState> 
         layoutState.relations,
         layoutState.versions,
         layoutState.groupByProject,
+        layoutState.groupByAssignee,
         layoutState.showVersions,
         layoutState.organizeByDependency,
         layoutState.projectExpansion,
@@ -628,6 +654,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     layoutRows: [],
     rowCount: 0,
     groupByProject: preferences.groupByProject ?? true,
+    groupByAssignee: preferences.groupByAssignee ?? false,
     showVersions: preferences.showVersions ?? true,
     organizeByDependency: preferences.organizeByDependency ?? false,
     viewportFromStorage: Boolean(preferences.viewport),
@@ -659,6 +686,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         tasks.forEach((task) => {
             const projectId = task.projectId ?? 'default_project';
             if (projectExpansion[projectId] === undefined) projectExpansion[projectId] = true;
+            const assigneeId = task.assignedToId === undefined || task.assignedToId === null ? 'none' : String(task.assignedToId);
+            const assigneeGroupKey = `assignee:${assigneeId}`;
+            if (projectExpansion[assigneeGroupKey] === undefined) projectExpansion[assigneeGroupKey] = true;
             if (taskExpansion[task.id] === undefined) taskExpansion[task.id] = true;
             if (task.fixedVersionId && versionExpansion[task.fixedVersionId] === undefined) versionExpansion[task.fixedVersionId] = true;
         });
@@ -926,9 +956,32 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     setGroupByProject: (grouped) => set((state) => {
         const nextShowSubprojects = grouped;
-        const layout = buildLayoutFromState(state, { groupByProject: grouped, showSubprojects: nextShowSubprojects });
+        const nextGroupByAssignee = grouped ? false : state.groupByAssignee;
+        const layout = buildLayoutFromState(state, {
+            groupByProject: grouped,
+            groupByAssignee: nextGroupByAssignee,
+            showSubprojects: nextShowSubprojects
+        });
         return {
             groupByProject: grouped,
+            groupByAssignee: nextGroupByAssignee,
+            showSubprojects: nextShowSubprojects,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
+    setGroupByAssignee: (grouped) => set((state) => {
+        const nextGroupByProject = grouped ? false : state.groupByProject;
+        const nextShowSubprojects = state.showSubprojects;
+        const layout = buildLayoutFromState(state, {
+            groupByAssignee: grouped,
+            groupByProject: nextGroupByProject,
+            showSubprojects: nextShowSubprojects
+        });
+        return {
+            groupByAssignee: grouped,
+            groupByProject: nextGroupByProject,
             showSubprojects: nextShowSubprojects,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -992,7 +1045,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     toggleAllExpansion: () => set((state) => {
         // Check if anything is collapsed. If so, expand all. Otherwise, collapse all.
-        const anyProjectCollapsed = state.groupByProject &&
+        const anyProjectCollapsed = (state.groupByProject || state.groupByAssignee) &&
             Object.keys(state.projectExpansion).length > 0 &&
             Object.values(state.projectExpansion).some(v => v === false);
 
@@ -1011,6 +1064,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         state.allTasks.forEach((task) => {
             const projectId = task.projectId ?? 'default_project';
             projectExpansion[projectId] = shouldExpand;
+            const assigneeId = task.assignedToId === undefined || task.assignedToId === null ? 'none' : String(task.assignedToId);
+            projectExpansion[`assignee:${assigneeId}`] = shouldExpand;
             taskExpansion[task.id] = shouldExpand;
             if (task.fixedVersionId) versionExpansion[task.fixedVersionId] = shouldExpand;
         });
@@ -1035,6 +1090,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         state.allTasks.forEach((task) => {
             const projectId = task.projectId ?? 'default_project';
             projectExpansion[projectId] = true;
+            const assigneeId = task.assignedToId === undefined || task.assignedToId === null ? 'none' : String(task.assignedToId);
+            projectExpansion[`assignee:${assigneeId}`] = true;
             taskExpansion[task.id] = true;
             if (task.fixedVersionId) versionExpansion[task.fixedVersionId] = true;
         });
@@ -1059,6 +1116,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         state.allTasks.forEach((task) => {
             const projectId = task.projectId ?? 'default_project';
             projectExpansion[projectId] = false;
+            const assigneeId = task.assignedToId === undefined || task.assignedToId === null ? 'none' : String(task.assignedToId);
+            projectExpansion[`assignee:${assigneeId}`] = false;
             taskExpansion[task.id] = false;
             if (task.fixedVersionId) versionExpansion[task.fixedVersionId] = false;
         });

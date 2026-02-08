@@ -11,6 +11,7 @@ export interface StoredPreferences {
     showVersions?: boolean;
     visibleColumns?: string[];
     groupByProject?: boolean;
+    groupByAssignee?: boolean;
     organizeByDependency?: boolean;
     columnWidths?: Record<string, number>;
     sidebarWidth?: number;

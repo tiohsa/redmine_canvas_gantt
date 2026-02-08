@@ -54,6 +54,13 @@ const ProjectIcon = () => (
     </svg>
 );
 
+const AssigneeIcon = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+    </svg>
+);
+
 const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
     <svg
         width="16"
@@ -850,8 +857,11 @@ export const UiSidebar: React.FC = () => {
                                                     const anyProjectCollapsed = useTaskStore.getState().groupByProject &&
                                                         Object.keys(projectExpansion).length > 0 &&
                                                         Object.values(projectExpansion).some(v => v === false);
+                                                    const anyAssigneeCollapsed = useTaskStore.getState().groupByAssignee &&
+                                                        Object.keys(projectExpansion).length > 0 &&
+                                                        Object.values(projectExpansion).some(v => v === false);
                                                     const anyTaskCollapsed = tasks.some(t => t.hasChildren && taskExpansion[t.id] === false);
-                                                    return (anyProjectCollapsed || anyTaskCollapsed)
+                                                    return (anyProjectCollapsed || anyAssigneeCollapsed || anyTaskCollapsed)
                                                         ? (i18n.t('button_expand_all') || 'すべて展開')
                                                         : (i18n.t('button_collapse_all') || 'すべて折りたたむ');
                                                 })()}
@@ -874,8 +884,11 @@ export const UiSidebar: React.FC = () => {
                                                     const anyProjectCollapsed = useTaskStore.getState().groupByProject &&
                                                         Object.keys(projectExpansion).length > 0 &&
                                                         Object.values(projectExpansion).some(v => v === false);
+                                                    const anyAssigneeCollapsed = useTaskStore.getState().groupByAssignee &&
+                                                        Object.keys(projectExpansion).length > 0 &&
+                                                        Object.values(projectExpansion).some(v => v === false);
                                                     const anyTaskCollapsed = tasks.some(t => t.hasChildren && taskExpansion[t.id] === false);
-                                                    return (anyProjectCollapsed || anyTaskCollapsed) ? <ExpandAllIcon /> : <CollapseAllIcon />;
+                                                    return (anyProjectCollapsed || anyAssigneeCollapsed || anyTaskCollapsed) ? <ExpandAllIcon /> : <CollapseAllIcon />;
                                                 })()}
                                             </button>
                                         </div>
@@ -957,9 +970,9 @@ export const UiSidebar: React.FC = () => {
                                         <ChevronIcon expanded={expanded} />
                                     </div>
                                     <div style={{ marginRight: 8, display: 'flex', alignItems: 'center', color: '#5f6368' }}>
-                                        <ProjectIcon />
+                                        {row.groupKind === 'assignee' ? <AssigneeIcon /> : <ProjectIcon />}
                                     </div>
-                                    {row.projectName || i18n.t('label_project') || 'Project'}
+                                    {row.projectName || (row.groupKind === 'assignee' ? (i18n.t('field_assigned_to') || 'Assignee') : (i18n.t('label_project') || 'Project'))}
                                 </div>
                             );
                         } else if (row.type === 'version') {

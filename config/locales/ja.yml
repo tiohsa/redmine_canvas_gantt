@@ -11,6 +11,7 @@ ja:
   label_filter_by_subject: "題名で絞り込み..."
   label_progress_line: "進捗ライン"
   label_group_by_project: "プロジェクトでグループ化"
+  label_group_by_assignee: "担当者でグループ化"
   label_toggle_sidebar: "サイドバーの切り替え"
   button_top: "トップ"
   label_expand: "展開する"

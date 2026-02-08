@@ -154,6 +154,26 @@ describe('TaskStore assignee filter', () => {
         setSelectedAssigneeIds([]);
         expect(useTaskStore.getState().tasks.length).toBe(3);
     });
+
+    it('setGroupByAssignee は担当者ヘッダーでグルーピングする', () => {
+        const mockTasks: Task[] = [
+            buildTask({ id: '1', subject: 'Task 1', assignedToId: 10, assignedToName: 'User A' }),
+            buildTask({ id: '2', subject: 'Task 2', assignedToId: 11, assignedToName: 'User B' }),
+            buildTask({ id: '3', subject: 'Task 3', assignedToId: 10, assignedToName: 'User A' })
+        ];
+
+        const { setTasks, setGroupByAssignee } = useTaskStore.getState();
+        setTasks(mockTasks);
+        setGroupByAssignee(true);
+
+        const rows = useTaskStore.getState().layoutRows;
+        const headerRows = rows.filter((row) => row.type === 'header');
+
+        expect(useTaskStore.getState().groupByAssignee).toBe(true);
+        expect(useTaskStore.getState().groupByProject).toBe(false);
+        expect(headerRows.length).toBe(2);
+        expect(headerRows.every((row) => row.type === 'header' && row.groupKind === 'assignee')).toBe(true);
+    });
 });
 
 describe('TaskStore version label visibility', () => {

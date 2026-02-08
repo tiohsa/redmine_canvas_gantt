@@ -12,7 +12,7 @@ interface GanttToolbarProps {
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const {
-        viewport, updateViewport, groupByProject, setGroupByProject, organizeByDependency, setOrganizeByDependency,
+        viewport, updateViewport, groupByProject, setGroupByProject, groupByAssignee, setGroupByAssignee, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
         setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
@@ -450,8 +450,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             padding: '0 10px',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
-                            backgroundColor: selectedAssigneeIds.length > 0 ? '#e8f0fe' : '#fff',
-                            color: selectedAssigneeIds.length > 0 ? '#1a73e8' : '#333',
+                            backgroundColor: (selectedAssigneeIds.length > 0 || groupByAssignee) ? '#e8f0fe' : '#fff',
+                            color: (selectedAssigneeIds.length > 0 || groupByAssignee) ? '#1a73e8' : '#333',
                             fontSize: '13px',
                             fontWeight: 500,
                             cursor: 'pointer',
@@ -503,6 +503,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     {assignee.name}
                                 </label>
                             ))}
+                            <div style={{ borderTop: '1px solid #f0f0f0', marginTop: '8px', paddingTop: '8px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={groupByAssignee}
+                                        onChange={() => setGroupByAssignee(!groupByAssignee)}
+                                    />
+                                    {i18n.t('label_group_by_assignee') || 'Group by Assignee'}
+                                </label>
+                            </div>
                             <button
                                 onClick={() => setSelectedAssigneeIds([])}
                                 style={{

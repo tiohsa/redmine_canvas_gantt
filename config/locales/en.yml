@@ -9,6 +9,7 @@ en:
   label_filter_by_subject: "Filter by subject..."
   label_progress_line: "Progress Line"
   label_group_by_project: "Group by project"
+  label_group_by_assignee: "Group by assignee"
   label_toggle_sidebar: "Toggle Sidebar"
   button_top: "Top"
   label_expand: "Expand"
