@@ -37,11 +37,48 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [showStatusMenu, setShowStatusMenu] = React.useState(false);
 
     const filterMenuRef = React.useRef<HTMLDivElement>(null);
+    const filterInputRef = React.useRef<HTMLInputElement>(null);
     const columnMenuRef = React.useRef<HTMLDivElement>(null);
     const assigneeMenuRef = React.useRef<HTMLDivElement>(null);
     const projectMenuRef = React.useRef<HTMLDivElement>(null);
     const versionMenuRef = React.useRef<HTMLDivElement>(null);
     const statusMenuRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+        if (!showFilterMenu) return;
+
+        const requestId = window.requestAnimationFrame(() => {
+            filterInputRef.current?.focus();
+            filterInputRef.current?.select();
+        });
+
+        return () => window.cancelAnimationFrame(requestId);
+    }, [showFilterMenu]);
+
+    React.useEffect(() => {
+        const handleGlobalKeyDown = (event: KeyboardEvent) => {
+            if (event.defaultPrevented) return;
+
+            const key = event.key.toLowerCase();
+
+            if (event.ctrlKey && !event.altKey && !event.metaKey && key === 'f') {
+                event.preventDefault();
+                event.stopPropagation();
+                setShowFilterMenu(true);
+                return;
+            }
+
+            if (key === 'escape' && showFilterMenu) {
+                event.preventDefault();
+                event.stopPropagation();
+                setFilterText('');
+                setShowFilterMenu(false);
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKeyDown, true);
+        return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    }, [showFilterMenu, setFilterText]);
 
     // Click outside handler to close all dropdowns
     React.useEffect(() => {
@@ -334,6 +371,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     >
                         <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('label_filter_tasks') || 'Filter Tasks'}</div>
                         <input
+                            ref={filterInputRef}
                             type="text"
                             placeholder={i18n.t('label_filter_by_subject') || "Filter by subject..."}
                             value={filterText}
