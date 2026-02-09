@@ -112,7 +112,9 @@ export class OverlayRenderer {
             const hasDue = Number.isFinite(task.dueDate);
             const hasDates = hasStart || hasDue;
             const hasProgress = Number.isFinite(task.ratioDone);
+            const snappedStart = hasStart ? LayoutEngine.snapDate(task.startDate, zoomLevel) : NaN;
             const snappedDue = hasDue ? LayoutEngine.snapDate(task.dueDate, zoomLevel) : NaN;
+            const isStartToday = Number.isFinite(snappedStart) && snappedStart === todayStart;
             const isDueToday = Number.isFinite(snappedDue) && snappedDue === todayStart;
 
 
@@ -143,7 +145,10 @@ export class OverlayRenderer {
                     effectiveEnd = effectiveStart + ONE_DAY;
                 }
 
-                if (isDueToday) {
+                // Single date task with date = today: pass through today line
+                if ((hasStart && !hasDue && isStartToday) || (!hasStart && hasDue && isDueToday)) {
+                    pointX = xToday;
+                } else if (isDueToday) {
                     pointX = xToday;
                 } else if (isClosed) {
                     pointX = xToday;
