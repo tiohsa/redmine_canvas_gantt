@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
 import { LayoutEngine } from '../engines/LayoutEngine';
@@ -264,75 +265,76 @@ export const HtmlOverlay: React.FC = () => {
     }, [canDropToRoot, moveTaskToRoot]);
 
     return (
-        <div
-            ref={overlayRef}
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
-        >
-            {visibleTasks.map(task => {
-                if (task.id !== hoveredTaskId) return null;
+        <>
+            <div
+                ref={overlayRef}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+            >
+                {visibleTasks.map(task => {
+                    if (task.id !== hoveredTaskId) return null;
 
-                const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
-                const centerY = bounds.y + bounds.height / 2;
-                // Position handles OUTSIDE the task bar to avoid conflict with resize handles
-                const handleOffset = 12; // Distance from bar edge
-                const baseStyle: React.CSSProperties = {
-                    position: 'absolute',
-                    top: centerY - 5,
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    backgroundColor: '#1a73e8',
-                    border: '2px solid #fff',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
-                    pointerEvents: 'auto',
-                    cursor: 'crosshair',
-                    zIndex: 100 // Ensure above other things
-                };
+                    const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+                    const centerY = bounds.y + bounds.height / 2;
+                    // Position handles OUTSIDE the task bar to avoid conflict with resize handles
+                    const handleOffset = 12; // Distance from bar edge
+                    const baseStyle: React.CSSProperties = {
+                        position: 'absolute',
+                        top: centerY - 5,
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        backgroundColor: '#1a73e8',
+                        border: '2px solid #fff',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+                        pointerEvents: 'auto',
+                        cursor: 'crosshair',
+                        zIndex: 100 // Ensure above other things
+                    };
 
-                return (
-                    <React.Fragment key={`handles-${task.id}`}>
-                        {/* Left handle - positioned outside the bar */}
-                        <div
-                            className="dependency-handle"
-                            style={{ ...baseStyle, left: bounds.x - handleOffset - 5 }}
-                            onMouseDown={() => {
-                                startDraft(task.id, bounds.x, centerY);
-                            }}
+                    return (
+                        <React.Fragment key={`handles-${task.id}`}>
+                            {/* Left handle - positioned outside the bar */}
+                            <div
+                                className="dependency-handle"
+                                style={{ ...baseStyle, left: bounds.x - handleOffset - 5 }}
+                                onMouseDown={() => {
+                                    startDraft(task.id, bounds.x, centerY);
+                                }}
+                            />
+                            {/* Right handle - positioned outside the bar */}
+                            <div
+                                className="dependency-handle"
+                                style={{ ...baseStyle, left: bounds.x + bounds.width + handleOffset - 5 }}
+                                onMouseDown={() => {
+                                    startDraft(task.id, bounds.x + bounds.width, centerY);
+                                }}
+                            />
+                        </React.Fragment>
+                    );
+                })}
+
+                {draft && (
+                    <svg width="100%" height="100%" style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+                        <defs>
+                            <marker id="draft-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+                                <path d="M0,0 L0,6 L6,3 z" fill="#1a73e8" />
+                            </marker>
+                        </defs>
+                        <line
+                            x1={draft.start.x}
+                            y1={draft.start.y}
+                            x2={draft.pointer.x}
+                            y2={draft.pointer.y}
+                            stroke="#1a73e8"
+                            strokeWidth={2}
+                            strokeDasharray="5 5"
+                            markerEnd="url(#draft-arrow)"
                         />
-                        {/* Right handle - positioned outside the bar */}
-                        <div
-                            className="dependency-handle"
-                            style={{ ...baseStyle, left: bounds.x + bounds.width + handleOffset - 5 }}
-                            onMouseDown={() => {
-                                startDraft(task.id, bounds.x + bounds.width, centerY);
-                            }}
-                        />
-                    </React.Fragment>
-                );
-            })}
+                    </svg>
+                )}
+            </div>
 
-            {draft && (
-                <svg width="100%" height="100%" style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
-                    <defs>
-                        <marker id="draft-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
-                            <path d="M0,0 L0,6 L6,3 z" fill="#1a73e8" />
-                        </marker>
-                    </defs>
-                    <line
-                        x1={draft.start.x}
-                        y1={draft.start.y}
-                        x2={draft.pointer.x}
-                        y2={draft.pointer.y}
-                        stroke="#1a73e8"
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                        markerEnd="url(#draft-arrow)"
-                    />
-                </svg>
-            )}
-
-
-            {contextMenu && (
+            {contextMenu && createPortal(
                 <>
                     <div
                         style={{
@@ -341,7 +343,7 @@ export const HtmlOverlay: React.FC = () => {
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            zIndex: 999,
+                            zIndex: 9999,
                             background: 'transparent'
                         }}
                         onClick={() => setContextMenu(null)}
@@ -361,7 +363,7 @@ export const HtmlOverlay: React.FC = () => {
                             minWidth: '200px',
                             boxShadow: '0 4px 20px rgba(0,0,0,0.15), 0 0 1px rgba(0,0,0,0.1)',
                             padding: '6px',
-                            zIndex: 1000,
+                            zIndex: 10000,
                             pointerEvents: 'auto',
                             animation: 'fadeIn 0.1s ease-out'
                         }}
@@ -490,8 +492,9 @@ export const HtmlOverlay: React.FC = () => {
                             </>
                         )}
                     </div>
-                </>
+                </>,
+                document.body
             )}
-        </div>
+        </>
     );
 };
