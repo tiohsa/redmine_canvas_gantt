@@ -205,13 +205,13 @@ const buildLayout = (
             if (!groupRoots.has(pid)) {
                 groupRoots.set(pid, []);
                 if (!groupOrder.has(pid)) {
-                // If the project is not in the filtered tasks, we try to find its order from allTasks
-                // Or just append it to the end
+                    // If the project is not in the filtered tasks, we try to find its order from allTasks
+                    // Or just append it to the end
                     const originalTask = allTasks.find(t => t.projectId === pid);
                     if (originalTask) {
-                    // We don't have a reliable index from filtered tasks, so we might just put it at the end
-                    // or try to match displayOrder if possible. 
-                    // For simplicity, let's append to the end.
+                        // We don't have a reliable index from filtered tasks, so we might just put it at the end
+                        // or try to match displayOrder if possible. 
+                        // For simplicity, let's append to the end.
                         groupOrder.set(pid, Number.MAX_SAFE_INTEGER);
                     } else {
                         groupOrder.set(pid, Number.MAX_SAFE_INTEGER);
@@ -408,7 +408,13 @@ const buildLayout = (
                 if (vId) usedVersionIds.add(String(vId));
             });
 
-            const projectVersions = versions.filter(v => usedVersionIds.has(v.id));
+            const projectVersions = versions.filter(v => {
+                // Task has this version?
+                if (usedVersionIds.has(v.id)) return true;
+                // Currently selected in filter? (and belongs to this project group)
+                if (_selectedVersionIds.includes(v.id) && v.projectId === groupId) return true;
+                return false;
+            });
             projectVersions.sort((a, b) => (a.effectiveDate - b.effectiveDate));
 
             projectVersions.forEach(v => {

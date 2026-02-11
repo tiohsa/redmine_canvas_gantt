@@ -223,7 +223,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
     const versionsList = React.useMemo(() => {
         const currentProjects = new Set(projects.map(p => p.id));
-        return versions.filter(v => currentProjects.has(v.projectId)).sort((a, b) => a.name.localeCompare(b.name));
+        return versions.filter(v => currentProjects.has(v.projectId) && v.status !== 'closed').sort((a, b) => a.name.localeCompare(b.name));
     }, [versions, projects]);
 
     const toggleVersion = (id: string) => {

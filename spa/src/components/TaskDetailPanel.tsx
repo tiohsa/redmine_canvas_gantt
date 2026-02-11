@@ -7,7 +7,7 @@ import type { Task } from '../types';
 import type { InlineEditSettings, TaskEditMeta, CustomFieldMeta } from '../types/editMeta';
 import { InlineEditService } from '../services/InlineEditService';
 
-type FieldKey = 'subject' | 'assignedToId' | 'statusId' | 'doneRatio' | 'startDate' | 'dueDate' | `cf:${number}`;
+type FieldKey = 'subject' | 'assignedToId' | 'statusId' | 'doneRatio' | 'startDate' | 'dueDate' | 'fixedVersionId' | `cf:${number}`;
 
 const getSettings = (): InlineEditSettings => {
     return (window as unknown as { RedmineCanvasGantt?: { settings?: InlineEditSettings } }).RedmineCanvasGantt?.settings ?? {};
@@ -232,6 +232,39 @@ export const TaskDetailPanel: React.FC = () => {
                         )}
                     />
                 ) : null}
+
+                <InlineRow
+                    label={i18n.t('field_fixed_version') || 'Target Version'}
+                    value={task.fixedVersionName || '-'}
+                    editable={Boolean(meta?.editable.fixedVersionId)}
+                    fieldKey="fixedVersionId"
+                    editor={({ onClose }) => {
+                        const allVersions = useTaskStore.getState().versions;
+                        const closedVersionIds = new Set(allVersions.filter(v => v.status === 'closed').map(v => Number(v.id)));
+                        const filteredVersions = (meta?.options.versions || []).filter(v => !closedVersionIds.has(v.id));
+
+                        return (
+                            <SelectEditor
+                                value={task.fixedVersionId ? Number(task.fixedVersionId) : null}
+                                options={filteredVersions}
+                                includeUnassigned
+                                onCancel={onClose}
+                                onCommit={async (next) => {
+                                    const prevId = task.fixedVersionId ?? null;
+                                    const prevName = task.fixedVersionName;
+                                    const name = next === null ? undefined : meta?.options.versions.find((o) => o.id === next)?.name;
+                                    await saveFields(
+                                        task.id,
+                                        { fixedVersionId: next !== null ? String(next) : undefined, fixedVersionName: name },
+                                        { fixedVersionId: prevId ?? undefined, fixedVersionName: prevName },
+                                        { fixed_version_id: next }
+                                    );
+                                    onClose();
+                                }}
+                            />
+                        );
+                    }}
+                />
 
                 {enabledDoneRatio ? (
                     <InlineRow

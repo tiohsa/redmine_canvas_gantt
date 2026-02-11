@@ -1521,14 +1521,19 @@ export const UiSidebar: React.FC = () => {
                                                 if (field === 'fixedVersionId') {
                                                     const taskMeta = editMetaByTaskId[task.id];
                                                     if (!taskMeta) return <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
+
+                                                    const allVersions = useTaskStore.getState().versions;
+                                                    const closedVersionIds = new Set(allVersions.filter(v => v.status === 'closed').map(v => Number(v.id)));
+                                                    const filteredVersions = (taskMeta.options.versions || []).filter(v => !closedVersionIds.has(v.id));
+
                                                     return (
                                                         <SelectEditor
                                                             value={task.fixedVersionId ? Number(task.fixedVersionId) : null}
-                                                            options={taskMeta.options.versions || []}
+                                                            options={filteredVersions}
                                                             includeUnassigned
                                                             onCancel={close}
                                                             onCommit={async (next) => {
-                                                                const nextName = meta.options.versions?.find(s => s.id === next)?.name;
+                                                                const nextName = taskMeta.options.versions?.find(s => s.id === next)?.name;
                                                                 await save({
                                                                     taskId: task.id,
                                                                     optimisticTaskUpdates: { fixedVersionId: next !== null ? String(next) : undefined, fixedVersionName: nextName },
