@@ -25,6 +25,10 @@ export const HtmlOverlay: React.FC = () => {
 
     const taskById = React.useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
     const contextTask = contextMenu ? taskById.get(contextMenu.taskId) ?? null : null;
+    const fallbackProjectId = React.useMemo(() => {
+        const projectId = window.RedmineCanvasGantt?.projectId;
+        return projectId !== undefined && projectId !== null ? String(projectId) : '';
+    }, []);
 
     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
     const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
@@ -226,6 +230,13 @@ export const HtmlOverlay: React.FC = () => {
         }
     }, []);
 
+    const buildNewIssueUrl = React.useCallback((query?: URLSearchParams) => {
+        const projectId = contextTask?.projectId || fallbackProjectId;
+        const basePath = projectId ? `/projects/${projectId}/issues/new` : '/issues/new';
+        const qs = query?.toString();
+        return qs ? `${basePath}?${qs}` : basePath;
+    }, [contextTask?.projectId, fallbackProjectId]);
+
     return (
         <div
             ref={overlayRef}
@@ -376,16 +387,20 @@ export const HtmlOverlay: React.FC = () => {
                             {i18n.t('button_edit')}
                         </div>
 
-                        <div className="menu-item" onClick={() => {
-                            useUIStore.getState().openIssueDialog(`/projects/${contextTask?.projectId || ''}/issues/new?parent_issue_id=${contextMenu.taskId}`);
+                        <div className="menu-item" data-testid="context-menu-add-child-task" onClick={() => {
+                            const query = new URLSearchParams();
+                            // Redmine new issue form expects nested params; keep legacy param for compatibility.
+                            query.set('issue[parent_issue_id]', contextMenu.taskId);
+                            query.set('parent_issue_id', contextMenu.taskId);
+                            useUIStore.getState().openIssueDialog(buildNewIssueUrl(query));
                             setContextMenu(null);
                         }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                             {i18n.t('label_add_child_task') || 'Add Child Task'}
                         </div>
 
-                        <div className="menu-item" onClick={() => {
-                            useUIStore.getState().openIssueDialog(`/projects/${contextTask?.projectId || ''}/issues/new`);
+                        <div className="menu-item" data-testid="context-menu-add-new-ticket" onClick={() => {
+                            useUIStore.getState().openIssueDialog(buildNewIssueUrl());
                             setContextMenu(null);
                         }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

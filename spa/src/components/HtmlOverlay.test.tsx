@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { HtmlOverlay } from './HtmlOverlay';
 import { useTaskStore } from '../stores/TaskStore';
+import { useUIStore } from '../stores/UIStore';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Relation, Task, Viewport } from '../types';
 import { RelationType } from '../types/constraints';
@@ -63,6 +64,7 @@ describe('HtmlOverlay', () => {
     beforeEach(() => {
         vi.mocked(apiClient.createRelation).mockReset();
         vi.mocked(apiClient.fetchData).mockReset();
+        useUIStore.setState({ issueDialogUrl: null });
         useTaskStore.setState({
             tasks: [],
             relations: [],
@@ -159,5 +161,23 @@ describe('HtmlOverlay', () => {
             expect(apiClient.fetchData).toHaveBeenCalled();
             expect(useTaskStore.getState().relations).toEqual([]);
         });
+    });
+
+    it('opens child issue dialog with parent params from context menu', () => {
+        act(() => {
+            useTaskStore.getState().setTasks([task1]);
+            useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '1' });
+        });
+
+        const { container } = render(<HtmlOverlay />);
+        const addChildItem = container.querySelector('[data-testid="context-menu-add-child-task"]');
+        expect(addChildItem).toBeTruthy();
+
+        fireEvent.click(addChildItem!);
+
+        const openedUrl = useUIStore.getState().issueDialogUrl;
+        expect(openedUrl).toContain('/projects/p1/issues/new?');
+        expect(openedUrl).toContain('issue%5Bparent_issue_id%5D=1');
+        expect(openedUrl).toContain('parent_issue_id=1');
     });
 });
