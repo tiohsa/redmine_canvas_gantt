@@ -3,6 +3,7 @@ import { useTaskStore } from './TaskStore';
 import type { Task } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { apiClient } from '../api/client';
+import { useUIStore } from './UIStore';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -349,8 +350,12 @@ describe('TaskStore filter persistence', () => {
 });
 
 describe('TaskStore saveChanges ordering', () => {
+    const addNotification = vi.fn();
+
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
+        useUIStore.setState({ addNotification: addNotification as unknown as (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void });
+        addNotification.mockReset();
         vi.mocked(apiClient.updateTask).mockReset();
         vi.mocked(apiClient.fetchData).mockReset();
         vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 1 });
@@ -377,5 +382,45 @@ describe('TaskStore saveChanges ordering', () => {
 
         const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
         expect(updatedIds).toEqual(['parent', 'child']);
+    });
+
+    it('saveChanges updates ancestors before descendant in deep hierarchy', async () => {
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+
+        setTasks([
+            buildTask({ id: 'grand', startDate: 0, dueDate: 2 }),
+            buildTask({ id: 'parent', parentId: 'grand', startDate: 0, dueDate: 2 }),
+            buildTask({ id: 'child', parentId: 'parent', startDate: 0, dueDate: 2 })
+        ]);
+
+        updateTask('child', { dueDate: 7 });
+        await saveChanges();
+
+        const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
+        expect(updatedIds).toEqual(['grand', 'parent', 'child']);
+    });
+
+    it('saveChanges notifies error when any update fails', async () => {
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+
+        setTasks([
+            buildTask({ id: 'parent', startDate: 0, dueDate: 2 }),
+            buildTask({ id: 'child', parentId: 'parent', startDate: 0, dueDate: 2 })
+        ]);
+
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
+            if (task.id === 'child') {
+                return { status: 'error', error: 'Child date is out of parent range' };
+            }
+            return { status: 'ok', lockVersion: 1 };
+        });
+
+        updateTask('child', { dueDate: 5 });
+        await saveChanges();
+
+        expect(addNotification).toHaveBeenCalledTimes(1);
+        const [message, type] = addNotification.mock.calls[0];
+        expect(String(message)).toContain('#child');
+        expect(type).toBe('error');
     });
 });
