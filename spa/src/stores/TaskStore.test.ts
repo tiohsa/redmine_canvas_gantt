@@ -1,7 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useTaskStore } from './TaskStore';
 import type { Task } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
+import { apiClient } from '../api/client';
+
+vi.mock('../api/client', () => ({
+    apiClient: {
+        fetchData: vi.fn(),
+        updateTask: vi.fn()
+    }
+}));
 
 const buildTask = (overrides: Partial<Task>): Task => ({
     id: 'task',
@@ -337,5 +345,37 @@ describe('TaskStore filter persistence', () => {
 
         removeTask('2'); // Remove hidden task
         expect(useTaskStore.getState().tasks.map(t => t.id)).toEqual(['3']);
+    });
+});
+
+describe('TaskStore saveChanges ordering', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        vi.mocked(apiClient.updateTask).mockReset();
+        vi.mocked(apiClient.fetchData).mockReset();
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 1 });
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            statuses: [],
+            project: { id: 'p1', name: 'P1' },
+            permissions: { editable: true, viewable: true }
+        });
+    });
+
+    it('saveChanges updates parent before child for nested tasks', async () => {
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+
+        setTasks([
+            buildTask({ id: 'parent', startDate: 0, dueDate: 2 }),
+            buildTask({ id: 'child', parentId: 'parent', startDate: 0, dueDate: 2 })
+        ]);
+
+        updateTask('child', { dueDate: 5 });
+        await saveChanges();
+
+        const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
+        expect(updatedIds).toEqual(['parent', 'child']);
     });
 });

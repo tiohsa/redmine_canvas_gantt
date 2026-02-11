@@ -5,6 +5,7 @@ import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences, savePreferences } from '../utils/preferences';
 import { getMaxFiniteDueDate } from '../utils/taskRange';
 import { i18n } from '../utils/i18n';
+import { useUIStore } from './UIStore';
 
 type SortConfig = { key: keyof Task; direction: 'asc' | 'desc' } | null;
 
@@ -1244,12 +1245,44 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     saveChanges: async () => {
         const { apiClient } = await import('../api/client');
         const state = get();
-        const tasksToUpdate = state.allTasks.filter(t => state.modifiedTaskIds.has(t.id));
+        const taskById = new Map(state.allTasks.map(task => [task.id, task]));
+        const depthCache = new Map<string, number>();
+        const calcDepth = (taskId: string): number => {
+            if (depthCache.has(taskId)) return depthCache.get(taskId)!;
+            let depth = 0;
+            let current = taskById.get(taskId);
+            const seen = new Set<string>([taskId]);
+            while (current?.parentId) {
+                if (seen.has(current.parentId)) break;
+                seen.add(current.parentId);
+                depth += 1;
+                current = taskById.get(current.parentId);
+            }
+            depthCache.set(taskId, depth);
+            return depth;
+        };
 
-        // Parallel updates (could be batched API if supported, but loop is standard for now)
-        await Promise.all(tasksToUpdate.map(t => apiClient.updateTask(t)));
+        // Update parents first so Redmine child-date validation does not reject child updates.
+        const tasksToUpdate = state.allTasks
+            .filter(t => state.modifiedTaskIds.has(t.id))
+            .sort((a, b) => calcDepth(a.id) - calcDepth(b.id));
+
+        const failures: string[] = [];
+        for (const task of tasksToUpdate) {
+            const result = await apiClient.updateTask(task);
+            if (result.status !== 'ok') {
+                failures.push(`#${task.id}: ${result.error || 'Unknown error'}`);
+            }
+        }
 
         await state.refreshData();
+
+        if (failures.length > 0) {
+            useUIStore.getState().addNotification(
+                `${i18n.t('label_failed_to_save') || 'Failed to save'} (${failures[0]})`,
+                'error'
+            );
+        }
     },
 
     discardChanges: async () => {
