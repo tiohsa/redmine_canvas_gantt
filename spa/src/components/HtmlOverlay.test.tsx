@@ -199,4 +199,16 @@ describe('HtmlOverlay', () => {
             expect(useTaskStore.getState().contextMenu).toBeNull();
         });
     });
+
+    it('does not show unset-parent item for root task', () => {
+        const rootTask: Task = { ...task1, id: '20', parentId: undefined };
+        act(() => {
+            useTaskStore.getState().setTasks([rootTask]);
+            useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '20' });
+        });
+
+        const { container } = render(<HtmlOverlay />);
+        const unsetParentItem = container.querySelector('[data-testid="context-menu-unset-parent"]');
+        expect(unsetParentItem).toBeNull();
+    });
 });

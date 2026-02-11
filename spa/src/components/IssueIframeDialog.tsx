@@ -9,7 +9,13 @@ export const IssueIframeDialog: React.FC = () => {
     const closeIssueDialog = useUIStore(state => state.closeIssueDialog);
     const refreshData = useTaskStore(state => state.refreshData);
     const iframeRef = React.useRef<HTMLIFrameElement>(null);
+    const iframeEscapeCleanupRef = React.useRef<(() => void) | null>(null);
     const [iframeError, setIframeError] = React.useState<string | null>(null);
+
+    const handleClose = React.useCallback(() => {
+        closeIssueDialog();
+        void refreshData();
+    }, [closeIssueDialog, refreshData]);
 
     const issueLabel = React.useMemo(() => {
         if (!issueDialogUrl) return '';
@@ -38,15 +44,38 @@ export const IssueIframeDialog: React.FC = () => {
     }, [issueDialogUrl]);
 
     React.useEffect(() => {
+        iframeEscapeCleanupRef.current?.();
+        iframeEscapeCleanupRef.current = null;
         setIframeError(null);
     }, [issueDialogUrl]);
 
-    if (!issueDialogUrl) return null;
+    React.useEffect(() => {
+        if (!issueDialogUrl) {
+            return;
+        }
 
-    const handleClose = () => {
-        closeIssueDialog();
-        void refreshData();
-    };
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            handleClose();
+        };
+
+        window.addEventListener('keydown', handleEscape, true);
+        return () => {
+            window.removeEventListener('keydown', handleEscape, true);
+        };
+    }, [issueDialogUrl, handleClose]);
+
+    React.useEffect(() => () => {
+        iframeEscapeCleanupRef.current?.();
+        iframeEscapeCleanupRef.current = null;
+    }, []);
+
+    if (!issueDialogUrl) return null;
 
     const handleIframeLoad = () => {
         try {
@@ -56,6 +85,25 @@ export const IssueIframeDialog: React.FC = () => {
             const iframeDocument = iframe.contentDocument ?? iframe.contentWindow?.document;
             if (iframeDocument) {
                 applyIssueDialogStyles(iframeDocument);
+
+                const iframeWindow = iframe.contentWindow;
+                if (iframeWindow && typeof iframeWindow.addEventListener === 'function' && typeof iframeWindow.removeEventListener === 'function') {
+                    iframeEscapeCleanupRef.current?.();
+                    const handleIframeEscape = (event: KeyboardEvent) => {
+                        if (event.key !== 'Escape') {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleClose();
+                    };
+                    iframeWindow.addEventListener('keydown', handleIframeEscape, true);
+                    iframeEscapeCleanupRef.current = () => {
+                        iframeWindow.removeEventListener('keydown', handleIframeEscape, true);
+                    };
+                }
+
                 const errorElement = findIssueDialogErrorElement(iframeDocument);
                 if (errorElement) {
                     const message = getIssueDialogErrorMessage(iframeDocument)

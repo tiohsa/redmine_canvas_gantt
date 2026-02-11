@@ -53,4 +53,15 @@ describe('IssueIframeDialog', () => {
 
         expect(screen.getByTestId('issue-dialog-error')).toHaveTextContent('Permission denied');
     });
+
+    it('closes the dialog when Escape key is pressed', () => {
+        const refreshData = vi.fn().mockResolvedValue(undefined);
+        useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
+
+        render(<IssueIframeDialog />);
+        fireEvent.keyDown(window, { key: 'Escape' });
+
+        expect(useUIStore.getState().issueDialogUrl).toBeNull();
+        expect(refreshData).toHaveBeenCalledTimes(1);
+    });
 });
