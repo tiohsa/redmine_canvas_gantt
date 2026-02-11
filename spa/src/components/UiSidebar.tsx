@@ -151,7 +151,9 @@ export const UiSidebar: React.FC = () => {
     const toggleTaskExpansion = useTaskStore(state => state.toggleTaskExpansion);
     const toggleAllExpansion = useTaskStore(state => state.toggleAllExpansion);
     const canDropAsChild = useTaskStore(state => state.canDropAsChild);
+    const canDropToRoot = useTaskStore(state => state.canDropToRoot);
     const moveTaskAsChild = useTaskStore(state => state.moveTaskAsChild);
+    const moveTaskToRoot = useTaskStore(state => state.moveTaskToRoot);
     const visibleColumns = useUIStore(state => state.visibleColumns);
     const setActiveInlineEdit = useUIStore(state => state.setActiveInlineEdit);
     const activeInlineEdit = useUIStore(state => state.activeInlineEdit);
@@ -162,18 +164,22 @@ export const UiSidebar: React.FC = () => {
     const [isResizingColumn, setIsResizingColumn] = React.useState(false);
     const [draggingTaskId, setDraggingTaskId] = React.useState<string | null>(null);
     const [dropTargetTaskId, setDropTargetTaskId] = React.useState<string | null>(null);
+    const [isRootDropActive, setIsRootDropActive] = React.useState(false);
     const bodyStyleRef = React.useRef<{ cursor: string; userSelect: string } | null>(null);
 
     const handleTaskDragStart = React.useCallback((taskId: string, e: React.DragEvent<HTMLDivElement>) => {
         setDraggingTaskId(taskId);
         setDropTargetTaskId(null);
+        setIsRootDropActive(false);
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', taskId);
     }, []);
 
     const handleTaskDragOver = React.useCallback((targetTaskId: string, e: React.DragEvent<HTMLDivElement>) => {
+        e.stopPropagation();
         const sourceTaskId = draggingTaskId || e.dataTransfer.getData('text/plain');
         if (!sourceTaskId) return;
+        setIsRootDropActive(false);
         if (!canDropAsChild(sourceTaskId, targetTaskId)) {
             e.dataTransfer.dropEffect = 'none';
             if (dropTargetTaskId) setDropTargetTaskId(null);
@@ -187,9 +193,11 @@ export const UiSidebar: React.FC = () => {
     }, [canDropAsChild, draggingTaskId, dropTargetTaskId]);
 
     const handleTaskDrop = React.useCallback(async (targetTaskId: string, e: React.DragEvent<HTMLDivElement>) => {
+        e.stopPropagation();
         e.preventDefault();
         const sourceTaskId = draggingTaskId || e.dataTransfer.getData('text/plain');
         setDropTargetTaskId(null);
+        setIsRootDropActive(false);
         setDraggingTaskId(null);
         if (!sourceTaskId || !canDropAsChild(sourceTaskId, targetTaskId)) {
             useUIStore.getState().addNotification(i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target', 'warning');
@@ -209,6 +217,46 @@ export const UiSidebar: React.FC = () => {
 
         useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_failed') || 'Failed to move task', 'error');
     }, [canDropAsChild, draggingTaskId, moveTaskAsChild]);
+
+    const handleRootDragOver = React.useCallback((e: React.DragEvent<HTMLDivElement>) => {
+        const sourceTaskId = draggingTaskId || e.dataTransfer.getData('text/plain');
+        if (!sourceTaskId) return;
+        if (!canDropToRoot(sourceTaskId)) {
+            e.dataTransfer.dropEffect = 'none';
+            if (isRootDropActive) setIsRootDropActive(false);
+            return;
+        }
+
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (!isRootDropActive) setIsRootDropActive(true);
+        if (dropTargetTaskId) setDropTargetTaskId(null);
+    }, [canDropToRoot, draggingTaskId, dropTargetTaskId, isRootDropActive]);
+
+    const handleRootDrop = React.useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        const sourceTaskId = draggingTaskId || e.dataTransfer.getData('text/plain');
+        setDropTargetTaskId(null);
+        setIsRootDropActive(false);
+        setDraggingTaskId(null);
+        if (!sourceTaskId || !canDropToRoot(sourceTaskId)) {
+            useUIStore.getState().addNotification(i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target', 'warning');
+            return;
+        }
+
+        const result = await moveTaskToRoot(sourceTaskId);
+        if (result.status === 'ok') {
+            useUIStore.getState().addNotification(i18n.t('label_parent_drop_unset_success') || 'Task parent removed', 'success');
+            return;
+        }
+
+        if (result.status === 'conflict') {
+            useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_conflict') || 'Task was updated by another user', 'error');
+            return;
+        }
+
+        useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_failed') || 'Failed to move task', 'error');
+    }, [canDropToRoot, draggingTaskId, moveTaskToRoot]);
 
     React.useEffect(() => {
         const onMouseMove = (e: MouseEvent) => {
@@ -975,7 +1023,23 @@ export const UiSidebar: React.FC = () => {
             </div>
 
             {/* Body */}
-            <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }} onWheel={handleWheel}>
+            <div
+                style={{
+                    flex: 1,
+                    position: 'relative',
+                    overflow: 'hidden',
+                    backgroundColor: isRootDropActive ? '#fff8e1' : 'transparent',
+                    boxShadow: isRootDropActive ? 'inset 0 0 0 1px #f9ab00' : 'none',
+                    transition: 'background-color 0.2s, box-shadow 0.2s'
+                }}
+                onWheel={handleWheel}
+                onDragOver={handleRootDragOver}
+                onDrop={(e) => { void handleRootDrop(e); }}
+                onDragLeave={(e) => {
+                    if (e.currentTarget !== e.target) return;
+                    setIsRootDropActive(false);
+                }}
+            >
                 {
                     visibleRows.map(row => {
                         const top = row.rowIndex * viewport.rowHeight - viewport.scrollY;
@@ -1093,6 +1157,7 @@ export const UiSidebar: React.FC = () => {
                                 onDragEnd={() => {
                                     setDraggingTaskId(null);
                                     setDropTargetTaskId(null);
+                                    setIsRootDropActive(false);
                                 }}
                                 onClick={() => {
                                     if (activeInlineEdit && activeInlineEdit.taskId !== task.id) {

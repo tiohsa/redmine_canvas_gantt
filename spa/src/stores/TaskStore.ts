@@ -87,7 +87,9 @@ interface TaskState {
     refreshData: () => Promise<void>;
     setSortingSuspended: (suspended: boolean) => void;
     canDropAsChild: (sourceTaskId: string, targetTaskId: string) => boolean;
+    canDropToRoot: (sourceTaskId: string) => boolean;
     moveTaskAsChild: (sourceTaskId: string, targetTaskId: string) => Promise<MoveTaskAsChildResult>;
+    moveTaskToRoot: (sourceTaskId: string) => Promise<MoveTaskAsChildResult>;
     saveChanges: () => Promise<void>;
     discardChanges: () => Promise<void>;
 }
@@ -606,6 +608,18 @@ const tailDisplayOrderForParent = (allTasks: Task[], parentTaskId: string, movin
     return base + 1;
 };
 
+const tailDisplayOrderForRoot = (allTasks: Task[], movingTask: Task): number => {
+    const siblingOrders = allTasks
+        .filter((task) => (
+            task.id !== movingTask.id &&
+            !task.parentId &&
+            task.projectId === movingTask.projectId
+        ))
+        .map((task) => task.displayOrder ?? 0);
+    const base = siblingOrders.length === 0 ? 0 : Math.max(...siblingOrders);
+    return base + 1;
+};
+
 const computeCenteredViewport = (viewport: Viewport, newScale: number, tasksMaxDue: number | null): { scrollX: number; startDate: number } => {
     const safeScale = viewport.scale || 0.00000001;
     const centerDate = viewport.startDate + (viewport.scrollX + viewport.width / 2) / safeScale;
@@ -833,6 +847,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         if (isDescendantTask(taskById, sourceTaskId, targetTaskId)) return false;
         return true;
     },
+    canDropToRoot: (sourceTaskId) => {
+        if (!sourceTaskId) return false;
+        const source = get().allTasks.find(task => task.id === sourceTaskId);
+        if (!source) return false;
+        if (!source.editable) return false;
+        return Boolean(source.parentId);
+    },
     moveTaskAsChild: async (sourceTaskId, targetTaskId) => {
         if (!get().canDropAsChild(sourceTaskId, targetTaskId)) {
             return { status: 'error', error: i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target' };
@@ -918,6 +939,97 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             status: 'ok',
             lockVersion: result.lockVersion,
             parentId: result.parentId ?? targetTaskId,
+            siblingPosition: 'tail'
+        };
+    },
+    moveTaskToRoot: async (sourceTaskId) => {
+        if (!get().canDropToRoot(sourceTaskId)) {
+            return { status: 'error', error: i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target' };
+        }
+
+        const { apiClient } = await import('../api/client');
+        const beforeState = get();
+        const snapshot = createTaskLayoutSnapshot(beforeState);
+        const sourceBefore = beforeState.allTasks.find(task => task.id === sourceTaskId);
+        if (!sourceBefore) {
+            return { status: 'error', error: i18n.t('label_parent_drop_failed') || 'Failed to update parent' };
+        }
+
+        const nextOrder = tailDisplayOrderForRoot(beforeState.allTasks, sourceBefore);
+        const nextAllTasks = beforeState.allTasks.map(task => (
+            task.id === sourceTaskId
+                ? { ...task, parentId: undefined, displayOrder: nextOrder }
+                : task
+        ));
+
+        const layout = buildLayoutFromState(beforeState, { allTasks: nextAllTasks });
+        set({
+            allTasks: nextAllTasks,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        });
+
+        if (!beforeState.autoSave) {
+            const nextModified = new Set(beforeState.modifiedTaskIds);
+            nextModified.add(sourceTaskId);
+            set({ modifiedTaskIds: nextModified });
+            return {
+                status: 'ok',
+                lockVersion: sourceBefore.lockVersion,
+                parentId: undefined,
+                siblingPosition: 'tail'
+            };
+        }
+
+        const result = await apiClient.updateTaskFields(sourceTaskId, {
+            parent_issue_id: null,
+            lock_version: sourceBefore.lockVersion
+        });
+
+        if (result.status !== 'ok') {
+            set({
+                allTasks: snapshot.allTasks,
+                tasks: snapshot.tasks,
+                layoutRows: snapshot.layoutRows,
+                rowCount: snapshot.rowCount
+            });
+            return {
+                status: result.status,
+                error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent')
+            };
+        }
+
+        const currentState = get();
+        const sourceAfter = currentState.allTasks.find(task => task.id === sourceTaskId);
+        const fallbackSource = sourceAfter ?? sourceBefore;
+        const updatedAllTasks = currentState.allTasks.map(task => (
+            task.id === sourceTaskId
+                ? {
+                    ...task,
+                    parentId: undefined,
+                    lockVersion: result.lockVersion ?? task.lockVersion,
+                    displayOrder: tailDisplayOrderForRoot(currentState.allTasks, fallbackSource)
+                }
+                : task
+        ));
+        const updatedLayout = buildLayoutFromState(currentState, { allTasks: updatedAllTasks });
+        set({
+            allTasks: updatedAllTasks,
+            tasks: updatedLayout.tasks,
+            layoutRows: updatedLayout.layoutRows,
+            rowCount: updatedLayout.rowCount,
+            modifiedTaskIds: (() => {
+                const nextModified = new Set(get().modifiedTaskIds);
+                nextModified.delete(sourceTaskId);
+                return nextModified;
+            })()
+        });
+
+        return {
+            status: 'ok',
+            lockVersion: result.lockVersion,
+            parentId: undefined,
             siblingPosition: 'tail'
         };
     },

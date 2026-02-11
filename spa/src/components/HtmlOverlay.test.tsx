@@ -180,4 +180,23 @@ describe('HtmlOverlay', () => {
         expect(openedUrl).toContain('issue%5Bparent_issue_id%5D=1');
         expect(openedUrl).toContain('parent_issue_id=1');
     });
+
+    it('unsets parent from context menu', async () => {
+        const childTask: Task = { ...task1, id: '10', parentId: '1' };
+        act(() => {
+            useTaskStore.getState().setTasks([childTask]);
+            useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '10' });
+        });
+
+        const { container } = render(<HtmlOverlay />);
+        const unsetParentItem = container.querySelector('[data-testid="context-menu-unset-parent"]');
+        expect(unsetParentItem).toBeTruthy();
+
+        fireEvent.click(unsetParentItem!);
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.parentId).toBeUndefined();
+            expect(useTaskStore.getState().contextMenu).toBeNull();
+        });
+    });
 });

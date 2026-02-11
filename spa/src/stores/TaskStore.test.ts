@@ -8,7 +8,8 @@ import { useUIStore } from './UIStore';
 vi.mock('../api/client', () => ({
     apiClient: {
         fetchData: vi.fn(),
-        updateTask: vi.fn()
+        updateTask: vi.fn(),
+        updateTaskFields: vi.fn()
     }
 }));
 
@@ -422,5 +423,54 @@ describe('TaskStore saveChanges ordering', () => {
         const [message, type] = addNotification.mock.calls[0];
         expect(String(message)).toContain('#child');
         expect(type).toBe('error');
+    });
+});
+
+describe('TaskStore drag parent updates', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        vi.mocked(apiClient.updateTaskFields).mockReset();
+    });
+
+    it('moveTaskToRoot updates only local state when autoSave is OFF', async () => {
+        const { setTasks, moveTaskToRoot } = useTaskStore.getState();
+
+        useTaskStore.setState({ autoSave: false });
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', displayOrder: 1 })
+        ]);
+
+        const result = await moveTaskToRoot('child');
+
+        expect(result.status).toBe('ok');
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBeUndefined();
+        expect(useTaskStore.getState().modifiedTaskIds.has('child')).toBe(true);
+        expect(vi.mocked(apiClient.updateTaskFields)).not.toHaveBeenCalled();
+    });
+
+    it('moveTaskToRoot sends parent_issue_id null when autoSave is ON', async () => {
+        const { setTasks, moveTaskToRoot } = useTaskStore.getState();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', displayOrder: 1, lockVersion: 2 })
+        ]);
+
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 3
+        });
+
+        const result = await moveTaskToRoot('child');
+
+        expect(result.status).toBe('ok');
+        expect(vi.mocked(apiClient.updateTaskFields)).toHaveBeenCalledWith('child', {
+            parent_issue_id: null,
+            lock_version: 2
+        });
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBeUndefined();
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.lockVersion).toBe(3);
     });
 });

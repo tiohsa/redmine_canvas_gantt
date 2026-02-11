@@ -13,6 +13,8 @@ export const HtmlOverlay: React.FC = () => {
     const relations = useTaskStore(state => state.relations);
     const setContextMenu = useTaskStore(state => state.setContextMenu);
     const refreshData = useTaskStore(state => state.refreshData);
+    const canDropToRoot = useTaskStore(state => state.canDropToRoot);
+    const moveTaskToRoot = useTaskStore(state => state.moveTaskToRoot);
     const viewport = useTaskStore(state => state.viewport);
     const zoomLevel = useTaskStore(state => state.zoomLevel);
     const rowCount = useTaskStore(state => state.rowCount);
@@ -237,6 +239,30 @@ export const HtmlOverlay: React.FC = () => {
         return qs ? `${basePath}?${qs}` : basePath;
     }, [contextTask?.projectId, fallbackProjectId]);
 
+    const handleUnsetParent = React.useCallback(async (taskId: string) => {
+        if (!canDropToRoot(taskId)) {
+            useUIStore.getState().addNotification(i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target', 'warning');
+            useTaskStore.getState().setContextMenu(null);
+            return;
+        }
+
+        const result = await moveTaskToRoot(taskId);
+        if (result.status === 'ok') {
+            useUIStore.getState().addNotification(i18n.t('label_parent_drop_unset_success') || 'Task parent removed', 'success');
+            useTaskStore.getState().setContextMenu(null);
+            return;
+        }
+
+        if (result.status === 'conflict') {
+            useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_conflict') || 'Task was updated by another user', 'error');
+            useTaskStore.getState().setContextMenu(null);
+            return;
+        }
+
+        useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_failed') || 'Failed to move task', 'error');
+        useTaskStore.getState().setContextMenu(null);
+    }, [canDropToRoot, moveTaskToRoot]);
+
     return (
         <div
             ref={overlayRef}
@@ -409,6 +435,19 @@ export const HtmlOverlay: React.FC = () => {
                             </svg>
                             {i18n.t('label_issue_new') || 'Add New Ticket'}
                         </div>
+
+                        {contextTask && canDropToRoot(contextTask.id) && (
+                            <div className="menu-item" data-testid="context-menu-unset-parent" onClick={() => {
+                                void handleUnsetParent(contextTask.id);
+                            }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M4 12h8" />
+                                    <path d="M9 7l-5 5 5 5" />
+                                    <path d="M20 7h-6a4 4 0 0 0-4 4" />
+                                </svg>
+                                {i18n.t('label_unset_parent_task') || 'Remove Parent'}
+                            </div>
+                        )}
 
                         <div className="menu-item danger" onClick={() => handleTaskDelete(contextMenu.taskId)}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>

@@ -101,6 +101,8 @@ class CanvasGanttsController < ApplicationController
     label_toggle_points_orphans: :label_toggle_points_orphans,
     label_points_short: :label_points_short,
     label_parent_drop_success: :label_parent_drop_success,
+    label_parent_drop_unset_success: :label_parent_drop_unset_success,
+    label_unset_parent_task: :label_unset_parent_task,
     label_parent_drop_invalid_target: :label_parent_drop_invalid_target,
     label_parent_drop_forbidden: :label_parent_drop_forbidden,
     label_parent_drop_conflict: :label_parent_drop_conflict,

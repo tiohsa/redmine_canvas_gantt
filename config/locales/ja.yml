@@ -75,6 +75,8 @@ ja:
   label_toggle_points_orphans: "開始日のみ・期日のみタスクの表示切替"
   label_points_short: "Pts"
   label_parent_drop_success: "タスクを子チケットとして移動しました"
+  label_parent_drop_unset_success: "子チケットを解除しました"
+  label_unset_parent_task: "子チケット解除"
   label_parent_drop_invalid_target: "このタスクにはドロップできません"
   label_parent_drop_forbidden: "親子関係を変更する権限がありません"
   label_parent_drop_conflict: "別の更新と競合しました。再読み込みしてください"
