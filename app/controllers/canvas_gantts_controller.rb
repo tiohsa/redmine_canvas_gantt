@@ -99,7 +99,12 @@ class CanvasGanttsController < ApplicationController
     label_show_versions: :label_show_versions,
     label_none: :label_none,
     label_toggle_points_orphans: :label_toggle_points_orphans,
-    label_points_short: :label_points_short
+    label_points_short: :label_points_short,
+    label_parent_drop_success: :label_parent_drop_success,
+    label_parent_drop_invalid_target: :label_parent_drop_invalid_target,
+    label_parent_drop_forbidden: :label_parent_drop_forbidden,
+    label_parent_drop_conflict: :label_parent_drop_conflict,
+    label_parent_drop_failed: :label_parent_drop_failed
   }.freeze
 
   ISSUE_INCLUDES = [
@@ -112,7 +117,7 @@ class CanvasGanttsController < ApplicationController
   ].freeze
   TASK_PERMITTED_ATTRIBUTES = %i[
     start_date due_date lock_version subject assigned_to_id status_id done_ratio priority_id
-    author_id category_id estimated_hours project_id tracker_id fixed_version_id
+    author_id category_id estimated_hours project_id tracker_id fixed_version_id parent_issue_id
   ].freeze
   CUSTOM_FIELD_FORMATS = %w[string int float list bool date text].freeze
 
@@ -204,13 +209,21 @@ class CanvasGanttsController < ApplicationController
     issue = Issue.visible.find(params[:id])
     return unless ensure_issue_in_scope(issue)
     return unless ensure_issue_editable(issue)
+    parent_issue = load_parent_issue(issue, params.dig(:task, :parent_issue_id))
+    return unless parent_issue != :invalid
 
     # Optimistic Locking Check handled by ActiveRecord automatically if lock_version is present
     issue.init_journal(User.current)
     issue.safe_attributes = permitted_task_params
 
     if issue.save
-      render json: { status: 'ok', lock_version: issue.lock_version }
+      render json: {
+        status: 'ok',
+        lock_version: issue.lock_version,
+        task_id: issue.id,
+        parent_id: issue.parent_id,
+        sibling_position: 'tail'
+      }
     else
       render json: { errors: issue.errors.full_messages }, status: :unprocessable_entity
     end
@@ -427,5 +440,33 @@ class CanvasGanttsController < ApplicationController
 
   def permitted_task_params
     params.require(:task).permit(*(TASK_PERMITTED_ATTRIBUTES + [{ custom_field_values: {} }]))
+  end
+
+  def load_parent_issue(source_issue, raw_parent_issue_id)
+    return nil if raw_parent_issue_id.blank?
+
+    parent_issue = Issue.visible.find(raw_parent_issue_id)
+    unless ensure_issue_in_scope(parent_issue)
+      return :invalid
+    end
+
+    if parent_issue.id == source_issue.id
+      render json: { errors: ['A task cannot be a child of itself.'] }, status: :unprocessable_entity
+      return :invalid
+    end
+
+    # No hierarchy change: keep current parent without failing cycle checks.
+    return parent_issue if source_issue.parent_id == parent_issue.id
+
+    # Reject only when trying to move under own descendant.
+    if source_issue.descendants.exists?(parent_issue.id)
+      render json: { errors: ['Cannot move a task under its own descendant.'] }, status: :unprocessable_entity
+      return :invalid
+    end
+
+    parent_issue
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: 'Parent task not found' }, status: :not_found
+    :invalid
   end
 end

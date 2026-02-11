@@ -150,6 +150,8 @@ export const UiSidebar: React.FC = () => {
     const toggleProjectExpansion = useTaskStore(state => state.toggleProjectExpansion);
     const toggleTaskExpansion = useTaskStore(state => state.toggleTaskExpansion);
     const toggleAllExpansion = useTaskStore(state => state.toggleAllExpansion);
+    const canDropAsChild = useTaskStore(state => state.canDropAsChild);
+    const moveTaskAsChild = useTaskStore(state => state.moveTaskAsChild);
     const visibleColumns = useUIStore(state => state.visibleColumns);
     const setActiveInlineEdit = useUIStore(state => state.setActiveInlineEdit);
     const activeInlineEdit = useUIStore(state => state.activeInlineEdit);
@@ -158,7 +160,55 @@ export const UiSidebar: React.FC = () => {
 
     const resizeRef = React.useRef<{ key: string; startX: number; startWidth: number } | null>(null);
     const [isResizingColumn, setIsResizingColumn] = React.useState(false);
+    const [draggingTaskId, setDraggingTaskId] = React.useState<string | null>(null);
+    const [dropTargetTaskId, setDropTargetTaskId] = React.useState<string | null>(null);
     const bodyStyleRef = React.useRef<{ cursor: string; userSelect: string } | null>(null);
+
+    const handleTaskDragStart = React.useCallback((taskId: string, e: React.DragEvent<HTMLDivElement>) => {
+        setDraggingTaskId(taskId);
+        setDropTargetTaskId(null);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', taskId);
+    }, []);
+
+    const handleTaskDragOver = React.useCallback((targetTaskId: string, e: React.DragEvent<HTMLDivElement>) => {
+        const sourceTaskId = draggingTaskId || e.dataTransfer.getData('text/plain');
+        if (!sourceTaskId) return;
+        if (!canDropAsChild(sourceTaskId, targetTaskId)) {
+            e.dataTransfer.dropEffect = 'none';
+            if (dropTargetTaskId) setDropTargetTaskId(null);
+            return;
+        }
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dropTargetTaskId !== targetTaskId) {
+            setDropTargetTaskId(targetTaskId);
+        }
+    }, [canDropAsChild, draggingTaskId, dropTargetTaskId]);
+
+    const handleTaskDrop = React.useCallback(async (targetTaskId: string, e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        const sourceTaskId = draggingTaskId || e.dataTransfer.getData('text/plain');
+        setDropTargetTaskId(null);
+        setDraggingTaskId(null);
+        if (!sourceTaskId || !canDropAsChild(sourceTaskId, targetTaskId)) {
+            useUIStore.getState().addNotification(i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target', 'warning');
+            return;
+        }
+
+        const result = await moveTaskAsChild(sourceTaskId, targetTaskId);
+        if (result.status === 'ok') {
+            useUIStore.getState().addNotification(i18n.t('label_parent_drop_success') || 'Task moved as child', 'success');
+            return;
+        }
+
+        if (result.status === 'conflict') {
+            useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_conflict') || 'Task was updated by another user', 'error');
+            return;
+        }
+
+        useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_failed') || 'Failed to move task', 'error');
+    }, [canDropAsChild, draggingTaskId, moveTaskAsChild]);
 
     React.useEffect(() => {
         const onMouseMove = (e: MouseEvent) => {
@@ -1029,12 +1079,21 @@ export const UiSidebar: React.FC = () => {
                         const task = taskMap.get(row.taskId);
                         if (!task) return null;
                         const isSelected = task.id === selectedTaskId;
+                        const isDropTarget = dropTargetTaskId === task.id;
                         const meta = editMetaByTaskId[task.id];
 
                         return (
                             <div
                                 key={task.id}
                                 data-testid={`task-row-${task.id}`}
+                                draggable={task.editable}
+                                onDragStart={(e) => handleTaskDragStart(task.id, e)}
+                                onDragOver={(e) => handleTaskDragOver(task.id, e)}
+                                onDrop={(e) => { void handleTaskDrop(task.id, e); }}
+                                onDragEnd={() => {
+                                    setDraggingTaskId(null);
+                                    setDropTargetTaskId(null);
+                                }}
                                 onClick={() => {
                                     if (activeInlineEdit && activeInlineEdit.taskId !== task.id) {
                                         setActiveInlineEdit(null);
@@ -1050,8 +1109,9 @@ export const UiSidebar: React.FC = () => {
                                     width: '100%',
                                     display: 'flex',
                                     borderBottom: '1px solid #f1f3f4',
-                                    backgroundColor: isSelected ? '#e8f0fe' : 'transparent',
-                                    cursor: 'pointer',
+                                    backgroundColor: isDropTarget ? '#e6f4ea' : (isSelected ? '#e8f0fe' : 'transparent'),
+                                    boxShadow: isDropTarget ? 'inset 0 0 0 1px #34a853' : 'none',
+                                    cursor: task.editable ? 'grab' : 'pointer',
                                     fontSize: '13px',
                                     color: '#3c4043',
                                     transition: 'background-color 0.2s, color 0.2s'

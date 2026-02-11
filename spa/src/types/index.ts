@@ -92,3 +92,16 @@ export type LayoutRow =
 
 export type ZoomLevel = 0 | 1 | 2;
 export type ViewMode = 'Day' | 'Week' | 'Month' | 'Quarter'; // Keeping for potential backward compact, but aim to use ZoomLevel
+
+export interface MoveTaskAsChildPayload {
+    sourceTaskId: string;
+    targetTaskId: string;
+}
+
+export interface MoveTaskAsChildResult {
+    status: 'ok' | 'conflict' | 'error';
+    lockVersion?: number;
+    parentId?: string;
+    siblingPosition?: 'tail';
+    error?: string;
+}

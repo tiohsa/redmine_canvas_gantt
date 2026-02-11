@@ -80,9 +80,10 @@ Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering 
    - Click **Canvas Gantt** in the project menu.
 
 5. **Interact**
-   - Zoom with Ctrl/Cmd + mouse wheel or toolbar buttons.
-   - Drag tasks to move; drag edges to resize.
-   - Drag from the endpoint dot to create dependencies.
+- Zoom with Ctrl/Cmd + mouse wheel or toolbar buttons.
+- Drag tasks to move; drag edges to resize.
+- Drag a task row onto another task row in the sidebar to make it a child issue.
+- Drag from the endpoint dot to create dependencies.
 
 ## Configuration
 

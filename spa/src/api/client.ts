@@ -45,6 +45,9 @@ interface ApiData {
 interface UpdateTaskResult {
     status: 'ok' | 'conflict' | 'error';
     lockVersion?: number;
+    taskId?: string;
+    parentId?: string;
+    siblingPosition?: 'tail';
     error?: string;
 }
 
@@ -403,6 +406,7 @@ export const apiClient = {
                 task: {
                     start_date: (task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toISOString().split('T')[0] : null,
                     due_date: (task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toISOString().split('T')[0] : null,
+                    parent_issue_id: task.parentId ? Number(task.parentId) : null,
                     lock_version: task.lockVersion
                 }
             })
@@ -417,7 +421,13 @@ export const apiClient = {
         }
 
         const data = await response.json();
-        return { status: 'ok', lockVersion: data.lock_version };
+        return {
+            status: 'ok',
+            lockVersion: data.lock_version,
+            taskId: data.task_id ? String(data.task_id) : String(task.id),
+            parentId: data.parent_id ? String(data.parent_id) : undefined,
+            siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined
+        };
     },
 
     updateTaskFields: async (taskId: string, fields: Record<string, unknown>): Promise<UpdateTaskResult> => {
@@ -445,7 +455,13 @@ export const apiClient = {
         }
 
         const data = await response.json();
-        return { status: 'ok', lockVersion: data.lock_version };
+        return {
+            status: 'ok',
+            lockVersion: data.lock_version,
+            taskId: data.task_id ? String(data.task_id) : String(taskId),
+            parentId: data.parent_id ? String(data.parent_id) : undefined,
+            siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined
+        };
     },
 
     createRelation: async (fromId: string, toId: string, type: string): Promise<Relation> => {

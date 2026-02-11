@@ -1,0 +1,33 @@
+.codex
+.specify
+specs
+# Ruby
+.bundle/
+log/
+tmp/
+vendor/bundle/
+*.gem
+
+# Node / TypeScript
+node_modules/
+spa/node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env*
+
+# Test / coverage
+coverage/
+spa/coverage/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/

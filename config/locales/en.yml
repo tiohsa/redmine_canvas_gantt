@@ -72,3 +72,8 @@ en:
   label_none: "(No version)"
   label_toggle_points_orphans: "Toggle Orphan Date Points"
   label_points_short: "Pts"
+  label_parent_drop_success: "Task moved under target task"
+  label_parent_drop_invalid_target: "Cannot drop onto this task"
+  label_parent_drop_forbidden: "You do not have permission to change task hierarchy"
+  label_parent_drop_conflict: "Task was updated by another user. Please reload."
+  label_parent_drop_failed: "Failed to update task hierarchy"

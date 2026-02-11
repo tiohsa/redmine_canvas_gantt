@@ -1,0 +1,7 @@
+node_modules/
+spa/node_modules/
+dist/
+build/
+coverage/
+*.min.js
+assets/build/
