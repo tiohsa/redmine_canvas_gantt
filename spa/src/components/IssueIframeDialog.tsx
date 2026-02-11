@@ -2,20 +2,98 @@ import React from 'react';
 import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
-import { applyIssueDialogStyles, findIssueDialogErrorElement, getIssueDialogErrorMessage } from '../utils/iframeStyles';
+import { applyIssueDialogStyles, getIssueDialogErrorMessage } from '../utils/iframeStyles';
+import { BulkSubtaskCreator } from './BulkSubtaskCreator';
+import type { BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
 
 export const IssueIframeDialog: React.FC = () => {
     const issueDialogUrl = useUIStore(state => state.issueDialogUrl);
     const closeIssueDialog = useUIStore(state => state.closeIssueDialog);
     const refreshData = useTaskStore(state => state.refreshData);
     const iframeRef = React.useRef<HTMLIFrameElement>(null);
+    const bulkRef = React.useRef<BulkSubtaskCreatorHandle>(null);
     const iframeEscapeCleanupRef = React.useRef<(() => void) | null>(null);
     const [iframeError, setIframeError] = React.useState<string | null>(null);
+    const [isSaving, setIsSaving] = React.useState(false);
 
     const handleClose = React.useCallback(() => {
         closeIssueDialog();
         void refreshData();
     }, [closeIssueDialog, refreshData]);
+
+    const handleIframeLoad = React.useCallback(async () => {
+        try {
+            const iframe = iframeRef.current;
+            if (!iframe) return;
+
+            const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+            if (!doc) return;
+
+            applyIssueDialogStyles(doc);
+
+            const iframeWindow = iframe.contentWindow;
+            if (iframeWindow && typeof iframeWindow.addEventListener === 'function') {
+                iframeEscapeCleanupRef.current?.();
+                const handleIframeEscape = (event: KeyboardEvent) => {
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleClose();
+                    }
+                };
+                iframeWindow.addEventListener('keydown', handleIframeEscape, true);
+                iframeEscapeCleanupRef.current = () => {
+                    iframeWindow.removeEventListener('keydown', handleIframeEscape, true);
+                };
+            }
+
+            const currentUrl = iframeWindow?.location.href || '';
+
+            const error = getIssueDialogErrorMessage(doc);
+            setIframeError(error);
+
+            // If we were saving and there are no errors, and the URL changed to /issues/XXX
+            if (isSaving && !error) {
+                const urlParsed = new URL(currentUrl, window.location.origin);
+                const path = urlParsed.pathname;
+
+                const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
+                if (issueMatch && !path.includes('/edit') && !path.includes('/new')) {
+                    const newIssueId = issueMatch[1];
+
+                    if (bulkRef.current?.hasSubjects()) {
+                        await bulkRef.current.createSubtasks(newIssueId);
+                    }
+
+                    setIsSaving(false);
+                    handleClose();
+                    return;
+                }
+            }
+
+            if (isSaving && error) {
+                setIsSaving(false);
+            }
+        } catch (e) {
+            console.debug("Could not verify iframe URL", e);
+        }
+    }, [handleClose, isSaving]);
+
+    const handleSave = React.useCallback(() => {
+        const doc = iframeRef.current?.contentDocument;
+        if (!doc) return;
+
+        const form = doc.querySelector('#issue-form') as HTMLFormElement;
+        if (form) {
+            setIsSaving(true);
+            const submitBtn = doc.querySelector('#issue-form input[name="commit"]') as HTMLElement;
+            if (submitBtn) {
+                submitBtn.click();
+            } else {
+                form.submit();
+            }
+        }
+    }, []);
 
     const issueLabel = React.useMemo(() => {
         if (!issueDialogUrl) return '';
@@ -41,6 +119,46 @@ export const IssueIframeDialog: React.FC = () => {
 
         // 3. General "Edit" fallback
         return i18n.t('button_edit') || 'Edit';
+    }, [issueDialogUrl]);
+
+    const { projectId, parentId } = React.useMemo(() => {
+        if (!issueDialogUrl) return { projectId: '', parentId: undefined };
+
+        try {
+            const urlParsed = new URL(issueDialogUrl, window.location.origin);
+            const path = urlParsed.pathname;
+            const params = urlParsed.searchParams;
+
+            let pId = '';
+            let paId = params.get('issue[parent_issue_id]') || params.get('parent_issue_id') || undefined;
+
+            // Extract project from /projects/xxx/issues/new
+            const projectMatch = path.match(/\/projects\/([^/]+)\/issues\/new/);
+            if (projectMatch) {
+                pId = projectMatch[1];
+            } else {
+                // Fallback to global project ID if not in URL
+                pId = String(window.RedmineCanvasGantt?.projectId || '');
+            }
+
+            // Extract issue ID from /issues/123/edit to use as parentId for subtasks
+            const issueMatch = path.match(/\/issues\/(\d+)(?:\/edit)?/);
+            if (issueMatch) {
+                const issueId = issueMatch[1];
+                // If it's an edit page, the issue itself is the parent for new subtasks
+                if (path.includes('/edit')) {
+                    paId = issueId;
+                }
+            }
+
+            return { projectId: pId, parentId: paId };
+        } catch (e) {
+            console.error("Failed to parse issue dialog URL", e);
+            return {
+                projectId: String(window.RedmineCanvasGantt?.projectId || ''),
+                parentId: undefined
+            };
+        }
     }, [issueDialogUrl]);
 
     React.useEffect(() => {
@@ -77,65 +195,6 @@ export const IssueIframeDialog: React.FC = () => {
 
     if (!issueDialogUrl) return null;
 
-    const handleIframeLoad = () => {
-        try {
-            const iframe = iframeRef.current;
-            if (!iframe) return;
-
-            const iframeDocument = iframe.contentDocument ?? iframe.contentWindow?.document;
-            if (iframeDocument) {
-                applyIssueDialogStyles(iframeDocument);
-
-                const iframeWindow = iframe.contentWindow;
-                if (iframeWindow && typeof iframeWindow.addEventListener === 'function' && typeof iframeWindow.removeEventListener === 'function') {
-                    iframeEscapeCleanupRef.current?.();
-                    const handleIframeEscape = (event: KeyboardEvent) => {
-                        if (event.key !== 'Escape') {
-                            return;
-                        }
-
-                        event.preventDefault();
-                        event.stopPropagation();
-                        handleClose();
-                    };
-                    iframeWindow.addEventListener('keydown', handleIframeEscape, true);
-                    iframeEscapeCleanupRef.current = () => {
-                        iframeWindow.removeEventListener('keydown', handleIframeEscape, true);
-                    };
-                }
-
-                const errorElement = findIssueDialogErrorElement(iframeDocument);
-                if (errorElement) {
-                    const message = getIssueDialogErrorMessage(iframeDocument)
-                        || i18n.t('label_issue_dialog_error')
-                        || 'Unable to load the issue editor';
-                    setIframeError(message);
-                } else {
-                    setIframeError(null);
-                }
-            }
-
-            // Only works if same-origin. 
-            // If it redirected to an issue page (view mode instead of edit/new), 
-            // we can trigger a refresh.
-            const currentUrl = iframe.contentWindow?.location.href;
-            if (currentUrl) {
-                const isEdit = currentUrl.includes('/edit');
-                const isNew = currentUrl.includes('/new');
-                const isIssuesList = currentUrl.endsWith('/issues');
-
-                // If we are no longer in edit/new mode, but still on Redmine,
-                // it's likely a redirect after save.
-                if (!isEdit && !isNew && !isIssuesList) {
-                    void refreshData();
-                }
-            }
-        } catch (e) {
-            // cross-origin error or similar, fallback to refresh on manual close
-            console.debug("Could not verify iframe URL", e);
-        }
-    };
-
     return (
         <div
             style={{
@@ -163,20 +222,23 @@ export const IssueIframeDialog: React.FC = () => {
                     height: '95vh',
                     backgroundColor: 'white',
                     borderRadius: '6px',
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.05)',
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
                     display: 'flex',
                     flexDirection: 'column',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    boxSizing: 'border-box'
                 }}
             >
-                {/* Header */}
+                {/* Header - Fixed Height */}
                 <div
                     style={{
+                        flex: '0 0 auto',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '16px 24px',
-                        backgroundColor: '#ffffff'
+                        backgroundColor: '#ffffff',
+                        borderBottom: '1px solid #e0e0e0'
                     }}
                 >
                     <span style={{ fontWeight: 700, fontSize: '18px', color: '#333' }}>
@@ -187,22 +249,17 @@ export const IssueIframeDialog: React.FC = () => {
                             href={issueDialogUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            onClick={() => {
-                                // Close the dialog when opening in a new tab
-                                handleClose();
-                            }}
+                            onClick={() => handleClose()}
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 width: '32px',
                                 height: '32px',
-                                padding: 0,
                                 borderRadius: '6px',
                                 border: '1px solid #e0e0e0',
                                 backgroundColor: '#fff',
-                                color: '#333',
-                                cursor: 'pointer'
+                                color: '#333'
                             }}
                         >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -220,12 +277,10 @@ export const IssueIframeDialog: React.FC = () => {
                                 justifyContent: 'center',
                                 width: '32px',
                                 height: '32px',
-                                padding: 0,
                                 borderRadius: '6px',
                                 border: '1px solid #e0e0e0',
                                 backgroundColor: '#fff',
-                                color: '#333',
-                                cursor: 'pointer'
+                                color: '#333'
                             }}
                         >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -236,12 +291,13 @@ export const IssueIframeDialog: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Iframe Content */}
-                <div style={{ flex: 1, position: 'relative' }}>
+                {/* Body Content - Scrollable if Iframe is big (though Iframe has internal scroll) */}
+                <div style={{ flex: '1 1 auto', position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
                     {iframeError ? (
                         <div
                             data-testid="issue-dialog-error"
                             style={{
+                                flex: '0 0 auto',
                                 padding: '12px 16px',
                                 backgroundColor: '#fdecea',
                                 color: '#b71c1c',
@@ -259,9 +315,78 @@ export const IssueIframeDialog: React.FC = () => {
                         style={{
                             width: '100%',
                             height: '100%',
-                            border: 'none'
+                            border: 'none',
+                            flex: 1
                         }}
                     />
+                </div>
+
+                {/* Bulk Creation Section - Fixed Height */}
+                <div style={{ flex: '0 0 auto', padding: '12px 24px 0 24px', backgroundColor: '#fff', borderTop: '1px solid #e0e0e0' }}>
+                    <BulkSubtaskCreator
+                        ref={bulkRef}
+                        projectId={projectId}
+                        parentId={parentId}
+                        hideStandaloneButton={true}
+                        showTopBorder={false}
+                        onTasksCreated={() => {
+                            void refreshData();
+                        }}
+                    />
+                </div>
+
+                {/* Footer Buttons - Fixed Height */}
+                <div style={{
+                    flex: '0 0 auto',
+                    padding: '12px 24px 24px 24px', // More bottom padding to prevent cutting
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: '12px',
+                    backgroundColor: '#fff'
+                }}>
+                    <button
+                        onClick={handleClose}
+                        disabled={isSaving}
+                        style={{
+                            height: '36px',
+                            padding: '0 16px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: '#fff',
+                            color: '#333',
+                            border: '1px solid #ccc',
+                            borderRadius: 4,
+                            fontSize: 14,
+                            cursor: isSaving ? 'default' : 'pointer',
+                            minWidth: '100px',
+                            boxSizing: 'border-box'
+                        }}
+                    >
+                        {i18n.t('button_cancel') || 'Cancel'}
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        disabled={isSaving}
+                        style={{
+                            height: '36px',
+                            padding: '0 16px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: isSaving ? '#ccc' : '#1a73e8',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: 4,
+                            fontSize: 14,
+                            fontWeight: 600,
+                            cursor: isSaving ? 'default' : 'pointer',
+                            minWidth: '100px',
+                            boxSizing: 'border-box'
+                        }}
+                    >
+                        {isSaving ? (i18n.t('label_loading') || 'Saving...') : (i18n.t('button_save') || 'Save')}
+                    </button>
                 </div>
             </div>
         </div>

@@ -11,7 +11,14 @@ const ISSUE_DIALOG_HIDE_SELECTORS = [
     // '#content > .tabs > ul li',
     // '#content .tabs > ul',
     // '#content .tabs > ul li',
-    '#content > h2'
+    '#content > h2',
+    '#content > .contextual',
+    'p.buttons',
+    '.buttons',
+    '#issue-form > input[type="submit"]',
+    '#issue-form > a[href*="preview"]',
+    '#issue-form a[href*="/issues"]',
+    '#issue-form a[onclick*="history.back"]'
 ];
 
 const ISSUE_DIALOG_CSS = `

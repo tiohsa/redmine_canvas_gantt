@@ -106,7 +106,14 @@ class CanvasGanttsController < ApplicationController
     label_parent_drop_invalid_target: :label_parent_drop_invalid_target,
     label_parent_drop_forbidden: :label_parent_drop_forbidden,
     label_parent_drop_conflict: :label_parent_drop_conflict,
-    label_parent_drop_failed: :label_parent_drop_failed
+    label_parent_drop_failed: :label_parent_drop_failed,
+    label_issue: :label_issue,
+    label_new: :label_new,
+    label_bulk_subtask_creation: :label_bulk_subtask_creation,
+    placeholder_bulk_subtask_creation: :placeholder_bulk_subtask_creation,
+    label_bulk_subtask_creation_success: :label_bulk_subtask_creation_success,
+    label_bulk_subtask_creation_partial_fail: :label_bulk_subtask_creation_partial_fail,
+    button_create: :button_create
   }.freeze
 
   ISSUE_INCLUDES = [
