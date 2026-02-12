@@ -84,9 +84,11 @@ jobs:
             role.permissions = (role.permissions + [:view_canvas_gantt, :edit_canvas_gantt]).uniq
             role.save!
 
-            Member.find_or_create_by!(project: project, user_id: 1) do |m|
-              m.role_ids = [role.id]
-            end
+            member = Member.find_or_initialize_by(project: project, user_id: 1)
+            member.role_ids = [role.id]
+            member.save!
+
+            Setting.rest_api_enabled = '1'
           "
 
       - name: Run Redmine E2E tests
