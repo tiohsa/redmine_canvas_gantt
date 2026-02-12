@@ -140,6 +140,21 @@ class CanvasGanttsController < ApplicationController
   before_action :set_permissions
   before_action :ensure_view_permission, only: [:index, :data, :edit_meta]
   before_action :ensure_edit_permission, only: [:update, :destroy_relation]
+  skip_forgery_protection only: [:asset]
+  skip_before_action :find_project_by_project_id, :set_permissions, only: [:asset]
+
+  # GET /plugin_assets/redmine_canvas_gantt/build/*asset_path
+  # Fallback asset delivery when public/plugin_assets static serving is disabled.
+  def asset
+    relative_path = params[:asset_path].to_s
+    return head :not_found if relative_path.blank? || relative_path.include?('..')
+
+    build_root = Rails.root.join('plugins', 'redmine_canvas_gantt', 'assets', 'build').to_s
+    file_path = File.expand_path(relative_path, build_root)
+    return head :not_found unless file_path.start_with?("#{build_root}/") && File.file?(file_path)
+
+    send_file file_path, type: Rack::Mime.mime_type(File.extname(file_path), 'application/octet-stream'), disposition: 'inline'
+  end
 
   # GET /projects/:project_id/canvas_gantt
   def index
