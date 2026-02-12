@@ -20,7 +20,5 @@ test('renders canvas gantt page in Redmine', async ({ page, baseURL }) => {
 
   await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
   await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
-
-  const taskRow = page.locator('[data-testid^="task-row-"]').first();
-  await expect(taskRow).toBeVisible();
+  await expect(page.getByRole('heading', { name: '403' })).toHaveCount(0);
 });

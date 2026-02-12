@@ -58,22 +58,11 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Start Redmine stack
-        working-directory: .
-        run: docker compose up -d
-
-      - name: Wait for Redmine
+      - name: Start Redmine stack and wait for health
         working-directory: .
         run: |
-          for i in {1..60}; do
-            if curl -fsS http://127.0.0.1:3000/login >/dev/null; then
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Redmine did not become ready in time"
-          docker compose logs redmine
-          exit 1
+          docker compose up -d --wait --wait-timeout 600
+          docker compose ps
 
       - name: Load Redmine default data
         working-directory: .
@@ -82,6 +71,23 @@ jobs:
       - name: Load Redmine fixtures
         working-directory: .
         run: docker compose exec -T redmine bundle exec rake db:fixtures:load
+
+      - name: Enable Canvas Gantt in test project
+        working-directory: .
+        run: |
+          docker compose exec -T redmine bundle exec rails runner "
+            project = Project.find_by!(identifier: 'ecookbook')
+            project.enabled_module_names = (project.enabled_module_names + ['canvas_gantt']).uniq
+            project.save!
+
+            role = Role.find_by(name: 'Manager') || Role.first
+            role.permissions = (role.permissions + [:view_canvas_gantt, :edit_canvas_gantt]).uniq
+            role.save!
+
+            Member.find_or_create_by!(project: project, user_id: 1) do |m|
+              m.role_ids = [role.id]
+            end
+          "
 
       - name: Run Redmine E2E tests
         run: npx playwright test -c playwright.redmine.config.ts
