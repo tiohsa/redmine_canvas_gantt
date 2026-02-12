@@ -38,13 +38,24 @@ begin
   public_build_dir = Rails.root.join('public', 'plugin_assets', 'redmine_canvas_gantt', 'build')
 
   if File.directory?(plugin_build_dir)
-    # Skip if already linked or copied
-    unless File.exist?(public_build_dir) || File.symlink?(public_build_dir)
-      FileUtils.mkdir_p(public_build_dir.parent)
+    FileUtils.mkdir_p(public_build_dir.parent)
+
+    if File.symlink?(public_build_dir)
+      # Refresh an outdated symlink target.
+      link_target = File.realpath(public_build_dir) rescue nil
+      unless link_target == plugin_build_dir.to_s
+        FileUtils.rm_f(public_build_dir)
+        FileUtils.ln_s(plugin_build_dir, public_build_dir)
+      end
+    elsif File.exist?(public_build_dir)
+      # Keep copied assets in sync when symlink is unavailable.
+      FileUtils.rm_rf(public_build_dir)
+      FileUtils.cp_r(plugin_build_dir, public_build_dir)
+    else
       begin
-        FileUtils.ln_sf(plugin_build_dir, public_build_dir)
+        FileUtils.ln_s(plugin_build_dir, public_build_dir)
       rescue Errno::EPERM, Errno::EACCES
-        # Symlink failed (e.g., Docker volume), fall back to copying
+        # Symlink failed (e.g., Docker volume), fall back to copying.
         FileUtils.cp_r(plugin_build_dir, public_build_dir)
       end
     end
