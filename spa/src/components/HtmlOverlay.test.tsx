@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { HtmlOverlay } from './HtmlOverlay';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
@@ -150,8 +150,8 @@ describe('HtmlOverlay', () => {
             useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '1' });
         });
 
-        const { container } = render(<HtmlOverlay />);
-        const removeItem = container.querySelector('[data-testid="remove-relation-rel-1"]');
+        render(<HtmlOverlay />);
+        const removeItem = screen.getByTestId('remove-relation-rel-1');
         expect(removeItem).toBeTruthy();
 
         fireEvent.click(removeItem!);
@@ -169,8 +169,8 @@ describe('HtmlOverlay', () => {
             useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '1' });
         });
 
-        const { container } = render(<HtmlOverlay />);
-        const addChildItem = container.querySelector('[data-testid="context-menu-add-child-task"]');
+        render(<HtmlOverlay />);
+        const addChildItem = screen.getByTestId('context-menu-add-child-task');
         expect(addChildItem).toBeTruthy();
 
         fireEvent.click(addChildItem!);
@@ -188,8 +188,8 @@ describe('HtmlOverlay', () => {
             useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '10' });
         });
 
-        const { container } = render(<HtmlOverlay />);
-        const unsetParentItem = container.querySelector('[data-testid="context-menu-unset-parent"]');
+        render(<HtmlOverlay />);
+        const unsetParentItem = screen.getByTestId('context-menu-unset-parent');
         expect(unsetParentItem).toBeTruthy();
 
         fireEvent.click(unsetParentItem!);
@@ -207,8 +207,8 @@ describe('HtmlOverlay', () => {
             useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '20' });
         });
 
-        const { container } = render(<HtmlOverlay />);
-        const unsetParentItem = container.querySelector('[data-testid="context-menu-unset-parent"]');
+        render(<HtmlOverlay />);
+        const unsetParentItem = screen.queryByTestId('context-menu-unset-parent');
         expect(unsetParentItem).toBeNull();
     });
 });
