@@ -275,6 +275,37 @@ describe('TaskStore project filter with subproject toggle', () => {
     });
 });
 
+describe('TaskStore context category menu', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('setContextCategoryMenu updates open/pinned state', () => {
+        const { setContextCategoryMenu } = useTaskStore.getState();
+        setContextCategoryMenu({ taskId: '1', open: true, pinned: true });
+
+        const state = useTaskStore.getState().contextCategoryMenu;
+        expect(state.taskId).toBe('1');
+        expect(state.open).toBe(true);
+        expect(state.pinned).toBe(true);
+    });
+
+    it('clearContextCategoryMenu resets menu state', () => {
+        const { setContextCategoryMenu, clearContextCategoryMenu } = useTaskStore.getState();
+        setContextCategoryMenu({ taskId: '1', open: true, pinned: true, loading: true, options: [{ id: 1, name: 'A' }] });
+        clearContextCategoryMenu();
+
+        expect(useTaskStore.getState().contextCategoryMenu).toEqual({
+            taskId: null,
+            open: false,
+            pinned: false,
+            loading: false,
+            disabled: false,
+            options: []
+        });
+    });
+});
+
 describe('TaskStore dependency grouping', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);

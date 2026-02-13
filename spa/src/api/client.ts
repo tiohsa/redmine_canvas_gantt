@@ -47,6 +47,8 @@ interface UpdateTaskResult {
     lockVersion?: number;
     taskId?: string;
     parentId?: string;
+    categoryId?: number | null;
+    categoryName?: string | null;
     siblingPosition?: 'tail';
     error?: string;
 }
@@ -426,6 +428,8 @@ export const apiClient = {
             lockVersion: data.lock_version,
             taskId: data.task_id ? String(data.task_id) : String(task.id),
             parentId: data.parent_id ? String(data.parent_id) : undefined,
+            categoryId: typeof data.category_id === 'number' ? data.category_id : null,
+            categoryName: typeof data.category_name === 'string' ? data.category_name : null,
             siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined
         };
     },
@@ -460,6 +464,8 @@ export const apiClient = {
             lockVersion: data.lock_version,
             taskId: data.task_id ? String(data.task_id) : String(taskId),
             parentId: data.parent_id ? String(data.parent_id) : undefined,
+            categoryId: typeof data.category_id === 'number' ? data.category_id : null,
+            categoryName: typeof data.category_name === 'string' ? data.category_name : null,
             siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined
         };
     },

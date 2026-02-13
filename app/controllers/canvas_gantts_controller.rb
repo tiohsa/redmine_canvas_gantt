@@ -107,6 +107,8 @@ class CanvasGanttsController < ApplicationController
     label_parent_drop_forbidden: :label_parent_drop_forbidden,
     label_parent_drop_conflict: :label_parent_drop_conflict,
     label_parent_drop_failed: :label_parent_drop_failed,
+    label_category_assignment_forbidden: :label_category_assignment_forbidden,
+    label_no_assignable_categories: :label_no_assignable_categories,
     label_issue: :label_issue,
     label_new: :label_new,
     label_bulk_subtask_creation: :label_bulk_subtask_creation,
@@ -213,7 +215,7 @@ class CanvasGanttsController < ApplicationController
         statuses: statuses.map { |s| { id: s.id, name: s.name } },
         assignees: assignables.map { |u| { id: u.id, name: u.name } },
         priorities: IssuePriority.active.map { |p| { id: p.id, name: p.name } },
-        categories: issue.project.issue_categories.map { |c| { id: c.id, name: c.name } },
+        categories: available_categories_for(issue, field_editable).map { |c| { id: c.id, name: c.name } },
         projects: Project.allowed_to(:add_issues).active.map { |p| { id: p.id, name: p.name } },
         trackers: issue.project.trackers.map { |t| { id: t.id, name: t.name } },
         versions: issue.project.shared_versions.map { |v| { id: v.id, name: v.name } },
@@ -233,6 +235,7 @@ class CanvasGanttsController < ApplicationController
     issue = Issue.visible.find(params[:id])
     return unless ensure_issue_in_scope(issue)
     return unless ensure_issue_editable(issue)
+    return unless ensure_category_updatable(issue)
     parent_issue = load_parent_issue(issue, params.dig(:task, :parent_issue_id))
     return unless parent_issue != :invalid
 
@@ -245,6 +248,8 @@ class CanvasGanttsController < ApplicationController
         status: 'ok',
         lock_version: issue.lock_version,
         task_id: issue.id,
+        category_id: issue.category_id,
+        category_name: issue.category&.name,
         parent_id: issue.parent_id,
         sibling_position: 'tail'
       }
@@ -417,10 +422,36 @@ class CanvasGanttsController < ApplicationController
     false
   end
 
+  def ensure_category_updatable(issue)
+    raw_task = params[:task]
+    return true unless raw_task.is_a?(ActionController::Parameters) || raw_task.is_a?(Hash)
+    return true unless raw_task.key?(:category_id) || raw_task.key?('category_id')
+
+    unless issue.safe_attribute?('category_id')
+      render json: { error: 'Permission denied' }, status: :forbidden
+      return false
+    end
+
+    requested_category_id = raw_task[:category_id] || raw_task['category_id']
+    return true if requested_category_id.nil? || requested_category_id == ''
+
+    category = issue.project.issue_categories.find_by(id: requested_category_id)
+    return true if category
+
+    render json: { errors: ['Category is not assignable to this task.'] }, status: :unprocessable_entity
+    false
+  end
+
   def build_field_editable(issue, editable)
     EDITABLE_FIELDS.each_with_object({}) do |field, result|
       result[field] = editable && issue.safe_attribute?(field.to_s)
     end
+  end
+
+  def available_categories_for(issue, field_editable)
+    return [] unless field_editable[:category_id]
+
+    issue.project.issue_categories.to_a
   end
 
   def inline_custom_fields_enabled?

@@ -105,3 +105,18 @@ export interface MoveTaskAsChildResult {
     siblingPosition?: 'tail';
     error?: string;
 }
+
+export interface ContextCategoryOption {
+    id: number;
+    name: string;
+}
+
+export interface ContextCategoryMenuState {
+    taskId: string | null;
+    open: boolean;
+    pinned: boolean;
+    loading: boolean;
+    disabled: boolean;
+    disabledReason?: string;
+    options: ContextCategoryOption[];
+}

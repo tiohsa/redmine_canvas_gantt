@@ -10,9 +10,12 @@ import { RelationType } from '../types/constraints';
 vi.mock('../api/client', () => ({
     apiClient: {
         fetchData: vi.fn(),
+        fetchEditMeta: vi.fn(),
         updateTask: vi.fn(),
+        updateTaskFields: vi.fn(),
         createRelation: vi.fn(),
-        deleteRelation: vi.fn()
+        deleteRelation: vi.fn(),
+        deleteTask: vi.fn()
     }
 }));
 
@@ -64,6 +67,8 @@ describe('HtmlOverlay', () => {
     beforeEach(() => {
         vi.mocked(apiClient.createRelation).mockReset();
         vi.mocked(apiClient.fetchData).mockReset();
+        vi.mocked(apiClient.fetchEditMeta).mockReset();
+        vi.mocked(apiClient.updateTaskFields).mockReset();
         useUIStore.setState({ issueDialogUrl: null });
         useTaskStore.setState({
             tasks: [],
@@ -210,5 +215,52 @@ describe('HtmlOverlay', () => {
         render(<HtmlOverlay />);
         const unsetParentItem = screen.queryByTestId('context-menu-unset-parent');
         expect(unsetParentItem).toBeNull();
+    });
+
+    it('opens category submenu and applies selected category', async () => {
+        vi.mocked(apiClient.fetchEditMeta).mockResolvedValue({
+            task: { id: '1', subject: 'Task 1', assignedToId: null, statusId: 1, doneRatio: 0, dueDate: null, startDate: null, priorityId: 1, categoryId: null, estimatedHours: null, projectId: 1, trackerId: 1, fixedVersionId: null, lockVersion: 0 },
+            editable: { subject: true, assignedToId: true, statusId: true, doneRatio: true, dueDate: true, startDate: true, priorityId: true, categoryId: true, estimatedHours: true, projectId: true, trackerId: true, fixedVersionId: true, customFieldValues: false },
+            options: { statuses: [], assignees: [], priorities: [], categories: [{ id: 10, name: 'Cat-A' }], projects: [], trackers: [], versions: [], customFields: [] },
+            customFieldValues: {}
+        });
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 2, taskId: '1' });
+
+        act(() => {
+            useTaskStore.getState().setTasks([task1]);
+            useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '1' });
+        });
+
+        render(<HtmlOverlay />);
+        fireEvent.click(screen.getByTestId('context-menu-category'));
+
+        const option = await screen.findByTestId('context-menu-category-option-10');
+        fireEvent.click(option);
+
+        await waitFor(() => {
+            expect(apiClient.updateTaskFields).toHaveBeenCalled();
+            expect(useTaskStore.getState().allTasks.find((t) => t.id === '1')?.categoryId).toBe(10);
+            expect(useTaskStore.getState().contextMenu).toBeNull();
+        });
+    });
+
+    it('shows disabled state when category update is not editable', async () => {
+        vi.mocked(apiClient.fetchEditMeta).mockResolvedValue({
+            task: { id: '1', subject: 'Task 1', assignedToId: null, statusId: 1, doneRatio: 0, dueDate: null, startDate: null, priorityId: 1, categoryId: null, estimatedHours: null, projectId: 1, trackerId: 1, fixedVersionId: null, lockVersion: 0 },
+            editable: { subject: true, assignedToId: true, statusId: true, doneRatio: true, dueDate: true, startDate: true, priorityId: true, categoryId: false, estimatedHours: true, projectId: true, trackerId: true, fixedVersionId: true, customFieldValues: false },
+            options: { statuses: [], assignees: [], priorities: [], categories: [{ id: 10, name: 'Cat-A' }], projects: [], trackers: [], versions: [], customFields: [] },
+            customFieldValues: {}
+        });
+
+        act(() => {
+            useTaskStore.getState().setTasks([task1]);
+            useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '1' });
+        });
+
+        render(<HtmlOverlay />);
+        fireEvent.click(screen.getByTestId('context-menu-category'));
+
+        expect(await screen.findByTestId('context-menu-category-disabled')).toBeTruthy();
+        expect(apiClient.updateTaskFields).not.toHaveBeenCalled();
     });
 });

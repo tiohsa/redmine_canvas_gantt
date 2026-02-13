@@ -79,6 +79,8 @@ en:
   label_parent_drop_forbidden: "You do not have permission to change task hierarchy"
   label_parent_drop_conflict: "Task was updated by another user. Please reload."
   label_parent_drop_failed: "Failed to update task hierarchy"
+  label_category_assignment_forbidden: "You do not have permission to update category"
+  label_no_assignable_categories: "No assignable category"
   label_bulk_subtask_creation: "Bulk Ticket Creation"
   placeholder_bulk_subtask_creation: "Enter one ticket subject per line..."
   label_bulk_subtask_creation_success: "Tickets created successfully"
