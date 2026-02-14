@@ -81,8 +81,6 @@ ja:
   label_parent_drop_forbidden: "親子関係を変更する権限がありません"
   label_parent_drop_conflict: "別の更新と競合しました。再読み込みしてください"
   label_parent_drop_failed: "親子関係の更新に失敗しました"
-  label_category_assignment_forbidden: "カテゴリを更新する権限がありません"
-  label_no_assignable_categories: "割り当て可能なカテゴリがありません"
   label_bulk_subtask_creation: "チケット一括登録"
   placeholder_bulk_subtask_creation: "チケットの題名を1行に1件ずつ入力してください..."
   label_bulk_subtask_creation_success: "チケットを一括登録しました"

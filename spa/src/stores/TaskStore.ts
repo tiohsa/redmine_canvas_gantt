@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus, ContextCategoryMenuState, ContextCategoryOption } from '../types';
+import type { Task, Relation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences, savePreferences } from '../utils/preferences';
@@ -30,7 +30,6 @@ interface TaskState {
     selectedTaskId: string | null;
     hoveredTaskId: string | null;
     contextMenu: { x: number; y: number; taskId: string } | null;
-    contextCategoryMenu: ContextCategoryMenuState;
     projectExpansion: Record<string, boolean>;
     versionExpansion: Record<string, boolean>;
     taskExpansion: Record<string, boolean>;
@@ -62,9 +61,6 @@ interface TaskState {
     selectTask: (id: string | null) => void;
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
-    setContextCategoryMenu: (next: Partial<ContextCategoryMenuState>) => void;
-    setContextCategoryOptions: (taskId: string, options: ContextCategoryOption[], disabled: boolean, disabledReason?: string) => void;
-    clearContextCategoryMenu: () => void;
     updateTask: (id: string, updates: Partial<Task>) => void;
     removeTask: (id: string) => void;
     updateViewport: (updates: Partial<Viewport>) => void;
@@ -723,14 +719,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     selectedTaskId: null,
     hoveredTaskId: null,
     contextMenu: null,
-    contextCategoryMenu: {
-        taskId: null,
-        open: false,
-        pinned: false,
-        loading: false,
-        disabled: false,
-        options: []
-    },
     projectExpansion: {},
     versionExpansion: {},
     taskExpansion: {},
@@ -837,42 +825,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }),
     selectTask: (id) => set({ selectedTaskId: id }),
     setHoveredTask: (id) => set({ hoveredTaskId: id }),
-    setContextMenu: (menu) => set({
-        contextMenu: menu,
-        contextCategoryMenu: menu ? get().contextCategoryMenu : {
-            taskId: null,
-            open: false,
-            pinned: false,
-            loading: false,
-            disabled: false,
-            options: []
-        }
-    }),
-    setContextCategoryMenu: (next) => set((state) => ({
-        contextCategoryMenu: {
-            ...state.contextCategoryMenu,
-            ...next
-        }
-    })),
-    setContextCategoryOptions: (taskId, options, disabled, disabledReason) => set((state) => ({
-        contextCategoryMenu: {
-            ...state.contextCategoryMenu,
-            taskId,
-            options,
-            disabled,
-            disabledReason
-        }
-    })),
-    clearContextCategoryMenu: () => set({
-        contextCategoryMenu: {
-            taskId: null,
-            open: false,
-            pinned: false,
-            loading: false,
-            disabled: false,
-            options: []
-        }
-    }),
+    setContextMenu: (menu) => set({ contextMenu: menu }),
     setSortingSuspended: (suspended) => set((state) => {
         if (!suspended && state.isSortingSuspended) {
             // Turning it off -> trigger re-layout

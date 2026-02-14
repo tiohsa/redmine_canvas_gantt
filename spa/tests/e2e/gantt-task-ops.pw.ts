@@ -41,17 +41,3 @@ test.skip('saves on blur', async ({ page }) => {
   const payload = patchPayloads[0] as { task?: { subject?: string } };
   expect(payload.task?.subject).toBe('Updated subject by blur');
 });
-
-test.skip('assigns category from context menu', async ({ page }) => {
-  const patchPayloads: unknown[] = [];
-  await setupMockApp(page, { onPatchTask: (payload) => patchPayloads.push(payload) });
-  await waitForInitialRender(page);
-
-  await page.getByTestId('task-row-101').click({ button: 'right' });
-  await page.getByTestId('context-menu-category').click();
-  await page.getByTestId('context-menu-category-option-1').click();
-
-  await expect.poll(() => patchPayloads.length).toBeGreaterThan(0);
-  const payload = patchPayloads[0] as { task?: { category_id?: number } };
-  expect(payload.task?.category_id).toBe(1);
-});
