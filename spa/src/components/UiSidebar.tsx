@@ -568,7 +568,7 @@ export const UiSidebar: React.FC = () => {
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        useUIStore.getState().openIssueDialog(`/issues/${t.id}/edit`);
+                                        useUIStore.getState().openIssueDialog(`/issues/${t.id}`);
                                     }}
                                     style={{
                                         overflow: 'hidden',
