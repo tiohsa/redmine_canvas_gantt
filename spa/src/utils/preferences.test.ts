@@ -25,4 +25,9 @@ describe('Preferences storage', () => {
         expect(loaded.zoomLevel).toBe(2);
         expect(loaded.selectedProjectIds).toEqual(['p1']);
     });
+
+    it('saves and loads autoSave', () => {
+        savePreferences({ autoSave: true });
+        expect(loadPreferences().autoSave).toBe(true);
+    });
 });
