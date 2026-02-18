@@ -732,7 +732,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     showSubprojects: preferences.groupByProject ?? true,
     isSortingSuspended: false,
     modifiedTaskIds: new Set(),
-    autoSave: false,
+    autoSave: preferences.autoSave ?? false,
 
     setAutoSave: (enabled) => set({ autoSave: enabled }),
 

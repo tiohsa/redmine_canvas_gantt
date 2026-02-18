@@ -30,7 +30,8 @@ const persistSelections = () => {
         customScales: taskState.customScales,
         rowHeight: taskState.viewport.rowHeight,
         selectedStatusIds: taskState.selectedStatusIds,
-        sortConfig: taskState.sortConfig
+        sortConfig: taskState.sortConfig,
+        autoSave: taskState.autoSave
     });
 };
 
