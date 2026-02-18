@@ -57,6 +57,26 @@
   background-color: rgba(30, 41, 59, 0.38);
 }
 
+
 .rcg-scroll::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* Task Edit Badge */
+.task-edit-badge {
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none; /* Prevent interaction when invisible */
+  border-radius: 4px;
+}
+
+.task-subject-cell:hover .task-edit-badge,
+.task-edit-badge:focus {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.task-edit-badge:hover {
+  background-color: rgba(95, 99, 104, 0.1) !important;
+  color: #1a73e8 !important;
 }
