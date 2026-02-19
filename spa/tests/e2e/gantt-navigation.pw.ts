@@ -88,3 +88,42 @@ test('keeps timeline header and viewport aligned after rapid month navigation cl
   await expect.poll(async () => (await getAlignment()).deltaX).toBeLessThanOrEqual(1);
   await expect.poll(async () => (await getAlignment()).deltaWidth).toBeLessThanOrEqual(1);
 });
+
+test('keeps timeline header and viewport aligned during rapid right-to-left wheel scrolling', async ({ page }) => {
+  await waitForInitialRender(page);
+
+  const scrollPane = page.locator('.rcg-gantt-scroll-pane');
+  const headerCanvas = page.locator('canvas').first();
+  const viewportPane = page.locator('.rcg-gantt-viewport');
+
+  const getAlignment = async () => {
+    const [headerBox, viewportBox] = await Promise.all([
+      headerCanvas.boundingBox(),
+      viewportPane.boundingBox(),
+    ]);
+
+    if (!headerBox || !viewportBox) {
+      throw new Error('Failed to get bounding boxes for header/viewport');
+    }
+
+    return {
+      deltaX: Math.abs(headerBox.x - viewportBox.x),
+      deltaWidth: Math.abs(headerBox.width - viewportBox.width),
+    };
+  };
+
+  await scrollPane.evaluate((el) => {
+    el.scrollLeft = Math.max(0, el.scrollWidth);
+    el.dispatchEvent(new Event('scroll'));
+  });
+
+  await scrollPane.evaluate((el) => {
+    for (let i = 0; i < 12; i++) {
+      el.scrollLeft = Math.max(0, el.scrollLeft - 240);
+      el.dispatchEvent(new Event('scroll'));
+    }
+  });
+
+  await expect.poll(async () => (await getAlignment()).deltaX).toBeLessThanOrEqual(1);
+  await expect.poll(async () => (await getAlignment()).deltaWidth).toBeLessThanOrEqual(1);
+});
