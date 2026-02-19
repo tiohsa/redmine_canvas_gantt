@@ -1,0 +1,127 @@
+import { render, screen, fireEvent } from '@testing-library/react';
+import { GanttContainer } from './GanttContainer';
+import { useUIStore } from '../stores/UIStore';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useTaskStore } from '../stores/TaskStore';
+
+// Mock engines and renderers
+vi.mock('../engines/InteractionEngine', () => ({
+    InteractionEngine: class {
+        detach() { }
+    },
+}));
+
+vi.mock('../renderers/BackgroundRenderer', () => ({
+    BackgroundRenderer: class {
+        render() { }
+    }
+}));
+
+vi.mock('../renderers/TaskRenderer', () => ({
+    TaskRenderer: class {
+        render() { }
+    }
+}));
+
+vi.mock('../renderers/OverlayRenderer', () => ({
+    OverlayRenderer: class {
+        render() { }
+    }
+}));
+
+// Mock ResizeObserver
+window.ResizeObserver = vi.fn().mockImplementation(function () {
+    return {
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+    };
+});
+
+// Mock canvas getContext
+HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
+    font: '',
+    measureText: () => ({ width: 0 }),
+    beginPath: () => { },
+    moveTo: () => { },
+    lineTo: () => { },
+    stroke: () => { },
+    fillText: () => { },
+    clearRect: () => { },
+    translate: () => { },
+    scale: () => { },
+    save: () => { },
+    restore: () => { },
+});
+
+vi.mock('./TimelineHeader', () => ({
+    TimelineHeader: () => <div data-testid="timeline-header" />,
+}));
+vi.mock('./UiSidebar', () => ({
+    UiSidebar: () => <div data-testid="ui-sidebar" />,
+}));
+vi.mock('./IssueIframeDialog', () => ({
+    IssueIframeDialog: () => <div />,
+}));
+vi.mock('./GlobalTooltip', () => ({
+    GlobalTooltip: () => <div />,
+}));
+vi.mock('./GanttToolbar', () => ({
+    GanttToolbar: () => <div data-testid="gantt-toolbar" />,
+}));
+
+describe('GanttContainer Resize', () => {
+    beforeEach(() => {
+        useUIStore.setState({
+            sidebarWidth: 300,
+            leftPaneVisible: true,
+        });
+        useTaskStore.setState({
+            viewport: {
+                startDate: Date.now(),
+                scrollX: 0,
+                scrollY: 0,
+                scale: 0.001,
+                width: 1000,
+                height: 600,
+                rowHeight: 40
+            },
+            tasks: [],
+            relations: [],
+            layoutRows: [],
+            rowCount: 0
+        });
+        vi.clearAllMocks();
+    });
+
+    it('should calculate sidebar width relative to container position', () => {
+        const setSidebarWidthSpy = vi.fn();
+        useUIStore.setState({ setSidebarWidth: setSidebarWidthSpy });
+
+        render(<GanttContainer />);
+
+        const resizeHandle = screen.getByTestId('sidebar-resize-handle');
+        const ganttContainerDiv = resizeHandle.parentElement as HTMLElement;
+
+        const mockRect = {
+            left: 100,
+            top: 0,
+            width: 1000,
+            height: 500,
+            bottom: 500,
+            right: 1100,
+            x: 100,
+            y: 0,
+            toJSON: () => { },
+        };
+        vi.spyOn(ganttContainerDiv, 'getBoundingClientRect').mockReturnValue(mockRect);
+
+        fireEvent.mouseDown(resizeHandle);
+
+        fireEvent.mouseMove(document, { clientX: 500 });
+
+        fireEvent.mouseUp(document);
+
+        expect(setSidebarWidthSpy).toHaveBeenCalledWith(400);
+    });
+});

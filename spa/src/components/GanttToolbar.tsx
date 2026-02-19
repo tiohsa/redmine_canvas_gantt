@@ -917,6 +917,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ display: 'flex', gap: '4px' }}>
                     <button
+                        aria-label={i18n.t('label_prev_month') || 'Previous month'}
                         onClick={() => navigateMonth(-1)}
                         style={{
                             width: '32px',
@@ -936,6 +937,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         </svg>
                     </button>
                     <button
+                        aria-label={i18n.t('label_next_month') || 'Next month'}
                         onClick={() => navigateMonth(1)}
                         style={{
                             width: '32px',

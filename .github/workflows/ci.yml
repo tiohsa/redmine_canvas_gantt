@@ -1,8 +1,13 @@
-name: CI
+name: Git Workflow Tests
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   spa-test:
@@ -33,6 +38,7 @@ jobs:
 
   e2e-redmine:
     name: Redmine E2E (Playwright)
+    needs: spa-test
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:

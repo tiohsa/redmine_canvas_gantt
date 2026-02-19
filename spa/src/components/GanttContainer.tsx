@@ -34,6 +34,7 @@ export const GanttContainer: React.FC = () => {
 
     const { viewport, tasks, relations, selectedTaskId, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, setTasks, setRelations, setVersions } = useTaskStore();
     const { sidebarWidth, setSidebarWidth, leftPaneVisible, showProgressLine, showPointsOrphans } = useUIStore();
+
     // Removed unused row calculations and task slicing
     // const totalRows = rowCount || tasks.length;
     // const [startRow, endRow] = getVisibleRowRange(viewport, totalRows);
@@ -43,9 +44,10 @@ export const GanttContainer: React.FC = () => {
     //     Math.max(0, startRow - DEPENDENCY_ROW_BUFFER),
     //     Math.min(totalRows - 1, endRow + DEPENDENCY_ROW_BUFFER)
     // );
+    // );
     const tasksMaxDue = useMemo(() => getMaxFiniteDueDate(tasks), [tasks]);
     const computeScrollContentSize = (): { width: number; height: number } => {
-        const scale = viewport.scale || 0.00000001;
+        const scale = viewport?.scale || 0.00000001;
 
         const visibleMs = viewport.width / scale;
         const visibleEnd = viewport.startDate + visibleMs;
@@ -83,7 +85,8 @@ export const GanttContainer: React.FC = () => {
         const handleMouseMove = (e: MouseEvent) => {
             if (!isResizing.current) return;
             // Constrain width
-            const newWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, e.clientX)); // Simple clientX mapping assuming sidebar starts at 0
+            const containerLeft = containerRef.current?.getBoundingClientRect().left || 0;
+            const newWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, e.clientX - containerLeft));
             setSidebarWidth(newWidth);
         };
 
@@ -168,7 +171,11 @@ export const GanttContainer: React.FC = () => {
         if (!viewportWrapperRef.current) return;
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
-                const { width, height } = entry.contentRect;
+                const fallbackWidth = entry.contentRect.width;
+                const fallbackHeight = entry.contentRect.height;
+                const scrollPane = scrollPaneRef.current;
+                const width = scrollPane?.clientWidth ?? fallbackWidth;
+                const height = scrollPane?.clientHeight ?? fallbackHeight;
                 [bgCanvasRef.current, taskCanvasRef.current, overlayCanvasRef.current].forEach(canvas => {
                     if (canvas) {
                         canvas.width = width;
