@@ -415,7 +415,11 @@ const buildLayout = (
                 if (_selectedVersionIds.includes(v.id) && v.projectId === groupId) return true;
                 return false;
             });
-            projectVersions.sort((a, b) => (a.effectiveDate - b.effectiveDate));
+            projectVersions.sort((a, b) => {
+                const aDate = a.effectiveDate ?? Infinity;
+                const bDate = b.effectiveDate ?? Infinity;
+                return aDate - bDate;
+            });
 
             projectVersions.forEach(v => {
                 const vRoots = versionMap.get(v.id) || [];
@@ -436,7 +440,8 @@ const buildLayout = (
                     }
                 }
 
-                if (!hideDescendants) {
+                // If a version has no effectiveDate, don't show it in the timeline.
+                if (v.effectiveDate !== undefined && !hideDescendants) {
                     layoutRows.push({
                         type: 'version',
                         id: v.id,
