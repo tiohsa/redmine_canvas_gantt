@@ -22,6 +22,7 @@ interface UIState {
     activeInlineEdit: { taskId: string; field: string; source?: 'cell' | 'panel' } | null;
     isFullScreen: boolean;
     issueDialogUrl: string | null;
+    isSidebarResizing: boolean;
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
@@ -36,6 +37,7 @@ interface UIState {
     toggleFullScreen: () => void;
     openIssueDialog: (url: string) => void;
     closeIssueDialog: () => void;
+    setSidebarResizing: (value: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -59,6 +61,7 @@ export const useUIStore = create<UIState>((set) => ({
     activeInlineEdit: null,
     isFullScreen: false,
     issueDialogUrl: null,
+    isSidebarResizing: false,
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
@@ -86,5 +89,6 @@ export const useUIStore = create<UIState>((set) => ({
     setFullScreen: (value) => set(() => ({ isFullScreen: value })),
     toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen })),
     openIssueDialog: (url) => set(() => ({ issueDialogUrl: url })),
-    closeIssueDialog: () => set(() => ({ issueDialogUrl: null }))
+    closeIssueDialog: () => set(() => ({ issueDialogUrl: null })),
+    setSidebarResizing: (value) => set(() => ({ isSidebarResizing: value }))
 }));

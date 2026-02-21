@@ -33,6 +33,10 @@ export class InteractionEngine {
         this.attachEvents();
     }
 
+    private isScrollInteractionLocked(): boolean {
+        return useUIStore.getState().isSidebarResizing;
+    }
+
     private panViewportByPixels(deltaX: number, deltaY: number) {
         const { viewport, updateViewport } = useTaskStore.getState();
         const scale = viewport.scale || 0.00000001;
@@ -122,6 +126,7 @@ export class InteractionEngine {
 
     private handleMouseDown = (e: MouseEvent) => {
         if (e.button === 2) return; // Ignore right-click
+        if (this.isScrollInteractionLocked()) return;
 
         // Ignore events from dependency handles (let/leave them for the Overlay handler)
         const downTarget = e.target;
@@ -339,6 +344,11 @@ export class InteractionEngine {
     };
 
     private handleWheel = (e: WheelEvent) => {
+        if (this.isScrollInteractionLocked()) {
+            e.preventDefault();
+            return;
+        }
+
         const { viewport, updateViewport } = useTaskStore.getState();
         if (e.ctrlKey || e.metaKey) {
             // Zoom
@@ -354,6 +364,10 @@ export class InteractionEngine {
     };
 
     private handleKeyDown = (e: KeyboardEvent) => {
+        if (this.isScrollInteractionLocked() && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+            return;
+        }
+
         const { tasks, selectedTaskId, selectTask } = useTaskStore.getState();
 
         if (e.key === 'Escape') {

@@ -38,12 +38,16 @@ describe('UIStore', () => {
         useUIStore.getState().setVisibleColumns(['id', 'subject']);
         useUIStore.getState().setColumnWidth('subject', 360);
         useUIStore.getState().openIssueDialog('/issues/10');
+        useUIStore.getState().setSidebarResizing(true);
 
         expect(useUIStore.getState().visibleColumns).toEqual(['id', 'subject']);
         expect(useUIStore.getState().columnWidths.subject).toBe(360);
         expect(useUIStore.getState().issueDialogUrl).toBe('/issues/10');
+        expect(useUIStore.getState().isSidebarResizing).toBe(true);
 
         useUIStore.getState().closeIssueDialog();
+        useUIStore.getState().setSidebarResizing(false);
         expect(useUIStore.getState().issueDialogUrl).toBeNull();
+        expect(useUIStore.getState().isSidebarResizing).toBe(false);
     });
 });

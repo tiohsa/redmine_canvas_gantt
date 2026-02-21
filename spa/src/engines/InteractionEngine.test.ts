@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InteractionEngine } from './InteractionEngine';
 import { useTaskStore } from '../stores/TaskStore';
+import { useUIStore } from '../stores/UIStore';
 import { LayoutEngine } from './LayoutEngine';
 import type { Relation, Task } from '../types';
 
@@ -69,6 +70,7 @@ const baseTask = (overrides: Partial<Task> = {}): Task => ({
 beforeEach(() => {
     vi.mocked(apiClient.updateTask).mockReset();
     vi.mocked(apiClient.fetchData).mockReset();
+    useUIStore.setState({ isSidebarResizing: false });
 });
 
 describe('InteractionEngine viewport panning', () => {
@@ -115,6 +117,26 @@ describe('InteractionEngine viewport panning', () => {
         const result = container.dispatchEvent(e);
         expect(result).toBe(false);
         expect(e.defaultPrevented).toBe(true);
+
+        engine.detach();
+        container.remove();
+    });
+
+    it('左ペインのリサイズ中はホイールでスクロールしない', () => {
+        setViewport({ startDate: 1000, scrollX: 10, scrollY: 20, scale: 2 });
+        useUIStore.setState({ isSidebarResizing: true });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+
+        const e = new WheelEvent('wheel', { deltaX: 30, deltaY: 40, bubbles: true, cancelable: true });
+        const result = container.dispatchEvent(e);
+        expect(result).toBe(false);
+        expect(e.defaultPrevented).toBe(true);
+
+        const { viewport } = useTaskStore.getState();
+        expect(viewport.startDate).toBe(1000);
+        expect(viewport.scrollX).toBe(10);
+        expect(viewport.scrollY).toBe(20);
 
         engine.detach();
         container.remove();

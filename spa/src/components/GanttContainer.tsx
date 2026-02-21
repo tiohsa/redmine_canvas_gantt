@@ -33,7 +33,7 @@ export const GanttContainer: React.FC = () => {
     const hasFetched = useRef(false);
 
     const { viewport, tasks, relations, selectedTaskId, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, setTasks, setRelations, setVersions } = useTaskStore();
-    const { sidebarWidth, setSidebarWidth, leftPaneVisible, showProgressLine, showPointsOrphans } = useUIStore();
+    const { sidebarWidth, setSidebarWidth, leftPaneVisible, showProgressLine, showPointsOrphans, isSidebarResizing, setSidebarResizing } = useUIStore();
 
     // Removed unused row calculations and task slicing
     // const totalRows = rowCount || tasks.length;
@@ -91,7 +91,9 @@ export const GanttContainer: React.FC = () => {
         };
 
         const handleMouseUp = () => {
+            if (!isResizing.current) return;
             isResizing.current = false;
+            setSidebarResizing(false);
             document.body.style.cursor = 'default';
         };
 
@@ -101,11 +103,13 @@ export const GanttContainer: React.FC = () => {
         return () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
+            setSidebarResizing(false);
         };
-    }, [viewportFromStorage, setSidebarWidth]);
+    }, [setSidebarResizing, viewportFromStorage, setSidebarWidth]);
 
     const startResize = () => {
         isResizing.current = true;
+        setSidebarResizing(true);
         document.body.style.cursor = 'col-resize';
     };
 
@@ -195,7 +199,7 @@ export const GanttContainer: React.FC = () => {
         if (!el) return;
 
         const onScroll = () => {
-            if (isSyncingScroll.current) return;
+            if (isSyncingScroll.current || isSidebarResizing) return;
 
             const virtualAvailableX = Math.max(0, scrollContentSize.width - viewport.width);
             const virtualAvailableY = Math.max(0, scrollContentSize.height - viewport.height);
@@ -219,12 +223,13 @@ export const GanttContainer: React.FC = () => {
         return () => {
             el.removeEventListener('scroll', onScroll);
         };
-    }, [realContentSize.height, realContentSize.width, scrollContentSize.height, scrollContentSize.width, updateViewport, viewport.height, viewport.width]);
+    }, [isSidebarResizing, realContentSize.height, realContentSize.width, scrollContentSize.height, scrollContentSize.width, updateViewport, viewport.height, viewport.width]);
 
     // Sync viewport -> native scrollbar (wheel/drag/keys update viewport directly)
     useEffect(() => {
         const el = scrollPaneRef.current;
         if (!el) return;
+        if (isSidebarResizing) return;
 
         const virtualAvailableX = Math.max(0, scrollContentSize.width - viewport.width);
         const virtualAvailableY = Math.max(0, scrollContentSize.height - viewport.height);
@@ -244,7 +249,7 @@ export const GanttContainer: React.FC = () => {
         requestAnimationFrame(() => {
             isSyncingScroll.current = false;
         });
-    }, [realContentSize.height, realContentSize.width, scrollContentSize.height, scrollContentSize.width, viewport.height, viewport.scrollX, viewport.scrollY, viewport.width]);
+    }, [isSidebarResizing, realContentSize.height, realContentSize.width, scrollContentSize.height, scrollContentSize.width, viewport.height, viewport.scrollX, viewport.scrollY, viewport.width]);
 
     useEffect(() => {
         // console.log('Render Loop:', { width: viewport.width, height: viewport.height, scrollX: viewport.scrollX, scrollY: viewport.scrollY, rowCount, tasks: tasks.length });
