@@ -446,7 +446,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
                                 padding: '12px',
                                 zIndex: 20,
-                                minWidth: '200px'
+                                minWidth: '200px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
                             }}
                         >
                             <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('label_column_plural') || 'Columns'}</div>
