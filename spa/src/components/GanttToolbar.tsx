@@ -402,6 +402,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 {i18n.t('label_clear_filter') || 'Clear'}
                             </button>
                         )}
+                        <div style={{ marginTop: '8px', fontSize: 11, color: '#999' }}>
+                            ESC {i18n.t('label_to_cancel') || 'to cancel'}
+                        </div>
                     </div>
                 )}
 
