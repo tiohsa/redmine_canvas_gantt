@@ -34,7 +34,7 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(30, 41, 59, 0.35) transparent;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
 }
 
 .rcg-scroll::-webkit-scrollbar {
