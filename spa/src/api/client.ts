@@ -229,8 +229,7 @@ export const apiClient = {
 
         const versions: Version[] = Array.isArray(data.versions) ? (data.versions as ApiVersion[]).map(v => {
             const dateStr = typeof v.effective_date === 'string' ? v.effective_date : null;
-            const effectiveDate = parseDate(dateStr);
-            if (!effectiveDate) return null;
+            const effectiveDate = parseDate(dateStr) ?? undefined;
 
             const startStr = typeof v.start_date === 'string' ? v.start_date : null;
             const startDate = parseDate(startStr) ?? undefined;
@@ -335,6 +334,7 @@ export const apiClient = {
         const projects = projectsRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
         const trackers = trackersRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
         const versions = versionsRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
+        console.log("DEBUG: fetchEditMeta parsed versions:", versions, "from versionsRaw:", versionsRaw);
         const customFields = customFieldsRaw.map(parseCustomFieldMeta).filter((v): v is CustomFieldMeta => Boolean(v));
 
         const customFieldValues: Record<string, string | null> = {};

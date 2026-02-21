@@ -48,7 +48,7 @@ export interface Relation {
 export interface Version {
     id: string;
     name: string;
-    effectiveDate: number;
+    effectiveDate?: number;
     startDate?: number;
     ratioDone?: number;
     projectId: string;
