@@ -59,6 +59,7 @@ declare global {
             redmineBase: string;
             authToken: string;
             apiKey: string;
+            nonWorkingWeekDays?: number[];
             settings?: InlineEditSettings & { row_height?: string };
             i18n?: Record<string, string>;
         };

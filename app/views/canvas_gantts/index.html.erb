@@ -7,7 +7,8 @@
       authToken: '<%= form_authenticity_token %>',
       apiKey: '<%= User.current.api_key %>',
       i18n: <%= @i18n.to_json.html_safe %>,
-      settings: <%= (@settings || {}).to_json.html_safe %>
+      settings: <%= (@settings || {}).to_json.html_safe %>,
+      nonWorkingWeekDays: <%= (@non_working_week_days || [0, 6]).to_json.html_safe %>
     };
   <% end %>
   <!-- In development with Vite dev server enabled, we use the Vite dev server. Otherwise, we use the manifest. -->

@@ -424,6 +424,83 @@ describe('TaskStore saveChanges ordering', () => {
         expect(String(message)).toContain('#child');
         expect(type).toBe('error');
     });
+
+    it('saveChanges retries tasks that fail due to transient ordering constraints', async () => {
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+
+        setTasks([
+            buildTask({ id: 'child', startDate: 3, dueDate: 5 }),
+            buildTask({ id: 'parent', startDate: 0, dueDate: 2 })
+        ]);
+
+        let parentSaved = false;
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
+            if (task.id === 'child' && !parentSaved) {
+                return { status: 'error', error: 'Date constraint violation' };
+            }
+            if (task.id === 'parent') {
+                parentSaved = true;
+            }
+            return { status: 'ok', lockVersion: 2 };
+        });
+
+        updateTask('child', { startDate: 1, dueDate: 3 });
+        updateTask('parent', { startDate: 0, dueDate: 0 });
+        await saveChanges();
+
+        const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
+        expect(updatedIds).toEqual(['child', 'parent', 'child']);
+        expect(addNotification).not.toHaveBeenCalled();
+    });
+
+    it('saveChanges resolves conflict when server already applied dependent updates', async () => {
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+
+        setTasks([
+            buildTask({ id: '18', startDate: 10, dueDate: 17, lockVersion: 1 }),
+            buildTask({ id: '19', startDate: 17, dueDate: 24, lockVersion: 1 })
+        ]);
+
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
+            if (task.id === '18') {
+                return { status: 'ok', lockVersion: 2 };
+            }
+            if (task.id === '19') {
+                return { status: 'conflict', error: 'This task was updated by another user. Please reload.' };
+            }
+            return { status: 'ok', lockVersion: 1 };
+        });
+
+        const latestTasks = [
+            buildTask({ id: '18', startDate: 11, dueDate: 17, lockVersion: 2 }),
+            buildTask({ id: '19', startDate: 18, dueDate: 25, lockVersion: 2 })
+        ];
+        vi.mocked(apiClient.fetchData)
+            .mockResolvedValueOnce({
+                tasks: latestTasks,
+                relations: [],
+                versions: [],
+                statuses: [],
+                project: { id: 'p1', name: 'P1' },
+                permissions: { editable: true, viewable: true }
+            })
+            .mockResolvedValueOnce({
+                tasks: latestTasks,
+                relations: [],
+                versions: [],
+                statuses: [],
+                project: { id: 'p1', name: 'P1' },
+                permissions: { editable: true, viewable: true }
+            });
+
+        updateTask('18', { startDate: 11, dueDate: 17 });
+        updateTask('19', { startDate: 18, dueDate: 25 });
+        await saveChanges();
+
+        const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
+        expect(updatedIds).toEqual(['18', '19']);
+        expect(addNotification).not.toHaveBeenCalled();
+    });
 });
 
 describe('TaskStore drag parent updates', () => {
