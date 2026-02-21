@@ -217,7 +217,7 @@ class CanvasGanttsController < ApplicationController
         categories: issue.project.issue_categories.map { |c| { id: c.id, name: c.name } },
         projects: Project.allowed_to(:add_issues).active.map { |p| { id: p.id, name: p.name } },
         trackers: issue.project.trackers.map { |t| { id: t.id, name: t.name } },
-        versions: Version.visible.where(project_id: issue.project.self_and_descendants.pluck(:id)).map { |v| { id: v.id, name: v.name } },
+        versions: Version.visible.where(project_id: issue.project_id).map { |v| { id: v.id, name: v.name } },
         custom_fields: custom_fields
       },
       custom_field_values: custom_field_values,
