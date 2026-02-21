@@ -160,6 +160,7 @@ class CanvasGanttsController < ApplicationController
   def index
     @i18n = I18N_LABELS.transform_values { |label_key| l(label_key) }
     @settings = plugin_settings
+    @non_working_week_days = Array(Setting.non_working_week_days).map(&:to_i).uniq.sort
   end
 
   # GET /projects/:project_id/canvas_gantt/data.json

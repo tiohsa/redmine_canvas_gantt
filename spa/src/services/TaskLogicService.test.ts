@@ -33,8 +33,8 @@ describe('TaskLogicService.checkDependencies', () => {
             const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY * 3);
 
             expect(updates.has('B')).toBe(true);
-            expect(updates.get('B')?.startDate).toBe(DAY * 3);
-            expect(updates.get('B')?.dueDate).toBe(DAY * 5); // Duration preserved: 2 days
+            expect(updates.get('B')?.startDate).toBe(DAY * 4);
+            expect(updates.get('B')?.dueDate).toBe(DAY * 6); // Duration preserved: 2 days
         });
 
         it('should not update when constraint is satisfied', () => {
@@ -65,7 +65,36 @@ describe('TaskLogicService.checkDependencies', () => {
             const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY);
 
             expect(updates.has('B')).toBe(true);
-            expect(updates.get('B')?.startDate).toBe(DAY * 3);
+            expect(updates.get('B')?.startDate).toBe(DAY * 4);
+        });
+
+        it('should skip weekend when calculating minimum successor start', () => {
+            const friday = Date.UTC(2026, 0, 2); // 2026-01-02 (Fri)
+            const saturday = Date.UTC(2026, 0, 3); // 2026-01-03 (Sat)
+            const sunday = Date.UTC(2026, 0, 4); // 2026-01-04 (Sun)
+            const monday = Date.UTC(2026, 0, 5); // 2026-01-05 (Mon)
+
+            const originalConfig = window.RedmineCanvasGantt;
+            window.RedmineCanvasGantt = {
+                ...(originalConfig || {}),
+                nonWorkingWeekDays: [0, 6]
+            } as Window['RedmineCanvasGantt'];
+
+            try {
+                const tasks = [
+                    buildTask({ id: 'A', startDate: Date.UTC(2026, 0, 1), dueDate: friday }),
+                    buildTask({ id: 'B', startDate: saturday, dueDate: sunday })
+                ];
+                const relations: Relation[] = [
+                    { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
+                ];
+
+                const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', Date.UTC(2026, 0, 1), friday);
+                expect(updates.has('B')).toBe(true);
+                expect(updates.get('B')?.startDate).toBe(monday);
+            } finally {
+                window.RedmineCanvasGantt = originalConfig;
+            }
         });
 
         it('should cascade updates through multiple successors', () => {
@@ -83,24 +112,69 @@ describe('TaskLogicService.checkDependencies', () => {
 
             expect(updates.has('B')).toBe(true);
             expect(updates.has('C')).toBe(true);
-            // B pushed to day 3-5, C should be pushed to day 5-7
-            expect(updates.get('C')?.startDate).toBe(DAY * 5);
+            // B pushed to day 4-6, C should be pushed to day 7-9
+            expect(updates.get('C')?.startDate).toBe(DAY * 7);
+        });
+
+        it('should push predecessor backward when successor moves backward', () => {
+            const tasks = [
+                buildTask({ id: 'A', startDate: DAY * 2, dueDate: DAY * 4 }),
+                buildTask({ id: 'B', startDate: DAY * 6, dueDate: DAY * 8 })
+            ];
+            const relations: Relation[] = [
+                { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
+            ];
+
+            const updates = TaskLogicService.checkDependencies(tasks, relations, 'B', DAY * 4, DAY * 6);
+
+            expect(updates.has('A')).toBe(true);
+            expect(updates.get('A')?.dueDate).toBe(DAY * 3);
+            expect(updates.get('A')?.startDate).toBe(DAY);
+        });
+
+        it('should not push predecessor when weekend endpoint already satisfies successor start', () => {
+            const friday = Date.UTC(2026, 2, 6); // 2026-03-06 (Fri)
+            const saturday = Date.UTC(2026, 2, 7); // 2026-03-07 (Sat)
+            const monday = Date.UTC(2026, 2, 9); // 2026-03-09 (Mon)
+
+            const originalConfig = window.RedmineCanvasGantt;
+            window.RedmineCanvasGantt = {
+                ...(originalConfig || {}),
+                nonWorkingWeekDays: [0, 6]
+            } as Window['RedmineCanvasGantt'];
+
+            try {
+                const tasks = [
+                    buildTask({ id: 'A', startDate: friday, dueDate: saturday }),
+                    buildTask({ id: 'B', startDate: monday, dueDate: monday })
+                ];
+                const relations: Relation[] = [
+                    { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
+                ];
+
+                // A ends on Saturday. With weekend off, earliest B start is Monday.
+                // If B moves but keeps Monday start, A should not be pushed to Friday.
+                const updates = TaskLogicService.checkDependencies(tasks, relations, 'B', monday, monday);
+                expect(updates.has('A')).toBe(false);
+            } finally {
+                window.RedmineCanvasGantt = originalConfig;
+            }
         });
     });
 
     describe('follows relations', () => {
         it('should push predecessor backward when follower moves backward', () => {
             const tasks = [
-                buildTask({ id: 'A', startDate: DAY * 3, dueDate: DAY * 5 }), // A follows B
+                buildTask({ id: 'A', startDate: DAY * 4, dueDate: DAY * 6 }), // A follows B
                 buildTask({ id: 'B', startDate: DAY * 2, dueDate: DAY * 4 })
             ];
             const relations: Relation[] = [
                 { id: 'r1', from: 'A', to: 'B', type: 'follows' }
             ];
 
-            // A moved to start at day 2, B (predecessor) ends at day 4
-            // A.start >= B.end means B.end <= 2 days
-            const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', DAY * 2, DAY * 4);
+            // A moved to start at day 3, B (predecessor) ends at day 4
+            // A.start >= B.end + 1 day means B.end <= 2 days
+            const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', DAY * 3, DAY * 5);
 
             expect(updates.has('B')).toBe(true);
             expect(updates.get('B')?.dueDate).toBe(DAY * 2);
@@ -121,10 +195,26 @@ describe('TaskLogicService.checkDependencies', () => {
 
             expect(updates.size).toBe(0);
         });
+
+        it('should push follower forward when predecessor moves forward', () => {
+            const tasks = [
+                buildTask({ id: 'A', startDate: DAY * 3, dueDate: DAY * 5 }), // A follows B
+                buildTask({ id: 'B', startDate: DAY, dueDate: DAY * 3 })
+            ];
+            const relations: Relation[] = [
+                { id: 'r1', from: 'A', to: 'B', type: 'follows' }
+            ];
+
+            const updates = TaskLogicService.checkDependencies(tasks, relations, 'B', DAY * 4, DAY * 6);
+
+            expect(updates.has('A')).toBe(true);
+            expect(updates.get('A')?.startDate).toBe(DAY * 7);
+            expect(updates.get('A')?.dueDate).toBe(DAY * 9);
+        });
     });
 
     describe('blocks relations', () => {
-        it('should handle blocks same as precedes', () => {
+        it('should ignore blocks for date constraints (Redmine-compatible)', () => {
             const tasks = [
                 buildTask({ id: 'A', startDate: 0, dueDate: DAY * 3 }),
                 buildTask({ id: 'B', startDate: DAY * 2, dueDate: DAY * 4 })
@@ -135,8 +225,7 @@ describe('TaskLogicService.checkDependencies', () => {
 
             const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY * 3);
 
-            expect(updates.has('B')).toBe(true);
-            expect(updates.get('B')?.startDate).toBe(DAY * 3);
+            expect(updates.has('B')).toBe(false);
         });
     });
 

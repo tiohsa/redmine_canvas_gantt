@@ -34,6 +34,7 @@ window.RedmineCanvasGantt = {
     redmineBase: '',
     authToken: '',
     apiKey: '',
+    nonWorkingWeekDays: [],
     i18n: {
         field_id: 'ID',
         field_subject: 'Task Name',

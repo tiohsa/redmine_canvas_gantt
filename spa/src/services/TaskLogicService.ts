@@ -2,6 +2,77 @@ import type { Task, Relation } from '../types';
 import { RelationType } from '../types/constraints';
 
 export class TaskLogicService {
+    private static normalizeRelationEndpoints(rel: Relation): { predecessorId: string; successorId: string; gapDays: number } | null {
+        // Redmine's precedes/follows requires at least (1 + delay) day gap.
+        // Reference: IssueRelation#successor_soonest_start (add_working_days(..., 1 + delay)).
+        const gapDays = 1 + (rel.delay || 0);
+        if (rel.type === RelationType.Precedes) {
+            return {
+                predecessorId: rel.from,
+                successorId: rel.to,
+                gapDays
+            };
+        }
+        if (rel.type === RelationType.Follows) {
+            return {
+                predecessorId: rel.to,
+                successorId: rel.from,
+                gapDays
+            };
+        }
+        return null;
+    }
+
+    private static getNonWorkingWeekDays(): Set<number> {
+        const fallback = new Set<number>([0, 6]); // Sunday/Saturday
+        if (typeof window === 'undefined') return fallback;
+        const raw = (window as Window).RedmineCanvasGantt?.nonWorkingWeekDays;
+        if (!Array.isArray(raw)) return fallback;
+        const normalized = raw
+            .map((day) => Number(day))
+            .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+        return new Set(normalized);
+    }
+
+    private static toUtcDayStart(timestamp: number): Date {
+        const date = new Date(timestamp);
+        date.setUTCHours(0, 0, 0, 0);
+        return date;
+    }
+
+    private static addWorkingDays(timestamp: number, days: number, nonWorkingWeekDays: Set<number>): number {
+        const date = this.toUtcDayStart(timestamp);
+        let remaining = Math.max(0, Math.floor(days));
+        while (remaining > 0) {
+            date.setUTCDate(date.getUTCDate() + 1);
+            if (!nonWorkingWeekDays.has(date.getUTCDay())) {
+                remaining -= 1;
+            }
+        }
+        return date.getTime();
+    }
+
+    /**
+     * Computes the latest predecessor end date that still satisfies:
+     * addWorkingDays(predecessorEnd, gapDays) <= successorStart.
+     *
+     * This is not always equivalent to subtracting working days from successorStart
+     * when predecessorEnd falls on non-working days.
+     */
+    private static latestPredecessorEndForSuccessorStart(
+        successorStart: number,
+        gapDays: number,
+        nonWorkingWeekDays: Set<number>
+    ): number {
+        const candidate = this.toUtcDayStart(successorStart);
+
+        while (this.addWorkingDays(candidate.getTime(), gapDays, nonWorkingWeekDays) > successorStart) {
+            candidate.setUTCDate(candidate.getUTCDate() - 1);
+        }
+
+        return candidate.getTime();
+    }
+
     /**
      * Checks if a task can be edited based on its status or properties.
      */
@@ -89,7 +160,6 @@ export class TaskLogicService {
      * Supported relation types:
      * - precedes: Finish-to-Start, successor.start >= predecessor.end + delay
      * - follows: Inverse of precedes, predecessor.end <= successor.start - delay
-     * - blocks/blocked: Treated same as precedes for date constraints
      * 
      * @param visitedIds - Set of already visited task IDs to prevent infinite loops in circular dependencies
      */
@@ -108,27 +178,22 @@ export class TaskLogicService {
             return updates;
         }
         visitedIds.add(movedTaskId);
+        const nonWorkingWeekDays = this.getNonWorkingWeekDays();
 
-        // Helper to calculate day boundary aligned timestamp
-        // Redmine delay is in days, and dates typically represent "start of day"
-        const dayInMs = 24 * 60 * 60 * 1000;
+        // ===== 1. Moved task acts as predecessor =====
+        // Constraint: successor.start >= predecessor.end + delay
+        const movedAsPredecessor = relations
+            .map((rel) => this.normalizeRelationEndpoints(rel))
+            .filter((entry): entry is { predecessorId: string; successorId: string; gapDays: number } => Boolean(entry))
+            .filter((entry) => entry.predecessorId === movedTaskId);
 
-        // ===== 1. PRECEDES relations (A precedes B) =====
-        // When A moves, check if B.start needs to be pushed forward
-        // Finish-to-Start: B.start >= A.end + delay
-        const precedesRelations = relations.filter(
-            r => r.from === movedTaskId &&
-                (r.type === RelationType.Precedes || r.type === RelationType.Blocks)
-        );
-
-        for (const rel of precedesRelations) {
-            const successor = tasks.find(t => t.id === rel.to);
+        for (const relation of movedAsPredecessor) {
+            const successor = tasks.find(t => t.id === relation.successorId);
             if (!successor) continue;
 
-            const delay = (rel.delay || 0) * dayInMs;
-            // End of predecessor + delay = minimum start for successor
+            // End of predecessor + gapDays = minimum start for successor.
             // Note: newDue represents the END date timestamp (typically start of that day)
-            const minStart = newDue + delay;
+            const minStart = this.addWorkingDays(newDue, relation.gapDays, nonWorkingWeekDays);
 
             if (successor.startDate !== undefined &&
                 Number.isFinite(successor.startDate) &&
@@ -156,30 +221,31 @@ export class TaskLogicService {
             }
         }
 
-        // ===== 2. FOLLOWS relations (A follows B) =====
-        // When A moves, check if B (predecessor of A) needs adjustment
-        // This is the inverse: A.start >= B.end + delay
-        // If we moved A backward, B might need to move backward too
-        const followsRelations = relations.filter(
-            r => r.from === movedTaskId &&
-                (r.type === RelationType.Follows || r.type === RelationType.Blocked)
-        );
+        // ===== 2. Moved task acts as successor =====
+        // Constraint: successor.start >= predecessor.end + delay
+        // If successor moves backward, predecessor may need to move backward as well.
+        if (Number.isFinite(newStart)) {
+            const movedAsSuccessor = relations
+                .map((rel) => this.normalizeRelationEndpoints(rel))
+                .filter((entry): entry is { predecessorId: string; successorId: string; gapDays: number } => Boolean(entry))
+                .filter((entry) => entry.successorId === movedTaskId);
 
-        for (const rel of followsRelations) {
-            const predecessor = tasks.find(t => t.id === rel.to);
-            if (!predecessor) continue;
+            for (const relation of movedAsSuccessor) {
+                const predecessor = tasks.find(t => t.id === relation.predecessorId);
+                if (!predecessor) continue;
 
-            const delay = (rel.delay || 0) * dayInMs;
-            // A follows B means: A.start >= B.end + delay
-            // So B.end <= A.start - delay (maximum end for predecessor)
-            const maxEnd = newStart - delay;
+                const predecessorEnd = predecessor.dueDate;
+                if (predecessorEnd === undefined || !Number.isFinite(predecessorEnd)) continue;
 
-            if (predecessor.dueDate !== undefined &&
-                Number.isFinite(predecessor.dueDate) &&
-                predecessor.dueDate > maxEnd) {
+                // Validate with Redmine-equivalent forward rule:
+                // successor.start >= addWorkingDays(predecessor.end, gapDays)
+                const requiredSuccessorStart = this.addWorkingDays(predecessorEnd, relation.gapDays, nonWorkingWeekDays);
+                if (requiredSuccessorStart <= newStart) continue;
+
+                const maxEnd = this.latestPredecessorEndForSuccessorStart(newStart, relation.gapDays, nonWorkingWeekDays);
 
                 const duration = (predecessor.startDate !== undefined && Number.isFinite(predecessor.startDate))
-                    ? predecessor.dueDate - predecessor.startDate
+                    ? predecessorEnd - predecessor.startDate
                     : 0;
                 const newPredecessorDue = maxEnd;
                 const newPredecessorStart = newPredecessorDue - duration;
@@ -206,4 +272,3 @@ export class TaskLogicService {
         return updates;
     }
 }
-
