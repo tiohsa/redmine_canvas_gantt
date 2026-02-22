@@ -66,6 +66,20 @@ declare global {
     }
 }
 
+type RedmineCanvasGanttConfig = NonNullable<Window['RedmineCanvasGantt']>;
+
+const getConfig = (): RedmineCanvasGanttConfig => {
+    const config = window.RedmineCanvasGantt;
+    if (!config) throw new Error('Configuration not found');
+    return config;
+};
+
+const buildJsonHeaders = (config: RedmineCanvasGanttConfig, includeCsrf: boolean = false): HeadersInit => ({
+    'X-Redmine-API-Key': config.apiKey,
+    'Content-Type': 'application/json',
+    ...(includeCsrf ? { 'X-CSRF-Token': config.authToken } : {})
+});
+
 const parseErrorMessage = async (response: Response): Promise<string> => {
     const payload = await response.json().catch(() => ({} as UnknownRecord));
     const record = asRecord(payload) ?? {};
@@ -140,11 +154,7 @@ const parseCustomFieldMeta = (value: unknown): CustomFieldMeta | null => {
 
 export const apiClient = {
     fetchData: async (params?: { statusIds?: number[] }): Promise<ApiData> => {
-        const config = window.RedmineCanvasGantt;
-
-        if (!config) {
-            throw new Error("Configuration not found");
-        }
+        const config = getConfig();
 
         const parseDate = (value: string | null | undefined): number | null => {
             if (!value) return null;
@@ -160,10 +170,7 @@ export const apiClient = {
         const url = `${config.apiBase}/data.json` + (qs ? `?${qs}` : '');
 
         const response = await fetch(url, {
-            headers: {
-                'X-Redmine-API-Key': config.apiKey,
-                'Content-Type': 'application/json'
-            }
+            headers: buildJsonHeaders(config)
         });
 
         if (!response.ok) {
@@ -255,16 +262,10 @@ export const apiClient = {
     },
 
     fetchEditMeta: async (taskId: string): Promise<TaskEditMeta> => {
-        const config = window.RedmineCanvasGantt;
-        if (!config) {
-            throw new Error("Configuration not found");
-        }
+        const config = getConfig();
 
         const response = await fetch(`${config.apiBase}/tasks/${taskId}/edit_meta.json`, {
-            headers: {
-                'X-Redmine-API-Key': config.apiKey,
-                'Content-Type': 'application/json'
-            }
+            headers: buildJsonHeaders(config)
         });
 
         if (!response.ok) {
@@ -335,7 +336,6 @@ export const apiClient = {
         const projects = projectsRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
         const trackers = trackersRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
         const versions = versionsRaw.map(parseEditOption).filter((v): v is EditOption => Boolean(v));
-        console.log("DEBUG: fetchEditMeta parsed versions:", versions, "from versionsRaw:", versionsRaw);
         const customFields = customFieldsRaw.map(parseCustomFieldMeta).filter((v): v is CustomFieldMeta => Boolean(v));
 
         const customFieldValues: Record<string, string | null> = {};
@@ -391,18 +391,11 @@ export const apiClient = {
     },
 
     updateTask: async (task: Task): Promise<UpdateTaskResult> => {
-        const config = window.RedmineCanvasGantt;
-        if (!config) {
-            throw new Error("Configuration not found");
-        }
+        const config = getConfig();
 
         const response = await fetch(`${config.apiBase}/tasks/${task.id}.json`, {
             method: 'PATCH',
-            headers: {
-                'X-Redmine-API-Key': config.apiKey,
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': config.authToken
-            },
+            headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
                 task: {
                     start_date: (task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toISOString().split('T')[0] : null,
@@ -432,18 +425,11 @@ export const apiClient = {
     },
 
     updateTaskFields: async (taskId: string, fields: Record<string, unknown>): Promise<UpdateTaskResult> => {
-        const config = window.RedmineCanvasGantt;
-        if (!config) {
-            throw new Error("Configuration not found");
-        }
+        const config = getConfig();
 
         const response = await fetch(`${config.apiBase}/tasks/${taskId}.json`, {
             method: 'PATCH',
-            headers: {
-                'X-Redmine-API-Key': config.apiKey,
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': config.authToken
-            },
+            headers: buildJsonHeaders(config, true),
             body: JSON.stringify({ task: fields })
         });
 
@@ -466,19 +452,12 @@ export const apiClient = {
     },
 
     createRelation: async (fromId: string, toId: string, type: string): Promise<Relation> => {
-        const config = window.RedmineCanvasGantt;
-        if (!config) {
-            throw new Error("Configuration not found");
-        }
+        const config = getConfig();
 
         const redmineBase = config.redmineBase || '';
         const response = await fetch(`${redmineBase}/issues/${fromId}/relations.json`, {
             method: 'POST',
-            headers: {
-                'X-Redmine-API-Key': config.apiKey,
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': config.authToken
-            },
+            headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
                 relation: {
                     issue_to_id: toId,
@@ -505,18 +484,11 @@ export const apiClient = {
     },
 
     deleteRelation: async (relationId: string): Promise<void> => {
-        const config = window.RedmineCanvasGantt;
-        if (!config) {
-            throw new Error("Configuration not found");
-        }
+        const config = getConfig();
 
         const response = await fetch(`${config.apiBase}/relations/${relationId}.json`, {
             method: 'DELETE',
-            headers: {
-                'X-Redmine-API-Key': config.apiKey,
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': config.authToken
-            }
+            headers: buildJsonHeaders(config, true)
         });
 
         if (!response.ok) {
@@ -526,10 +498,7 @@ export const apiClient = {
     },
 
     createTask: async (task: Partial<Task>): Promise<Task> => {
-        const config = window.RedmineCanvasGantt;
-        if (!config) {
-            throw new Error("Configuration not found");
-        }
+        const config = getConfig();
 
         const body: Record<string, unknown> = {
             subject: task.subject,
@@ -546,11 +515,7 @@ export const apiClient = {
         const redmineBase = config.redmineBase || '';
         const response = await fetch(`${redmineBase}/issues.json`, {
             method: 'POST',
-            headers: {
-                'X-Redmine-API-Key': config.apiKey,
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': config.authToken
-            },
+            headers: buildJsonHeaders(config, true),
             body: JSON.stringify({ issue: body })
         });
 
@@ -582,20 +547,13 @@ export const apiClient = {
     },
 
     deleteTask: async (taskId: string): Promise<void> => {
-        const config = window.RedmineCanvasGantt;
-        if (!config) {
-            throw new Error("Configuration not found");
-        }
+        const config = getConfig();
 
         const redmineBase = config.redmineBase || '';
         // Redmine API DELETE /issues/:id.json
         const response = await fetch(`${redmineBase}/issues/${taskId}.json`, {
             method: 'DELETE',
-            headers: {
-                'X-Redmine-API-Key': config.apiKey,
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': config.authToken
-            }
+            headers: buildJsonHeaders(config, true)
         });
 
         if (!response.ok) {
