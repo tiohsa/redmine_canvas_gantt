@@ -12,8 +12,9 @@ import { TimelineHeader } from './TimelineHeader';
 import { IssueIframeDialog } from './IssueIframeDialog';
 import { getMaxFiniteDueDate, getMinFiniteStartDate } from '../utils/taskRange';
 import { GlobalTooltip } from './GlobalTooltip';
+import { clampSidebarWidthToBounds, computeSidebarWidthBounds } from '../utils/sidebarWidth';
 
-import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, SIDEBAR_MIN_WIDTH, BOTTOM_PADDING_PX } from '../constants';
+import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, BOTTOM_PADDING_PX } from '../constants';
 
 export const GanttContainer: React.FC = () => {
     // containerRef is the root flex container
@@ -46,12 +47,14 @@ export const GanttContainer: React.FC = () => {
     // );
     // );
     const tasksMaxDue = useMemo(() => getMaxFiniteDueDate(tasks), [tasks]);
-    const getSidebarWidthBounds = (): { min: number; max: number } | null => {
+    const getSidebarWidthBounds = () => {
         const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 0;
-        if (containerWidth <= 0) return null;
-
-        const max = Math.max(SIDEBAR_MIN_WIDTH, Math.floor(containerWidth * 0.5));
-        return { min: SIDEBAR_MIN_WIDTH, max };
+        return computeSidebarWidthBounds(containerWidth);
+    };
+    const getClampedSidebarWidth = (width: number): number | null => {
+        const bounds = getSidebarWidthBounds();
+        if (!bounds) return null;
+        return clampSidebarWidthToBounds(width, bounds);
     };
     const computeScrollContentSize = (): { width: number; height: number } => {
         const scale = viewport?.scale || 0.00000001;
@@ -94,10 +97,8 @@ export const GanttContainer: React.FC = () => {
             // Constrain width to the container and keep at least half of the timeline visible.
             const containerRect = containerRef.current?.getBoundingClientRect();
             const containerLeft = containerRect?.left ?? 0;
-            const bounds = getSidebarWidthBounds();
-            if (!bounds) return;
-            const { min, max } = bounds;
-            const newWidth = Math.max(min, Math.min(max, e.clientX - containerLeft));
+            const newWidth = getClampedSidebarWidth(e.clientX - containerLeft);
+            if (newWidth === null) return;
             setSidebarWidth(newWidth);
         };
 
@@ -122,10 +123,8 @@ export const GanttContainer: React.FC = () => {
         if (!leftPaneVisible) return;
 
         const clampSidebarWidth = () => {
-            const bounds = getSidebarWidthBounds();
-            if (!bounds) return;
-            const { min, max } = bounds;
-            const clampedWidth = Math.max(min, Math.min(max, sidebarWidth));
+            const clampedWidth = getClampedSidebarWidth(sidebarWidth);
+            if (clampedWidth === null) return;
             if (clampedWidth !== sidebarWidth) {
                 setSidebarWidth(clampedWidth);
             }

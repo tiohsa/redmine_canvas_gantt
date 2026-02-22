@@ -4,6 +4,13 @@ import { useUIStore } from '../stores/UIStore';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useTaskStore } from '../stores/TaskStore';
 
+const fetchDataMock = vi.fn().mockResolvedValue({
+    tasks: [],
+    relations: [],
+    versions: [],
+    statuses: []
+});
+
 // Mock engines and renderers
 vi.mock('../engines/InteractionEngine', () => ({
     InteractionEngine: class {
@@ -69,6 +76,11 @@ vi.mock('./GlobalTooltip', () => ({
 vi.mock('./GanttToolbar', () => ({
     GanttToolbar: () => <div data-testid="gantt-toolbar" />,
 }));
+vi.mock('../api/client', () => ({
+    apiClient: {
+        fetchData: (...args: unknown[]) => fetchDataMock(...args)
+    }
+}));
 
 describe('GanttContainer Resize', () => {
     beforeEach(() => {
@@ -91,6 +103,7 @@ describe('GanttContainer Resize', () => {
             layoutRows: [],
             rowCount: 0
         });
+        fetchDataMock.mockClear();
         vi.clearAllMocks();
     });
 
