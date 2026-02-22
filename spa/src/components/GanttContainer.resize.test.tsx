@@ -124,4 +124,32 @@ describe('GanttContainer Resize', () => {
 
         expect(setSidebarWidthSpy).toHaveBeenCalledWith(400);
     });
+
+    it('should cap sidebar width at 50% of container width', () => {
+        const setSidebarWidthSpy = vi.fn();
+        useUIStore.setState({ setSidebarWidth: setSidebarWidthSpy });
+
+        render(<GanttContainer />);
+
+        const resizeHandle = screen.getByTestId('sidebar-resize-handle');
+        const ganttContainerDiv = resizeHandle.parentElement as HTMLElement;
+
+        vi.spyOn(ganttContainerDiv, 'getBoundingClientRect').mockReturnValue({
+            left: 100,
+            top: 0,
+            width: 1000,
+            height: 500,
+            bottom: 500,
+            right: 1100,
+            x: 100,
+            y: 0,
+            toJSON: () => { },
+        });
+
+        fireEvent.mouseDown(resizeHandle);
+        fireEvent.mouseMove(document, { clientX: 1200 });
+        fireEvent.mouseUp(document);
+
+        expect(setSidebarWidthSpy).toHaveBeenCalledWith(500);
+    });
 });
