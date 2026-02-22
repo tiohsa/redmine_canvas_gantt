@@ -12,8 +12,9 @@ import { TimelineHeader } from './TimelineHeader';
 import { IssueIframeDialog } from './IssueIframeDialog';
 import { getMaxFiniteDueDate, getMinFiniteStartDate } from '../utils/taskRange';
 import { GlobalTooltip } from './GlobalTooltip';
+import { clampSidebarWidthToBounds, computeSidebarWidthBounds } from '../utils/sidebarWidth';
 
-import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, BOTTOM_PADDING_PX } from '../constants';
+import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, BOTTOM_PADDING_PX } from '../constants';
 
 export const GanttContainer: React.FC = () => {
     // containerRef is the root flex container
@@ -46,6 +47,15 @@ export const GanttContainer: React.FC = () => {
     // );
     // );
     const tasksMaxDue = useMemo(() => getMaxFiniteDueDate(tasks), [tasks]);
+    const getSidebarWidthBounds = () => {
+        const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 0;
+        return computeSidebarWidthBounds(containerWidth);
+    };
+    const getClampedSidebarWidth = (width: number): number | null => {
+        const bounds = getSidebarWidthBounds();
+        if (!bounds) return null;
+        return clampSidebarWidthToBounds(width, bounds);
+    };
     const computeScrollContentSize = (): { width: number; height: number } => {
         const scale = viewport?.scale || 0.00000001;
 
@@ -84,9 +94,11 @@ export const GanttContainer: React.FC = () => {
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
             if (!isResizing.current) return;
-            // Constrain width
-            const containerLeft = containerRef.current?.getBoundingClientRect().left || 0;
-            const newWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, e.clientX - containerLeft));
+            // Constrain width to the container and keep at least half of the timeline visible.
+            const containerRect = containerRef.current?.getBoundingClientRect();
+            const containerLeft = containerRect?.left ?? 0;
+            const newWidth = getClampedSidebarWidth(e.clientX - containerLeft);
+            if (newWidth === null) return;
             setSidebarWidth(newWidth);
         };
 
@@ -106,6 +118,22 @@ export const GanttContainer: React.FC = () => {
             setSidebarResizing(false);
         };
     }, [setSidebarResizing, viewportFromStorage, setSidebarWidth]);
+
+    useEffect(() => {
+        if (!leftPaneVisible) return;
+
+        const clampSidebarWidth = () => {
+            const clampedWidth = getClampedSidebarWidth(sidebarWidth);
+            if (clampedWidth === null) return;
+            if (clampedWidth !== sidebarWidth) {
+                setSidebarWidth(clampedWidth);
+            }
+        };
+
+        clampSidebarWidth();
+        window.addEventListener('resize', clampSidebarWidth);
+        return () => window.removeEventListener('resize', clampSidebarWidth);
+    }, [leftPaneVisible, sidebarWidth, setSidebarWidth]);
 
     const startResize = () => {
         isResizing.current = true;
