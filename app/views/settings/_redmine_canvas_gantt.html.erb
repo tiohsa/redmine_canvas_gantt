@@ -27,7 +27,10 @@
   </p>
 
   <p>
-    <label><%= l(:label_custom_field_plural) %> (default OFF)</label>
+    <label><%= l(:label_custom_field_plural) %> (default ON)</label>
+    <%= check_box_tag 'settings[inline_edit_custom_fields]', '1', settings.fetch('inline_edit_custom_fields', '1').to_s == '1' %>
+  </p>
+
   <p>
     <label><%= l(:label_row_height) %></label>
     <%= number_field_tag 'settings[row_height]', settings['row_height'], min: 20, max: 100 %>

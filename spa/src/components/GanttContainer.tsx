@@ -33,7 +33,7 @@ export const GanttContainer: React.FC = () => {
     const isSyncingScroll = useRef(false);
     const hasFetched = useRef(false);
 
-    const { viewport, tasks, relations, selectedTaskId, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, setTasks, setRelations, setVersions } = useTaskStore();
+    const { viewport, tasks, relations, selectedTaskId, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, setTasks, setRelations, setVersions, setCustomFields } = useTaskStore();
     const { sidebarWidth, setSidebarWidth, leftPaneVisible, showProgressLine, showPointsOrphans, isSidebarResizing, setSidebarResizing } = useUIStore();
 
     // Removed unused row calculations and task slicing
@@ -159,6 +159,7 @@ export const GanttContainer: React.FC = () => {
                 setTasks(data.tasks);
                 setRelations(data.relations);
                 setVersions(data.versions);
+                setCustomFields(data.customFields);
                 useTaskStore.getState().setTaskStatuses(data.statuses);
 
                 if (!viewportFromStorage) {
@@ -179,7 +180,7 @@ export const GanttContainer: React.FC = () => {
                 }
             }).catch(err => console.error("Failed to load Gantt data", err));
         });
-    }, [setRelations, setTasks, setVersions, updateViewport, viewportFromStorage]);
+    }, [setCustomFields, setRelations, setTasks, setVersions, updateViewport, viewportFromStorage]);
 
     useEffect(() => {
         // We attach interaction engine to the MAIN PANE (timeline), not the whole container

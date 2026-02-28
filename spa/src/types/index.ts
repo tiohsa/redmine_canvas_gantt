@@ -28,6 +28,7 @@ export interface Task {
     statusName?: string;
     spentHours?: number;
     fixedVersionName?: string;
+    customFieldValues?: Record<string, string | null>;
 
     // Computed for layout (cached)
     rowIndex: number;

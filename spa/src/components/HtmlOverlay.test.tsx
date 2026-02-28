@@ -87,6 +87,7 @@ describe('HtmlOverlay', () => {
             tasks: [task1, task2],
             relations: [relation],
             versions: [],
+            customFields: [],
             project: { id: 'p1', name: 'Project' },
             statuses: [],
             permissions: { editable: true, viewable: true }
@@ -138,6 +139,7 @@ describe('HtmlOverlay', () => {
             tasks: [task1, task2],
             relations: [],
             versions: [],
+            customFields: [],
             statuses: [],
             project: { id: 'p1', name: 'Project' },
             permissions: { editable: true, viewable: true }

@@ -21,7 +21,7 @@ Redmine::Plugin.register :redmine_canvas_gantt do
     'inline_edit_status' => '1',
     'inline_edit_done_ratio' => '1',
     'inline_edit_due_date' => '1',
-    'inline_edit_custom_fields' => '0',
+    'inline_edit_custom_fields' => '1',
     'row_height' => '36',
     'use_vite_dev_server' => '0'
   }, partial: 'settings/redmine_canvas_gantt'

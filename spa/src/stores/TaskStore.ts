@@ -7,8 +7,9 @@ import { getMaxFiniteDueDate } from '../utils/taskRange';
 import { i18n } from '../utils/i18n';
 import { useUIStore } from './UIStore';
 import type { MoveTaskAsChildResult } from '../types';
+import type { CustomFieldMeta } from '../types/editMeta';
 
-type SortConfig = { key: keyof Task; direction: 'asc' | 'desc' } | null;
+type SortConfig = { key: string; direction: 'asc' | 'desc' } | null;
 
 interface TaskState {
     allTasks: Task[];
@@ -16,6 +17,7 @@ interface TaskState {
     relations: Relation[];
     versions: Version[];
     taskStatuses: TaskStatus[];
+    customFields: CustomFieldMeta[];
     selectedStatusIds: number[];
     viewport: Viewport;
     viewMode: ViewMode;
@@ -54,6 +56,7 @@ interface TaskState {
     setRelations: (relations: Relation[]) => void;
     setVersions: (versions: Version[]) => void;
     setTaskStatuses: (statuses: TaskStatus[]) => void;
+    setCustomFields: (fields: CustomFieldMeta[]) => void;
     setSelectedStatusFromServer: (ids: number[]) => void;
     setShowVersions: (show: boolean) => void;
     addRelation: (relation: Relation) => void;
@@ -83,7 +86,7 @@ interface TaskState {
     setSelectedProjectIds: (ids: string[]) => void;
     setSelectedVersionIds: (ids: string[]) => void;
     scrollToTask: (taskId: string) => void;
-    setSortConfig: (key: keyof Task | null) => void;
+    setSortConfig: (key: string | null) => void;
     refreshData: () => Promise<void>;
     setSortingSuspended: (suspended: boolean) => void;
     canDropAsChild: (sourceTaskId: string, targetTaskId: string) => boolean;
@@ -110,6 +113,7 @@ type LayoutState = {
     allTasks: Task[];
     relations: Relation[];
     versions: Version[];
+    customFields: CustomFieldMeta[];
     groupByProject: boolean;
     groupByAssignee: boolean;
     showVersions: boolean;
@@ -140,7 +144,8 @@ const buildLayout = (
     _selectedVersionIds: string[],
     selectedProjectIds: string[],
     sortConfig: SortConfig,
-    allTasks: Task[]
+    allTasks: Task[],
+    customFields: CustomFieldMeta[]
 ): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
     const ASSIGNEE_GROUP_PREFIX = 'assignee:';
     const UNASSIGNED_GROUP_ID = 'none';
@@ -223,6 +228,47 @@ const buildLayout = (
 
 
     // Helper to sort task IDs by configured sort or default displayOrder
+    const customFieldMetaById = new Map(customFields.map((cf) => [String(cf.id), cf]));
+
+    const getSortValue = (task: Task, sortKey: string): string | number | null | undefined => {
+        if (sortKey.startsWith('cf:')) {
+            const customFieldId = sortKey.slice(3);
+            const raw = task.customFieldValues?.[customFieldId];
+            if (raw === undefined || raw === null || raw === '') return raw;
+            const meta = customFieldMetaById.get(customFieldId);
+            if (!meta) return raw;
+
+            if (meta.fieldFormat === 'int' || meta.fieldFormat === 'float') {
+                const parsed = Number(raw);
+                return Number.isFinite(parsed) ? parsed : raw;
+            }
+            if (meta.fieldFormat === 'bool') {
+                if (raw === '1') return 1;
+                if (raw === '0') return 0;
+                return raw;
+            }
+            if (meta.fieldFormat === 'date') {
+                const ts = new Date(raw).getTime();
+                return Number.isFinite(ts) ? ts : raw;
+            }
+            return raw;
+        }
+
+        return (task as unknown as Record<string, unknown>)[sortKey] as string | number | null | undefined;
+    };
+
+    const compareSortValues = (a: string | number | null | undefined, b: string | number | null | undefined): number => {
+        if (a === b) return 0;
+        if (a === null || a === undefined || a === '') return 1;
+        if (b === null || b === undefined || b === '') return -1;
+
+        if (typeof a === 'number' && typeof b === 'number') {
+            return a < b ? -1 : 1;
+        }
+
+        return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+    };
+
     const sortTaskIds = (ids: string[]) => {
         ids.sort((a, b) => {
             const taskA = nodeMap.get(a)?.task;
@@ -230,17 +276,9 @@ const buildLayout = (
             if (!taskA || !taskB) return 0;
 
             if (sortConfig) {
-                const valA = taskA[sortConfig.key];
-                const valB = taskB[sortConfig.key];
-
-                if (valA === valB) return 0;
-
-                // Handle nulls/undefined always at the bottom? or top? 
-                // Let's say nulls last.
-                if (valA === null || valA === undefined) return 1;
-                if (valB === null || valB === undefined) return -1;
-
-                const compare = (valA < valB ? -1 : 1);
+                const valA = getSortValue(taskA, sortConfig.key);
+                const valB = getSortValue(taskB, sortConfig.key);
+                const compare = compareSortValues(valA, valB);
                 return sortConfig.direction === 'asc' ? compare : -compare;
             }
 
@@ -549,6 +587,7 @@ const resolveLayoutState = (state: TaskState, overrides: Partial<LayoutState> = 
     selectedVersionIds: overrides.selectedVersionIds ?? state.selectedVersionIds,
     selectedProjectIds: overrides.selectedProjectIds ?? state.selectedProjectIds,
     sortConfig: overrides.sortConfig ?? state.sortConfig,
+    customFields: overrides.customFields ?? state.customFields,
     filterText: overrides.filterText ?? state.filterText,
     selectedAssigneeIds: overrides.selectedAssigneeIds ?? state.selectedAssigneeIds,
     showSubprojects: overrides.showSubprojects ?? state.showSubprojects,
@@ -581,7 +620,8 @@ const buildLayoutFromState = (state: TaskState, overrides: Partial<LayoutState> 
         layoutState.selectedVersionIds,
         layoutState.selectedProjectIds,
         layoutState.sortConfig,
-        layoutState.allTasks
+        layoutState.allTasks,
+        layoutState.customFields
     );
 };
 
@@ -710,6 +750,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     relations: [],
     versions: [],
     taskStatuses: [],
+    customFields: [],
     selectedStatusIds: preferences.selectedStatusIds ?? [],
     viewport: DEFAULT_VIEWPORT,
     viewMode: preferences.viewMode ?? 'Week',
@@ -792,6 +833,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         };
     }),
     setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
+    setCustomFields: (customFields) => set((state) => {
+        const layout = buildLayoutFromState(state, { customFields });
+        return {
+            customFields,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
     setSelectedStatusFromServer: (ids) => {
         set({ selectedStatusIds: ids });
         get().refreshData();
@@ -1496,11 +1546,12 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const { apiClient } = await import('../api/client');
         const state = get();
         const data = await apiClient.fetchData({ statusIds: state.selectedStatusIds });
-        const { setTasks, setRelations, setVersions, setTaskStatuses } = state;
+        const { setTasks, setRelations, setVersions, setTaskStatuses, setCustomFields } = state;
         setTasks(data.tasks);
         setRelations(data.relations);
         setVersions(data.versions);
         setTaskStatuses(data.statuses);
+        setCustomFields(data.customFields);
         set({ modifiedTaskIds: new Set() });
     },
 

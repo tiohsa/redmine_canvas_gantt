@@ -16,7 +16,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
         setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
-        modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave
+        modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields
     } = useTaskStore();
     const {
         showProgressLine,
@@ -141,7 +141,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setVisibleColumns(next);
     };
 
-    const columnOptions = [
+    const baseColumnOptions = [
         { key: 'id', label: 'ID' },
         { key: 'project', label: i18n.t('field_project') || 'Project' },
         { key: 'tracker', label: i18n.t('field_tracker') || 'Tracker' },
@@ -159,6 +159,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         { key: 'createdOn', label: i18n.t('field_created_on') || 'Created' },
         { key: 'updatedOn', label: i18n.t('field_updated_on') || 'Updated' }
     ];
+    const customFieldColumnOptions = customFields.map((cf) => ({
+        key: `cf:${cf.id}`,
+        label: cf.name
+    }));
+    const columnOptions = [...baseColumnOptions, ...customFieldColumnOptions];
 
     const assignees = React.useMemo(() => {
         const map = new Map<number | null, string>();

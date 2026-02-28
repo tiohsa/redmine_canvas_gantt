@@ -125,4 +125,72 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(JSON.parse(response.body)).to eq('error' => 'Relation not found in this project')
     end
   end
+
+  describe '#inline_custom_fields_enabled?' do
+    it 'is true when setting is missing (default ON)' do
+      allow(controller).to receive(:plugin_settings).and_return({})
+      expect(controller.send(:inline_custom_fields_enabled?)).to be(true)
+    end
+
+    it 'is false when setting is explicitly OFF' do
+      allow(controller).to receive(:plugin_settings).and_return({ 'inline_edit_custom_fields' => '0' })
+      expect(controller.send(:inline_custom_fields_enabled?)).to be(false)
+    end
+  end
+
+  describe '#extract_custom_fields / #build_task_custom_field_values' do
+    let(:allowed_custom_field) do
+      instance_double(
+        IssueCustomField,
+        id: 1,
+        name: 'Allowed CF',
+        field_format: 'string',
+        multiple?: false,
+        is_required: false,
+        regexp: nil,
+        min_length: nil,
+        max_length: nil,
+        possible_values: nil
+      )
+    end
+    let(:disallowed_custom_field) do
+      instance_double(
+        IssueCustomField,
+        id: 2,
+        name: 'Disallowed CF',
+        field_format: 'string',
+        multiple?: false,
+        is_required: false,
+        regexp: nil,
+        min_length: nil,
+        max_length: nil,
+        possible_values: nil
+      )
+    end
+    let(:allowed_custom_field_value) { double('CustomValueAllowed', custom_field: allowed_custom_field, value: 'A-001') }
+    let(:disallowed_custom_field_value) { double('CustomValueDisallowed', custom_field: disallowed_custom_field, value: 'B-001') }
+    let(:issue) do
+      instance_double(
+        Issue,
+        available_custom_fields: [allowed_custom_field],
+        custom_field_values: [allowed_custom_field_value, disallowed_custom_field_value]
+      )
+    end
+
+    before do
+      allow(controller).to receive(:inline_custom_fields_enabled?).and_return(true)
+    end
+
+    it 'filters out custom fields that are not applicable to the issue tracker in edit_meta' do
+      custom_fields, custom_field_values = controller.send(:extract_custom_fields, issue, { custom_field_values: true })
+
+      expect(custom_fields.map { |cf| cf[:id] }).to eq([1])
+      expect(custom_field_values).to eq('1' => 'A-001')
+    end
+
+    it 'filters out custom fields that are not applicable to the issue tracker in data payload values' do
+      values = controller.send(:build_task_custom_field_values, issue)
+      expect(values).to eq('1' => 'A-001')
+    end
+  end
 end
