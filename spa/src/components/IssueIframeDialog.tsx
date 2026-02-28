@@ -52,25 +52,25 @@ export const IssueIframeDialog: React.FC = () => {
             const error = getIssueDialogErrorMessage(doc);
             setIframeError(error);
 
-            // If we were saving, close only on successful transition to /issues/:id.
-            // Otherwise always unlock so users can fix inputs and retry.
+            // If we were saving, close only when we are on issue show page without edit form.
+            // This avoids false positives when update renders edit with validation errors.
             if (isSaving) {
-                if (!error) {
-                    const urlParsed = new URL(currentUrl, window.location.origin);
-                    const path = urlParsed.pathname;
+                const urlParsed = new URL(currentUrl, window.location.origin);
+                const path = urlParsed.pathname;
+                const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
+                const hasIssueForm = doc.querySelector('#issue-form') !== null;
+                const isIssueShow = Boolean(issueMatch) && !path.includes('/edit') && !path.includes('/new');
 
-                    const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
-                    if (issueMatch && !path.includes('/edit') && !path.includes('/new')) {
-                        const newIssueId = issueMatch[1];
+                if (!error && isIssueShow && !hasIssueForm) {
+                    const newIssueId = issueMatch?.[1];
 
-                        if (bulkRef.current?.hasSubjects()) {
-                            await bulkRef.current.createSubtasks(newIssueId);
-                        }
-
-                        setIsSaving(false);
-                        handleClose();
-                        return;
+                    if (newIssueId && bulkRef.current?.hasSubjects()) {
+                        await bulkRef.current.createSubtasks(newIssueId);
                     }
+
+                    setIsSaving(false);
+                    handleClose();
+                    return;
                 }
 
                 setIsSaving(false);

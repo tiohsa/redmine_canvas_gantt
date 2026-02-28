@@ -25,8 +25,10 @@ describe('IssueIframeDialog', () => {
         const iframe = container.querySelector('iframe') as HTMLIFrameElement;
         const doc = document.implementation.createHTMLDocument('iframe');
 
+        const iframeWindow = { location: { href: 'http://example.com/issues/123/edit' }, document: doc };
         Object.defineProperty(iframe, 'contentWindow', {
-            value: { location: { href: 'http://example.com/issues/123/edit' }, document: doc }
+            value: iframeWindow,
+            configurable: true
         });
         Object.defineProperty(iframe, 'contentDocument', { value: doc });
 
@@ -44,8 +46,10 @@ describe('IssueIframeDialog', () => {
         vi.mocked(findIssueDialogErrorElement).mockReturnValue(errorElement);
         vi.mocked(getIssueDialogErrorMessage).mockReturnValue('Permission denied');
 
+        const iframeWindow = { location: { href: 'http://example.com/issues/123/edit' }, document: doc };
         Object.defineProperty(iframe, 'contentWindow', {
-            value: { location: { href: 'http://example.com/issues/123/edit' }, document: doc }
+            value: iframeWindow,
+            configurable: true
         });
         Object.defineProperty(iframe, 'contentDocument', { value: doc });
 
@@ -65,7 +69,7 @@ describe('IssueIframeDialog', () => {
         expect(refreshData).toHaveBeenCalledTimes(1);
     });
 
-    it('re-enables Save after non-success load while saving', async () => {
+    it('keeps dialog open when save result stays on issue path with issue-form', async () => {
         const { container } = render(<IssueIframeDialog />);
         const iframe = container.querySelector('iframe') as HTMLIFrameElement;
         const doc = document.implementation.createHTMLDocument('iframe');
@@ -78,7 +82,7 @@ describe('IssueIframeDialog', () => {
         vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
 
         Object.defineProperty(iframe, 'contentWindow', {
-            value: { location: { href: 'http://example.com/issues/123/edit' }, document: doc }
+            value: { location: { href: 'http://example.com/issues/123' }, document: doc }
         });
         Object.defineProperty(iframe, 'contentDocument', { value: doc });
 
@@ -90,11 +94,52 @@ describe('IssueIframeDialog', () => {
             expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
         });
 
-        // Still on edit URL and no detected success transition: must unlock retry.
+        // URL is /issues/:id but edit form remains, so treat as failed save and keep dialog open.
         fireEvent.load(iframe);
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+            expect(useUIStore.getState().issueDialogUrl).toBe('/issues/123/edit');
+        });
+    });
+
+    it('closes dialog when save transitions to issue show without issue-form', async () => {
+        const refreshData = vi.fn().mockResolvedValue(undefined);
+        useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="issue-form">
+              <input name="commit" type="submit" value="Save" />
+            </form>
+        `;
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+
+        const iframeWindow = { location: { href: 'http://example.com/issues/123/edit' }, document: doc };
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: iframeWindow,
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc });
+
+        fireEvent.load(iframe);
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
+        });
+
+        // Simulate successful transition to show page content (no edit form).
+        doc.body.innerHTML = `<div id="content"><p>Issue detail</p></div>`;
+        iframeWindow.location.href = 'http://example.com/issues/123';
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+            expect(refreshData).toHaveBeenCalledTimes(1);
         });
     });
 

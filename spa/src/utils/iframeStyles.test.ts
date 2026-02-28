@@ -24,4 +24,15 @@ describe('iframeStyles', () => {
         expect(findIssueDialogErrorElement(doc)).toBe(error);
         expect(getIssueDialogErrorMessage(doc)).toBe('Permission denied');
     });
+
+    it('detects conflict warning block as an error signal', () => {
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const conflict = doc.createElement('div');
+        conflict.className = 'conflict';
+        conflict.textContent = 'Update conflict';
+        doc.body.appendChild(conflict);
+
+        expect(findIssueDialogErrorElement(doc)).toBe(conflict);
+        expect(getIssueDialogErrorMessage(doc)).toBe('Update conflict');
+    });
 });
