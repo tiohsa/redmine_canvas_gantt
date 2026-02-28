@@ -293,7 +293,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <button
                     data-testid="maximize-left-pane-button"
                     onClick={toggleRightPane}
-                    title={i18n.t('label_maximize_left_pane') || "Maximize Left Pane"}
+                    title={isLeftPaneMaximized
+                        ? (i18n.t('label_restore_split_view') || "Restore Split View")
+                        : (i18n.t('label_maximize_left_pane') || "Maximize List")}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -317,7 +319,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 <button
                     data-testid="maximize-right-pane-button"
                     onClick={toggleLeftPane}
-                    title={i18n.t('label_toggle_sidebar') || "Toggle Sidebar"}
+                    title={isRightPaneMaximized
+                        ? (i18n.t('label_restore_split_view') || "Restore Split View")
+                        : (i18n.t('label_maximize_right_pane') || "Maximize Chart")}
                     style={{
                         display: 'flex',
                         alignItems: 'center',
