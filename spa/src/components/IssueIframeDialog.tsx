@@ -52,16 +52,18 @@ export const IssueIframeDialog: React.FC = () => {
             const error = getIssueDialogErrorMessage(doc);
             setIframeError(error);
 
-            // If we were saving and there are no errors, and the URL changed to /issues/XXX
-            if (isSaving && !error) {
+            // If we were saving, close when we transition to issue show page without error.
+            // Validation failures usually remain on /edit or /new and keep error blocks in DOM.
+            if (isSaving) {
                 const urlParsed = new URL(currentUrl, window.location.origin);
                 const path = urlParsed.pathname;
-
                 const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
-                if (issueMatch && !path.includes('/edit') && !path.includes('/new')) {
-                    const newIssueId = issueMatch[1];
+                const isIssueShow = Boolean(issueMatch) && !path.includes('/edit') && !path.includes('/new');
 
-                    if (bulkRef.current?.hasSubjects()) {
+                if (!error && isIssueShow) {
+                    const newIssueId = issueMatch?.[1];
+
+                    if (newIssueId && bulkRef.current?.hasSubjects()) {
                         await bulkRef.current.createSubtasks(newIssueId);
                     }
 
@@ -69,13 +71,14 @@ export const IssueIframeDialog: React.FC = () => {
                     handleClose();
                     return;
                 }
-            }
 
-            if (isSaving && error) {
                 setIsSaving(false);
             }
         } catch (e) {
             console.debug("Could not verify iframe URL", e);
+            if (isSaving) {
+                setIsSaving(false);
+            }
         }
     }, [handleClose, isSaving]);
 
@@ -165,6 +168,7 @@ export const IssueIframeDialog: React.FC = () => {
         iframeEscapeCleanupRef.current?.();
         iframeEscapeCleanupRef.current = null;
         setIframeError(null);
+        setIsSaving(false);
     }, [issueDialogUrl]);
 
     React.useEffect(() => {

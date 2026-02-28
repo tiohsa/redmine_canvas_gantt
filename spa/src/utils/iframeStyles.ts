@@ -31,7 +31,8 @@ const ISSUE_DIALOG_ERROR_SELECTORS = [
     '#errorExplanation',
     '.errorExplanation',
     '#flash_error',
-    '.flash.error'
+    '.flash.error',
+    '.conflict'
 ];
 
 export const applyIssueDialogStyles = (doc: Document): void => {

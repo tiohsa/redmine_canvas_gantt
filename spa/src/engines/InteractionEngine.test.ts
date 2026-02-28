@@ -173,6 +173,7 @@ describe('InteractionEngine task updates', () => {
             tasks: [task1, task2],
             relations,
             versions: [],
+            customFields: [],
             statuses: [],
             project: { id: 'p1', name: 'Project' },
             permissions: { editable: true, viewable: true }

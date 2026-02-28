@@ -39,6 +39,7 @@ interface ApiData {
     versions: Version[];
     project: Project;
     statuses: TaskStatus[];
+    customFields: CustomFieldMeta[];
     permissions: { editable: boolean; viewable: boolean };
 }
 
@@ -177,12 +178,22 @@ export const apiClient = {
             throw new Error(`API Error: ${response.statusText}`);
         }
 
-        const data = await response.json();
+        const payload = await response.json();
+        const data = asRecord(payload) ?? {};
+        const customFieldsRaw = Array.isArray(data.custom_fields) ? data.custom_fields : [];
+        const customFields = customFieldsRaw.map(parseCustomFieldMeta).filter((v): v is CustomFieldMeta => Boolean(v));
 
         // Transform API tasks to internal Task model
-        const tasks: Task[] = (data.tasks as ApiTask[]).map((t, index: number): Task => {
+        const tasksRaw = Array.isArray(data.tasks) ? data.tasks : [];
+        const tasks: Task[] = (tasksRaw as ApiTask[]).map((t, index: number): Task => {
             const start = parseDate(typeof t.start_date === 'string' ? t.start_date : null);
             const due = parseDate(typeof t.due_date === 'string' ? t.due_date : null);
+            const customFieldValuesRaw = asRecord(t.custom_field_values) ?? {};
+            const customFieldValues: Record<string, string | null> = {};
+            Object.entries(customFieldValuesRaw).forEach(([key, value]) => {
+                if (typeof value === 'string') customFieldValues[key] = value;
+                else if (value === null) customFieldValues[key] = null;
+            });
 
             return {
                 id: String(t.id),
@@ -214,6 +225,7 @@ export const apiClient = {
                 statusName: typeof t.status_name === 'string' ? t.status_name : undefined,
                 spentHours: typeof t.spent_hours === 'number' ? t.spent_hours : undefined,
                 fixedVersionName: typeof t.fixed_version_name === 'string' ? t.fixed_version_name : undefined,
+                customFieldValues,
                 rowIndex: index, // Simplify for now: default order
                 hasChildren: false // Will be updated below
             };
@@ -227,7 +239,8 @@ export const apiClient = {
             }
         });
 
-        const relations: Relation[] = (data.relations as ApiRelation[]).map((r): Relation => ({
+        const relationsRaw = Array.isArray(data.relations) ? data.relations : [];
+        const relations: Relation[] = (relationsRaw as ApiRelation[]).map((r): Relation => ({
             id: String(r.id ?? ''),
             from: String(r.from ?? r.issue_from_id ?? ''),
             to: String(r.to ?? r.issue_to_id ?? ''),
@@ -235,7 +248,7 @@ export const apiClient = {
             delay: typeof r.delay === 'number' ? r.delay : undefined
         })).filter(r => r.id !== '' && r.from !== '' && r.to !== '' && r.type !== '');
 
-        const versions: Version[] = Array.isArray(data.versions) ? (data.versions as ApiVersion[]).map(v => {
+        const versions: Version[] = Array.isArray(data.versions) ? (data.versions as ApiVersion[]).map((v: ApiVersion) => {
             const dateStr = typeof v.effective_date === 'string' ? v.effective_date : null;
             const effectiveDate = parseDate(dateStr) ?? undefined;
 
@@ -258,7 +271,21 @@ export const apiClient = {
             ? (data.statuses as unknown[]).map(parseStatus).filter((s): s is TaskStatus => s !== null)
             : [];
 
-        return { ...data, tasks, relations, versions, statuses };
+        const projectRecord = asRecord(data.project) ?? {};
+        const permissionsRecord = asRecord(data.permissions) ?? {};
+        const project: Project = {
+            id: String(projectRecord.id ?? ''),
+            name: typeof projectRecord.name === 'string' ? projectRecord.name : ''
+        };
+        if (typeof projectRecord.start_date === 'string') project.startDate = projectRecord.start_date;
+        if (typeof projectRecord.due_date === 'string') project.dueDate = projectRecord.due_date;
+
+        const permissions = {
+            editable: Boolean(permissionsRecord.editable),
+            viewable: Boolean(permissionsRecord.viewable)
+        };
+
+        return { tasks, relations, versions, statuses, customFields, project, permissions };
     },
 
     fetchEditMeta: async (taskId: string): Promise<TaskEditMeta> => {

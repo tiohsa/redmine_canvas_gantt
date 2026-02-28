@@ -6,9 +6,9 @@ import { getStatusColor, getPriorityColor } from '../utils/styles';
 import { useUIStore } from '../stores/UIStore';
 import { loadPreferences } from '../utils/preferences';
 
-import { DoneRatioEditor, DueDateEditor, SelectEditor, SubjectEditor } from './TaskDetailPanel';
+import { CustomFieldEditor, DoneRatioEditor, DueDateEditor, SelectEditor, SubjectEditor } from './InlineEditors';
 import { useEditMetaStore } from '../stores/EditMetaStore';
-import type { InlineEditSettings, TaskEditMeta } from '../types/editMeta';
+import type { CustomFieldMeta, InlineEditSettings, TaskEditMeta } from '../types/editMeta';
 import { InlineEditService } from '../services/InlineEditService';
 import { i18n } from '../utils/i18n';
 
@@ -136,6 +136,25 @@ const CollapseAllIcon = () => (
     </svg>
 );
 
+const CUSTOM_FIELD_COLUMN_PREFIX = 'cf:';
+const CUSTOM_FIELD_EDIT_PREFIX = 'customField:';
+
+const isCustomFieldColumnKey = (key: string) => key.startsWith(CUSTOM_FIELD_COLUMN_PREFIX);
+const customFieldIdFromColumnKey = (key: string) => (isCustomFieldColumnKey(key) ? key.slice(CUSTOM_FIELD_COLUMN_PREFIX.length) : null);
+const customFieldEditField = (id: string) => `${CUSTOM_FIELD_EDIT_PREFIX}${id}`;
+const customFieldIdFromEditField = (field: string) => field.startsWith(CUSTOM_FIELD_EDIT_PREFIX) ? field.slice(CUSTOM_FIELD_EDIT_PREFIX.length) : null;
+
+const formatCustomFieldCellValue = (task: Task, customField: CustomFieldMeta): string => {
+    const raw = task.customFieldValues?.[String(customField.id)];
+    if (raw === undefined || raw === null || raw === '') return '-';
+    if (customField.fieldFormat === 'bool') return raw === '1' ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No');
+    if (customField.fieldFormat === 'date') {
+        const ts = new Date(raw).getTime();
+        return Number.isFinite(ts) ? new Date(ts).toLocaleDateString() : raw;
+    }
+    return raw;
+};
+
 export const UiSidebar: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
     const layoutRows = useTaskStore(state => state.layoutRows);
@@ -147,6 +166,7 @@ export const UiSidebar: React.FC = () => {
     const selectedTaskId = useTaskStore(state => state.selectedTaskId);
     const projectExpansion = useTaskStore(state => state.projectExpansion);
     const taskExpansion = useTaskStore(state => state.taskExpansion);
+    const customFields = useTaskStore(state => state.customFields);
     const toggleProjectExpansion = useTaskStore(state => state.toggleProjectExpansion);
     const toggleTaskExpansion = useTaskStore(state => state.toggleTaskExpansion);
     const toggleAllExpansion = useTaskStore(state => state.toggleAllExpansion);
@@ -383,6 +403,9 @@ export const UiSidebar: React.FC = () => {
         addAutoWidth('updatedOn', i18n.t('field_updated_on') || 'Updated', (t) => t.updatedOn ? new Date(t.updatedOn).toLocaleString() : '');
         addAutoWidth('spentHours', i18n.t('field_spent_hours') || 'Spent Time', (t) => t.spentHours !== undefined ? `${t.spentHours}h` : '');
         addAutoWidth('version', i18n.t('field_version') || 'Target Version', (t) => t.fixedVersionName || '');
+        customFields.forEach((cf) => {
+            addAutoWidth(`cf:${cf.id}`, cf.name, (t) => formatCustomFieldCellValue(t, cf));
+        });
 
         // Apply
         Object.keys(newWidths).forEach(key => {
@@ -390,7 +413,7 @@ export const UiSidebar: React.FC = () => {
         });
 
         calculatedRef.current = true;
-    }, [tasks, setColumnWidth]);
+    }, [customFields, tasks, setColumnWidth]);
 
     const handleResizeStart = (e: React.MouseEvent, key: string, currentWidth: number) => {
         e.preventDefault();
@@ -777,6 +800,22 @@ export const UiSidebar: React.FC = () => {
                 <span style={{ color: '#666', fontSize: '12px' }}>{t.fixedVersionName || '-'}</span>
             ))
         },
+        ...customFields.map((customField) => ({
+            key: `cf:${customField.id}`,
+            title: customField.name,
+            width: columnWidths[`cf:${customField.id}`] ?? (customField.fieldFormat === 'text' ? 180 : 120),
+            render: (t: Task) => {
+                const displayValue = formatCustomFieldCellValue(t, customField);
+                return renderEditableCell(t, customFieldEditField(String(customField.id)), (
+                    <span
+                        style={{ color: displayValue === '-' ? '#999' : '#666', fontSize: '12px' }}
+                        data-tooltip={displayValue !== '-' ? displayValue : undefined}
+                    >
+                        {displayValue}
+                    </span>
+                ));
+            }
+        }))
     ];
 
     const activeColumns = columns.filter(col => col.key === 'subject' || visibleColumns.includes(col.key));
@@ -796,7 +835,8 @@ export const UiSidebar: React.FC = () => {
         }
     }, []);
 
-    const getSortField = React.useCallback((columnKey: string): keyof Task | null => {
+    const getSortField = React.useCallback((columnKey: string): string | null => {
+        if (isCustomFieldColumnKey(columnKey)) return columnKey;
         if (columnKey === 'subject') return 'subject';
         if (columnKey === 'assignee') return 'assignedToName';
         if (columnKey === 'status') return 'statusId'; // Position is better than name
@@ -818,6 +858,8 @@ export const UiSidebar: React.FC = () => {
     }, []);
 
     const getEditField = React.useCallback((columnKey: string) => {
+        const customFieldId = customFieldIdFromColumnKey(columnKey);
+        if (customFieldId) return customFieldEditField(customFieldId);
         if (columnKey === 'subject') return 'subject';
         if (columnKey === 'assignee') return 'assignedToId';
         if (columnKey === 'status') return 'statusId';
@@ -836,6 +878,15 @@ export const UiSidebar: React.FC = () => {
 
     const shouldEnableField = React.useCallback((field: string, task: Task, providedMeta?: TaskEditMeta) => {
         if (!task.editable) return false;
+
+        const customFieldId = customFieldIdFromEditField(field);
+        if (customFieldId) {
+            if (!isInlineEditEnabled('inline_edit_custom_fields', true)) return false;
+            const meta = providedMeta || editMetaByTaskId[task.id];
+            if (!meta) return true;
+            if (!meta.editable.customFieldValues) return false;
+            return meta.options.customFields.some((cf) => String(cf.id) === customFieldId);
+        }
 
         // Plugin settings
         if (field === 'subject') return isInlineEditEnabled('inline_edit_subject', true);
@@ -881,8 +932,9 @@ export const UiSidebar: React.FC = () => {
             'assignedToId', 'statusId', 'priorityId', 'authorId',
             'categoryId', 'projectId', 'trackerId', 'fixedVersionId'
         ].includes(field);
+        const needsCustomFieldMeta = customFieldIdFromEditField(field) !== null;
 
-        if (requiresMeta) {
+        if (requiresMeta || needsCustomFieldMeta) {
             const m = await ensureEditMeta(task.id);
             if (!m) return;
             // Re-check after meta is loaded to catch field-level restrictions
@@ -1569,6 +1621,47 @@ export const UiSidebar: React.FC = () => {
                                                             }}
                                                         />
                                                     );
+                                                }
+
+                                                {
+                                                    if (!field) return <span>{i18n.t('button_edit')}</span>;
+                                                    const customFieldId = customFieldIdFromEditField(field);
+                                                    if (customFieldId) {
+                                                        const taskMeta = editMetaByTaskId[task.id];
+                                                        if (!taskMeta) return <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
+                                                        if (!taskMeta.editable.customFieldValues) return <span>{i18n.t('button_edit')}</span>;
+
+                                                        const customField = taskMeta.options.customFields.find((cf) => String(cf.id) === customFieldId)
+                                                            ?? customFields.find((cf) => String(cf.id) === customFieldId);
+                                                        if (!customField) return <span>{i18n.t('button_edit')}</span>;
+
+                                                        return (
+                                                            <CustomFieldEditor
+                                                                customField={customField}
+                                                                initialValue={task.customFieldValues?.[customFieldId] ?? taskMeta.customFieldValues[customFieldId] ?? null}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    const prevRecord = task.customFieldValues;
+                                                                    const nextRecord = { ...(prevRecord ?? {}), [customFieldId]: next };
+                                                                    useTaskStore.getState().updateTask(task.id, { customFieldValues: nextRecord });
+                                                                    useEditMetaStore.getState().setCustomFieldValue(task.id, Number(customFieldId), next);
+                                                                    try {
+                                                                        await save({
+                                                                            taskId: task.id,
+                                                                            optimisticTaskUpdates: {},
+                                                                            rollbackTaskUpdates: {},
+                                                                            fields: { custom_field_values: { [customFieldId]: next ?? '' } }
+                                                                        });
+                                                                    } catch (e) {
+                                                                        useTaskStore.getState().updateTask(task.id, { customFieldValues: prevRecord });
+                                                                        useEditMetaStore.getState().setCustomFieldValue(task.id, Number(customFieldId), taskMeta.customFieldValues[customFieldId] ?? null);
+                                                                        throw e;
+                                                                    }
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
                                                 }
 
                                                 return <span>{i18n.t('button_edit')}</span>;

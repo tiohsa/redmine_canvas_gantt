@@ -154,4 +154,166 @@ describe('UiSidebar', () => {
         const subjectLink = screen.getByText('Long Task Subject For Tooltip Test');
         expect(subjectLink).toHaveAttribute('data-tooltip', 'Long Task Subject For Tooltip Test');
     });
+
+    it('allows inline edit for custom field when setting is enabled', async () => {
+        const taskId = '201';
+        const customFieldId = 10;
+
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key',
+            i18n: { button_edit: 'Edit', label_yes: 'Yes', label_no: 'No', label_custom_field_plural: 'Custom fields' },
+            settings: { inline_edit_custom_fields: '1' }
+        };
+
+        useUIStore.setState({ visibleColumns: ['id', `cf:${customFieldId}`] });
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false,
+            selectedTaskId: null,
+            customFields: [{
+                id: customFieldId,
+                name: 'Client Code',
+                fieldFormat: 'string',
+                isRequired: false
+            }]
+        });
+        useEditMetaStore.setState({
+            metaByTaskId: {
+                [taskId]: {
+                    task: { id: taskId, subject: 'CF task', assignedToId: null, statusId: 1, doneRatio: 0, dueDate: '2025-01-01', startDate: '2025-01-01', priorityId: 1, categoryId: null, estimatedHours: null, projectId: 1, trackerId: 1, fixedVersionId: null, lockVersion: 1 },
+                    editable: { subject: true, assignedToId: true, statusId: true, doneRatio: true, dueDate: true, startDate: true, priorityId: true, categoryId: true, estimatedHours: true, projectId: true, trackerId: true, fixedVersionId: true, customFieldValues: true },
+                    options: {
+                        statuses: [{ id: 1, name: 'New' }],
+                        assignees: [],
+                        priorities: [],
+                        categories: [],
+                        projects: [],
+                        trackers: [],
+                        versions: [],
+                        customFields: [{ id: customFieldId, name: 'Client Code', fieldFormat: 'string', isRequired: false }]
+                    },
+                    customFieldValues: { [String(customFieldId)]: 'A-001' }
+                }
+            },
+            loadingTaskId: null,
+            error: null
+        });
+
+        const task: Task = {
+            id: taskId,
+            subject: 'CF task',
+            startDate: new Date('2025-01-01').getTime(),
+            dueDate: new Date('2025-01-05').getTime(),
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false,
+            customFieldValues: { [String(customFieldId)]: 'A-001' }
+        };
+        useTaskStore.getState().setTasks([task]);
+
+        render(<UiSidebar />);
+
+        const cell = await screen.findByTestId(`cell-${taskId}-cf:${customFieldId}`);
+        fireEvent.doubleClick(cell);
+
+        await waitFor(() => {
+            expect(document.querySelector('input[type="text"]')).toBeTruthy();
+        });
+    });
+
+    it('prevents inline edit for custom field when setting is disabled', async () => {
+        const taskId = '202';
+        const customFieldId = 10;
+
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key',
+            i18n: { button_edit: 'Edit', label_yes: 'Yes', label_no: 'No', label_custom_field_plural: 'Custom fields' },
+            settings: { inline_edit_custom_fields: '0' }
+        };
+
+        useUIStore.setState({ visibleColumns: ['id', `cf:${customFieldId}`] });
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false,
+            selectedTaskId: null,
+            customFields: [{
+                id: customFieldId,
+                name: 'Client Code',
+                fieldFormat: 'string',
+                isRequired: false
+            }]
+        });
+        useEditMetaStore.setState({
+            metaByTaskId: {
+                [taskId]: {
+                    task: { id: taskId, subject: 'CF task', assignedToId: null, statusId: 1, doneRatio: 0, dueDate: '2025-01-01', startDate: '2025-01-01', priorityId: 1, categoryId: null, estimatedHours: null, projectId: 1, trackerId: 1, fixedVersionId: null, lockVersion: 1 },
+                    editable: { subject: true, assignedToId: true, statusId: true, doneRatio: true, dueDate: true, startDate: true, priorityId: true, categoryId: true, estimatedHours: true, projectId: true, trackerId: true, fixedVersionId: true, customFieldValues: true },
+                    options: {
+                        statuses: [{ id: 1, name: 'New' }],
+                        assignees: [],
+                        priorities: [],
+                        categories: [],
+                        projects: [],
+                        trackers: [],
+                        versions: [],
+                        customFields: [{ id: customFieldId, name: 'Client Code', fieldFormat: 'string', isRequired: false }]
+                    },
+                    customFieldValues: { [String(customFieldId)]: 'A-001' }
+                }
+            },
+            loadingTaskId: null,
+            error: null
+        });
+
+        const task: Task = {
+            id: taskId,
+            subject: 'CF task',
+            startDate: new Date('2025-01-01').getTime(),
+            dueDate: new Date('2025-01-05').getTime(),
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false,
+            customFieldValues: { [String(customFieldId)]: 'A-001' }
+        };
+        useTaskStore.getState().setTasks([task]);
+
+        render(<UiSidebar />);
+
+        const cell = await screen.findByTestId(`cell-${taskId}-cf:${customFieldId}`);
+        fireEvent.doubleClick(cell);
+
+        await waitFor(() => {
+            expect(document.querySelector('input[type="text"]')).toBeNull();
+        });
+    });
 });

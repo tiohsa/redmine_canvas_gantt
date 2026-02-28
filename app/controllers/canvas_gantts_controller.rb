@@ -36,6 +36,9 @@ class CanvasGanttsController < ApplicationController
     label_today: :label_today,
     button_top: :button_top,
     label_toggle_sidebar: :label_toggle_sidebar,
+    label_maximize_left_pane: :label_maximize_left_pane,
+    label_maximize_right_pane: :label_maximize_right_pane,
+    label_restore_split_view: :label_restore_split_view,
     label_month: :label_month,
     label_week: :label_week,
     label_day: :label_day,
@@ -118,7 +121,7 @@ class CanvasGanttsController < ApplicationController
 
   ISSUE_INCLUDES = [
     :relations_to, :relations_from, :status, :tracker, :assigned_to, :priority,
-    :author, :category, :project, :fixed_version
+    :author, :category, :project, :fixed_version, { custom_values: :custom_field }
   ].freeze
   EDITABLE_FIELDS = %i[
     subject assigned_to_id status_id done_ratio due_date start_date priority_id
@@ -171,6 +174,7 @@ class CanvasGanttsController < ApplicationController
 
       render json: {
         tasks: build_tasks(issues),
+        custom_fields: build_project_custom_fields(project_ids, issues),
         relations: build_relations(issues),
         versions: build_versions(project_ids),
         statuses: build_statuses,
@@ -361,9 +365,48 @@ class CanvasGanttsController < ApplicationController
         created_on: issue.created_on,
         updated_on: issue.updated_on,
         spent_hours: issue.spent_hours,
-        fixed_version_name: issue.fixed_version&.name
+        fixed_version_name: issue.fixed_version&.name,
+        custom_field_values: build_task_custom_field_values(issue)
       }
     end
+  end
+
+  def build_project_custom_fields(project_ids, issues = [])
+    seen = {}
+
+    project_fields = Project.where(id: project_ids).flat_map do |project|
+      begin
+        Array(project.all_issue_custom_fields)
+      rescue NoMethodError
+        begin
+          Array(project.issue_custom_fields)
+        rescue NoMethodError
+          []
+        end
+      end.select do |custom_field|
+        custom_field.is_a?(IssueCustomField) &&
+          custom_field_visible_for_project?(custom_field, project) &&
+          !custom_field.multiple? &&
+          CUSTOM_FIELD_FORMATS.include?(custom_field.field_format.to_s)
+      end
+    end
+
+    issue_fields = Array(issues).flat_map do |issue|
+      issue.custom_field_values.map(&:custom_field)
+    end.compact.select do |custom_field|
+      custom_field.is_a?(IssueCustomField) &&
+        !custom_field.multiple? &&
+        CUSTOM_FIELD_FORMATS.include?(custom_field.field_format.to_s)
+    end
+
+    (project_fields + issue_fields)
+      .uniq { |cf| cf.id }
+      .sort_by { |cf| [cf.position || 0, cf.name.to_s.downcase] }
+      .each_with_object([]) do |custom_field, result|
+        next if seen[custom_field.id]
+        seen[custom_field.id] = true
+        result << serialize_custom_field(custom_field)
+      end
   end
 
   def build_relations(issues)
@@ -425,36 +468,92 @@ class CanvasGanttsController < ApplicationController
   end
 
   def inline_custom_fields_enabled?
-    plugin_settings['inline_edit_custom_fields'].to_s == '1'
+    plugin_settings.fetch('inline_edit_custom_fields', '1').to_s == '1'
   end
 
   def extract_custom_fields(issue, field_editable)
     return [[], {}] unless inline_custom_fields_enabled? && field_editable[:custom_field_values]
 
+    applicable_custom_field_ids = issue_applicable_custom_field_ids(issue)
     custom_fields = []
     custom_field_values = {}
 
     issue.custom_field_values.each do |custom_field_value|
       custom_field = custom_field_value.custom_field
       next unless custom_field
+      next unless applicable_custom_field_ids.include?(custom_field.id)
       next if custom_field.multiple?
       next unless CUSTOM_FIELD_FORMATS.include?(custom_field.field_format.to_s)
 
-      custom_fields << {
-        id: custom_field.id,
-        name: custom_field.name,
-        field_format: custom_field.field_format,
-        is_required: custom_field.is_required,
-        regexp: custom_field.regexp,
-        min_length: custom_field.min_length,
-        max_length: custom_field.max_length,
-        possible_values: custom_field.field_format.to_s == 'list' ? custom_field.possible_values : nil,
-        text_formatting: custom_field.field_format.to_s == 'text' ? safe_text_formatting(custom_field) : nil
-      }
+      custom_fields << serialize_custom_field(custom_field)
       custom_field_values[custom_field.id.to_s] = custom_field_value.value
     end
 
     [custom_fields, custom_field_values]
+  end
+
+  def build_task_custom_field_values(issue)
+    applicable_custom_field_ids = issue_applicable_custom_field_ids(issue)
+    issue.custom_field_values.each_with_object({}) do |custom_field_value, values|
+      custom_field = custom_field_value.custom_field
+      next unless custom_field
+      next unless applicable_custom_field_ids.include?(custom_field.id)
+      next if custom_field.multiple?
+      next unless CUSTOM_FIELD_FORMATS.include?(custom_field.field_format.to_s)
+
+      values[custom_field.id.to_s] = custom_field_value.value
+    end
+  end
+
+  def issue_applicable_custom_field_ids(issue)
+    available_fields = if issue.respond_to?(:available_custom_fields)
+                         Array(issue.available_custom_fields)
+                       else
+                         []
+                       end
+
+    ids = available_fields
+      .select { |f| f.respond_to?(:id) }
+      .map(&:id)
+      .compact
+
+    return ids.uniq unless ids.empty?
+
+    Array(issue.custom_field_values)
+      .filter_map { |v| v.custom_field&.id }
+      .uniq
+  rescue StandardError
+    []
+  end
+
+  def serialize_custom_field(custom_field)
+    {
+      id: custom_field.id,
+      name: custom_field.name,
+      field_format: custom_field.field_format,
+      is_required: custom_field.is_required,
+      regexp: custom_field.regexp,
+      min_length: custom_field.min_length,
+      max_length: custom_field.max_length,
+      possible_values: custom_field.field_format.to_s == 'list' ? custom_field.possible_values : nil,
+      text_formatting: custom_field.field_format.to_s == 'text' ? safe_text_formatting(custom_field) : nil
+    }
+  end
+
+  def custom_field_visible_for_project?(custom_field, project)
+    return true unless custom_field.respond_to?(:visible_by?)
+
+    custom_field.visible_by?(project, User.current)
+  rescue ArgumentError
+    begin
+      custom_field.visible_by?(project)
+    rescue ArgumentError
+      custom_field.visible_by?(User.current)
+    rescue ArgumentError
+      custom_field.visible_by?
+    end
+  rescue StandardError
+    true
   end
 
   def safe_text_formatting(custom_field)

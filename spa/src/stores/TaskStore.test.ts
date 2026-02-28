@@ -364,6 +364,7 @@ describe('TaskStore saveChanges ordering', () => {
             tasks: [],
             relations: [],
             versions: [],
+            customFields: [],
             statuses: [],
             project: { id: 'p1', name: 'P1' },
             permissions: { editable: true, viewable: true }
@@ -480,6 +481,7 @@ describe('TaskStore saveChanges ordering', () => {
                 tasks: latestTasks,
                 relations: [],
                 versions: [],
+                customFields: [],
                 statuses: [],
                 project: { id: 'p1', name: 'P1' },
                 permissions: { editable: true, viewable: true }
@@ -488,6 +490,7 @@ describe('TaskStore saveChanges ordering', () => {
                 tasks: latestTasks,
                 relations: [],
                 versions: [],
+                customFields: [],
                 statuses: [],
                 project: { id: 'p1', name: 'P1' },
                 permissions: { editable: true, viewable: true }
