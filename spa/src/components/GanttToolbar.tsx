@@ -454,16 +454,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            padding: '0 10px',
+                            justifyContent: 'center',
+                            padding: '0',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
-                            backgroundColor: '#fff',
-                            color: '#333',
-                            fontSize: '13px',
-                            fontWeight: 500,
+                            backgroundColor: visibleColumns.join(',') !== DEFAULT_COLUMNS.join(',') ? '#e8f0fe' : '#fff',
+                            color: visibleColumns.join(',') !== DEFAULT_COLUMNS.join(',') ? '#1a73e8' : '#333',
                             cursor: 'pointer',
-                            height: '32px'
+                            height: '32px',
+                            width: '32px',
+                            position: 'relative'
                         }}
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -471,7 +471,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <line x1="9" y1="3" x2="9" y2="21" />
                             <line x1="15" y1="3" x2="15" y2="21" />
                         </svg>
-                        {i18n.t('label_column_short') || 'Cols'}
+                        {visibleColumns.join(',') !== DEFAULT_COLUMNS.join(',') && (
+                            <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                        )}
                     </button>
 
                     {showColumnMenu && (
@@ -528,23 +530,25 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            padding: '0 10px',
+                            justifyContent: 'center',
+                            padding: '0',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: (selectedAssigneeIds.length > 0 || groupByAssignee) ? '#e8f0fe' : '#fff',
                             color: (selectedAssigneeIds.length > 0 || groupByAssignee) ? '#1a73e8' : '#333',
-                            fontSize: '13px',
-                            fontWeight: 500,
                             cursor: 'pointer',
-                            height: '32px'
+                            height: '32px',
+                            width: '32px',
+                            position: 'relative'
                         }}
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                             <circle cx="12" cy="7" r="4" />
                         </svg>
-                        {i18n.t('label_assigned_to_short') || 'Assign'}
+                        {(selectedAssigneeIds.length > 0 || groupByAssignee) && (
+                            <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                        )}
                     </button>
 
                     {showAssigneeMenu && (
@@ -619,22 +623,24 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            padding: '0 10px',
+                            justifyContent: 'center',
+                            padding: '0',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: (selectedProjectIds.length > 0 || groupByProject) ? '#e8f0fe' : '#fff',
                             color: (selectedProjectIds.length > 0 || groupByProject) ? '#1a73e8' : '#333',
-                            fontSize: '13px',
-                            fontWeight: 500,
                             cursor: 'pointer',
-                            height: '32px'
+                            height: '32px',
+                            width: '32px',
+                            position: 'relative'
                         }}
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                         </svg>
-                        {i18n.t('label_project_short') || 'PJ'}
+                        {(selectedProjectIds.length > 0 || groupByProject) && (
+                            <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                        )}
                     </button>
                     {showProjectMenu && (
                         <div
@@ -708,23 +714,25 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            padding: '0 10px',
+                            justifyContent: 'center',
+                            padding: '0',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: (selectedVersionIds.length > 0 || showVersions) ? '#e8f0fe' : '#fff',
                             color: (selectedVersionIds.length > 0 || showVersions) ? '#1a73e8' : '#333',
-                            fontSize: '13px',
-                            fontWeight: 500,
                             cursor: 'pointer',
-                            height: '32px'
+                            height: '32px',
+                            width: '32px',
+                            position: 'relative'
                         }}
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
                             <line x1="4" y1="22" x2="4" y2="15" />
                         </svg>
-                        {i18n.t('label_version_short') || 'Ver'}
+                        {(selectedVersionIds.length > 0 || showVersions) && (
+                            <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                        )}
                     </button>
                     {showVersionMenu && (
                         <div
@@ -806,22 +814,24 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px',
-                            padding: '0 10px',
+                            justifyContent: 'center',
+                            padding: '0',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: selectedStatusIds.length > 0 ? '#e8f0fe' : '#fff',
                             color: selectedStatusIds.length > 0 ? '#1a73e8' : '#333',
-                            fontSize: '13px',
-                            fontWeight: 500,
                             cursor: 'pointer',
-                            height: '32px'
+                            height: '32px',
+                            width: '32px',
+                            position: 'relative'
                         }}
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                         </svg>
-                        {i18n.t('label_status_short') || 'Status'}
+                        {selectedStatusIds.length > 0 && (
+                            <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                        )}
                     </button>
                     {showStatusMenu && (
                         <div
@@ -884,22 +894,24 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
-                        padding: '0 10px',
+                        justifyContent: 'center',
+                        padding: '0',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
                         backgroundColor: showProgressLine ? '#e8f0fe' : '#fff',
                         color: showProgressLine ? '#1a73e8' : '#333',
-                        fontSize: '13px',
-                        fontWeight: 500,
                         cursor: 'pointer',
-                        height: '32px'
+                        height: '32px',
+                        width: '32px',
+                        position: 'relative'
                     }}
                 >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
                     </svg>
-                    {i18n.t('label_progress_short') || 'Prog'}
+                    {showProgressLine && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    )}
                 </button>
 
 
@@ -911,16 +923,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
-                        padding: '0 10px',
+                        justifyContent: 'center',
+                        padding: '0',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
                         backgroundColor: organizeByDependency ? '#e8f0fe' : '#fff',
                         color: organizeByDependency ? '#1a73e8' : '#333',
-                        fontSize: '13px',
-                        fontWeight: 500,
                         cursor: 'pointer',
-                        height: '32px'
+                        height: '32px',
+                        width: '32px',
+                        position: 'relative'
                     }}
                 >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -929,7 +941,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <path d="M11 9l2 2" />
                         <path d="M7 12l6-6" />
                     </svg>
-                    {i18n.t('label_dependencies_short') || 'Dep'}
+                    {organizeByDependency && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    )}
                 </button>
 
                 <button
@@ -938,22 +952,24 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
-                        padding: '0 10px',
+                        justifyContent: 'center',
+                        padding: '0',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
                         backgroundColor: showPointsOrphans ? '#e8f0fe' : '#fff',
                         color: showPointsOrphans ? '#1a73e8' : '#333',
-                        fontSize: '13px',
-                        fontWeight: 500,
                         cursor: 'pointer',
-                        height: '32px'
+                        height: '32px',
+                        width: '32px',
+                        position: 'relative'
                     }}
                 >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 2l3 5h6l-5 4 2 6-6-4-6 4 2-6-5-4h6z" />
                     </svg>
-                    {i18n.t('label_points_short') || 'Pts'}
+                    {showPointsOrphans && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    )}
                 </button>
             </div>
 
