@@ -52,16 +52,15 @@ export const IssueIframeDialog: React.FC = () => {
             const error = getIssueDialogErrorMessage(doc);
             setIframeError(error);
 
-            // If we were saving, close only when we are on issue show page without edit form.
-            // This avoids false positives when update renders edit with validation errors.
+            // If we were saving, close when we transition to issue show page without error.
+            // Validation failures usually remain on /edit or /new and keep error blocks in DOM.
             if (isSaving) {
                 const urlParsed = new URL(currentUrl, window.location.origin);
                 const path = urlParsed.pathname;
                 const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
-                const hasIssueForm = doc.querySelector('#issue-form') !== null;
                 const isIssueShow = Boolean(issueMatch) && !path.includes('/edit') && !path.includes('/new');
 
-                if (!error && isIssueShow && !hasIssueForm) {
+                if (!error && isIssueShow) {
                     const newIssueId = issueMatch?.[1];
 
                     if (newIssueId && bulkRef.current?.hasSubjects()) {
