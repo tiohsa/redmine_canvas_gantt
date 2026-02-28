@@ -1,0 +1,43 @@
+services:
+  redmine:
+    image: redmine:6.0
+    container_name: redmine-canvas-gantt
+    ports:
+      - "3000:3000"
+    environment:
+      RAILS_ENV: production
+      REDMINE_DB_MYSQL: db
+      REDMINE_DB_PASSWORD: password
+      REDMINE_SECRET_KEY_BASE: supersecretkey
+      SECRET_KEY_BASE: supersecretkey
+    volumes:
+      - ./:/usr/src/redmine/plugins/redmine_canvas_gantt
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ruby -rsocket -e \"TCPSocket.new('127.0.0.1', 3000).close\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  db:
+    image: mariadb:10.11
+    container_name: redmine-canvas-gantt-db
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: redmine
+      MYSQL_USER: redmine
+      MYSQL_PASSWORD: password
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  db-data:
