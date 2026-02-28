@@ -138,7 +138,7 @@ describe('GanttContainer Resize', () => {
         expect(setSidebarWidthSpy).toHaveBeenCalledWith(400);
     });
 
-    it('should cap sidebar width at 50% of container width', () => {
+    it('should cap sidebar width based on right pane minimum width', () => {
         const setSidebarWidthSpy = vi.fn();
         useUIStore.setState({ setSidebarWidth: setSidebarWidthSpy });
 
@@ -163,6 +163,36 @@ describe('GanttContainer Resize', () => {
         fireEvent.mouseMove(document, { clientX: 1200 });
         fireEvent.mouseUp(document);
 
-        expect(setSidebarWidthSpy).toHaveBeenCalledWith(500);
+        expect(setSidebarWidthSpy).toHaveBeenCalledWith(674);
+    });
+
+    it('should clamp sidebar width on window resize', () => {
+        const setSidebarWidthSpy = vi.fn();
+        useUIStore.setState({
+            setSidebarWidth: setSidebarWidthSpy,
+            sidebarWidth: 600,
+            leftPaneVisible: true,
+        });
+
+        render(<GanttContainer />);
+
+        const resizeHandle = screen.getByTestId('sidebar-resize-handle');
+        const ganttContainerDiv = resizeHandle.parentElement as HTMLElement;
+
+        vi.spyOn(ganttContainerDiv, 'getBoundingClientRect').mockReturnValue({
+            left: 0,
+            top: 0,
+            width: 800,
+            height: 500,
+            bottom: 500,
+            right: 800,
+            x: 0,
+            y: 0,
+            toJSON: () => { },
+        });
+
+        fireEvent(window, new Event('resize'));
+
+        expect(setSidebarWidthSpy).toHaveBeenCalledWith(474);
     });
 });

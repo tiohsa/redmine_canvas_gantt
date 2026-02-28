@@ -7,10 +7,17 @@ describe('computeSidebarWidthBounds', () => {
         expect(computeSidebarWidthBounds(0)).toBeNull();
     });
 
-    it('最大幅をコンテナ幅の50%で計算する', () => {
+    it('最大幅を比率と右ペイン最小幅の両方で制限する', () => {
         expect(computeSidebarWidthBounds(1000)).toEqual({
             min: SIDEBAR_MIN_WIDTH,
-            max: 500
+            max: 674
+        });
+    });
+
+    it('大きいコンテナでは比率上限が有効になる', () => {
+        expect(computeSidebarWidthBounds(3000)).toEqual({
+            min: SIDEBAR_MIN_WIDTH,
+            max: 2400
         });
     });
 
@@ -23,7 +30,7 @@ describe('computeSidebarWidthBounds', () => {
 });
 
 describe('clampSidebarWidthToBounds', () => {
-    const bounds = { min: 200, max: 500 };
+    const bounds = { min: 200, max: 674 };
 
     it('範囲内の値はそのまま返す', () => {
         expect(clampSidebarWidthToBounds(320, bounds)).toBe(320);
@@ -34,7 +41,6 @@ describe('clampSidebarWidthToBounds', () => {
     });
 
     it('最大幅超過は最大幅に丸める', () => {
-        expect(clampSidebarWidthToBounds(800, bounds)).toBe(500);
+        expect(clampSidebarWidthToBounds(800, bounds)).toBe(674);
     });
 });
-
