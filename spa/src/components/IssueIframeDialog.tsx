@@ -52,30 +52,34 @@ export const IssueIframeDialog: React.FC = () => {
             const error = getIssueDialogErrorMessage(doc);
             setIframeError(error);
 
-            // If we were saving and there are no errors, and the URL changed to /issues/XXX
-            if (isSaving && !error) {
-                const urlParsed = new URL(currentUrl, window.location.origin);
-                const path = urlParsed.pathname;
+            // If we were saving, close only on successful transition to /issues/:id.
+            // Otherwise always unlock so users can fix inputs and retry.
+            if (isSaving) {
+                if (!error) {
+                    const urlParsed = new URL(currentUrl, window.location.origin);
+                    const path = urlParsed.pathname;
 
-                const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
-                if (issueMatch && !path.includes('/edit') && !path.includes('/new')) {
-                    const newIssueId = issueMatch[1];
+                    const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
+                    if (issueMatch && !path.includes('/edit') && !path.includes('/new')) {
+                        const newIssueId = issueMatch[1];
 
-                    if (bulkRef.current?.hasSubjects()) {
-                        await bulkRef.current.createSubtasks(newIssueId);
+                        if (bulkRef.current?.hasSubjects()) {
+                            await bulkRef.current.createSubtasks(newIssueId);
+                        }
+
+                        setIsSaving(false);
+                        handleClose();
+                        return;
                     }
-
-                    setIsSaving(false);
-                    handleClose();
-                    return;
                 }
-            }
 
-            if (isSaving && error) {
                 setIsSaving(false);
             }
         } catch (e) {
             console.debug("Could not verify iframe URL", e);
+            if (isSaving) {
+                setIsSaving(false);
+            }
         }
     }, [handleClose, isSaving]);
 
@@ -165,6 +169,7 @@ export const IssueIframeDialog: React.FC = () => {
         iframeEscapeCleanupRef.current?.();
         iframeEscapeCleanupRef.current = null;
         setIframeError(null);
+        setIsSaving(false);
     }, [issueDialogUrl]);
 
     React.useEffect(() => {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { IssueIframeDialog } from './IssueIframeDialog';
 import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
@@ -63,5 +63,72 @@ describe('IssueIframeDialog', () => {
 
         expect(useUIStore.getState().issueDialogUrl).toBeNull();
         expect(refreshData).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-enables Save after non-success load while saving', async () => {
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="issue-form">
+              <input name="commit" type="submit" value="Save" />
+            </form>
+        `;
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/edit' }, document: doc }
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc });
+
+        fireEvent.load(iframe);
+        const saveButton = screen.getByRole('button', { name: 'Save' });
+        fireEvent.click(saveButton);
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
+        });
+
+        // Still on edit URL and no detected success transition: must unlock retry.
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+        });
+    });
+
+    it('resets saving state when dialog is reopened', async () => {
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="issue-form">
+              <input name="commit" type="submit" value="Save" />
+            </form>
+        `;
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/edit' }, document: doc }
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc });
+
+        fireEvent.load(iframe);
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
+        });
+
+        act(() => {
+            useUIStore.setState({ issueDialogUrl: null });
+            useUIStore.setState({ issueDialogUrl: '/issues/999/edit' });
+        });
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+        });
     });
 });
