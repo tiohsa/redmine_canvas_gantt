@@ -13,6 +13,7 @@ ja:
   label_group_by_project: "プロジェクトでグループ化"
   label_group_by_assignee: "担当者でグループ化"
   label_toggle_sidebar: "サイドバーの切り替え"
+  label_maximize_left_pane: "左ペインを最大化"
   button_top: "トップ"
   label_expand: "展開する"
   label_collapse: "折りたたむ"

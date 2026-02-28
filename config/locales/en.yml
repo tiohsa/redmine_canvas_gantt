@@ -11,6 +11,7 @@ en:
   label_group_by_project: "Group by project"
   label_group_by_assignee: "Group by assignee"
   label_toggle_sidebar: "Toggle Sidebar"
+  label_maximize_left_pane: "Maximize Left Pane"
   button_top: "Top"
   label_expand: "Expand"
   label_collapse: "Collapse"

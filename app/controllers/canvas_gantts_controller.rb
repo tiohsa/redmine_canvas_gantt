@@ -36,6 +36,7 @@ class CanvasGanttsController < ApplicationController
     label_today: :label_today,
     button_top: :button_top,
     label_toggle_sidebar: :label_toggle_sidebar,
+    label_maximize_left_pane: :label_maximize_left_pane,
     label_month: :label_month,
     label_week: :label_week,
     label_day: :label_day,

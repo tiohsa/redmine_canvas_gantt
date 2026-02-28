@@ -19,6 +19,7 @@ interface UIState {
     columnWidths: Record<string, number>;
     sidebarWidth: number;
     leftPaneVisible: boolean;
+    rightPaneVisible: boolean;
     activeInlineEdit: { taskId: string; field: string; source?: 'cell' | 'panel' } | null;
     isFullScreen: boolean;
     issueDialogUrl: string | null;
@@ -28,6 +29,7 @@ interface UIState {
     toggleProgressLine: () => void;
     togglePointsOrphans: () => void;
     toggleLeftPane: () => void;
+    toggleRightPane: () => void;
     showPointsOrphans: boolean;
     setVisibleColumns: (cols: string[]) => void;
     setColumnWidth: (key: string, width: number) => void;
@@ -45,6 +47,7 @@ export const useUIStore = create<UIState>((set) => ({
     showProgressLine: preferences.showProgressLine ?? false,
     showPointsOrphans: preferences.showPointsOrphans ?? true, // Default to true
     leftPaneVisible: true,
+    rightPaneVisible: true,
     visibleColumns: preferences.visibleColumns
         ? preferences.visibleColumns
         : ['id', ...DEFAULT_COLUMNS],
@@ -81,7 +84,24 @@ export const useUIStore = create<UIState>((set) => ({
         })),
     toggleProgressLine: () => set((state) => ({ showProgressLine: !state.showProgressLine })),
     togglePointsOrphans: () => set((state) => ({ showPointsOrphans: !state.showPointsOrphans })),
-    toggleLeftPane: () => set((state) => ({ leftPaneVisible: !state.leftPaneVisible })),
+    toggleLeftPane: () => set((state) => {
+        if (state.leftPaneVisible && state.rightPaneVisible) {
+            return { leftPaneVisible: false, rightPaneVisible: true };
+        }
+        if (!state.leftPaneVisible && state.rightPaneVisible) {
+            return { leftPaneVisible: true, rightPaneVisible: true };
+        }
+        return { leftPaneVisible: false, rightPaneVisible: true };
+    }),
+    toggleRightPane: () => set((state) => {
+        if (state.leftPaneVisible && state.rightPaneVisible) {
+            return { leftPaneVisible: true, rightPaneVisible: false };
+        }
+        if (state.leftPaneVisible && !state.rightPaneVisible) {
+            return { leftPaneVisible: true, rightPaneVisible: true };
+        }
+        return { leftPaneVisible: true, rightPaneVisible: false };
+    }),
     setVisibleColumns: (cols) => set(() => ({ visibleColumns: cols })),
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),
     setSidebarWidth: (width) => set(() => ({ sidebarWidth: width })),

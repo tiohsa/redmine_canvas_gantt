@@ -24,11 +24,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         visibleColumns,
         setVisibleColumns,
         toggleLeftPane,
+        toggleRightPane,
+        leftPaneVisible,
+        rightPaneVisible,
         showPointsOrphans,
         togglePointsOrphans,
         isFullScreen,
         toggleFullScreen
     } = useUIStore();
+    const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
+    const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
     const [showFilterMenu, setShowFilterMenu] = React.useState(false);
     const [showAssigneeMenu, setShowAssigneeMenu] = React.useState(false);
@@ -286,6 +291,31 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             {/* Left: Filter & Options */}
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
                 <button
+                    data-testid="maximize-left-pane-button"
+                    onClick={toggleRightPane}
+                    title={i18n.t('label_maximize_left_pane') || "Maximize Left Pane"}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: isLeftPaneMaximized ? '#e8f0fe' : '#fff',
+                        color: isLeftPaneMaximized ? '#1a73e8' : '#333',
+                        cursor: 'pointer',
+                        width: '32px',
+                        height: '32px'
+                    }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <line x1="15" y1="3" x2="15" y2="21" />
+                    </svg>
+                </button>
+
+                <button
+                    data-testid="maximize-right-pane-button"
                     onClick={toggleLeftPane}
                     title={i18n.t('label_toggle_sidebar') || "Toggle Sidebar"}
                     style={{
@@ -295,8 +325,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         padding: '0',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
-                        backgroundColor: '#fff',
-                        color: '#333',
+                        backgroundColor: isRightPaneMaximized ? '#e8f0fe' : '#fff',
+                        color: isRightPaneMaximized ? '#1a73e8' : '#333',
                         cursor: 'pointer',
                         width: '32px',
                         height: '32px'

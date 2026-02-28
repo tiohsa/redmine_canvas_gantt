@@ -23,15 +23,39 @@ describe('UIStore', () => {
         expect(useUIStore.getState().notifications).toHaveLength(0);
     });
 
-    it('toggles fullscreen and left pane visibility', () => {
+    it('toggles fullscreen and pane maximization states', () => {
         expect(useUIStore.getState().isFullScreen).toBe(false);
         expect(useUIStore.getState().leftPaneVisible).toBe(true);
+        expect(useUIStore.getState().rightPaneVisible).toBe(true);
 
         useUIStore.getState().toggleFullScreen();
         useUIStore.getState().toggleLeftPane();
 
         expect(useUIStore.getState().isFullScreen).toBe(true);
         expect(useUIStore.getState().leftPaneVisible).toBe(false);
+        expect(useUIStore.getState().rightPaneVisible).toBe(true);
+
+        useUIStore.getState().toggleRightPane();
+        expect(useUIStore.getState().leftPaneVisible).toBe(true);
+        expect(useUIStore.getState().rightPaneVisible).toBe(false);
+
+        useUIStore.getState().toggleRightPane();
+        expect(useUIStore.getState().leftPaneVisible).toBe(true);
+        expect(useUIStore.getState().rightPaneVisible).toBe(true);
+    });
+
+    it('switches directly between left and right maximized states', () => {
+        useUIStore.getState().toggleLeftPane();
+        expect(useUIStore.getState().leftPaneVisible).toBe(false);
+        expect(useUIStore.getState().rightPaneVisible).toBe(true);
+
+        useUIStore.getState().toggleRightPane();
+        expect(useUIStore.getState().leftPaneVisible).toBe(true);
+        expect(useUIStore.getState().rightPaneVisible).toBe(false);
+
+        useUIStore.getState().toggleLeftPane();
+        expect(useUIStore.getState().leftPaneVisible).toBe(false);
+        expect(useUIStore.getState().rightPaneVisible).toBe(true);
     });
 
     it('updates visible columns, width and issue dialog state', () => {

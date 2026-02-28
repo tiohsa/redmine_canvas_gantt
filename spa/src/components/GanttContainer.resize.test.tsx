@@ -87,6 +87,7 @@ describe('GanttContainer Resize', () => {
         useUIStore.setState({
             sidebarWidth: 300,
             leftPaneVisible: true,
+            rightPaneVisible: true,
         });
         useTaskStore.setState({
             viewport: {
@@ -172,6 +173,7 @@ describe('GanttContainer Resize', () => {
             setSidebarWidth: setSidebarWidthSpy,
             sidebarWidth: 600,
             leftPaneVisible: true,
+            rightPaneVisible: true,
         });
 
         render(<GanttContainer />);
@@ -194,5 +196,31 @@ describe('GanttContainer Resize', () => {
         fireEvent(window, new Event('resize'));
 
         expect(setSidebarWidthSpy).toHaveBeenCalledWith(474);
+    });
+
+    it('should hide right pane and resize handle when left pane is maximized', () => {
+        useUIStore.setState({
+            leftPaneVisible: true,
+            rightPaneVisible: false,
+        });
+
+        render(<GanttContainer />);
+
+        expect(screen.getByTestId('left-pane')).toBeInTheDocument();
+        expect(screen.queryByTestId('sidebar-resize-handle')).not.toBeInTheDocument();
+        expect(screen.getByTestId('right-pane')).toHaveStyle('display: none');
+    });
+
+    it('should hide left pane and resize handle when right pane is maximized', () => {
+        useUIStore.setState({
+            leftPaneVisible: false,
+            rightPaneVisible: true,
+        });
+
+        render(<GanttContainer />);
+
+        expect(screen.queryByTestId('left-pane')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('sidebar-resize-handle')).not.toBeInTheDocument();
+        expect(screen.getByTestId('right-pane')).toHaveStyle('display: flex');
     });
 });

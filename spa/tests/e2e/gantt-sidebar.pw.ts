@@ -9,7 +9,7 @@ test('renders sidebar with task list', async ({ page }) => {
   await waitForInitialRender(page);
 
   await expect(page.getByTestId('sidebar-header-subject')).toContainText('Task Name');
-  await expect(page.getByText('Fix login flow')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Fix login flow' })).toBeVisible();
 });
 
 test('resizing left pane does not shrink column width', async ({ page }) => {
@@ -43,4 +43,19 @@ test('resizing left pane does not shrink column width', async ({ page }) => {
   expect(sidebarBox).toBeTruthy();
   expect(assigneeBox).toBeTruthy();
   expect(assigneeBox!.x).toBeGreaterThanOrEqual(sidebarBox!.x + sidebarBox!.width - 1);
+});
+
+test('left pane maximize keeps sidebar tasks visible', async ({ page }) => {
+  await waitForInitialRender(page);
+
+  const leftPaneMaxButton = page.getByTestId('maximize-left-pane-button');
+  const rightPane = page.getByTestId('right-pane');
+  const taskRow = page.getByTestId('task-row-101');
+
+  await leftPaneMaxButton.click();
+
+  await expect(page.getByTestId('left-pane')).toBeVisible();
+  await expect(page.getByTestId('sidebar-resize-handle')).toHaveCount(0);
+  await expect(rightPane).toHaveCSS('display', 'none');
+  await expect(taskRow).toBeVisible();
 });

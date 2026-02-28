@@ -32,7 +32,17 @@ export const GanttContainer: React.FC = () => {
     const isSyncingScroll = useRef(false);
 
     const { viewport, tasks, relations, selectedTaskId, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, setTasks, setRelations, setVersions, setCustomFields } = useTaskStore();
-    const { sidebarWidth, setSidebarWidth, leftPaneVisible, showProgressLine, showPointsOrphans, isSidebarResizing, setSidebarResizing } = useUIStore();
+    const {
+        sidebarWidth,
+        setSidebarWidth,
+        leftPaneVisible,
+        rightPaneVisible,
+        showProgressLine,
+        showPointsOrphans,
+        isSidebarResizing,
+        setSidebarResizing
+    } = useUIStore();
+    const isSplitView = leftPaneVisible && rightPaneVisible;
 
     const tasksMaxDue = useMemo(() => getMaxFiniteDueDate(tasks), [tasks]);
 
@@ -47,7 +57,7 @@ export const GanttContainer: React.FC = () => {
 
     const { startResize } = useSidebarResize({
         containerRef,
-        leftPaneVisible,
+        leftPaneVisible: isSplitView,
         sidebarWidth,
         setSidebarWidth,
         setSidebarResizing
@@ -102,6 +112,9 @@ export const GanttContainer: React.FC = () => {
                 const scrollPane = scrollPaneRef.current;
                 const width = scrollPane?.clientWidth ?? fallbackWidth;
                 const height = scrollPane?.clientHeight ?? fallbackHeight;
+                if (width <= 0 || height <= 0) {
+                    continue;
+                }
 
                 [bgCanvasRef.current, taskCanvasRef.current, overlayCanvasRef.current].forEach(canvas => {
                     if (canvas) {
@@ -127,27 +140,42 @@ export const GanttContainer: React.FC = () => {
             <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
                 {leftPaneVisible && (
                     <>
-                        <div data-testid="left-pane" style={{ width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
+                        <div
+                            data-testid="left-pane"
+                            style={isSplitView
+                                ? { width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }
+                                : { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex' }}
+                        >
                             <UiSidebar />
                         </div>
 
-                        <div
-                            data-testid="sidebar-resize-handle"
-                            onMouseDown={startResize}
-                            style={{
-                                width: SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH,
-                                boxSizing: 'border-box',
-                                cursor: 'col-resize',
-                                backgroundColor: '#f0f0f0',
-                                borderRight: '1px solid #e0e0e0',
-                                borderLeft: '1px solid #e0e0e0',
-                                zIndex: 10
-                            }}
-                        />
+                        {isSplitView && (
+                            <div
+                                data-testid="sidebar-resize-handle"
+                                onMouseDown={startResize}
+                                style={{
+                                    width: SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH,
+                                    boxSizing: 'border-box',
+                                    cursor: 'col-resize',
+                                    backgroundColor: '#f0f0f0',
+                                    borderRight: '1px solid #e0e0e0',
+                                    borderLeft: '1px solid #e0e0e0',
+                                    zIndex: 10
+                                }}
+                            />
+                        )}
                     </>
                 )}
 
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <div
+                    data-testid="right-pane"
+                    style={{
+                        flex: 1,
+                        display: rightPaneVisible ? 'flex' : 'none',
+                        flexDirection: 'column',
+                        minWidth: 0
+                    }}
+                >
                     <TimelineHeader />
                     <div ref={viewportWrapperRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                         <div
