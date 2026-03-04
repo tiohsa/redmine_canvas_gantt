@@ -137,12 +137,12 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'vite_asset_helper').to_s
 
   helper RedmineCanvasGantt::ViteAssetHelper
-  accept_api_auth :data, :edit_meta, :update, :destroy_relation
+  accept_api_auth :data, :edit_meta, :update, :bulk_create_subtasks, :destroy_relation
 
   before_action :find_project_by_project_id
   before_action :set_permissions
   before_action :ensure_view_permission, only: [:index, :data, :edit_meta]
-  before_action :ensure_edit_permission, only: [:update, :destroy_relation]
+  before_action :ensure_edit_permission, only: [:update, :bulk_create_subtasks, :destroy_relation]
   skip_forgery_protection only: [:asset]
   skip_before_action :find_project_by_project_id, :set_permissions, only: [:asset]
 
@@ -246,6 +246,11 @@ class CanvasGanttsController < ApplicationController
     issue.safe_attributes = permitted_task_params
 
     if issue.save
+      if requested_parent_issue_id_provided? && issue.parent_id != requested_parent_issue_id
+        render json: { errors: ['Parent linkage failed'], parent_id: issue.parent_id }, status: :unprocessable_entity
+        return
+      end
+
       render json: {
         status: 'ok',
         lock_version: issue.lock_version,
@@ -260,6 +265,37 @@ class CanvasGanttsController < ApplicationController
     render json: { error: 'Conflict: This task has been updated by another user. Please reload.' }, status: :conflict
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Task not found' }, status: :not_found
+  end
+
+  # POST /projects/:project_id/canvas_gantt/subtasks/bulk.json
+  def bulk_create_subtasks
+    parent_issue = Issue.visible.find(params[:parent_issue_id])
+    return unless ensure_issue_in_scope(parent_issue)
+
+    unless allowed_to_bulk_create_subtasks?(parent_issue)
+      render json: { error: 'Permission denied' }, status: :forbidden
+      return
+    end
+
+    subjects = Array(params[:subjects])
+    if subjects.empty?
+      render json: { error: 'subjects must be a non-empty array' }, status: :unprocessable_entity
+      return
+    end
+
+    inherited_attrs = build_inherited_subtask_attributes(parent_issue)
+    results = subjects.map { |raw_subject| create_subtask_from_subject(raw_subject, parent_issue, inherited_attrs) }
+    success_count = results.count { |result| result[:status] == 'ok' }
+    fail_count = results.length - success_count
+
+    render json: {
+      status: 'ok',
+      success_count: success_count,
+      fail_count: fail_count,
+      results: results
+    }
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: 'Parent task not found' }, status: :not_found
   end
 
   # DELETE /projects/:project_id/canvas_gantt/relations/:id.json
@@ -566,6 +602,22 @@ class CanvasGanttsController < ApplicationController
     params.require(:task).permit(*(TASK_PERMITTED_ATTRIBUTES + [{ custom_field_values: {} }]))
   end
 
+  def requested_parent_issue_id_provided?
+    task_params = params[:task]
+    return false unless task_params.respond_to?(:key?)
+
+    task_params.key?(:parent_issue_id) || task_params.key?('parent_issue_id')
+  end
+
+  def requested_parent_issue_id
+    raw_parent_issue_id = params.dig(:task, :parent_issue_id)
+    return nil if raw_parent_issue_id.blank?
+
+    Integer(raw_parent_issue_id)
+  rescue ArgumentError, TypeError
+    nil
+  end
+
   def load_parent_issue(source_issue, raw_parent_issue_id)
     return nil if raw_parent_issue_id.blank?
 
@@ -592,5 +644,65 @@ class CanvasGanttsController < ApplicationController
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Parent task not found' }, status: :not_found
     :invalid
+  end
+
+  def build_inherited_subtask_attributes(parent_issue)
+    {
+      parent_issue_id: parent_issue.id,
+      project_id: parent_issue.project_id,
+      tracker_id: parent_issue.tracker_id,
+      status_id: parent_issue.status_id,
+      priority_id: parent_issue.priority_id,
+      assigned_to_id: parent_issue.assigned_to_id,
+      fixed_version_id: parent_issue.fixed_version_id,
+      category_id: parent_issue.category_id
+    }
+  end
+
+  def allowed_to_bulk_create_subtasks?(parent_issue)
+    User.current.allowed_to?(:add_issues, parent_issue.project) &&
+      User.current.allowed_to?(:manage_subtasks, parent_issue.project)
+  end
+
+  def create_subtask_from_subject(raw_subject, parent_issue, inherited_attrs)
+    subject = raw_subject.to_s.strip
+    if subject.blank?
+      return {
+        status: 'error',
+        subject: subject,
+        errors: ['Subject cannot be blank']
+      }
+    end
+
+    issue = Issue.new
+    issue.author = User.current
+    issue.safe_attributes = inherited_attrs.merge(subject: subject)
+    issue.parent_issue_id = parent_issue.id
+
+    if issue.save
+      unless issue.parent_id == parent_issue.id
+        begin
+          issue.destroy
+        rescue StandardError
+          # Keep original linkage error even if cleanup fails.
+        end
+        return {
+          status: 'error',
+          subject: subject,
+          errors: ['Parent linkage failed']
+        }
+      end
+      {
+        status: 'ok',
+        subject: subject,
+        issue_id: issue.id
+      }
+    else
+      {
+        status: 'error',
+        subject: subject,
+        errors: issue.errors.full_messages
+      }
+    end
   end
 end

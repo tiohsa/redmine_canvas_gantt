@@ -553,4 +553,47 @@ describe('TaskStore drag parent updates', () => {
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBeUndefined();
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.lockVersion).toBe(3);
     });
+
+    it('moveTaskAsChild rolls back when API response parentId does not match target', async () => {
+        const { setTasks, moveTaskAsChild } = useTaskStore.getState();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: 'source', projectId: 'p1', displayOrder: 2, lockVersion: 2 })
+        ]);
+
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 3
+        });
+
+        const result = await moveTaskAsChild('source', 'parent');
+
+        expect(result.status).toBe('error');
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'source')?.parentId).toBeUndefined();
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'source')?.lockVersion).toBe(2);
+    });
+
+    it('moveTaskToRoot rolls back when API response still has parentId', async () => {
+        const { setTasks, moveTaskToRoot } = useTaskStore.getState();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', displayOrder: 1, lockVersion: 2 })
+        ]);
+
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 3,
+            parentId: 'parent'
+        });
+
+        const result = await moveTaskToRoot('child');
+
+        expect(result.status).toBe('error');
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBe('parent');
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.lockVersion).toBe(2);
+    });
 });

@@ -4,7 +4,6 @@ import { i18n } from '../utils/i18n';
 import { apiClient } from '../api/client';
 
 interface BulkSubtaskCreatorProps {
-    projectId: string;
     parentId?: string;
     onTasksCreated?: () => void;
     hideStandaloneButton?: boolean;
@@ -17,7 +16,7 @@ export interface BulkSubtaskCreatorHandle {
 }
 
 export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, BulkSubtaskCreatorProps>(
-    ({ projectId, parentId, onTasksCreated, hideStandaloneButton, showTopBorder = true }, ref) => {
+    ({ parentId, onTasksCreated, hideStandaloneButton, showTopBorder = true }, ref) => {
         const [expanded, setExpanded] = React.useState(false);
         const [subjects, setSubjects] = React.useState('');
         const [loading, setLoading] = React.useState(false);
@@ -33,19 +32,17 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
 
             try {
                 const targetParentId = newParentId || parentId;
-                await Promise.all(subjectsList.map(async (subject) => {
-                    try {
-                        await apiClient.createTask({
-                            subject,
-                            projectId,
-                            parentId: targetParentId
-                        });
-                        successCount++;
-                    } catch (e) {
-                        console.error(e);
-                        failCount++;
-                    }
-                }));
+                if (!targetParentId) {
+                    addNotification(i18n.t('label_failed_to_save') || 'Failed to save', 'error');
+                    return { success: 0, fail: subjectsList.length };
+                }
+
+                const result = await apiClient.bulkCreateSubtasks({
+                    parentId: targetParentId,
+                    subjects: subjectsList
+                });
+                successCount = result.successCount;
+                failCount = result.failCount;
 
                 if (successCount > 0) {
                     addNotification(i18n.t('label_bulk_subtask_creation_success') || `${successCount} tasks created.`, 'success');
@@ -55,7 +52,10 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                 }
 
                 if (failCount > 0) {
-                    addNotification(i18n.t('label_bulk_subtask_creation_partial_fail') || `${failCount} tasks failed.`, 'error');
+                    const firstError = result.results.find((row) => row.status === 'error' && row.errors && row.errors.length > 0);
+                    const detail = firstError?.errors?.[0];
+                    const defaultMessage = i18n.t('label_bulk_subtask_creation_partial_fail') || `${failCount} tasks failed.`;
+                    addNotification(detail ? `${defaultMessage} (${detail})` : defaultMessage, 'error');
                 }
                 return { success: successCount, fail: failCount };
             } catch (e) {

@@ -52,6 +52,18 @@ interface UpdateTaskResult {
     error?: string;
 }
 
+export interface BulkCreateSubtasksResult {
+    status: 'ok';
+    successCount: number;
+    failCount: number;
+    results: Array<{
+        status: 'ok' | 'error';
+        subject: string;
+        issueId?: string;
+        errors?: string[];
+    }>;
+}
+
 declare global {
     interface Window {
         RedmineCanvasGantt?: {
@@ -524,26 +536,15 @@ export const apiClient = {
         }
     },
 
-    createTask: async (task: Partial<Task>): Promise<Task> => {
+    bulkCreateSubtasks: async (payload: { parentId: string; subjects: string[] }): Promise<BulkCreateSubtasksResult> => {
         const config = getConfig();
-
-        const body: Record<string, unknown> = {
-            subject: task.subject,
-            project_id: task.projectId ? Number(task.projectId) : config.projectId,
-            tracker_id: task.trackerId,
-            status_id: task.statusId,
-            assigned_to_id: task.assignedToId,
-            done_ratio: task.ratioDone,
-            parent_issue_id: task.parentId,
-            start_date: task.startDate ? new Date(task.startDate).toISOString().split('T')[0] : undefined,
-            due_date: task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : undefined,
-        };
-
-        const redmineBase = config.redmineBase || '';
-        const response = await fetch(`${redmineBase}/issues.json`, {
+        const response = await fetch(`${config.apiBase}/subtasks/bulk.json`, {
             method: 'POST',
             headers: buildJsonHeaders(config, true),
-            body: JSON.stringify({ issue: body })
+            body: JSON.stringify({
+                parent_issue_id: Number(payload.parentId),
+                subjects: payload.subjects
+            })
         });
 
         if (!response.ok) {
@@ -552,25 +553,26 @@ export const apiClient = {
         }
 
         const data = await response.json();
-        const t = data.issue;
+        const resultsRaw = Array.isArray(data.results) ? data.results : [];
+        const results = resultsRaw.map((row: unknown) => {
+            const record = asRecord(row) ?? {};
+            const errors = Array.isArray(record.errors) && record.errors.every((e) => typeof e === 'string')
+                ? record.errors as string[]
+                : undefined;
+            return {
+                status: record.status === 'ok' ? 'ok' : 'error',
+                subject: typeof record.subject === 'string' ? record.subject : '',
+                issueId: record.issue_id != null ? String(record.issue_id) : undefined,
+                errors
+            };
+        });
 
-        // Return a partial Task object sufficient for UI update or reload
         return {
-            id: String(t.id),
-            subject: t.subject,
-            projectId: String(t.project.id),
-            startDate: new Date(t.start_date).getTime(),
-            dueDate: new Date(t.due_date).getTime(),
-            ratioDone: t.done_ratio,
-            statusId: t.status.id,
-            assignedToId: t.assigned_to?.id,
-            assignedToName: t.assigned_to?.name,
-            parentId: t.parent?.id ? String(t.parent.id) : undefined,
-            lockVersion: 0,
-            editable: true,
-            rowIndex: 0,
-            hasChildren: false
-        } as Task;
+            status: 'ok',
+            successCount: typeof data.success_count === 'number' ? data.success_count : 0,
+            failCount: typeof data.fail_count === 'number' ? data.fail_count : 0,
+            results
+        };
     },
 
     deleteTask: async (taskId: string): Promise<void> => {

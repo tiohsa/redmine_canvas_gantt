@@ -7,6 +7,7 @@ RedmineApp::Application.routes.draw do
     get 'canvas_gantt/data', to: 'canvas_gantts#data'
     get 'canvas_gantt/tasks/:id/edit_meta', to: 'canvas_gantts#edit_meta'
     patch 'canvas_gantt/tasks/:id', to: 'canvas_gantts#update'
+    post 'canvas_gantt/subtasks/bulk', to: 'canvas_gantts#bulk_create_subtasks'
     delete 'canvas_gantt/relations/:id', to: 'canvas_gantts#destroy_relation'
   end
 end

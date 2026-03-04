@@ -124,25 +124,15 @@ export const IssueIframeDialog: React.FC = () => {
         return i18n.t('button_edit') || 'Edit';
     }, [issueDialogUrl]);
 
-    const { projectId, parentId } = React.useMemo(() => {
-        if (!issueDialogUrl) return { projectId: '', parentId: undefined };
+    const parentId = React.useMemo(() => {
+        if (!issueDialogUrl) return undefined;
 
         try {
             const urlParsed = new URL(issueDialogUrl, window.location.origin);
             const path = urlParsed.pathname;
             const params = urlParsed.searchParams;
 
-            let pId = '';
             let paId = params.get('issue[parent_issue_id]') || params.get('parent_issue_id') || undefined;
-
-            // Extract project from /projects/xxx/issues/new
-            const projectMatch = path.match(/\/projects\/([^/]+)\/issues\/new/);
-            if (projectMatch) {
-                pId = projectMatch[1];
-            } else {
-                // Fallback to global project ID if not in URL
-                pId = String(window.RedmineCanvasGantt?.projectId || '');
-            }
 
             // Extract issue ID from /issues/123/edit to use as parentId for subtasks
             const issueMatch = path.match(/\/issues\/(\d+)(?:\/edit)?/);
@@ -154,13 +144,10 @@ export const IssueIframeDialog: React.FC = () => {
                 }
             }
 
-            return { projectId: pId, parentId: paId };
+            return paId;
         } catch (e) {
             console.error("Failed to parse issue dialog URL", e);
-            return {
-                projectId: String(window.RedmineCanvasGantt?.projectId || ''),
-                parentId: undefined
-            };
+            return undefined;
         }
     }, [issueDialogUrl]);
 
@@ -329,7 +316,6 @@ export const IssueIframeDialog: React.FC = () => {
                 <div style={{ flex: '0 0 auto', padding: '12px 24px 0 24px', backgroundColor: '#fff', borderTop: '1px solid #e0e0e0' }}>
                     <BulkSubtaskCreator
                         ref={bulkRef}
-                        projectId={projectId}
                         parentId={parentId}
                         hideStandaloneButton={true}
                         showTopBorder={false}

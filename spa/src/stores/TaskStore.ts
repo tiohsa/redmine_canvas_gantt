@@ -973,13 +973,26 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             };
         }
 
+        if (result.parentId !== targetTaskId) {
+            set({
+                allTasks: snapshot.allTasks,
+                tasks: snapshot.tasks,
+                layoutRows: snapshot.layoutRows,
+                rowCount: snapshot.rowCount
+            });
+            return {
+                status: 'error',
+                error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent')
+            };
+        }
+
         const updatedAllTasks = get().allTasks.map(task => (
             task.id === sourceTaskId
                 ? {
                     ...task,
-                    parentId: result.parentId ?? targetTaskId,
+                    parentId: targetTaskId,
                     lockVersion: result.lockVersion ?? task.lockVersion,
-                    displayOrder: tailDisplayOrderForParent(get().allTasks, result.parentId ?? targetTaskId, sourceTaskId)
+                    displayOrder: tailDisplayOrderForParent(get().allTasks, targetTaskId, sourceTaskId)
                 }
                 : task
         ));
@@ -999,7 +1012,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return {
             status: 'ok',
             lockVersion: result.lockVersion,
-            parentId: result.parentId ?? targetTaskId,
+            parentId: targetTaskId,
             siblingPosition: 'tail'
         };
     },
@@ -1057,6 +1070,19 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             });
             return {
                 status: result.status,
+                error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent')
+            };
+        }
+
+        if (result.parentId !== undefined) {
+            set({
+                allTasks: snapshot.allTasks,
+                tasks: snapshot.tasks,
+                layoutRows: snapshot.layoutRows,
+                rowCount: snapshot.rowCount
+            });
+            return {
+                status: 'error',
                 error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent')
             };
         }
