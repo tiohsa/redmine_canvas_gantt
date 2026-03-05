@@ -1085,6 +1085,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
                     <select
+                        data-no-select2="1"
                         value={viewport.rowHeight}
                         onChange={(e) => setRowHeight(Number(e.target.value))}
                         title={i18n.t('label_row_height') || 'Row height'}

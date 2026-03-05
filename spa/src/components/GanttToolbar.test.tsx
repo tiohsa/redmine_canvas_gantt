@@ -75,4 +75,24 @@ describe('GanttToolbar shortcuts', () => {
         expect(useUIStore.getState().leftPaneVisible).toBe(true);
         expect(useUIStore.getState().rightPaneVisible).toBe(true);
     });
+
+    it('marks row height select as select2 opt-out', () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [],
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
+
+        const rowHeightSelect = screen.getByTitle('Row height');
+        expect(rowHeightSelect).toHaveAttribute('data-no-select2', '1');
+    });
 });
