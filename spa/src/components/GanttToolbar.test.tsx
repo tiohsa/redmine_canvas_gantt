@@ -75,4 +75,30 @@ describe('GanttToolbar shortcuts', () => {
         expect(useUIStore.getState().leftPaneVisible).toBe(true);
         expect(useUIStore.getState().rightPaneVisible).toBe(true);
     });
+
+    it('updates row height via custom list menu', () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [],
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
+
+        const rowHeightButton = screen.getByTestId('row-height-menu-button');
+        expect(rowHeightButton).toHaveTextContent('M');
+
+        fireEvent.click(rowHeightButton);
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'XL' }));
+
+        expect(useTaskStore.getState().viewport.rowHeight).toBe(52);
+        expect(screen.getByTestId('row-height-menu-button')).toHaveTextContent('XL');
+    });
 });

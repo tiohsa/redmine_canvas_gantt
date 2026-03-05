@@ -40,6 +40,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [showProjectMenu, setShowProjectMenu] = React.useState(false);
     const [showVersionMenu, setShowVersionMenu] = React.useState(false);
     const [showStatusMenu, setShowStatusMenu] = React.useState(false);
+    const [showRowHeightMenu, setShowRowHeightMenu] = React.useState(false);
 
     const filterMenuRef = React.useRef<HTMLDivElement>(null);
     const filterInputRef = React.useRef<HTMLInputElement>(null);
@@ -48,6 +49,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const projectMenuRef = React.useRef<HTMLDivElement>(null);
     const versionMenuRef = React.useRef<HTMLDivElement>(null);
     const statusMenuRef = React.useRef<HTMLDivElement>(null);
+    const rowHeightMenuRef = React.useRef<HTMLDivElement>(null);
 
     React.useEffect(() => {
         if (!showFilterMenu) return;
@@ -107,11 +109,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             if (showStatusMenu && statusMenuRef.current && !statusMenuRef.current.contains(target)) {
                 setShowStatusMenu(false);
             }
+            if (showRowHeightMenu && rowHeightMenuRef.current && !rowHeightMenuRef.current.contains(target)) {
+                setShowRowHeightMenu(false);
+            }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu, showStatusMenu]);
+    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu, showStatusMenu, showRowHeightMenu]);
 
     const handleTodayClick = () => {
         const now = Date.now();
@@ -276,6 +281,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         { level: 1, label: i18n.t('label_week') || 'Week' },
         { level: 2, label: i18n.t('label_day') || 'Day' }
     ];
+    const ROW_HEIGHT_OPTIONS = [
+        { value: 20, label: i18n.t('label_row_height_xs') || 'XS' },
+        { value: 28, label: i18n.t('label_row_height_s') || 'S' },
+        { value: 36, label: i18n.t('label_row_height_m') || 'M' },
+        { value: 44, label: i18n.t('label_row_height_l') || 'L' },
+        { value: 52, label: i18n.t('label_row_height_xl') || 'XL' }
+    ];
+    const currentRowHeightOption = ROW_HEIGHT_OPTIONS.find(option => option.value === viewport.rowHeight) || ROW_HEIGHT_OPTIONS[2];
 
     return (
         <div style={{
@@ -1083,11 +1096,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     })}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
-                    <select
-                        value={viewport.rowHeight}
-                        onChange={(e) => setRowHeight(Number(e.target.value))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px', position: 'relative' }}>
+                    <button
+                        type="button"
+                        onClick={() => setShowRowHeightMenu(prev => !prev)}
                         title={i18n.t('label_row_height') || 'Row height'}
+                        aria-haspopup="menu"
+                        aria-expanded={showRowHeightMenu}
+                        data-testid="row-height-menu-button"
                         style={{
                             padding: '0 8px',
                             borderRadius: '6px',
@@ -1098,15 +1114,64 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             fontWeight: 500,
                             cursor: 'pointer',
                             height: '32px',
-                            outline: 'none'
+                            outline: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
                         }}
                     >
-                        <option value={20}>{i18n.t('label_row_height_xs') || 'XS'}</option>
-                        <option value={28}>{i18n.t('label_row_height_s') || 'S'}</option>
-                        <option value={36}>{i18n.t('label_row_height_m') || 'M'}</option>
-                        <option value={44}>{i18n.t('label_row_height_l') || 'L'}</option>
-                        <option value={52}>{i18n.t('label_row_height_xl') || 'XL'}</option>
-                    </select>
+                        {currentRowHeightOption.label}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                    </button>
+                    {showRowHeightMenu && (
+                        <div
+                            ref={rowHeightMenuRef}
+                            role="menu"
+                            data-testid="row-height-menu"
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                right: 0,
+                                marginTop: '4px',
+                                background: '#fff',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                padding: '6px',
+                                zIndex: 20,
+                                minWidth: '96px'
+                            }}
+                        >
+                            {ROW_HEIGHT_OPTIONS.map(option => (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    role="menuitemradio"
+                                    aria-checked={viewport.rowHeight === option.value}
+                                    onClick={() => {
+                                        setRowHeight(option.value);
+                                        setShowRowHeightMenu(false);
+                                    }}
+                                    style={{
+                                        width: '100%',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        background: viewport.rowHeight === option.value ? '#e8f0fe' : 'transparent',
+                                        color: viewport.rowHeight === option.value ? '#1a73e8' : '#333',
+                                        fontSize: '13px',
+                                        fontWeight: viewport.rowHeight === option.value ? 600 : 500,
+                                        cursor: 'pointer',
+                                        padding: '6px 8px',
+                                        textAlign: 'left'
+                                    }}
+                                >
+                                    {option.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 <button
