@@ -76,7 +76,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(useUIStore.getState().rightPaneVisible).toBe(true);
     });
 
-    it('marks row height select as select2 opt-out', () => {
+    it('updates row height via custom list menu', () => {
         useTaskStore.setState({
             filterText: '',
             allTasks: [],
@@ -92,7 +92,13 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
 
-        const rowHeightSelect = screen.getByTitle('Row height');
-        expect(rowHeightSelect).toHaveAttribute('data-no-select2', '1');
+        const rowHeightButton = screen.getByTestId('row-height-menu-button');
+        expect(rowHeightButton).toHaveTextContent('M');
+
+        fireEvent.click(rowHeightButton);
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'XL' }));
+
+        expect(useTaskStore.getState().viewport.rowHeight).toBe(52);
+        expect(screen.getByTestId('row-height-menu-button')).toHaveTextContent('XL');
     });
 });
