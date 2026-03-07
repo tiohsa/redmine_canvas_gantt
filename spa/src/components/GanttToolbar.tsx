@@ -1139,37 +1139,42 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 border: '1px solid #e0e0e0',
                                 borderRadius: '8px',
                                 boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                                padding: '6px',
+                                padding: '12px',
                                 zIndex: 20,
-                                minWidth: '96px'
+                                minWidth: '120px'
                             }}
                         >
-                            {ROW_HEIGHT_OPTIONS.map(option => (
-                                <button
-                                    key={option.value}
-                                    type="button"
-                                    role="menuitemradio"
-                                    aria-checked={viewport.rowHeight === option.value}
-                                    onClick={() => {
-                                        setRowHeight(option.value);
-                                        setShowRowHeightMenu(false);
-                                    }}
-                                    style={{
-                                        width: '100%',
-                                        border: 'none',
-                                        borderRadius: '6px',
-                                        background: viewport.rowHeight === option.value ? '#e8f0fe' : 'transparent',
-                                        color: viewport.rowHeight === option.value ? '#1a73e8' : '#333',
-                                        fontSize: '13px',
-                                        fontWeight: viewport.rowHeight === option.value ? 600 : 500,
-                                        cursor: 'pointer',
-                                        padding: '6px 8px',
-                                        textAlign: 'left'
-                                    }}
-                                >
-                                    {option.label}
-                                </button>
-                            ))}
+                            <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>
+                                {i18n.t('label_row_height') || 'Row height'}
+                            </div>
+                            {ROW_HEIGHT_OPTIONS.map(option => {
+                                const isChecked = viewport.rowHeight === option.value;
+                                return (
+                                    <label
+                                        key={option.value}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '4px 0',
+                                            color: isChecked ? '#1a73e8' : '#444',
+                                            fontWeight: isChecked ? 600 : 400,
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={() => {
+                                                if (!isChecked) {
+                                                    setRowHeight(option.value);
+                                                }
+                                            }}
+                                        />
+                                        {option.label}
+                                    </label>
+                                );
+                            })}
                         </div>
                     )}
                 </div>

@@ -2,6 +2,7 @@ import React from 'react';
 import { useUIStore } from '../stores/UIStore';
 import type { CustomFieldMeta } from '../types/editMeta';
 import { i18n } from '../utils/i18n';
+import { CustomListSelect } from './CustomListSelect';
 
 export const SubjectEditor: React.FC<{
     initialValue: string;
@@ -85,6 +86,16 @@ export const SelectEditor: React.FC<{
         if (!q) return options;
         return options.filter((o) => o.name.toLowerCase().includes(q));
     }, [filter, options]);
+    const selectOptions = React.useMemo(() => {
+        const next = filtered.map((option) => ({
+            value: String(option.id),
+            label: option.name
+        }));
+        if (includeUnassigned) {
+            return [{ value: '', label: i18n.t('label_unassigned') || 'Unassigned' }, ...next];
+        }
+        return next;
+    }, [filtered, includeUnassigned]);
 
     const commit = async (next: number | null) => {
         if (next === value) {
@@ -112,27 +123,21 @@ export const SelectEditor: React.FC<{
                     disabled={saving}
                 />
             ) : null}
-            <select
+            <CustomListSelect
                 value={value === null ? '' : String(value)}
-                onChange={(e) => {
-                    const raw = e.target.value;
+                options={selectOptions}
+                onChange={(raw) => {
                     const next = raw === '' ? null : Number(raw);
                     void commit(next);
                 }}
-                onBlur={(e) => {
-                    const container = e.currentTarget.parentElement;
-                    if (container && !container.contains(e.relatedTarget as Node)) {
+                onClose={(reason) => {
+                    if ((reason === 'outside' || reason === 'escape') && !saving) {
                         onCancel();
                     }
                 }}
                 disabled={saving}
-                style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
-            >
-                {includeUnassigned ? <option value="">{i18n.t('label_unassigned') || 'Unassigned'}</option> : null}
-                {filtered.map((o) => (
-                    <option key={o.id} value={String(o.id)}>{o.name}</option>
-                ))}
-            </select>
+                dataTestId="select-editor"
+            />
             {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
         </div>
     );
@@ -335,33 +340,32 @@ export const CustomFieldEditor: React.FC<{
 
     if (customField.fieldFormat === 'list') {
         const possibleValues = customField.possibleValues ?? [];
+        const options = [
+            ...(!customField.isRequired ? [{ value: '', label: '-' }] : []),
+            ...possibleValues.map((pv) => ({ value: pv, label: pv }))
+        ];
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <select
+                <CustomListSelect
                     value={value}
+                    options={options}
                     disabled={saving}
-                    onChange={(e) => {
-                        const next = e.target.value;
+                    onChange={(next) => {
                         setValue(next);
                         void commit(next);
                     }}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Escape') onCancel();
-                    }}
-                    onBlur={() => {
-                        if (value === (initialValue ?? '')) {
-                            onCancel();
-                        } else {
-                            void commit(value);
+                    onClose={(reason) => {
+                        if (reason === 'outside' || reason === 'escape') {
+                            if (value === (initialValue ?? '')) {
+                                onCancel();
+                            } else {
+                                void commit(value);
+                            }
                         }
                     }}
-                    style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
-                >
-                    {!customField.isRequired ? <option value="">-</option> : null}
-                    {possibleValues.map((pv) => (
-                        <option key={pv} value={pv}>{pv}</option>
-                    ))}
-                </select>
+                    placeholder={i18n.t('label_select') || 'Select'}
+                    dataTestId="custom-field-list-editor"
+                />
                 {saving ? <div style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
                 {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
             </div>

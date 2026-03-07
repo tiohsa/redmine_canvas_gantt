@@ -76,7 +76,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(useUIStore.getState().rightPaneVisible).toBe(true);
     });
 
-    it('updates row height via custom list menu', () => {
+    it('updates row height via checkbox menu and keeps it open', () => {
         useTaskStore.setState({
             filterText: '',
             allTasks: [],
@@ -96,9 +96,39 @@ describe('GanttToolbar shortcuts', () => {
         expect(rowHeightButton).toHaveTextContent('M');
 
         fireEvent.click(rowHeightButton);
-        fireEvent.click(screen.getByRole('menuitemradio', { name: 'XL' }));
+        const xlCheckbox = screen.getByLabelText('XL');
+        fireEvent.click(xlCheckbox);
 
         expect(useTaskStore.getState().viewport.rowHeight).toBe(52);
         expect(screen.getByTestId('row-height-menu-button')).toHaveTextContent('XL');
+        expect(screen.getByTestId('row-height-menu')).toBeInTheDocument();
+        expect(screen.getByLabelText('XL')).toBeChecked();
+
+        fireEvent.click(screen.getByLabelText('XL'));
+        expect(useTaskStore.getState().viewport.rowHeight).toBe(52);
+        expect(screen.getByLabelText('XL')).toBeChecked();
+    });
+
+    it('closes row height menu on outside click', () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [],
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
+
+        fireEvent.click(screen.getByTestId('row-height-menu-button'));
+        expect(screen.getByTestId('row-height-menu')).toBeInTheDocument();
+
+        fireEvent.mouseDown(document.body);
+        expect(screen.queryByTestId('row-height-menu')).not.toBeInTheDocument();
     });
 });
