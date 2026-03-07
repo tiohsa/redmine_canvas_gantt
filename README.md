@@ -90,6 +90,7 @@ Redmine Canvas Gantt delivers a fast, interactive Gantt experience by rendering 
 - **Inline quick edit**: Toggle which fields are editable in **Administration → Plugins → Canvas Gantt → Configure**.
 - **Row height**: Set the default row height in the same settings page.
 - **Vite dev server**: Enable **Use Vite dev server** to load assets from `http://localhost:5173` during development.
+- **redmica_ui_extension compatibility**: If `redmica_ui_extension` applies Select2 and Canvas Gantt controls behave unexpectedly, go to **Administration → Plugins → Redmica UI Extension → Configure** and turn off **Enable searchable selectbox**.
 
 ## Docker Compose (Quick Start)
 
