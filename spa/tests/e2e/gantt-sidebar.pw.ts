@@ -12,6 +12,25 @@ test('renders sidebar with task list', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Fix login flow' })).toBeVisible();
 });
 
+test('sidebar task cells keep pointer cursor while rows stay draggable', async ({ page }) => {
+  await waitForInitialRender(page);
+
+  const taskRow = page.getByTestId('task-row-101');
+  const subjectCell = page.getByTestId('cell-101-subject');
+  const statusCell = page.getByTestId('cell-101-status');
+
+  await expect(taskRow).toHaveAttribute('draggable', 'true');
+  await expect
+    .poll(() => taskRow.evaluate((el) => getComputedStyle(el).cursor))
+    .toBe('pointer');
+  await expect
+    .poll(() => subjectCell.evaluate((el) => getComputedStyle(el).cursor))
+    .toBe('pointer');
+  await expect
+    .poll(() => statusCell.evaluate((el) => getComputedStyle(el).cursor))
+    .toBe('pointer');
+});
+
 test('resizing left pane does not shrink column width', async ({ page }) => {
   await waitForInitialRender(page);
 

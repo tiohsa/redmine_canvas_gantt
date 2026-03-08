@@ -45,6 +45,45 @@ describe('UiSidebar', () => {
         expect(screen.getByTestId('task-id-123')).toHaveTextContent('123');
     });
 
+    it('keeps task rows draggable while using pointer cursor', () => {
+        useUIStore.setState({ visibleColumns: ['id', 'status'] });
+
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false
+        });
+
+        const task: Task = {
+            id: '125',
+            subject: 'Draggable task',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            statusName: 'New',
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+
+        useTaskStore.getState().setTasks([task]);
+
+        render(<UiSidebar />);
+
+        const taskRow = screen.getByTestId('task-row-125');
+        expect(taskRow).toHaveAttribute('draggable', 'true');
+        expect(getComputedStyle(taskRow).cursor).toBe('pointer');
+    });
+
     it('double click on start date cell starts inline edit and saves', async () => {
         const taskId = '123';
 

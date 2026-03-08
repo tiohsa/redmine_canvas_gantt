@@ -1254,7 +1254,7 @@ export const UiSidebar: React.FC = () => {
                                     borderBottom: '1px solid #f1f3f4',
                                     backgroundColor: isDropTarget ? '#e6f4ea' : (isSelected ? '#e8f0fe' : 'transparent'),
                                     boxShadow: isDropTarget ? 'inset 0 0 0 1px #34a853' : 'none',
-                                    cursor: task.editable ? 'grab' : 'pointer',
+                                    cursor: 'pointer',
                                     fontSize: '13px',
                                     color: '#3c4043',
                                     transition: 'background-color 0.2s, color 0.2s'
