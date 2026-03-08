@@ -3,6 +3,7 @@ import { GanttContainer } from './GanttContainer';
 import { useUIStore } from '../stores/UIStore';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useTaskStore } from '../stores/TaskStore';
+import { SIDEBAR_RESIZE_CURSOR } from '../constants';
 
 const fetchDataMock = vi.fn().mockResolvedValue({
     tasks: [],
@@ -84,6 +85,8 @@ vi.mock('../api/client', () => ({
 
 describe('GanttContainer Resize', () => {
     beforeEach(() => {
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
         useUIStore.setState({
             sidebarWidth: 300,
             leftPaneVisible: true,
@@ -106,6 +109,25 @@ describe('GanttContainer Resize', () => {
         });
         fetchDataMock.mockClear();
         vi.clearAllMocks();
+    });
+
+    it('should use ew-resize and restore previous body styles during sidebar resize', () => {
+        render(<GanttContainer />);
+
+        const resizeHandle = screen.getByTestId('sidebar-resize-handle');
+        document.body.style.cursor = 'crosshair';
+        document.body.style.userSelect = 'text';
+
+        fireEvent.mouseDown(resizeHandle);
+
+        expect(resizeHandle).toHaveStyle(`cursor: ${SIDEBAR_RESIZE_CURSOR}`);
+        expect(document.body.style.cursor).toBe(SIDEBAR_RESIZE_CURSOR);
+        expect(document.body.style.userSelect).toBe('none');
+
+        fireEvent.mouseUp(document);
+
+        expect(document.body.style.cursor).toBe('crosshair');
+        expect(document.body.style.userSelect).toBe('text');
     });
 
     it('should calculate sidebar width relative to container position', () => {

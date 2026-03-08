@@ -67,6 +67,24 @@ const baseTask = (overrides: Partial<Task> = {}): Task => ({
     ...overrides
 });
 
+const seedTasks = (tasks: Task[], overrides: Partial<ReturnType<typeof useTaskStore.getState>> = {}) => {
+    useTaskStore.setState({
+        allTasks: tasks,
+        tasks,
+        relations: [],
+        layoutRows: [],
+        rowCount: tasks.length,
+        groupByProject: false,
+        projectExpansion: {},
+        taskExpansion: {},
+        filterText: '',
+        sortConfig: null,
+        autoSave: false,
+        modifiedTaskIds: new Set(),
+        ...overrides
+    });
+};
+
 beforeEach(() => {
     vi.mocked(apiClient.updateTask).mockReset();
     vi.mocked(apiClient.fetchData).mockReset();
@@ -190,6 +208,101 @@ describe('InteractionEngine task updates', () => {
         expect(apiClient.updateTask).toHaveBeenCalled();
         expect(apiClient.fetchData).toHaveBeenCalled();
 
+        engine.detach();
+        container.remove();
+    });
+});
+
+describe('InteractionEngine cursor behavior', () => {
+    it('uses move cursor on editable task body hover', () => {
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'move-task', rowIndex: 0, startDate: 0, dueDate: 10 });
+        seedTasks([task]);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
+        container.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x + bounds.width / 2,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(container.style.cursor).toBe('move');
+
+        engine.detach();
+        container.remove();
+    });
+
+    it('uses ew-resize cursor on task resize handle hover', () => {
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'resize-task', rowIndex: 0, startDate: 0, dueDate: 10 });
+        seedTasks([task]);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        container.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x + 1,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(container.style.cursor).toBe('ew-resize');
+
+        engine.detach();
+        container.remove();
+    });
+
+    it('uses pointer cursor on parent task hover', () => {
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'parent-task', rowIndex: 0, startDate: 0, dueDate: 10, hasChildren: true });
+        seedTasks([task]);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
+        container.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x + bounds.width / 2,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(container.style.cursor).toBe('pointer');
+
+        engine.detach();
+        container.remove();
+    });
+
+    it('keeps move cursor while dragging outside the task body', () => {
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'drag-task', rowIndex: 0, startDate: 0, dueDate: 10 });
+        seedTasks([task]);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
+        const startX = bounds.x + bounds.width / 2;
+        const startY = bounds.y + bounds.height / 2;
+
+        container.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: startX,
+            clientY: startY,
+            bubbles: true
+        }));
+        window.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x + bounds.width + 120,
+            clientY: startY,
+            bubbles: true
+        }));
+
+        expect(container.style.cursor).toBe('move');
+
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         engine.detach();
         container.remove();
     });

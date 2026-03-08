@@ -84,6 +84,7 @@ class CanvasGanttsController < ApplicationController
     label_version_filter: :label_version_filter,
     label_status_filter: :label_status_filter,
     label_organize_by_dependency: :label_organize_by_dependency,
+    label_row_height: :label_row_height,
     label_row_height_xs: :label_row_height_xs,
     label_row_height_s: :label_row_height_s,
     label_row_height_m: :label_row_height_m,

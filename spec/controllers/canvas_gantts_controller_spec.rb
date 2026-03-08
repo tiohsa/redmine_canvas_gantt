@@ -50,6 +50,25 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe 'GET #index' do
+    before do
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: false, viewable: true })
+      end
+      allow(controller).to receive(:plugin_settings).and_return({})
+      allow(Setting).to receive(:non_working_week_days).and_return([0, 6])
+    end
+
+    it 'includes row height labels in frontend i18n payload' do
+      get :index, params: { project_id: 'demo' }
+
+      expect(response).to have_http_status(:ok)
+      i18n_payload = controller.instance_variable_get(:@i18n)
+      expect(i18n_payload['label_row_height']).to eq(I18n.t(:label_row_height))
+      expect(i18n_payload['label_row_height_m']).to eq(I18n.t(:label_row_height_m))
+    end
+  end
+
   describe 'PATCH #update' do
     let(:issue_scope) { double('IssueScope') }
     let(:issue) do

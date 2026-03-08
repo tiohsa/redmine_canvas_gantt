@@ -5,6 +5,10 @@ import type { Task } from '../types';
 import { snapToUtcDay } from '../utils/time';
 
 type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
+const TASK_MOVE_CURSOR = 'move';
+const TASK_RESIZE_CURSOR = 'ew-resize';
+const TASK_DISABLED_PARENT_CURSOR = 'pointer';
+const DEFAULT_CURSOR = 'default';
 
 interface DragState {
     mode: DragMode;
@@ -122,6 +126,18 @@ export class InteractionEngine {
 
     private snapToDate(timestamp: number): number {
         return snapToUtcDay(timestamp);
+    }
+
+    private getCursorForHit(hit: { task: Task | null; region: 'body' | 'start' | 'end' }): string {
+        if (this.drag.mode === 'task-move') return TASK_MOVE_CURSOR;
+        if (this.drag.mode === 'task-resize-start' || this.drag.mode === 'task-resize-end') return TASK_RESIZE_CURSOR;
+        if (this.drag.mode === 'pan') return DEFAULT_CURSOR;
+
+        if (!hit.task) return DEFAULT_CURSOR;
+        if (hit.task.hasChildren) return TASK_DISABLED_PARENT_CURSOR;
+        if (!hit.task.editable) return DEFAULT_CURSOR;
+        if (hit.region === 'start' || hit.region === 'end') return TASK_RESIZE_CURSOR;
+        return TASK_MOVE_CURSOR;
     }
 
     private handleMouseDown = (e: MouseEvent) => {
@@ -243,16 +259,7 @@ export class InteractionEngine {
             }
         }
 
-        // Update cursor based on hit region
-        if (hit.task && hit.task.editable) {
-            if (hit.region === 'start' || hit.region === 'end') {
-                this.container.style.cursor = 'ew-resize';
-            } else {
-                this.container.style.cursor = 'grab';
-            }
-        } else {
-            this.container.style.cursor = 'default';
-        }
+        this.container.style.cursor = this.getCursorForHit(hit);
 
         if (this.drag.mode === 'none') return;
 
@@ -323,7 +330,7 @@ export class InteractionEngine {
         useTaskStore.getState().setSortingSuspended(false);
 
         this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: undefined, originalDueDate: undefined, snapshot: null };
-        this.container.style.cursor = 'default';
+        this.container.style.cursor = DEFAULT_CURSOR;
 
         if (wasDragging && draggedTaskId) {
             const { autoSave, saveChanges } = useTaskStore.getState();

@@ -47,6 +47,7 @@ window.RedmineCanvasGantt = {
         button_expand: 'Expand',
         label_sort_by: 'Sort by',
         label_project: 'Project',
+        label_row_height: 'Row height',
         button_edit: 'Edit',
         button_delete: 'Delete',
         button_save: 'Save',
