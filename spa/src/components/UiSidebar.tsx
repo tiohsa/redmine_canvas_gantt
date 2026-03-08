@@ -5,6 +5,7 @@ import type { Task } from '../types';
 import { getStatusColor, getPriorityColor } from '../utils/styles';
 import { useUIStore } from '../stores/UIStore';
 import { loadPreferences } from '../utils/preferences';
+import { SIDEBAR_RESIZE_CURSOR } from '../constants';
 
 import { CustomFieldEditor, DoneRatioEditor, DueDateEditor, SelectEditor, SubjectEditor } from './InlineEditors';
 import { useEditMetaStore } from '../stores/EditMetaStore';
@@ -310,7 +311,7 @@ export const UiSidebar: React.FC = () => {
                     userSelect: document.body.style.userSelect
                 };
             }
-            document.body.style.cursor = 'col-resize';
+            document.body.style.cursor = SIDEBAR_RESIZE_CURSOR;
             document.body.style.userSelect = 'none';
             return;
         }
@@ -1072,13 +1073,14 @@ export const UiSidebar: React.FC = () => {
                                 }
 
                                 <div
+                                    data-testid={`sidebar-column-resize-handle-${col.key}`}
                                     style={{
                                         position: 'absolute',
                                         right: 0,
                                         bottom: 0,
                                         width: 4, // Hit area
                                         height: '100%',
-                                        cursor: 'col-resize',
+                                        cursor: SIDEBAR_RESIZE_CURSOR,
                                         zIndex: 10,
                                         display: 'flex',
                                         alignItems: 'center',

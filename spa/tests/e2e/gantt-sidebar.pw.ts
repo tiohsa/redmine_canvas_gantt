@@ -31,6 +31,56 @@ test('sidebar task cells keep pointer cursor while rows stay draggable', async (
     .toBe('pointer');
 });
 
+test('resize handles use ew-resize and column resizing still works', async ({ page }) => {
+  await waitForInitialRender(page);
+
+  const sidebarResizeHandle = page.getByTestId('sidebar-resize-handle');
+  const statusHeader = page.getByTestId('sidebar-header-status');
+  const columnResizeHandle = page.getByTestId('sidebar-column-resize-handle-status');
+
+  await expect
+    .poll(() => sidebarResizeHandle.evaluate((el) => getComputedStyle(el).cursor))
+    .toBe('ew-resize');
+  await expect
+    .poll(() => columnResizeHandle.evaluate((el) => getComputedStyle(el).cursor))
+    .toBe('ew-resize');
+
+  const statusWidthBefore = await statusHeader.evaluate((el) => Number.parseFloat(getComputedStyle(el).width));
+  expect(statusWidthBefore).toBeTruthy();
+
+  const columnHandleBox = await columnResizeHandle.boundingBox();
+  expect(columnHandleBox).toBeTruthy();
+  const startX = columnHandleBox!.x + columnHandleBox!.width / 2;
+  const centerY = columnHandleBox!.y + columnHandleBox!.height / 2;
+  const endX = startX + 60;
+  await columnResizeHandle.dispatchEvent('mousedown', {
+    clientX: startX,
+    clientY: centerY,
+    button: 0,
+    buttons: 1,
+  });
+  await page.evaluate(({ x, y }) => {
+    window.dispatchEvent(new MouseEvent('mousemove', {
+      clientX: x,
+      clientY: y,
+      bubbles: true,
+      buttons: 1,
+    }));
+  }, { x: endX, y: centerY });
+
+  await expect
+    .poll(() => statusHeader.evaluate((el) => Number.parseFloat(getComputedStyle(el).width)))
+    .toBeGreaterThan(statusWidthBefore + 10);
+
+  await page.evaluate(({ x, y }) => {
+    window.dispatchEvent(new MouseEvent('mouseup', {
+      clientX: x,
+      clientY: y,
+      bubbles: true,
+    }));
+  }, { x: endX, y: centerY });
+});
+
 test('resizing left pane does not shrink column width', async ({ page }) => {
   await waitForInitialRender(page);
 
@@ -43,6 +93,9 @@ test('resizing left pane does not shrink column width', async ({ page }) => {
   const sidebarWidthBefore = (await sidebar.boundingBox())?.width;
   expect(subjectWidthBefore).toBeTruthy();
   expect(sidebarWidthBefore).toBeTruthy();
+  await expect
+    .poll(() => resizeHandle.evaluate((el) => getComputedStyle(el).cursor))
+    .toBe('ew-resize');
 
   const handleBox = await resizeHandle.boundingBox();
   expect(handleBox).toBeTruthy();

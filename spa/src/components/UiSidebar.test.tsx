@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { fireEvent, waitFor } from '@testing-library/react';
 import { UiSidebar } from './UiSidebar';
@@ -6,8 +6,14 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import type { Task } from '../types';
 import { useEditMetaStore } from '../stores/EditMetaStore';
+import { SIDEBAR_RESIZE_CURSOR } from '../constants';
 
 describe('UiSidebar', () => {
+    beforeEach(() => {
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    });
+
     it('shows task id column', () => {
         useUIStore.setState({ visibleColumns: ['id'] });
 
@@ -82,6 +88,60 @@ describe('UiSidebar', () => {
         const taskRow = screen.getByTestId('task-row-125');
         expect(taskRow).toHaveAttribute('draggable', 'true');
         expect(getComputedStyle(taskRow).cursor).toBe('pointer');
+    });
+
+    it('uses ew-resize and restores previous body styles during column resize', async () => {
+        useUIStore.setState({ visibleColumns: ['id', 'status'] });
+
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false
+        });
+
+        const task: Task = {
+            id: '126',
+            subject: 'Resizable column task',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            statusName: 'New',
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+
+        useTaskStore.getState().setTasks([task]);
+
+        render(<UiSidebar />);
+
+        const resizeHandle = screen.getByTestId('sidebar-column-resize-handle-status');
+        document.body.style.cursor = 'crosshair';
+        document.body.style.userSelect = 'text';
+
+        fireEvent.mouseDown(resizeHandle, { clientX: 320 });
+
+        await waitFor(() => {
+            expect(resizeHandle).toHaveStyle(`cursor: ${SIDEBAR_RESIZE_CURSOR}`);
+            expect(document.body.style.cursor).toBe(SIDEBAR_RESIZE_CURSOR);
+            expect(document.body.style.userSelect).toBe('none');
+        });
+
+        fireEvent.mouseUp(window);
+
+        await waitFor(() => {
+            expect(document.body.style.cursor).toBe('crosshair');
+            expect(document.body.style.userSelect).toBe('text');
+        });
     });
 
     it('double click on start date cell starts inline edit and saves', async () => {
