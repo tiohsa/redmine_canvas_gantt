@@ -948,6 +948,7 @@ export const UiSidebar: React.FC = () => {
     const save = React.useCallback(async (params: Parameters<typeof InlineEditService.saveTaskFields>[0]) => {
         await InlineEditService.saveTaskFields(params);
     }, []);
+    const inlineControlHeight = Math.max(20, Math.min(24, viewport.rowHeight - 6));
 
     return (
         <div
@@ -1310,6 +1311,7 @@ export const UiSidebar: React.FC = () => {
                                                     return (
                                                         <SubjectEditor
                                                             initialValue={task.subject}
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 await save({
@@ -1333,6 +1335,7 @@ export const UiSidebar: React.FC = () => {
                                                             value={current}
                                                             options={taskMeta.options.assignees}
                                                             includeUnassigned
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 const prevId = task.assignedToId ?? null;
@@ -1357,6 +1360,7 @@ export const UiSidebar: React.FC = () => {
                                                         <SelectEditor
                                                             value={task.statusId}
                                                             options={taskMeta.options.statuses}
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 if (next === null) return;
@@ -1377,6 +1381,7 @@ export const UiSidebar: React.FC = () => {
                                                     return (
                                                         <DoneRatioEditor
                                                             initialValue={task.ratioDone}
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 await save({
@@ -1396,6 +1401,7 @@ export const UiSidebar: React.FC = () => {
                                                         <DueDateEditor
                                                             initialValue={toDateInputValue(task.dueDate)}
                                                             min={toDateInputValue(task.startDate)}
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={(next) => {
                                                                 // Handle clearing the date
@@ -1432,6 +1438,7 @@ export const UiSidebar: React.FC = () => {
                                                         <DueDateEditor
                                                             initialValue={toDateInputValue(task.startDate)}
                                                             max={toDateInputValue(task.dueDate)}
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={(next) => {
                                                                 // Handle clearing the date
@@ -1470,6 +1477,7 @@ export const UiSidebar: React.FC = () => {
                                                         <SelectEditor
                                                             value={task.priorityId ?? null}
                                                             options={taskMeta.options.priorities || []}
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 if (next === null) return;
@@ -1493,6 +1501,7 @@ export const UiSidebar: React.FC = () => {
                                                         <SelectEditor
                                                             value={task.authorId ?? null}
                                                             options={taskMeta.options.assignees}
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 const nextName = meta.options.assignees.find(s => s.id === next)?.name;
@@ -1516,6 +1525,7 @@ export const UiSidebar: React.FC = () => {
                                                             value={task.categoryId ?? null}
                                                             options={taskMeta.options.categories || []}
                                                             includeUnassigned
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 const nextName = meta.options.categories?.find(s => s.id === next)?.name;
@@ -1535,6 +1545,7 @@ export const UiSidebar: React.FC = () => {
                                                     return (
                                                         <DoneRatioEditor
                                                             initialValue={task.estimatedHours || 0}
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 await save({
@@ -1556,6 +1567,7 @@ export const UiSidebar: React.FC = () => {
                                                         <SelectEditor
                                                             value={task.projectId ? Number(task.projectId) : null}
                                                             options={taskMeta.options.projects || []}
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 if (next === null) return;
@@ -1579,6 +1591,7 @@ export const UiSidebar: React.FC = () => {
                                                         <SelectEditor
                                                             value={task.trackerId ?? null}
                                                             options={taskMeta.options.trackers || []}
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 if (next === null) return;
@@ -1608,6 +1621,7 @@ export const UiSidebar: React.FC = () => {
                                                             value={task.fixedVersionId ? Number(task.fixedVersionId) : null}
                                                             options={filteredVersions}
                                                             includeUnassigned
+                                                            controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 const nextName = taskMeta.options.versions?.find(s => s.id === next)?.name;
@@ -1639,6 +1653,7 @@ export const UiSidebar: React.FC = () => {
                                                             <CustomFieldEditor
                                                                 customField={customField}
                                                                 initialValue={task.customFieldValues?.[customFieldId] ?? taskMeta.customFieldValues[customFieldId] ?? null}
+                                                                controlHeight={inlineControlHeight}
                                                                 onCancel={close}
                                                                 onCommit={async (next) => {
                                                                     const prevRecord = task.customFieldValues;

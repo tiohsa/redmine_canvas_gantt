@@ -3,11 +3,45 @@ import { useUIStore } from '../stores/UIStore';
 import type { CustomFieldMeta } from '../types/editMeta';
 import { i18n } from '../utils/i18n';
 
+const DEFAULT_CONTROL_HEIGHT = 24;
+
+const getResolvedControlHeight = (controlHeight?: number) => controlHeight ?? DEFAULT_CONTROL_HEIGHT;
+
+const buildControlStyle = ({
+    controlHeight,
+    fontSize = 13,
+    width = '100%',
+    padding = '0 8px',
+    border,
+    borderRadius = 4
+}: {
+    controlHeight?: number;
+    fontSize?: number;
+    width?: React.CSSProperties['width'];
+    padding?: React.CSSProperties['padding'];
+    border: string;
+    borderRadius?: React.CSSProperties['borderRadius'];
+}): React.CSSProperties => {
+    const resolvedHeight = getResolvedControlHeight(controlHeight);
+    return {
+        boxSizing: 'border-box',
+        margin: 0,
+        width,
+        height: resolvedHeight,
+        lineHeight: `${Math.max(resolvedHeight - 2, 18)}px`,
+        fontSize,
+        padding,
+        border,
+        borderRadius
+    };
+};
+
 export const SubjectEditor: React.FC<{
     initialValue: string;
     onCommit: (value: string) => Promise<void>;
     onCancel: () => void;
-}> = ({ initialValue, onCommit, onCancel }) => {
+    controlHeight?: number;
+}> = ({ initialValue, onCommit, onCancel, controlHeight }) => {
     const [value, setValue] = React.useState(initialValue);
     const [saving, setSaving] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
@@ -59,7 +93,10 @@ export const SubjectEditor: React.FC<{
                         }
                     }}
                     disabled={saving}
-                    style={{ width: '100%', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
+                    style={buildControlStyle({
+                        controlHeight,
+                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                    })}
                 />
                 {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
             </div>
@@ -74,7 +111,8 @@ export const SelectEditor: React.FC<{
     includeUnassigned?: boolean;
     onCommit: (value: number | null) => Promise<void>;
     onCancel: () => void;
-}> = ({ value, options, includeUnassigned, onCommit, onCancel }) => {
+    controlHeight?: number;
+}> = ({ value, options, includeUnassigned, onCommit, onCancel, controlHeight }) => {
     const [saving, setSaving] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
     const [filter, setFilter] = React.useState('');
@@ -108,7 +146,11 @@ export const SelectEditor: React.FC<{
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
                     placeholder={i18n.t('label_search') || 'Search...'}
-                    style={{ fontSize: 12, padding: '6px 8px', border: '1px solid #ccc', borderRadius: 4 }}
+                    style={buildControlStyle({
+                        controlHeight,
+                        fontSize: 12,
+                        border: '1px solid #ccc'
+                    })}
                     disabled={saving}
                 />
             ) : null}
@@ -126,7 +168,11 @@ export const SelectEditor: React.FC<{
                     }
                 }}
                 disabled={saving}
-                style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
+                style={buildControlStyle({
+                    controlHeight,
+                    padding: '0 24px 0 8px',
+                    border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                })}
             >
                 {includeUnassigned ? <option value="">{i18n.t('label_unassigned') || 'Unassigned'}</option> : null}
                 {filtered.map((o) => (
@@ -142,7 +188,8 @@ export const DoneRatioEditor: React.FC<{
     initialValue: number;
     onCommit: (value: number) => Promise<void>;
     onCancel: () => void;
-}> = ({ initialValue, onCommit, onCancel }) => {
+    controlHeight?: number;
+}> = ({ initialValue, onCommit, onCancel, controlHeight }) => {
     const [value, setValue] = React.useState(String(initialValue));
     const [saving, setSaving] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
@@ -192,7 +239,11 @@ export const DoneRatioEditor: React.FC<{
                             void commit();
                         }
                     }}
-                    style={{ width: '54px', fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
+                    style={buildControlStyle({
+                        controlHeight,
+                        width: '54px',
+                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                    })}
                 />
                 <span style={{ fontSize: 12, color: '#444' }}>%</span>
                 {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
@@ -208,10 +259,12 @@ export const DueDateEditor: React.FC<{
     onCancel: () => void;
     min?: string;
     max?: string;
-}> = ({ initialValue, onCommit, onCancel, min, max }) => {
+    controlHeight?: number;
+}> = ({ initialValue, onCommit, onCancel, min, max, controlHeight }) => {
     const [value, setValue] = React.useState(initialValue);
     const [saving, setSaving] = React.useState(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
+    const resolvedControlHeight = getResolvedControlHeight(controlHeight);
 
     React.useEffect(() => {
         const timer = setTimeout(() => {
@@ -247,8 +300,25 @@ export const DueDateEditor: React.FC<{
     const displayValue = value ? value.replace(/-/g, '/') : '';
 
     return (
-        <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <span style={{ color: '#666', padding: '0 4px', fontSize: 13 }}>{displayValue}</span>
+        <div
+            style={{
+                width: '100%',
+                height: resolvedControlHeight,
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center'
+            }}
+        >
+            <span
+                style={{
+                    color: '#666',
+                    padding: '0 8px',
+                    fontSize: 13,
+                    lineHeight: `${Math.max(resolvedControlHeight - 2, 18)}px`
+                }}
+            >
+                {displayValue}
+            </span>
             <input
                 ref={inputRef}
                 type="date"
@@ -275,7 +345,7 @@ export const DueDateEditor: React.FC<{
                     top: 0,
                     left: 0,
                     width: '100%',
-                    height: '100%',
+                    height: resolvedControlHeight,
                     opacity: 0,
                     border: 'none',
                     margin: 0,
@@ -292,7 +362,8 @@ export const CustomFieldEditor: React.FC<{
     initialValue: string | null;
     onCommit: (value: string | null) => Promise<void>;
     onCancel: () => void;
-}> = ({ customField, initialValue, onCommit, onCancel }) => {
+    controlHeight?: number;
+}> = ({ customField, initialValue, onCommit, onCancel, controlHeight }) => {
     const [value, setValue] = React.useState(initialValue ?? '');
     const [saving, setSaving] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
@@ -355,7 +426,11 @@ export const CustomFieldEditor: React.FC<{
                             void commit(value);
                         }
                     }}
-                    style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
+                    style={buildControlStyle({
+                        controlHeight,
+                        padding: '0 24px 0 8px',
+                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                    })}
                 >
                     {!customField.isRequired ? <option value="">-</option> : null}
                     {possibleValues.map((pv) => (
@@ -400,6 +475,7 @@ export const CustomFieldEditor: React.FC<{
             <DueDateEditor
                 initialValue={value}
                 onCancel={onCancel}
+                controlHeight={controlHeight}
                 onCommit={async (next) => {
                     await commit(next);
                 }}
@@ -448,7 +524,10 @@ export const CustomFieldEditor: React.FC<{
                             void commit(value);
                         }
                     }}
-                    style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4 }}
+                    style={buildControlStyle({
+                        controlHeight,
+                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                    })}
                 />
             )}
             {saving ? <div style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}

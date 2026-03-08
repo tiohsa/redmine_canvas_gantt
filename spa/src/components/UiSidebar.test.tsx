@@ -316,4 +316,110 @@ describe('UiSidebar', () => {
             expect(document.querySelector('input[type="text"]')).toBeNull();
         });
     });
+
+    it('sizes status inline edit control from row height', async () => {
+        const taskId = '301';
+
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key',
+            i18n: {
+                button_edit: 'Edit',
+                field_status: 'Status',
+                label_loading: 'Loading...'
+            },
+            settings: { inline_edit_status: '1' }
+        };
+
+        useUIStore.setState({ visibleColumns: ['id', 'status'], activeInlineEdit: null });
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 20
+            },
+            groupByProject: false,
+            selectedTaskId: null,
+            customFields: []
+        });
+        useEditMetaStore.setState({
+            metaByTaskId: {
+                [taskId]: {
+                    task: {
+                        id: taskId,
+                        subject: 'Compact row task',
+                        assignedToId: null,
+                        statusId: 1,
+                        doneRatio: 0,
+                        dueDate: '2025-01-01',
+                        startDate: '2025-01-01',
+                        priorityId: 1,
+                        categoryId: null,
+                        estimatedHours: null,
+                        projectId: 1,
+                        trackerId: 1,
+                        fixedVersionId: null,
+                        lockVersion: 1
+                    },
+                    editable: {
+                        subject: true,
+                        assignedToId: true,
+                        statusId: true,
+                        doneRatio: true,
+                        dueDate: true,
+                        startDate: true,
+                        priorityId: true,
+                        categoryId: true,
+                        estimatedHours: true,
+                        projectId: true,
+                        trackerId: true,
+                        fixedVersionId: true,
+                        customFieldValues: true
+                    },
+                    options: {
+                        statuses: [{ id: 1, name: 'New' }, { id: 2, name: 'Closed' }],
+                        assignees: [],
+                        priorities: [],
+                        categories: [],
+                        projects: [],
+                        trackers: [],
+                        versions: [],
+                        customFields: []
+                    },
+                    customFieldValues: {}
+                }
+            },
+            loadingTaskId: null,
+            error: null
+        });
+
+        const task: Task = {
+            id: taskId,
+            subject: 'Compact row task',
+            startDate: new Date('2025-01-01').getTime(),
+            dueDate: new Date('2025-01-05').getTime(),
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+        useTaskStore.getState().setTasks([task]);
+
+        render(<UiSidebar />);
+
+        const cell = await screen.findByTestId(`cell-${taskId}-status`);
+        fireEvent.doubleClick(cell);
+
+        const select = await screen.findByRole('combobox');
+        expect(select).toHaveStyle({ height: '20px', padding: '0 24px 0 8px' });
+    });
 });
