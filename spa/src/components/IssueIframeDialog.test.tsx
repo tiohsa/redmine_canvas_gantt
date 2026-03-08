@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { IssueIframeDialog } from './IssueIframeDialog';
 import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
@@ -67,6 +67,41 @@ describe('IssueIframeDialog', () => {
 
         expect(useUIStore.getState().issueDialogUrl).toBeNull();
         expect(refreshData).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders compact chrome with left-aligned footer actions', () => {
+        render(<IssueIframeDialog />);
+
+        const header = screen.getByTestId('issue-dialog-header');
+        const footer = screen.getByTestId('issue-dialog-footer');
+        const title = screen.getByText('Issue #123');
+        const openInNewTabLink = screen.getByRole('link', { name: 'Open issue in new tab' });
+        const closeButton = screen.getByRole('button', { name: 'Close issue dialog' });
+        const footerButtons = within(footer).getAllByRole('button');
+
+        expect(header.style.paddingTop).toBe('2px');
+        expect(header.style.paddingRight).toBe('12px');
+        expect(header.style.paddingBottom).toBe('2px');
+        expect(header.style.paddingLeft).toBe('12px');
+        expect(title.style.fontSize).toBe('14px');
+        expect(openInNewTabLink.style.width).toBe('24px');
+        expect(openInNewTabLink.style.height).toBe('24px');
+        expect(closeButton.style.width).toBe('24px');
+        expect(closeButton.style.height).toBe('24px');
+
+        expect(footer.style.justifyContent).toBe('flex-start');
+        expect(footer.style.gap).toBe('6px');
+        expect(footer.style.paddingTop).toBe('2px');
+        expect(footer.style.paddingRight).toBe('12px');
+        expect(footer.style.paddingBottom).toBe('4px');
+        expect(footer.style.paddingLeft).toBe('12px');
+        expect(footerButtons).toHaveLength(2);
+        expect(footerButtons[0]).toHaveTextContent('Cancel');
+        expect(footerButtons[1]).toHaveTextContent('Save');
+        expect(footerButtons[0].style.height).toBe('28px');
+        expect(footerButtons[1].style.height).toBe('28px');
+        expect(footerButtons[0].style.minWidth).toBe('88px');
+        expect(footerButtons[1].style.minWidth).toBe('88px');
     });
 
     it('closes dialog when save transitions to issue show even if issue-form remains', async () => {

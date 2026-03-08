@@ -17,7 +17,7 @@ import { useSidebarResize } from './gantt/useSidebarResize';
 import { useInitialGanttData } from './gantt/useInitialGanttData';
 import { useScrollSync } from './gantt/useScrollSync';
 
-import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, BOTTOM_PADDING_PX, SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH } from '../constants';
+import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, BOTTOM_PADDING_PX, SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH, SIDEBAR_RESIZE_CURSOR } from '../constants';
 
 export const GanttContainer: React.FC = () => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -156,7 +156,7 @@ export const GanttContainer: React.FC = () => {
                                 style={{
                                     width: SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH,
                                     boxSizing: 'border-box',
-                                    cursor: 'col-resize',
+                                    cursor: SIDEBAR_RESIZE_CURSOR,
                                     backgroundColor: '#f0f0f0',
                                     borderRight: '1px solid #e0e0e0',
                                     borderLeft: '1px solid #e0e0e0',

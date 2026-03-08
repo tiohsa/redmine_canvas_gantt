@@ -9,3 +9,4 @@ export const SIDEBAR_MAX_WIDTH_RATIO = 0.8;
 export const SIDEBAR_RIGHT_PANE_MIN_WIDTH = 320;
 export const SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH = 6;
 export const SIDEBAR_DEFAULT_WIDTH = 300;
+export const SIDEBAR_RESIZE_CURSOR = 'ew-resize';

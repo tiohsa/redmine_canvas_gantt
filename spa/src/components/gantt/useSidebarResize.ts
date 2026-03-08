@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
+import { SIDEBAR_RESIZE_CURSOR } from '../../constants';
 import { clampSidebarWidthToBounds, computeSidebarWidthBounds } from '../../utils/sidebarWidth';
 
 type Params = {
@@ -18,6 +19,31 @@ export const useSidebarResize = ({
     setSidebarResizing
 }: Params): { startResize: () => void } => {
     const isResizing = useRef(false);
+    const bodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null);
+
+    const applyResizeBodyStyles = useCallback(() => {
+        if (typeof document === 'undefined') return;
+        if (!bodyStyleRef.current) {
+            bodyStyleRef.current = {
+                cursor: document.body.style.cursor,
+                userSelect: document.body.style.userSelect
+            };
+        }
+        document.body.style.cursor = SIDEBAR_RESIZE_CURSOR;
+        document.body.style.userSelect = 'none';
+    }, []);
+
+    const restoreBodyStyles = useCallback(() => {
+        if (typeof document === 'undefined') return;
+        if (bodyStyleRef.current) {
+            document.body.style.cursor = bodyStyleRef.current.cursor;
+            document.body.style.userSelect = bodyStyleRef.current.userSelect;
+            bodyStyleRef.current = null;
+            return;
+        }
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    }, []);
 
     const getSidebarWidthBounds = useCallback(() => {
         const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 0;
@@ -44,7 +70,7 @@ export const useSidebarResize = ({
             if (!isResizing.current) return;
             isResizing.current = false;
             setSidebarResizing(false);
-            document.body.style.cursor = 'default';
+            restoreBodyStyles();
         };
 
         document.addEventListener('mousemove', handleMouseMove);
@@ -54,8 +80,9 @@ export const useSidebarResize = ({
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
             setSidebarResizing(false);
+            restoreBodyStyles();
         };
-    }, [containerRef, getClampedSidebarWidth, setSidebarResizing, setSidebarWidth]);
+    }, [containerRef, getClampedSidebarWidth, restoreBodyStyles, setSidebarResizing, setSidebarWidth]);
 
     useEffect(() => {
         if (!leftPaneVisible) return;
@@ -76,8 +103,8 @@ export const useSidebarResize = ({
     const startResize = useCallback(() => {
         isResizing.current = true;
         setSidebarResizing(true);
-        document.body.style.cursor = 'col-resize';
-    }, [setSidebarResizing]);
+        applyResizeBodyStyles();
+    }, [applyResizeBodyStyles, setSidebarResizing]);
 
     return { startResize };
 };
