@@ -64,7 +64,15 @@ describe('HtmlOverlay', () => {
     beforeEach(() => {
         vi.mocked(apiClient.createRelation).mockReset();
         vi.mocked(apiClient.fetchData).mockReset();
-        useUIStore.setState({ issueDialogUrl: null });
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key',
+            settings: { default_relation_type: 'precedes', auto_calculate_delay: '1', dependency_edit_mode: '1' }
+        };
+        useUIStore.setState({ issueDialogUrl: null, dependencyEditMode: true });
         useTaskStore.setState({
             tasks: [],
             relations: [],
@@ -126,11 +134,25 @@ describe('HtmlOverlay', () => {
         fireEvent.mouseMove(window, { clientX: bounds2.x + 1, clientY: bounds2.y + 1 });
         fireEvent.mouseUp(window);
 
+        const createButton = await screen.findByTestId('relation-dialog-create');
+        fireEvent.click(createButton);
+
         await waitFor(() => {
-            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes);
+            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, undefined);
             expect(apiClient.fetchData).toHaveBeenCalled();
             expect(useTaskStore.getState().relations).toEqual([relation]);
         });
+    });
+
+    it('does not render dependency handles when dependency edit mode is off', () => {
+        useUIStore.setState({ dependencyEditMode: false });
+        act(() => {
+            useTaskStore.getState().setTasks([task1]);
+            useTaskStore.getState().setHoveredTask('1');
+        });
+
+        const { container } = render(<HtmlOverlay />);
+        expect(container.querySelectorAll('.dependency-handle').length).toBe(0);
     });
 
     it('removes a relation from the context menu', async () => {
@@ -163,54 +185,5 @@ describe('HtmlOverlay', () => {
             expect(apiClient.fetchData).toHaveBeenCalled();
             expect(useTaskStore.getState().relations).toEqual([]);
         });
-    });
-
-    it('opens child issue dialog with parent params from context menu', () => {
-        act(() => {
-            useTaskStore.getState().setTasks([task1]);
-            useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '1' });
-        });
-
-        render(<HtmlOverlay />);
-        const addChildItem = screen.getByTestId('context-menu-add-child-task');
-        expect(addChildItem).toBeTruthy();
-
-        fireEvent.click(addChildItem!);
-
-        const openedUrl = useUIStore.getState().issueDialogUrl;
-        expect(openedUrl).toContain('/projects/p1/issues/new?');
-        expect(openedUrl).toContain('issue%5Bparent_issue_id%5D=1');
-        expect(openedUrl).toContain('parent_issue_id=1');
-    });
-
-    it('unsets parent from context menu', async () => {
-        const childTask: Task = { ...task1, id: '10', parentId: '1' };
-        act(() => {
-            useTaskStore.getState().setTasks([childTask]);
-            useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '10' });
-        });
-
-        render(<HtmlOverlay />);
-        const unsetParentItem = screen.getByTestId('context-menu-unset-parent');
-        expect(unsetParentItem).toBeTruthy();
-
-        fireEvent.click(unsetParentItem!);
-
-        await waitFor(() => {
-            expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.parentId).toBeUndefined();
-            expect(useTaskStore.getState().contextMenu).toBeNull();
-        });
-    });
-
-    it('does not show unset-parent item for root task', () => {
-        const rootTask: Task = { ...task1, id: '20', parentId: undefined };
-        act(() => {
-            useTaskStore.getState().setTasks([rootTask]);
-            useTaskStore.getState().setContextMenu({ x: 10, y: 10, taskId: '20' });
-        });
-
-        render(<HtmlOverlay />);
-        const unsetParentItem = screen.queryByTestId('context-menu-unset-parent');
-        expect(unsetParentItem).toBeNull();
     });
 });

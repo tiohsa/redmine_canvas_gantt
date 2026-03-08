@@ -24,6 +24,7 @@ interface UIState {
     isFullScreen: boolean;
     issueDialogUrl: string | null;
     isSidebarResizing: boolean;
+    dependencyEditMode: boolean;
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
@@ -40,6 +41,8 @@ interface UIState {
     openIssueDialog: (url: string) => void;
     closeIssueDialog: () => void;
     setSidebarResizing: (value: boolean) => void;
+    toggleDependencyEditMode: () => void;
+    setDependencyEditMode: (value: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -65,6 +68,7 @@ export const useUIStore = create<UIState>((set) => ({
     isFullScreen: false,
     issueDialogUrl: null,
     isSidebarResizing: false,
+    dependencyEditMode: window.RedmineCanvasGantt?.settings?.dependency_edit_mode?.toString() !== '0',
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
@@ -110,5 +114,7 @@ export const useUIStore = create<UIState>((set) => ({
     toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen })),
     openIssueDialog: (url) => set(() => ({ issueDialogUrl: url })),
     closeIssueDialog: () => set(() => ({ issueDialogUrl: null })),
-    setSidebarResizing: (value) => set(() => ({ isSidebarResizing: value }))
+    setSidebarResizing: (value) => set(() => ({ isSidebarResizing: value })),
+    toggleDependencyEditMode: () => set((state) => ({ dependencyEditMode: !state.dependencyEditMode })),
+    setDependencyEditMode: (value) => set(() => ({ dependencyEditMode: value }))
 }));

@@ -90,3 +90,10 @@ ja:
   label_bulk_subtask_creation_partial_fail: "一部のチケットの登録に失敗しました"
   button_save: "保存"
   button_cancel: "キャンセル"
+
+  label_dependency_edit_mode: "依存関係編集モード"
+  label_relation_create: "依存関係を作成"
+  label_relation_type: "依存関係種別"
+  label_relation_delay_auto_calc_unavailable: "日付不足のため自動計算なし"
+  label_relation_delay_invalid: "delay は 0 以上で入力してください"
+  label_delay: "delay"

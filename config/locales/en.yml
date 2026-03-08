@@ -88,3 +88,10 @@ en:
   label_bulk_subtask_creation_partial_fail: "Failed to create some tickets"
   button_save: "Save"
   button_cancel: "Cancel"
+
+  label_dependency_edit_mode: "Dependency edit mode"
+  label_relation_create: "Create dependency"
+  label_relation_type: "Relation type"
+  label_relation_delay_auto_calc_unavailable: "No auto calculation due to missing dates."
+  label_relation_delay_invalid: "Delay must be 0 or greater"
+  label_delay: "Delay"

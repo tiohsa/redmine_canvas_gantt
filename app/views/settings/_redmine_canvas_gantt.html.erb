@@ -31,6 +31,21 @@
     <%= check_box_tag 'settings[inline_edit_custom_fields]', '1', settings.fetch('inline_edit_custom_fields', '1').to_s == '1' %>
   </p>
 
+
+  <p>
+    <label>Default relation type</label>
+    <%= select_tag 'settings[default_relation_type]', options_for_select([['precedes', 'precedes'], ['relates', 'relates'], ['blocks', 'blocks']], settings.fetch('default_relation_type', 'precedes').to_s) %>
+  </p>
+
+  <p>
+    <label>Auto calculate relation delay</label>
+    <%= check_box_tag 'settings[auto_calculate_delay]', '1', settings.fetch('auto_calculate_delay', '1').to_s == '1' %>
+  </p>
+
+  <p>
+    <label>Dependency edit mode default ON</label>
+    <%= check_box_tag 'settings[dependency_edit_mode]', '1', settings.fetch('dependency_edit_mode', '1').to_s == '1' %>
+  </p>
   <p>
     <label><%= l(:label_row_height) %></label>
     <%= number_field_tag 'settings[row_height]', settings['row_height'], min: 20, max: 100 %>

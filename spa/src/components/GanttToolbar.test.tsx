@@ -76,6 +76,28 @@ describe('GanttToolbar shortcuts', () => {
         expect(useUIStore.getState().rightPaneVisible).toBe(true);
     });
 
+
+    it('toggles dependency edit mode button state', () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [],
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
+        const button = screen.getByTestId('dependency-edit-mode-button');
+        const initial = useUIStore.getState().dependencyEditMode;
+        fireEvent.click(button);
+        expect(useUIStore.getState().dependencyEditMode).toBe(!initial);
+    });
+
     it('updates row height via checkbox list menu and keeps it open', () => {
         useTaskStore.setState({
             filterText: '',

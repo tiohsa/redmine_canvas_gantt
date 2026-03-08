@@ -490,7 +490,7 @@ export const apiClient = {
         };
     },
 
-    createRelation: async (fromId: string, toId: string, type: string): Promise<Relation> => {
+    createRelation: async (fromId: string, toId: string, type: string, delay?: number): Promise<Relation> => {
         const config = getConfig();
 
         const redmineBase = config.redmineBase || '';
@@ -500,7 +500,8 @@ export const apiClient = {
             body: JSON.stringify({
                 relation: {
                     issue_to_id: toId,
-                    relation_type: type
+                    relation_type: type,
+                    ...(typeof delay === 'number' ? { delay } : {})
                 }
             })
         });

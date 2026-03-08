@@ -30,7 +30,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         showPointsOrphans,
         togglePointsOrphans,
         isFullScreen,
-        toggleFullScreen
+        toggleFullScreen,
+        dependencyEditMode,
+        toggleDependencyEditMode
     } = useUIStore();
     const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
     const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
@@ -929,6 +931,36 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
 
 
+
+                <button
+                    onClick={toggleDependencyEditMode}
+                    title={i18n.t('label_dependency_edit_mode') || 'Dependency Edit Mode'}
+                    data-testid="dependency-edit-mode-button"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: dependencyEditMode ? '#e8f0fe' : '#fff',
+                        color: dependencyEditMode ? '#1a73e8' : '#333',
+                        cursor: 'pointer',
+                        height: '32px',
+                        width: '32px',
+                        position: 'relative'
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 12h6" />
+                        <path d="M14 12h6" />
+                        <circle cx="10" cy="12" r="2" />
+                        <circle cx="14" cy="12" r="2" />
+                    </svg>
+                    {dependencyEditMode && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    )}
+                </button>
 
                 <button
                     onClick={() => setOrganizeByDependency(!organizeByDependency)}
