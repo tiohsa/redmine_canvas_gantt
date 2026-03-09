@@ -360,7 +360,6 @@ export const HtmlOverlay: React.FC = () => {
     const viewport = useTaskStore(state => state.viewport);
     const zoomLevel = useTaskStore(state => state.zoomLevel);
     const rowCount = useTaskStore(state => state.rowCount);
-    const dependencyEditMode = useUIStore(state => state.dependencyEditMode);
     const defaultRelationType = useUIStore(state => state.defaultRelationType);
     const autoCalculateDelay = useUIStore(state => state.autoCalculateDelay);
     const autoApplyDefaultRelation = useUIStore(state => state.autoApplyDefaultRelation);
@@ -549,12 +548,11 @@ export const HtmlOverlay: React.FC = () => {
     }, [autoApplyDefaultRelation, autoCalculateDelay, defaultRelationType, handleCreateRelation, handleMouseMove, relations, setDraftRelation, taskById]);
 
     const startDraft = React.useCallback((taskId: string, x: number, y: number) => {
-        if (!dependencyEditMode) return;
         const startPoint = { x, y };
         setDragDraftState({ fromId: taskId, start: startPoint, pointer: startPoint });
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
-    }, [dependencyEditMode, handleMouseMove, handleMouseUp, setDragDraftState]);
+    }, [handleMouseMove, handleMouseUp, setDragDraftState]);
 
     React.useEffect(() => {
         const handleGlobalMouseDown = (event: MouseEvent) => {
@@ -773,7 +771,6 @@ export const HtmlOverlay: React.FC = () => {
                 style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
             >
                 {visibleTasks.map((task) => {
-                    if (!dependencyEditMode) return null;
                     if (task.id !== hoveredTaskId) return null;
 
                     const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);

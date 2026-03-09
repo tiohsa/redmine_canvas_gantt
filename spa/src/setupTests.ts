@@ -68,6 +68,5 @@ window.RedmineCanvasGantt = {
     },
     settings: {
         row_height: '32',
-        dependency_edit_mode: '1'
     }
 };

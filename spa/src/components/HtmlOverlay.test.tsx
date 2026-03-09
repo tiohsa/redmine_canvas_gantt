@@ -77,13 +77,12 @@ describe('HtmlOverlay', () => {
             redmineBase: '',
             authToken: 'token',
             apiKey: 'key',
-            settings: { dependency_edit_mode: '1' }
+            settings: { }
         };
 
         useUIStore.setState({
             ...useUIStore.getState(),
-            issueDialogUrl: null,
-            dependencyEditMode: true
+            issueDialogUrl: null
         });
 
         useTaskStore.setState({
@@ -323,15 +322,4 @@ describe('HtmlOverlay', () => {
         });
     });
 
-    it('does not render dependency handles when dependency edit mode is off', () => {
-        useUIStore.setState({ dependencyEditMode: false });
-
-        act(() => {
-            useTaskStore.getState().setTasks([task1]);
-            useTaskStore.getState().setHoveredTask('1');
-        });
-
-        const { container } = render(<HtmlOverlay />);
-        expect(container.querySelectorAll('.dependency-handle').length).toBe(0);
-    });
 });

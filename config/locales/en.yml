@@ -89,7 +89,6 @@ en:
   button_save: "Save"
   button_cancel: "Cancel"
 
-  label_dependency_edit_mode: "Dependency edit mode"
   label_relation_type_precedes_info: "The predecessor task must finish before the successor task starts."
   label_relation_type_relates_info: "Creates a reference link only. It does not apply any schedule constraint."
   label_relation_type_blocks_info: "The source task blocks the target task until the blocking work is finished."

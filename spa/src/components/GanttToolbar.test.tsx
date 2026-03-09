@@ -21,7 +21,6 @@ describe('GanttToolbar shortcuts', () => {
             }),
             settings: {
                 ...(window.RedmineCanvasGantt?.settings ?? {}),
-                dependency_edit_mode: '1'
             }
         };
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -95,7 +94,7 @@ describe('GanttToolbar shortcuts', () => {
     });
 
 
-    it('toggles dependency edit mode button state', () => {
+    it('shows relation settings button in toolbar', () => {
         useTaskStore.setState({
             filterText: '',
             allTasks: [],
@@ -110,11 +109,7 @@ describe('GanttToolbar shortcuts', () => {
         });
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
-        const button = screen.getByTestId('dependency-edit-mode-button');
-        const initial = useUIStore.getState().dependencyEditMode;
         expect(screen.getByTestId('relation-settings-menu-button')).toBeInTheDocument();
-        fireEvent.click(button);
-        expect(useUIStore.getState().dependencyEditMode).toBe(!initial);
     });
 
     it('updates row height via checkbox list menu and keeps it open', () => {
