@@ -18,6 +18,9 @@ const TASK_RESIZE_CURSOR = 'ew-resize';
 const TASK_DISABLED_PARENT_CURSOR = 'pointer';
 const DEFAULT_CURSOR = 'default';
 const RELATION_ROW_BUFFER = 50;
+const TASK_RESIZE_HANDLE_WIDTH_PX = 8;
+const TASK_RESIZE_OUTSIDE_MARGIN_PX = 6;
+const TASK_MIN_MOVE_REGION_WIDTH_PX = 8;
 
 interface DragState {
     mode: DragMode;
@@ -107,30 +110,81 @@ export class InteractionEngine {
 
     private hitTest(x: number, y: number): { task: Task | null; region: 'body' | 'start' | 'end' } {
         const { tasks, viewport, rowCount, zoomLevel } = useTaskStore.getState();
-        const RESIZE_HANDLE_WIDTH = 8;
 
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
         const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
 
         for (const t of visibleTasks) {
             const bounds = LayoutEngine.getTaskBounds(t, viewport, 'hit', zoomLevel);
-            if (x >= bounds.x && x <= bounds.x + bounds.width &&
-                y >= bounds.y && y <= bounds.y + bounds.height) {
-                // Determine which part was clicked
-                const isPoint = !Number.isFinite(t.startDate) || !Number.isFinite(t.dueDate);
-                if (isPoint) {
+            if (y < bounds.y || y > bounds.y + bounds.height) {
+                continue;
+            }
+
+            // Determine which part was clicked
+            const isPoint = !Number.isFinite(t.startDate) || !Number.isFinite(t.dueDate);
+            if (isPoint) {
+                if (x >= bounds.x && x <= bounds.x + bounds.width) {
                     return { task: t, region: 'body' };
                 }
+                continue;
+            }
 
-                if (x <= bounds.x + RESIZE_HANDLE_WIDTH) {
-                    return { task: t, region: 'start' };
-                } else if (x >= bounds.x + bounds.width - RESIZE_HANDLE_WIDTH) {
-                    return { task: t, region: 'end' };
-                }
-                return { task: t, region: 'body' };
+            const region = this.getTaskRegionForX(bounds.x, bounds.width, x);
+            if (region) {
+                return { task: t, region };
             }
         }
         return { task: null, region: 'body' };
+    }
+
+    private getTaskRegionForX(
+        taskX: number,
+        taskWidth: number,
+        pointerX: number
+    ): 'body' | 'start' | 'end' | null {
+        const taskEndX = taskX + taskWidth;
+        const paddedStartX = taskX - TASK_RESIZE_OUTSIDE_MARGIN_PX;
+        const paddedEndX = taskEndX + TASK_RESIZE_OUTSIDE_MARGIN_PX;
+
+        if (pointerX < paddedStartX || pointerX > paddedEndX) {
+            return null;
+        }
+
+        const availableForHandles = Math.max(0, taskWidth - TASK_MIN_MOVE_REGION_WIDTH_PX);
+        const handleWidth = Math.min(TASK_RESIZE_HANDLE_WIDTH_PX, availableForHandles / 2);
+        const leftResizeEnd = taskX + handleWidth;
+        const rightResizeStart = taskEndX - handleWidth;
+
+        const isNearLeftEdge = pointerX <= leftResizeEnd || pointerX < taskX;
+        const isNearRightEdge = pointerX >= rightResizeStart || pointerX > taskEndX;
+
+        if (isNearLeftEdge && isNearRightEdge) {
+            return (pointerX - taskX) <= (taskEndX - pointerX) ? 'start' : 'end';
+        }
+        if (isNearLeftEdge) return 'start';
+        if (isNearRightEdge) return 'end';
+        if (pointerX >= taskX && pointerX <= taskEndX) return 'body';
+        return null;
+    }
+
+    private isPointerWithinActualTaskHitBounds(task: Task, x: number, y: number): boolean {
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        return (
+            x >= bounds.x &&
+            x <= bounds.x + bounds.width &&
+            y >= bounds.y &&
+            y <= bounds.y + bounds.height
+        );
+    }
+
+    private getResizeRegionFromTarget(target: EventTarget | null): 'start' | 'end' | null {
+        if (!(target instanceof Element)) return null;
+        const handle = target.closest('.task-resize-handle');
+        if (!handle) return null;
+
+        const region = handle.getAttribute('data-region');
+        return region === 'start' || region === 'end' ? region : null;
     }
 
     private snapToDate(timestamp: number): number {
@@ -202,62 +256,62 @@ export class InteractionEngine {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
+        const handleRegion = this.getResizeRegionFromTarget(downTarget);
         const hit = this.hitTest(x, y);
-        if (!hit.task) {
-            const relation = this.hitTestRelation(x, y);
-            if (relation) {
-                useTaskStore.getState().selectRelation(relation.id);
-                return;
-            }
+        const resolvedHit = handleRegion && hit.task ? { ...hit, region: handleRegion } : hit;
+        const relation = this.hitTestRelation(x, y);
+        if (relation && (!resolvedHit.task || !this.isPointerWithinActualTaskHitBounds(resolvedHit.task, x, y))) {
+            useTaskStore.getState().selectRelation(relation.id);
+            return;
         }
 
-        if (hit.task && hit.task.editable) {
+        if (resolvedHit.task && resolvedHit.task.editable) {
             // Check if parent task
-            if (hit.task.hasChildren) {
-                useTaskStore.getState().selectTask(hit.task.id);
+            if (resolvedHit.task.hasChildren) {
+                useTaskStore.getState().selectTask(resolvedHit.task.id);
                 // Show warning and return
                 useUIStore.getState().addNotification('Cannot move parent task. Move child tasks instead.', 'warning');
                 return;
             }
 
-            useTaskStore.getState().selectTask(hit.task.id);
+            useTaskStore.getState().selectTask(resolvedHit.task.id);
             // Suspend sorting during interaction
             useTaskStore.getState().setSortingSuspended(true);
 
-            if (hit.region === 'body') {
+            if (resolvedHit.region === 'body') {
                 this.drag = {
                     mode: 'task-move',
                     startX: e.clientX,
                     startY: e.clientY,
-                    taskId: hit.task.id,
-                    originalStartDate: hit.task.startDate,
-                    originalDueDate: hit.task.dueDate,
+                    taskId: resolvedHit.task.id,
+                    originalStartDate: resolvedHit.task.startDate,
+                    originalDueDate: resolvedHit.task.dueDate,
                     snapshot: JSON.parse(JSON.stringify(useTaskStore.getState().allTasks))
                 };
-            } else if (hit.region === 'start') {
+            } else if (resolvedHit.region === 'start') {
                 this.drag = {
                     mode: 'task-resize-start',
                     startX: e.clientX,
                     startY: e.clientY,
-                    taskId: hit.task.id,
-                    originalStartDate: hit.task.startDate,
-                    originalDueDate: hit.task.dueDate,
+                    taskId: resolvedHit.task.id,
+                    originalStartDate: resolvedHit.task.startDate,
+                    originalDueDate: resolvedHit.task.dueDate,
                     snapshot: JSON.parse(JSON.stringify(useTaskStore.getState().allTasks))
                 };
-            } else if (hit.region === 'end') {
+            } else if (resolvedHit.region === 'end') {
                 this.drag = {
                     mode: 'task-resize-end',
                     startX: e.clientX,
                     startY: e.clientY,
-                    taskId: hit.task.id,
-                    originalStartDate: hit.task.startDate,
-                    originalDueDate: hit.task.dueDate,
+                    taskId: resolvedHit.task.id,
+                    originalStartDate: resolvedHit.task.startDate,
+                    originalDueDate: resolvedHit.task.dueDate,
                     snapshot: JSON.parse(JSON.stringify(useTaskStore.getState().allTasks))
                 };
             }
-        } else if (hit.task) {
+        } else if (resolvedHit.task) {
             // Not editable, just select
-            useTaskStore.getState().selectTask(hit.task.id);
+            useTaskStore.getState().selectTask(resolvedHit.task.id);
         } else {
             // No task hit - start panning
             useTaskStore.getState().selectTask(null);

@@ -32,10 +32,6 @@
   </p>
 
   <p>
-    <label>Dependency edit mode default ON</label>
-    <%= check_box_tag 'settings[dependency_edit_mode]', '1', settings.fetch('dependency_edit_mode', '1').to_s == '1' %>
-  </p>
-  <p>
     <label><%= l(:label_row_height) %></label>
     <%= number_field_tag 'settings[row_height]', settings['row_height'], min: 20, max: 100 %>
   </p>

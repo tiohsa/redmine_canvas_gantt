@@ -257,6 +257,48 @@ describe('InteractionEngine cursor behavior', () => {
         container.remove();
     });
 
+    it('uses ew-resize cursor slightly outside the left edge of a task bar', () => {
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'resize-left-outside-task', rowIndex: 0, startDate: 0, dueDate: 10 });
+        seedTasks([task]);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        container.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x - 4,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(container.style.cursor).toBe('ew-resize');
+
+        engine.detach();
+        container.remove();
+    });
+
+    it('uses ew-resize cursor slightly outside the right edge of a task bar', () => {
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'resize-right-outside-task', rowIndex: 0, startDate: 0, dueDate: 10 });
+        seedTasks([task]);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        container.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x + bounds.width + 4,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(container.style.cursor).toBe('ew-resize');
+
+        engine.detach();
+        container.remove();
+    });
+
     it('uses pointer cursor on parent task hover', () => {
         setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
         const container = createContainer();
@@ -274,6 +316,126 @@ describe('InteractionEngine cursor behavior', () => {
 
         expect(container.style.cursor).toBe('pointer');
 
+        engine.detach();
+        container.remove();
+    });
+
+    it('keeps default cursor for non-editable tasks even near the resize edge', () => {
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'readonly-task', rowIndex: 0, startDate: 0, dueDate: 10, editable: false });
+        seedTasks([task]);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        container.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x - 4,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(container.style.cursor).toBe('default');
+
+        engine.detach();
+        container.remove();
+    });
+
+    it('keeps a move region for short task bars', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 4 / DAY_MS });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'short-task', rowIndex: 0, startDate: 0, dueDate: 0 });
+        seedTasks([task]);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+
+        container.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x + bounds.width / 2,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(container.style.cursor).toBe('move');
+
+        container.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x - 4,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(container.style.cursor).toBe('ew-resize');
+
+        engine.detach();
+        container.remove();
+    });
+
+    it('starts resizing from the visible start handle', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'handle-start-task', rowIndex: 0, startDate: 0, dueDate: DAY_MS * 10 });
+        seedTasks([task]);
+
+        const handle = document.createElement('div');
+        handle.className = 'task-resize-handle';
+        handle.setAttribute('data-region', 'start');
+        container.appendChild(handle);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        handle.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: bounds.x,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+        window.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x + 2,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(useTaskStore.getState().tasks[0].startDate).toBe(DAY_MS * 2);
+        expect(useTaskStore.getState().tasks[0].dueDate).toBe(DAY_MS * 10);
+
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        engine.detach();
+        container.remove();
+    });
+
+    it('starts resizing from the visible end handle', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'handle-end-task', rowIndex: 0, startDate: 0, dueDate: DAY_MS * 10 });
+        seedTasks([task]);
+
+        const handle = document.createElement('div');
+        handle.className = 'task-resize-handle';
+        handle.setAttribute('data-region', 'end');
+        container.appendChild(handle);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        handle.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: bounds.x + bounds.width,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+        window.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x + bounds.width + 2,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(useTaskStore.getState().tasks[0].startDate).toBe(0);
+        expect(useTaskStore.getState().tasks[0].dueDate).toBe(DAY_MS * 12);
+
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         engine.detach();
         container.remove();
     });

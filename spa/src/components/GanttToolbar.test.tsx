@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { GanttToolbar } from './GanttToolbar';
+import { RelationType } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import '../stores/preferencesWatcher';
+
+const getCanvasGanttConfig = (): NonNullable<Window['RedmineCanvasGantt']> => {
+    const config = window.RedmineCanvasGantt;
+    if (!config) throw new Error('RedmineCanvasGantt config is not initialized');
+    return config;
+};
 
 describe('GanttToolbar shortcuts', () => {
     beforeEach(() => {
@@ -20,7 +27,13 @@ describe('GanttToolbar shortcuts', () => {
             }),
             settings: {
                 ...(window.RedmineCanvasGantt?.settings ?? {}),
-                dependency_edit_mode: '1'
+            }
+        };
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            settings: {
+                ...(config.settings ?? {}),
             }
         };
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -94,7 +107,7 @@ describe('GanttToolbar shortcuts', () => {
     });
 
 
-    it('toggles dependency edit mode button state', () => {
+    it('shows relation settings button in toolbar', () => {
         useTaskStore.setState({
             filterText: '',
             allTasks: [],
@@ -109,11 +122,7 @@ describe('GanttToolbar shortcuts', () => {
         });
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
-        const button = screen.getByTestId('dependency-edit-mode-button');
-        const initial = useUIStore.getState().dependencyEditMode;
-        expect(screen.queryByTestId('relation-settings-menu-button')).not.toBeInTheDocument();
-        fireEvent.click(button);
-        expect(useUIStore.getState().dependencyEditMode).toBe(!initial);
+        expect(screen.getByTestId('relation-settings-menu-button')).toBeInTheDocument();
     });
 
     it('updates row height via checkbox list menu and keeps it open', () => {
@@ -164,4 +173,58 @@ describe('GanttToolbar shortcuts', () => {
         fireEvent.mouseDown(document.body);
         expect(screen.queryByTestId('row-height-menu')).not.toBeInTheDocument();
     });
+
+    it('saves relation settings from toolbar menu', () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [],
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
+        fireEvent.click(screen.getByTestId('relation-settings-menu-button'));
+        fireEvent.change(screen.getByTestId('relation-default-type-select'), { target: { value: RelationType.Relates } });
+        fireEvent.click(screen.getByTestId('relation-auto-calculate-toggle'));
+        fireEvent.click(screen.getByTestId('relation-auto-apply-toggle'));
+        fireEvent.click(screen.getByTestId('relation-settings-save-button'));
+
+        expect(useUIStore.getState().defaultRelationType).toBe(RelationType.Relates);
+        expect(useUIStore.getState().autoCalculateDelay).toBe(false);
+        expect(useUIStore.getState().autoApplyDefaultRelation).toBe(false);
+    });
+
+    it('localizes relation default setting labels', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_relation_type_precedes: '先行',
+                label_relation_type_relates: '関連',
+                label_relation_type_blocks: 'ブロック',
+                label_relation_auto_calculate_delay: 'delay を自動計算',
+                label_relation_auto_apply_default: 'デフォルト依存関係を自動適用'
+            },
+            settings: {
+                ...(config.settings ?? {})
+            }
+        };
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
+        fireEvent.click(screen.getByTestId('relation-settings-menu-button'));
+
+        expect(screen.getByRole('option', { name: '先行' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: '関連' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'ブロック' })).toBeInTheDocument();
+        expect(screen.getByText('delay を自動計算')).toBeInTheDocument();
+        expect(screen.getByText('デフォルト依存関係を自動適用')).toBeInTheDocument();
+    });
+
 });

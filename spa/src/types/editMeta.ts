@@ -6,7 +6,9 @@ export interface InlineEditSettings {
     inline_edit_due_date?: string;
     inline_edit_start_date?: string;
     inline_edit_custom_fields?: string;
-    dependency_edit_mode?: string;
+    default_relation_type?: 'precedes' | 'relates' | 'blocks';
+    auto_calculate_delay?: string;
+    auto_apply_default_relation?: string;
 }
 
 export interface EditOption {

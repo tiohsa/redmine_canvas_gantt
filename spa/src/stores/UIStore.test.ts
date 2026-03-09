@@ -16,7 +16,6 @@ describe('UIStore', () => {
             }),
             settings: {
                 ...(window.RedmineCanvasGantt?.settings ?? {}),
-                dependency_edit_mode: '1'
             }
         };
         useUIStore.setState(useUIStore.getInitialState(), true);

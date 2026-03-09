@@ -56,4 +56,18 @@ describe('Preferences storage', () => {
         expect(parsed?.version).toBe(2);
         expect(parsed?.projects?.['project:1']?.selectedProjectIds).toEqual(['legacy-project']);
     });
+
+    it('saves and loads relation preferences', () => {
+        savePreferences({
+            defaultRelationType: 'blocks',
+            autoCalculateDelay: false,
+            autoApplyDefaultRelation: false
+        }, 1);
+
+        const loaded = loadPreferences(1);
+        expect(loaded.defaultRelationType).toBe('blocks');
+        expect(loaded.autoCalculateDelay).toBe(false);
+        expect(loaded.autoApplyDefaultRelation).toBe(false);
+    });
+
 });

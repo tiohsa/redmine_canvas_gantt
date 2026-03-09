@@ -23,6 +23,9 @@ export interface StoredPreferences {
     sortConfig?: { key: string; direction: 'asc' | 'desc' } | null;
     selectedVersionIds?: string[];
     autoSave?: boolean;
+    defaultRelationType?: 'precedes' | 'relates' | 'blocks';
+    autoCalculateDelay?: boolean;
+    autoApplyDefaultRelation?: boolean;
 }
 
 const STORAGE_KEY = 'canvasGantt:preferences';

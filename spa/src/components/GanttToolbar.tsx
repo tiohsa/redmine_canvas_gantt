@@ -1,9 +1,12 @@
 import React from 'react';
 
 import type { ZoomLevel } from '../types';
+import { RelationType, type DefaultRelationType } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
+import { getRelationTypeLabel } from '../utils/relationEditing';
+import { savePreferences } from '../utils/preferences';
 
 interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
@@ -31,8 +34,13 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         togglePointsOrphans,
         isFullScreen,
         toggleFullScreen,
-        dependencyEditMode,
-        toggleDependencyEditMode
+        defaultRelationType,
+        autoCalculateDelay,
+        autoApplyDefaultRelation,
+        setDefaultRelationType,
+        setAutoCalculateDelay,
+        setAutoApplyDefaultRelation,
+        resetRelationPreferences
     } = useUIStore();
     const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
     const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
@@ -43,6 +51,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [showVersionMenu, setShowVersionMenu] = React.useState(false);
     const [showStatusMenu, setShowStatusMenu] = React.useState(false);
     const [showRowHeightMenu, setShowRowHeightMenu] = React.useState(false);
+    const [showRelationSettingsMenu, setShowRelationSettingsMenu] = React.useState(false);
+    const [draftRelationType, setDraftRelationType] = React.useState<DefaultRelationType>(defaultRelationType);
+    const [draftAutoCalculateDelay, setDraftAutoCalculateDelay] = React.useState<boolean>(autoCalculateDelay);
+    const [draftAutoApplyDefaultRelation, setDraftAutoApplyDefaultRelation] = React.useState<boolean>(autoApplyDefaultRelation);
 
     const filterMenuRef = React.useRef<HTMLDivElement>(null);
     const filterInputRef = React.useRef<HTMLInputElement>(null);
@@ -52,6 +64,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const versionMenuRef = React.useRef<HTMLDivElement>(null);
     const statusMenuRef = React.useRef<HTMLDivElement>(null);
     const rowHeightMenuRef = React.useRef<HTMLDivElement>(null);
+    const relationSettingsMenuRef = React.useRef<HTMLDivElement>(null);
 
     React.useEffect(() => {
         if (!showFilterMenu) return;
@@ -63,6 +76,13 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
         return () => window.cancelAnimationFrame(requestId);
     }, [showFilterMenu]);
+
+    React.useEffect(() => {
+        if (!showRelationSettingsMenu) return;
+        setDraftRelationType(defaultRelationType);
+        setDraftAutoCalculateDelay(autoCalculateDelay);
+        setDraftAutoApplyDefaultRelation(autoApplyDefaultRelation);
+    }, [autoApplyDefaultRelation, autoCalculateDelay, defaultRelationType, showRelationSettingsMenu]);
 
     React.useEffect(() => {
         const handleGlobalKeyDown = (event: KeyboardEvent) => {
@@ -114,11 +134,36 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             if (showRowHeightMenu && rowHeightMenuRef.current && !rowHeightMenuRef.current.contains(target)) {
                 setShowRowHeightMenu(false);
             }
+            if (showRelationSettingsMenu && relationSettingsMenuRef.current && !relationSettingsMenuRef.current.contains(target)) {
+                setShowRelationSettingsMenu(false);
+            }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu, showStatusMenu, showRowHeightMenu]);
+    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu, showStatusMenu, showRowHeightMenu, showRelationSettingsMenu]);
+
+    const handleSaveRelationSettings = () => {
+        setDefaultRelationType(draftRelationType);
+        setAutoCalculateDelay(draftAutoCalculateDelay);
+        setAutoApplyDefaultRelation(draftAutoApplyDefaultRelation);
+        savePreferences({
+            defaultRelationType: draftRelationType,
+            autoCalculateDelay: draftAutoCalculateDelay,
+            autoApplyDefaultRelation: draftAutoApplyDefaultRelation
+        });
+        setShowRelationSettingsMenu(false);
+    };
+
+    const handleResetRelationSettings = () => {
+        resetRelationPreferences();
+        savePreferences({
+            defaultRelationType: undefined,
+            autoCalculateDelay: undefined,
+            autoApplyDefaultRelation: undefined
+        });
+        setShowRelationSettingsMenu(false);
+    };
 
     const handleTodayClick = () => {
         const now = Date.now();
@@ -929,35 +974,94 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </button>
 
-                <button
-                    onClick={toggleDependencyEditMode}
-                    title={i18n.t('label_dependency_edit_mode') || 'Dependency Edit Mode'}
-                    data-testid="dependency-edit-mode-button"
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '0',
-                        borderRadius: '6px',
-                        border: '1px solid #e0e0e0',
-                        backgroundColor: dependencyEditMode ? '#e8f0fe' : '#fff',
-                        color: dependencyEditMode ? '#1a73e8' : '#333',
-                        cursor: 'pointer',
-                        height: '32px',
-                        width: '32px',
-                        position: 'relative'
-                    }}
+
+                <div
+                    ref={relationSettingsMenuRef}
+                    style={{ display: 'flex', alignItems: 'center', position: 'relative' }}
                 >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M4 12h6" />
-                        <path d="M14 12h6" />
-                        <circle cx="10" cy="12" r="2" />
-                        <circle cx="14" cy="12" r="2" />
-                    </svg>
-                    {dependencyEditMode && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    <button
+                        onClick={() => setShowRelationSettingsMenu(prev => !prev)}
+                        title={i18n.t('label_relation_title') || 'Dependency'}
+                        data-testid="relation-settings-menu-button"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '0',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: autoApplyDefaultRelation ? '#e8f0fe' : '#fff',
+                            color: autoApplyDefaultRelation ? '#1a73e8' : '#333',
+                            cursor: 'pointer',
+                            height: '32px',
+                            width: '32px',
+                            position: 'relative'
+                        }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M4 12h6" />
+                            <path d="M14 12h6" />
+                            <circle cx="10" cy="12" r="2" />
+                            <circle cx="14" cy="12" r="2" />
+                        </svg>
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: autoApplyDefaultRelation ? '#1a73e8' : '#a0a0a0', borderRadius: '50%' }} />
+                    </button>
+                    {showRelationSettingsMenu && (
+                        <div
+                            data-testid="relation-settings-menu"
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                right: 0,
+                                marginTop: 6,
+                                background: '#fff',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: 8,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                padding: 12,
+                                minWidth: 260,
+                                zIndex: 20
+                            }}
+                        >
+                            <div style={{ fontWeight: 600, marginBottom: 8 }}>{i18n.t('label_relation_title') || 'Dependency'}</div>
+                            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, marginBottom: 8 }}>
+                                <span>{i18n.t('label_relation_type') || 'Relation type'}</span>
+                                <select
+                                    data-testid="relation-default-type-select"
+                                    value={draftRelationType}
+                                    onChange={(event) => setDraftRelationType(event.target.value as DefaultRelationType)}
+                                    style={{ height: 30, borderRadius: 6, border: '1px solid #ddd' }}
+                                >
+                                    <option value={RelationType.Precedes}>{getRelationTypeLabel(RelationType.Precedes)}</option>
+                                    <option value={RelationType.Relates}>{getRelationTypeLabel(RelationType.Relates)}</option>
+                                    <option value={RelationType.Blocks}>{getRelationTypeLabel(RelationType.Blocks)}</option>
+                                </select>
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 6 }}>
+                                <input
+                                    data-testid="relation-auto-calculate-toggle"
+                                    type="checkbox"
+                                    checked={draftAutoCalculateDelay}
+                                    onChange={(event) => setDraftAutoCalculateDelay(event.target.checked)}
+                                />
+                                <span>{i18n.t('label_relation_auto_calculate_delay') || 'Auto calculate delay'}</span>
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 10 }}>
+                                <input
+                                    data-testid="relation-auto-apply-toggle"
+                                    type="checkbox"
+                                    checked={draftAutoApplyDefaultRelation}
+                                    onChange={(event) => setDraftAutoApplyDefaultRelation(event.target.checked)}
+                                />
+                                <span>{i18n.t('label_relation_auto_apply_default') || 'Auto apply default relation'}</span>
+                            </label>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                                <button type="button" onClick={handleResetRelationSettings} data-testid="relation-settings-reset-button" style={{ border: '1px solid #ddd', background: '#fff', borderRadius: 6, height: 28, padding: '0 8px', cursor: 'pointer' }}>{i18n.t('button_reset') || 'Reset'}</button>
+                                <button type="button" onClick={handleSaveRelationSettings} data-testid="relation-settings-save-button" style={{ border: '1px solid #1d4ed8', background: '#1d4ed8', color: '#fff', borderRadius: 6, height: 28, padding: '0 8px', cursor: 'pointer' }}>{i18n.t('button_save') || 'Save'}</button>
+                            </div>
+                        </div>
                     )}
-                </button>
+                </div>
 
                 <button
                     onClick={() => setOrganizeByDependency(!organizeByDependency)}

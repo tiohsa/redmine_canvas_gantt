@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { RelationType, type DefaultRelationType } from '../types/constraints';
 import { loadPreferences } from '../utils/preferences';
 
 export const DEFAULT_COLUMNS = ['status', 'assignee', 'startDate', 'dueDate', 'ratioDone'];
@@ -24,7 +25,9 @@ interface UIState {
     isFullScreen: boolean;
     issueDialogUrl: string | null;
     isSidebarResizing: boolean;
-    dependencyEditMode: boolean;
+    defaultRelationType: DefaultRelationType;
+    autoCalculateDelay: boolean;
+    autoApplyDefaultRelation: boolean;
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
@@ -41,14 +44,18 @@ interface UIState {
     openIssueDialog: (url: string) => void;
     closeIssueDialog: () => void;
     setSidebarResizing: (value: boolean) => void;
-    toggleDependencyEditMode: () => void;
-    setDependencyEditMode: (value: boolean) => void;
+    setDefaultRelationType: (value: DefaultRelationType) => void;
+    setAutoCalculateDelay: (value: boolean) => void;
+    setAutoApplyDefaultRelation: (value: boolean) => void;
+    resetRelationPreferences: () => void;
 }
+
+const DEFAULT_RELATION_TYPE = RelationType.Precedes;
 
 export const useUIStore = create<UIState>((set) => ({
     notifications: [],
     showProgressLine: preferences.showProgressLine ?? false,
-    showPointsOrphans: preferences.showPointsOrphans ?? true, // Default to true
+    showPointsOrphans: preferences.showPointsOrphans ?? true,
     leftPaneVisible: true,
     rightPaneVisible: true,
     visibleColumns: preferences.visibleColumns
@@ -68,14 +75,15 @@ export const useUIStore = create<UIState>((set) => ({
     isFullScreen: false,
     issueDialogUrl: null,
     isSidebarResizing: false,
-    dependencyEditMode: window.RedmineCanvasGantt?.settings?.dependency_edit_mode?.toString() !== '0',
+    defaultRelationType: preferences.defaultRelationType ?? DEFAULT_RELATION_TYPE,
+    autoCalculateDelay: preferences.autoCalculateDelay ?? true,
+    autoApplyDefaultRelation: preferences.autoApplyDefaultRelation ?? true,
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
             notifications: [...state.notifications, { id, message, type }]
         }));
 
-        // Auto-remove after 3 seconds
         setTimeout(() => {
             set((state) => ({
                 notifications: state.notifications.filter((n) => n.id !== id)
@@ -115,6 +123,12 @@ export const useUIStore = create<UIState>((set) => ({
     openIssueDialog: (url) => set(() => ({ issueDialogUrl: url })),
     closeIssueDialog: () => set(() => ({ issueDialogUrl: null })),
     setSidebarResizing: (value) => set(() => ({ isSidebarResizing: value })),
-    toggleDependencyEditMode: () => set((state) => ({ dependencyEditMode: !state.dependencyEditMode })),
-    setDependencyEditMode: (value) => set(() => ({ dependencyEditMode: value }))
+    setDefaultRelationType: (value) => set(() => ({ defaultRelationType: value })),
+    setAutoCalculateDelay: (value) => set(() => ({ autoCalculateDelay: value })),
+    setAutoApplyDefaultRelation: (value) => set(() => ({ autoApplyDefaultRelation: value })),
+    resetRelationPreferences: () => set(() => ({
+        defaultRelationType: DEFAULT_RELATION_TYPE,
+        autoCalculateDelay: true,
+        autoApplyDefaultRelation: true
+    }))
 }));

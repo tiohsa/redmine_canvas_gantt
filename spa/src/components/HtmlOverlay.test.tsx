@@ -69,7 +69,6 @@ describe('HtmlOverlay', () => {
         vi.mocked(apiClient.updateRelation).mockReset();
         vi.mocked(apiClient.deleteRelation).mockReset();
         vi.mocked(apiClient.deleteTask).mockReset();
-        vi.stubGlobal('confirm', vi.fn(() => true));
 
         window.RedmineCanvasGantt = {
             projectId: 1,
@@ -77,13 +76,12 @@ describe('HtmlOverlay', () => {
             redmineBase: '',
             authToken: 'token',
             apiKey: 'key',
-            settings: { dependency_edit_mode: '1' }
+            settings: { }
         };
 
         useUIStore.setState({
             ...useUIStore.getState(),
-            issueDialogUrl: null,
-            dependencyEditMode: true
+            issueDialogUrl: null
         });
 
         useTaskStore.setState({
@@ -119,11 +117,12 @@ describe('HtmlOverlay', () => {
         } as DOMRect);
     };
 
-    it('opens a draft relation popover after dragging a dependency handle', async () => {
+    it('opens a draft relation popover after dragging a dependency handle when auto apply is off', async () => {
         const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes, delay: 0 };
         vi.mocked(apiClient.createRelation).mockResolvedValue(relation);
 
         act(() => {
+            useUIStore.setState({ autoApplyDefaultRelation: false });
             useTaskStore.getState().setTasks([task1, task2]);
             useTaskStore.getState().setHoveredTask('1');
         });
@@ -151,6 +150,129 @@ describe('HtmlOverlay', () => {
         });
     });
 
+    it('shows resize handles for a hovered editable leaf task', () => {
+        act(() => {
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.getState().setHoveredTask('1');
+        });
+
+        render(<HtmlOverlay />);
+
+        const startHandle = screen.getByTestId('task-resize-handle-start-1');
+        expect(startHandle).toBeInTheDocument();
+        expect(screen.getByTestId('task-resize-handle-end-1')).toBeInTheDocument();
+        expect(startHandle.getAttribute('style')).toContain('background: rgba(26, 115, 232, 0.18)');
+        expect(startHandle.getAttribute('style')).toContain('border: 1px solid rgba(26, 115, 232, 0.68)');
+    });
+
+    it('keeps resize handles visible for a selected task even when not hovered', () => {
+        act(() => {
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.getState().selectTask('1');
+        });
+
+        render(<HtmlOverlay />);
+
+        const startHandle = screen.getByTestId('task-resize-handle-start-1');
+        expect(startHandle).toBeInTheDocument();
+        expect(screen.getByTestId('task-resize-handle-end-1')).toBeInTheDocument();
+        expect(startHandle.getAttribute('style')).toContain('background: rgba(26, 115, 232, 0.24)');
+        expect(startHandle.getAttribute('style')).toContain('border: 1px solid rgba(26, 115, 232, 0.82)');
+    });
+
+    it('hides resize handles while dragging a dependency and restores them on mouseup', () => {
+        act(() => {
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.getState().setHoveredTask('1');
+            useTaskStore.getState().selectTask('1');
+        });
+
+        const { container } = render(<HtmlOverlay />);
+        mockOverlayRect(container);
+
+        expect(screen.getByTestId('task-resize-handle-start-1')).toBeInTheDocument();
+        expect(screen.getByTestId('task-resize-handle-end-1')).toBeInTheDocument();
+
+        const handles = container.querySelectorAll('.dependency-handle');
+        fireEvent.mouseDown(handles[1]);
+
+        expect(screen.queryByTestId('task-resize-handle-start-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-resize-handle-end-1')).not.toBeInTheDocument();
+
+        fireEvent.mouseUp(window);
+
+        expect(screen.getByTestId('task-resize-handle-start-1')).toBeInTheDocument();
+        expect(screen.getByTestId('task-resize-handle-end-1')).toBeInTheDocument();
+    });
+
+    it('does not show resize handles for parent, read-only, or single-date tasks', () => {
+        const parentTask = { ...task1, id: 'parent', hasChildren: true };
+        const readonlyTask = { ...task2, id: 'readonly', editable: false, rowIndex: 1 };
+        const singleDateTask = { ...task2, id: 'single-date', rowIndex: 2, dueDate: Number.NaN };
+
+        act(() => {
+            useTaskStore.setState({
+                ...useTaskStore.getState(),
+                allTasks: [parentTask, readonlyTask, singleDateTask],
+                tasks: [parentTask, readonlyTask, singleDateTask],
+                layoutRows: [],
+                rowCount: 3,
+                hoveredTaskId: 'parent'
+            });
+        });
+
+        const { rerender } = render(<HtmlOverlay />);
+        expect(screen.queryByTestId('task-resize-handle-start-parent')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-resize-handle-end-parent')).not.toBeInTheDocument();
+
+        act(() => {
+            useTaskStore.setState({ ...useTaskStore.getState(), hoveredTaskId: 'readonly' });
+        });
+        rerender(<HtmlOverlay />);
+        expect(screen.queryByTestId('task-resize-handle-start-readonly')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-resize-handle-end-readonly')).not.toBeInTheDocument();
+
+        act(() => {
+            useTaskStore.setState({ ...useTaskStore.getState(), hoveredTaskId: 'single-date' });
+        });
+        rerender(<HtmlOverlay />);
+        expect(screen.queryByTestId('task-resize-handle-start-single-date')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-resize-handle-end-single-date')).not.toBeInTheDocument();
+    });
+
+
+
+    it('creates relation immediately after dragging when auto apply is on', async () => {
+        const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes, delay: 2 };
+        vi.mocked(apiClient.createRelation).mockResolvedValue(relation);
+
+        act(() => {
+            useUIStore.setState({
+                autoApplyDefaultRelation: true,
+                defaultRelationType: RelationType.Precedes,
+                autoCalculateDelay: true
+            });
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.getState().setHoveredTask('1');
+        });
+
+        const { container } = render(<HtmlOverlay />);
+        mockOverlayRect(container);
+
+        const handles = container.querySelectorAll('.dependency-handle');
+        fireEvent.mouseDown(handles[1]);
+
+        const arrangedTask2 = useTaskStore.getState().tasks.find(t => t.id === '2');
+        const bounds2 = LayoutEngine.getTaskBounds(arrangedTask2!, viewport, 'hit', 2);
+        fireEvent.mouseMove(window, { clientX: bounds2.x + 1, clientY: bounds2.y + 1 });
+        fireEvent.mouseUp(window);
+
+        await waitFor(() => {
+            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, 2);
+            expect(useTaskStore.getState().relations).toEqual([relation]);
+        });
+        expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+    });
     it('updates an existing relation from the popover', async () => {
         const existingRelation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Follows, delay: 2 };
         const updatedRelation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Blocked };
@@ -235,7 +357,25 @@ describe('HtmlOverlay', () => {
         await waitFor(() => {
             expect(apiClient.deleteRelation).toHaveBeenCalledWith('rel-1');
             expect(useTaskStore.getState().relations).toEqual([]);
+            expect(useTaskStore.getState().selectedRelationId).toBeNull();
         });
+    });
+
+    it('shows an inline error when relation deletion fails', async () => {
+        vi.mocked(apiClient.deleteRelation).mockRejectedValue(new Error('Delete failed'));
+
+        act(() => {
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.getState().setRelations([{ id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes }]);
+            useTaskStore.getState().selectRelation('rel-1');
+        });
+
+        render(<HtmlOverlay />);
+        fireEvent.click(await screen.findByTestId('relation-delete-button'));
+
+        expect(await screen.findByTestId('relation-error')).toHaveTextContent('Delete failed');
+        expect(screen.getByTestId('relation-editor')).toBeInTheDocument();
+        expect(useTaskStore.getState().selectedRelationId).toBe('rel-1');
     });
 
     it('keeps relation selection when clicking inside the gantt viewport', async () => {
@@ -289,15 +429,4 @@ describe('HtmlOverlay', () => {
         });
     });
 
-    it('does not render dependency handles when dependency edit mode is off', () => {
-        useUIStore.setState({ dependencyEditMode: false });
-
-        act(() => {
-            useTaskStore.getState().setTasks([task1]);
-            useTaskStore.getState().setHoveredTask('1');
-        });
-
-        const { container } = render(<HtmlOverlay />);
-        expect(container.querySelectorAll('.dependency-handle').length).toBe(0);
-    });
 });
