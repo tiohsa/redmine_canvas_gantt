@@ -117,3 +117,15 @@ export const getRelationInfoText = (relationType: DefaultRelationType): string =
             return i18n.t('label_relation_type_precedes_info') || 'The predecessor task must finish before the successor task starts.';
     }
 };
+
+export const getRelationTypeLabel = (relationType: DefaultRelationType): string => {
+    switch (relationType) {
+        case RelationType.Relates:
+            return i18n.t('label_relation_type_relates') || 'Relates';
+        case RelationType.Blocks:
+            return i18n.t('label_relation_type_blocks') || 'Blocks';
+        case RelationType.Precedes:
+        default:
+            return i18n.t('label_relation_type_precedes') || 'Precedes';
+    }
+};

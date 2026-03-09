@@ -16,6 +16,7 @@ import {
 import {
     calculateDelay,
     getRelationInfoText,
+    getRelationTypeLabel,
     supportsDelayForUiType,
     toEditableRelationView,
     toRawRelationType,
@@ -208,9 +209,9 @@ const RelationEditorPopover: React.FC<{
                             fontFamily: 'inherit'
                         }}
                     >
-                        <option value={RelationType.Precedes}>{RelationType.Precedes}</option>
-                        <option value={RelationType.Relates}>{RelationType.Relates}</option>
-                        <option value={RelationType.Blocks}>{RelationType.Blocks}</option>
+                        <option value={RelationType.Precedes}>{getRelationTypeLabel(RelationType.Precedes)}</option>
+                        <option value={RelationType.Relates}>{getRelationTypeLabel(RelationType.Relates)}</option>
+                        <option value={RelationType.Blocks}>{getRelationTypeLabel(RelationType.Blocks)}</option>
                     </select>
                 </label>
 
@@ -494,9 +495,6 @@ export const HtmlOverlay: React.FC = () => {
     }, [clearRelationSelection, replaceRelation]);
 
     const handleRemoveRelation = React.useCallback(async (relationId: string) => {
-        const message = i18n.t('label_relation_delete_confirmation') || 'Delete this dependency?';
-        if (!window.confirm(message)) return;
-
         await apiClient.deleteRelation(relationId);
         removeRelation(relationId);
         clearRelationSelection();

@@ -187,4 +187,30 @@ describe('GanttToolbar shortcuts', () => {
         expect(useUIStore.getState().autoApplyDefaultRelation).toBe(false);
     });
 
+    it('localizes relation default setting labels', () => {
+        window.RedmineCanvasGantt = {
+            ...(window.RedmineCanvasGantt ?? {}),
+            i18n: {
+                ...(window.RedmineCanvasGantt?.i18n ?? {}),
+                label_relation_type_precedes: '先行',
+                label_relation_type_relates: '関連',
+                label_relation_type_blocks: 'ブロック',
+                label_relation_auto_calculate_delay: 'delay を自動計算',
+                label_relation_auto_apply_default: 'デフォルト依存関係を自動適用'
+            },
+            settings: {
+                ...(window.RedmineCanvasGantt?.settings ?? {})
+            }
+        };
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
+        fireEvent.click(screen.getByTestId('relation-settings-menu-button'));
+
+        expect(screen.getByRole('option', { name: '先行' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: '関連' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'ブロック' })).toBeInTheDocument();
+        expect(screen.getByText('delay を自動計算')).toBeInTheDocument();
+        expect(screen.getByText('デフォルト依存関係を自動適用')).toBeInTheDocument();
+    });
+
 });

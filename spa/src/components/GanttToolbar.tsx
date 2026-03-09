@@ -5,6 +5,7 @@ import { RelationType, type DefaultRelationType } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
+import { getRelationTypeLabel } from '../utils/relationEditing';
 import { savePreferences } from '../utils/preferences';
 
 interface GanttToolbarProps {
@@ -1031,9 +1032,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     onChange={(event) => setDraftRelationType(event.target.value as DefaultRelationType)}
                                     style={{ height: 30, borderRadius: 6, border: '1px solid #ddd' }}
                                 >
-                                    <option value={RelationType.Precedes}>{RelationType.Precedes}</option>
-                                    <option value={RelationType.Relates}>{RelationType.Relates}</option>
-                                    <option value={RelationType.Blocks}>{RelationType.Blocks}</option>
+                                    <option value={RelationType.Precedes}>{getRelationTypeLabel(RelationType.Precedes)}</option>
+                                    <option value={RelationType.Relates}>{getRelationTypeLabel(RelationType.Relates)}</option>
+                                    <option value={RelationType.Blocks}>{getRelationTypeLabel(RelationType.Blocks)}</option>
                                 </select>
                             </label>
                             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 6 }}>
@@ -1043,7 +1044,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     checked={draftAutoCalculateDelay}
                                     onChange={(event) => setDraftAutoCalculateDelay(event.target.checked)}
                                 />
-                                <span>Auto calculate delay</span>
+                                <span>{i18n.t('label_relation_auto_calculate_delay') || 'Auto calculate delay'}</span>
                             </label>
                             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 10 }}>
                                 <input
@@ -1052,7 +1053,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     checked={draftAutoApplyDefaultRelation}
                                     onChange={(event) => setDraftAutoApplyDefaultRelation(event.target.checked)}
                                 />
-                                <span>Auto apply default relation</span>
+                                <span>{i18n.t('label_relation_auto_apply_default') || 'Auto apply default relation'}</span>
                             </label>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                                 <button type="button" onClick={handleResetRelationSettings} data-testid="relation-settings-reset-button" style={{ border: '1px solid #ddd', background: '#fff', borderRadius: 6, height: 28, padding: '0 8px', cursor: 'pointer' }}>{i18n.t('button_reset') || 'Reset'}</button>

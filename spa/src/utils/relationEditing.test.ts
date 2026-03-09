@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RelationType } from '../types/constraints';
-import { calculateDelay, toEditableRelationView, toRawRelationType } from './relationEditing';
+import { calculateDelay, getRelationTypeLabel, toEditableRelationView, toRawRelationType } from './relationEditing';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -37,5 +37,13 @@ describe('calculateDelay', () => {
             startDate: DAY_MS * 5,
             dueDate: DAY_MS * 7
         })).toEqual({ delay: 3 });
+    });
+});
+
+describe('getRelationTypeLabel', () => {
+    it('returns localized labels for editable relation types', () => {
+        expect(getRelationTypeLabel(RelationType.Precedes)).toBe('Precedes');
+        expect(getRelationTypeLabel(RelationType.Relates)).toBe('Relates');
+        expect(getRelationTypeLabel(RelationType.Blocks)).toBe('Blocks');
     });
 });

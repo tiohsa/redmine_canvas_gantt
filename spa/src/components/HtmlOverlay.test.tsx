@@ -69,7 +69,6 @@ describe('HtmlOverlay', () => {
         vi.mocked(apiClient.updateRelation).mockReset();
         vi.mocked(apiClient.deleteRelation).mockReset();
         vi.mocked(apiClient.deleteTask).mockReset();
-        vi.stubGlobal('confirm', vi.fn(() => true));
 
         window.RedmineCanvasGantt = {
             projectId: 1,
@@ -358,7 +357,25 @@ describe('HtmlOverlay', () => {
         await waitFor(() => {
             expect(apiClient.deleteRelation).toHaveBeenCalledWith('rel-1');
             expect(useTaskStore.getState().relations).toEqual([]);
+            expect(useTaskStore.getState().selectedRelationId).toBeNull();
         });
+    });
+
+    it('shows an inline error when relation deletion fails', async () => {
+        vi.mocked(apiClient.deleteRelation).mockRejectedValue(new Error('Delete failed'));
+
+        act(() => {
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.getState().setRelations([{ id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes }]);
+            useTaskStore.getState().selectRelation('rel-1');
+        });
+
+        render(<HtmlOverlay />);
+        fireEvent.click(await screen.findByTestId('relation-delete-button'));
+
+        expect(await screen.findByTestId('relation-error')).toHaveTextContent('Delete failed');
+        expect(screen.getByTestId('relation-editor')).toBeInTheDocument();
+        expect(useTaskStore.getState().selectedRelationId).toBe('rel-1');
     });
 
     it('keeps relation selection when clicking inside the gantt viewport', async () => {
