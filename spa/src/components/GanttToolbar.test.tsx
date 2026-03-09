@@ -6,6 +6,12 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import '../stores/preferencesWatcher';
 
+const getCanvasGanttConfig = (): NonNullable<Window['RedmineCanvasGantt']> => {
+    const config = window.RedmineCanvasGantt;
+    if (!config) throw new Error('RedmineCanvasGantt config is not initialized');
+    return config;
+};
+
 describe('GanttToolbar shortcuts', () => {
     beforeEach(() => {
         window.localStorage.clear();
@@ -21,6 +27,13 @@ describe('GanttToolbar shortcuts', () => {
             }),
             settings: {
                 ...(window.RedmineCanvasGantt?.settings ?? {}),
+            }
+        };
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            settings: {
+                ...(config.settings ?? {}),
             }
         };
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -188,10 +201,11 @@ describe('GanttToolbar shortcuts', () => {
     });
 
     it('localizes relation default setting labels', () => {
+        const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
-            ...(window.RedmineCanvasGantt ?? {}),
+            ...config,
             i18n: {
-                ...(window.RedmineCanvasGantt?.i18n ?? {}),
+                ...(config.i18n ?? {}),
                 label_relation_type_precedes: '先行',
                 label_relation_type_relates: '関連',
                 label_relation_type_blocks: 'ブロック',
@@ -199,7 +213,7 @@ describe('GanttToolbar shortcuts', () => {
                 label_relation_auto_apply_default: 'デフォルト依存関係を自動適用'
             },
             settings: {
-                ...(window.RedmineCanvasGantt?.settings ?? {})
+                ...(config.settings ?? {})
             }
         };
 
