@@ -387,7 +387,7 @@ export const HtmlOverlay: React.FC = () => {
     const overlayRef = React.useRef<HTMLDivElement>(null);
     const contextMenuRef = React.useRef<HTMLDivElement>(null);
     const relationMenuRef = React.useRef<HTMLDivElement | null>(null);
-    const [dragDraft, setDragDraft] = React.useState<{ fromId: string; start: { x: number; y: number }; pointer: { x: number; y: number }; targetId?: string } | null>(null);
+    const [dragDraft, setDragDraft] = React.useState<{ fromId: string; start: { x: number; y: number }; pointer: { x: number; y: number }; startSide: 'left' | 'right'; targetId?: string } | null>(null);
     const dragDraftRef = React.useRef<typeof dragDraft>(null);
     const [menuPosition, setMenuPosition] = React.useState<{ x: number; y: number } | null>(null);
     const [relationPosition, setRelationPosition] = React.useState<{ x: number; y: number } | null>(null);
@@ -524,17 +524,20 @@ export const HtmlOverlay: React.FC = () => {
         dragDraftRef.current = null;
         setDragDraft(null);
 
-        const { fromId, targetId, start, pointer } = currentDraft;
+        const { fromId, targetId, start, pointer, startSide } = currentDraft;
         if (!targetId || targetId === fromId) return;
 
-        const fromTask = taskById.get(fromId);
-        const toTask = taskById.get(targetId);
+        const relationFromId = startSide === 'left' ? targetId : fromId;
+        const relationToId = startSide === 'left' ? fromId : targetId;
+
+        const fromTask = taskById.get(relationFromId);
+        const toTask = taskById.get(relationToId);
         const autoDelay = autoCalculateDelay && defaultRelationType === RelationType.Precedes
             ? calculateDelay(RelationType.Precedes, fromTask, toTask)
             : {};
 
         const duplicate = relations.some((relation) => (
-            relation.from === fromId && relation.to === targetId && relation.type === defaultRelationType
+            relation.from === relationFromId && relation.to === relationToId && relation.type === defaultRelationType
         ));
         if (duplicate) {
             useUIStore.getState().addNotification(i18n.t('label_relation_already_exists') || 'Relation already exists', 'warning');
@@ -544,7 +547,7 @@ export const HtmlOverlay: React.FC = () => {
         const relationDelay = defaultRelationType === RelationType.Precedes ? autoDelay.delay : undefined;
 
         if (autoApplyDefaultRelation) {
-            void handleCreateRelation({ from: fromId, to: targetId, type: defaultRelationType }, defaultRelationType, relationDelay).catch((error: unknown) => {
+            void handleCreateRelation({ from: relationFromId, to: relationToId, type: defaultRelationType }, defaultRelationType, relationDelay).catch((error: unknown) => {
                 const message = error instanceof Error ? error.message : (i18n.t('label_relation_add_failed') || 'Failed to create relation');
                 useUIStore.getState().addNotification(message, 'error');
             });
@@ -552,8 +555,8 @@ export const HtmlOverlay: React.FC = () => {
         }
 
         setDraftRelation({
-            from: fromId,
-            to: targetId,
+            from: relationFromId,
+            to: relationToId,
             type: defaultRelationType,
             delay: relationDelay,
             autoDelayMessage: defaultRelationType === RelationType.Precedes ? autoDelay.message : undefined,
@@ -564,9 +567,9 @@ export const HtmlOverlay: React.FC = () => {
         });
     }, [autoApplyDefaultRelation, autoCalculateDelay, defaultRelationType, handleCreateRelation, handleMouseMove, relations, setDraftRelation, taskById]);
 
-    const startDraft = React.useCallback((taskId: string, x: number, y: number) => {
+    const startDraft = React.useCallback((taskId: string, x: number, y: number, startSide: 'left' | 'right') => {
         const startPoint = { x, y };
-        setDragDraftState({ fromId: taskId, start: startPoint, pointer: startPoint });
+        setDragDraftState({ fromId: taskId, start: startPoint, pointer: startPoint, startSide });
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
     }, [handleMouseMove, handleMouseUp, setDragDraftState]);
@@ -872,14 +875,14 @@ export const HtmlOverlay: React.FC = () => {
                                         className="dependency-handle"
                                         style={{ ...baseStyle, left: bounds.x - handleOffset - 5 }}
                                         onMouseDown={() => {
-                                            startDraft(task.id, bounds.x, centerY);
+                                            startDraft(task.id, bounds.x, centerY, 'left');
                                         }}
                                     />
                                     <div
                                         className="dependency-handle"
                                         style={{ ...baseStyle, left: bounds.x + bounds.width + handleOffset - 5 }}
                                         onMouseDown={() => {
-                                            startDraft(task.id, bounds.x + bounds.width, centerY);
+                                            startDraft(task.id, bounds.x + bounds.width, centerY, 'right');
                                         }}
                                     />
                                 </>

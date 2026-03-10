@@ -18,7 +18,7 @@ const normalizeRelation = (raw: unknown, fallback: { fromId: string; toId: strin
     const rel = nested ?? candidate ?? {};
 
     const idValue = rel.id;
-    const fromValue = rel.issue_id ?? rel.issue_from_id ?? rel.from ?? fallback.fromId;
+    const fromValue = rel.issue_from_id ?? rel.issue_id ?? rel.from ?? fallback.fromId;
     const toValue = rel.issue_to_id ?? rel.issue_to ?? rel.to ?? fallback.toId;
     const typeValue = rel.relation_type ?? rel.type ?? fallback.type;
     const delayValue = rel.delay;

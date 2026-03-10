@@ -150,6 +150,38 @@ describe('HtmlOverlay', () => {
         });
     });
 
+
+    it('creates reversed endpoints when dragging from the left dependency handle', async () => {
+        const relation: Relation = { id: 'rel-1', from: '2', to: '1', type: RelationType.Relates };
+        vi.mocked(apiClient.createRelation).mockResolvedValue(relation);
+
+        act(() => {
+            useUIStore.setState({ autoApplyDefaultRelation: false });
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.getState().setHoveredTask('1');
+        });
+
+        const { container } = render(<HtmlOverlay />);
+        mockOverlayRect(container);
+
+        const handles = container.querySelectorAll('.dependency-handle');
+        fireEvent.mouseDown(handles[0]);
+
+        const arrangedTask2 = useTaskStore.getState().tasks.find(t => t.id === '2');
+        const bounds2 = LayoutEngine.getTaskBounds(arrangedTask2!, viewport, 'hit', 2);
+        fireEvent.mouseMove(window, { clientX: bounds2.x + 1, clientY: bounds2.y + 1 });
+        fireEvent.mouseUp(window);
+
+        expect(await screen.findByTestId('relation-editor')).toBeInTheDocument();
+        fireEvent.change(screen.getByTestId('relation-type-select'), { target: { value: RelationType.Relates } });
+        fireEvent.click(screen.getByTestId('relation-save-button'));
+
+        await waitFor(() => {
+            expect(apiClient.createRelation).toHaveBeenCalledWith('2', '1', RelationType.Relates, undefined);
+            expect(useTaskStore.getState().relations).toEqual([relation]);
+        });
+    });
+
     it('shows resize handles for a hovered editable leaf task', () => {
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);
