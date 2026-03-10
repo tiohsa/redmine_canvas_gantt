@@ -4,14 +4,16 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Task } from '../types';
 import { getStatusColor, getPriorityColor } from '../utils/styles';
 import { useUIStore } from '../stores/UIStore';
-import { loadPreferences } from '../utils/preferences';
 import { SIDEBAR_RESIZE_CURSOR } from '../constants';
 
 import { CustomFieldEditor, DoneRatioEditor, DueDateEditor, SelectEditor, SubjectEditor } from './InlineEditors';
 import { useEditMetaStore } from '../stores/EditMetaStore';
-import type { CustomFieldMeta, InlineEditSettings, TaskEditMeta } from '../types/editMeta';
-import { InlineEditService } from '../services/InlineEditService';
+import type { InlineEditSettings } from '../types/editMeta';
 import { i18n } from '../utils/i18n';
+import { customFieldEditField, customFieldIdFromEditField, formatCustomFieldCellValue, type SidebarColumn } from './sidebar/sidebarColumns';
+import { useSidebarColumnSizing } from './sidebar/useSidebarColumnSizing';
+import { useSidebarDragAndDrop } from './sidebar/useSidebarDragAndDrop';
+import { useSidebarInlineEdit } from './sidebar/useSidebarInlineEdit';
 
 const getAvatarColor = (name: string) => {
     const colors = ['#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800', '#ff5722'];
@@ -137,25 +139,6 @@ const CollapseAllIcon = () => (
     </svg>
 );
 
-const CUSTOM_FIELD_COLUMN_PREFIX = 'cf:';
-const CUSTOM_FIELD_EDIT_PREFIX = 'customField:';
-
-const isCustomFieldColumnKey = (key: string) => key.startsWith(CUSTOM_FIELD_COLUMN_PREFIX);
-const customFieldIdFromColumnKey = (key: string) => (isCustomFieldColumnKey(key) ? key.slice(CUSTOM_FIELD_COLUMN_PREFIX.length) : null);
-const customFieldEditField = (id: string) => `${CUSTOM_FIELD_EDIT_PREFIX}${id}`;
-const customFieldIdFromEditField = (field: string) => field.startsWith(CUSTOM_FIELD_EDIT_PREFIX) ? field.slice(CUSTOM_FIELD_EDIT_PREFIX.length) : null;
-
-const formatCustomFieldCellValue = (task: Task, customField: CustomFieldMeta): string => {
-    const raw = task.customFieldValues?.[String(customField.id)];
-    if (raw === undefined || raw === null || raw === '') return '-';
-    if (customField.fieldFormat === 'bool') return raw === '1' ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No');
-    if (customField.fieldFormat === 'date') {
-        const ts = new Date(raw).getTime();
-        return Number.isFinite(ts) ? new Date(ts).toLocaleDateString() : raw;
-    }
-    return raw;
-};
-
 export const UiSidebar: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
     const layoutRows = useTaskStore(state => state.layoutRows);
@@ -181,254 +164,44 @@ export const UiSidebar: React.FC = () => {
     const columnWidths = useUIStore(state => state.columnWidths);
     const setColumnWidth = useUIStore(state => state.setColumnWidth);
 
-    const resizeRef = React.useRef<{ key: string; startX: number; startWidth: number } | null>(null);
-    const [isResizingColumn, setIsResizingColumn] = React.useState(false);
-    const [draggingTaskId, setDraggingTaskId] = React.useState<string | null>(null);
-    const [dropTargetTaskId, setDropTargetTaskId] = React.useState<string | null>(null);
-    const [isRootDropActive, setIsRootDropActive] = React.useState(false);
-    const bodyStyleRef = React.useRef<{ cursor: string; userSelect: string } | null>(null);
-
-    const handleTaskDragStart = React.useCallback((taskId: string, e: React.DragEvent<HTMLDivElement>) => {
-        setDraggingTaskId(taskId);
-        setDropTargetTaskId(null);
-        setIsRootDropActive(false);
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', taskId);
-    }, []);
-
-    const handleTaskDragOver = React.useCallback((targetTaskId: string, e: React.DragEvent<HTMLDivElement>) => {
-        e.stopPropagation();
-        const sourceTaskId = draggingTaskId || e.dataTransfer.getData('text/plain');
-        if (!sourceTaskId) return;
-        setIsRootDropActive(false);
-        if (!canDropAsChild(sourceTaskId, targetTaskId)) {
-            e.dataTransfer.dropEffect = 'none';
-            if (dropTargetTaskId) setDropTargetTaskId(null);
-            return;
-        }
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        if (dropTargetTaskId !== targetTaskId) {
-            setDropTargetTaskId(targetTaskId);
-        }
-    }, [canDropAsChild, draggingTaskId, dropTargetTaskId]);
-
-    const handleTaskDrop = React.useCallback(async (targetTaskId: string, e: React.DragEvent<HTMLDivElement>) => {
-        e.stopPropagation();
-        e.preventDefault();
-        const sourceTaskId = draggingTaskId || e.dataTransfer.getData('text/plain');
-        setDropTargetTaskId(null);
-        setIsRootDropActive(false);
-        setDraggingTaskId(null);
-        if (!sourceTaskId || !canDropAsChild(sourceTaskId, targetTaskId)) {
-            useUIStore.getState().addNotification(i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target', 'warning');
-            return;
-        }
-
-        const result = await moveTaskAsChild(sourceTaskId, targetTaskId);
-        if (result.status === 'ok') {
-            useUIStore.getState().addNotification(i18n.t('label_parent_drop_success') || 'Task moved as child', 'success');
-            return;
-        }
-
-        if (result.status === 'conflict') {
-            useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_conflict') || 'Task was updated by another user', 'error');
-            return;
-        }
-
-        useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_failed') || 'Failed to move task', 'error');
-    }, [canDropAsChild, draggingTaskId, moveTaskAsChild]);
-
-    const handleRootDragOver = React.useCallback((e: React.DragEvent<HTMLDivElement>) => {
-        const sourceTaskId = draggingTaskId || e.dataTransfer.getData('text/plain');
-        if (!sourceTaskId) return;
-        if (!canDropToRoot(sourceTaskId)) {
-            e.dataTransfer.dropEffect = 'none';
-            if (isRootDropActive) setIsRootDropActive(false);
-            return;
-        }
-
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        if (!isRootDropActive) setIsRootDropActive(true);
-        if (dropTargetTaskId) setDropTargetTaskId(null);
-    }, [canDropToRoot, draggingTaskId, dropTargetTaskId, isRootDropActive]);
-
-    const handleRootDrop = React.useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        const sourceTaskId = draggingTaskId || e.dataTransfer.getData('text/plain');
-        setDropTargetTaskId(null);
-        setIsRootDropActive(false);
-        setDraggingTaskId(null);
-        if (!sourceTaskId || !canDropToRoot(sourceTaskId)) {
-            useUIStore.getState().addNotification(i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target', 'warning');
-            return;
-        }
-
-        const result = await moveTaskToRoot(sourceTaskId);
-        if (result.status === 'ok') {
-            useUIStore.getState().addNotification(i18n.t('label_parent_drop_unset_success') || 'Task parent removed', 'success');
-            return;
-        }
-
-        if (result.status === 'conflict') {
-            useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_conflict') || 'Task was updated by another user', 'error');
-            return;
-        }
-
-        useUIStore.getState().addNotification(result.error || i18n.t('label_parent_drop_failed') || 'Failed to move task', 'error');
-    }, [canDropToRoot, draggingTaskId, moveTaskToRoot]);
-
-    React.useEffect(() => {
-        const onMouseMove = (e: MouseEvent) => {
-            if (!resizeRef.current) return;
-            const delta = e.clientX - resizeRef.current.startX;
-            const newWidth = Math.max(40, resizeRef.current.startWidth + delta);
-            setColumnWidth(resizeRef.current.key, newWidth);
-        };
-
-        const onMouseUp = () => {
-            if (resizeRef.current) {
-                resizeRef.current = null;
-                setIsResizingColumn(false);
-            }
-        };
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
-        return () => {
-            window.removeEventListener('mousemove', onMouseMove);
-            window.removeEventListener('mouseup', onMouseUp);
-        };
-    }, [setColumnWidth]);
-
-    React.useEffect(() => {
-        if (typeof document === 'undefined') return;
-        if (isResizingColumn) {
-            if (!bodyStyleRef.current) {
-                bodyStyleRef.current = {
-                    cursor: document.body.style.cursor,
-                    userSelect: document.body.style.userSelect
-                };
-            }
-            document.body.style.cursor = SIDEBAR_RESIZE_CURSOR;
-            document.body.style.userSelect = 'none';
-            return;
-        }
-
-        if (bodyStyleRef.current) {
-            document.body.style.cursor = bodyStyleRef.current.cursor;
-            document.body.style.userSelect = bodyStyleRef.current.userSelect;
-            bodyStyleRef.current = null;
-        } else {
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        }
-    }, [isResizingColumn]);
-
-    // Auto-size columns on load (skip if user has saved column widths)
-    const calculatedRef = React.useRef(false);
-    React.useEffect(() => {
-        const savedPrefs = loadPreferences();
-        // Skip auto-sizing if user has previously saved column widths
-        if (calculatedRef.current || tasks.length === 0 || savedPrefs.columnWidths) return;
-
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        if (!context) return;
-
-        context.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'; // ID font
-        const idWidth = Math.max(
-            context.measureText('ID').width,
-            ...tasks.slice(0, 50).map(t => context.measureText(String(t.id)).width)
-        ) + 24; // padding
-
-        context.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'; // Body font
-
-        const measure = (text: string) => context.measureText(text).width;
-
-        const getColWidth = (title: string, accessor: (t: Task) => string) => {
-            const headerWidth = measure(title) + 24; // Padding + sort/resizer space
-            const contentWidth = Math.max(...tasks.slice(0, 50).map(t => measure(accessor(t))));
-            return Math.ceil(Math.max(headerWidth, contentWidth + 20)); // Content padding
-        };
-
-        const newWidths: Record<string, number> = {};
-        newWidths['id'] = Math.ceil(idWidth);
-
-        // Subject typically takes remaining space or has a min width, but user asked for "exact".
-        // Subject has indentation and icons.
-        // base 8px + indent * 16 + 18 (expander) + 6 (gap) + 16 (tracker) + text + 20 (edit icon) + padding
-        const getSubjectWidth = (t: Task) => {
-            const indent = 8 + (t.indentLevel ?? 0) * 16;
-            const icons = (t.hasChildren ? 18 : 18) + 6 + 16; // Expander + gap + tracker
-            const text = measure(t.subject);
-            const editIcon = 24;
-            return indent + icons + text + editIcon + 12;
-        };
-        const subjectTitle = i18n.t('field_subject') || 'Task Name';
-        const subjectWidth = Math.max(measure(subjectTitle) + 24, ...tasks.slice(0, 50).map(getSubjectWidth));
-        newWidths['subject'] = Math.ceil(Math.min(600, subjectWidth)); // Cap at 600 to prevent explosion
-
-        newWidths['status'] = getColWidth(i18n.t('field_status') || 'Status', (t: Task) => {
-            const s = getStatusColor(t.statusId);
-            return s.label; // Padded pill
-        }) + 16; // Pill padding
-
-        newWidths['assignee'] = Math.max(measure(i18n.t('field_assigned_to') || 'Assignee') + 24, ...tasks.slice(0, 50).map(t => {
-            if (!t.assignedToName) return 0;
-            // Icon 24 + padding
-            return 24 + 12;
-        }));
-
-        newWidths['startDate'] = getColWidth(i18n.t('field_start_date') || 'Start Date', (t: Task) => (t.startDate !== undefined && Number.isFinite(t.startDate)) ? new Date(t.startDate).toLocaleDateString() : '-');
-        newWidths['dueDate'] = getColWidth(i18n.t('field_due_date') || 'Due Date', (t: Task) => (t.dueDate !== undefined && Number.isFinite(t.dueDate)) ? new Date(t.dueDate).toLocaleDateString() : '-');
-
-        newWidths['ratioDone'] = Math.max(measure(i18n.t('field_done_ratio') || 'Progress') + 24, ...tasks.slice(0, 50).map(() => {
-            // Icon 20 + padding
-            return 20 + 12;
-        }));
-
-        const addAutoWidth = (key: string, title: string, accessor: (t: Task) => string) => {
-            newWidths[key] = getColWidth(title, accessor);
-        };
-
-        addAutoWidth('project', i18n.t('field_project') || 'Project', (t) => t.projectName || '');
-        addAutoWidth('tracker', i18n.t('field_tracker') || 'Tracker', (t) => t.trackerName || '');
-        addAutoWidth('priority', i18n.t('field_priority') || 'Priority', (t) => t.priorityName || '');
-        newWidths['priority'] += 16; // Badge padding
-        addAutoWidth('author', i18n.t('field_author') || 'Author', (t) => t.authorName || '');
-        addAutoWidth('category', i18n.t('field_category') || 'Category', (t) => t.categoryName || '');
-        addAutoWidth('estimatedHours', i18n.t('field_estimated_hours') || 'Estimated Time', (t) => t.estimatedHours !== undefined ? `${t.estimatedHours}h` : '');
-        addAutoWidth('createdOn', i18n.t('field_created_on') || 'Created', (t) => t.createdOn ? new Date(t.createdOn).toLocaleString() : '');
-        addAutoWidth('updatedOn', i18n.t('field_updated_on') || 'Updated', (t) => t.updatedOn ? new Date(t.updatedOn).toLocaleString() : '');
-        addAutoWidth('spentHours', i18n.t('field_spent_hours') || 'Spent Time', (t) => t.spentHours !== undefined ? `${t.spentHours}h` : '');
-        addAutoWidth('version', i18n.t('field_version') || 'Target Version', (t) => t.fixedVersionName || '');
-        customFields.forEach((cf) => {
-            addAutoWidth(`cf:${cf.id}`, cf.name, (t) => formatCustomFieldCellValue(t, cf));
-        });
-
-        // Apply
-        Object.keys(newWidths).forEach(key => {
-            setColumnWidth(key, newWidths[key]);
-        });
-
-        calculatedRef.current = true;
-    }, [customFields, tasks, setColumnWidth]);
-
-    const handleResizeStart = (e: React.MouseEvent, key: string, currentWidth: number) => {
-        e.preventDefault();
-        e.stopPropagation();
-        resizeRef.current = { key, startX: e.clientX, startWidth: currentWidth };
-        setIsResizingColumn(true);
-    };
-
     const editMetaByTaskId = useEditMetaStore((s) => s.metaByTaskId);
     const fetchEditMeta = useEditMetaStore((s) => s.fetchEditMeta);
 
     const settings = React.useMemo(() => {
         return (window as unknown as { RedmineCanvasGantt?: { settings?: InlineEditSettings } }).RedmineCanvasGantt?.settings ?? {};
     }, []);
+
+    const { handleResizeStart } = useSidebarColumnSizing({ tasks, customFields, setColumnWidth });
+    const {
+        dropTargetTaskId,
+        isRootDropActive,
+        setIsRootDropActive,
+        handleTaskDragStart,
+        handleTaskDragOver,
+        handleTaskDrop,
+        handleRootDragOver,
+        handleRootDrop,
+        resetDragState
+    } = useSidebarDragAndDrop({
+        canDropAsChild,
+        canDropToRoot,
+        moveTaskAsChild,
+        moveTaskToRoot
+    });
+    const {
+        toDateInputValue,
+        getSortField,
+        getEditField,
+        shouldEnableField,
+        startCellEdit,
+        save
+    } = useSidebarInlineEdit({
+        settings,
+        editMetaByTaskId,
+        fetchEditMeta,
+        selectTask,
+        setActiveInlineEdit
+    });
 
     const taskMap = React.useMemo(() => {
         const map = new Map<string, Task>();
@@ -472,7 +245,7 @@ export const UiSidebar: React.FC = () => {
         );
     };
 
-    const columns = [
+    const columns: SidebarColumn[] = [
         {
             key: 'id',
             title: 'ID',
@@ -821,134 +594,6 @@ export const UiSidebar: React.FC = () => {
 
     const activeColumns = columns.filter(col => col.key === 'subject' || visibleColumns.includes(col.key));
 
-    const isInlineEditEnabled = React.useCallback((key: keyof InlineEditSettings, defaultValue: boolean) => {
-        const value = settings[key];
-        if (value === undefined) return defaultValue;
-        return String(value) === '1';
-    }, [settings]);
-
-    const toDateInputValue = React.useCallback((timestamp: number | undefined) => {
-        if (timestamp === undefined || !Number.isFinite(timestamp)) return '';
-        try {
-            return new Date(timestamp).toISOString().split('T')[0];
-        } catch {
-            return '';
-        }
-    }, []);
-
-    const getSortField = React.useCallback((columnKey: string): string | null => {
-        if (isCustomFieldColumnKey(columnKey)) return columnKey;
-        if (columnKey === 'subject') return 'subject';
-        if (columnKey === 'assignee') return 'assignedToName';
-        if (columnKey === 'status') return 'statusId'; // Position is better than name
-        if (columnKey === 'ratioDone') return 'ratioDone';
-        if (columnKey === 'dueDate') return 'dueDate';
-        if (columnKey === 'startDate') return 'startDate';
-        if (columnKey === 'estimatedHours') return 'estimatedHours';
-        if (columnKey === 'priority') return 'priorityId'; // Weight is better than name
-        if (columnKey === 'author') return 'authorName';
-        if (columnKey === 'category') return 'categoryName';
-        if (columnKey === 'project') return 'projectName';
-        if (columnKey === 'tracker') return 'trackerName';
-        if (columnKey === 'spentHours') return 'spentHours';
-        if (columnKey === 'version') return 'fixedVersionName';
-        if (columnKey === 'createdOn') return 'createdOn';
-        if (columnKey === 'updatedOn') return 'updatedOn';
-        if (columnKey === 'id') return 'id';
-        return null;
-    }, []);
-
-    const getEditField = React.useCallback((columnKey: string) => {
-        const customFieldId = customFieldIdFromColumnKey(columnKey);
-        if (customFieldId) return customFieldEditField(customFieldId);
-        if (columnKey === 'subject') return 'subject';
-        if (columnKey === 'assignee') return 'assignedToId';
-        if (columnKey === 'status') return 'statusId';
-        if (columnKey === 'ratioDone') return 'ratioDone';
-        if (columnKey === 'dueDate') return 'dueDate';
-        if (columnKey === 'startDate') return 'startDate';
-        if (columnKey === 'priority') return 'priorityId';
-        if (columnKey === 'author') return 'authorId';
-        if (columnKey === 'category') return 'categoryId';
-        if (columnKey === 'estimatedHours') return 'estimatedHours';
-        if (columnKey === 'project') return 'projectId';
-        if (columnKey === 'tracker') return 'trackerId';
-        if (columnKey === 'version') return 'fixedVersionId';
-        return null;
-    }, []);
-
-    const shouldEnableField = React.useCallback((field: string, task: Task, providedMeta?: TaskEditMeta) => {
-        if (!task.editable) return false;
-
-        const customFieldId = customFieldIdFromEditField(field);
-        if (customFieldId) {
-            if (!isInlineEditEnabled('inline_edit_custom_fields', true)) return false;
-            const meta = providedMeta || editMetaByTaskId[task.id];
-            if (!meta) return true;
-            if (!meta.editable.customFieldValues) return false;
-            return meta.options.customFields.some((cf) => String(cf.id) === customFieldId);
-        }
-
-        // Plugin settings
-        if (field === 'subject') return isInlineEditEnabled('inline_edit_subject', true);
-        if (field === 'assignedToId') return isInlineEditEnabled('inline_edit_assigned_to', true);
-        if (field === 'statusId') return isInlineEditEnabled('inline_edit_status', true);
-        if (field === 'ratioDone') return isInlineEditEnabled('inline_edit_done_ratio', true);
-        if (field === 'dueDate') return isInlineEditEnabled('inline_edit_due_date', true);
-        if (field === 'startDate') return isInlineEditEnabled('inline_edit_start_date', true);
-
-        // Check metadata for field-level editability
-        const meta = providedMeta || editMetaByTaskId[task.id];
-        if (meta && meta.editable) {
-            const editableMap = meta.editable as Record<string, boolean>;
-            if (editableMap[field] === false) return false;
-        }
-
-        if (field === 'priorityId') return true;
-        if (field === 'authorId') return true;
-        if (field === 'categoryId') return true;
-        if (field === 'estimatedHours') return true;
-        if (field === 'projectId') return true;
-        if (field === 'trackerId') return true;
-        if (field === 'fixedVersionId') return true;
-        return false;
-    }, [isInlineEditEnabled, editMetaByTaskId]);
-
-    const ensureEditMeta = React.useCallback(async (taskId: string): Promise<TaskEditMeta | null> => {
-        const cached = editMetaByTaskId[taskId];
-        if (cached) return cached;
-        try {
-            return await fetchEditMeta(taskId);
-        } catch {
-            return null;
-        }
-    }, [editMetaByTaskId, fetchEditMeta]);
-
-    const startCellEdit = async (task: Task, field: string) => {
-        if (!shouldEnableField(field, task)) return;
-        selectTask(task.id);
-
-        // For select-based editors, ensure meta is available before opening.
-        const requiresMeta = [
-            'assignedToId', 'statusId', 'priorityId', 'authorId',
-            'categoryId', 'projectId', 'trackerId', 'fixedVersionId'
-        ].includes(field);
-        const needsCustomFieldMeta = customFieldIdFromEditField(field) !== null;
-
-        if (requiresMeta || needsCustomFieldMeta) {
-            const m = await ensureEditMeta(task.id);
-            if (!m) return;
-            // Re-check after meta is loaded to catch field-level restrictions
-            // IMPORTANT: use the fresh meta 'm' to avoid stale closure issues
-            if (!shouldEnableField(field, task, m)) return;
-        }
-
-        setActiveInlineEdit({ taskId: task.id, field, source: 'cell' });
-    };
-
-    const save = React.useCallback(async (params: Parameters<typeof InlineEditService.saveTaskFields>[0]) => {
-        await InlineEditService.saveTaskFields(params);
-    }, []);
     const inlineControlHeight = Math.max(20, Math.min(24, viewport.rowHeight - 6));
 
     return (
@@ -1234,11 +879,7 @@ export const UiSidebar: React.FC = () => {
                                 onDragStart={(e) => handleTaskDragStart(task.id, e)}
                                 onDragOver={(e) => handleTaskDragOver(task.id, e)}
                                 onDrop={(e) => { void handleTaskDrop(task.id, e); }}
-                                onDragEnd={() => {
-                                    setDraggingTaskId(null);
-                                    setDropTargetTaskId(null);
-                                    setIsRootDropActive(false);
-                                }}
+                                onDragEnd={resetDragState}
                                 onClick={() => {
                                     if (activeInlineEdit && activeInlineEdit.taskId !== task.id) {
                                         setActiveInlineEdit(null);

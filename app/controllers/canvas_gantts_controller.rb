@@ -156,6 +156,10 @@ class CanvasGanttsController < ApplicationController
 
   menu_item :canvas_gantt
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'vite_asset_helper').to_s
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'custom_field_serializer').to_s
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'custom_field_extractor').to_s
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'data_payload_builder').to_s
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'relation_params_normalizer').to_s
 
   helper RedmineCanvasGantt::ViteAssetHelper
   accept_api_auth :data, :edit_meta, :update, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation
@@ -193,15 +197,12 @@ class CanvasGanttsController < ApplicationController
       project_ids = descendant_project_ids
       issues = issue_scope(project_ids).to_a
 
-      render json: {
-        tasks: build_tasks(issues),
-        custom_fields: build_project_custom_fields(project_ids, issues),
-        relations: build_relations(issues),
-        versions: build_versions(project_ids),
-        statuses: build_statuses,
-        project: build_project_payload,
-        permissions: @permissions
-      }
+      render json: data_payload_builder.build(
+        project: @project,
+        permissions: @permissions,
+        project_ids: project_ids,
+        issues: issues
+      )
     rescue => e
       render json: { error: e.message }, status: :internal_server_error
     end
@@ -222,7 +223,7 @@ class CanvasGanttsController < ApplicationController
     assignables = issue.assignable_users.to_a
     assignables = assignables.sort_by { |u| u.name.to_s.downcase }
 
-    custom_fields, custom_field_values = extract_custom_fields(issue, field_editable)
+    custom_fields, custom_field_values = custom_field_extractor.extract_custom_fields(issue, field_editable[:custom_field_values])
 
     render json: {
       task: {
@@ -331,7 +332,7 @@ class CanvasGanttsController < ApplicationController
       return
     end
 
-    delay = normalize_relation_delay(relation_type)
+    delay = relation_params_normalizer.normalize_delay(relation_type)
     return if performed?
     return unless ensure_relation_delay_consistent!(issue_from, issue_to, relation_type, delay)
 
@@ -343,7 +344,7 @@ class CanvasGanttsController < ApplicationController
     )
 
     if relation.save
-      render json: { status: 'ok', relation: serialize_relation(relation) }
+      render json: { status: 'ok', relation: relation_params_normalizer.serialize_relation(relation) }
     else
       render json: { errors: relation.errors.full_messages }, status: :unprocessable_entity
     end
@@ -364,7 +365,7 @@ class CanvasGanttsController < ApplicationController
       return
     end
 
-    delay = normalize_relation_delay(relation_type)
+    delay = relation_params_normalizer.normalize_delay(relation_type)
     return if performed?
     return unless ensure_relation_delay_consistent!(relation.issue_from, relation.issue_to, relation_type, delay)
 
@@ -372,7 +373,7 @@ class CanvasGanttsController < ApplicationController
     relation.delay = delay
 
     if relation.save
-      render json: { status: 'ok', relation: serialize_relation(relation) }
+      render json: { status: 'ok', relation: relation_params_normalizer.serialize_relation(relation) }
     else
       render json: { errors: relation.errors.full_messages }, status: :unprocessable_entity
     end
@@ -435,114 +436,6 @@ class CanvasGanttsController < ApplicationController
     scope
   end
 
-  def build_tasks(issues)
-    issues.each_with_index.map do |issue, idx|
-      {
-        id: issue.id,
-        subject: issue.subject,
-        project_id: issue.project_id,
-        project_name: issue.project.name,
-        display_order: idx,
-        start_date: issue.start_date,
-        due_date: issue.due_date,
-        ratio_done: issue.done_ratio,
-        status_id: issue.status_id,
-        status_name: issue.status.name,
-        assigned_to_id: issue.assigned_to_id,
-        assigned_to_name: issue.assigned_to&.name,
-        parent_id: issue.parent_id,
-        lock_version: issue.lock_version,
-        editable: User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?,
-        tracker_id: issue.tracker_id,
-        tracker_name: issue.tracker&.name,
-        fixed_version_id: issue.fixed_version_id,
-        priority_id: issue.priority_id,
-        priority_name: issue.priority&.name,
-        author_id: issue.author_id,
-        author_name: issue.author&.name,
-        category_id: issue.category_id,
-        category_name: issue.category&.name,
-        estimated_hours: issue.estimated_hours,
-        created_on: issue.created_on,
-        updated_on: issue.updated_on,
-        spent_hours: issue.spent_hours,
-        fixed_version_name: issue.fixed_version&.name,
-        custom_field_values: build_task_custom_field_values(issue)
-      }
-    end
-  end
-
-  def build_project_custom_fields(project_ids, issues = [])
-    seen = {}
-
-    project_fields = Project.where(id: project_ids).flat_map do |project|
-      begin
-        Array(project.all_issue_custom_fields)
-      rescue NoMethodError
-        begin
-          Array(project.issue_custom_fields)
-        rescue NoMethodError
-          []
-        end
-      end.select do |custom_field|
-        custom_field.is_a?(IssueCustomField) &&
-          custom_field_visible_for_project?(custom_field, project) &&
-          !custom_field.multiple? &&
-          CUSTOM_FIELD_FORMATS.include?(custom_field.field_format.to_s)
-      end
-    end
-
-    issue_fields = Array(issues).flat_map do |issue|
-      issue.custom_field_values.map(&:custom_field)
-    end.compact.select do |custom_field|
-      custom_field.is_a?(IssueCustomField) &&
-        !custom_field.multiple? &&
-        CUSTOM_FIELD_FORMATS.include?(custom_field.field_format.to_s)
-    end
-
-    (project_fields + issue_fields)
-      .uniq { |cf| cf.id }
-      .sort_by { |cf| [cf.position || 0, cf.name.to_s.downcase] }
-      .each_with_object([]) do |custom_field, result|
-        next if seen[custom_field.id]
-        seen[custom_field.id] = true
-        result << serialize_custom_field(custom_field)
-      end
-  end
-
-  def build_relations(issues)
-    issues.flat_map(&:relations).uniq.map do |relation|
-      serialize_relation(relation)
-    end
-  end
-
-  def build_versions(project_ids)
-    Version.visible.where(project_id: project_ids).map do |version|
-      {
-        id: version.id,
-        name: version.name,
-        effective_date: version.effective_date,
-        start_date: version.try(:start_date),
-        completed_percent: version.completed_percent,
-        project_id: version.project_id,
-        status: version.status
-      }
-    end
-  end
-
-  def build_statuses
-    IssueStatus.sorted.map { |status| { id: status.id, name: status.name, is_closed: status.is_closed? } }
-  end
-
-  def build_project_payload
-    {
-      id: @project.id,
-      name: @project.name,
-      start_date: @project.start_date,
-      due_date: @project.due_date
-    }
-  end
-
   def ensure_issue_in_scope(issue)
     return true if descendant_project_ids.include?(issue.project_id)
 
@@ -567,96 +460,6 @@ class CanvasGanttsController < ApplicationController
     plugin_settings.fetch('inline_edit_custom_fields', '1').to_s == '1'
   end
 
-  def extract_custom_fields(issue, field_editable)
-    return [[], {}] unless inline_custom_fields_enabled? && field_editable[:custom_field_values]
-
-    applicable_custom_field_ids = issue_applicable_custom_field_ids(issue)
-    custom_fields = []
-    custom_field_values = {}
-
-    issue.custom_field_values.each do |custom_field_value|
-      custom_field = custom_field_value.custom_field
-      next unless custom_field
-      next unless applicable_custom_field_ids.include?(custom_field.id)
-      next if custom_field.multiple?
-      next unless CUSTOM_FIELD_FORMATS.include?(custom_field.field_format.to_s)
-
-      custom_fields << serialize_custom_field(custom_field)
-      custom_field_values[custom_field.id.to_s] = custom_field_value.value
-    end
-
-    [custom_fields, custom_field_values]
-  end
-
-  def build_task_custom_field_values(issue)
-    applicable_custom_field_ids = issue_applicable_custom_field_ids(issue)
-    issue.custom_field_values.each_with_object({}) do |custom_field_value, values|
-      custom_field = custom_field_value.custom_field
-      next unless custom_field
-      next unless applicable_custom_field_ids.include?(custom_field.id)
-      next if custom_field.multiple?
-      next unless CUSTOM_FIELD_FORMATS.include?(custom_field.field_format.to_s)
-
-      values[custom_field.id.to_s] = custom_field_value.value
-    end
-  end
-
-  def issue_applicable_custom_field_ids(issue)
-    available_fields = if issue.respond_to?(:available_custom_fields)
-                         Array(issue.available_custom_fields)
-                       else
-                         []
-                       end
-
-    ids = available_fields
-      .select { |f| f.respond_to?(:id) }
-      .map(&:id)
-      .compact
-
-    return ids.uniq unless ids.empty?
-
-    Array(issue.custom_field_values)
-      .filter_map { |v| v.custom_field&.id }
-      .uniq
-  rescue StandardError
-    []
-  end
-
-  def serialize_custom_field(custom_field)
-    {
-      id: custom_field.id,
-      name: custom_field.name,
-      field_format: custom_field.field_format,
-      is_required: custom_field.is_required,
-      regexp: custom_field.regexp,
-      min_length: custom_field.min_length,
-      max_length: custom_field.max_length,
-      possible_values: custom_field.field_format.to_s == 'list' ? custom_field.possible_values : nil,
-      text_formatting: custom_field.field_format.to_s == 'text' ? safe_text_formatting(custom_field) : nil
-    }
-  end
-
-  def custom_field_visible_for_project?(custom_field, project)
-    return true unless custom_field.respond_to?(:visible_by?)
-
-    custom_field.visible_by?(project, User.current)
-  rescue ArgumentError
-    begin
-      custom_field.visible_by?(project)
-    rescue ArgumentError
-      custom_field.visible_by?(User.current)
-    rescue ArgumentError
-      custom_field.visible_by?
-    end
-  rescue StandardError
-    true
-  end
-
-  def safe_text_formatting(custom_field)
-    custom_field.text_formatting
-  rescue StandardError
-    nil
-  end
 
   def permitted_task_params
     params.require(:task).permit(*(TASK_PERMITTED_ATTRIBUTES + [{ custom_field_values: {} }]))
@@ -664,16 +467,6 @@ class CanvasGanttsController < ApplicationController
 
   def relation_params
     params.require(:relation).permit(:issue_from_id, :issue_to_id, :relation_type, :delay)
-  end
-
-  def serialize_relation(relation)
-    {
-      id: relation.id,
-      from: relation.issue_from_id,
-      to: relation.issue_to_id,
-      type: relation.relation_type,
-      delay: relation.delay
-    }
   end
 
   def ensure_relation_editable!(relation)
@@ -709,33 +502,6 @@ class CanvasGanttsController < ApplicationController
     end
 
     true
-  end
-
-  def normalize_relation_delay(relation_type)
-    raw_delay = relation_params[:delay]
-
-    unless DELAY_RELATION_TYPES.include?(relation_type)
-      if relation_delay_provided? && raw_delay.present?
-        render json: { errors: [l(:error_canvas_gantt_relation_delay_not_allowed)] }, status: :unprocessable_entity
-      end
-      return nil
-    end
-
-    if raw_delay.blank?
-      render json: { errors: [l(:error_canvas_gantt_relation_delay_required)] }, status: :unprocessable_entity
-      return nil
-    end
-
-    delay = Integer(raw_delay)
-    if delay.negative?
-      render json: { errors: [l(:error_canvas_gantt_relation_delay_invalid)] }, status: :unprocessable_entity
-      return nil
-    end
-
-    delay
-  rescue ArgumentError, TypeError
-    render json: { errors: [l(:error_canvas_gantt_relation_delay_invalid)] }, status: :unprocessable_entity
-    nil
   end
 
   def ensure_relation_delay_consistent!(issue_from, issue_to, relation_type, delay)
@@ -883,5 +649,74 @@ class CanvasGanttsController < ApplicationController
         errors: issue.errors.full_messages
       }
     end
+  end
+
+  def custom_field_serializer
+    @custom_field_serializer ||= RedmineCanvasGantt::CustomFieldSerializer.new(current_user: User.current)
+  end
+
+  def custom_field_extractor
+    @custom_field_extractor ||= RedmineCanvasGantt::CustomFieldExtractor.new(
+      serializer: custom_field_serializer,
+      supported_formats: CUSTOM_FIELD_FORMATS
+    )
+  end
+
+  def data_payload_builder
+    @data_payload_builder ||= RedmineCanvasGantt::DataPayloadBuilder.new(
+      custom_field_extractor: custom_field_extractor,
+      current_user: User.current
+    )
+  end
+
+  def relation_params_normalizer
+    @relation_params_normalizer ||= RedmineCanvasGantt::RelationParamsNormalizer.new(
+      delay_relation_types: DELAY_RELATION_TYPES,
+      relation_params: relation_params,
+      delay_provided: method(:relation_delay_provided?),
+      error_renderer: lambda { |message_key|
+        render json: { errors: [l(message_key)] }, status: :unprocessable_entity
+      }
+    )
+  end
+
+  def build_tasks(issues)
+    data_payload_builder.build_tasks(issues)
+  end
+
+  def build_project_custom_fields(project_ids, issues = [])
+    custom_field_extractor.build_project_custom_fields(project_ids, issues)
+  end
+
+  def build_relations(issues)
+    data_payload_builder.build_relations(issues)
+  end
+
+  def build_versions(project_ids)
+    data_payload_builder.build_versions(project_ids)
+  end
+
+  def build_statuses
+    data_payload_builder.build_statuses
+  end
+
+  def build_project_payload
+    data_payload_builder.build_project_payload(@project)
+  end
+
+  def extract_custom_fields(issue, field_editable)
+    custom_field_extractor.extract_custom_fields(issue, inline_custom_fields_enabled? && field_editable[:custom_field_values])
+  end
+
+  def build_task_custom_field_values(issue)
+    custom_field_extractor.build_task_custom_field_values(issue)
+  end
+
+  def serialize_relation(relation)
+    relation_params_normalizer.serialize_relation(relation)
+  end
+
+  def normalize_relation_delay(relation_type)
+    relation_params_normalizer.normalize_delay(relation_type)
   end
 end

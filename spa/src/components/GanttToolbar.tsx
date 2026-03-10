@@ -7,11 +7,20 @@ import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
 import { getRelationTypeLabel } from '../utils/relationEditing';
 import { savePreferences } from '../utils/preferences';
+import { useToolbarMenuState } from './gantt/useToolbarMenuState';
 
 interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
     onZoomChange: (level: ZoomLevel) => void;
 }
+
+const toggleSelectionValue = <T,>(selectedValues: T[], value: T): T[] =>
+    selectedValues.includes(value)
+        ? selectedValues.filter((selectedValue) => selectedValue !== value)
+        : [...selectedValues, value];
+
+const toggleAllSelectionValues = <T,>(isAllSelected: boolean, allValues: T[]): T[] =>
+    isAllSelected ? [] : allValues;
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange }) => {
     const {
@@ -44,27 +53,33 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     } = useUIStore();
     const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
     const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
-    const [showColumnMenu, setShowColumnMenu] = React.useState(false);
-    const [showFilterMenu, setShowFilterMenu] = React.useState(false);
-    const [showAssigneeMenu, setShowAssigneeMenu] = React.useState(false);
-    const [showProjectMenu, setShowProjectMenu] = React.useState(false);
-    const [showVersionMenu, setShowVersionMenu] = React.useState(false);
-    const [showStatusMenu, setShowStatusMenu] = React.useState(false);
-    const [showRowHeightMenu, setShowRowHeightMenu] = React.useState(false);
-    const [showRelationSettingsMenu, setShowRelationSettingsMenu] = React.useState(false);
+    const {
+        columnMenuRef,
+        filterMenuRef,
+        assigneeMenuRef,
+        projectMenuRef,
+        versionMenuRef,
+        statusMenuRef,
+        rowHeightMenuRef,
+        relationSettingsMenuRef,
+        isMenuOpen,
+        toggleMenu,
+        openMenuByKey,
+        closeMenu
+    } = useToolbarMenuState();
     const [draftRelationType, setDraftRelationType] = React.useState<DefaultRelationType>(defaultRelationType);
     const [draftAutoCalculateDelay, setDraftAutoCalculateDelay] = React.useState<boolean>(autoCalculateDelay);
     const [draftAutoApplyDefaultRelation, setDraftAutoApplyDefaultRelation] = React.useState<boolean>(autoApplyDefaultRelation);
 
-    const filterMenuRef = React.useRef<HTMLDivElement>(null);
     const filterInputRef = React.useRef<HTMLInputElement>(null);
-    const columnMenuRef = React.useRef<HTMLDivElement>(null);
-    const assigneeMenuRef = React.useRef<HTMLDivElement>(null);
-    const projectMenuRef = React.useRef<HTMLDivElement>(null);
-    const versionMenuRef = React.useRef<HTMLDivElement>(null);
-    const statusMenuRef = React.useRef<HTMLDivElement>(null);
-    const rowHeightMenuRef = React.useRef<HTMLDivElement>(null);
-    const relationSettingsMenuRef = React.useRef<HTMLDivElement>(null);
+    const showFilterMenu = isMenuOpen('filter');
+    const showColumnMenu = isMenuOpen('column');
+    const showAssigneeMenu = isMenuOpen('assignee');
+    const showProjectMenu = isMenuOpen('project');
+    const showVersionMenu = isMenuOpen('version');
+    const showStatusMenu = isMenuOpen('status');
+    const showRowHeightMenu = isMenuOpen('rowHeight');
+    const showRelationSettingsMenu = isMenuOpen('relationSettings');
 
     React.useEffect(() => {
         if (!showFilterMenu) return;
@@ -93,7 +108,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             if (event.ctrlKey && !event.altKey && !event.metaKey && key === 'f') {
                 event.preventDefault();
                 event.stopPropagation();
-                setShowFilterMenu(true);
+                openMenuByKey('filter');
                 return;
             }
 
@@ -101,47 +116,13 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 event.preventDefault();
                 event.stopPropagation();
                 setFilterText('');
-                setShowFilterMenu(false);
+                closeMenu('filter');
             }
         };
 
         window.addEventListener('keydown', handleGlobalKeyDown, true);
         return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
-    }, [showFilterMenu, setFilterText]);
-
-    // Click outside handler to close all dropdowns
-    React.useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            const target = event.target as Node;
-            if (showFilterMenu && filterMenuRef.current && !filterMenuRef.current.contains(target)) {
-                setShowFilterMenu(false);
-            }
-            if (showColumnMenu && columnMenuRef.current && !columnMenuRef.current.contains(target)) {
-                setShowColumnMenu(false);
-            }
-            if (showAssigneeMenu && assigneeMenuRef.current && !assigneeMenuRef.current.contains(target)) {
-                setShowAssigneeMenu(false);
-            }
-            if (showProjectMenu && projectMenuRef.current && !projectMenuRef.current.contains(target)) {
-                setShowProjectMenu(false);
-            }
-            if (showVersionMenu && versionMenuRef.current && !versionMenuRef.current.contains(target)) {
-                setShowVersionMenu(false);
-            }
-            if (showStatusMenu && statusMenuRef.current && !statusMenuRef.current.contains(target)) {
-                setShowStatusMenu(false);
-            }
-            if (showRowHeightMenu && rowHeightMenuRef.current && !rowHeightMenuRef.current.contains(target)) {
-                setShowRowHeightMenu(false);
-            }
-            if (showRelationSettingsMenu && relationSettingsMenuRef.current && !relationSettingsMenuRef.current.contains(target)) {
-                setShowRelationSettingsMenu(false);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showFilterMenu, showColumnMenu, showAssigneeMenu, showProjectMenu, showVersionMenu, showStatusMenu, showRowHeightMenu, showRelationSettingsMenu]);
+    }, [closeMenu, openMenuByKey, showFilterMenu, setFilterText]);
 
     const handleSaveRelationSettings = () => {
         setDefaultRelationType(draftRelationType);
@@ -152,7 +133,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             autoCalculateDelay: draftAutoCalculateDelay,
             autoApplyDefaultRelation: draftAutoApplyDefaultRelation
         });
-        setShowRelationSettingsMenu(false);
+        closeMenu('relationSettings');
     };
 
     const handleResetRelationSettings = () => {
@@ -162,7 +143,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             autoCalculateDelay: undefined,
             autoApplyDefaultRelation: undefined
         });
-        setShowRelationSettingsMenu(false);
+        closeMenu('relationSettings');
     };
 
     const handleTodayClick = () => {
@@ -240,20 +221,13 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     }, [allTasks]);
 
     const toggleAssignee = (id: number | null) => {
-        const next = selectedAssigneeIds.includes(id)
-            ? selectedAssigneeIds.filter(i => i !== id)
-            : [...selectedAssigneeIds, id];
-        setSelectedAssigneeIds(next);
+        setSelectedAssigneeIds(toggleSelectionValue(selectedAssigneeIds, id));
     };
 
     const isAllAssigneesSelected = assignees.length > 0 && selectedAssigneeIds.length === assignees.length;
 
     const toggleAllAssignees = () => {
-        if (isAllAssigneesSelected) {
-            setSelectedAssigneeIds([]);
-        } else {
-            setSelectedAssigneeIds(assignees.map(a => a.id));
-        }
+        setSelectedAssigneeIds(toggleAllSelectionValues(isAllAssigneesSelected, assignees.map(a => a.id)));
     };
 
     const projects = React.useMemo(() => {
@@ -267,20 +241,13 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     }, [allTasks]);
 
     const toggleProject = (id: string) => {
-        const next = selectedProjectIds.includes(id)
-            ? selectedProjectIds.filter(i => i !== id)
-            : [...selectedProjectIds, id];
-        setSelectedProjectIds(next);
+        setSelectedProjectIds(toggleSelectionValue(selectedProjectIds, id));
     };
 
     const isAllProjectsSelected = projects.length > 0 && selectedProjectIds.length === projects.length;
 
     const toggleAllProjects = () => {
-        if (isAllProjectsSelected) {
-            setSelectedProjectIds([]);
-        } else {
-            setSelectedProjectIds(projects.map(p => p.id));
-        }
+        setSelectedProjectIds(toggleAllSelectionValues(isAllProjectsSelected, projects.map(p => p.id)));
     };
 
     const versionsList = React.useMemo(() => {
@@ -289,38 +256,24 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     }, [versions, projects]);
 
     const toggleVersion = (id: string) => {
-        const next = selectedVersionIds.includes(id)
-            ? selectedVersionIds.filter(i => i !== id)
-            : [...selectedVersionIds, id];
-        setSelectedVersionIds(next);
+        setSelectedVersionIds(toggleSelectionValue(selectedVersionIds, id));
     };
 
     const allVersionIdsWithNone = ['_none', ...versionsList.map(v => v.id)];
     const isAllVersionsSelected = versionsList.length > 0 && selectedVersionIds.length === allVersionIdsWithNone.length && selectedVersionIds.includes('_none');
 
     const toggleAllVersions = () => {
-        if (isAllVersionsSelected) {
-            setSelectedVersionIds([]);
-        } else {
-            setSelectedVersionIds(allVersionIdsWithNone);
-        }
+        setSelectedVersionIds(toggleAllSelectionValues(isAllVersionsSelected, allVersionIdsWithNone));
     };
 
     const toggleStatus = (id: number) => {
-        const next = selectedStatusIds.includes(id)
-            ? selectedStatusIds.filter(i => i !== id)
-            : [...selectedStatusIds, id];
-        setSelectedStatusFromServer(next);
+        setSelectedStatusFromServer(toggleSelectionValue(selectedStatusIds, id));
     };
 
     const isAllStatusesSelected = taskStatuses.length > 0 && selectedStatusIds.length === taskStatuses.length;
 
     const toggleAllStatuses = () => {
-        if (isAllStatusesSelected) {
-            setSelectedStatusFromServer([]);
-        } else {
-            setSelectedStatusFromServer(taskStatuses.map(s => s.id));
-        }
+        setSelectedStatusFromServer(toggleAllSelectionValues(isAllStatusesSelected, taskStatuses.map(s => s.id)));
     };
 
     const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
@@ -430,8 +383,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     </svg>
                 </button>
 
+                <div ref={filterMenuRef} style={{ position: 'relative' }}>
                 <button
-                    onClick={() => setShowFilterMenu(prev => !prev)}
+                    onClick={() => toggleMenu('filter')}
                     title={i18n.t('label_filter_tasks') || 'Filter Tasks'}
                     style={{
                         display: 'flex',
@@ -446,15 +400,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         width: '32px',
                         height: '32px'
                     }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                    </svg>
-                </button>
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                        </svg>
+                    </button>
 
-                {showFilterMenu && (
+                    {showFilterMenu && (
                     <div
-                        ref={filterMenuRef}
                         style={{
                             position: 'absolute',
                             top: '40px',
@@ -505,11 +458,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             ESC {i18n.t('label_to_cancel') || 'to cancel'}
                         </div>
                     </div>
-                )}
+                    )}
+                </div>
 
-                <div style={{ position: 'relative' }}>
+                <div ref={columnMenuRef} style={{ position: 'relative' }}>
                     <button
-                        onClick={() => setShowColumnMenu(prev => !prev)}
+                        onClick={() => toggleMenu('column')}
                         title={i18n.t('label_column_plural') || 'Columns'}
                         style={{
                             display: 'flex',
@@ -538,7 +492,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                     {showColumnMenu && (
                         <div
-                            ref={columnMenuRef}
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -583,9 +536,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <div style={{ position: 'relative' }}>
+                <div ref={assigneeMenuRef} style={{ position: 'relative' }}>
                     <button
-                        onClick={() => setShowAssigneeMenu(prev => !prev)}
+                        onClick={() => toggleMenu('assignee')}
                         title={i18n.t('field_assigned_to') || 'Assignee Filter'}
                         style={{
                             display: 'flex',
@@ -613,7 +566,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                     {showAssigneeMenu && (
                         <div
-                            ref={assigneeMenuRef}
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -676,9 +628,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <div style={{ position: 'relative' }}>
+                <div ref={projectMenuRef} style={{ position: 'relative' }}>
                     <button
-                        onClick={() => setShowProjectMenu(prev => !prev)}
+                        onClick={() => toggleMenu('project')}
                         title={i18n.t('label_project_plural') || 'Filter by project'}
                         style={{
                             display: 'flex',
@@ -704,7 +656,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     </button>
                     {showProjectMenu && (
                         <div
-                            ref={projectMenuRef}
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -767,9 +718,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <div style={{ position: 'relative' }}>
+                <div ref={versionMenuRef} style={{ position: 'relative' }}>
                     <button
-                        onClick={() => setShowVersionMenu(prev => !prev)}
+                        onClick={() => toggleMenu('version')}
                         title={i18n.t('label_version_plural') || 'Filter by version'}
                         style={{
                             display: 'flex',
@@ -796,7 +747,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     </button>
                     {showVersionMenu && (
                         <div
-                            ref={versionMenuRef}
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -867,9 +817,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <div style={{ position: 'relative' }}>
+                <div ref={statusMenuRef} style={{ position: 'relative' }}>
                     <button
-                        onClick={() => setShowStatusMenu(prev => !prev)}
+                        onClick={() => toggleMenu('status')}
                         title={i18n.t('field_status') || 'Filter by status'}
                         style={{
                             display: 'flex',
@@ -895,7 +845,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     </button>
                     {showStatusMenu && (
                         <div
-                            ref={statusMenuRef}
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -980,7 +929,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     style={{ display: 'flex', alignItems: 'center', position: 'relative' }}
                 >
                     <button
-                        onClick={() => setShowRelationSettingsMenu(prev => !prev)}
+                        onClick={() => toggleMenu('relationSettings')}
                         title={i18n.t('label_relation_title') || 'Dependency'}
                         data-testid="relation-settings-menu-button"
                         style={{
@@ -1235,7 +1184,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 >
                     <button
                         type="button"
-                        onClick={() => setShowRowHeightMenu(prev => !prev)}
+                        onClick={() => toggleMenu('rowHeight')}
                         title={i18n.t('label_row_height') || 'Row height'}
                         aria-haspopup="menu"
                         aria-expanded={showRowHeightMenu}

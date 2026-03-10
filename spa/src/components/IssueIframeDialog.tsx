@@ -98,8 +98,8 @@ export const IssueIframeDialog: React.FC = () => {
         }
     }, []);
 
-    const issueLabel = React.useMemo(() => {
-        if (!issueDialogUrl) return '';
+    const { issueLabel, issueSubject } = React.useMemo(() => {
+        if (!issueDialogUrl) return { issueLabel: '', issueSubject: '' };
 
         const url = issueDialogUrl.split('?')[0];
 
@@ -110,18 +110,22 @@ export const IssueIframeDialog: React.FC = () => {
             // Try to find the task in the store to get more info (Tracker, etc.)
             const task = useTaskStore.getState().tasks.find(t => String(t.id) === issueId);
             if (task) {
-                return `${task.trackerName || i18n.t('label_issue') || 'Issue'} #${task.id}`;
+                const label = `${task.trackerName || i18n.t('label_issue') || 'Issue'} #${task.id}`;
+                return { issueLabel: label, issueSubject: task.subject || '' };
             }
-            return `${i18n.t('label_issue') || 'Issue'} #${issueId}`;
+            const label = `${i18n.t('label_issue') || 'Issue'} #${issueId}`;
+            return { issueLabel: label, issueSubject: '' };
         }
 
         // 2. Handle new issue
         if (url.includes('/issues/new')) {
-            return i18n.t('label_issue_new') || (i18n.t('label_new') ? `${i18n.t('label_new')} ${i18n.t('label_issue')}` : 'New Issue');
+            const label = i18n.t('label_issue_new') || (i18n.t('label_new') ? `${i18n.t('label_new')} ${i18n.t('label_issue')}` : 'New Issue');
+            return { issueLabel: label, issueSubject: '' };
         }
 
         // 3. General "Edit" fallback
-        return i18n.t('button_edit') || 'Edit';
+        const label = i18n.t('button_edit') || 'Edit';
+        return { issueLabel: label, issueSubject: '' };
     }, [issueDialogUrl]);
 
     const parentId = React.useMemo(() => {
@@ -239,10 +243,17 @@ export const IssueIframeDialog: React.FC = () => {
                         borderBottom: '1px solid #e0e0e0'
                     }}
                 >
-                    <span style={{ fontWeight: 700, fontSize: '14px', color: '#333' }}>
-                        {issueLabel}
-                    </span>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flex: 1, paddingRight: '12px' }}>
+                        <span style={{ fontWeight: 700, fontSize: '14px', color: '#333', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            {issueLabel}
+                        </span>
+                        {issueSubject && (
+                            <span style={{ fontSize: '14px', color: '#5f6368', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {issueSubject}
+                            </span>
+                        )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                         <a
                             href={issueDialogUrl}
                             target="_blank"

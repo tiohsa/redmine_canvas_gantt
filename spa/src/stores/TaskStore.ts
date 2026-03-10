@@ -8,8 +8,12 @@ import { i18n } from '../utils/i18n';
 import { useUIStore } from './UIStore';
 import type { MoveTaskAsChildResult } from '../types';
 import type { CustomFieldMeta } from '../types/editMeta';
-
-type SortConfig = { key: string; direction: 'asc' | 'desc' } | null;
+import type { LayoutState, SortConfig } from './taskStore/types';
+import { buildLayout } from './taskStore/layout';
+import { applyFilters } from './taskStore/filters';
+import { isDescendantTask, tailDisplayOrderForParent, tailDisplayOrderForRoot } from './taskStore/hierarchy';
+import { computeCenteredViewport } from './taskStore/viewport';
+import { buildMoveTaskResult, createTaskLayoutSnapshot, restoreTaskSnapshot, saveModifiedTasks } from './taskStore/taskPersistence';
 
 interface TaskState {
     allTasks: Task[];
@@ -115,469 +119,6 @@ const DEFAULT_VIEWPORT: Viewport = {
     rowHeight: preferences.rowHeight ?? (Number(window.RedmineCanvasGantt?.settings?.row_height) || 36)
 };
 
-type LayoutState = {
-    allTasks: Task[];
-    relations: Relation[];
-    versions: Version[];
-    customFields: CustomFieldMeta[];
-    groupByProject: boolean;
-    groupByAssignee: boolean;
-    showVersions: boolean;
-    organizeByDependency: boolean;
-    projectExpansion: Record<string, boolean>;
-    versionExpansion: Record<string, boolean>;
-    taskExpansion: Record<string, boolean>;
-    selectedVersionIds: string[];
-    selectedProjectIds: string[];
-    sortConfig: SortConfig;
-    filterText: string;
-    selectedAssigneeIds: (number | null)[];
-    showSubprojects: boolean;
-    currentProjectId: string | null;
-};
-
-const buildLayout = (
-    tasks: Task[],
-    relations: Relation[],
-    versions: Version[],
-    groupByProject: boolean,
-    groupByAssignee: boolean,
-    showVersions: boolean,
-    organizeByDependency: boolean,
-    projectExpansion: Record<string, boolean>,
-    versionExpansion: Record<string, boolean>,
-    taskExpansion: Record<string, boolean>,
-    _selectedVersionIds: string[],
-    selectedProjectIds: string[],
-    sortConfig: SortConfig,
-    allTasks: Task[],
-    customFields: CustomFieldMeta[]
-): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
-    const ASSIGNEE_GROUP_PREFIX = 'assignee:';
-    const UNASSIGNED_GROUP_ID = 'none';
-    const groupingMode: 'none' | 'project' | 'assignee' = groupByAssignee ? 'assignee' : (groupByProject ? 'project' : 'none');
-
-    const toAssigneeId = (task: Task) => (task.assignedToId === undefined || task.assignedToId === null ? UNASSIGNED_GROUP_ID : String(task.assignedToId));
-    const toAssigneeGroupKey = (assigneeId: string) => `${ASSIGNEE_GROUP_PREFIX}${assigneeId}`;
-    const toGroupKey = (task: Task) => {
-        if (groupingMode === 'project') return task.projectId ?? 'default_project';
-        if (groupingMode === 'assignee') return toAssigneeGroupKey(toAssigneeId(task));
-        return '_global';
-    };
-    const toHeaderKind = () => groupingMode === 'assignee' ? 'assignee' : 'project';
-
-    const assigneeNameById = new Map<string, string>();
-    assigneeNameById.set(UNASSIGNED_GROUP_ID, i18n.t('label_unassigned') || 'Unassigned');
-    allTasks.forEach((task) => {
-        if (task.assignedToId === undefined || task.assignedToId === null) return;
-        assigneeNameById.set(String(task.assignedToId), task.assignedToName || `${i18n.t('field_assigned_to') || 'Assignee'} #${task.assignedToId}`);
-    });
-
-    const normalizedTasks = tasks.map((task) => ({ ...task, hasChildren: false }));
-
-    const nodeMap = new Map<string, { task: Task; children: string[] }>();
-    normalizedTasks.forEach((task) => nodeMap.set(task.id, { task, children: [] }));
-
-    const groupOrder = new Map<string, number>();
-    const groupRoots = new Map<string, string[]>();
-
-    normalizedTasks.forEach((task, index) => {
-        const groupKey = toGroupKey(task);
-        if (!groupOrder.has(groupKey)) {
-            groupOrder.set(groupKey, index);
-        }
-
-        let treatedAsChild = false;
-
-        if (task.parentId && nodeMap.has(task.parentId)) {
-            const parentNode = nodeMap.get(task.parentId);
-            const sameGroup = parentNode && toGroupKey(parentNode.task) === groupKey;
-
-            if (groupingMode === 'none' || sameGroup) {
-                parentNode?.children.push(task.id);
-                if (parentNode) {
-                    parentNode.task.hasChildren = true;
-                }
-                treatedAsChild = true;
-            }
-        }
-
-        if (!treatedAsChild) {
-            if (!groupRoots.has(groupKey)) {
-                groupRoots.set(groupKey, []);
-            }
-            groupRoots.get(groupKey)?.push(task.id);
-        }
-    });
-
-    // Ensure selected projects are included even if they have no visible tasks
-    if (groupingMode === 'project') {
-        selectedProjectIds.forEach(pid => {
-            if (!groupRoots.has(pid)) {
-                groupRoots.set(pid, []);
-                if (!groupOrder.has(pid)) {
-                    // If the project is not in the filtered tasks, we try to find its order from allTasks
-                    // Or just append it to the end
-                    const originalTask = allTasks.find(t => t.projectId === pid);
-                    if (originalTask) {
-                        // We don't have a reliable index from filtered tasks, so we might just put it at the end
-                        // or try to match displayOrder if possible. 
-                        // For simplicity, let's append to the end.
-                        groupOrder.set(pid, Number.MAX_SAFE_INTEGER);
-                    } else {
-                        groupOrder.set(pid, Number.MAX_SAFE_INTEGER);
-                    }
-                }
-            }
-        });
-    }
-
-
-    // Helper to sort task IDs by configured sort or default displayOrder
-    const customFieldMetaById = new Map(customFields.map((cf) => [String(cf.id), cf]));
-
-    const getSortValue = (task: Task, sortKey: string): string | number | null | undefined => {
-        if (sortKey.startsWith('cf:')) {
-            const customFieldId = sortKey.slice(3);
-            const raw = task.customFieldValues?.[customFieldId];
-            if (raw === undefined || raw === null || raw === '') return raw;
-            const meta = customFieldMetaById.get(customFieldId);
-            if (!meta) return raw;
-
-            if (meta.fieldFormat === 'int' || meta.fieldFormat === 'float') {
-                const parsed = Number(raw);
-                return Number.isFinite(parsed) ? parsed : raw;
-            }
-            if (meta.fieldFormat === 'bool') {
-                if (raw === '1') return 1;
-                if (raw === '0') return 0;
-                return raw;
-            }
-            if (meta.fieldFormat === 'date') {
-                const ts = new Date(raw).getTime();
-                return Number.isFinite(ts) ? ts : raw;
-            }
-            return raw;
-        }
-
-        return (task as unknown as Record<string, unknown>)[sortKey] as string | number | null | undefined;
-    };
-
-    const compareSortValues = (a: string | number | null | undefined, b: string | number | null | undefined): number => {
-        if (a === b) return 0;
-        if (a === null || a === undefined || a === '') return 1;
-        if (b === null || b === undefined || b === '') return -1;
-
-        if (typeof a === 'number' && typeof b === 'number') {
-            return a < b ? -1 : 1;
-        }
-
-        return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-    };
-
-    const sortTaskIds = (ids: string[]) => {
-        ids.sort((a, b) => {
-            const taskA = nodeMap.get(a)?.task;
-            const taskB = nodeMap.get(b)?.task;
-            if (!taskA || !taskB) return 0;
-
-            if (sortConfig) {
-                const valA = getSortValue(taskA, sortConfig.key);
-                const valB = getSortValue(taskB, sortConfig.key);
-                const compare = compareSortValues(valA, valB);
-                return sortConfig.direction === 'asc' ? compare : -compare;
-            }
-
-            return (taskA.displayOrder ?? 0) - (taskB.displayOrder ?? 0);
-        });
-    };
-
-    // Sort children and root nodes by displayOrder for stable rendering
-    nodeMap.forEach((node) => {
-        sortTaskIds(node.children);
-    });
-
-    groupRoots.forEach((roots) => {
-        sortTaskIds(roots);
-    });
-
-    const componentMap = organizeByDependency ? buildDependencyComponents(normalizedTasks, relations) : null;
-
-    if (organizeByDependency && componentMap) {
-        groupRoots.forEach((roots) => {
-            const rootIndex = new Map(roots.map((id, index) => [id, index]));
-            const componentOrder = new Map<string, number>();
-            let order = 0;
-
-            roots.forEach((id) => {
-                const component = componentMap.get(id) ?? id;
-                if (!componentOrder.has(component)) {
-                    componentOrder.set(component, order);
-                    order += 1;
-                }
-            });
-
-            roots.sort((a, b) => {
-                const componentA = componentMap.get(a) ?? a;
-                const componentB = componentMap.get(b) ?? b;
-                const orderA = componentOrder.get(componentA) ?? 0;
-                const orderB = componentOrder.get(componentB) ?? 0;
-                if (orderA !== orderB) return orderA - orderB;
-                return (rootIndex.get(a) ?? 0) - (rootIndex.get(b) ?? 0);
-            });
-        });
-    }
-
-    // When not grouping, combine all roots and sort globally
-    if (groupingMode === 'none' && sortConfig) {
-        const allRoots: string[] = [];
-        groupRoots.forEach((roots) => {
-            allRoots.push(...roots);
-        });
-        sortTaskIds(allRoots);
-        // Clear and refill with global order under a single "virtual" project
-        groupRoots.clear();
-        groupRoots.set('_global', allRoots);
-    }
-
-    const orderedGroups = Array.from(groupRoots.keys()).sort((a, b) => (groupOrder.get(a) ?? 0) - (groupOrder.get(b) ?? 0));
-
-    let rowIndex = 0;
-    const arrangedTasks: Task[] = [];
-    const layoutRows: LayoutRow[] = [];
-
-    const traverse = (taskId: string, depth: number, hiddenByAncestor: boolean, guides: boolean[], isLast: boolean) => {
-        const node = nodeMap.get(taskId);
-        if (!node) return;
-
-        const isExpanded = taskExpansion[taskId] ?? true;
-        const shouldHideChildren = hiddenByAncestor || !isExpanded;
-
-        if (!hiddenByAncestor) {
-            const taskWithLayout: Task = {
-                ...node.task,
-                indentLevel: depth,
-                rowIndex,
-                treeLevelGuides: guides,
-                isLastChild: isLast
-            };
-            arrangedTasks.push(taskWithLayout);
-            layoutRows.push({ type: 'task', taskId: taskWithLayout.id, rowIndex });
-            rowIndex += 1;
-        }
-
-        const childGuides = [...guides, !isLast];
-        node.children.forEach((childId, idx) => {
-            const isChildLast = idx === node.children.length - 1;
-            traverse(childId, depth + 1, shouldHideChildren, childGuides, isChildLast);
-        });
-    };
-
-    orderedGroups.forEach((groupId) => {
-        const roots = groupRoots.get(groupId) ?? [];
-
-        let projectName = '';
-        if (groupingMode === 'assignee') {
-            const assigneeId = groupId.replace(ASSIGNEE_GROUP_PREFIX, '');
-            projectName = assigneeNameById.get(assigneeId) || (i18n.t('label_unassigned') || 'Unassigned');
-        } else {
-            const projectNode = nodeMap.get(roots[0] ?? '');
-            if (projectNode?.task.projectName) {
-                projectName = projectNode.task.projectName;
-            } else {
-                for (const node of nodeMap.values()) {
-                    if (node.task.projectId === groupId && node.task.projectName) {
-                        projectName = node.task.projectName;
-                        break;
-                    }
-                }
-            }
-
-
-            if (!projectName) {
-                const t = allTasks.find(t => t.projectId === groupId && t.projectName);
-                if (t && t.projectName) projectName = t.projectName;
-            }
-
-            if (!projectName) projectName = groupId === 'default_project' ? '' : groupId;
-        }
-
-        const expanded = projectExpansion[groupId] ?? true;
-        const shouldShowVersions = showVersions;
-        const shouldGroupByGroup = groupingMode !== 'none';
-
-        if (shouldGroupByGroup) {
-            let pStart: number | undefined;
-            let pDue: number | undefined;
-
-            nodeMap.forEach(node => {
-                if (toGroupKey(node.task) === groupId) {
-                    const ts = node.task.startDate;
-                    const td = node.task.dueDate;
-                    if (ts !== undefined && Number.isFinite(ts)) {
-                        pStart = pStart === undefined ? ts : Math.min(pStart, ts);
-                    }
-                    if (td !== undefined && Number.isFinite(td)) {
-                        pDue = pDue === undefined ? td : Math.max(pDue, td);
-                    }
-                }
-            });
-
-            layoutRows.push({
-                type: 'header',
-                projectId: groupId,
-                projectName,
-                groupKind: toHeaderKind(),
-                rowIndex,
-                startDate: pStart,
-                dueDate: pDue
-            });
-            rowIndex += 1;
-        }
-
-        const hideDescendants = (shouldGroupByGroup && !expanded) ? true : false;
-
-        if (shouldShowVersions) {
-            const versionMap = new Map<string | undefined, string[]>();
-            roots.forEach(rootId => {
-                const t = nodeMap.get(rootId)?.task;
-                const vId = t?.fixedVersionId;
-                const key = vId || undefined;
-                if (!versionMap.has(key)) versionMap.set(key, []);
-                versionMap.get(key)?.push(rootId);
-            });
-
-            const usedVersionIds = new Set<string>();
-            versionMap.forEach((_, vId) => {
-                if (vId) usedVersionIds.add(String(vId));
-            });
-
-            const projectVersions = versions.filter(v => {
-                // Task has this version?
-                if (usedVersionIds.has(v.id)) return true;
-                // Currently selected in filter? (and belongs to this project group)
-                if (_selectedVersionIds.includes(v.id) && v.projectId === groupId) return true;
-                return false;
-            });
-            projectVersions.sort((a, b) => {
-                const aDate = a.effectiveDate ?? Infinity;
-                const bDate = b.effectiveDate ?? Infinity;
-                return aDate - bDate;
-            });
-
-            projectVersions.forEach(v => {
-                const vRoots = versionMap.get(v.id) || [];
-                const vExpanded = versionExpansion[v.id] ?? true;
-
-                let vStart = v.startDate;
-                if (!Number.isFinite(vStart)) {
-                    if (vRoots.length > 0) {
-                        let minS = Infinity;
-                        vRoots.forEach(rid => {
-                            const t = nodeMap.get(rid)?.task;
-                            if (t && t.startDate !== undefined && Number.isFinite(t.startDate)) minS = Math.min(minS, t.startDate);
-                        });
-                        if (minS !== Infinity) vStart = minS;
-                        else vStart = v.effectiveDate;
-                    } else {
-                        vStart = v.effectiveDate;
-                    }
-                }
-
-                // If a version has no effectiveDate, don't show it in the timeline.
-                if (v.effectiveDate !== undefined && !hideDescendants) {
-                    layoutRows.push({
-                        type: 'version',
-                        id: v.id,
-                        name: v.name,
-                        rowIndex,
-                        startDate: vStart,
-                        dueDate: v.effectiveDate,
-                        ratioDone: v.ratioDone,
-                        projectId: groupId
-                    });
-                    rowIndex += 1;
-                }
-
-                const hideVersionChildren = hideDescendants || !vExpanded;
-                vRoots.forEach((rootId, idx) => {
-                    const isLast = idx === vRoots.length - 1;
-                    traverse(rootId, 0, hideVersionChildren, [], isLast);
-                });
-
-                versionMap.delete(v.id);
-            });
-
-            // Render remaining roots (those with no version, or versions not found in the metadata)
-            const remainingEntries = Array.from(versionMap.entries());
-            remainingEntries.forEach(([, vRoots], entryIdx) => {
-                const isLastEntry = entryIdx === remainingEntries.length - 1;
-                vRoots.forEach((rootId, idx) => {
-                    const isLast = isLastEntry && (idx === vRoots.length - 1);
-                    traverse(rootId, 0, hideDescendants, [], isLast);
-                });
-            });
-        } else {
-            roots.forEach((rootId, idx) => {
-                const isLast = idx === roots.length - 1;
-                traverse(rootId, 0, hideDescendants, [], isLast);
-            });
-        }
-    });
-
-    return { tasks: arrangedTasks, layoutRows, rowCount: rowIndex };
-};
-
-const applyFilters = (
-    tasks: Task[],
-    filterText: string,
-    selectedAssigneeIds: (number | null)[],
-    selectedProjectIds: string[],
-    selectedVersionIds: string[],
-    showSubprojects: boolean = true,
-    currentProjectId: string | null = null
-) => {
-    const lowerText = filterText.toLowerCase();
-    const hasTextFilter = Boolean(lowerText);
-    const hasAssigneeFilter = selectedAssigneeIds.length > 0;
-    const hasProjectFilter = selectedProjectIds.length > 0;
-    const hasVersionFilter = selectedVersionIds.length > 0;
-    const hasSubprojectFilter = !showSubprojects && currentProjectId !== null && !hasProjectFilter;
-
-    if (!hasTextFilter && !hasAssigneeFilter && !hasProjectFilter && !hasVersionFilter && !hasSubprojectFilter) {
-        return tasks;
-    }
-
-    const matched = tasks.filter(t => {
-        const matchesText = !hasTextFilter || t.subject.toLowerCase().includes(lowerText);
-        const taskAssignee = t.assignedToId === undefined ? null : t.assignedToId;
-        const matchesAssignee = !hasAssigneeFilter || selectedAssigneeIds.includes(taskAssignee);
-        const matchesProject = !hasProjectFilter || (t.projectId && selectedProjectIds.includes(t.projectId));
-        const matchesVersion = !hasVersionFilter || (
-            (selectedVersionIds.includes('_none') && !t.fixedVersionId) ||
-            (t.fixedVersionId && selectedVersionIds.includes(t.fixedVersionId))
-        );
-        const matchesSubproject = !hasSubprojectFilter || t.projectId === currentProjectId;
-        return matchesText && matchesAssignee && matchesProject && matchesVersion && matchesSubproject;
-    });
-
-    if (matched.length === 0) return [];
-
-    const taskById = new Map(tasks.map(task => [task.id, task]));
-    const visibleIds = new Set<string>();
-
-    matched.forEach(task => {
-        visibleIds.add(task.id);
-
-        let currentParentId = task.parentId;
-        while (currentParentId && taskById.has(currentParentId)) {
-            visibleIds.add(currentParentId);
-            currentParentId = taskById.get(currentParentId)?.parentId;
-        }
-    });
-
-    return tasks.filter(task => visibleIds.has(task.id));
-};
 
 const resolveLayoutState = (state: TaskState, overrides: Partial<LayoutState> = {}): LayoutState => ({
     allTasks: overrides.allTasks ?? state.allTasks,
@@ -631,124 +172,6 @@ const buildLayoutFromState = (state: TaskState, overrides: Partial<LayoutState> 
     );
 };
 
-type TaskLayoutSnapshot = {
-    allTasks: Task[];
-    tasks: Task[];
-    layoutRows: LayoutRow[];
-    rowCount: number;
-};
-
-const createTaskLayoutSnapshot = (state: TaskState): TaskLayoutSnapshot => ({
-    allTasks: state.allTasks.map((task) => ({ ...task })),
-    tasks: state.tasks.map((task) => ({ ...task })),
-    layoutRows: state.layoutRows.map((row) => ({ ...row })),
-    rowCount: state.rowCount
-});
-
-const isDescendantTask = (taskById: Map<string, Task>, ancestorTaskId: string, targetTaskId: string): boolean => {
-    let current = taskById.get(targetTaskId);
-    const seen = new Set<string>();
-    while (current?.parentId) {
-        if (seen.has(current.parentId)) break;
-        if (current.parentId === ancestorTaskId) return true;
-        seen.add(current.parentId);
-        current = taskById.get(current.parentId);
-    }
-    return false;
-};
-
-const tailDisplayOrderForParent = (allTasks: Task[], parentTaskId: string, movingTaskId: string): number => {
-    const siblingOrders = allTasks
-        .filter((task) => task.id !== movingTaskId && task.parentId === parentTaskId)
-        .map((task) => task.displayOrder ?? 0);
-    const base = siblingOrders.length === 0 ? 0 : Math.max(...siblingOrders);
-    return base + 1;
-};
-
-const tailDisplayOrderForRoot = (allTasks: Task[], movingTask: Task): number => {
-    const siblingOrders = allTasks
-        .filter((task) => (
-            task.id !== movingTask.id &&
-            !task.parentId &&
-            task.projectId === movingTask.projectId
-        ))
-        .map((task) => task.displayOrder ?? 0);
-    const base = siblingOrders.length === 0 ? 0 : Math.max(...siblingOrders);
-    return base + 1;
-};
-
-const computeCenteredViewport = (viewport: Viewport, newScale: number, tasksMaxDue: number | null): { scrollX: number; startDate: number } => {
-    const safeScale = viewport.scale || 0.00000001;
-    const centerDate = viewport.startDate + (viewport.scrollX + viewport.width / 2) / safeScale;
-    const ONE_DAY = 24 * 60 * 60 * 1000;
-    const paddingMs = 60 * ONE_DAY;
-
-    // Calculate the ideal scrollX to center on centerDate
-    let nextScrollX = (centerDate - viewport.startDate) * newScale - viewport.width / 2;
-    let nextStartDate = viewport.startDate;
-
-    // If scrollX would be negative, we need to shift startDate earlier
-    if (nextScrollX < 0) {
-        // Calculate how much earlier startDate needs to be
-        const shortfallMs = -nextScrollX / newScale;
-        // Add some buffer (2 weeks) to avoid edge cases
-        nextStartDate = viewport.startDate - shortfallMs - 14 * ONE_DAY;
-        // Recalculate scrollX with the new startDate
-        nextScrollX = (centerDate - nextStartDate) * newScale - viewport.width / 2;
-    }
-
-    // Calculate max scroll based on task range
-    const visibleMs = viewport.width / newScale;
-    const minRangeEnd = centerDate + visibleMs / 2;
-    const rangeEnd = Math.max(tasksMaxDue ?? minRangeEnd, minRangeEnd) + paddingMs;
-    const maxScrollX = Math.max(0, (rangeEnd - nextStartDate) * newScale - viewport.width);
-
-    if (nextScrollX > maxScrollX) nextScrollX = maxScrollX;
-    if (nextScrollX < 0) nextScrollX = 0;
-
-    return { scrollX: nextScrollX, startDate: nextStartDate };
-};
-
-const buildDependencyComponents = (tasks: Task[], relations: Relation[]): Map<string, string> => {
-    const parent = new Map<string, string>();
-    tasks.forEach(task => parent.set(task.id, task.id));
-
-    const find = (id: string): string => {
-        const stored = parent.get(id);
-        if (!stored) return id;
-        if (stored !== id) {
-            const root = find(stored);
-            parent.set(id, root);
-            return root;
-        }
-        return stored;
-    };
-
-    const union = (a: string, b: string) => {
-        const rootA = find(a);
-        const rootB = find(b);
-        if (rootA === rootB) return;
-        parent.set(rootB, rootA);
-    };
-
-    relations.forEach((rel) => {
-        if (!parent.has(rel.from) || !parent.has(rel.to)) return;
-        union(rel.from, rel.to);
-    });
-
-    tasks.forEach((task) => {
-        if (!task.parentId) return;
-        if (!parent.has(task.parentId)) return;
-        union(task.id, task.parentId);
-    });
-
-    const components = new Map<string, string>();
-    tasks.forEach((task) => {
-        components.set(task.id, find(task.id));
-    });
-
-    return components;
-};
 
 export const useTaskStore = create<TaskState>((set, get) => ({
     allTasks: [],
@@ -967,7 +390,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     },
     moveTaskAsChild: async (sourceTaskId, targetTaskId) => {
         if (!get().canDropAsChild(sourceTaskId, targetTaskId)) {
-            return { status: 'error', error: i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target' };
+            return buildMoveTaskResult('error', { error: i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target' });
         }
 
         const { apiClient } = await import('../api/client');
@@ -975,7 +398,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const snapshot = createTaskLayoutSnapshot(beforeState);
         const sourceBefore = beforeState.allTasks.find(task => task.id === sourceTaskId);
         if (!sourceBefore) {
-            return { status: 'error', error: i18n.t('label_parent_drop_failed') || 'Failed to update parent' };
+            return buildMoveTaskResult('error', { error: i18n.t('label_parent_drop_failed') || 'Failed to update parent' });
         }
 
         const nextOrder = tailDisplayOrderForParent(beforeState.allTasks, targetTaskId, sourceTaskId);
@@ -997,12 +420,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             const nextModified = new Set(beforeState.modifiedTaskIds);
             nextModified.add(sourceTaskId);
             set({ modifiedTaskIds: nextModified });
-            return {
-                status: 'ok',
-                lockVersion: sourceBefore.lockVersion,
-                parentId: targetTaskId,
-                siblingPosition: 'tail'
-            };
+            return buildMoveTaskResult('ok', { lockVersion: sourceBefore.lockVersion, parentId: targetTaskId });
         }
 
         const result = await apiClient.updateTaskFields(sourceTaskId, {
@@ -1011,29 +429,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         });
 
         if (result.status !== 'ok') {
-            set({
-                allTasks: snapshot.allTasks,
-                tasks: snapshot.tasks,
-                layoutRows: snapshot.layoutRows,
-                rowCount: snapshot.rowCount
-            });
-            return {
-                status: result.status,
-                error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent')
-            };
+            restoreTaskSnapshot((restoredSnapshot) => set(restoredSnapshot), snapshot);
+            return buildMoveTaskResult(result.status, { error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent') });
         }
 
         if (result.parentId !== targetTaskId) {
-            set({
-                allTasks: snapshot.allTasks,
-                tasks: snapshot.tasks,
-                layoutRows: snapshot.layoutRows,
-                rowCount: snapshot.rowCount
-            });
-            return {
-                status: 'error',
-                error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent')
-            };
+            restoreTaskSnapshot((restoredSnapshot) => set(restoredSnapshot), snapshot);
+            return buildMoveTaskResult('error', { error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent') });
         }
 
         const updatedAllTasks = get().allTasks.map(task => (
@@ -1059,16 +461,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             })()
         });
 
-        return {
-            status: 'ok',
-            lockVersion: result.lockVersion,
-            parentId: targetTaskId,
-            siblingPosition: 'tail'
-        };
+        return buildMoveTaskResult('ok', { lockVersion: result.lockVersion, parentId: targetTaskId });
     },
     moveTaskToRoot: async (sourceTaskId) => {
         if (!get().canDropToRoot(sourceTaskId)) {
-            return { status: 'error', error: i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target' };
+            return buildMoveTaskResult('error', { error: i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target' });
         }
 
         const { apiClient } = await import('../api/client');
@@ -1076,7 +473,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const snapshot = createTaskLayoutSnapshot(beforeState);
         const sourceBefore = beforeState.allTasks.find(task => task.id === sourceTaskId);
         if (!sourceBefore) {
-            return { status: 'error', error: i18n.t('label_parent_drop_failed') || 'Failed to update parent' };
+            return buildMoveTaskResult('error', { error: i18n.t('label_parent_drop_failed') || 'Failed to update parent' });
         }
 
         const nextOrder = tailDisplayOrderForRoot(beforeState.allTasks, sourceBefore);
@@ -1098,12 +495,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             const nextModified = new Set(beforeState.modifiedTaskIds);
             nextModified.add(sourceTaskId);
             set({ modifiedTaskIds: nextModified });
-            return {
-                status: 'ok',
-                lockVersion: sourceBefore.lockVersion,
-                parentId: undefined,
-                siblingPosition: 'tail'
-            };
+            return buildMoveTaskResult('ok', { lockVersion: sourceBefore.lockVersion, parentId: undefined });
         }
 
         const result = await apiClient.updateTaskFields(sourceTaskId, {
@@ -1112,29 +504,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         });
 
         if (result.status !== 'ok') {
-            set({
-                allTasks: snapshot.allTasks,
-                tasks: snapshot.tasks,
-                layoutRows: snapshot.layoutRows,
-                rowCount: snapshot.rowCount
-            });
-            return {
-                status: result.status,
-                error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent')
-            };
+            restoreTaskSnapshot((restoredSnapshot) => set(restoredSnapshot), snapshot);
+            return buildMoveTaskResult(result.status, { error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent') });
         }
 
         if (result.parentId !== undefined) {
-            set({
-                allTasks: snapshot.allTasks,
-                tasks: snapshot.tasks,
-                layoutRows: snapshot.layoutRows,
-                rowCount: snapshot.rowCount
-            });
-            return {
-                status: 'error',
-                error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent')
-            };
+            restoreTaskSnapshot((restoredSnapshot) => set(restoredSnapshot), snapshot);
+            return buildMoveTaskResult('error', { error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent') });
         }
 
         const currentState = get();
@@ -1163,12 +539,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             })()
         });
 
-        return {
-            status: 'ok',
-            lockVersion: result.lockVersion,
-            parentId: undefined,
-            siblingPosition: 'tail'
-        };
+        return buildMoveTaskResult('ok', { lockVersion: result.lockVersion, parentId: undefined });
     },
 
     updateTask: (id, updates) => set((state) => {
@@ -1634,95 +1005,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     saveChanges: async () => {
         const { apiClient } = await import('../api/client');
         const state = get();
-        const mutableTaskById = new Map(state.allTasks.map(task => [task.id, { ...task }]));
-        const hasSamePersistedFields = (local: Task, remote: Task): boolean => {
-            const sameStartDate = local.startDate === remote.startDate;
-            const sameDueDate = local.dueDate === remote.dueDate;
-            const sameParentId = (local.parentId ?? null) === (remote.parentId ?? null);
-            return sameStartDate && sameDueDate && sameParentId;
-        };
-        const depthCache = new Map<string, number>();
-        const calcDepth = (taskId: string): number => {
-            if (depthCache.has(taskId)) return depthCache.get(taskId)!;
-            let depth = 0;
-            let current = mutableTaskById.get(taskId);
-            const seen = new Set<string>([taskId]);
-            while (current?.parentId) {
-                if (seen.has(current.parentId)) break;
-                seen.add(current.parentId);
-                depth += 1;
-                current = mutableTaskById.get(current.parentId);
-            }
-            depthCache.set(taskId, depth);
-            return depth;
-        };
-
-        // Update parents first so Redmine child-date validation does not reject child updates.
-        const tasksToUpdate = state.allTasks
-            .filter(t => state.modifiedTaskIds.has(t.id))
-            .sort((a, b) => calcDepth(a.id) - calcDepth(b.id));
-
-        const failures = new Map<string, string>();
-        let pending = tasksToUpdate.map(task => task.id);
-        const maxPasses = Math.max(1, pending.length);
-
-        for (let pass = 0; pass < maxPasses && pending.length > 0; pass += 1) {
-            let progress = false;
-            const nextPending: string[] = [];
-            const conflictTaskIds: string[] = [];
-
-            for (const taskId of pending) {
-                const task = mutableTaskById.get(taskId);
-                if (!task) continue;
-                const result = await apiClient.updateTask(task);
-
-                if (result.status === 'ok') {
-                    progress = true;
-                    failures.delete(taskId);
-                    if (typeof result.lockVersion === 'number') {
-                        mutableTaskById.set(taskId, { ...task, lockVersion: result.lockVersion });
-                    }
-                    continue;
-                }
-
-                if (result.status === 'conflict') {
-                    conflictTaskIds.push(taskId);
-                }
-                failures.set(taskId, result.error || 'Unknown error');
-                nextPending.push(taskId);
-            }
-
-            if (conflictTaskIds.length > 0) {
-                const latest = await apiClient.fetchData({ statusIds: state.selectedStatusIds });
-                const latestTaskById = new Map(latest.tasks.map(task => [task.id, task]));
-                const refreshedPending: string[] = [];
-
-                for (const taskId of nextPending) {
-                    const localTask = mutableTaskById.get(taskId);
-                    const latestTask = latestTaskById.get(taskId);
-                    if (!localTask || !latestTask) {
-                        refreshedPending.push(taskId);
-                        continue;
-                    }
-
-                    mutableTaskById.set(taskId, { ...localTask, lockVersion: latestTask.lockVersion });
-
-                    if (hasSamePersistedFields(localTask, latestTask)) {
-                        failures.delete(taskId);
-                        progress = true;
-                        continue;
-                    }
-
-                    refreshedPending.push(taskId);
-                }
-
-                pending = refreshedPending;
-            } else {
-                pending = nextPending;
-            }
-
-            if (!progress) break;
-        }
+        const failures = await saveModifiedTasks(
+            state.allTasks,
+            state.modifiedTaskIds,
+            state.selectedStatusIds,
+            apiClient.updateTask,
+            apiClient.fetchData
+        );
 
         await state.refreshData();
 
