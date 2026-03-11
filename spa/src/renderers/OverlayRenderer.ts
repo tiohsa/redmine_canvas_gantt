@@ -5,6 +5,7 @@ import { useUIStore } from '../stores/UIStore';
 import {
     buildRelationRenderContext,
     buildRelationRoutePoints,
+    normalizeRelationForRendering,
     isRouteVisible,
     shouldRenderRelationsAtZoom
 } from './relationGeometry';
@@ -181,6 +182,7 @@ export class OverlayRenderer {
         const drawableRelations = draftRelation ? [...relations, { id: '__draft__', ...draftRelation }] : relations;
 
         drawableRelations.forEach((relation) => {
+            const normalizedRelation = normalizeRelationForRendering(relation, context);
             const points = buildRelationRoutePoints(relation, context, viewport);
             if (!points || !isRouteVisible(points, viewport)) {
                 return;
@@ -207,14 +209,16 @@ export class OverlayRenderer {
             ctx.stroke();
             ctx.restore();
 
-            this.drawArrowHead(
-                ctx,
-                points[points.length - 2],
-                points[points.length - 1],
-                viewport,
-                isSelected ? '#2563eb' : '#888',
-                isSelected ? 7 : 6
-            );
+            if (normalizedRelation.showArrow && points.length >= 2) {
+                this.drawArrowHead(
+                    ctx,
+                    points[points.length - 2],
+                    points[points.length - 1],
+                    viewport,
+                    isSelected ? '#2563eb' : '#888',
+                    isSelected ? 7 : 6
+                );
+            }
         });
     }
 

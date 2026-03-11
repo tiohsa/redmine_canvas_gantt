@@ -1,5 +1,6 @@
 import { LayoutEngine } from '../engines/LayoutEngine';
-import type { Relation, Task, Viewport, ZoomLevel } from '../types';
+import type { DraftRelation, Relation, Task, Viewport, ZoomLevel } from '../types';
+import { RelationType } from '../types/constraints';
 import { routeDependencyFS, type Point, type Rect, type RouteParams } from './dependencyRouting';
 
 export const RELATION_HIT_TOLERANCE_PX = 10;
@@ -14,6 +15,14 @@ export type RelationRenderContext = {
     taskById: Map<string, Task>;
     rectById: Map<string, Rect>;
     allRects: Array<{ id: string; rect: Rect }>;
+};
+
+type RelationRenderInput = Pick<Relation, 'from' | 'to' | 'type'> | Pick<DraftRelation, 'from' | 'to' | 'type'>;
+
+export type NormalizedRelationForRendering = {
+    from: string;
+    to: string;
+    showArrow: boolean;
 };
 
 export const shouldRenderRelationsAtZoom = (zoomLevel: ZoomLevel): boolean => zoomLevel >= 1;
@@ -44,12 +53,13 @@ export const buildRelationRenderContext = (
 };
 
 export const buildRelationRoutePoints = (
-    relation: Pick<Relation, 'from' | 'to'>,
+    relation: RelationRenderInput,
     context: RelationRenderContext,
     viewport: Viewport
 ): Point[] | null => {
-    const fromTask = context.taskById.get(relation.from);
-    const toTask = context.taskById.get(relation.to);
+    const normalizedRelation = normalizeRelationForRendering(relation, context);
+    const fromTask = context.taskById.get(normalizedRelation.from);
+    const toTask = context.taskById.get(normalizedRelation.to);
     if (!fromTask || !toTask) return null;
 
     if (!Number.isFinite(fromTask.startDate) || !Number.isFinite(fromTask.dueDate) ||
@@ -57,12 +67,12 @@ export const buildRelationRoutePoints = (
         return null;
     }
 
-    const fromRect = context.rectById.get(relation.from);
-    const toRect = context.rectById.get(relation.to);
+    const fromRect = context.rectById.get(normalizedRelation.from);
+    const toRect = context.rectById.get(normalizedRelation.to);
     if (!fromRect || !toRect) return null;
 
     const obstacles = context.allRects
-        .filter((entry) => entry.id !== relation.from && entry.id !== relation.to)
+        .filter((entry) => entry.id !== normalizedRelation.from && entry.id !== normalizedRelation.to)
         .map((entry) => entry.rect);
 
     const oneDayMs = 24 * 60 * 60 * 1000;
@@ -82,6 +92,32 @@ export const buildRelationRoutePoints = (
             step: viewport.rowHeight
         }
     );
+};
+
+export const normalizeRelationForRendering = (
+    relation: RelationRenderInput,
+    context: RelationRenderContext
+): NormalizedRelationForRendering => {
+    switch (relation.type) {
+        case RelationType.Follows:
+        case RelationType.Blocked:
+            return {
+                from: relation.to,
+                to: relation.from,
+                showArrow: true
+            };
+        case RelationType.Relates:
+            return {
+                ...normalizeRelatesEndpoints(relation, context),
+                showArrow: false
+            };
+        default:
+            return {
+                from: relation.from,
+                to: relation.to,
+                showArrow: true
+            };
+    }
 };
 
 export const getPolylineMidpoint = (points: Point[]): Point => {
@@ -160,4 +196,27 @@ const distanceToSegment = (point: Point, start: Point, end: Point): number => {
     const projectedX = start.x + dx * clamped;
     const projectedY = start.y + dy * clamped;
     return Math.hypot(point.x - projectedX, point.y - projectedY);
+};
+
+const normalizeRelatesEndpoints = (
+    relation: Pick<RelationRenderInput, 'from' | 'to'>,
+    context: RelationRenderContext
+): Pick<NormalizedRelationForRendering, 'from' | 'to'> => {
+    const fromRect = context.rectById.get(relation.from);
+    const toRect = context.rectById.get(relation.to);
+    if (!fromRect || !toRect) {
+        return { from: relation.from, to: relation.to };
+    }
+
+    const fromCenterX = fromRect.x + fromRect.width / 2;
+    const toCenterX = toRect.x + toRect.width / 2;
+    if (fromCenterX === toCenterX) {
+        return { from: relation.from, to: relation.to };
+    }
+
+    if (fromCenterX < toCenterX) {
+        return { from: relation.from, to: relation.to };
+    }
+
+    return { from: relation.to, to: relation.from };
 };

@@ -4,6 +4,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { LayoutEngine } from './LayoutEngine';
 import type { Relation, Task } from '../types';
+import { RelationType } from '../types/constraints';
 import { buildRelationRenderContext, buildRelationRoutePoints, getPolylineMidpoint } from '../renderers/relationGeometry';
 
 vi.mock('../api/client', () => ({
@@ -547,6 +548,45 @@ describe('InteractionEngine relation selection', () => {
         }));
 
         expect(useTaskStore.getState().selectedRelationId).toBe('r2');
+
+        engine.detach();
+        container.remove();
+    });
+
+    it('selects relates relations using the normalized rendered route', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        setViewport({ scale: 1 / DAY_MS, rowHeight: 36 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+
+        const task1 = baseTask({ id: '1', rowIndex: 0, startDate: 0, dueDate: DAY_MS });
+        const task2 = baseTask({ id: '2', rowIndex: 1, startDate: DAY_MS * 4, dueDate: DAY_MS * 5 });
+        const relation: Relation = { id: 'r1', from: '2', to: '1', type: RelationType.Relates };
+
+        useTaskStore.setState({
+            allTasks: [task1, task2],
+            tasks: [task1, task2],
+            relations: [relation],
+            layoutRows: [],
+            rowCount: 2,
+            selectedTaskId: null,
+            selectedRelationId: null,
+            draftRelation: null
+        });
+
+        const { viewport, zoomLevel, tasks } = useTaskStore.getState();
+        const context = buildRelationRenderContext(tasks, viewport, zoomLevel);
+        const points = buildRelationRoutePoints(relation, context, viewport);
+        expect(points).toBeTruthy();
+        const midpoint = getPolylineMidpoint(points!);
+
+        container.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: midpoint.x - viewport.scrollX,
+            clientY: midpoint.y - viewport.scrollY,
+            bubbles: true
+        }));
+
+        expect(useTaskStore.getState().selectedRelationId).toBe('r1');
 
         engine.detach();
         container.remove();
