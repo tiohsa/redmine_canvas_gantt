@@ -37,13 +37,10 @@ describe('routeDependencyFS', () => {
             maxShift: 3
         });
 
-        expect(points.length).toBeGreaterThanOrEqual(4);
+        expect(points.length).toBe(2);
         expect(points[0].x).toBe(fromRect.x + fromRect.width);
         expect(points[points.length - 1].x).toBe(toRect.x);
-        // Note: The optimized direct Z-route (Strategy 1) may not pass through grid lines
-        // when both source and target are on the same row with a clear gap between them.
-        // In such cases, the route is a simple [fromPort -> dropX,fromY -> dropX,toY -> toPort]
-        // which doesn't necessarily cross row boundaries.
+        // 最短経路優先のため、障害物が無い同一行では始点→終点の2点のみになる。
     });
 
     it('shifts the mid route to avoid obstacles', () => {
@@ -65,10 +62,7 @@ describe('routeDependencyFS', () => {
             maxShift: 2
         });
 
-        expect(points.some((point, index) => {
-            if (index === 0 || index === points.length - 1) return false;
-            return point.y % context.rowHeight === 0;
-        })).toBe(true);
+        expect(points.length).toBeGreaterThanOrEqual(3);
         expect(points.some((point, index) => {
             if (index === points.length - 1) return false;
             return segmentIntersectsRect(point, points[index + 1], obstacle);

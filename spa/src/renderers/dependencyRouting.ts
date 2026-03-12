@@ -56,85 +56,246 @@ export function routeDependencyFS(
     const fromPort = getPort(fromRect, 'RIGHT_CENTER');
     const toPort = getPort(toRect, 'LEFT_CENTER');
 
-    // Strategy 1: Simple Direct Z-Route with Column Center Snapping
-    // Search for a column center that fits in the gap between Source and Target.
+    const routed = routeShortestOrthogonal(fromPort, toPort, obstacles, viewport, context, params);
+    if (routed) {
+        return routed;
+    }
 
-    let dropX: number | null = null;
-    const minX = fromPort.x + params.outset;
-    const maxX = toPort.x - params.inset;
+    const boundaryY = pickRowBoundary(context);
+    return simplifyOrthogonal(buildRouteViaBoundary(fromPort, toPort, params, boundaryY));
+}
 
-    if (maxX > minX) {
-        // Start from the column containing the target start
-        const colIndex = Math.floor(toPort.x / context.columnWidth);
+function routeShortestOrthogonal(
+    fromPort: Point,
+    toPort: Point,
+    obstacles: Rect[],
+    viewport: ViewportLike,
+    context: RouteContext,
+    params: RouteParams
+): Point[] | null {
+    const clearance = 2;
+    const relevantObstacles = filterRelevantObstacles(fromPort, toPort, obstacles, context.rowHeight);
+    const expandedObstacles = relevantObstacles.map((rect) => inflateRect(rect, clearance));
 
-        // Look backwards for a few columns to find one that fits
-        for (let i = 0; i < 5; i++) {
-            const center = (colIndex - i) * context.columnWidth + context.columnWidth / 2;
+    const xs = collectCandidateXs(fromPort, toPort, expandedObstacles, viewport, context, params);
+    const ys = collectCandidateYs(fromPort, toPort, expandedObstacles, viewport, context, params);
 
-            // If we went too far left (behind source), stop
-            if (center < minX) break;
+    if (xs.length < 2 || ys.length < 2) return null;
 
-            // If this center is valid (left of target buffer), use it
-            if (center <= maxX) {
-                dropX = center;
-                break;
+    const xToIndex = new Map(xs.map((x, index) => [x, index]));
+    const yToIndex = new Map(ys.map((y, index) => [y, index]));
+    const start = { x: xToIndex.get(fromPort.x), y: yToIndex.get(fromPort.y) };
+    const goal = { x: xToIndex.get(toPort.x), y: yToIndex.get(toPort.y) };
+    if (start.x === undefined || start.y === undefined || goal.x === undefined || goal.y === undefined) {
+        return null;
+    }
+
+    const edges = buildEdgeMap(xs, ys, expandedObstacles);
+    const nodeCount = xs.length * ys.length;
+    const bestDist = new Array<number>(nodeCount * 3).fill(Infinity);
+    const bestBends = new Array<number>(nodeCount * 3).fill(Infinity);
+    const prev = new Array<{ state: number; node: number } | null>(nodeCount * 3).fill(null);
+    const queue: Array<{ state: number; node: number; distance: number; bends: number }> = [];
+
+    const startNode = toNodeIndex(start.x, start.y, ys.length);
+    const goalNode = toNodeIndex(goal.x, goal.y, ys.length);
+    const startState = toStateIndex(startNode, 0);
+    bestDist[startState] = 0;
+    bestBends[startState] = 0;
+    queue.push({ state: startState, node: startNode, distance: 0, bends: 0 });
+
+    while (queue.length > 0) {
+        queue.sort((a, b) => (a.distance - b.distance) || (a.bends - b.bends));
+        const current = queue.shift();
+        if (!current) break;
+        if (current.distance !== bestDist[current.state] || current.bends !== bestBends[current.state]) continue;
+
+        if (current.node === goalNode) {
+            const path = restorePath(current.state, prev, xs, ys);
+            return simplifyOrthogonal(path);
+        }
+
+        const neighbors = edges.get(current.node) ?? [];
+        for (const next of neighbors) {
+            const nextDirection = next.direction;
+            const currentDirection = current.state % 3;
+            const addedBend = currentDirection !== 0 && currentDirection !== nextDirection ? 1 : 0;
+            const nextDistance = current.distance + next.length;
+            const nextBends = current.bends + addedBend;
+            const nextState = toStateIndex(next.node, nextDirection);
+
+            if (
+                nextDistance < bestDist[nextState] ||
+                (nextDistance === bestDist[nextState] && nextBends < bestBends[nextState])
+            ) {
+                bestDist[nextState] = nextDistance;
+                bestBends[nextState] = nextBends;
+                prev[nextState] = { state: current.state, node: current.node };
+                queue.push({ state: nextState, node: next.node, distance: nextDistance, bends: nextBends });
             }
         }
     }
 
-    // Only attempt if we found a valid drop point
-    if (dropX !== null) {
-        const directRoute = [
-            fromPort,
-            { x: dropX, y: fromPort.y },
-            { x: dropX, y: toPort.y },
-            toPort
-        ];
-        if (!pathIntersectsAny(directRoute, obstacles)) {
-            return directRoute;
-        }
-    }
+    return null;
+}
 
-    const boundaryY = pickRowBoundary(context);
-    const basePoints = simplifyOrthogonal(buildRouteViaBoundary(fromPort, toPort, params, boundaryY));
+function filterRelevantObstacles(fromPort: Point, toPort: Point, obstacles: Rect[], margin: number): Rect[] {
+    const minX = Math.min(fromPort.x, toPort.x) - margin * 2;
+    const maxX = Math.max(fromPort.x, toPort.x) + margin * 2;
+    const minY = Math.min(fromPort.y, toPort.y) - margin * 3;
+    const maxY = Math.max(fromPort.y, toPort.y) + margin * 3;
 
-    if (!pathIntersectsAny(basePoints, obstacles)) {
-        return basePoints;
-    }
+    return obstacles.filter((rect) => !(
+        rect.x + rect.width < minX ||
+        rect.x > maxX ||
+        rect.y + rect.height < minY ||
+        rect.y > maxY
+    ));
+}
 
-    const shiftOffsets = buildShiftOffsets(params.maxShift, context.rowHeight);
-    for (const offset of shiftOffsets) {
-        const shiftedPoints = simplifyOrthogonal(buildRouteViaBoundary(
-            fromPort,
-            toPort,
-            params,
-            boundaryY + offset
-        ));
-        if (!pathIntersectsAny(shiftedPoints, obstacles)) {
-            return shiftedPoints;
-        }
-    }
-
-    const bypassCandidates = buildBypassCandidates(viewport, context.rowHeight);
-    for (const safeY of bypassCandidates) {
-        const bypassPoints = simplifyOrthogonal(buildRouteViaBoundary(fromPort, toPort, params, safeY));
-        if (!pathIntersectsAny(bypassPoints, obstacles)) {
-            return bypassPoints;
-        }
-    }
-
-    const stretch = context.rowHeight;
-    const stretchedParams: RouteParams = {
-        ...params,
-        outset: params.outset + stretch,
-        inset: params.inset + stretch
+function inflateRect(rect: Rect, padding: number): Rect {
+    return {
+        x: rect.x - padding,
+        y: rect.y - padding,
+        width: rect.width + padding * 2,
+        height: rect.height + padding * 2
     };
-    const stretchedPoints = simplifyOrthogonal(buildRouteViaBoundary(fromPort, toPort, stretchedParams, boundaryY));
-    if (!pathIntersectsAny(stretchedPoints, obstacles)) {
-        return stretchedPoints;
+}
+
+function collectCandidateXs(
+    fromPort: Point,
+    toPort: Point,
+    obstacles: Rect[],
+    viewport: ViewportLike,
+    context: RouteContext,
+    params: RouteParams
+): number[] {
+    const minBase = Math.min(fromPort.x, toPort.x);
+    const maxBase = Math.max(fromPort.x, toPort.x);
+    const corridor = Math.max(context.columnWidth, context.rowHeight);
+
+    const values = new Set<number>([
+        fromPort.x,
+        toPort.x,
+        fromPort.x + params.outset,
+        toPort.x - params.inset,
+        minBase - corridor,
+        maxBase + corridor,
+        minBase - corridor * 2,
+        maxBase + corridor * 2,
+        viewport.scrollY // dummy to keep deterministic set size independent from no-obstacle cases
+    ]);
+    values.delete(viewport.scrollY);
+
+    obstacles.forEach((rect) => {
+        values.add(rect.x - 1);
+        values.add(rect.x + rect.width + 1);
+    });
+
+    return Array.from(values).sort((a, b) => a - b);
+}
+
+function collectCandidateYs(
+    fromPort: Point,
+    toPort: Point,
+    obstacles: Rect[],
+    viewport: ViewportLike,
+    context: RouteContext,
+    params: RouteParams
+): number[] {
+    const boundary = pickRowBoundary(context);
+    const values = new Set<number>([
+        fromPort.y,
+        toPort.y,
+        boundary,
+        boundary + context.rowHeight,
+        boundary - context.rowHeight,
+        ...buildShiftOffsets(params.maxShift, context.rowHeight).map((shift) => boundary + shift),
+        ...buildBypassCandidates(viewport, context.rowHeight)
+    ]);
+
+    obstacles.forEach((rect) => {
+        values.add(rect.y - 1);
+        values.add(rect.y + rect.height + 1);
+    });
+
+    return Array.from(values).sort((a, b) => a - b);
+}
+
+function buildEdgeMap(
+    xs: number[],
+    ys: number[],
+    obstacles: Rect[]
+): Map<number, Array<{ node: number; length: number; direction: 1 | 2 }>> {
+    const edges = new Map<number, Array<{ node: number; length: number; direction: 1 | 2 }>>();
+
+    const addEdge = (fromNode: number, toNode: number, length: number, direction: 1 | 2) => {
+        if (!edges.has(fromNode)) edges.set(fromNode, []);
+        edges.get(fromNode)?.push({ node: toNode, length, direction });
+    };
+
+    for (let yIndex = 0; yIndex < ys.length; yIndex += 1) {
+        for (let xIndex = 0; xIndex < xs.length - 1; xIndex += 1) {
+            const from: Point = { x: xs[xIndex], y: ys[yIndex] };
+            const to: Point = { x: xs[xIndex + 1], y: ys[yIndex] };
+            if (segmentBlocked(from, to, obstacles)) continue;
+
+            const leftNode = toNodeIndex(xIndex, yIndex, ys.length);
+            const rightNode = toNodeIndex(xIndex + 1, yIndex, ys.length);
+            const length = Math.abs(to.x - from.x);
+            addEdge(leftNode, rightNode, length, 1);
+            addEdge(rightNode, leftNode, length, 1);
+        }
     }
 
-    return basePoints;
+    for (let xIndex = 0; xIndex < xs.length; xIndex += 1) {
+        for (let yIndex = 0; yIndex < ys.length - 1; yIndex += 1) {
+            const from: Point = { x: xs[xIndex], y: ys[yIndex] };
+            const to: Point = { x: xs[xIndex], y: ys[yIndex + 1] };
+            if (segmentBlocked(from, to, obstacles)) continue;
+
+            const topNode = toNodeIndex(xIndex, yIndex, ys.length);
+            const bottomNode = toNodeIndex(xIndex, yIndex + 1, ys.length);
+            const length = Math.abs(to.y - from.y);
+            addEdge(topNode, bottomNode, length, 2);
+            addEdge(bottomNode, topNode, length, 2);
+        }
+    }
+
+    return edges;
+}
+
+function segmentBlocked(from: Point, to: Point, obstacles: Rect[]): boolean {
+    return obstacles.some((rect) => segmentIntersectsRect(from, to, rect));
+}
+
+function toNodeIndex(xIndex: number, yIndex: number, ySize: number): number {
+    return xIndex * ySize + yIndex;
+}
+
+function toStateIndex(nodeIndex: number, direction: 0 | 1 | 2): number {
+    return nodeIndex * 3 + direction;
+}
+
+function restorePath(
+    endState: number,
+    prev: Array<{ state: number; node: number } | null>,
+    xs: number[],
+    ys: number[]
+): Point[] {
+    const points: Point[] = [];
+    let cursor: number | null = endState;
+
+    while (cursor !== null) {
+        const node = Math.floor(cursor / 3);
+        const xIndex = Math.floor(node / ys.length);
+        const yIndex = node % ys.length;
+        points.push({ x: xs[xIndex], y: ys[yIndex] });
+        cursor = prev[cursor]?.state ?? null;
+    }
+
+    points.reverse();
+    return points;
 }
 
 function buildShiftOffsets(maxShift: number, step: number): number[] {
@@ -190,17 +351,6 @@ function buildRouteViaBoundary(
     ];
 }
 
-function pathIntersectsAny(points: Point[], obstacles: Rect[]): boolean {
-    const segments = toSegments(points);
-    for (const rect of obstacles) {
-        for (const segment of segments) {
-            if (segmentIntersectsRect(segment.from, segment.to, rect)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 function simplifyOrthogonal(points: Point[]): Point[] {
     if (points.length <= 2) return points;
@@ -230,13 +380,6 @@ function simplifyOrthogonal(points: Point[]): Point[] {
     return simplified;
 }
 
-function toSegments(points: Point[]): Segment[] {
-    const segments: Segment[] = [];
-    for (let i = 0; i < points.length - 1; i += 1) {
-        segments.push({ from: points[i], to: points[i + 1] });
-    }
-    return segments;
-}
 
 export function segmentIntersectsRect(a: Point, b: Point, rect: Rect): boolean {
     if (rectContainsPoint(rect, a) || rectContainsPoint(rect, b)) {
