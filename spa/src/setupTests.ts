@@ -74,7 +74,8 @@ window.RedmineCanvasGantt = {
         label_export_png: 'Export PNG',
         label_export_csv: 'Export CSV',
         label_export_unavailable: 'Export is unavailable in the current layout',
-        label_export_failed: 'Export failed'
+        label_export_failed: 'Export failed',
+        help_desc_export: 'Export the current Gantt view as a PNG image, or download the visible task data as CSV including hierarchy and dependency columns.'
     },
     settings: {
         row_height: '32',

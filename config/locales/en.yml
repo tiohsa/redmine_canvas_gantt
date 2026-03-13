@@ -142,6 +142,7 @@ en:
   help_desc_status_filter: "Filter tasks by their current issue status (e.g., New, In Progress, Closed)."
   help_desc_progress_line: "Toggle the visibility of a progress line on the chart to visualize if tasks are ahead or behind schedule."
   help_desc_dependency_settings: "Configure default behavior for drawing dependencies, such as relation type and auto-calculating delay."
+  help_desc_export: "Export the current Gantt view as a PNG image, or download the visible task data as CSV including hierarchy and dependency columns."
   help_desc_organize_by_dependency: "Sort tasks based on their dependencies. Preceding tasks will be listed before succeeding tasks."
   help_desc_points_orphans: "Show or hide milestone indicators for tasks that only have a start date or a due date."
   help_desc_today: "Scrolls the timeline view to center on the current day."

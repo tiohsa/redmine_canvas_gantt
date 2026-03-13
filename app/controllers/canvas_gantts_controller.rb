@@ -154,6 +154,7 @@ class CanvasGanttsController < ApplicationController
     help_desc_status_filter: :help_desc_status_filter,
     help_desc_progress_line: :help_desc_progress_line,
     help_desc_dependency_settings: :help_desc_dependency_settings,
+    help_desc_export: :help_desc_export,
     help_desc_organize_by_dependency: :help_desc_organize_by_dependency,
     help_desc_points_orphans: :help_desc_points_orphans,
     help_desc_today: :help_desc_today,

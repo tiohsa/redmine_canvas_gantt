@@ -202,6 +202,11 @@ export const HelpDialog: React.FC = () => {
                                 description={i18n.t('help_desc_dependency_settings') || 'Configure default behavior for drawing dependencies, such as relation type and auto-calculating delay.'}
                             />
                             <HelpRow
+                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>}
+                                title={i18n.t('label_export') || 'Export'}
+                                description={i18n.t('help_desc_export') || 'Export the current Gantt view as a PNG image, or download the visible task data as CSV including hierarchy and dependency columns.'}
+                            />
+                            <HelpRow
                                 icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 6h6v6H5z" /><path d="M13 12h6v6h-6z" /><path d="M11 9l2 2" /><path d="M7 12l6-6" /></svg>}
                                 title={i18n.t('label_organize_by_dependency') || 'Organize by Dependency'}
                                 description={i18n.t('help_desc_organize_by_dependency') || 'Sort tasks based on their dependencies. Preceding tasks will be listed before succeeding tasks.'}

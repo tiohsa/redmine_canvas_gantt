@@ -38,6 +38,7 @@ const buildHelpTranslations = (language: 'ja' | 'en'): Record<string, string> =>
             help_desc_status_filter: '日本語 ステータス説明',
             help_desc_progress_line: '日本語 進捗説明',
             help_desc_dependency_settings: '日本語 依存設定説明',
+            help_desc_export: '日本語 エクスポート説明',
             help_desc_organize_by_dependency: '日本語 依存整理説明',
             help_desc_points_orphans: '日本語 ポイント説明',
             help_desc_today: '日本語 今日説明',
@@ -92,6 +93,7 @@ const buildHelpTranslations = (language: 'ja' | 'en'): Record<string, string> =>
         help_desc_status_filter: 'English status description',
         help_desc_progress_line: 'English progress description',
         help_desc_dependency_settings: 'English dependency settings description',
+        help_desc_export: 'English export description',
         help_desc_organize_by_dependency: 'English organize description',
         help_desc_points_orphans: 'English orphan points description',
         help_desc_today: 'English today description',
@@ -148,6 +150,7 @@ describe('HelpDialog', () => {
         expect(screen.getByText('日本語ヘルプ')).toBeInTheDocument();
         expect(screen.getByText('日本語ツールバー')).toBeInTheDocument();
         expect(screen.getByText('日本語 左ペイン説明')).toBeInTheDocument();
+        expect(screen.getByText('日本語 エクスポート説明')).toBeInTheDocument();
         expect(screen.getByText('日本語基本操作')).toBeInTheDocument();
         expect(screen.getByText('日本語 ドラッグ説明')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: '日本語閉じる' })).toBeInTheDocument();
@@ -164,6 +167,7 @@ describe('HelpDialog', () => {
         expect(screen.getByText('English Help')).toBeInTheDocument();
         expect(screen.getByText('English Toolbar')).toBeInTheDocument();
         expect(screen.getByText('English left pane description')).toBeInTheDocument();
+        expect(screen.getByText('English export description')).toBeInTheDocument();
         expect(screen.getByText('English Basic Operations')).toBeInTheDocument();
         expect(screen.getByText('English drag and drop description')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'English Close' })).toBeInTheDocument();
