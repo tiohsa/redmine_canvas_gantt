@@ -157,4 +157,4 @@ en:
   help_op_context_menu: "Context Menu"
   help_op_context_menu_desc: "Right-click on a task row or task bar to access a context menu for editing, assigning, updating status, or opening the issue."
   help_op_unscheduled: "Schedule Tasks"
-  help_op_unscheduled_desc: "For tasks with no dates, drag them from the left list onto the chart to set their dates."
+  help_op_unscheduled_desc: "For tasks without dates, edit the start date or due date directly in the left task list. Once dates are set, the task will also appear on the chart."

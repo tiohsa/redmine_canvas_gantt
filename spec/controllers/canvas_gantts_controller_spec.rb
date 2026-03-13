@@ -67,6 +67,32 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(i18n_payload['label_row_height']).to eq(I18n.t(:label_row_height))
       expect(i18n_payload['label_row_height_m']).to eq(I18n.t(:label_row_height_m))
     end
+
+    it 'includes localized help labels in Japanese frontend i18n payload' do
+      I18n.with_locale(:ja) do
+        get :index, params: { project_id: 'demo' }
+
+        expect(response).to have_http_status(:ok)
+        i18n_payload = controller.instance_variable_get(:@i18n)
+        expect(i18n_payload['label_help']).to eq(I18n.t(:label_help))
+        expect(i18n_payload['help_label_basic_operations']).to eq(I18n.t(:help_label_basic_operations))
+        expect(i18n_payload['help_desc_maximize_left']).to eq(I18n.t(:help_desc_maximize_left))
+        expect(i18n_payload['button_close']).to eq(I18n.t(:button_close))
+      end
+    end
+
+    it 'includes localized help labels in English frontend i18n payload' do
+      I18n.with_locale(:en) do
+        get :index, params: { project_id: 'demo' }
+
+        expect(response).to have_http_status(:ok)
+        i18n_payload = controller.instance_variable_get(:@i18n)
+        expect(i18n_payload['label_help']).to eq(I18n.t(:label_help))
+        expect(i18n_payload['help_label_basic_operations']).to eq(I18n.t(:help_label_basic_operations))
+        expect(i18n_payload['help_desc_maximize_left']).to eq(I18n.t(:help_desc_maximize_left))
+        expect(i18n_payload['button_close']).to eq(I18n.t(:button_close))
+      end
+    end
   end
 
   describe 'PATCH #update' do
