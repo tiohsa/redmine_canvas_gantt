@@ -227,4 +227,22 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByText('デフォルト依存関係を自動適用')).toBeInTheDocument();
     });
 
+    it('localizes the help button title', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_help: 'ヘルプ'
+            },
+            settings: {
+                ...(config.settings ?? {})
+            }
+        };
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} />);
+
+        expect(screen.getByTitle('ヘルプ')).toBeInTheDocument();
+    });
+
 });

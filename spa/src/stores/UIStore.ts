@@ -24,6 +24,7 @@ interface UIState {
     activeInlineEdit: { taskId: string; field: string; source?: 'cell' | 'panel' } | null;
     isFullScreen: boolean;
     issueDialogUrl: string | null;
+    isHelpDialogOpen: boolean;
     isSidebarResizing: boolean;
     defaultRelationType: DefaultRelationType;
     autoCalculateDelay: boolean;
@@ -43,6 +44,8 @@ interface UIState {
     toggleFullScreen: () => void;
     openIssueDialog: (url: string) => void;
     closeIssueDialog: () => void;
+    openHelpDialog: () => void;
+    closeHelpDialog: () => void;
     setSidebarResizing: (value: boolean) => void;
     setDefaultRelationType: (value: DefaultRelationType) => void;
     setAutoCalculateDelay: (value: boolean) => void;
@@ -74,6 +77,7 @@ export const useUIStore = create<UIState>((set) => ({
     activeInlineEdit: null,
     isFullScreen: false,
     issueDialogUrl: null,
+    isHelpDialogOpen: false,
     isSidebarResizing: false,
     defaultRelationType: preferences.defaultRelationType ?? DEFAULT_RELATION_TYPE,
     autoCalculateDelay: preferences.autoCalculateDelay ?? true,
@@ -122,6 +126,8 @@ export const useUIStore = create<UIState>((set) => ({
     toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen })),
     openIssueDialog: (url) => set(() => ({ issueDialogUrl: url })),
     closeIssueDialog: () => set(() => ({ issueDialogUrl: null })),
+    openHelpDialog: () => set(() => ({ isHelpDialogOpen: true })),
+    closeHelpDialog: () => set(() => ({ isHelpDialogOpen: false })),
     setSidebarResizing: (value) => set(() => ({ isSidebarResizing: value })),
     setDefaultRelationType: (value) => set(() => ({ defaultRelationType: value })),
     setAutoCalculateDelay: (value) => set(() => ({ autoCalculateDelay: value })),

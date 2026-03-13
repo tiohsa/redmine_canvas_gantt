@@ -10,6 +10,7 @@ import { HtmlOverlay } from './HtmlOverlay';
 import { UiSidebar } from './UiSidebar';
 import { TimelineHeader } from './TimelineHeader';
 import { IssueIframeDialog } from './IssueIframeDialog';
+import { HelpDialog } from './HelpDialog';
 import { getMaxFiniteDueDate } from '../utils/taskRange';
 import { GlobalTooltip } from './GlobalTooltip';
 import { computeContentSizes } from './gantt/contentSize';
@@ -209,6 +210,7 @@ export const GanttContainer: React.FC = () => {
             </div>
             <IssueIframeDialog />
             <GlobalTooltip />
+            <HelpDialog />
         </>
     );
 };
