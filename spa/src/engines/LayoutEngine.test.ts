@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { LayoutEngine } from './LayoutEngine';
 import type { Viewport, Task } from '../types';
+import { snapToLocalDay } from '../utils/time';
 
 describe('LayoutEngine', () => {
     const mockViewport: Viewport = {
@@ -103,12 +104,12 @@ describe('LayoutEngine', () => {
         expect(bounds.height).toBe(40);
     });
 
-    it('getTaskBounds snaps to week grid when zoomLevel=1', () => {
+    it('keeps task geometry day-accurate in week and month views', () => {
         const task: Task = {
             id: '1',
-            subject: 'Week',
+            subject: 'Cross Zoom',
             startDate: new Date(2024, 0, 3, 12, 0, 0, 0).getTime(),
-            dueDate: new Date(2024, 0, 10, 12, 0, 0, 0).getTime(),
+            dueDate: new Date(2024, 0, 5, 12, 0, 0, 0).getTime(),
             rowIndex: 0,
             ratioDone: 0,
             statusId: 1,
@@ -117,28 +118,21 @@ describe('LayoutEngine', () => {
             hasChildren: false
         };
 
-        const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 1);
-        const expectedX = LayoutEngine.dateToX(LayoutEngine['snapDate'](task.startDate, 1), mockViewport);
-        expect(bounds.x).toBe(expectedX);
-    });
+        const expectedStart = snapToLocalDay(task.startDate);
+        const expectedDueInclusive = snapToLocalDay(task.dueDate) + 24 * 60 * 60 * 1000;
+        const expectedX = LayoutEngine.dateToX(expectedStart, mockViewport);
+        const expectedWidth = expectedDueInclusive - expectedStart;
 
-    it('getTaskBounds snaps to month grid when zoomLevel=0', () => {
-        const task: Task = {
-            id: '1',
-            subject: 'Month',
-            startDate: new Date(2024, 0, 10, 12, 0, 0, 0).getTime(),
-            dueDate: new Date(2024, 0, 20, 12, 0, 0, 0).getTime(),
-            rowIndex: 0,
-            ratioDone: 0,
-            statusId: 1,
-            lockVersion: 0,
-            editable: true,
-            hasChildren: false
-        };
+        const dayBounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
+        const weekBounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 1);
+        const monthBounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 0);
 
-        const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 0);
-        const expectedX = LayoutEngine.dateToX(LayoutEngine['snapDate'](task.startDate, 0), mockViewport);
-        expect(bounds.x).toBe(expectedX);
+        expect(dayBounds.x).toBe(expectedX);
+        expect(dayBounds.width).toBe(expectedWidth);
+        expect(weekBounds.x).toBe(expectedX);
+        expect(weekBounds.width).toBe(expectedWidth);
+        expect(monthBounds.x).toBe(expectedX);
+        expect(monthBounds.width).toBe(expectedWidth);
     });
 
     it('sliceTasksInRowRange は rowIndex 範囲のタスクだけ返す', () => {

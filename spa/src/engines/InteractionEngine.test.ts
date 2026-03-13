@@ -213,6 +213,54 @@ describe('InteractionEngine task updates', () => {
         engine.detach();
         container.remove();
     });
+
+    it('週表示でタスクを右に移動してもバー幅を維持する', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        setViewport({
+            startDate: Date.UTC(2026, 2, 1),
+            scrollX: 0,
+            scrollY: 0,
+            scale: 10 / DAY_MS
+        });
+        useTaskStore.setState({ zoomLevel: 1 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+
+        const task = baseTask({
+            id: 'week-task',
+            rowIndex: 0,
+            startDate: Date.UTC(2026, 2, 11),
+            dueDate: Date.UTC(2026, 2, 13)
+        });
+        seedTasks([task]);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const beforeBounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
+        const startX = beforeBounds.x + beforeBounds.width / 2;
+        const startY = beforeBounds.y + beforeBounds.height / 2;
+
+        container.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: startX,
+            clientY: startY,
+            bubbles: true
+        }));
+        window.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: startX + 2 * 10,
+            clientY: startY,
+            bubbles: true
+        }));
+
+        const movedTask = useTaskStore.getState().tasks[0];
+        const afterBounds = LayoutEngine.getTaskBounds(movedTask, viewport, 'bar', zoomLevel);
+
+        expect(movedTask.startDate).toBe(Date.UTC(2026, 2, 13));
+        expect(movedTask.dueDate).toBe(Date.UTC(2026, 2, 15));
+        expect(afterBounds.width).toBe(beforeBounds.width);
+
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        engine.detach();
+        container.remove();
+    });
 });
 
 describe('InteractionEngine cursor behavior', () => {

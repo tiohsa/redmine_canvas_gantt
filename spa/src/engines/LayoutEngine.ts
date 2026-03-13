@@ -1,5 +1,5 @@
 import type { Task, Viewport, Bounds, ZoomLevel } from '../types';
-import { snapToLocalDay, snapToLocalMonth, snapToLocalWeek } from '../utils/time';
+import { snapToLocalDay } from '../utils/time';
 
 export class LayoutEngine {
     /**
@@ -20,10 +20,9 @@ export class LayoutEngine {
     /**
      * Returns the screen bounding box for a task bar.
      */
-    public static snapDate(timestamp: number | undefined, zoomLevel?: ZoomLevel): number {
+    public static snapDate(timestamp: number | undefined, _zoomLevel?: ZoomLevel): number {
+        void _zoomLevel;
         if (timestamp === undefined || !Number.isFinite(timestamp)) return NaN;
-        if (zoomLevel === 0) return snapToLocalMonth(timestamp);
-        if (zoomLevel === 1) return snapToLocalWeek(timestamp);
         return snapToLocalDay(timestamp);
     }
 

@@ -3,7 +3,7 @@
 // 既存の LayoutEngine と同等の機能を持ち、他コンポーネントで再利用可能です。
 
 import type { Task, Viewport, Bounds, ZoomLevel } from '../types';
-import { snapToLocalDay, snapToLocalMonth, snapToLocalWeek } from '../utils/time';
+import { snapToLocalDay } from '../utils/time';
 
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -24,10 +24,9 @@ export function xToDate(x: number, viewport: Viewport): number {
 /**
  * ズームレベルに応じて日付をスナップします。
  */
-export function snapDate(timestamp: number | undefined, zoomLevel?: ZoomLevel): number {
+export function snapDate(timestamp: number | undefined, _zoomLevel?: ZoomLevel): number {
+    void _zoomLevel;
     if (timestamp === undefined || !Number.isFinite(timestamp)) return NaN;
-    if (zoomLevel === 0) return snapToLocalMonth(timestamp);
-    if (zoomLevel === 1) return snapToLocalWeek(timestamp);
     return snapToLocalDay(timestamp);
 }
 
