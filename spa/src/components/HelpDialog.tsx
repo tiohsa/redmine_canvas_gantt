@@ -312,14 +312,20 @@ export const HelpDialog: React.FC = () => {
                     <button
                         onClick={closeHelpDialog}
                         style={{
-                            padding: '8px 16px',
+                            padding: '0 20px',
+                            height: '34px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
                             backgroundColor: '#fff',
                             border: '1px solid #ccc',
                             borderRadius: '4px',
                             color: '#333',
                             fontSize: '14px',
                             cursor: 'pointer',
-                            fontWeight: 500
+                            fontWeight: 500,
+                            lineHeight: 1,
+                            boxSizing: 'border-box'
                         }}
                     >
                         {i18n.t('button_close') || 'Close'}
