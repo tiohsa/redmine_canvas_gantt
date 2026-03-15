@@ -291,7 +291,8 @@ export const IssueIframeDialog: React.FC = () => {
                                 borderRadius: '6px',
                                 border: '1px solid #e0e0e0',
                                 backgroundColor: '#fff',
-                                color: '#333'
+                                color: '#333',
+                                cursor: 'pointer'
                             }}
                         >
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
