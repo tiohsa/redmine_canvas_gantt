@@ -37,6 +37,26 @@ describe('IssueIframeDialog', () => {
         expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc);
     });
 
+    it('hides iframe until load completes', () => {
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+
+        expect(iframe).toHaveClass('issue-iframe-loading');
+
+        const iframeWindow = { location: { href: 'http://example.com/issues/123/edit' }, document: doc };
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: iframeWindow,
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc });
+
+        fireEvent.load(iframe);
+
+        expect(iframe).not.toHaveClass('issue-iframe-loading');
+        expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc);
+    });
+
     it('shows error message when iframe contains an error', () => {
         const { container } = render(<IssueIframeDialog />);
         const iframe = container.querySelector('iframe') as HTMLIFrameElement;
