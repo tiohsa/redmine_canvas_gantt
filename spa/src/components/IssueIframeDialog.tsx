@@ -31,6 +31,8 @@ export const IssueIframeDialog: React.FC = () => {
 
             applyIssueDialogStyles(doc);
 
+            iframe.classList.remove('issue-iframe-loading');
+
             const iframeWindow = iframe.contentWindow;
             if (iframeWindow && typeof iframeWindow.addEventListener === 'function') {
                 iframeEscapeCleanupRef.current?.();
@@ -330,6 +332,7 @@ export const IssueIframeDialog: React.FC = () => {
                             border: 'none',
                             flex: 1
                         }}
+                        className="issue-iframe-loading"
                     />
                 </div>
 

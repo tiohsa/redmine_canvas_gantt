@@ -80,3 +80,7 @@
   background-color: rgba(95, 99, 104, 0.1) !important;
   color: #1a73e8 !important;
 }
+
+iframe.issue-iframe-loading {
+  visibility: hidden;
+}
