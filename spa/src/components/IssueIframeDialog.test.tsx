@@ -164,6 +164,7 @@ describe('IssueIframeDialog', () => {
     it('closes dialog when save transitions to issue show without issue-form', async () => {
         const refreshData = vi.fn().mockResolvedValue(undefined);
         useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
+        useUIStore.setState({ issueDialogUrl: '/redmine/issues/123/edit' });
 
         const { container } = render(<IssueIframeDialog />);
         const iframe = container.querySelector('iframe') as HTMLIFrameElement;
@@ -176,7 +177,7 @@ describe('IssueIframeDialog', () => {
 
         vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
 
-        const iframeWindow = { location: { href: 'http://example.com/issues/123/edit' }, document: doc };
+        const iframeWindow = { location: { href: 'http://example.com/redmine/issues/123/edit' }, document: doc };
         Object.defineProperty(iframe, 'contentWindow', {
             value: iframeWindow,
             configurable: true
@@ -192,7 +193,7 @@ describe('IssueIframeDialog', () => {
 
         // Simulate successful transition to show page content (no edit form).
         doc.body.innerHTML = `<div id="content"><p>Issue detail</p></div>`;
-        iframeWindow.location.href = 'http://example.com/issues/123';
+        iframeWindow.location.href = 'http://example.com/redmine/issues/123';
         fireEvent.load(iframe);
 
         await waitFor(() => {
@@ -239,7 +240,7 @@ describe('IssueIframeDialog', () => {
     it('closes dialog when saving from new issue page to issue show', async () => {
         const refreshData = vi.fn().mockResolvedValue(undefined);
         useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
-        useUIStore.setState({ issueDialogUrl: '/projects/p1/issues/new' });
+        useUIStore.setState({ issueDialogUrl: '/redmine/projects/p1/issues/new' });
 
         const { container } = render(<IssueIframeDialog />);
         const iframe = container.querySelector('iframe') as HTMLIFrameElement;
@@ -250,7 +251,7 @@ describe('IssueIframeDialog', () => {
             </form>
         `;
 
-        const iframeWindow = { location: { href: 'http://example.com/projects/p1/issues/new' }, document: doc };
+        const iframeWindow = { location: { href: 'http://example.com/redmine/projects/p1/issues/new' }, document: doc };
         Object.defineProperty(iframe, 'contentWindow', {
             value: iframeWindow,
             configurable: true
@@ -265,7 +266,7 @@ describe('IssueIframeDialog', () => {
             expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
         });
 
-        iframeWindow.location.href = 'http://example.com/issues/456';
+        iframeWindow.location.href = 'http://example.com/redmine/issues/456';
         fireEvent.load(iframe);
 
         await waitFor(() => {

@@ -134,6 +134,36 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByTestId('relation-settings-menu-button')).toBeInTheDocument();
     });
 
+    it('opens new issue dialog with redmineBase prefix', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            redmineBase: '/redmine',
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_issue_new: 'New issue'
+            }
+        };
+
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [],
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTitle('New issue'));
+
+        expect(useUIStore.getState().issueDialogUrl).toBe('/redmine/projects/1/issues/new');
+    });
+
     it('updates row height via checkbox list menu and keeps it open', () => {
         useTaskStore.setState({
             filterText: '',

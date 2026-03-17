@@ -7,6 +7,7 @@ import { apiClient } from '../api/client';
 import { RelationType, type DefaultRelationType } from '../types/constraints';
 import { useUIStore } from '../stores/UIStore';
 import type { DraftRelation, Relation, Task } from '../types';
+import { buildRedmineUrl } from '../utils/redmineUrl';
 import {
     buildRelationRenderContext,
     buildRelationRoutePoints,
@@ -757,7 +758,8 @@ export const HtmlOverlay: React.FC = () => {
         const projectId = contextTask?.projectId || fallbackProjectId;
         const basePath = projectId ? `/projects/${projectId}/issues/new` : '/issues/new';
         const qs = query?.toString();
-        return qs ? `${basePath}?${qs}` : basePath;
+        const url = qs ? `${basePath}?${qs}` : basePath;
+        return buildRedmineUrl(url);
     }, [contextTask?.projectId, fallbackProjectId]);
 
     const handleUnsetParent = React.useCallback(async (taskId: string) => {
@@ -1000,7 +1002,7 @@ export const HtmlOverlay: React.FC = () => {
                     `}</style>
 
                         <div className="menu-item" onClick={() => {
-                            useUIStore.getState().openIssueDialog(`/issues/${contextMenu.taskId}/edit`);
+                            useUIStore.getState().openIssueDialog(buildRedmineUrl(`/issues/${contextMenu.taskId}/edit`));
                             setContextMenu(null);
                         }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
