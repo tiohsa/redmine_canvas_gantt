@@ -76,12 +76,17 @@ describe('UIStore', () => {
     it('updates visible columns, width and issue dialog state', () => {
         useUIStore.getState().setVisibleColumns(['id', 'subject']);
         useUIStore.getState().setColumnWidth('subject', 360);
+        window.RedmineCanvasGantt = {
+            ...window.RedmineCanvasGantt!,
+            redmineBase: '/redmine'
+        };
+
         useUIStore.getState().openIssueDialog('/issues/10');
         useUIStore.getState().setSidebarResizing(true);
 
         expect(useUIStore.getState().visibleColumns).toEqual(['id', 'subject']);
         expect(useUIStore.getState().columnWidths.subject).toBe(360);
-        expect(useUIStore.getState().issueDialogUrl).toBe('/issues/10');
+        expect(useUIStore.getState().issueDialogUrl).toBe('/redmine/issues/10');
         expect(useUIStore.getState().isSidebarResizing).toBe(true);
 
         useUIStore.getState().closeIssueDialog();

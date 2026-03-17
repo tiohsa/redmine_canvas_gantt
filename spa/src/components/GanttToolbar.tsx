@@ -7,6 +7,7 @@ import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
 import { getRelationTypeLabel } from '../utils/relationEditing';
 import { savePreferences } from '../utils/preferences';
+import { buildRedmineUrl } from '../utils/redmineUrl';
 import { useToolbarMenuState } from './gantt/useToolbarMenuState';
 import type { GanttExportHandle } from '../export/types';
 
@@ -381,7 +382,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     onClick={() => {
                         const projectId = window.RedmineCanvasGantt?.projectId;
                         if (projectId) {
-                            useUIStore.getState().openIssueDialog(`/projects/${projectId}/issues/new`);
+                            useUIStore.getState().openIssueDialog(buildRedmineUrl(`/projects/${projectId}/issues/new`));
                         }
                     }}
                     title={i18n.t('label_issue_new')}

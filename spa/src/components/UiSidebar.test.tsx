@@ -254,6 +254,61 @@ describe('UiSidebar', () => {
         expect(subjectLink).toHaveAttribute('data-tooltip', 'Long Task Subject For Tooltip Test');
     });
 
+    it('opens issue dialog and link href with redmineBase prefix', async () => {
+        window.RedmineCanvasGantt = {
+            ...(window.RedmineCanvasGantt ?? {
+                projectId: 1,
+                apiBase: '',
+                redmineBase: '',
+                authToken: '',
+                apiKey: '',
+                nonWorkingWeekDays: [],
+                i18n: {}
+            }),
+            redmineBase: '/redmine'
+        };
+
+        useUIStore.setState({ visibleColumns: ['subject'] });
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false
+        });
+
+        const task: Task = {
+            id: '321',
+            subject: 'Subdir Issue',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+
+        useTaskStore.getState().setTasks([task]);
+
+        render(<UiSidebar />);
+
+        const subjectLink = screen.getByText('Subdir Issue');
+        expect(subjectLink).toHaveAttribute('href', '/redmine/issues/321');
+
+        fireEvent.click(subjectLink);
+
+        await waitFor(() => {
+            expect(useUIStore.getState().issueDialogUrl).toBe('/redmine/issues/321');
+        });
+    });
+
     it('allows inline edit for custom field when setting is enabled', async () => {
         const taskId = '201';
         const customFieldId = 10;

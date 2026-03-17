@@ -10,6 +10,7 @@ import { CustomFieldEditor, DoneRatioEditor, DueDateEditor, SelectEditor, Subjec
 import { useEditMetaStore } from '../stores/EditMetaStore';
 import type { InlineEditSettings } from '../types/editMeta';
 import { i18n } from '../utils/i18n';
+import { buildRedmineUrl } from '../utils/redmineUrl';
 import { customFieldEditField, customFieldIdFromEditField, formatCustomFieldCellValue, type SidebarColumn } from './sidebar/sidebarColumns';
 import { useSidebarColumnSizing } from './sidebar/useSidebarColumnSizing';
 import { useSidebarDragAndDrop } from './sidebar/useSidebarDragAndDrop';
@@ -358,14 +359,14 @@ export const UiSidebar: React.FC = () => {
                                     <TrackerIcon name={t.trackerName} />
                                 </div>
                                 <a
-                                    href={`/issues/${t.id}`}
+                                    href={buildRedmineUrl(`/issues/${t.id}`)}
                                     className="task-subject"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        useUIStore.getState().openIssueDialog(`/issues/${t.id}`);
+                                        useUIStore.getState().openIssueDialog(buildRedmineUrl(`/issues/${t.id}`));
                                     }}
                                     style={{
                                         overflow: 'hidden',
@@ -391,7 +392,7 @@ export const UiSidebar: React.FC = () => {
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        useUIStore.getState().openIssueDialog(`/issues/${t.id}/edit`);
+                                        useUIStore.getState().openIssueDialog(buildRedmineUrl(`/issues/${t.id}/edit`));
                                     }}
                                     title={i18n.t('button_edit') || 'Edit'}
                                     style={{

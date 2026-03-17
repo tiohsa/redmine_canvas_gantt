@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { RelationType, type DefaultRelationType } from '../types/constraints';
 import { loadPreferences } from '../utils/preferences';
+import { buildRedmineUrl } from '../utils/redmineUrl';
 
 export const DEFAULT_COLUMNS = ['status', 'assignee', 'startDate', 'dueDate', 'ratioDone'];
 const preferences = loadPreferences();
@@ -124,7 +125,7 @@ export const useUIStore = create<UIState>((set) => ({
     setActiveInlineEdit: (value) => set(() => ({ activeInlineEdit: value })),
     setFullScreen: (value) => set(() => ({ isFullScreen: value })),
     toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen })),
-    openIssueDialog: (url) => set(() => ({ issueDialogUrl: url })),
+    openIssueDialog: (url) => set(() => ({ issueDialogUrl: buildRedmineUrl(url) })),
     closeIssueDialog: () => set(() => ({ issueDialogUrl: null })),
     openHelpDialog: () => set(() => ({ isHelpDialogOpen: true })),
     closeHelpDialog: () => set(() => ({ isHelpDialogOpen: false })),
