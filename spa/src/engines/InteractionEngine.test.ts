@@ -709,4 +709,93 @@ describe('InteractionEngine relation selection', () => {
         engine.detach();
         container.remove();
     });
+
+    it('prefers resize over relation selection when clicking the visible end handle area', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS, rowHeight: 36 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+
+        const task1 = baseTask({ id: '1', rowIndex: 0, startDate: 0, dueDate: DAY_MS });
+        const task2 = baseTask({ id: '2', rowIndex: 1, startDate: DAY_MS * 4, dueDate: DAY_MS * 5 });
+        const relation: Relation = { id: 'r1', from: '1', to: '2', type: 'precedes' };
+
+        useTaskStore.setState({
+            allTasks: [task1, task2],
+            tasks: [task1, task2],
+            relations: [relation],
+            layoutRows: [],
+            rowCount: 2,
+            selectedTaskId: null,
+            selectedRelationId: null,
+            draftRelation: null
+        });
+
+        const handle = document.createElement('div');
+        handle.className = 'task-resize-handle';
+        handle.setAttribute('data-region', 'end');
+        container.appendChild(handle);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task1, viewport, 'hit', zoomLevel);
+        const handleX = bounds.x + bounds.width + 4;
+        const handleY = bounds.y + bounds.height / 2;
+
+        handle.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: handleX,
+            clientY: handleY,
+            bubbles: true
+        }));
+        window.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: handleX + DAY_MS * viewport.scale,
+            clientY: handleY,
+            bubbles: true
+        }));
+
+        expect(useTaskStore.getState().selectedTaskId).toBe('1');
+        expect(useTaskStore.getState().selectedRelationId).toBeNull();
+        expect(useTaskStore.getState().tasks[0].dueDate).toBe(DAY_MS * 2);
+
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        engine.detach();
+        container.remove();
+    });
+
+    it('shows resize cursor instead of relation pointer in the end handle overlap area', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS, rowHeight: 36 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+
+        const task1 = baseTask({ id: '1', rowIndex: 0, startDate: 0, dueDate: DAY_MS });
+        const task2 = baseTask({ id: '2', rowIndex: 1, startDate: DAY_MS * 4, dueDate: DAY_MS * 5 });
+        const relation: Relation = { id: 'r1', from: '1', to: '2', type: 'precedes' };
+
+        useTaskStore.setState({
+            allTasks: [task1, task2],
+            tasks: [task1, task2],
+            relations: [relation],
+            layoutRows: [],
+            rowCount: 2,
+            selectedTaskId: null,
+            selectedRelationId: null,
+            draftRelation: null
+        });
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task1, viewport, 'hit', zoomLevel);
+        const overlapX = bounds.x + bounds.width + 4;
+        const overlapY = bounds.y + bounds.height / 2;
+
+        window.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: overlapX,
+            clientY: overlapY,
+            bubbles: true
+        }));
+
+        expect(container.style.cursor).toBe('ew-resize');
+
+        engine.detach();
+        container.remove();
+    });
 });

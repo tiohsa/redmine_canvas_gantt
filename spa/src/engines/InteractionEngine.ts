@@ -191,16 +191,28 @@ export class InteractionEngine {
         return snapToUtcDay(timestamp);
     }
 
+    private isResizeIntent(
+        hit: { task: Task | null; region: 'body' | 'start' | 'end' },
+        handleRegion: 'start' | 'end' | null,
+        x: number,
+        y: number
+    ): boolean {
+        if (handleRegion) return true;
+        if (!hit.task || hit.task.hasChildren || !hit.task.editable) return false;
+        if (hit.region !== 'start' && hit.region !== 'end') return false;
+        return this.isPointerWithinActualTaskHitBounds(hit.task, x, y);
+    }
+
     private getCursorForHit(hit: { task: Task | null; region: 'body' | 'start' | 'end'; relation: Relation | null }): string {
         if (this.drag.mode === 'task-move') return TASK_MOVE_CURSOR;
         if (this.drag.mode === 'task-resize-start' || this.drag.mode === 'task-resize-end') return TASK_RESIZE_CURSOR;
         if (this.drag.mode === 'pan') return DEFAULT_CURSOR;
 
-        if (hit.relation) return 'pointer';
         if (!hit.task) return DEFAULT_CURSOR;
         if (hit.task.hasChildren) return TASK_DISABLED_PARENT_CURSOR;
         if (!hit.task.editable) return DEFAULT_CURSOR;
         if (hit.region === 'start' || hit.region === 'end') return TASK_RESIZE_CURSOR;
+        if (hit.relation) return 'pointer';
         return TASK_MOVE_CURSOR;
     }
 
@@ -259,8 +271,9 @@ export class InteractionEngine {
         const handleRegion = this.getResizeRegionFromTarget(downTarget);
         const hit = this.hitTest(x, y);
         const resolvedHit = handleRegion && hit.task ? { ...hit, region: handleRegion } : hit;
+        const isResizeIntent = this.isResizeIntent(resolvedHit, handleRegion, x, y);
         const relation = this.hitTestRelation(x, y);
-        if (relation && (!resolvedHit.task || !this.isPointerWithinActualTaskHitBounds(resolvedHit.task, x, y))) {
+        if (relation && !isResizeIntent && (!resolvedHit.task || !this.isPointerWithinActualTaskHitBounds(resolvedHit.task, x, y))) {
             useTaskStore.getState().selectRelation(relation.id);
             return;
         }
