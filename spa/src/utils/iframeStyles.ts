@@ -25,6 +25,8 @@ const ISSUE_DIALOG_HIDE_SELECTORS = [
 
 const ISSUE_DIALOG_CSS = `
 ${ISSUE_DIALOG_HIDE_SELECTORS.join(', ')} { display: none !important; }
+html, body, #wrapper, #main { height: auto !important; min-height: 0 !important; }
+html, body { overflow-y: auto !important; }
 #content { margin: 0 !important; padding: 16px !important; }
 body { background: #fff !important; }
 `;

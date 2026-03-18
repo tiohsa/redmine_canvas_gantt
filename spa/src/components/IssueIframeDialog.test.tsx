@@ -11,8 +11,44 @@ vi.mock('../utils/iframeStyles', () => ({
     getIssueDialogErrorMessage: vi.fn()
 }));
 
+class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+}
+
+const setElementHeight = (element: HTMLElement, height: number) => {
+    Object.defineProperty(element, 'scrollHeight', {
+        configurable: true,
+        value: height
+    });
+    Object.defineProperty(element, 'clientHeight', {
+        configurable: true,
+        value: height
+    });
+    Object.defineProperty(element, 'offsetHeight', {
+        configurable: true,
+        value: height
+    });
+    Object.defineProperty(element, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({
+            width: 0,
+            height,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: height,
+            x: 0,
+            y: 0,
+            toJSON: () => ({})
+        })
+    });
+};
+
 describe('IssueIframeDialog', () => {
     beforeEach(() => {
+        window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
         useUIStore.setState({ issueDialogUrl: '/issues/123/edit' });
         useTaskStore.setState({ refreshData: vi.fn() as unknown as () => Promise<void> });
         vi.mocked(applyIssueDialogStyles).mockReset();
@@ -122,6 +158,58 @@ describe('IssueIframeDialog', () => {
         expect(footerButtons[1].style.height).toBe('28px');
         expect(footerButtons[0].style.minWidth).toBe('88px');
         expect(footerButtons[1].style.minWidth).toBe('88px');
+    });
+
+    it('shrinks dialog height for short iframe content', async () => {
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const content = doc.createElement('div');
+        content.id = 'content';
+        doc.body.appendChild(content);
+
+        setElementHeight(content, 120);
+        setElementHeight(doc.body, 120);
+        setElementHeight(doc.documentElement, 120);
+
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/edit' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            const dialog = screen.getByTestId('issue-dialog-header').parentElement as HTMLDivElement;
+            expect(dialog.style.height).toBe('320px');
+        });
+    });
+
+    it('clamps dialog height for tall iframe content', async () => {
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const content = doc.createElement('div');
+        content.id = 'content';
+        doc.body.appendChild(content);
+
+        setElementHeight(content, 2000);
+        setElementHeight(doc.body, 2000);
+        setElementHeight(doc.documentElement, 2000);
+
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/edit' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            const dialog = screen.getByTestId('issue-dialog-header').parentElement as HTMLDivElement;
+            expect(dialog.style.height).toBe(`${Math.floor(window.innerHeight * 0.9)}px`);
+        });
     });
 
     it('closes dialog when save transitions to issue show even if issue-form remains', async () => {

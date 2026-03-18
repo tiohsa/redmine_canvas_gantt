@@ -15,6 +15,8 @@ describe('iframeStyles', () => {
         expect(css).toContain('#content > h2');
         expect(css).toContain('#issue-form > p.buttons');
         expect(css).toContain('#issue-form > .buttons');
+        expect(css).toContain('html, body, #wrapper, #main');
+        expect(css).toContain('overflow-y: auto');
         expect(css).not.toContain(', p.buttons,');
         expect(css).not.toContain(', .buttons,');
     });

@@ -6,20 +6,138 @@ import { applyIssueDialogStyles, getIssueDialogErrorMessage } from '../utils/ifr
 import { BulkSubtaskCreator } from './BulkSubtaskCreator';
 import type { BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
 
+const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
+const MIN_DIALOG_HEIGHT_PX = 320;
+const DEFAULT_DIALOG_WIDTH_PX = 1600;
+
+type ObserverWindow = Window & {
+    ResizeObserver?: typeof ResizeObserver;
+    MutationObserver?: typeof MutationObserver;
+};
+
+const getElementOuterHeight = (element: HTMLElement | null): number => {
+    if (!element) {
+        return 0;
+    }
+
+    return Math.ceil(element.getBoundingClientRect().height);
+};
+
+const getDocumentScrollHeight = (element: HTMLElement): number => {
+    return Math.max(
+        element.scrollHeight,
+        element.clientHeight,
+        element.offsetHeight,
+        Math.ceil(element.getBoundingClientRect().height)
+    );
+};
+
+const getIssueDialogContentHeight = (doc: Document): number => {
+    const candidates = [
+        doc.querySelector<HTMLElement>('#content'),
+        doc.querySelector<HTMLElement>('#main'),
+        doc.body,
+        doc.documentElement
+    ];
+
+    for (const element of candidates) {
+        if (!element) {
+            continue;
+        }
+
+        const height = getDocumentScrollHeight(element);
+        if (height > 0) {
+            return height;
+        }
+    }
+
+    return 0;
+};
+
 export const IssueIframeDialog: React.FC = () => {
     const issueDialogUrl = useUIStore(state => state.issueDialogUrl);
     const closeIssueDialog = useUIStore(state => state.closeIssueDialog);
     const refreshData = useTaskStore(state => state.refreshData);
     const iframeRef = React.useRef<HTMLIFrameElement>(null);
     const bulkRef = React.useRef<BulkSubtaskCreatorHandle>(null);
+    const headerRef = React.useRef<HTMLDivElement>(null);
+    const bulkSectionRef = React.useRef<HTMLDivElement>(null);
+    const footerRef = React.useRef<HTMLDivElement>(null);
+    const errorRef = React.useRef<HTMLDivElement>(null);
     const iframeEscapeCleanupRef = React.useRef<(() => void) | null>(null);
+    const iframeSizeObserverCleanupRef = React.useRef<(() => void) | null>(null);
+    const dialogResizeCleanupRef = React.useRef<(() => void) | null>(null);
     const [iframeError, setIframeError] = React.useState<string | null>(null);
     const [isSaving, setIsSaving] = React.useState(false);
+    const [dialogHeightPx, setDialogHeightPx] = React.useState<number | null>(null);
 
     const handleClose = React.useCallback(() => {
         closeIssueDialog();
         void refreshData();
     }, [closeIssueDialog, refreshData]);
+
+    const measureDialogHeight = React.useCallback(() => {
+        const doc = iframeRef.current?.contentDocument;
+        if (!doc) {
+            setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
+            return;
+        }
+
+        const maxHeightPx = Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO);
+        const chromeHeight =
+            getElementOuterHeight(headerRef.current) +
+            getElementOuterHeight(errorRef.current) +
+            getElementOuterHeight(bulkSectionRef.current) +
+            getElementOuterHeight(footerRef.current);
+        const iframeContentHeight = getIssueDialogContentHeight(doc);
+        const nextHeight = Math.min(
+            maxHeightPx,
+            Math.max(MIN_DIALOG_HEIGHT_PX, chromeHeight + iframeContentHeight)
+        );
+
+        setDialogHeightPx(nextHeight);
+    }, []);
+
+    const bindIframeSizeObservers = React.useCallback((doc: Document) => {
+        iframeSizeObserverCleanupRef.current?.();
+
+        const cleanupCallbacks: Array<() => void> = [];
+        const iframeWindow = iframeRef.current?.contentWindow as ObserverWindow | null;
+        const resizeObserverCtor = iframeWindow?.ResizeObserver ?? window.ResizeObserver;
+        const mutationObserverCtor = iframeWindow?.MutationObserver ?? window.MutationObserver;
+
+        if (typeof resizeObserverCtor !== 'undefined') {
+            const resizeObserver = new resizeObserverCtor(() => {
+                measureDialogHeight();
+            });
+            const resizeTargets = [
+                doc.querySelector<HTMLElement>('#content'),
+                doc.querySelector<HTMLElement>('#main'),
+                doc.body,
+                doc.documentElement
+            ].filter((element): element is HTMLElement => Boolean(element));
+
+            resizeTargets.forEach((element) => resizeObserver.observe(element));
+            cleanupCallbacks.push(() => resizeObserver.disconnect());
+        }
+
+        if (typeof mutationObserverCtor !== 'undefined') {
+            const mutationObserver = new mutationObserverCtor(() => {
+                measureDialogHeight();
+            });
+            mutationObserver.observe(doc.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                characterData: true
+            });
+            cleanupCallbacks.push(() => mutationObserver.disconnect());
+        }
+
+        iframeSizeObserverCleanupRef.current = () => {
+            cleanupCallbacks.forEach((cleanup) => cleanup());
+        };
+    }, [measureDialogHeight]);
 
     const handleIframeLoad = React.useCallback(async () => {
         try {
@@ -30,6 +148,7 @@ export const IssueIframeDialog: React.FC = () => {
             if (!doc) return;
 
             applyIssueDialogStyles(doc);
+            bindIframeSizeObservers(doc);
 
             iframe.classList.remove('issue-iframe-loading');
 
@@ -53,6 +172,9 @@ export const IssueIframeDialog: React.FC = () => {
 
             const error = getIssueDialogErrorMessage(doc);
             setIframeError(error);
+            window.requestAnimationFrame(() => {
+                measureDialogHeight();
+            });
 
             // If we were saving, close when we transition to issue show page without error.
             // Validation failures usually remain on /edit or /new and keep error blocks in DOM.
@@ -81,8 +203,9 @@ export const IssueIframeDialog: React.FC = () => {
             if (isSaving) {
                 setIsSaving(false);
             }
+            setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
         }
-    }, [handleClose, isSaving]);
+    }, [bindIframeSizeObservers, handleClose, isSaving, measureDialogHeight]);
 
     const handleSave = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;
@@ -160,8 +283,11 @@ export const IssueIframeDialog: React.FC = () => {
     React.useEffect(() => {
         iframeEscapeCleanupRef.current?.();
         iframeEscapeCleanupRef.current = null;
+        iframeSizeObserverCleanupRef.current?.();
+        iframeSizeObserverCleanupRef.current = null;
         setIframeError(null);
         setIsSaving(false);
+        setDialogHeightPx(null);
     }, [issueDialogUrl]);
 
     React.useEffect(() => {
@@ -188,7 +314,44 @@ export const IssueIframeDialog: React.FC = () => {
     React.useEffect(() => () => {
         iframeEscapeCleanupRef.current?.();
         iframeEscapeCleanupRef.current = null;
+        iframeSizeObserverCleanupRef.current?.();
+        iframeSizeObserverCleanupRef.current = null;
+        dialogResizeCleanupRef.current?.();
+        dialogResizeCleanupRef.current = null;
     }, []);
+
+    React.useEffect(() => {
+        if (!issueDialogUrl) {
+            return;
+        }
+
+        const handleResize = () => {
+            measureDialogHeight();
+        };
+
+        const resizeObserver = typeof ResizeObserver !== 'undefined'
+            ? new ResizeObserver(() => {
+                measureDialogHeight();
+            })
+            : null;
+
+        [headerRef.current, bulkSectionRef.current, footerRef.current, errorRef.current]
+            .filter((element): element is HTMLDivElement => Boolean(element))
+            .forEach((element) => resizeObserver?.observe(element));
+
+        window.addEventListener('resize', handleResize);
+        dialogResizeCleanupRef.current = () => {
+            window.removeEventListener('resize', handleResize);
+            resizeObserver?.disconnect();
+        };
+
+        measureDialogHeight();
+
+        return () => {
+            dialogResizeCleanupRef.current?.();
+            dialogResizeCleanupRef.current = null;
+        };
+    }, [issueDialogUrl, iframeError, measureDialogHeight]);
 
     if (!issueDialogUrl) return null;
 
@@ -220,9 +383,10 @@ export const IssueIframeDialog: React.FC = () => {
         >
             <div
                 style={{
-                    width: '1600px',
+                    width: `${DEFAULT_DIALOG_WIDTH_PX}px`,
                     maxWidth: '98vw',
-                    height: '95vh',
+                    height: dialogHeightPx ? `${dialogHeightPx}px` : `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
+                    maxHeight: `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
                     backgroundColor: 'white',
                     borderRadius: '6px',
                     boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
@@ -235,6 +399,7 @@ export const IssueIframeDialog: React.FC = () => {
                 {/* Header - Fixed Height */}
                 <div
                     data-testid="issue-dialog-header"
+                    ref={headerRef}
                     style={{
                         flex: '0 0 auto',
                         display: 'flex',
@@ -310,6 +475,7 @@ export const IssueIframeDialog: React.FC = () => {
                     {iframeError ? (
                         <div
                             data-testid="issue-dialog-error"
+                            ref={errorRef}
                             style={{
                                 flex: '0 0 auto',
                                 padding: '12px 16px',
@@ -337,7 +503,7 @@ export const IssueIframeDialog: React.FC = () => {
                 </div>
 
                 {/* Bulk Creation Section - Fixed Height */}
-                <div style={{ flex: '0 0 auto', padding: '8px 12px 0 12px', backgroundColor: '#fff', borderTop: '1px solid #e0e0e0' }}>
+                <div ref={bulkSectionRef} style={{ flex: '0 0 auto', padding: '8px 12px 0 12px', backgroundColor: '#fff', borderTop: '1px solid #e0e0e0' }}>
                     <BulkSubtaskCreator
                         ref={bulkRef}
                         parentId={parentId}
@@ -352,6 +518,7 @@ export const IssueIframeDialog: React.FC = () => {
                 {/* Footer Buttons - Fixed Height */}
                 <div
                     data-testid="issue-dialog-footer"
+                    ref={footerRef}
                     style={{
                         flex: '0 0 auto',
                         padding: compactFooterPadding,
