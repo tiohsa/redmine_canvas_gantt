@@ -14,11 +14,14 @@ import { applyFilters } from './taskStore/filters';
 import { isDescendantTask, tailDisplayOrderForParent, tailDisplayOrderForRoot } from './taskStore/hierarchy';
 import { computeCenteredViewport } from './taskStore/viewport';
 import { buildMoveTaskResult, createTaskLayoutSnapshot, restoreTaskSnapshot, saveModifiedTasks } from './taskStore/taskPersistence';
+import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
+import { AutoScheduleMoveMode } from '../types/constraints';
 
 interface TaskState {
     allTasks: Task[];
     tasks: Task[];
     relations: Relation[];
+    schedulingStates: Record<string, SchedulingStateInfo>;
     versions: Version[];
     taskStatuses: TaskStatus[];
     customFields: CustomFieldMeta[];
@@ -172,11 +175,28 @@ const buildLayoutFromState = (state: TaskState, overrides: Partial<LayoutState> 
     );
 };
 
+const buildDerivedTaskState = (
+    state: TaskState,
+    overrides: Partial<LayoutState> & { allTasks?: Task[]; relations?: Relation[] } = {}
+) => {
+    const allTasks = overrides.allTasks ?? state.allTasks;
+    const relations = overrides.relations ?? state.relations;
+    const layout = buildLayoutFromState(state, { ...overrides, allTasks, relations });
+
+    return {
+        tasks: layout.tasks,
+        layoutRows: layout.layoutRows,
+        rowCount: layout.rowCount,
+        schedulingStates: TaskLogicService.deriveSchedulingStates(allTasks, relations)
+    };
+};
+
 
 export const useTaskStore = create<TaskState>((set, get) => ({
     allTasks: [],
     tasks: [],
     relations: [],
+    schedulingStates: {},
     versions: [],
     taskStatuses: [],
     customFields: [],
@@ -228,7 +248,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             if (task.fixedVersionId && versionExpansion[task.fixedVersionId] === undefined) versionExpansion[task.fixedVersionId] = true;
         });
 
-        const layout = buildLayoutFromState(state, {
+        const derived = buildDerivedTaskState(state, {
             allTasks: tasks,
             projectExpansion,
             versionExpansion,
@@ -237,44 +257,48 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
         return {
             allTasks: tasks,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount,
+            tasks: derived.tasks,
+            layoutRows: derived.layoutRows,
+            rowCount: derived.rowCount,
+            schedulingStates: derived.schedulingStates,
             projectExpansion,
             versionExpansion,
             taskExpansion
         };
     }),
     setRelations: (relations) => set((state) => {
-        const layout = buildLayoutFromState(state, { relations });
+        const derived = buildDerivedTaskState(state, { relations });
         return {
             relations,
             selectedRelationId: state.selectedRelationId && relations.some(relation => relation.id === state.selectedRelationId)
                 ? state.selectedRelationId
                 : null,
             draftRelation: null,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
+            tasks: derived.tasks,
+            layoutRows: derived.layoutRows,
+            rowCount: derived.rowCount,
+            schedulingStates: derived.schedulingStates
         };
     }),
     setVersions: (versions) => set((state) => {
-        const layout = buildLayoutFromState(state, { versions });
+        const derived = buildDerivedTaskState(state, { versions });
         return {
             versions,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
+            tasks: derived.tasks,
+            layoutRows: derived.layoutRows,
+            rowCount: derived.rowCount,
+            schedulingStates: derived.schedulingStates
         };
     }),
     setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
     setCustomFields: (customFields) => set((state) => {
-        const layout = buildLayoutFromState(state, { customFields });
+        const derived = buildDerivedTaskState(state, { customFields });
         return {
             customFields,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
+            tasks: derived.tasks,
+            layoutRows: derived.layoutRows,
+            rowCount: derived.rowCount,
+            schedulingStates: derived.schedulingStates
         };
     }),
     setSelectedStatusFromServer: (ids) => {
@@ -295,13 +319,34 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const exists = state.relations.some(r => r.from === relation.from && r.to === relation.to && r.type === relation.type);
         if (exists) return state;
         const nextRelations = [...state.relations, relation];
-        const layout = buildLayoutFromState(state, { relations: nextRelations });
+        let nextTasks = state.allTasks;
+        const originTaskId = relation.type === 'follows' ? relation.to : relation.from;
+        const originTask = nextTasks.find((task) => task.id === originTaskId);
+        const dependentUpdates = TaskLogicService.checkDependencies(
+            nextTasks,
+            nextRelations,
+            originTaskId,
+            originTask?.startDate ?? Number.NaN,
+            originTask?.dueDate ?? Number.NaN,
+            AutoScheduleMoveMode.ConstraintPush
+        );
+
+        if (dependentUpdates.updates.size > 0) {
+            nextTasks = nextTasks.map((task) => dependentUpdates.updates.has(task.id) ? { ...task, ...dependentUpdates.updates.get(task.id) } : task);
+        }
+
+        const derived = buildDerivedTaskState(state, { relations: nextRelations, allTasks: nextTasks });
+        const modifiedTaskIds = new Set(state.modifiedTaskIds);
+        dependentUpdates.updates.forEach((_, taskId) => modifiedTaskIds.add(taskId));
         return {
+            allTasks: nextTasks,
             relations: nextRelations,
             draftRelation: null,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
+            tasks: derived.tasks,
+            layoutRows: derived.layoutRows,
+            rowCount: derived.rowCount,
+            schedulingStates: derived.schedulingStates,
+            modifiedTaskIds
         };
     }),
     replaceRelation: (relation) => set((state) => {
@@ -310,24 +355,46 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             existingIndex === -1
                 ? [...state.relations, relation]
                 : state.relations.map((current) => current.id === relation.id ? relation : current);
-        const layout = buildLayoutFromState(state, { relations: nextRelations });
+        let nextTasks = state.allTasks;
+        const originTaskId = relation.type === 'follows' ? relation.to : relation.from;
+        const originTask = nextTasks.find((task) => task.id === originTaskId);
+        const dependentUpdates = TaskLogicService.checkDependencies(
+            nextTasks,
+            nextRelations,
+            originTaskId,
+            originTask?.startDate ?? Number.NaN,
+            originTask?.dueDate ?? Number.NaN,
+            AutoScheduleMoveMode.ConstraintPush
+        );
+
+        if (dependentUpdates.updates.size > 0) {
+            nextTasks = nextTasks.map((task) => dependentUpdates.updates.has(task.id) ? { ...task, ...dependentUpdates.updates.get(task.id) } : task);
+        }
+
+        const derived = buildDerivedTaskState(state, { relations: nextRelations, allTasks: nextTasks });
+        const modifiedTaskIds = new Set(state.modifiedTaskIds);
+        dependentUpdates.updates.forEach((_, taskId) => modifiedTaskIds.add(taskId));
         return {
+            allTasks: nextTasks,
             relations: nextRelations,
             draftRelation: null,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
+            tasks: derived.tasks,
+            layoutRows: derived.layoutRows,
+            rowCount: derived.rowCount,
+            schedulingStates: derived.schedulingStates,
+            modifiedTaskIds
         };
     }),
     removeRelation: (relationId) => set((state) => {
         const nextRelations = state.relations.filter(r => r.id !== relationId);
-        const layout = buildLayoutFromState(state, { relations: nextRelations });
+        const derived = buildDerivedTaskState(state, { relations: nextRelations });
         return {
             relations: nextRelations,
             selectedRelationId: state.selectedRelationId === relationId ? null : state.selectedRelationId,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
+            tasks: derived.tasks,
+            layoutRows: derived.layoutRows,
+            rowCount: derived.rowCount,
+            schedulingStates: derived.schedulingStates
         };
     }),
     selectTask: (id) => set({
@@ -558,14 +625,19 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const pendingUpdates = new Map<string, Partial<Task>>();
 
         if (updates.startDate !== undefined || updates.dueDate !== undefined) {
-            const depUpdates = TaskLogicService.checkDependencies(
-                currentTasks,
+            const depResult = TaskLogicService.checkDependencies(
+                state.allTasks,
                 state.relations,
                 id,
                 updatedTask.startDate!,
-                updatedTask.dueDate!
+                updatedTask.dueDate!,
+                useUIStore.getState().autoScheduleMoveMode
             );
-            depUpdates.forEach((v, k) => pendingUpdates.set(k, v));
+            if (depResult.error) {
+                useUIStore.getState().addNotification(depResult.error, 'error');
+                return state;
+            }
+            depResult.updates.forEach((v, k) => pendingUpdates.set(k, v));
         }
 
         if (pendingUpdates.size > 0) {
@@ -602,6 +674,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         newModifiedIds.add(id);
         pendingUpdates.forEach((_, key) => newModifiedIds.add(key));
 
+        const nextSchedulingStates = TaskLogicService.deriveSchedulingStates(finalTasks, state.relations);
+
         if (state.isSortingSuspended) {
             // Just update the view 'tasks' without re-layout (preserving order)
             const newViewTasks = state.tasks.map(t => {
@@ -623,17 +697,19 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             return {
                 allTasks: finalTasks,
                 tasks: newViewTasks,
+                schedulingStates: nextSchedulingStates,
                 modifiedTaskIds: newModifiedIds // Add here for suspended case
             };
         }
 
-        const layout = buildLayoutFromState(state, { allTasks: finalTasks });
+        const derived = buildDerivedTaskState(state, { allTasks: finalTasks });
 
         return {
             allTasks: finalTasks,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount,
+            tasks: derived.tasks,
+            layoutRows: derived.layoutRows,
+            rowCount: derived.rowCount,
+            schedulingStates: derived.schedulingStates,
             modifiedTaskIds: newModifiedIds // Add here for normal case
         };
     }),
@@ -642,12 +718,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     removeTask: (id) => set((state) => {
         const finalTasks = state.allTasks.filter(t => t.id !== id);
-        const layout = buildLayoutFromState(state, { allTasks: finalTasks });
+        const derived = buildDerivedTaskState(state, { allTasks: finalTasks });
         return {
             allTasks: finalTasks,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
+            tasks: derived.tasks,
+            layoutRows: derived.layoutRows,
+            rowCount: derived.rowCount,
+            schedulingStates: derived.schedulingStates
         };
     }),
 
@@ -1007,6 +1084,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const state = get();
         const failures = await saveModifiedTasks(
             state.allTasks,
+            state.relations,
             state.modifiedTaskIds,
             state.selectedStatusIds,
             apiClient.updateTask,

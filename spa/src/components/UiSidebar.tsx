@@ -142,6 +142,7 @@ const CollapseAllIcon = () => (
 
 export const UiSidebar: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
+    const schedulingStates = useTaskStore(state => state.schedulingStates);
     const layoutRows = useTaskStore(state => state.layoutRows);
     const rowCount = useTaskStore(state => state.rowCount);
     const viewport = useTaskStore(state => state.viewport);
@@ -278,6 +279,15 @@ export const UiSidebar: React.FC = () => {
                 >
                     {(() => {
                         const isSelected = t.id === selectedTaskId;
+                        const schedulingState = schedulingStates[t.id];
+                        const schedulingBadgeColor =
+                            schedulingState?.state === 'cyclic'
+                                ? '#d93025'
+                                : schedulingState?.state === 'invalid'
+                                    ? '#ea8600'
+                                    : schedulingState?.state === 'conflicted'
+                                        ? '#f9ab00'
+                                        : '#5f6368';
                         return (
                             <>
                                 {/* Tree Lines */}
@@ -357,6 +367,28 @@ export const UiSidebar: React.FC = () => {
 
                                 <div style={{ marginLeft: 8, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                                     <TrackerIcon name={t.trackerName} />
+                                    {schedulingState && schedulingState.state !== 'normal' && (
+                                        <span
+                                            data-testid={`task-scheduling-badge-${t.id}`}
+                                            data-tooltip={schedulingState.message}
+                                            style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                minWidth: 18,
+                                                height: 18,
+                                                borderRadius: 999,
+                                                padding: '0 5px',
+                                                backgroundColor: schedulingState.state === 'unscheduled' ? '#f1f3f4' : '#fff7e0',
+                                                border: `1px solid ${schedulingBadgeColor}`,
+                                                color: schedulingBadgeColor,
+                                                fontSize: 10,
+                                                fontWeight: 700
+                                            }}
+                                        >
+                                            {schedulingState.state === 'unscheduled' ? 'U' : '!'}
+                                        </span>
+                                    )}
                                 </div>
                                 <a
                                     href={buildRedmineUrl(`/issues/${t.id}`)}

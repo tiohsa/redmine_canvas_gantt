@@ -1,4 +1,4 @@
-import type { Task } from '../../types';
+import type { Relation, Task } from '../../types';
 import type { MoveTaskAsChildResult } from '../../types';
 import type { TaskLayoutSnapshot } from './types';
 
@@ -44,6 +44,7 @@ export const restoreTaskSnapshot = (
 
 export const saveModifiedTasks = async (
     tasks: Task[],
+    relations: Relation[],
     modifiedTaskIds: Set<string>,
     selectedStatusIds: number[],
     updateTask: (task: Task) => Promise<UpdateTaskFieldsResult>,
@@ -71,10 +72,46 @@ export const saveModifiedTasks = async (
         depthCache.set(taskId, depth);
         return depth;
     };
+    const modifiedIdSet = new Set(Array.from(modifiedTaskIds));
+    const dependencyOrderCache = new Map<string, number>();
+    const incomingHardDependencies = new Map<string, string[]>();
+
+    relations.forEach((relation) => {
+        if (relation.type !== 'precedes' && relation.type !== 'follows') return;
+
+        const predecessorId = relation.type === 'follows' ? relation.to : relation.from;
+        const successorId = relation.type === 'follows' ? relation.from : relation.to;
+        if (!modifiedIdSet.has(predecessorId) || !modifiedIdSet.has(successorId)) return;
+
+        const predecessors = incomingHardDependencies.get(successorId) ?? [];
+        predecessors.push(predecessorId);
+        incomingHardDependencies.set(successorId, predecessors);
+    });
+    const calcDependencyOrder = (taskId: string, visiting: Set<string> = new Set()): number => {
+        if (dependencyOrderCache.has(taskId)) return dependencyOrderCache.get(taskId)!;
+        if (visiting.has(taskId)) return 0;
+
+        visiting.add(taskId);
+        const predecessors = incomingHardDependencies.get(taskId) ?? [];
+        const order = predecessors.length === 0
+            ? 0
+            : 1 + Math.max(...predecessors.map((predecessorId) => calcDependencyOrder(predecessorId, visiting)));
+        visiting.delete(taskId);
+        dependencyOrderCache.set(taskId, order);
+        return order;
+    };
 
     const tasksToUpdate = tasks
         .filter(t => modifiedTaskIds.has(t.id))
-        .sort((a, b) => calcDepth(a.id) - calcDepth(b.id));
+        .sort((a, b) => {
+            const depthDelta = calcDepth(a.id) - calcDepth(b.id);
+            if (depthDelta !== 0) return depthDelta;
+
+            const dependencyDelta = calcDependencyOrder(b.id) - calcDependencyOrder(a.id);
+            if (dependencyDelta !== 0) return dependencyDelta;
+
+            return 0;
+        });
 
     const failures = new Map<string, string>();
     let pending = tasksToUpdate.map(task => task.id);

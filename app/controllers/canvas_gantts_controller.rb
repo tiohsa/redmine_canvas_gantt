@@ -117,6 +117,11 @@ class CanvasGanttsController < ApplicationController
     label_relation_updated: :label_relation_updated,
     label_relation_title: :label_relation_title,
     label_delay: :label_delay,
+    label_scheduling_state_unscheduled: :label_scheduling_state_unscheduled,
+    label_scheduling_state_invalid: :label_scheduling_state_invalid,
+    label_scheduling_state_conflicted: :label_scheduling_state_conflicted,
+    label_scheduling_state_cyclic: :label_scheduling_state_cyclic,
+    label_scheduling_state_incomplete_dates: :label_scheduling_state_incomplete_dates,
     label_add_new_ticket: :label_issue_new,
     label_show_versions: :label_show_versions,
     label_none: :label_none,
@@ -200,6 +205,7 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'custom_field_serializer').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'custom_field_extractor').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'data_payload_builder').to_s
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'constraint_graph').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'relation_params_normalizer').to_s
 
   helper RedmineCanvasGantt::ViteAssetHelper
@@ -376,6 +382,15 @@ class CanvasGanttsController < ApplicationController
     delay = relation_params_normalizer.normalize_delay(relation_type)
     return if performed?
     return unless ensure_relation_delay_consistent!(issue_from, issue_to, relation_type, delay)
+    return unless ensure_relation_cycle_safe!(
+      candidate_relation: {
+        id: '__pending__',
+        from: issue_from.id,
+        to: issue_to.id,
+        type: relation_type,
+        delay: delay
+      }
+    )
 
     relation = IssueRelation.new(
       issue_from: issue_from,
@@ -409,6 +424,16 @@ class CanvasGanttsController < ApplicationController
     delay = relation_params_normalizer.normalize_delay(relation_type)
     return if performed?
     return unless ensure_relation_delay_consistent!(relation.issue_from, relation.issue_to, relation_type, delay)
+    return unless ensure_relation_cycle_safe!(
+      candidate_relation: {
+        id: relation.id,
+        from: relation.issue_from_id,
+        to: relation.issue_to_id,
+        type: relation_type,
+        delay: delay
+      },
+      replacing_relation_id: relation.id
+    )
 
     relation.relation_type = relation_type
     relation.delay = delay
@@ -557,6 +582,17 @@ class CanvasGanttsController < ApplicationController
     return true if successor_start.to_date >= minimum_successor_start
 
     render json: { errors: [l(:error_canvas_gantt_relation_delay_mismatch)] }, status: :unprocessable_entity
+    false
+  end
+
+  def ensure_relation_cycle_safe!(candidate_relation:, replacing_relation_id: nil)
+    relations = build_relations(issue_scope(descendant_project_ids).to_a)
+    filtered_relations = relations.reject { |relation| relation[:id].to_s == replacing_relation_id.to_s }
+    next_relations = filtered_relations + [candidate_relation]
+    constraint_graph = RedmineCanvasGantt::ConstraintGraph.new(relations: next_relations)
+    return true unless constraint_graph.cyclic?
+
+    render json: { errors: [l(:error_canvas_gantt_relation_cycle_detected)] }, status: :unprocessable_entity
     false
   end
 

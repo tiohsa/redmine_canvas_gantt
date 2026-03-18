@@ -1,0 +1,17 @@
+{
+  "flat-1000": {
+    "renderMs": 5000
+  },
+  "flat-5000": {
+    "renderMs": 15000
+  },
+  "flat-10000": {
+    "renderMs": 30000
+  },
+  "hierarchy-1000": {
+    "renderMs": 6000
+  },
+  "dependency-1000": {
+    "renderMs": 7000
+  }
+}

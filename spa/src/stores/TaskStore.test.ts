@@ -4,6 +4,7 @@ import type { Task } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { apiClient } from '../api/client';
 import { useUIStore } from './UIStore';
+import { AutoScheduleMoveMode } from '../types/constraints';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -12,6 +13,13 @@ vi.mock('../api/client', () => ({
         updateTaskFields: vi.fn()
     }
 }));
+
+const MONDAY = Date.UTC(2026, 0, 5);
+const TUESDAY = Date.UTC(2026, 0, 6);
+const WEDNESDAY = Date.UTC(2026, 0, 7);
+const THURSDAY = Date.UTC(2026, 0, 8);
+const FRIDAY = Date.UTC(2026, 0, 9);
+const DAY = 24 * 60 * 60 * 1000;
 
 const buildTask = (overrides: Partial<Task>): Task => ({
     id: 'task',
@@ -376,6 +384,90 @@ describe('TaskStore dependency grouping', () => {
     });
 });
 
+describe('TaskStore scheduling state and relation-driven recalculation', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        useUIStore.setState(useUIStore.getInitialState(), true);
+    });
+
+    it('addRelation recalculates downstream tasks and marks them modified', () => {
+        const { setTasks, addRelation } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: MONDAY }),
+            buildTask({ id: 'B', startDate: MONDAY, dueDate: TUESDAY })
+        ]);
+
+        addRelation({ id: 'r1', from: 'A', to: 'B', type: 'precedes' });
+
+        const state = useTaskStore.getState();
+        const movedTask = state.allTasks.find((task) => task.id === 'B');
+        expect(movedTask?.startDate).toBe(TUESDAY);
+        expect(movedTask?.dueDate).toBe(WEDNESDAY);
+        expect(state.modifiedTaskIds.has('B')).toBe(true);
+    });
+
+    it('setRelations derives cyclic scheduling state from loaded data', () => {
+        const { setTasks, setRelations } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'A', startDate: 0, dueDate: 1 }),
+            buildTask({ id: 'B', startDate: 2, dueDate: 3 })
+        ]);
+
+        setRelations([
+            { id: 'r1', from: 'A', to: 'B', type: 'precedes' },
+            { id: 'r2', from: 'B', to: 'A', type: 'precedes' }
+        ]);
+
+        expect(useTaskStore.getState().schedulingStates.A.state).toBe('cyclic');
+        expect(useTaskStore.getState().schedulingStates.B.state).toBe('cyclic');
+    });
+
+    it('updateTask shifts downstream chain together in linked downstream mode', () => {
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+        const { setTasks, setRelations, updateTask } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: WEDNESDAY }),
+            buildTask({ id: 'C', startDate: Date.UTC(2026, 0, 8), dueDate: Date.UTC(2026, 0, 8) })
+        ]);
+        setRelations([
+            { id: 'r1', from: 'A', to: 'B', type: 'precedes' },
+            { id: 'r2', from: 'B', to: 'C', type: 'precedes' }
+        ]);
+
+        updateTask('A', { startDate: TUESDAY, dueDate: WEDNESDAY });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find((task) => task.id === 'B')?.startDate).toBe(THURSDAY);
+        expect(state.allTasks.find((task) => task.id === 'C')?.startDate).toBe(Date.UTC(2026, 0, 9));
+    });
+
+    it('rejects linked shift when external dependency would be violated', () => {
+        const addNotification = vi.fn();
+        useUIStore.setState({
+            autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift,
+            addNotification: addNotification as unknown as (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void
+        });
+        const { setTasks, setRelations, updateTask } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'P', startDate: MONDAY, dueDate: THURSDAY }),
+            buildTask({ id: 'A', startDate: FRIDAY, dueDate: FRIDAY + DAY }),
+            buildTask({ id: 'B', startDate: FRIDAY + DAY * 3, dueDate: FRIDAY + DAY * 4 })
+        ]);
+        setRelations([
+            { id: 'r1', from: 'A', to: 'B', type: 'precedes' },
+            { id: 'r2', from: 'P', to: 'B', type: 'precedes' }
+        ]);
+
+        updateTask('A', { startDate: THURSDAY, dueDate: FRIDAY });
+
+        expect(useTaskStore.getState().allTasks.find((task) => task.id === 'A')?.startDate).toBe(FRIDAY);
+        expect(useTaskStore.getState().allTasks.find((task) => task.id === 'B')?.startDate).toBe(FRIDAY + DAY * 3);
+        expect(addNotification).toHaveBeenCalledTimes(1);
+        expect(String(addNotification.mock.calls[0]?.[0])).toContain('external dependency');
+    });
+});
+
 describe('TaskStore filter persistence', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -580,6 +672,62 @@ describe('TaskStore saveChanges ordering', () => {
 
         const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
         expect(updatedIds).toEqual(['18', '19']);
+        expect(addNotification).not.toHaveBeenCalled();
+    });
+
+    it('saveChanges saves downstream dependency updates before their predecessor', async () => {
+        const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();
+
+        setTasks([
+            buildTask({ id: '18', startDate: THURSDAY, dueDate: FRIDAY }),
+            buildTask({ id: '19', startDate: Date.UTC(2026, 0, 13), dueDate: Date.UTC(2026, 0, 14) })
+        ]);
+        setRelations([
+            { id: 'r1', from: '18', to: '19', type: 'precedes', delay: 1 }
+        ]);
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+
+        updateTask('18', { startDate: FRIDAY, dueDate: Date.UTC(2026, 0, 12) });
+        await saveChanges();
+
+        const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
+        expect(updatedIds).toEqual(['19', '18']);
+        expect(addNotification).not.toHaveBeenCalled();
+    });
+
+    it('saveChanges retries a predecessor after delay mismatch once successor is saved', async () => {
+        const { setTasks, setRelations, saveChanges } = useTaskStore.getState();
+
+        setTasks([
+            buildTask({ id: '18', startDate: THURSDAY, dueDate: FRIDAY }),
+            buildTask({ id: '19', startDate: Date.UTC(2026, 0, 13), dueDate: Date.UTC(2026, 0, 14) })
+        ]);
+        setRelations([
+            { id: 'r1', from: '18', to: '19', type: 'precedes', delay: 1 }
+        ]);
+        useTaskStore.setState({
+            modifiedTaskIds: new Set(['18', '19']),
+            allTasks: [
+                buildTask({ id: '18', startDate: FRIDAY, dueDate: Date.UTC(2026, 0, 12), lockVersion: 1 }),
+                buildTask({ id: '19', startDate: Date.UTC(2026, 0, 14), dueDate: Date.UTC(2026, 0, 15), lockVersion: 1 })
+            ]
+        });
+
+        let successorSaved = false;
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
+            if (task.id === '18' && !successorSaved) {
+                return { status: 'error', error: 'Delay does not match the current task dates.' };
+            }
+            if (task.id === '19') {
+                successorSaved = true;
+            }
+            return { status: 'ok', lockVersion: 2 };
+        });
+
+        await saveChanges();
+
+        const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
+        expect(updatedIds).toEqual(['19', '18']);
         expect(addNotification).not.toHaveBeenCalled();
     });
 });

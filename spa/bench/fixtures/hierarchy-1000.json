@@ -1,0 +1,7 @@
+{
+  "name": "hierarchy-1000",
+  "order": 4,
+  "kind": "hierarchy",
+  "taskCount": 1000,
+  "branchFactor": 10
+}

@@ -2,7 +2,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { GanttToolbar } from './GanttToolbar';
-import { RelationType } from '../types/constraints';
+import { AutoScheduleMoveMode, RelationType } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import type { GanttExportHandle } from '../export/types';
@@ -232,11 +232,13 @@ describe('GanttToolbar shortcuts', () => {
         fireEvent.change(screen.getByTestId('relation-default-type-select'), { target: { value: RelationType.Relates } });
         fireEvent.click(screen.getByTestId('relation-auto-calculate-toggle'));
         fireEvent.click(screen.getByTestId('relation-auto-apply-toggle'));
+        fireEvent.change(screen.getByTestId('auto-schedule-move-mode-select'), { target: { value: AutoScheduleMoveMode.LinkedDownstreamShift } });
         fireEvent.click(screen.getByTestId('relation-settings-save-button'));
 
         expect(useUIStore.getState().defaultRelationType).toBe(RelationType.Relates);
         expect(useUIStore.getState().autoCalculateDelay).toBe(false);
         expect(useUIStore.getState().autoApplyDefaultRelation).toBe(false);
+        expect(useUIStore.getState().autoScheduleMoveMode).toBe(AutoScheduleMoveMode.LinkedDownstreamShift);
     });
 
     it('localizes relation default setting labels', () => {
@@ -249,7 +251,10 @@ describe('GanttToolbar shortcuts', () => {
                 label_relation_type_relates: '関連',
                 label_relation_type_blocks: 'ブロック',
                 label_relation_auto_calculate_delay: 'delay を自動計算',
-                label_relation_auto_apply_default: 'デフォルト依存関係を自動適用'
+                label_relation_auto_apply_default: 'デフォルト依存関係を自動適用',
+                label_auto_schedule_move_mode: '自動スケジュール移動モード',
+                label_auto_schedule_move_mode_constraint_push: '制約押し出し',
+                label_auto_schedule_move_mode_linked_shift: '連動タスク一括移動'
             },
             settings: {
                 ...(config.settings ?? {})
@@ -264,6 +269,9 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByRole('option', { name: 'ブロック' })).toBeInTheDocument();
         expect(screen.getByText('delay を自動計算')).toBeInTheDocument();
         expect(screen.getByText('デフォルト依存関係を自動適用')).toBeInTheDocument();
+        expect(screen.getByText('自動スケジュール移動モード')).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: '制約押し出し' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: '連動タスク一括移動' })).toBeInTheDocument();
     });
 
     it('localizes the help button title', () => {

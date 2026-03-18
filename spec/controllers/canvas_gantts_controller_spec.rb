@@ -318,6 +318,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
       end
       allow(controller).to receive(:descendant_project_ids).and_return([1, 2])
+      allow(controller).to receive(:issue_scope).with([1, 2]).and_return(double(to_a: []))
       allow(IssueRelation).to receive(:find).with('77').and_return(relation)
       allow(relation).to receive(:issue_from).and_return(issue_from)
       allow(relation).to receive(:issue_to).and_return(issue_to)
@@ -429,6 +430,20 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(JSON.parse(response.body)).to eq('errors' => ['Delay does not match the current task dates.'])
     end
 
+    it 'rejects relation updates that would create a scheduling cycle' do
+      allow(issue_from).to receive(:editable?).and_return(true)
+      existing_relations = [{ id: '12', from: 11, to: 10, type: 'precedes', delay: 0 }]
+      allow(controller).to receive(:issue_scope).with([1, 2]).and_return(double(to_a: [double('Issue')]))
+      allow(controller).to receive(:build_relations).and_return(existing_relations)
+
+      patch :update_relation,
+            params: { project_id: 'demo', id: '77', relation: { relation_type: 'precedes', delay: '2' } },
+            format: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(JSON.parse(response.body)).to eq('errors' => ['This dependency would create a scheduling cycle.'])
+    end
+
     it 'allows delay when dependency dates are missing' do
       allow(issue_from).to receive(:editable?).and_return(true)
       allow(issue_from).to receive(:due_date).and_return(nil)
@@ -452,6 +467,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
       end
       allow(controller).to receive(:descendant_project_ids).and_return([1])
+      allow(controller).to receive(:issue_scope).with([1]).and_return(double(to_a: []))
       allow(Issue).to receive(:visible).and_return(issue_scope)
       allow(issue_scope).to receive(:find).with('10').and_return(issue_from)
       allow(issue_scope).to receive(:find).with('11').and_return(issue_to)
@@ -484,6 +500,20 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:unprocessable_entity)
       expect(JSON.parse(response.body)).to eq('errors' => ['Delay does not match the current task dates.'])
+    end
+
+    it 'rejects relation creation that would create a scheduling cycle' do
+      allow(controller).to receive(:issue_scope).with([1]).and_return(double(to_a: [double('Issue')]))
+      allow(controller).to receive(:build_relations).and_return([
+        { id: '12', from: 11, to: 10, type: 'precedes', delay: 0 }
+      ])
+
+      post :create_relation,
+           params: { project_id: 'demo', relation: { issue_from_id: '10', issue_to_id: '11', relation_type: 'precedes', delay: '2' } },
+           format: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(JSON.parse(response.body)).to eq('errors' => ['This dependency would create a scheduling cycle.'])
     end
 
     it 'allows relation creation when dependency dates are missing' do

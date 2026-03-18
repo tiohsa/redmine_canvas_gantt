@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { RelationType, type DefaultRelationType } from '../types/constraints';
+import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DefaultRelationType } from '../types/constraints';
 import { loadPreferences } from '../utils/preferences';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 
@@ -30,6 +30,7 @@ interface UIState {
     defaultRelationType: DefaultRelationType;
     autoCalculateDelay: boolean;
     autoApplyDefaultRelation: boolean;
+    autoScheduleMoveMode: AutoScheduleMoveModeValue;
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
@@ -51,6 +52,7 @@ interface UIState {
     setDefaultRelationType: (value: DefaultRelationType) => void;
     setAutoCalculateDelay: (value: boolean) => void;
     setAutoApplyDefaultRelation: (value: boolean) => void;
+    setAutoScheduleMoveMode: (value: AutoScheduleMoveModeValue) => void;
     resetRelationPreferences: () => void;
 }
 
@@ -83,6 +85,7 @@ export const useUIStore = create<UIState>((set) => ({
     defaultRelationType: preferences.defaultRelationType ?? DEFAULT_RELATION_TYPE,
     autoCalculateDelay: preferences.autoCalculateDelay ?? true,
     autoApplyDefaultRelation: preferences.autoApplyDefaultRelation ?? true,
+    autoScheduleMoveMode: preferences.autoScheduleMoveMode ?? AutoScheduleMoveMode.ConstraintPush,
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
@@ -133,9 +136,11 @@ export const useUIStore = create<UIState>((set) => ({
     setDefaultRelationType: (value) => set(() => ({ defaultRelationType: value })),
     setAutoCalculateDelay: (value) => set(() => ({ autoCalculateDelay: value })),
     setAutoApplyDefaultRelation: (value) => set(() => ({ autoApplyDefaultRelation: value })),
+    setAutoScheduleMoveMode: (value) => set(() => ({ autoScheduleMoveMode: value })),
     resetRelationPreferences: () => set(() => ({
         defaultRelationType: DEFAULT_RELATION_TYPE,
         autoCalculateDelay: true,
-        autoApplyDefaultRelation: true
+        autoApplyDefaultRelation: true,
+        autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush
     }))
 }));
