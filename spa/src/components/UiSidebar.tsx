@@ -16,9 +16,10 @@ import { useSidebarColumnSizing } from './sidebar/useSidebarColumnSizing';
 import { useSidebarDragAndDrop } from './sidebar/useSidebarDragAndDrop';
 import { useSidebarInlineEdit } from './sidebar/useSidebarInlineEdit';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
+import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 
 type TaskNotificationDescriptor = {
-    glyph: 'U' | '!';
+    glyph: 'U' | '!' | 'CP';
     color: string;
     backgroundColor: string;
     tooltip: string;
@@ -66,6 +67,18 @@ const getTaskNotification = (schedulingState?: SchedulingStateInfo): TaskNotific
         backgroundColor: '#f1f3f4',
         tooltip: schedulingState.message,
         testIdSuffix: 'unscheduled'
+    };
+};
+
+const getCriticalPathNotification = (criticalPathMetrics?: CriticalPathTaskMetrics): TaskNotificationDescriptor | null => {
+    if (!criticalPathMetrics?.critical) return null;
+
+    return {
+        glyph: 'CP',
+        color: '#b42318',
+        backgroundColor: '#fff1f3',
+        tooltip: `Critical path task. Total slack: ${criticalPathMetrics.totalSlackDays} working day(s).`,
+        testIdSuffix: 'critical'
     };
 };
 
@@ -196,6 +209,7 @@ const CollapseAllIcon = () => (
 export const UiSidebar: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
     const schedulingStates = useTaskStore(state => state.schedulingStates);
+    const criticalPathMetrics = useTaskStore(state => state.criticalPathMetrics);
     const layoutRows = useTaskStore(state => state.layoutRows);
     const rowCount = useTaskStore(state => state.rowCount);
     const viewport = useTaskStore(state => state.viewport);
@@ -319,7 +333,7 @@ export const UiSidebar: React.FC = () => {
             title: i18n.t('label_notifications') || 'Notifications',
             width: columnWidths[NOTIFICATION_COLUMN_KEY] ?? 44,
             render: (t: Task) => {
-                const notification = getTaskNotification(schedulingStates[t.id]);
+                const notification = getTaskNotification(schedulingStates[t.id]) ?? getCriticalPathNotification(criticalPathMetrics[t.id]);
                 if (!notification) return null;
 
                 return (

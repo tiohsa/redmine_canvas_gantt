@@ -422,6 +422,23 @@ describe('TaskStore scheduling state and relation-driven recalculation', () => {
         expect(useTaskStore.getState().schedulingStates.B.state).toBe('cyclic');
     });
 
+    it('derives critical path metrics from loaded tasks and relations', () => {
+        const { setTasks, setRelations } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY })
+        ]);
+
+        setRelations([
+            { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
+        ]);
+
+        const state = useTaskStore.getState();
+        expect(state.criticalPathMetrics.A?.critical).toBe(true);
+        expect(state.criticalPathMetrics.B?.critical).toBe(true);
+        expect(state.criticalPathProjectFinish).toBe(THURSDAY);
+    });
+
     it('updateTask shifts downstream chain together in linked downstream mode', () => {
         useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
         const { setTasks, setRelations, updateTask } = useTaskStore.getState();
