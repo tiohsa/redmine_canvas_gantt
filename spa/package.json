@@ -10,6 +10,8 @@
     "build:watch": "tsc -b && vite build --watch",
     "lint": "eslint .",
     "preview": "vite preview",
+    "benchmark": "npm run build && node ./scripts/run-benchmark.mjs",
+    "benchmark:ci": "npm run build && CI=1 node ./scripts/run-benchmark.mjs --ci",
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"

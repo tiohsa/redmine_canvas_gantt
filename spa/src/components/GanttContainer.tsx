@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { InteractionEngine } from '../engines/InteractionEngine';
 import { BackgroundRenderer } from '../renderers/BackgroundRenderer';
 import { TaskRenderer } from '../renderers/TaskRenderer';
-import { OverlayRenderer } from '../renderers/OverlayRenderer';
+import { OverlayRenderer, type OverlayRenderState } from '../renderers/OverlayRenderer';
 import { A11yLayer } from './A11yLayer';
 import { HtmlOverlay } from './HtmlOverlay';
 import { UiSidebar } from './UiSidebar';
@@ -96,6 +96,26 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         overlay?: OverlayRenderer;
     }>({});
 
+    const overlayRenderState = useMemo<OverlayRenderState>(() => ({
+        viewport,
+        tasks,
+        relations,
+        rowCount,
+        zoomLevel,
+        selectedTaskId,
+        selectedRelationId,
+        draftRelation
+    }), [
+        draftRelation,
+        relations,
+        rowCount,
+        selectedRelationId,
+        selectedTaskId,
+        tasks,
+        viewport,
+        zoomLevel
+    ]);
+
     useEffect(() => {
         if (!mainPaneRef.current || !bgCanvasRef.current || !taskCanvasRef.current || !overlayCanvasRef.current) return;
 
@@ -136,11 +156,31 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         return () => resizeObserver.disconnect();
     }, [updateViewport]);
 
-    useEffect(() => {
-        if (engines.current.bg) engines.current.bg.render(viewport, zoomLevel, selectedTaskId, tasks);
-        if (engines.current.task) engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows, showPointsOrphans);
-        if (engines.current.overlay) engines.current.overlay.render(viewport);
-    }, [viewport, tasks, zoomLevel, showProgressLine, rowCount, relations, selectedTaskId, selectedRelationId, draftRelation, layoutRows, showVersions, showPointsOrphans]);
+    const drawCanvases = useCallback(() => {
+        if (engines.current.bg) {
+            engines.current.bg.render(viewport, zoomLevel, selectedTaskId, tasks);
+        }
+        if (engines.current.task) {
+            engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows, showPointsOrphans);
+        }
+        if (engines.current.overlay) {
+            engines.current.overlay.render(overlayRenderState);
+        }
+    }, [
+        layoutRows,
+        selectedTaskId,
+        showPointsOrphans,
+        tasks,
+        viewport,
+        zoomLevel,
+        overlayRenderState,
+        relations,
+        rowCount
+    ]);
+
+    useLayoutEffect(() => {
+        drawCanvases();
+    }, [drawCanvases, showProgressLine, showVersions]);
 
     const captureSnapshot = useCallback((): GanttExportSnapshot => {
         const headerCanvas = timelineHeaderRef.current?.getCanvas();

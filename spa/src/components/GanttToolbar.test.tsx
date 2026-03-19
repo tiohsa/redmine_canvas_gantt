@@ -2,7 +2,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { GanttToolbar } from './GanttToolbar';
-import { RelationType } from '../types/constraints';
+import { AutoScheduleMoveMode, RelationType } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import type { GanttExportHandle } from '../export/types';
@@ -232,11 +232,13 @@ describe('GanttToolbar shortcuts', () => {
         fireEvent.change(screen.getByTestId('relation-default-type-select'), { target: { value: RelationType.Relates } });
         fireEvent.click(screen.getByTestId('relation-auto-calculate-toggle'));
         fireEvent.click(screen.getByTestId('relation-auto-apply-toggle'));
+        fireEvent.change(screen.getByTestId('auto-schedule-move-mode-select'), { target: { value: AutoScheduleMoveMode.Off } });
         fireEvent.click(screen.getByTestId('relation-settings-save-button'));
 
         expect(useUIStore.getState().defaultRelationType).toBe(RelationType.Relates);
         expect(useUIStore.getState().autoCalculateDelay).toBe(false);
         expect(useUIStore.getState().autoApplyDefaultRelation).toBe(false);
+        expect(useUIStore.getState().autoScheduleMoveMode).toBe(AutoScheduleMoveMode.Off);
     });
 
     it('localizes relation default setting labels', () => {
@@ -245,11 +247,19 @@ describe('GanttToolbar shortcuts', () => {
             ...config,
             i18n: {
                 ...(config.i18n ?? {}),
+                label_relation_title: '依存関係',
+                label_relation_type: '依存関係種別',
                 label_relation_type_precedes: '先行',
                 label_relation_type_relates: '関連',
                 label_relation_type_blocks: 'ブロック',
                 label_relation_auto_calculate_delay: 'delay を自動計算',
-                label_relation_auto_apply_default: 'デフォルト依存関係を自動適用'
+                label_relation_auto_apply_default: 'デフォルト依存関係を自動適用',
+                label_auto_schedule_move_mode: '自動スケジュール移動モード',
+                label_auto_schedule_move_mode_off: 'OFF',
+                label_auto_schedule_move_mode_constraint_push: '制約押し出し',
+                label_auto_schedule_move_mode_linked_shift: '連動タスク一括移動',
+                button_reset: 'リセット',
+                button_save: '保存'
             },
             settings: {
                 ...(config.settings ?? {})
@@ -259,11 +269,62 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
         fireEvent.click(screen.getByTestId('relation-settings-menu-button'));
 
+        expect(screen.getByText('依存関係')).toBeInTheDocument();
+        expect(screen.getByText('依存関係種別')).toBeInTheDocument();
         expect(screen.getByRole('option', { name: '先行' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: '関連' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'ブロック' })).toBeInTheDocument();
         expect(screen.getByText('delay を自動計算')).toBeInTheDocument();
         expect(screen.getByText('デフォルト依存関係を自動適用')).toBeInTheDocument();
+        expect(screen.getByText('自動スケジュール移動モード')).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'OFF' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: '制約押し出し' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: '連動タスク一括移動' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'リセット' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument();
+    });
+
+    it('localizes relation settings dialog labels in english', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_relation_title: 'Dependency Settings',
+                label_relation_type: 'Dependency type',
+                label_relation_type_precedes: 'Finish to Start',
+                label_relation_type_relates: 'Reference only',
+                label_relation_type_blocks: 'Blocks work',
+                label_relation_auto_calculate_delay: 'Auto-calculate delay',
+                label_relation_auto_apply_default: 'Apply defaults automatically',
+                label_auto_schedule_move_mode: 'Move related tasks',
+                label_auto_schedule_move_mode_off: 'OFF mode',
+                label_auto_schedule_move_mode_constraint_push: 'Constraint push mode',
+                label_auto_schedule_move_mode_linked_shift: 'Linked shift mode',
+                button_reset: 'Reset settings',
+                button_save: 'Save settings'
+            },
+            settings: {
+                ...(config.settings ?? {})
+            }
+        };
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('relation-settings-menu-button'));
+
+        expect(screen.getByText('Dependency Settings')).toBeInTheDocument();
+        expect(screen.getByText('Dependency type')).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Finish to Start' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Reference only' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Blocks work' })).toBeInTheDocument();
+        expect(screen.getByText('Auto-calculate delay')).toBeInTheDocument();
+        expect(screen.getByText('Apply defaults automatically')).toBeInTheDocument();
+        expect(screen.getByText('Move related tasks')).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'OFF mode' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Constraint push mode' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Linked shift mode' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Reset settings' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Save settings' })).toBeInTheDocument();
     });
 
     it('localizes the help button title', () => {

@@ -1,7 +1,7 @@
 import React from 'react';
 
 import type { ZoomLevel } from '../types';
-import { RelationType, type DefaultRelationType } from '../types/constraints';
+import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DefaultRelationType } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
@@ -50,9 +50,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         defaultRelationType,
         autoCalculateDelay,
         autoApplyDefaultRelation,
+        autoScheduleMoveMode,
         setDefaultRelationType,
         setAutoCalculateDelay,
         setAutoApplyDefaultRelation,
+        setAutoScheduleMoveMode,
         resetRelationPreferences
     } = useUIStore();
     const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
@@ -75,6 +77,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [draftRelationType, setDraftRelationType] = React.useState<DefaultRelationType>(defaultRelationType);
     const [draftAutoCalculateDelay, setDraftAutoCalculateDelay] = React.useState<boolean>(autoCalculateDelay);
     const [draftAutoApplyDefaultRelation, setDraftAutoApplyDefaultRelation] = React.useState<boolean>(autoApplyDefaultRelation);
+    const [draftAutoScheduleMoveMode, setDraftAutoScheduleMoveMode] = React.useState<AutoScheduleMoveModeValue>(autoScheduleMoveMode);
 
     const filterInputRef = React.useRef<HTMLInputElement>(null);
     const showFilterMenu = isMenuOpen('filter');
@@ -103,7 +106,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setDraftRelationType(defaultRelationType);
         setDraftAutoCalculateDelay(autoCalculateDelay);
         setDraftAutoApplyDefaultRelation(autoApplyDefaultRelation);
-    }, [autoApplyDefaultRelation, autoCalculateDelay, defaultRelationType, showRelationSettingsMenu]);
+        setDraftAutoScheduleMoveMode(autoScheduleMoveMode);
+    }, [autoApplyDefaultRelation, autoCalculateDelay, autoScheduleMoveMode, defaultRelationType, showRelationSettingsMenu]);
 
     React.useEffect(() => {
         const handleGlobalKeyDown = (event: KeyboardEvent) => {
@@ -134,10 +138,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setDefaultRelationType(draftRelationType);
         setAutoCalculateDelay(draftAutoCalculateDelay);
         setAutoApplyDefaultRelation(draftAutoApplyDefaultRelation);
+        setAutoScheduleMoveMode(draftAutoScheduleMoveMode);
         savePreferences({
             defaultRelationType: draftRelationType,
             autoCalculateDelay: draftAutoCalculateDelay,
-            autoApplyDefaultRelation: draftAutoApplyDefaultRelation
+            autoApplyDefaultRelation: draftAutoApplyDefaultRelation,
+            autoScheduleMoveMode: draftAutoScheduleMoveMode
         });
         closeMenu('relationSettings');
     };
@@ -147,7 +153,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         savePreferences({
             defaultRelationType: undefined,
             autoCalculateDelay: undefined,
-            autoApplyDefaultRelation: undefined
+            autoApplyDefaultRelation: undefined,
+            autoScheduleMoveMode: undefined
         });
         closeMenu('relationSettings');
     };
@@ -1026,6 +1033,25 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     onChange={(event) => setDraftAutoApplyDefaultRelation(event.target.checked)}
                                 />
                                 <span>{i18n.t('label_relation_auto_apply_default') || 'Auto apply default relation'}</span>
+                            </label>
+                            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, marginBottom: 10 }}>
+                                <span>{i18n.t('label_auto_schedule_move_mode') || 'Auto scheduling move mode'}</span>
+                                <select
+                                    data-testid="auto-schedule-move-mode-select"
+                                    value={draftAutoScheduleMoveMode}
+                                    onChange={(event) => setDraftAutoScheduleMoveMode(event.target.value as AutoScheduleMoveModeValue)}
+                                    style={{ height: 30, borderRadius: 6, border: '1px solid #ddd' }}
+                                >
+                                    <option value={AutoScheduleMoveMode.Off}>
+                                        {i18n.t('label_auto_schedule_move_mode_off') || 'Off'}
+                                    </option>
+                                    <option value={AutoScheduleMoveMode.ConstraintPush}>
+                                        {i18n.t('label_auto_schedule_move_mode_constraint_push') || 'Constraint push'}
+                                    </option>
+                                    <option value={AutoScheduleMoveMode.LinkedDownstreamShift}>
+                                        {i18n.t('label_auto_schedule_move_mode_linked_shift') || 'Linked downstream shift'}
+                                    </option>
+                                </select>
                             </label>
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                                 <button type="button" onClick={handleResetRelationSettings} data-testid="relation-settings-reset-button" style={{ border: '1px solid #ddd', background: '#fff', borderRadius: 6, height: 28, padding: '0 8px', cursor: 'pointer' }}>{i18n.t('button_reset') || 'Reset'}</button>

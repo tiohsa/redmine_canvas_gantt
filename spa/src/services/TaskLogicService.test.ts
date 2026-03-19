@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { TaskLogicService } from './TaskLogicService';
 import type { Task, Relation } from '../types';
+import { AutoScheduleMoveMode } from '../types/constraints';
 
 const buildTask = (overrides: Partial<Task>): Task => ({
     id: 'task',
@@ -17,6 +18,11 @@ const buildTask = (overrides: Partial<Task>): Task => ({
 });
 
 const DAY = 24 * 60 * 60 * 1000;
+const MONDAY = Date.UTC(2026, 0, 5);
+const TUESDAY = Date.UTC(2026, 0, 6);
+const WEDNESDAY = Date.UTC(2026, 0, 7);
+const THURSDAY = Date.UTC(2026, 0, 8);
+const FRIDAY = Date.UTC(2026, 0, 9);
 
 describe('TaskLogicService.checkDependencies', () => {
     describe('precedes relations', () => {
@@ -30,7 +36,7 @@ describe('TaskLogicService.checkDependencies', () => {
             ];
 
             // A ends at day 3, but B starts at day 2 - violation
-            const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY * 3);
+            const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY * 3);
 
             expect(updates.has('B')).toBe(true);
             expect(updates.get('B')?.startDate).toBe(DAY * 4);
@@ -39,33 +45,33 @@ describe('TaskLogicService.checkDependencies', () => {
 
         it('should not update when constraint is satisfied', () => {
             const tasks = [
-                buildTask({ id: 'A', startDate: 0, dueDate: DAY }),
-                buildTask({ id: 'B', startDate: DAY * 2, dueDate: DAY * 3 })
+                buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+                buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY })
             ];
             const relations: Relation[] = [
                 { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
             ];
 
             // A ends at day 1, B starts at day 2 - no violation
-            const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY);
+            const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'A', MONDAY, TUESDAY);
 
             expect(updates.size).toBe(0);
         });
 
         it('should respect delay parameter', () => {
             const tasks = [
-                buildTask({ id: 'A', startDate: 0, dueDate: DAY }),
-                buildTask({ id: 'B', startDate: DAY, dueDate: DAY * 2 })
+                buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+                buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY })
             ];
             const relations: Relation[] = [
                 { id: 'r1', from: 'A', to: 'B', type: 'precedes', delay: 2 } // 2 day delay
             ];
 
             // A ends at day 1, with 2 day delay, B must start at day 3
-            const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY);
+            const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'A', MONDAY, TUESDAY);
 
             expect(updates.has('B')).toBe(true);
-            expect(updates.get('B')?.startDate).toBe(DAY * 4);
+            expect(updates.get('B')?.startDate).toBe(FRIDAY);
         });
 
         it('should skip weekend when calculating minimum successor start', () => {
@@ -89,7 +95,7 @@ describe('TaskLogicService.checkDependencies', () => {
                     { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
                 ];
 
-                const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', Date.UTC(2026, 0, 1), friday);
+                const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'A', Date.UTC(2026, 0, 1), friday);
                 expect(updates.has('B')).toBe(true);
                 expect(updates.get('B')?.startDate).toBe(monday);
             } finally {
@@ -108,7 +114,7 @@ describe('TaskLogicService.checkDependencies', () => {
                 { id: 'r2', from: 'B', to: 'C', type: 'precedes' }
             ];
 
-            const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY * 3);
+            const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY * 3);
 
             expect(updates.has('B')).toBe(true);
             expect(updates.has('C')).toBe(true);
@@ -116,7 +122,7 @@ describe('TaskLogicService.checkDependencies', () => {
             expect(updates.get('C')?.startDate).toBe(DAY * 7);
         });
 
-        it('should push predecessor backward when successor moves backward', () => {
+        it('keeps predecessors fixed when a successor moves backward', () => {
             const tasks = [
                 buildTask({ id: 'A', startDate: DAY * 2, dueDate: DAY * 4 }),
                 buildTask({ id: 'B', startDate: DAY * 6, dueDate: DAY * 8 })
@@ -125,11 +131,9 @@ describe('TaskLogicService.checkDependencies', () => {
                 { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
             ];
 
-            const updates = TaskLogicService.checkDependencies(tasks, relations, 'B', DAY * 4, DAY * 6);
+            const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'B', DAY * 4, DAY * 6);
 
-            expect(updates.has('A')).toBe(true);
-            expect(updates.get('A')?.dueDate).toBe(DAY * 3);
-            expect(updates.get('A')?.startDate).toBe(DAY);
+            expect(updates.size).toBe(0);
         });
 
         it('should not push predecessor when weekend endpoint already satisfies successor start', () => {
@@ -154,7 +158,7 @@ describe('TaskLogicService.checkDependencies', () => {
 
                 // A ends on Saturday. With weekend off, earliest B start is Monday.
                 // If B moves but keeps Monday start, A should not be pushed to Friday.
-                const updates = TaskLogicService.checkDependencies(tasks, relations, 'B', monday, monday);
+                const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'B', monday, monday);
                 expect(updates.has('A')).toBe(false);
             } finally {
                 window.RedmineCanvasGantt = originalConfig;
@@ -163,7 +167,7 @@ describe('TaskLogicService.checkDependencies', () => {
     });
 
     describe('follows relations', () => {
-        it('should push predecessor backward when follower moves backward', () => {
+        it('keeps predecessors fixed when a follower moves backward', () => {
             const tasks = [
                 buildTask({ id: 'A', startDate: DAY * 4, dueDate: DAY * 6 }), // A follows B
                 buildTask({ id: 'B', startDate: DAY * 2, dueDate: DAY * 4 })
@@ -172,13 +176,9 @@ describe('TaskLogicService.checkDependencies', () => {
                 { id: 'r1', from: 'A', to: 'B', type: 'follows' }
             ];
 
-            // A moved to start at day 3, B (predecessor) ends at day 4
-            // A.start >= B.end + 1 day means B.end <= 2 days
-            const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', DAY * 3, DAY * 5);
+            const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'A', DAY * 3, DAY * 5);
 
-            expect(updates.has('B')).toBe(true);
-            expect(updates.get('B')?.dueDate).toBe(DAY * 2);
-            expect(updates.get('B')?.startDate).toBe(0); // Duration preserved: 2 days
+            expect(updates.size).toBe(0);
         });
 
         it('should not update when follows constraint satisfied', () => {
@@ -191,25 +191,25 @@ describe('TaskLogicService.checkDependencies', () => {
             ];
 
             // A starts at day 5, B ends at day 3 - satisfied
-            const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', DAY * 5, DAY * 7);
+            const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'A', DAY * 5, DAY * 7);
 
             expect(updates.size).toBe(0);
         });
 
         it('should push follower forward when predecessor moves forward', () => {
             const tasks = [
-                buildTask({ id: 'A', startDate: DAY * 3, dueDate: DAY * 5 }), // A follows B
-                buildTask({ id: 'B', startDate: DAY, dueDate: DAY * 3 })
+                buildTask({ id: 'A', startDate: THURSDAY, dueDate: FRIDAY }), // A follows B
+                buildTask({ id: 'B', startDate: MONDAY, dueDate: TUESDAY })
             ];
             const relations: Relation[] = [
                 { id: 'r1', from: 'A', to: 'B', type: 'follows' }
             ];
 
-            const updates = TaskLogicService.checkDependencies(tasks, relations, 'B', DAY * 4, DAY * 6);
+            const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'B', WEDNESDAY, THURSDAY);
 
             expect(updates.has('A')).toBe(true);
-            expect(updates.get('A')?.startDate).toBe(DAY * 7);
-            expect(updates.get('A')?.dueDate).toBe(DAY * 9);
+            expect(updates.get('A')?.startDate).toBe(FRIDAY);
+            expect(updates.get('A')?.dueDate).toBe(FRIDAY + DAY);
         });
     });
 
@@ -223,7 +223,7 @@ describe('TaskLogicService.checkDependencies', () => {
                 { id: 'r1', from: 'A', to: 'B', type: 'blocks' }
             ];
 
-            const updates = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY * 3);
+            const { updates } = TaskLogicService.checkDependencies(tasks, relations, 'A', 0, DAY * 3);
 
             expect(updates.has('B')).toBe(false);
         });
@@ -262,6 +262,117 @@ describe('TaskLogicService.checkDependencies', () => {
             }).not.toThrow();
         });
     });
+
+    describe('linked downstream shift mode', () => {
+        it('returns no downstream updates when auto scheduling is off', () => {
+            const tasks = [
+                buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+                buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY })
+            ];
+            const relations: Relation[] = [
+                { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
+            ];
+
+            const { updates, error } = TaskLogicService.checkDependencies(
+                tasks,
+                relations,
+                'A',
+                TUESDAY,
+                WEDNESDAY,
+                AutoScheduleMoveMode.Off
+            );
+
+            expect(error).toBeUndefined();
+            expect(updates.size).toBe(0);
+        });
+
+        it('shifts all downstream successors by the same working-day delta', () => {
+            const tasks = [
+                buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+                buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY }),
+                buildTask({ id: 'C', startDate: FRIDAY, dueDate: FRIDAY + DAY })
+            ];
+            const relations: Relation[] = [
+                { id: 'r1', from: 'A', to: 'B', type: 'precedes' },
+                { id: 'r2', from: 'B', to: 'C', type: 'precedes' }
+            ];
+
+            const { updates, error } = TaskLogicService.checkDependencies(
+                tasks,
+                relations,
+                'A',
+                TUESDAY,
+                WEDNESDAY,
+                AutoScheduleMoveMode.LinkedDownstreamShift
+            );
+
+            expect(error).toBeUndefined();
+            expect(updates.get('B')?.startDate).toBe(THURSDAY);
+            expect(updates.get('B')?.dueDate).toBe(FRIDAY);
+            expect(updates.get('C')?.startDate).toBe(FRIDAY + DAY * 3);
+        });
+
+        it('rejects linked shift when an external predecessor would be violated', () => {
+            const tasks = [
+                buildTask({ id: 'P', startDate: MONDAY, dueDate: THURSDAY }),
+                buildTask({ id: 'A', startDate: FRIDAY, dueDate: FRIDAY + DAY }),
+                buildTask({ id: 'B', startDate: FRIDAY + DAY * 3, dueDate: FRIDAY + DAY * 4 })
+            ];
+            const relations: Relation[] = [
+                { id: 'r1', from: 'A', to: 'B', type: 'precedes' },
+                { id: 'r2', from: 'P', to: 'B', type: 'precedes' }
+            ];
+
+            const { updates, error } = TaskLogicService.checkDependencies(
+                tasks,
+                relations,
+                'A',
+                THURSDAY,
+                FRIDAY,
+                AutoScheduleMoveMode.LinkedDownstreamShift
+            );
+
+            expect(updates.size).toBe(0);
+            expect(error).toContain('external dependency');
+        });
+
+        it('preserves delay across a weekend shift', () => {
+            const thursday = Date.UTC(2026, 0, 8);
+            const friday = Date.UTC(2026, 0, 9);
+            const monday = Date.UTC(2026, 0, 12);
+            const tuesday = Date.UTC(2026, 0, 13);
+
+            const originalConfig = window.RedmineCanvasGantt;
+            window.RedmineCanvasGantt = {
+                ...(originalConfig || {}),
+                nonWorkingWeekDays: [0, 6]
+            } as Window['RedmineCanvasGantt'];
+
+            try {
+                const tasks = [
+                    buildTask({ id: 'A', startDate: WEDNESDAY, dueDate: thursday }),
+                    buildTask({ id: 'B', startDate: monday, dueDate: tuesday })
+                ];
+                const relations: Relation[] = [
+                    { id: 'r1', from: 'A', to: 'B', type: 'precedes', delay: 1 }
+                ];
+
+                const { updates, error } = TaskLogicService.checkDependencies(
+                    tasks,
+                    relations,
+                    'A',
+                    THURSDAY,
+                    friday,
+                    AutoScheduleMoveMode.LinkedDownstreamShift
+                );
+
+                expect(error).toBeUndefined();
+                expect(updates.get('B')?.startDate).toBe(tuesday);
+            } finally {
+                window.RedmineCanvasGantt = originalConfig;
+            }
+        });
+    });
 });
 
 describe('TaskLogicService.validateDates', () => {
@@ -276,5 +387,15 @@ describe('TaskLogicService.validateDates', () => {
         const task = buildTask({ startDate: DAY, dueDate: DAY * 2 });
         const errors = TaskLogicService.validateDates(task);
         expect(errors.length).toBe(0);
+    });
+});
+
+describe('TaskLogicService.deriveSchedulingStates', () => {
+    it('marks tasks with missing dates as unscheduled', () => {
+        const states = TaskLogicService.deriveSchedulingStates([
+            buildTask({ id: 'A', startDate: undefined, dueDate: undefined })
+        ], []);
+
+        expect(states.A.state).toBe('unscheduled');
     });
 });

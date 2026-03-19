@@ -94,4 +94,12 @@ describe('UIStore', () => {
         expect(useUIStore.getState().issueDialogUrl).toBeNull();
         expect(useUIStore.getState().isSidebarResizing).toBe(false);
     });
+
+    it('resets relation preferences including auto schedule move mode', () => {
+        useUIStore.getState().setAutoScheduleMoveMode('off');
+        expect(useUIStore.getState().autoScheduleMoveMode).toBe('off');
+
+        useUIStore.getState().resetRelationPreferences();
+        expect(useUIStore.getState().autoScheduleMoveMode).toBe('constraint_push');
+    });
 });

@@ -1,0 +1,6 @@
+{
+  "name": "dependency-1000",
+  "order": 5,
+  "kind": "dependency",
+  "taskCount": 1000
+}

@@ -61,13 +61,15 @@ describe('Preferences storage', () => {
         savePreferences({
             defaultRelationType: 'blocks',
             autoCalculateDelay: false,
-            autoApplyDefaultRelation: false
+            autoApplyDefaultRelation: false,
+            autoScheduleMoveMode: 'off'
         }, 1);
 
         const loaded = loadPreferences(1);
         expect(loaded.defaultRelationType).toBe('blocks');
         expect(loaded.autoCalculateDelay).toBe(false);
         expect(loaded.autoApplyDefaultRelation).toBe(false);
+        expect(loaded.autoScheduleMoveMode).toBe('off');
     });
 
 });

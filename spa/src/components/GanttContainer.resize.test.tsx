@@ -1,9 +1,10 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { GanttContainer } from './GanttContainer';
 import { useUIStore } from '../stores/UIStore';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useTaskStore } from '../stores/TaskStore';
 import { SIDEBAR_RESIZE_CURSOR } from '../constants';
+import type { Relation, Task } from '../types';
 
 const fetchDataMock = vi.fn().mockResolvedValue({
     tasks: [],
@@ -11,6 +12,9 @@ const fetchDataMock = vi.fn().mockResolvedValue({
     versions: [],
     statuses: []
 });
+const backgroundRenderMock = vi.fn();
+const taskRenderMock = vi.fn();
+const overlayRenderMock = vi.fn();
 
 // Mock engines and renderers
 vi.mock('../engines/InteractionEngine', () => ({
@@ -21,19 +25,25 @@ vi.mock('../engines/InteractionEngine', () => ({
 
 vi.mock('../renderers/BackgroundRenderer', () => ({
     BackgroundRenderer: class {
-        render() { }
+        render(...args: unknown[]) {
+            backgroundRenderMock(...args);
+        }
     }
 }));
 
 vi.mock('../renderers/TaskRenderer', () => ({
     TaskRenderer: class {
-        render() { }
+        render(...args: unknown[]) {
+            taskRenderMock(...args);
+        }
     }
 }));
 
 vi.mock('../renderers/OverlayRenderer', () => ({
     OverlayRenderer: class {
-        render() { }
+        render(...args: unknown[]) {
+            overlayRenderMock(...args);
+        }
     }
 }));
 
@@ -109,6 +119,9 @@ describe('GanttContainer Resize', () => {
         });
         fetchDataMock.mockClear();
         vi.clearAllMocks();
+        backgroundRenderMock.mockClear();
+        taskRenderMock.mockClear();
+        overlayRenderMock.mockClear();
     });
 
     it('should use ew-resize and restore previous body styles during sidebar resize', () => {
@@ -244,5 +257,84 @@ describe('GanttContainer Resize', () => {
         expect(screen.queryByTestId('left-pane')).not.toBeInTheDocument();
         expect(screen.queryByTestId('sidebar-resize-handle')).not.toBeInTheDocument();
         expect(screen.getByTestId('right-pane')).toHaveStyle('display: flex');
+    });
+
+    it('renders task and overlay canvases from the same updated task snapshot', async () => {
+        const taskA: Task = {
+            id: 'A',
+            subject: 'Task A',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+        const taskB: Task = {
+            id: 'B',
+            subject: 'Task B',
+            startDate: 2,
+            dueDate: 3,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 1,
+            hasChildren: false
+        };
+        const relation: Relation = { id: 'r1', from: 'A', to: 'B', type: 'precedes' };
+
+        fetchDataMock.mockResolvedValueOnce({
+            tasks: [taskA, taskB],
+            relations: [relation],
+            versions: [],
+            statuses: []
+        });
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 1000,
+                height: 600,
+                rowHeight: 40
+            },
+            tasks: [taskA, taskB],
+            allTasks: [taskA, taskB],
+            relations: [relation],
+            layoutRows: [],
+            rowCount: 2,
+            zoomLevel: 2
+        });
+
+        render(<GanttContainer />);
+
+        await waitFor(() => {
+            const latestTaskRenderArgs = taskRenderMock.mock.calls.at(-1) ?? [];
+            const taskRenderTasks = latestTaskRenderArgs[1] as Task[] | undefined;
+            expect(taskRenderTasks?.find((task) => task.id === 'B')?.startDate).toBe(2);
+        });
+
+        const updatedTaskB: Task = { ...taskB, startDate: 4, dueDate: 5 };
+        await act(async () => {
+            useTaskStore.setState((state) => ({
+                tasks: [state.tasks[0], updatedTaskB],
+                allTasks: [state.allTasks[0], updatedTaskB]
+            }));
+        });
+
+        await waitFor(() => {
+            const latestTaskRenderArgs = taskRenderMock.mock.calls.at(-1) ?? [];
+            const latestOverlayRenderArgs = overlayRenderMock.mock.calls.at(-1) ?? [];
+            const taskRenderTasks = latestTaskRenderArgs[1] as Task[] | undefined;
+            const overlayRenderState = latestOverlayRenderArgs[0] as { tasks?: Task[] } | undefined;
+            const overlayRenderTasks = overlayRenderState?.tasks;
+
+            expect(taskRenderTasks?.find((task) => task.id === 'B')?.startDate).toBe(4);
+            expect(overlayRenderTasks?.find((task) => task.id === 'B')?.startDate).toBe(4);
+        });
     });
 });

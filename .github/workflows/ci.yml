@@ -44,11 +44,49 @@ jobs:
       - name: Unit tests
         run: npm run test -- --run
 
-  e2e-redmine:
-    name: Redmine E2E (Playwright)
+  spa-benchmark:
+    name: SPA Benchmark
     needs: spa-test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: spa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: spa/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run benchmark regression gate
+        run: npm run benchmark:ci
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: spa/bench/results/benchmark-results.json
+          if-no-files-found: ignore
+
+  e2e-redmine-61:
+    name: Redmine 6.1 Full E2E
+    needs: spa-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REDMINE_IMAGE: redmine:6.1
     defaults:
       run:
         working-directory: spa
@@ -113,6 +151,90 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-redmine
+          path: spa/playwright-report
+          if-no-files-found: ignore
+
+      - name: Print container logs on failure
+        if: failure()
+        working-directory: .
+        run: docker compose logs --no-color
+
+      - name: Stop Redmine stack
+        if: always()
+        working-directory: .
+        run: docker compose down -v
+
+  e2e-redmine-60-compat:
+    name: Redmine 6.0 Compatibility Smoke
+    needs: spa-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REDMINE_IMAGE: redmine:6.0
+    defaults:
+      run:
+        working-directory: spa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: spa/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SPA assets for Redmine
+        run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Start Redmine stack and wait for health
+        working-directory: .
+        run: |
+          docker compose up -d --wait --wait-timeout 600
+          docker compose ps
+
+      - name: Load Redmine default data
+        working-directory: .
+        run: docker compose exec -T -e REDMINE_LANG=en redmine bundle exec rake redmine:load_default_data
+
+      - name: Load Redmine fixtures
+        working-directory: .
+        run: docker compose exec -T redmine bundle exec rake db:fixtures:load
+
+      - name: Enable Canvas Gantt in test project
+        working-directory: .
+        run: |
+          docker compose exec -T redmine bundle exec rails runner "
+            project = Project.find_by!(identifier: 'ecookbook')
+            project.enabled_module_names = (project.enabled_module_names + ['canvas_gantt']).uniq
+            project.save!
+
+            role = Role.find_by(name: 'Manager') || Role.first
+            role.permissions = (role.permissions + [:view_canvas_gantt, :edit_canvas_gantt]).uniq
+            role.save!
+
+            member = Member.find_or_initialize_by(project: project, user_id: 1)
+            member.role_ids = [role.id]
+            member.save!
+
+            Setting.rest_api_enabled = '1'
+          "
+
+      - name: Run Redmine compatibility smoke test
+        run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-redmine-60
           path: spa/playwright-report
           if-no-files-found: ignore
 

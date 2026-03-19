@@ -10,6 +10,17 @@ import {
     shouldRenderRelationsAtZoom
 } from './relationGeometry';
 
+export type OverlayRenderState = {
+    viewport: Viewport;
+    tasks: Task[];
+    relations: Relation[];
+    rowCount: number;
+    zoomLevel: ZoomLevel;
+    selectedTaskId: string | null;
+    selectedRelationId: string | null;
+    draftRelation: DraftRelation | null;
+};
+
 export class OverlayRenderer {
     private canvas: HTMLCanvasElement;
     private static readonly DEPENDENCY_ROW_BUFFER = 50;
@@ -18,13 +29,21 @@ export class OverlayRenderer {
         this.canvas = canvas;
     }
 
-    render(viewport: Viewport) {
+    render({
+        viewport,
+        tasks,
+        relations,
+        rowCount,
+        zoomLevel,
+        selectedTaskId,
+        selectedRelationId,
+        draftRelation
+    }: OverlayRenderState) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        const { tasks, relations, draftRelation, selectedRelationId, selectedTaskId, rowCount, zoomLevel } = useTaskStore.getState();
         const totalRows = rowCount || tasks.length;
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, totalRows);
 

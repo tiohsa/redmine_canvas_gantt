@@ -34,7 +34,8 @@ const persistSelections = () => {
         autoSave: taskState.autoSave,
         defaultRelationType: uiState.defaultRelationType,
         autoCalculateDelay: uiState.autoCalculateDelay,
-        autoApplyDefaultRelation: uiState.autoApplyDefaultRelation
+        autoApplyDefaultRelation: uiState.autoApplyDefaultRelation,
+        autoScheduleMoveMode: uiState.autoScheduleMoveMode
     });
 };
 
