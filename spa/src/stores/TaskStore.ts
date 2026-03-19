@@ -15,6 +15,7 @@ import { isDescendantTask, tailDisplayOrderForParent, tailDisplayOrderForRoot } 
 import { computeCenteredViewport } from './taskStore/viewport';
 import { buildMoveTaskResult, createTaskLayoutSnapshot, restoreTaskSnapshot, saveModifiedTasks } from './taskStore/taskPersistence';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
+import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
 
 interface TaskState {
@@ -22,6 +23,8 @@ interface TaskState {
     tasks: Task[];
     relations: Relation[];
     schedulingStates: Record<string, SchedulingStateInfo>;
+    criticalPathMetrics: Record<string, CriticalPathTaskMetrics>;
+    criticalPathProjectFinish?: number;
     versions: Version[];
     taskStatuses: TaskStatus[];
     customFields: CustomFieldMeta[];
@@ -182,12 +185,15 @@ const buildDerivedTaskState = (
     const allTasks = overrides.allTasks ?? state.allTasks;
     const relations = overrides.relations ?? state.relations;
     const layout = buildLayoutFromState(state, { ...overrides, allTasks, relations });
+    const criticalPath = TaskLogicService.calculateCriticalPath(allTasks, relations);
 
     return {
         tasks: layout.tasks,
         layoutRows: layout.layoutRows,
         rowCount: layout.rowCount,
-        schedulingStates: TaskLogicService.deriveSchedulingStates(allTasks, relations)
+        schedulingStates: TaskLogicService.deriveSchedulingStates(allTasks, relations),
+        criticalPathMetrics: criticalPath.metricsByTaskId,
+        criticalPathProjectFinish: criticalPath.projectFinish
     };
 };
 
@@ -197,6 +203,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     tasks: [],
     relations: [],
     schedulingStates: {},
+    criticalPathMetrics: {},
+    criticalPathProjectFinish: undefined,
     versions: [],
     taskStatuses: [],
     customFields: [],
@@ -261,6 +269,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             layoutRows: derived.layoutRows,
             rowCount: derived.rowCount,
             schedulingStates: derived.schedulingStates,
+            criticalPathMetrics: derived.criticalPathMetrics,
+            criticalPathProjectFinish: derived.criticalPathProjectFinish,
             projectExpansion,
             versionExpansion,
             taskExpansion
@@ -277,7 +287,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             tasks: derived.tasks,
             layoutRows: derived.layoutRows,
             rowCount: derived.rowCount,
-            schedulingStates: derived.schedulingStates
+            schedulingStates: derived.schedulingStates,
+            criticalPathMetrics: derived.criticalPathMetrics,
+            criticalPathProjectFinish: derived.criticalPathProjectFinish
         };
     }),
     setVersions: (versions) => set((state) => {
@@ -287,7 +299,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             tasks: derived.tasks,
             layoutRows: derived.layoutRows,
             rowCount: derived.rowCount,
-            schedulingStates: derived.schedulingStates
+            schedulingStates: derived.schedulingStates,
+            criticalPathMetrics: derived.criticalPathMetrics,
+            criticalPathProjectFinish: derived.criticalPathProjectFinish
         };
     }),
     setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
@@ -298,7 +312,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             tasks: derived.tasks,
             layoutRows: derived.layoutRows,
             rowCount: derived.rowCount,
-            schedulingStates: derived.schedulingStates
+            schedulingStates: derived.schedulingStates,
+            criticalPathMetrics: derived.criticalPathMetrics,
+            criticalPathProjectFinish: derived.criticalPathProjectFinish
         };
     }),
     setSelectedStatusFromServer: (ids) => {
@@ -346,6 +362,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             layoutRows: derived.layoutRows,
             rowCount: derived.rowCount,
             schedulingStates: derived.schedulingStates,
+            criticalPathMetrics: derived.criticalPathMetrics,
+            criticalPathProjectFinish: derived.criticalPathProjectFinish,
             modifiedTaskIds
         };
     }),
@@ -382,6 +400,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             layoutRows: derived.layoutRows,
             rowCount: derived.rowCount,
             schedulingStates: derived.schedulingStates,
+            criticalPathMetrics: derived.criticalPathMetrics,
+            criticalPathProjectFinish: derived.criticalPathProjectFinish,
             modifiedTaskIds
         };
     }),
@@ -394,7 +414,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             tasks: derived.tasks,
             layoutRows: derived.layoutRows,
             rowCount: derived.rowCount,
-            schedulingStates: derived.schedulingStates
+            schedulingStates: derived.schedulingStates,
+            criticalPathMetrics: derived.criticalPathMetrics,
+            criticalPathProjectFinish: derived.criticalPathProjectFinish
         };
     }),
     selectTask: (id) => set({
@@ -675,6 +697,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         pendingUpdates.forEach((_, key) => newModifiedIds.add(key));
 
         const nextSchedulingStates = TaskLogicService.deriveSchedulingStates(finalTasks, state.relations);
+        const nextCriticalPath = TaskLogicService.calculateCriticalPath(finalTasks, state.relations);
 
         if (state.isSortingSuspended) {
             // Just update the view 'tasks' without re-layout (preserving order)
@@ -698,6 +721,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
                 allTasks: finalTasks,
                 tasks: newViewTasks,
                 schedulingStates: nextSchedulingStates,
+                criticalPathMetrics: nextCriticalPath.metricsByTaskId,
+                criticalPathProjectFinish: nextCriticalPath.projectFinish,
                 modifiedTaskIds: newModifiedIds // Add here for suspended case
             };
         }
@@ -710,6 +735,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             layoutRows: derived.layoutRows,
             rowCount: derived.rowCount,
             schedulingStates: derived.schedulingStates,
+            criticalPathMetrics: derived.criticalPathMetrics,
+            criticalPathProjectFinish: derived.criticalPathProjectFinish,
             modifiedTaskIds: newModifiedIds // Add here for normal case
         };
     }),
@@ -724,7 +751,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             tasks: derived.tasks,
             layoutRows: derived.layoutRows,
             rowCount: derived.rowCount,
-            schedulingStates: derived.schedulingStates
+            schedulingStates: derived.schedulingStates,
+            criticalPathMetrics: derived.criticalPathMetrics,
+            criticalPathProjectFinish: derived.criticalPathProjectFinish
         };
     }),
 

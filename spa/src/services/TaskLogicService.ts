@@ -1,5 +1,6 @@
 import type { Task, Relation } from '../types';
 import { calculateLinkedDownstreamUpdates, deriveSchedulingStates, recalculateDownstreamTasks, type SchedulingStateInfo } from '../scheduling/constraintGraph';
+import { calculateCriticalPath, type CriticalPathResult } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode, type AutoScheduleMoveMode as AutoScheduleMoveModeValue } from '../types/constraints';
 
 export interface DependencyCheckResult {
@@ -33,6 +34,10 @@ export class TaskLogicService {
 
     static deriveSchedulingStates(tasks: Task[], relations: Relation[]): Record<string, SchedulingStateInfo> {
         return deriveSchedulingStates(tasks, relations);
+    }
+
+    static calculateCriticalPath(tasks: Task[], relations: Relation[]): CriticalPathResult {
+        return calculateCriticalPath(tasks, relations);
     }
 
     /**

@@ -446,6 +446,61 @@ describe('UiSidebar', () => {
         );
     });
 
+    it('shows critical path badge in the notification column when there is no scheduling warning', () => {
+        useUIStore.setState({ visibleColumns: ['notification', 'subject'] });
+
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false
+        });
+
+        const task: Task = {
+            id: '904',
+            subject: 'Critical path task',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+
+        useTaskStore.getState().setTasks([task]);
+        useTaskStore.setState({
+            schedulingStates: {},
+            criticalPathMetrics: {
+                '904': {
+                    taskId: '904',
+                    durationDays: 1,
+                    es: 0,
+                    ef: 1,
+                    ls: 0,
+                    lf: 1,
+                    totalSlackDays: 0,
+                    critical: true
+                }
+            }
+        });
+
+        render(<UiSidebar />);
+
+        expect(screen.getByTestId('task-notification-badge-critical-904')).toHaveTextContent('CP');
+        expect(screen.getByTestId('task-notification-badge-critical-904')).toHaveAttribute(
+            'data-tooltip',
+            'Critical path task. Total slack: 0 working day(s).'
+        );
+    });
+
     it('allows inline edit for custom field when setting is enabled', async () => {
         const taskId = '201';
         const customFieldId = 10;
