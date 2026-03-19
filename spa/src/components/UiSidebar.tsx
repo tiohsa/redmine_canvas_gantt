@@ -28,7 +28,7 @@ type TaskNotificationDescriptor = {
 
 const NOTIFICATION_COLUMN_KEY = 'notification';
 
-const getTaskNotification = (schedulingState?: SchedulingStateInfo): TaskNotificationDescriptor | null => {
+const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskNotificationDescriptor | null => {
     if (!schedulingState || schedulingState.state === 'normal') return null;
 
     if (schedulingState.state === 'invalid') {
@@ -81,6 +81,13 @@ const getCriticalPathNotification = (criticalPathMetrics?: CriticalPathTaskMetri
         testIdSuffix: 'critical'
     };
 };
+
+const getTaskNotification = (
+    schedulingState?: SchedulingStateInfo,
+    criticalPathMetrics?: CriticalPathTaskMetrics
+): TaskNotificationDescriptor | null => (
+    getSchedulingNotification(schedulingState) ?? getCriticalPathNotification(criticalPathMetrics)
+);
 
 const getAvatarColor = (name: string) => {
     const colors = ['#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800', '#ff5722'];
@@ -333,7 +340,7 @@ export const UiSidebar: React.FC = () => {
             title: i18n.t('label_notifications') || 'Notifications',
             width: columnWidths[NOTIFICATION_COLUMN_KEY] ?? 44,
             render: (t: Task) => {
-                const notification = getTaskNotification(schedulingStates[t.id]) ?? getCriticalPathNotification(criticalPathMetrics[t.id]);
+                const notification = getTaskNotification(schedulingStates[t.id], criticalPathMetrics[t.id]);
                 if (!notification) return null;
 
                 return (
