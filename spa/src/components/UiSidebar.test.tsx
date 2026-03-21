@@ -9,6 +9,17 @@ import { useEditMetaStore } from '../stores/EditMetaStore';
 import { SIDEBAR_RESIZE_CURSOR } from '../constants';
 
 describe('UiSidebar', () => {
+    const expectNotificationSprite = (testId: string) => {
+        const badge = screen.getByTestId(testId);
+        const svg = badge.querySelector('svg');
+
+        expect(svg).toBeInTheDocument();
+
+        const useElement = svg?.querySelector('use');
+        expect(useElement).toBeInTheDocument();
+        expect(useElement?.getAttribute('href') ?? useElement?.getAttribute('xlink:href')).toMatch(/^#/);
+    };
+
     beforeEach(() => {
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
@@ -349,7 +360,7 @@ describe('UiSidebar', () => {
         render(<UiSidebar />);
 
         expect(screen.getByTestId('sidebar-header-notification')).toBeInTheDocument();
-        expect(screen.getByTestId('task-notification-badge-unscheduled-901')).toHaveTextContent('U');
+        expectNotificationSprite('task-notification-badge-unscheduled-901');
         expect(screen.queryByTestId('task-scheduling-badge-901')).not.toBeInTheDocument();
     });
 
@@ -439,7 +450,7 @@ describe('UiSidebar', () => {
 
         render(<UiSidebar />);
 
-        expect(screen.getByTestId('task-notification-badge-conflicted-903')).toHaveTextContent('!');
+        expectNotificationSprite('task-notification-badge-conflicted-903');
         expect(screen.getByTestId('task-notification-badge-conflicted-903')).toHaveAttribute(
             'data-tooltip',
             'This task violates a scheduling dependency.'
@@ -494,7 +505,7 @@ describe('UiSidebar', () => {
 
         render(<UiSidebar />);
 
-        expect(screen.getByTestId('task-notification-badge-critical-904')).toHaveTextContent('CP');
+        expectNotificationSprite('task-notification-badge-critical-904');
         expect(screen.getByTestId('task-notification-badge-critical-904')).toHaveAttribute(
             'data-tooltip',
             'Critical path task. Total slack: 0 working day(s).'
