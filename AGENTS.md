@@ -1,95 +1,117 @@
 # AGENTS.md
 
-## Project overview
+## Project Overview
 
-Redmine Canvas Gantt は Redmine 向けの高性能 Canvas ベースガントチャートプラグイン。バックエンドは Ruby on Rails (Redmine プラグイン)、フロントエンドは `spa/` ディレクトリの React SPA で構成される。
+Redmine Canvas Gantt is a high-performance Canvas-based Gantt chart plugin for Redmine. The backend is a Redmine plugin built with Ruby on Rails, and the frontend is a React SPA in `spa/`.
 
-- Language: Ruby (backend), TypeScript (frontend)
-- Framework: Redmine 6.0 plugin (Rails), React 19, Vite 7
-- Architecture: Redmine プラグイン + SPA フロントエンド
+- Languages: Ruby (backend), TypeScript (frontend)
+- Frameworks: Redmine 6.x, React 19, Vite 7
+- Architecture: Redmine plugin backend + SPA frontend
 
-## Dev environment setup
+## Dev Environment Setup
 
-### バックエンド (Redmine プラグイン)
+### Backend / Redmine
 
-- プラグインを Redmine の `plugins/` ディレクトリに配置
-- Docker で Redmine 環境を起動: `docker compose up -d --wait`
-- Redmine: `http://localhost:3003`
+- Mount this repository into a Redmine app as `plugins/redmine_canvas_gantt`
+- Start the local stack from the plugin root: `docker compose up -d --wait`
+- Redmine URL: `http://localhost:3000`
+- Load initial data when needed:
+  - `docker compose exec -T -e REDMINE_LANG=en redmine bundle exec rake redmine:load_default_data`
+  - `docker compose exec -T redmine bundle exec rake db:fixtures:load`
 
-### フロントエンド (SPA)
+### Frontend / SPA
 
-- 作業ディレクトリ: `spa/`
-- 依存インストール: `cd spa && npm ci`
-- Node.js バージョン: 20 以上
-- 開発サーバー: `cd spa && npm run dev`
+- Working directory: `spa/`
+- Install dependencies: `cd spa && npm ci`
+- Required Node.js version: 20+
+- Start the Vite dev server: `cd spa && npm run dev`
+- To use live frontend assets, enable the plugin setting `use_vite_dev_server`
 
-## Build commands
+## Build Commands
 
-- SPA ビルド: `cd spa && npm run build` (TypeScript コンパイル + Vite ビルド → `assets/build/` に出力)
-- 開発サーバー: `cd spa && npm run dev`
-- TypeScript 型チェック: `cd spa && tsc -b`
+- SPA build: `cd spa && npm run build`
+- SPA build watch: `cd spa && npm run build:watch`
+- TypeScript type check: `cd spa && tsc -b`
+- ESLint: `cd spa && npm run lint`
+- Preview built SPA: `cd spa && npm run preview`
 
-## Testing instructions
+## Testing Instructions
 
-### ユニットテスト (Vitest)
+### Frontend Unit Tests
 
-- 全テスト実行: `cd spa && npm run test -- --run`
-- ウォッチモード: `cd spa && npm run test`
-- 単一ファイル: `cd spa && npx vitest run src/components/GanttContainer.resize.test.tsx`
+- Run all unit tests: `cd spa && npm run test -- --run`
+- Watch mode: `cd spa && npm run test`
+- Run one file: `cd spa && npx vitest run src/components/GanttContainer.resize.test.tsx`
 
-### E2E テスト (Playwright)
+### Frontend E2E Tests
 
-- スタンドアロン E2E: `cd spa && npm run test:e2e`
-- ヘッド付き: `cd spa && npm run test:e2e:headed`
-- Redmine 統合 E2E (Docker 環境必要): `cd spa && npx playwright test -c playwright.redmine.config.ts`
+- Standalone Playwright tests: `cd spa && npm run test:e2e`
+- Headed Playwright tests: `cd spa && npm run test:e2e:headed`
+- Redmine-backed Playwright tests: `cd spa && npx playwright test -c playwright.redmine.config.ts`
+- Redmine 6.0 compatibility smoke test: `cd spa && npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts`
 
-### バックエンド (RSpec)
+### Backend Tests
 
-- `bundle exec rspec spec/`
+- Do not run `bundle exec rspec` from the plugin directory; this directory does not contain a `Gemfile`
+- Run backend specs from the Redmine runtime environment
+- Docker command: `docker compose exec -T redmine bundle exec rspec plugins/redmine_canvas_gantt/spec`
+- Non-Docker command: from the Redmine app root, run `bundle exec rspec plugins/redmine_canvas_gantt/spec`
 
-## Code style
+### Benchmark Gate
 
-- Linter: `cd spa && npm run lint`
-- 設定: `spa/eslint.config.js` (ESLint 9 flat config)
-  - `@eslint/js` recommended
-  - `typescript-eslint` recommended
-  - `eslint-plugin-react-hooks` recommended
-  - `eslint-plugin-react-refresh` (Vite)
-- TypeScript: strict モード有効 (`noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`)
-- コミット前に `npm run lint` と `npm run test -- --run` を必ず実行
+- Local benchmark run: `cd spa && npm run benchmark`
+- CI-style benchmark gate: `cd spa && npm run benchmark:ci`
+
+## Code Style
+
+- Frontend lint config: `spa/eslint.config.js`
+- TypeScript strict mode is enabled
+  - `noUnusedLocals`
+  - `noUnusedParameters`
+  - `noFallthroughCasesInSwitch`
+- Prefer small, testable UI/state helpers over large inline blocks
+- Keep Ruby code idiomatic to Redmine/Rails conventions
+  - 2-space indentation
+  - `snake_case` methods and files
+  - `CamelCase` classes and modules
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/ci.yml`):
+GitHub Actions workflow: `.github/workflows/ci.yml`
 
-1. **spa-test**: Lint → Unit Tests
-2. **e2e-redmine**: Docker で Redmine スタック起動 → Playwright E2E
+- `spa-test`: install dependencies, lint, run Vitest
+- `spa-benchmark`: run the benchmark regression gate
+- `e2e-redmine-61`: build SPA, boot Docker Redmine 6.1, run full Playwright integration tests
+- `e2e-redmine-60-compat`: build SPA, boot Docker Redmine 6.0, run compatibility smoke tests
 
-## Security considerations
+## Security Considerations
 
-- API キーやシークレットをコミットしない
-- 環境変数で機密設定を管理
-- Redmine の権限モデル (`view_canvas_gantt`, `edit_canvas_gantt`) を遵守
+- Do not commit API keys, tokens, or secrets
+- Keep secret configuration in environment variables or Redmine settings
+- Respect Redmine permissions: `view_canvas_gantt` and `edit_canvas_gantt`
+- Preserve the asset path safety checks around `/plugin_assets/redmine_canvas_gantt/build/*`
 
 ## Architecture
 
-```
+```text
 redmine_canvas_gantt/
-├── init.rb                    # プラグイン登録・設定・アセットリンク
-├── config/
-│   ├── routes.rb              # API ルーティング定義
-│   └── locales/               # i18n (en.yml, ja.yml)
+├── init.rb
 ├── app/
-│   ├── controllers/           # canvas_gantts_controller.rb
-│   └── views/                 # ERB テンプレート
-├── lib/                       # ライブラリ・Rake タスク
-├── spec/                      # RSpec テスト
-├── assets/build/              # SPA ビルド成果物 (Vite 出力先)
-├── spa/                       # React SPA (詳細は spa/AGENTS.md)
-├── docker-compose.yml         # Redmine + MariaDB 開発環境
-└── .github/workflows/ci.yml   # CI パイプライン
+│   ├── controllers/
+│   └── views/
+├── config/
+│   ├── locales/
+│   └── routes.rb
+├── lib/redmine_canvas_gantt/
+├── spec/
+├── assets/build/
+├── spa/
+├── docker-compose.yml
+└── .github/workflows/ci.yml
 ```
 
-- `canvas_gantts_controller.rb` が API エンドポイントを提供 (data, update, destroy_relation)
-- SPA は `window.RedmineCanvasGantt` グローバルオブジェクトから設定を受け取る
-- ビルド成果物は `assets/build/` に出力され、`init.rb` が `public/plugin_assets/` にシンボリックリンクを作成
+- `app/controllers/canvas_gantts_controller.rb` serves the main page, JSON data endpoints, edit endpoints, relation endpoints, and fallback asset delivery
+- `lib/redmine_canvas_gantt/data_payload_builder.rb` builds task, relation, version, status, and project payloads for the SPA
+- `spa/` contains the React application, Zustand stores, renderers, API client, Vitest tests, and Playwright tests
+- `npm run build` writes frontend assets to `assets/build/`
+- On Redmine boot, `init.rb` links or copies built assets into `public/plugin_assets/redmine_canvas_gantt/build`
