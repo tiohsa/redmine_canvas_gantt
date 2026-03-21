@@ -1,6 +1,6 @@
 import React from 'react';
 
-import type { ZoomLevel } from '../types';
+import type { TaskStatus, ZoomLevel } from '../types';
 import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DefaultRelationType } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
@@ -24,6 +24,31 @@ const toggleSelectionValue = <T,>(selectedValues: T[], value: T): T[] =>
 
 const toggleAllSelectionValues = <T,>(isAllSelected: boolean, allValues: T[]): T[] =>
     isAllSelected ? [] : allValues;
+
+type CheckboxState = 'checked' | 'unchecked' | 'indeterminate';
+
+const dedupeNumbers = (values: number[]): number[] => Array.from(new Set(values));
+
+const mergeStatusSelection = (selectedIds: number[], groupIds: number[], shouldSelect: boolean): number[] => {
+    if (shouldSelect) return dedupeNumbers([...selectedIds, ...groupIds]);
+    const groupIdSet = new Set(groupIds);
+    return selectedIds.filter((id) => !groupIdSet.has(id));
+};
+
+const resolveCheckboxState = (groupIds: number[], selectedIds: number[]): CheckboxState => {
+    if (groupIds.length === 0) return 'unchecked';
+    const selectedGroupCount = groupIds.filter((id) => selectedIds.includes(id)).length;
+    if (selectedGroupCount === 0) return 'unchecked';
+    if (selectedGroupCount === groupIds.length) return 'checked';
+    return 'indeterminate';
+};
+
+const applyIndeterminateState = (element: HTMLInputElement | null, state: CheckboxState) => {
+    if (!element) return;
+    element.indeterminate = state === 'indeterminate';
+};
+
+const getCheckboxChecked = (state: CheckboxState): boolean => state === 'checked';
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange, exportRef }) => {
     const {
@@ -80,6 +105,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [draftAutoScheduleMoveMode, setDraftAutoScheduleMoveMode] = React.useState<AutoScheduleMoveModeValue>(autoScheduleMoveMode);
 
     const filterInputRef = React.useRef<HTMLInputElement>(null);
+    const selectAllStatusesRef = React.useRef<HTMLInputElement>(null);
+    const completedStatusesRef = React.useRef<HTMLInputElement>(null);
+    const incompleteStatusesRef = React.useRef<HTMLInputElement>(null);
     const showFilterMenu = isMenuOpen('filter');
     const showColumnMenu = isMenuOpen('column');
     const showAssigneeMenu = isMenuOpen('assignee');
@@ -301,10 +329,41 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setSelectedStatusFromServer(toggleSelectionValue(selectedStatusIds, id));
     };
 
-    const isAllStatusesSelected = taskStatuses.length > 0 && selectedStatusIds.length === taskStatuses.length;
+    const closedStatusIds = React.useMemo(
+        () => taskStatuses.filter((status: TaskStatus) => status.isClosed).map((status: TaskStatus) => status.id),
+        [taskStatuses]
+    );
+    const openStatusIds = React.useMemo(
+        () => taskStatuses.filter((status: TaskStatus) => !status.isClosed).map((status: TaskStatus) => status.id),
+        [taskStatuses]
+    );
+    const allStatusIds = React.useMemo(() => taskStatuses.map((status: TaskStatus) => status.id), [taskStatuses]);
+    const allStatusesState = resolveCheckboxState(allStatusIds, selectedStatusIds);
+    const completedStatusesState = resolveCheckboxState(closedStatusIds, selectedStatusIds);
+    const incompleteStatusesState = resolveCheckboxState(openStatusIds, selectedStatusIds);
+
+    React.useEffect(() => {
+        applyIndeterminateState(selectAllStatusesRef.current, allStatusesState);
+    }, [allStatusesState, showStatusMenu]);
+
+    React.useEffect(() => {
+        applyIndeterminateState(completedStatusesRef.current, completedStatusesState);
+    }, [completedStatusesState, showStatusMenu]);
+
+    React.useEffect(() => {
+        applyIndeterminateState(incompleteStatusesRef.current, incompleteStatusesState);
+    }, [incompleteStatusesState, showStatusMenu]);
 
     const toggleAllStatuses = () => {
-        setSelectedStatusFromServer(toggleAllSelectionValues(isAllStatusesSelected, taskStatuses.map(s => s.id)));
+        setSelectedStatusFromServer(toggleAllSelectionValues(allStatusesState === 'checked', allStatusIds));
+    };
+
+    const toggleCompletedStatuses = () => {
+        setSelectedStatusFromServer(mergeStatusSelection(selectedStatusIds, closedStatusIds, completedStatusesState !== 'checked'));
+    };
+
+    const toggleIncompleteStatuses = () => {
+        setSelectedStatusFromServer(mergeStatusSelection(selectedStatusIds, openStatusIds, incompleteStatusesState !== 'checked'));
     };
 
     const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
@@ -895,11 +954,30 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>{i18n.t('field_status') || 'Status'}</div>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: '#333', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', marginBottom: '8px' }}>
                                 <input
+                                    ref={selectAllStatusesRef}
                                     type="checkbox"
-                                    checked={isAllStatusesSelected}
+                                    checked={getCheckboxChecked(allStatusesState)}
                                     onChange={toggleAllStatuses}
                                 />
                                 <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
+                                <input
+                                    ref={completedStatusesRef}
+                                    type="checkbox"
+                                    checked={getCheckboxChecked(completedStatusesState)}
+                                    onChange={toggleCompletedStatuses}
+                                />
+                                {i18n.t('label_status_completed') || 'Completed'}
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0 8px', color: '#444', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', marginBottom: '8px' }}>
+                                <input
+                                    ref={incompleteStatusesRef}
+                                    type="checkbox"
+                                    checked={getCheckboxChecked(incompleteStatusesState)}
+                                    onChange={toggleIncompleteStatuses}
+                                />
+                                {i18n.t('label_status_incomplete') || 'Incomplete'}
                             </label>
                             {taskStatuses.map(status => (
                                 <label key={status.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>

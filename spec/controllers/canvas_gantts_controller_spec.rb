@@ -66,6 +66,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
       i18n_payload = controller.instance_variable_get(:@i18n)
       expect(i18n_payload['label_row_height']).to eq(I18n.t(:label_row_height))
       expect(i18n_payload['label_row_height_m']).to eq(I18n.t(:label_row_height_m))
+      expect(i18n_payload['label_status_completed']).to eq(I18n.t(:label_status_completed))
+      expect(i18n_payload['label_status_incomplete']).to eq(I18n.t(:label_status_incomplete))
     end
 
     it 'includes localized help labels in Japanese frontend i18n payload' do

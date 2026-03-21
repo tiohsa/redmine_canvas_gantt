@@ -49,6 +49,29 @@ describe('GanttToolbar shortcuts', () => {
         useUIStore.setState(useUIStore.getInitialState(), true);
     });
 
+    const setStatusFilterState = (selectedStatusIds: number[] = []) => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [],
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [
+                { id: 1, name: 'New', isClosed: false },
+                { id: 2, name: 'In Progress', isClosed: false },
+                { id: 3, name: 'Closed', isClosed: true },
+                { id: 4, name: 'Rejected', isClosed: true }
+            ],
+            selectedStatusIds,
+            modifiedTaskIds: new Set(),
+            autoSave: true,
+            setSelectedStatusFromServer: (ids: number[]) => {
+                useTaskStore.setState({ selectedStatusIds: ids });
+            }
+        });
+    };
+
     it('opens filter input with Ctrl+F and cancels with Escape', async () => {
         useTaskStore.setState({
             filterText: '',
@@ -387,6 +410,87 @@ describe('GanttToolbar shortcuts', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /reset/i }));
         expect(useUIStore.getState().visibleColumns).toEqual(['notification', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone']);
+    });
+
+    it('toggles completed and incomplete status groups', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                field_status: 'Status',
+                label_all_select: 'Select All',
+                label_status_completed: 'Completed',
+                label_status_incomplete: 'Incomplete',
+                label_clear_filter: 'Clear'
+            }
+        };
+
+        setStatusFilterState();
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTitle('Status'));
+        fireEvent.click(screen.getByLabelText('Completed'));
+        expect(useTaskStore.getState().selectedStatusIds).toEqual([3, 4]);
+
+        fireEvent.click(screen.getByLabelText('Incomplete'));
+        expect(useTaskStore.getState().selectedStatusIds).toEqual([3, 4, 1, 2]);
+
+        fireEvent.click(screen.getByLabelText('Completed'));
+        expect(useTaskStore.getState().selectedStatusIds).toEqual([1, 2]);
+    });
+
+    it('recomputes grouped status checkbox states from individual selections', async () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                field_status: 'Status',
+                label_all_select: 'Select All',
+                label_status_completed: 'Completed',
+                label_status_incomplete: 'Incomplete',
+                label_clear_filter: 'Clear'
+            }
+        };
+
+        setStatusFilterState([1, 3]);
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTitle('Status'));
+
+        const selectAll = screen.getByLabelText('Select All') as HTMLInputElement;
+        const completed = screen.getByLabelText('Completed') as HTMLInputElement;
+        const incomplete = screen.getByLabelText('Incomplete') as HTMLInputElement;
+
+        await waitFor(() => {
+            expect(selectAll.checked).toBe(false);
+            expect(selectAll.indeterminate).toBe(true);
+            expect(completed.checked).toBe(false);
+            expect(completed.indeterminate).toBe(true);
+            expect(incomplete.checked).toBe(false);
+            expect(incomplete.indeterminate).toBe(true);
+        });
+
+        fireEvent.click(screen.getByLabelText('In Progress'));
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().selectedStatusIds).toEqual([1, 3, 2]);
+            expect(incomplete.checked).toBe(true);
+            expect(incomplete.indeterminate).toBe(false);
+            expect(selectAll.checked).toBe(false);
+            expect(selectAll.indeterminate).toBe(true);
+        });
+
+        fireEvent.click(screen.getByLabelText('Rejected'));
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().selectedStatusIds).toEqual([1, 3, 2, 4]);
+            expect(selectAll.checked).toBe(true);
+            expect(selectAll.indeterminate).toBe(false);
+            expect(completed.checked).toBe(true);
+            expect(completed.indeterminate).toBe(false);
+        });
     });
 
 });

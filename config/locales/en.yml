@@ -51,6 +51,8 @@ en:
   button_collapse_all: "Collapse All"
   label_show_subprojects: "Show subprojects"
   label_all_select: "Select All"
+  label_status_completed: "Completed"
+  label_status_incomplete: "Incomplete"
   label_unassigned: "Unassigned"
   label_assigned_to_filter: "Filter by assignee"
   label_project_filter: "Filter by project"
