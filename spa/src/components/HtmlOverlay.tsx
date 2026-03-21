@@ -368,7 +368,6 @@ export const HtmlOverlay: React.FC = () => {
     const contextMenu = useTaskStore(state => state.contextMenu);
     const tasks = useTaskStore(state => state.tasks);
     const relations = useTaskStore(state => state.relations);
-    const schedulingStates = useTaskStore(state => state.schedulingStates);
     const selectedRelationId = useTaskStore(state => state.selectedRelationId);
     const draftRelation = useTaskStore(state => state.draftRelation);
     const setContextMenu = useTaskStore(state => state.setContextMenu);
@@ -800,47 +799,6 @@ export const HtmlOverlay: React.FC = () => {
                 ref={overlayRef}
                 style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
             >
-                {visibleTasks.map((task) => {
-                    const stateInfo = schedulingStates[task.id];
-                    if (!stateInfo || stateInfo.state === 'normal' || stateInfo.state === 'unscheduled') return null;
-
-                    const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
-                    const color =
-                        stateInfo.state === 'cyclic'
-                            ? '#d93025'
-                            : stateInfo.state === 'invalid'
-                                ? '#ea8600'
-                                : '#f9ab00';
-
-                    return (
-                        <div
-                            key={`scheduling-state-${task.id}`}
-                            data-testid={`task-scheduling-state-${task.id}`}
-                            data-tooltip={stateInfo.message}
-                            style={{
-                                position: 'absolute',
-                                left: bounds.x + bounds.width + 8,
-                                top: Math.max(0, bounds.y - 2),
-                                width: 16,
-                                height: 16,
-                                borderRadius: '50%',
-                                background: '#fff',
-                                color,
-                                border: `1px solid ${color}`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: 11,
-                                fontWeight: 700,
-                                pointerEvents: 'auto',
-                                boxShadow: '0 1px 2px rgba(0,0,0,0.12)'
-                            }}
-                        >
-                            !
-                        </div>
-                    );
-                })}
-
                 {visibleTasks.map((task) => {
                     const isDependencyDragging = dragDraft !== null;
                     const showDependencyHandles = task.id === hoveredTaskId;
