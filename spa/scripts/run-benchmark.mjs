@@ -1,5 +1,5 @@
 import { chromium } from '@playwright/test';
-import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import process from 'node:process';
@@ -13,6 +13,8 @@ const BENCH_DIR = resolve(SPA_DIR, 'bench');
 const RESULTS_DIR = resolve(BENCH_DIR, 'results');
 const BUDGET_FILE = resolve(BENCH_DIR, 'budgets.json');
 const DEFAULT_OUTPUT_FILE = resolve(RESULTS_DIR, 'benchmark-results.json');
+const BUILD_DIR = resolve(SPA_DIR, '..', 'assets', 'build');
+const MANIFEST_FILE = resolve(BUILD_DIR, '.vite', 'manifest.json');
 const BASE_URL = 'http://127.0.0.1:4173';
 const SAMPLE_COUNT = Number(process.env.BENCHMARK_SAMPLE_COUNT ?? 3);
 const REGRESSION_THRESHOLD = 1.2;
@@ -48,47 +50,95 @@ const median = (values) => {
 
 const average = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
 
-const waitForServer = async (url, timeoutMs) => {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch {
-      // Server not ready yet.
-    }
-
-    await delay(500);
-  }
-
-  throw new Error(`Timed out waiting for ${url}`);
+const MIME_TYPES = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml'
 };
 
-const spawnPreviewServer = async () => {
-  const server = spawn('npm', ['run', 'preview', '--', '--host', '127.0.0.1', '--port', '4173', '--strictPort'], {
-    cwd: SPA_DIR,
-    stdio: 'inherit',
-    shell: false
+const contentTypeFor = (path) => {
+  const extension = path.slice(path.lastIndexOf('.'));
+  return MIME_TYPES[extension] ?? 'application/octet-stream';
+};
+
+const renderBenchmarkHtml = async () => {
+  const [templateHtml, manifestText] = await Promise.all([
+    readFile(resolve(SPA_DIR, 'index.html'), 'utf8'),
+    readFile(MANIFEST_FILE, 'utf8')
+  ]);
+  const manifest = JSON.parse(manifestText);
+  const entry = manifest['src/main.tsx'];
+
+  if (!entry?.file) {
+    throw new Error('Missing build manifest entry for src/main.tsx');
+  }
+
+  const cssLinks = (entry.css ?? [])
+    .map((file) => `    <link rel="stylesheet" href="/${file}" />`)
+    .join('\n');
+  const scriptTag = `    <script type="module" src="/${entry.file}"></script>`;
+
+  return templateHtml
+    .replace('    <script type="module" src="/src/main.tsx"></script>', `${cssLinks}\n${scriptTag}`)
+    .replace('href="/vite.svg"', 'href="/vite.svg"');
+};
+
+const startBenchmarkServer = async () => {
+  const html = await renderBenchmarkHtml();
+  const fileMap = new Map();
+  const manifest = JSON.parse(await readFile(MANIFEST_FILE, 'utf8'));
+  const entry = manifest['src/main.tsx'];
+
+  fileMap.set('/vite.svg', resolve(BUILD_DIR, 'vite.svg'));
+  fileMap.set(`/${entry.file}`, resolve(BUILD_DIR, entry.file));
+  for (const cssFile of entry.css ?? []) {
+    fileMap.set(`/${cssFile}`, resolve(BUILD_DIR, cssFile));
+  }
+
+  const server = createServer(async (request, response) => {
+    const requestPath = request.url === '/' ? '/' : new URL(request.url, BASE_URL).pathname;
+
+    if (requestPath === '/') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(html);
+      return;
+    }
+
+    const filePath = fileMap.get(requestPath);
+    if (!filePath) {
+      response.writeHead(404);
+      response.end('Not Found');
+      return;
+    }
+
+    try {
+      const body = await readFile(filePath);
+      response.writeHead(200, { 'content-type': contentTypeFor(filePath) });
+      response.end(body);
+    } catch (error) {
+      response.writeHead(500);
+      response.end(error instanceof Error ? error.message : String(error));
+    }
   });
 
-  await waitForServer(BASE_URL, 60_000);
+  await new Promise((resolveReady, rejectReady) => {
+    server.once('error', rejectReady);
+    server.listen(4173, '127.0.0.1', resolveReady);
+  });
+
   return server;
 };
 
-const stopPreviewServer = async (server) => {
-  if (!server || server.killed || server.exitCode !== null || server.signalCode !== null) return;
-
-  server.kill('SIGTERM');
-  const exitCode = await Promise.race([
-    new Promise((resolveExit) => server.once('exit', resolveExit)),
-    delay(5_000).then(() => 'timeout')
-  ]);
-
-  if (exitCode === 'timeout') {
-    server.kill('SIGKILL');
-    await new Promise((resolveExit) => server.once('exit', resolveExit));
-  }
+const stopBenchmarkServer = async (server) => {
+  if (!server?.listening) return;
+  await new Promise((resolveClose, rejectClose) => {
+    server.close((error) => {
+      if (error) rejectClose(error);
+      else resolveClose();
+    });
+  });
 };
 
 const installBenchmarkGlobals = async (page) => {
@@ -241,11 +291,11 @@ const main = async () => {
 
   await mkdir(resolve(RESULTS_DIR), { recursive: true });
 
-  let previewServer;
+  let benchmarkServer;
   let browser;
 
   try {
-    previewServer = await spawnPreviewServer();
+    benchmarkServer = await startBenchmarkServer();
     browser = await chromium.launch({ headless: true });
 
     const scenarioResults = [];
@@ -280,7 +330,7 @@ const main = async () => {
     }
   } finally {
     await browser?.close();
-    await stopPreviewServer(previewServer);
+    await stopBenchmarkServer(benchmarkServer);
   }
 };
 

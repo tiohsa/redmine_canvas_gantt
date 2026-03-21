@@ -1,0 +1,224 @@
+{
+  "generatedAt": "2026-03-21T16:37:19.391Z",
+  "baseUrl": "http://127.0.0.1:4173",
+  "sampleCount": 3,
+  "regressionThreshold": 1.2,
+  "ci": true,
+  "results": [
+    {
+      "name": "flat-1000",
+      "kind": "flat",
+      "taskCount": 1000,
+      "payloadBytes": 297128,
+      "samples": [
+        {
+          "sample": 1,
+          "renderMs": 349.4,
+          "domNodes": 2076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        },
+        {
+          "sample": 2,
+          "renderMs": 273.8,
+          "domNodes": 2076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        },
+        {
+          "sample": 3,
+          "renderMs": 257.2,
+          "domNodes": 2076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        }
+      ],
+      "metrics": {
+        "renderMs": {
+          "min": 257.2,
+          "median": 273.8,
+          "mean": 293.47,
+          "max": 349.4
+        }
+      },
+      "budget": {
+        "baselineMs": 5000,
+        "thresholdMs": 6000,
+        "allowedRegressionPercent": 20
+      },
+      "status": "pass"
+    },
+    {
+      "name": "flat-5000",
+      "kind": "flat",
+      "taskCount": 5000,
+      "payloadBytes": 1497397,
+      "samples": [
+        {
+          "sample": 1,
+          "renderMs": 604.3,
+          "domNodes": 6076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        },
+        {
+          "sample": 2,
+          "renderMs": 575.4,
+          "domNodes": 6076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        },
+        {
+          "sample": 3,
+          "renderMs": 601.7,
+          "domNodes": 6076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        }
+      ],
+      "metrics": {
+        "renderMs": {
+          "min": 575.4,
+          "median": 601.7,
+          "mean": 593.8,
+          "max": 604.3
+        }
+      },
+      "budget": {
+        "baselineMs": 15000,
+        "thresholdMs": 18000,
+        "allowedRegressionPercent": 20
+      },
+      "status": "pass"
+    },
+    {
+      "name": "flat-10000",
+      "kind": "flat",
+      "taskCount": 10000,
+      "payloadBytes": 2997730,
+      "samples": [
+        {
+          "sample": 1,
+          "renderMs": 1070.6,
+          "domNodes": 11076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        },
+        {
+          "sample": 2,
+          "renderMs": 1036.9,
+          "domNodes": 11076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        },
+        {
+          "sample": 3,
+          "renderMs": 953.1,
+          "domNodes": 11076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        }
+      ],
+      "metrics": {
+        "renderMs": {
+          "min": 953.1,
+          "median": 1036.9,
+          "mean": 1020.2,
+          "max": 1070.6
+        }
+      },
+      "budget": {
+        "baselineMs": 30000,
+        "thresholdMs": 36000,
+        "allowedRegressionPercent": 20
+      },
+      "status": "pass"
+    },
+    {
+      "name": "hierarchy-1000",
+      "kind": "hierarchy",
+      "taskCount": 1000,
+      "payloadBytes": 332932,
+      "samples": [
+        {
+          "sample": 1,
+          "renderMs": 253.2,
+          "domNodes": 2165,
+          "visibleRows": 18,
+          "canvasCount": 3
+        },
+        {
+          "sample": 2,
+          "renderMs": 239.9,
+          "domNodes": 2165,
+          "visibleRows": 18,
+          "canvasCount": 3
+        },
+        {
+          "sample": 3,
+          "renderMs": 223.3,
+          "domNodes": 2165,
+          "visibleRows": 18,
+          "canvasCount": 3
+        }
+      ],
+      "metrics": {
+        "renderMs": {
+          "min": 223.3,
+          "median": 239.9,
+          "mean": 238.8,
+          "max": 253.2
+        }
+      },
+      "budget": {
+        "baselineMs": 6000,
+        "thresholdMs": 7200,
+        "allowedRegressionPercent": 20
+      },
+      "status": "pass"
+    },
+    {
+      "name": "dependency-1000",
+      "kind": "dependency",
+      "taskCount": 1000,
+      "payloadBytes": 372730,
+      "samples": [
+        {
+          "sample": 1,
+          "renderMs": 273.2,
+          "domNodes": 2076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        },
+        {
+          "sample": 2,
+          "renderMs": 273.2,
+          "domNodes": 2076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        },
+        {
+          "sample": 3,
+          "renderMs": 302.1,
+          "domNodes": 2076,
+          "visibleRows": 18,
+          "canvasCount": 3
+        }
+      ],
+      "metrics": {
+        "renderMs": {
+          "min": 273.2,
+          "median": 273.2,
+          "mean": 282.83,
+          "max": 302.1
+        }
+      },
+      "budget": {
+        "baselineMs": 7000,
+        "thresholdMs": 8400,
+        "allowedRegressionPercent": 20
+      },
+      "status": "pass"
+    }
+  ]
+}
