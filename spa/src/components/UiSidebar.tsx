@@ -17,11 +17,11 @@ import { useSidebarDragAndDrop } from './sidebar/useSidebarDragAndDrop';
 import { useSidebarInlineEdit } from './sidebar/useSidebarInlineEdit';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
+import { SvgIcon } from '../icons/SvgIcon';
 
 type TaskNotificationDescriptor = {
-    glyph: 'U' | '!' | 'CP';
+    iconName: 'rcg-icon-notification-unscheduled' | 'rcg-icon-notification-warning' | 'rcg-icon-notification-critical';
     color: string;
-    backgroundColor: string;
     tooltip: string;
     testIdSuffix: string;
 };
@@ -33,9 +33,8 @@ const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskN
 
     if (schedulingState.state === 'invalid') {
         return {
-            glyph: '!',
+            iconName: 'rcg-icon-notification-warning',
             color: '#ea8600',
-            backgroundColor: '#fff7e0',
             tooltip: schedulingState.message,
             testIdSuffix: 'invalid'
         };
@@ -43,9 +42,8 @@ const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskN
 
     if (schedulingState.state === 'cyclic') {
         return {
-            glyph: '!',
+            iconName: 'rcg-icon-notification-warning',
             color: '#d93025',
-            backgroundColor: '#fff7e0',
             tooltip: schedulingState.message,
             testIdSuffix: 'cyclic'
         };
@@ -53,18 +51,16 @@ const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskN
 
     if (schedulingState.state === 'conflicted') {
         return {
-            glyph: '!',
+            iconName: 'rcg-icon-notification-warning',
             color: '#f9ab00',
-            backgroundColor: '#fff7e0',
             tooltip: schedulingState.message,
             testIdSuffix: 'conflicted'
         };
     }
 
     return {
-        glyph: 'U',
+        iconName: 'rcg-icon-notification-unscheduled',
         color: '#5f6368',
-        backgroundColor: '#f1f3f4',
         tooltip: schedulingState.message,
         testIdSuffix: 'unscheduled'
     };
@@ -74,9 +70,8 @@ const getCriticalPathNotification = (criticalPathMetrics?: CriticalPathTaskMetri
     if (!criticalPathMetrics?.critical) return null;
 
     return {
-        glyph: 'CP',
+        iconName: 'rcg-icon-notification-critical',
         color: '#b42318',
-        backgroundColor: '#fff1f3',
         tooltip: `Critical path task. Total slack: ${criticalPathMetrics.totalSlackDays} working day(s).`,
         testIdSuffix: 'critical'
     };
@@ -351,18 +346,12 @@ export const UiSidebar: React.FC = () => {
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            minWidth: 18,
+                            width: 18,
                             height: 18,
-                            borderRadius: 999,
-                            padding: '0 5px',
-                            backgroundColor: notification.backgroundColor,
-                            border: `1px solid ${notification.color}`,
-                            color: notification.color,
-                            fontSize: 10,
-                            fontWeight: 700
+                            color: notification.color
                         }}
                     >
-                        {notification.glyph}
+                        <SvgIcon name={notification.iconName} size={18} />
                     </span>
                 );
             }
