@@ -80,6 +80,8 @@ class CanvasGanttsController < ApplicationController
     field_spent_hours: :label_spent_time,
     field_version: :field_fixed_version,
     label_all_select: :label_all_select,
+    label_status_completed: :label_status_completed,
+    label_status_incomplete: :label_status_incomplete,
     label_assigned_to_filter: :label_assigned_to_filter,
     label_project_filter: :label_project_filter,
     label_version_filter: :label_version_filter,
