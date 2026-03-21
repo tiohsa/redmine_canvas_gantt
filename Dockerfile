@@ -1,4 +1,4 @@
-FROM redmine:6.0
+FROM redmine:6.1.2
 
 RUN printf '%s\n' \
     'require_relative "config/environment"' \

@@ -1,6 +1,6 @@
 services:
   redmine:
-    image: redmine:6.0
+    image: redmine:6.1.2
     container_name: redmine-canvas-gantt
     ports:
       - "3000:3000"
