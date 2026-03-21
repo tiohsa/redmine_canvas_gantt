@@ -5,8 +5,6 @@ on:
     branches:
       - main
   pull_request:
-    branches:
-      - main
     types:
       - opened
       - synchronize
@@ -18,8 +16,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  spa-test:
-    name: SPA Lint and Unit Tests
+  init:
+    name: init
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: spa/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Docker Compose configuration
+        working-directory: .
+        run: docker compose config
+
+  build:
+    name: build
+    needs: init
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: spa/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SPA
+        run: npm run build
+
+  test:
+    name: test
+    needs: init
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,7 +93,7 @@ jobs:
 
   spa-benchmark:
     name: SPA Benchmark
-    needs: spa-test
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -82,7 +129,9 @@ jobs:
 
   e2e-redmine-61:
     name: Redmine 6.1 Full E2E
-    needs: spa-test
+    needs:
+      - build
+      - test
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -166,7 +215,9 @@ jobs:
 
   e2e-redmine-60-compat:
     name: Redmine 6.0 Compatibility Smoke
-    needs: spa-test
+    needs:
+      - build
+      - test
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
