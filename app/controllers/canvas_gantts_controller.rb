@@ -381,22 +381,16 @@ class CanvasGanttsController < ApplicationController
     return unless ensure_relation_createable!(issue_from, issue_to)
 
     relation_type = relation_params[:relation_type].to_s
-    unless EDITABLE_RELATION_TYPES.include?(relation_type)
-      render json: { errors: [l(:error_canvas_gantt_relation_type_invalid)] }, status: :unprocessable_entity
-      return
-    end
+    return unless ensure_editable_relation_type!(relation_type)
 
-    delay = relation_params_normalizer.normalize_delay(relation_type)
+    delay = normalized_relation_delay(relation_type)
     return if performed?
-    return unless ensure_relation_delay_consistent!(issue_from, issue_to, relation_type, delay)
-    return unless ensure_relation_cycle_safe!(
-      candidate_relation: {
-        id: '__pending__',
-        from: issue_from.id,
-        to: issue_to.id,
-        type: relation_type,
-        delay: delay
-      }
+    return unless ensure_relation_change_valid!(
+      issue_from: issue_from,
+      issue_to: issue_to,
+      relation_id: '__pending__',
+      relation_type: relation_type,
+      delay: delay
     )
 
     relation = IssueRelation.new(
@@ -406,11 +400,7 @@ class CanvasGanttsController < ApplicationController
       delay: delay
     )
 
-    if relation.save
-      render json: { status: 'ok', relation: relation_params_normalizer.serialize_relation(relation) }
-    else
-      render json: { errors: relation.errors.full_messages }, status: :unprocessable_entity
-    end
+    render_relation_save_result(relation)
   rescue ActiveRecord::RecordNotFound
     render json: { error: l(:error_canvas_gantt_task_not_found) }, status: :not_found
   rescue => e
@@ -423,33 +413,23 @@ class CanvasGanttsController < ApplicationController
     return unless ensure_relation_editable!(relation)
 
     relation_type = relation_params[:relation_type].to_s
-    unless EDITABLE_RELATION_TYPES.include?(relation_type)
-      render json: { errors: [l(:error_canvas_gantt_relation_type_invalid)] }, status: :unprocessable_entity
-      return
-    end
+    return unless ensure_editable_relation_type!(relation_type)
 
-    delay = relation_params_normalizer.normalize_delay(relation_type)
+    delay = normalized_relation_delay(relation_type)
     return if performed?
-    return unless ensure_relation_delay_consistent!(relation.issue_from, relation.issue_to, relation_type, delay)
-    return unless ensure_relation_cycle_safe!(
-      candidate_relation: {
-        id: relation.id,
-        from: relation.issue_from_id,
-        to: relation.issue_to_id,
-        type: relation_type,
-        delay: delay
-      },
+    return unless ensure_relation_change_valid!(
+      issue_from: relation.issue_from,
+      issue_to: relation.issue_to,
+      relation_id: relation.id,
+      relation_type: relation_type,
+      delay: delay,
       replacing_relation_id: relation.id
     )
 
     relation.relation_type = relation_type
     relation.delay = delay
 
-    if relation.save
-      render json: { status: 'ok', relation: relation_params_normalizer.serialize_relation(relation) }
-    else
-      render json: { errors: relation.errors.full_messages }, status: :unprocessable_entity
-    end
+    render_relation_save_result(relation)
   rescue ActiveRecord::RecordNotFound
     render json: { error: l(:error_canvas_gantt_relation_not_found) }, status: :not_found
   rescue => e
@@ -608,6 +588,50 @@ class CanvasGanttsController < ApplicationController
       parsed = Integer(day, exception: false)
       parsed if parsed && parsed.between?(0, 6)
     end.to_set
+  end
+
+  def ensure_editable_relation_type!(relation_type)
+    return true if EDITABLE_RELATION_TYPES.include?(relation_type)
+
+    render json: { errors: [l(:error_canvas_gantt_relation_type_invalid)] }, status: :unprocessable_entity
+    false
+  end
+
+  def normalized_relation_delay(relation_type)
+    relation_params_normalizer.normalize_delay(relation_type)
+  end
+
+  def ensure_relation_change_valid!(issue_from:, issue_to:, relation_id:, relation_type:, delay:, replacing_relation_id: nil)
+    return false unless ensure_relation_delay_consistent!(issue_from, issue_to, relation_type, delay)
+
+    ensure_relation_cycle_safe!(
+      candidate_relation: build_candidate_relation(
+        relation_id: relation_id,
+        issue_from: issue_from,
+        issue_to: issue_to,
+        relation_type: relation_type,
+        delay: delay
+      ),
+      replacing_relation_id: replacing_relation_id
+    )
+  end
+
+  def build_candidate_relation(relation_id:, issue_from:, issue_to:, relation_type:, delay:)
+    {
+      id: relation_id,
+      from: issue_from.id,
+      to: issue_to.id,
+      type: relation_type,
+      delay: delay
+    }
+  end
+
+  def render_relation_save_result(relation)
+    if relation.save
+      render json: { status: 'ok', relation: relation_params_normalizer.serialize_relation(relation) }
+    else
+      render json: { errors: relation.errors.full_messages }, status: :unprocessable_entity
+    end
   end
 
   def add_working_days_to_date(date, days, non_working_week_days)
