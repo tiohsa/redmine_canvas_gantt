@@ -197,6 +197,29 @@ describe('HtmlOverlay', () => {
         expect(startHandle.getAttribute('style')).toContain('border: 1px solid rgba(26, 115, 232, 0.68)');
     });
 
+    it('does not render scheduling warning icons in the right pane', () => {
+        act(() => {
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.setState({
+                schedulingStates: {
+                    '1': {
+                        state: 'conflicted',
+                        message: 'This task violates a scheduling dependency.'
+                    },
+                    '2': {
+                        state: 'invalid',
+                        message: 'This task has an invalid date range.'
+                    }
+                }
+            });
+        });
+
+        render(<HtmlOverlay />);
+
+        expect(screen.queryByTestId('task-scheduling-state-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-scheduling-state-2')).not.toBeInTheDocument();
+    });
+
     it('keeps resize handles visible for a selected task even when not hovered', () => {
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);
