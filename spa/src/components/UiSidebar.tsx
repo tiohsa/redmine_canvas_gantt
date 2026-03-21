@@ -69,13 +69,15 @@ const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskN
 const getCriticalPathNotification = (criticalPathMetrics?: CriticalPathTaskMetrics): TaskNotificationDescriptor | null => {
     if (!criticalPathMetrics?.critical) return null;
 
+    const days = criticalPathMetrics.totalSlackDays;
     return {
         iconName: 'rcg-icon-notification-critical',
         color: '#b42318',
-        tooltip: `Critical path task. Total slack: ${criticalPathMetrics.totalSlackDays} working day(s).`,
+        tooltip: i18n.t('label_critical_path_total_slack', { days }) || `Critical path task. Total slack: ${days} working day(s).`,
         testIdSuffix: 'critical'
     };
 };
+
 
 const getTaskNotification = (
     schedulingState?: SchedulingStateInfo,

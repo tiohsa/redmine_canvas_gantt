@@ -21,6 +21,8 @@ ja:
   label_collapse: "折りたたむ"
   label_loading: "読み込み中..."
   label_notifications: "通知"
+  label_critical_path_total_slack: "クリティカルパスのタスクです。総余裕期間: %{days} 稼働日。"
+
   label_sort_by: "並び替え:"
   label_project: "プロジェクト"
   label_success: "成功"

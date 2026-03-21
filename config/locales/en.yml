@@ -19,6 +19,8 @@ en:
   label_collapse: "Collapse"
   label_loading: "Loading..."
   label_notifications: "Notifications"
+  label_critical_path_total_slack: "Critical path task. Total slack: %{days} working day(s)."
+
   label_sort_by: "Sort by"
   label_project: "Project"
   label_success: "Success"
