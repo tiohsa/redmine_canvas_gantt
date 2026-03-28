@@ -2,6 +2,50 @@ import { create } from 'zustand';
 import { useTaskStore } from './TaskStore';
 import { WorkloadLogicService, type WorkloadData, type WorkloadOptions } from '../services/WorkloadLogicService';
 import { loadPreferences, savePreferences } from '../utils/preferences';
+import type { Task } from '../types';
+
+type HistogramSelectionCycle = {
+    activeKey: string | null;
+    nextIndex: number;
+};
+
+const HISTOGRAM_SELECTION_RESET: HistogramSelectionCycle = {
+    activeKey: null,
+    nextIndex: 0
+};
+
+const getTaskIdSortValue = (taskId: string): { isNumeric: boolean; numeric: number; text: string } => {
+    const numeric = Number(taskId);
+    return {
+        isNumeric: Number.isFinite(numeric),
+        numeric,
+        text: taskId
+    };
+};
+
+const compareTaskIds = (a: string, b: string): number => {
+    const aValue = getTaskIdSortValue(a);
+    const bValue = getTaskIdSortValue(b);
+
+    if (aValue.isNumeric && bValue.isNumeric) {
+        return aValue.numeric - bValue.numeric;
+    }
+
+    return aValue.text.localeCompare(bValue.text);
+};
+
+const sortHistogramTasks = (tasks: Array<{ task: Task; dailyLoad: number }>): Array<{ task: Task; dailyLoad: number }> => (
+    [...tasks].sort((a, b) => {
+        const estimatedHoursA = a.task.estimatedHours ?? 0;
+        const estimatedHoursB = b.task.estimatedHours ?? 0;
+
+        if (estimatedHoursA !== estimatedHoursB) {
+            return estimatedHoursB - estimatedHoursA;
+        }
+
+        return compareTaskIds(a.task.id, b.task.id);
+    })
+);
 
 interface WorkloadState {
     // Settings
@@ -13,6 +57,7 @@ interface WorkloadState {
 
     // Derived Data
     workloadData: WorkloadData | null;
+    histogramSelectionCycle: HistogramSelectionCycle;
 
     // Actions
     setWorkloadPaneVisible: (visible: boolean) => void;
@@ -21,6 +66,8 @@ interface WorkloadState {
     setLeafIssuesOnly: (leafOnly: boolean) => void;
     setIncludeClosedIssues: (include: boolean) => void;
     setTodayOnwardOnly: (todayOnward: boolean) => void;
+    resetHistogramSelectionCycle: () => void;
+    resolveNextHistogramTask: (assigneeId: number, dateStr: string) => { taskId: string | null };
     calculateWorkloadData: () => void;
 }
 
@@ -35,6 +82,7 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
     todayOnwardOnly: prefs.todayOnwardOnly ?? false,
     
     workloadData: null,
+    histogramSelectionCycle: HISTOGRAM_SELECTION_RESET,
 
     setWorkloadPaneVisible: (visible) => {
         set({ workloadPaneVisible: visible });
@@ -83,6 +131,38 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
         }
     },
 
+    resetHistogramSelectionCycle: () => {
+        set({ histogramSelectionCycle: HISTOGRAM_SELECTION_RESET });
+    },
+
+    resolveNextHistogramTask: (assigneeId, dateStr) => {
+        const { workloadData, histogramSelectionCycle } = get();
+        if (!workloadData) return { taskId: null };
+
+        const daily = workloadData.assignees.get(assigneeId)?.dailyWorkloads.get(dateStr);
+        if (!daily || daily.contributingTasks.length === 0) return { taskId: null };
+
+        const sortedTasks = sortHistogramTasks(daily.contributingTasks);
+        const currentKey = `${assigneeId}:${dateStr}`;
+        const isSameBar = histogramSelectionCycle.activeKey === currentKey;
+        const nextIndex = isSameBar
+            ? histogramSelectionCycle.nextIndex % sortedTasks.length
+            : 0;
+        const nextTask = sortedTasks[nextIndex]?.task;
+        if (!nextTask) return { taskId: null };
+
+        set({
+            histogramSelectionCycle: {
+                activeKey: currentKey,
+                nextIndex: sortedTasks.length > 1
+                    ? (nextIndex + 1) % sortedTasks.length
+                    : 0
+            }
+        });
+
+        return { taskId: nextTask.id };
+    },
+
     calculateWorkloadData: () => {
         const { capacityThreshold, leafIssuesOnly, includeClosedIssues, todayOnwardOnly } = get();
         
@@ -101,7 +181,10 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
         };
 
         const data = WorkloadLogicService.calculateWorkload(allTasks, closedStatusIds, options);
-        set({ workloadData: data });
+        set({
+            workloadData: data,
+            histogramSelectionCycle: HISTOGRAM_SELECTION_RESET
+        });
     }
 }));
 

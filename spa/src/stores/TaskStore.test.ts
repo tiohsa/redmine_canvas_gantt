@@ -283,6 +283,107 @@ describe('TaskStore project filter with subproject toggle', () => {
     });
 });
 
+describe('TaskStore focusTask', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('opens ancestor, project, and version groups before selecting the task', () => {
+        const { setTasks, setVersions, toggleProjectExpansion, toggleVersionExpansion, toggleTaskExpansion, focusTask } = useTaskStore.getState();
+
+        setVersions([
+            {
+                id: 'v1',
+                name: 'Version 1',
+                effectiveDate: MONDAY,
+                startDate: MONDAY,
+                ratioDone: 0,
+                projectId: 'p1',
+                status: 'open'
+            }
+        ]);
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', projectName: 'Project 1', fixedVersionId: 'v1', hasChildren: true, displayOrder: 0 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', projectName: 'Project 1', fixedVersionId: 'v1', startDate: TUESDAY, dueDate: WEDNESDAY, displayOrder: 1 })
+        ]);
+
+        toggleProjectExpansion('p1');
+        toggleVersionExpansion('v1');
+        toggleTaskExpansion('parent');
+
+        const result = focusTask('child');
+        const state = useTaskStore.getState();
+
+        expect(result).toEqual({ status: 'ok' });
+        expect(state.projectExpansion.p1).toBe(true);
+        expect(state.versionExpansion.v1).toBe(true);
+        expect(state.taskExpansion.parent).toBe(true);
+        expect(state.selectedTaskId).toBe('child');
+        expect(state.tasks.some((task) => task.id === 'child')).toBe(true);
+    });
+
+    it('scrolls vertically and horizontally to make the task visible', () => {
+        const { setTasks, focusTask } = useTaskStore.getState();
+        const tasks: Task[] = [];
+
+        for (let index = 0; index < 30; index += 1) {
+            tasks.push(buildTask({
+                id: `task-${index}`,
+                projectId: 'p1',
+                projectName: 'Project 1',
+                displayOrder: index,
+                startDate: MONDAY + index * DAY,
+                dueDate: MONDAY + index * DAY
+            }));
+        }
+
+        useTaskStore.setState((state) => ({
+            ...state,
+            viewport: {
+                ...state.viewport,
+                width: 400,
+                height: 160,
+                rowHeight: 32,
+                startDate: MONDAY,
+                scrollX: 0,
+                scrollY: 0
+            },
+            groupByProject: false,
+            showVersions: false
+        }));
+        setTasks(tasks);
+
+        const result = focusTask('task-24');
+        const state = useTaskStore.getState();
+
+        expect(result).toEqual({ status: 'ok' });
+        expect(state.selectedTaskId).toBe('task-24');
+        expect(state.viewport.scrollY).toBeGreaterThan(0);
+        expect(state.viewport.scrollX).toBeGreaterThan(0);
+    });
+
+    it('returns filtered_out without changing state when the task is hidden by filters', () => {
+        const { setTasks, setFilterText, focusTask } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'visible', subject: 'Visible Task', projectId: 'p1' }),
+            buildTask({ id: 'hidden', subject: 'Hidden Task', projectId: 'p1' })
+        ]);
+        setFilterText('Visible');
+
+        const before = useTaskStore.getState();
+        const result = focusTask('hidden');
+        const after = useTaskStore.getState();
+
+        expect(result).toEqual({ status: 'filtered_out' });
+        expect(after.selectedTaskId).toBe(before.selectedTaskId);
+        expect(after.viewport).toEqual(before.viewport);
+    });
+
+    it('returns missing when the task does not exist', () => {
+        expect(useTaskStore.getState().focusTask('missing-task')).toEqual({ status: 'missing' });
+    });
+});
+
 describe('TaskStore dependency grouping', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);

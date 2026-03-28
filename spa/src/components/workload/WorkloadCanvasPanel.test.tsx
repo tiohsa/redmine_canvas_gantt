@@ -4,6 +4,8 @@ import { WorkloadCanvasPanel } from './WorkloadCanvasPanel';
 import { useTaskStore } from '../../stores/TaskStore';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
 import type { WorkloadData } from '../../services/WorkloadLogicService';
+import type { Task } from '../../types';
+import { useUIStore } from '../../stores/UIStore';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
@@ -20,7 +22,21 @@ const mockContext = {
     lineWidth: 0
 } as unknown as CanvasRenderingContext2D;
 
-const buildWorkloadData = (): WorkloadData => ({
+const buildTask = (overrides: Partial<Task>): Task => ({
+    id: 'task',
+    subject: 'task',
+    startDate: 0,
+    dueDate: 0,
+    ratioDone: 0,
+    statusId: 1,
+    lockVersion: 0,
+    editable: true,
+    rowIndex: 0,
+    hasChildren: false,
+    ...overrides
+});
+
+const buildWorkloadData = (contributingTasks: Task[] = []): WorkloadData => ({
     assignees: new Map([
         [1, {
             assigneeId: 1,
@@ -30,10 +46,13 @@ const buildWorkloadData = (): WorkloadData => ({
             dailyWorkloads: new Map([
                 ['2026-01-01', {
                     dateStr: '2026-01-01',
-                    timestamp: ONE_DAY,
+                    timestamp: ONE_DAY * 3,
                     totalLoad: 8,
                     isOverload: false,
-                    contributingTasks: []
+                    contributingTasks: contributingTasks.map((task) => ({
+                        task,
+                        dailyLoad: 1
+                    }))
                 }]
             ])
         }]
@@ -77,15 +96,16 @@ beforeEach(() => {
         ...useTaskStore.getInitialState(),
         viewport: {
             ...useTaskStore.getInitialState().viewport,
-            startDate: 1000,
+            startDate: 0,
             scrollX: 50,
             scrollY: 60,
-            scale: 2,
+            scale: 20 / ONE_DAY,
             height: 200,
             rowHeight: 40
         },
         rowCount: 20
     }, true);
+    useUIStore.setState(useUIStore.getInitialState(), true);
 
     useWorkloadStore.setState({
         ...useWorkloadStore.getInitialState(),
@@ -166,5 +186,69 @@ describe('WorkloadCanvasPanel', () => {
         fireEvent.scroll(viewportElement, { target: { scrollTop: 48 } });
 
         expect(handleScroll).toHaveBeenCalledWith(48);
+    });
+
+    it('focuses the matching task when a histogram bar is clicked', () => {
+        const tasks = [
+            buildTask({ id: 'task-1', subject: 'Task 1', projectId: 'p1', startDate: ONE_DAY, dueDate: ONE_DAY, estimatedHours: 4 }),
+            buildTask({ id: 'task-2', subject: 'Task 2', projectId: 'p1', startDate: ONE_DAY * 2, dueDate: ONE_DAY * 2, estimatedHours: 2 })
+        ];
+        useTaskStore.getState().setTasks(tasks);
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData(tasks)
+        });
+
+        render(<WorkloadCanvasPanel />);
+
+        const viewportElement = screen.getByTestId('workload-canvas-viewport');
+        fireEvent.mouseDown(viewportElement, { button: 0, clientX: 15, clientY: 70 });
+        fireEvent.mouseUp(window, { clientX: 15, clientY: 70 });
+
+        expect(useTaskStore.getState().selectedTaskId).toBe('task-1');
+    });
+
+    it('cycles through matching tasks on repeated clicks of the same bar', () => {
+        const tasks = [
+            buildTask({ id: 'task-1', subject: 'Task 1', projectId: 'p1', startDate: ONE_DAY, dueDate: ONE_DAY, estimatedHours: 8 }),
+            buildTask({ id: 'task-2', subject: 'Task 2', projectId: 'p1', startDate: ONE_DAY * 2, dueDate: ONE_DAY * 2, estimatedHours: 4 })
+        ];
+        useTaskStore.getState().setTasks(tasks);
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData(tasks)
+        });
+
+        render(<WorkloadCanvasPanel />);
+
+        const viewportElement = screen.getByTestId('workload-canvas-viewport');
+        fireEvent.mouseDown(viewportElement, { button: 0, clientX: 15, clientY: 70 });
+        fireEvent.mouseUp(window, { clientX: 15, clientY: 70 });
+        expect(useTaskStore.getState().selectedTaskId).toBe('task-1');
+
+        fireEvent.mouseDown(viewportElement, { button: 0, clientX: 65, clientY: 70 });
+        fireEvent.mouseUp(window, { clientX: 65, clientY: 70 });
+        expect(useTaskStore.getState().selectedTaskId).toBe('task-2');
+    });
+
+    it('shows a warning when the clicked task is hidden by filters', () => {
+        const tasks = [
+            buildTask({ id: 'hidden-task', subject: 'Hidden Task', projectId: 'p1', startDate: ONE_DAY, dueDate: ONE_DAY, estimatedHours: 8 })
+        ];
+        useTaskStore.getState().setTasks(tasks);
+        useTaskStore.getState().setFilterText('Visible');
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData(tasks)
+        });
+
+        render(<WorkloadCanvasPanel />);
+
+        const viewportElement = screen.getByTestId('workload-canvas-viewport');
+        fireEvent.mouseDown(viewportElement, { button: 0, clientX: 15, clientY: 70 });
+        fireEvent.mouseUp(window, { clientX: 15, clientY: 70 });
+
+        expect(useTaskStore.getState().selectedTaskId).toBeNull();
+        expect(useUIStore.getState().notifications.at(-1)?.message).toBe('Selected task is hidden by the current filters.');
     });
 });

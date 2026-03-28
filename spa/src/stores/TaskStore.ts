@@ -116,6 +116,7 @@ interface TaskState {
     setSelectedProjectIds: (ids: string[]) => void;
     setSelectedVersionIds: (ids: string[]) => void;
     scrollToTask: (taskId: string) => void;
+    focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
     refreshData: () => Promise<void>;
     setSortingSuspended: (suspended: boolean) => void;
@@ -252,6 +253,67 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
         nextTasks,
         modifiedTaskIds,
         derived: buildDerivedTaskState(state, { relations: nextRelations, allTasks: nextTasks })
+    };
+};
+
+const getTaskFocusTimestamp = (task: Task): number => {
+    if (Number.isFinite(task.startDate)) {
+        return task.startDate!;
+    }
+    if (Number.isFinite(task.dueDate)) {
+        return task.dueDate!;
+    }
+    return Date.now();
+};
+
+const matchesTaskFilters = (task: Task, state: TaskState): boolean => {
+    const lowerText = state.filterText.toLowerCase();
+    const hasTextFilter = Boolean(lowerText);
+    const hasAssigneeFilter = state.selectedAssigneeIds.length > 0;
+    const hasProjectFilter = state.selectedProjectIds.length > 0;
+    const hasVersionFilter = state.selectedVersionIds.length > 0;
+    const hasSubprojectFilter = !state.showSubprojects && state.currentProjectId !== null && !hasProjectFilter;
+
+    if (!hasTextFilter && !hasAssigneeFilter && !hasProjectFilter && !hasVersionFilter && !hasSubprojectFilter) {
+        return true;
+    }
+
+    const taskAssignee = task.assignedToId === undefined ? null : task.assignedToId;
+
+    return (
+        (!hasTextFilter || task.subject.toLowerCase().includes(lowerText)) &&
+        (!hasAssigneeFilter || state.selectedAssigneeIds.includes(taskAssignee)) &&
+        (!hasProjectFilter || (task.projectId !== undefined && state.selectedProjectIds.includes(task.projectId))) &&
+        (!hasVersionFilter || (
+            (state.selectedVersionIds.includes('_none') && !task.fixedVersionId) ||
+            (task.fixedVersionId !== undefined && state.selectedVersionIds.includes(task.fixedVersionId))
+        )) &&
+        (!hasSubprojectFilter || task.projectId === state.currentProjectId)
+    );
+};
+
+const computeFocusedViewport = (state: TaskState, task: Task) => {
+    const BOTTOM_PADDING_PX = 40;
+    const targetMetadata = getTaskFocusTimestamp(task);
+    let startDate = state.viewport.startDate;
+
+    if (targetMetadata < startDate) {
+        const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+        startDate = targetMetadata - ONE_WEEK;
+    }
+
+    const taskX = (targetMetadata - startDate) * state.viewport.scale;
+    const scrollX = Math.max(0, taskX - (state.viewport.width / 2));
+
+    const rawScrollY = task.rowIndex * state.viewport.rowHeight - ((state.viewport.height - state.viewport.rowHeight) / 2);
+    const maxScrollY = Math.max(0, state.rowCount * state.viewport.rowHeight + BOTTOM_PADDING_PX - state.viewport.height);
+    const scrollY = Math.max(0, Math.min(maxScrollY, rawScrollY));
+
+    return {
+        ...state.viewport,
+        startDate,
+        scrollX,
+        scrollY
     };
 };
 
@@ -1019,14 +1081,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             ?? state.allTasks.find(t => t.id === taskId);
         if (!targetTask) return state;
 
-        let targetMetadata = 0;
-        if (Number.isFinite(targetTask.startDate)) {
-            targetMetadata = targetTask.startDate!;
-        } else if (Number.isFinite(targetTask.dueDate)) {
-            targetMetadata = targetTask.dueDate!;
-        } else {
-            targetMetadata = Date.now();
-        }
+        const targetMetadata = getTaskFocusTimestamp(targetTask);
 
         let { viewport } = state;
 
@@ -1046,6 +1101,72 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             viewport: { ...viewport, scrollX: centeredX }
         };
     }),
+
+    focusTask: (taskId: string) => {
+        const state = get();
+        const targetTask = state.allTasks.find((task) => task.id === taskId);
+        if (!targetTask) {
+            return { status: 'missing' } as const;
+        }
+
+        if (!matchesTaskFilters(targetTask, state)) {
+            return { status: 'filtered_out' } as const;
+        }
+
+        const nextTaskExpansion = { ...state.taskExpansion };
+        const nextProjectExpansion = { ...state.projectExpansion };
+        const nextVersionExpansion = { ...state.versionExpansion };
+        const taskById = new Map(state.allTasks.map((task) => [task.id, task]));
+
+        let currentParentId = targetTask.parentId;
+        while (currentParentId) {
+            nextTaskExpansion[currentParentId] = true;
+            currentParentId = taskById.get(currentParentId)?.parentId;
+        }
+
+        const projectId = targetTask.projectId ?? 'default_project';
+        nextProjectExpansion[projectId] = true;
+        const assigneeId = targetTask.assignedToId === undefined || targetTask.assignedToId === null
+            ? 'none'
+            : String(targetTask.assignedToId);
+        nextProjectExpansion[`assignee:${assigneeId}`] = true;
+
+        if (targetTask.fixedVersionId) {
+            nextVersionExpansion[targetTask.fixedVersionId] = true;
+        }
+
+        const layout = buildLayoutFromState(state, {
+            taskExpansion: nextTaskExpansion,
+            projectExpansion: nextProjectExpansion,
+            versionExpansion: nextVersionExpansion
+        });
+        const focusedTask = layout.tasks.find((task) => task.id === taskId);
+        if (!focusedTask) {
+            return { status: 'filtered_out' } as const;
+        }
+
+        const nextState = {
+            taskExpansion: nextTaskExpansion,
+            projectExpansion: nextProjectExpansion,
+            versionExpansion: nextVersionExpansion,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount,
+            viewport: computeFocusedViewport({
+                ...state,
+                rowCount: layout.rowCount,
+                tasks: layout.tasks,
+                layoutRows: layout.layoutRows
+            }, focusedTask),
+            selectedTaskId: taskId,
+            selectedRelationId: null,
+            draftRelation: null,
+            contextMenu: null
+        };
+
+        set(nextState);
+        return { status: 'ok' } as const;
+    },
 
     setSortConfig: (key) => set((state) => {
         let newSort: TaskState['sortConfig'] = null;

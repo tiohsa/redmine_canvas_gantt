@@ -15,12 +15,14 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
     onScroll
 }) => {
     const HEADER_HEIGHT = 40;
+    const DRAG_THRESHOLD_PX = 4;
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const viewportRef = useRef<HTMLDivElement>(null);
     const renderEngine = useRef<WorkloadRenderer | null>(null);
-    const dragStateRef = useRef<{ active: boolean; startX: number; startY: number }>({
+    const dragStateRef = useRef<{ active: boolean; dragging: boolean; startX: number; startY: number }>({
         active: false,
+        dragging: false,
         startX: 0,
         startY: 0
     });
@@ -111,6 +113,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
             if (!dragStateRef.current.active) return;
             dragStateRef.current = {
                 active: false,
+                dragging: false,
                 startX: 0,
                 startY: 0
             };
@@ -120,6 +123,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
             if (event.button !== 0 || isSidebarResizing) return;
             dragStateRef.current = {
                 active: true,
+                dragging: false,
                 startX: event.clientX,
                 startY: event.clientY
             };
@@ -133,26 +137,73 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                 return;
             }
 
+            const deltaFromStartX = event.clientX - dragStateRef.current.startX;
+            const deltaFromStartY = event.clientY - dragStateRef.current.startY;
+            if (!dragStateRef.current.dragging) {
+                const pointerDistance = Math.hypot(deltaFromStartX, deltaFromStartY);
+                if (pointerDistance < DRAG_THRESHOLD_PX) {
+                    return;
+                }
+            }
+
             const deltaX = event.clientX - dragStateRef.current.startX;
             panViewportByPixels(deltaX, 0);
             dragStateRef.current = {
                 active: true,
+                dragging: true,
                 startX: event.clientX,
                 startY: event.clientY
             };
         };
 
+        const handleMouseUp = (event: MouseEvent) => {
+            if (!dragStateRef.current.active) return;
+
+            const pointerState = dragStateRef.current;
+            finishDrag();
+
+            if (pointerState.dragging || isSidebarResizing) {
+                return;
+            }
+
+            const viewportRect = viewportElement.getBoundingClientRect();
+            const x = event.clientX - viewportRect.left;
+            const y = event.clientY - viewportRect.top;
+            const hit = renderEngine.current?.hitTestDailyBar({
+                pointerX: x,
+                pointerY: y,
+                viewport,
+                zoomLevel,
+                workloadData,
+                capacityThreshold,
+                verticalScroll: scrollTop
+            });
+            if (!hit) {
+                return;
+            }
+
+            const { taskId } = useWorkloadStore.getState().resolveNextHistogramTask(hit.assigneeId, hit.dateStr);
+            if (!taskId) {
+                return;
+            }
+
+            const result = useTaskStore.getState().focusTask(taskId);
+            if (result.status === 'filtered_out') {
+                useUIStore.getState().addNotification('Selected task is hidden by the current filters.', 'warning');
+            }
+        };
+
         viewportElement.addEventListener('mousedown', handleMouseDown);
         window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', finishDrag);
+        window.addEventListener('mouseup', handleMouseUp);
 
         return () => {
             viewportElement.removeEventListener('mousedown', handleMouseDown);
             window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', finishDrag);
+            window.removeEventListener('mouseup', handleMouseUp);
             finishDrag();
         };
-    }, [isSidebarResizing]);
+    }, [capacityThreshold, isSidebarResizing, scrollTop, viewport, workloadData, zoomLevel]);
 
     return (
         <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', borderTop: '1px solid #e0e0e0', backgroundColor: '#ffffff' }}>

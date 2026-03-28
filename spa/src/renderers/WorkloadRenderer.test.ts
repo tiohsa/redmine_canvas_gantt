@@ -227,4 +227,50 @@ describe('WorkloadRenderer', () => {
         const barDraws = vi.mocked(ctx.fillRect).mock.calls.filter(([, y, , height]) => Number(y) >= 0 && Number(height) > 0);
         expect(barDraws.length).toBeGreaterThan(1);
     });
+
+    it('hit tests the visible workload bar for the correct assignee and date', () => {
+        const canvas = {
+            width: 800,
+            height: 240,
+            getContext: vi.fn(() => createMockContext())
+        } as unknown as HTMLCanvasElement;
+        const renderer = new WorkloadRenderer(canvas);
+
+        const hit = renderer.hitTestDailyBar({
+            viewport: buildViewport({ scale: 10 / ONE_DAY }),
+            zoomLevel: 2,
+            workloadData: buildWorkloadData(0),
+            capacityThreshold: 8,
+            verticalScroll: 0,
+            hoveredAssigneeId: null,
+            hoveredDateStr: null,
+            pointerX: 6,
+            pointerY: 54
+        });
+
+        expect(hit).toEqual({ assigneeId: 1, dateStr: '2026-01-01' });
+    });
+
+    it('hit tests the lower assignee row after vertical scrolling', () => {
+        const canvas = {
+            width: 800,
+            height: 72,
+            getContext: vi.fn(() => createMockContext())
+        } as unknown as HTMLCanvasElement;
+        const renderer = new WorkloadRenderer(canvas);
+
+        const hit = renderer.hitTestDailyBar({
+            viewport: buildViewport({ scale: 10 / ONE_DAY, rowHeight: 36 }),
+            zoomLevel: 2,
+            workloadData: buildTwoAssigneeWorkloadData(0),
+            capacityThreshold: 8,
+            verticalScroll: 72,
+            hoveredAssigneeId: null,
+            hoveredDateStr: null,
+            pointerX: 6,
+            pointerY: 54
+        });
+
+        expect(hit).toEqual({ assigneeId: 2, dateStr: '2026-01-01' });
+    });
 });
