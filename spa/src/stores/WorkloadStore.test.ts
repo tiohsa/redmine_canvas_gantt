@@ -268,4 +268,31 @@ describe('WorkloadStore histogram selection', () => {
         useWorkloadStore.getState().resolveNextHistogramTask(1, '2026-01-05');
         expect(useWorkloadStore.getState().getHistogramTaskCycleInfo(1, '2026-01-05')).toEqual({ current: 2, total: 2 });
     });
+
+    it('returns histogram bar label info for multiple-task bars even before selection', () => {
+        const tasks = [
+            buildTask({ id: 'high', estimatedHours: 8, assignedToId: 1, assignedToName: 'Alice' }),
+            buildTask({ id: 'low', estimatedHours: 2, assignedToId: 1, assignedToName: 'Alice' })
+        ];
+
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData([
+                {
+                    assigneeId: 1,
+                    assigneeName: 'Alice',
+                    dateStr: '2026-01-05',
+                    tasks
+                }
+            ])
+        });
+
+        expect(useWorkloadStore.getState().getHistogramBarLabelInfo(1, '2026-01-05')).toEqual({ current: 1, total: 2 });
+
+        useWorkloadStore.getState().resolveNextHistogramTask(1, '2026-01-05');
+        expect(useWorkloadStore.getState().getHistogramBarLabelInfo(1, '2026-01-05')).toEqual({ current: 1, total: 2 });
+
+        useWorkloadStore.getState().resolveNextHistogramTask(1, '2026-01-05');
+        expect(useWorkloadStore.getState().getHistogramBarLabelInfo(1, '2026-01-05')).toEqual({ current: 2, total: 2 });
+    });
 });

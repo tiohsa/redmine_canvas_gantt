@@ -12,6 +12,7 @@ export interface WorkloadRenderState {
     hoveredDateStr: string | null;
     focusedAssigneeId: number | null;
     focusedDateStr: string | null;
+    getBarLabelInfo?: (assigneeId: number, dateStr: string) => { current: number; total: number } | null;
 }
 
 export interface WorkloadHitTestState {
@@ -35,6 +36,8 @@ export class WorkloadRenderer {
     private static readonly BAR_COLOR_OVERLOAD = '#ea4335'; // Red
     private static readonly MAX_EXPECTED_LOAD = 24; // For scaling the histogram
     private static readonly DAY_MS = 24 * 60 * 60 * 1000;
+    private static readonly LABEL_MIN_BAR_WIDTH = 22;
+    private static readonly LABEL_TOP_PADDING = 6;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -128,7 +131,8 @@ export class WorkloadRenderer {
             verticalScroll,
             hoveredAssigneeId,
             focusedAssigneeId,
-            focusedDateStr
+            focusedDateStr,
+            getBarLabelInfo
         } = state;
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
@@ -227,6 +231,19 @@ export class WorkloadRenderer {
                 if (rect) {
                     ctx.fillStyle = daily.isOverload ? WorkloadRenderer.BAR_COLOR_OVERLOAD : WorkloadRenderer.BAR_COLOR_NORMAL;
                     ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+
+                    const labelInfo = getBarLabelInfo?.(assignee.assigneeId, daily.dateStr) ?? null;
+                    if (labelInfo && rect.width >= WorkloadRenderer.LABEL_MIN_BAR_WIDTH && rect.y > WorkloadRenderer.LABEL_TOP_PADDING + 10) {
+                        ctx.fillStyle = '#5f6368';
+                        ctx.font = '600 10px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+                        ctx.fillText(
+                            `${labelInfo.current}/${labelInfo.total}`,
+                            rect.x + rect.width / 2,
+                            rect.y - WorkloadRenderer.LABEL_TOP_PADDING
+                        );
+                    }
 
                     if (focusedAssigneeId === assignee.assigneeId && focusedDateStr === daily.dateStr) {
                         ctx.strokeStyle = '#ff9800';

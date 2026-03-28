@@ -91,6 +91,7 @@ interface WorkloadState {
     resetHistogramSelectionCycle: () => void;
     resolveNextHistogramTask: (assigneeId: number, dateStr: string) => { taskId: string | null };
     getHistogramTaskCycleInfo: (assigneeId: number, dateStr: string) => CycleInfo;
+    getHistogramBarLabelInfo: (assigneeId: number, dateStr: string) => CycleInfo;
     setFocusedHistogramBar: (bar: FocusedHistogramBar) => void;
     resetOverloadFocus: () => void;
     resolveNextOverloadBar: (assigneeId: number) => FocusedHistogramBar;
@@ -205,6 +206,27 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
 
         const currentKey = `${assigneeId}:${dateStr}`;
         if (histogramSelectionCycle.activeKey !== currentKey) return null;
+
+        return {
+            current: histogramSelectionCycle.nextIndex === 0 ? total : histogramSelectionCycle.nextIndex,
+            total
+        };
+    },
+
+    getHistogramBarLabelInfo: (assigneeId, dateStr) => {
+        const { workloadData, histogramSelectionCycle } = get();
+        if (!workloadData) return null;
+
+        const total = workloadData.assignees.get(assigneeId)?.dailyWorkloads.get(dateStr)?.contributingTasks.length ?? 0;
+        if (total <= 1) return null;
+
+        const currentKey = `${assigneeId}:${dateStr}`;
+        if (histogramSelectionCycle.activeKey !== currentKey) {
+            return {
+                current: 1,
+                total
+            };
+        }
 
         return {
             current: histogramSelectionCycle.nextIndex === 0 ? total : histogramSelectionCycle.nextIndex,

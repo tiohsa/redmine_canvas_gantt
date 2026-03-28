@@ -10,6 +10,7 @@ function createMockContext() {
         beginPath: vi.fn(),
         clearRect: vi.fn(),
         fillRect: vi.fn(),
+        fillText: vi.fn(),
         strokeRect: vi.fn(),
         stroke: vi.fn(),
         moveTo: vi.fn(),
@@ -17,6 +18,9 @@ function createMockContext() {
         setLineDash: vi.fn(),
         save: vi.fn(),
         restore: vi.fn(),
+        font: '',
+        textAlign: 'left' as CanvasTextAlign,
+        textBaseline: 'alphabetic' as CanvasTextBaseline,
         fillStyle: '',
         strokeStyle: '',
         lineWidth: 0
@@ -115,7 +119,8 @@ describe('WorkloadRenderer', () => {
             hoveredAssigneeId: null,
             hoveredDateStr: null,
             focusedAssigneeId: null,
-            focusedDateStr: null
+            focusedDateStr: null,
+            getBarLabelInfo: undefined
         });
 
         const baselineFillRectCount = vi.mocked(ctx.fillRect).mock.calls.length;
@@ -129,7 +134,8 @@ describe('WorkloadRenderer', () => {
             hoveredAssigneeId: null,
             hoveredDateStr: null,
             focusedAssigneeId: null,
-            focusedDateStr: null
+            focusedDateStr: null,
+            getBarLabelInfo: undefined
         });
 
         expect(vi.mocked(ctx.fillRect).mock.calls.length).toBeGreaterThan(baselineFillRectCount);
@@ -154,7 +160,8 @@ describe('WorkloadRenderer', () => {
             hoveredAssigneeId: null,
             hoveredDateStr: null,
             focusedAssigneeId: null,
-            focusedDateStr: null
+            focusedDateStr: null,
+            getBarLabelInfo: undefined
         });
 
         const baselineFillRectCount = vi.mocked(ctx.fillRect).mock.calls.length;
@@ -168,7 +175,8 @@ describe('WorkloadRenderer', () => {
             hoveredAssigneeId: null,
             hoveredDateStr: null,
             focusedAssigneeId: null,
-            focusedDateStr: null
+            focusedDateStr: null,
+            getBarLabelInfo: undefined
         });
 
         expect(vi.mocked(ctx.fillRect).mock.calls.length).toBeGreaterThan(baselineFillRectCount);
@@ -199,7 +207,8 @@ describe('WorkloadRenderer', () => {
             hoveredAssigneeId: null,
             hoveredDateStr: null,
             focusedAssigneeId: null,
-            focusedDateStr: null
+            focusedDateStr: null,
+            getBarLabelInfo: undefined
         });
 
         const baselineFillRectCount = vi.mocked(ctx.fillRect).mock.calls.length;
@@ -238,7 +247,8 @@ describe('WorkloadRenderer', () => {
             hoveredAssigneeId: null,
             hoveredDateStr: null,
             focusedAssigneeId: null,
-            focusedDateStr: null
+            focusedDateStr: null,
+            getBarLabelInfo: undefined
         });
 
         const barDraws = vi.mocked(ctx.fillRect).mock.calls.filter(([, y, , height]) => Number(y) >= 0 && Number(height) > 0);
@@ -306,13 +316,15 @@ describe('WorkloadRenderer', () => {
             capacityThreshold: 8,
             verticalScroll: 0,
             hoveredAssigneeId: null,
-            hoveredDateStr: null
+            hoveredDateStr: null,
+            getBarLabelInfo: undefined
         };
 
         renderer.render({
             ...state,
             focusedAssigneeId: null,
-            focusedDateStr: null
+            focusedDateStr: null,
+            getBarLabelInfo: undefined
         });
 
         const baselineFillRectCount = vi.mocked(ctx.fillRect).mock.calls.length;
@@ -323,11 +335,37 @@ describe('WorkloadRenderer', () => {
         renderer.render({
             ...state,
             focusedAssigneeId: 1,
-            focusedDateStr: '2026-01-01'
+            focusedDateStr: '2026-01-01',
+            getBarLabelInfo: undefined
         });
 
         expect(vi.mocked(ctx.strokeRect)).toHaveBeenCalled();
         expect(vi.mocked(ctx.setLineDash)).toHaveBeenCalledWith([4, 2]);
         expect(vi.mocked(ctx.fillRect).mock.calls.length).toBe(baselineFillRectCount);
+    });
+
+    it('draws labels above bars only when multiple tasks contribute', () => {
+        const ctx = createMockContext();
+        const canvas = {
+            width: 800,
+            height: 240,
+            getContext: vi.fn(() => ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new WorkloadRenderer(canvas);
+
+        renderer.render({
+            viewport: buildViewport({ scale: 40 / ONE_DAY }),
+            zoomLevel: 2,
+            workloadData: buildWorkloadData(0),
+            capacityThreshold: 8,
+            verticalScroll: 0,
+            hoveredAssigneeId: null,
+            hoveredDateStr: null,
+            focusedAssigneeId: null,
+            focusedDateStr: null,
+            getBarLabelInfo: (_assigneeId, _dateStr) => ({ current: 1, total: 3 })
+        });
+
+        expect(vi.mocked(ctx.fillText)).toHaveBeenCalledWith('1/3', expect.any(Number), expect.any(Number));
     });
 });

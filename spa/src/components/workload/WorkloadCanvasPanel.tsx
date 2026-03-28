@@ -38,8 +38,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         workloadData,
         capacityThreshold,
         focusedHistogramBar,
-        setFocusedHistogramBar,
-        getHistogramTaskCycleInfo
+        setFocusedHistogramBar
     } = useWorkloadStore();
     const { viewport, zoomLevel } = useTaskStore();
     const isSidebarResizing = useUIStore((state) => state.isSidebarResizing);
@@ -67,9 +66,6 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
     const hasAssignees = workloadAssigneeCount > 0;
     const contentHeight = hasAssignees ? workloadAssigneeCount * rowHeight : 0;
     const cursor = isHistogramBarHovered && !isPointerSuppressed && !isSidebarResizing ? 'pointer' : 'default';
-    const histogramTaskCycleInfo = focusedHistogramBar
-        ? getHistogramTaskCycleInfo(focusedHistogramBar.assigneeId, focusedHistogramBar.dateStr)
-        : null;
 
     interactionStateRef.current = {
         viewport,
@@ -121,7 +117,8 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                    hoveredAssigneeId: null,
                    hoveredDateStr: null,
                    focusedAssigneeId: focusedHistogramBar?.assigneeId ?? null,
-                   focusedDateStr: focusedHistogramBar?.dateStr ?? null
+                   focusedDateStr: focusedHistogramBar?.dateStr ?? null,
+                   getBarLabelInfo: useWorkloadStore.getState().getHistogramBarLabelInfo
                });
             }
         });
@@ -151,7 +148,8 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                 hoveredAssigneeId: null,
                 hoveredDateStr: null,
                 focusedAssigneeId: focusedHistogramBar?.assigneeId ?? null,
-                focusedDateStr: focusedHistogramBar?.dateStr ?? null
+                focusedDateStr: focusedHistogramBar?.dateStr ?? null,
+                getBarLabelInfo: useWorkloadStore.getState().getHistogramBarLabelInfo
             });
         }
     }, [capacityThreshold, focusedHistogramBar, scrollTop, viewport, zoomLevel, workloadData]);
@@ -382,11 +380,6 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                 backgroundColor: '#fafafa'
             }}>
                 <span>HISTOGRAM (DAILY WORKLOAD)</span>
-                {histogramTaskCycleInfo && (
-                    <span data-testid="histogram-cycle-count" style={{ fontSize: '11px', color: '#666' }}>
-                        {histogramTaskCycleInfo.current}/{histogramTaskCycleInfo.total}
-                    </span>
-                )}
             </div>
             <div
                 ref={viewportRef}
