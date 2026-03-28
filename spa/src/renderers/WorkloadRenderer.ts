@@ -10,6 +10,8 @@ export interface WorkloadRenderState {
     verticalScroll: number;
     hoveredAssigneeId: number | null;
     hoveredDateStr: string | null;
+    focusedAssigneeId: number | null;
+    focusedDateStr: string | null;
 }
 
 export interface WorkloadHitTestState {
@@ -118,7 +120,16 @@ export class WorkloadRenderer {
     }
 
     render(state: WorkloadRenderState) {
-        const { viewport, zoomLevel, workloadData, capacityThreshold, verticalScroll, hoveredAssigneeId } = state;
+        const {
+            viewport,
+            zoomLevel,
+            workloadData,
+            capacityThreshold,
+            verticalScroll,
+            hoveredAssigneeId,
+            focusedAssigneeId,
+            focusedDateStr
+        } = state;
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -216,6 +227,16 @@ export class WorkloadRenderer {
                 if (rect) {
                     ctx.fillStyle = daily.isOverload ? WorkloadRenderer.BAR_COLOR_OVERLOAD : WorkloadRenderer.BAR_COLOR_NORMAL;
                     ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+
+                    if (focusedAssigneeId === assignee.assigneeId && focusedDateStr === daily.dateStr) {
+                        ctx.save();
+                        ctx.strokeStyle = '#202124';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(rect.x - 1, rect.y - 1, rect.width + 2, rect.height + 2);
+                        ctx.fillStyle = 'rgba(255, 193, 7, 0.22)';
+                        ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+                        ctx.restore();
+                    }
                 }
             });
         });

@@ -9,8 +9,23 @@ type HistogramSelectionCycle = {
     nextIndex: number;
 };
 
+type OverloadFocusCycle = {
+    activeAssigneeId: number | null;
+    nextIndex: number;
+};
+
+type FocusedHistogramBar = {
+    assigneeId: number;
+    dateStr: string;
+} | null;
+
 const HISTOGRAM_SELECTION_RESET: HistogramSelectionCycle = {
     activeKey: null,
+    nextIndex: 0
+};
+
+const OVERLOAD_FOCUS_RESET: OverloadFocusCycle = {
+    activeAssigneeId: null,
     nextIndex: 0
 };
 
@@ -58,6 +73,8 @@ interface WorkloadState {
     // Derived Data
     workloadData: WorkloadData | null;
     histogramSelectionCycle: HistogramSelectionCycle;
+    overloadFocusCycle: OverloadFocusCycle;
+    focusedHistogramBar: FocusedHistogramBar;
 
     // Actions
     setWorkloadPaneVisible: (visible: boolean) => void;
@@ -68,6 +85,8 @@ interface WorkloadState {
     setTodayOnwardOnly: (todayOnward: boolean) => void;
     resetHistogramSelectionCycle: () => void;
     resolveNextHistogramTask: (assigneeId: number, dateStr: string) => { taskId: string | null };
+    resetOverloadFocus: () => void;
+    resolveNextOverloadBar: (assigneeId: number) => FocusedHistogramBar;
     calculateWorkloadData: () => void;
 }
 
@@ -83,6 +102,8 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
     
     workloadData: null,
     histogramSelectionCycle: HISTOGRAM_SELECTION_RESET,
+    overloadFocusCycle: OVERLOAD_FOCUS_RESET,
+    focusedHistogramBar: null,
 
     setWorkloadPaneVisible: (visible) => {
         set({ workloadPaneVisible: visible });
@@ -163,6 +184,48 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
         return { taskId: nextTask.id };
     },
 
+    resetOverloadFocus: () => {
+        set({
+            overloadFocusCycle: OVERLOAD_FOCUS_RESET,
+            focusedHistogramBar: null
+        });
+    },
+
+    resolveNextOverloadBar: (assigneeId) => {
+        const { workloadData, overloadFocusCycle } = get();
+        if (!workloadData) return null;
+
+        const assignee = workloadData.assignees.get(assigneeId);
+        if (!assignee) return null;
+
+        const overloads = Array.from(assignee.dailyWorkloads.values())
+            .filter((daily) => daily.isOverload)
+            .sort((a, b) => a.timestamp - b.timestamp);
+        if (overloads.length === 0) return null;
+
+        const isSameAssignee = overloadFocusCycle.activeAssigneeId === assigneeId;
+        const nextIndex = isSameAssignee
+            ? overloadFocusCycle.nextIndex % overloads.length
+            : 0;
+        const nextDaily = overloads[nextIndex];
+        const focusedHistogramBar = {
+            assigneeId,
+            dateStr: nextDaily.dateStr
+        };
+
+        set({
+            overloadFocusCycle: {
+                activeAssigneeId: assigneeId,
+                nextIndex: overloads.length > 1
+                    ? (nextIndex + 1) % overloads.length
+                    : 0
+            },
+            focusedHistogramBar
+        });
+
+        return focusedHistogramBar;
+    },
+
     calculateWorkloadData: () => {
         const { capacityThreshold, leafIssuesOnly, includeClosedIssues, todayOnwardOnly } = get();
         
@@ -183,7 +246,9 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
         const data = WorkloadLogicService.calculateWorkload(allTasks, closedStatusIds, options);
         set({
             workloadData: data,
-            histogramSelectionCycle: HISTOGRAM_SELECTION_RESET
+            histogramSelectionCycle: HISTOGRAM_SELECTION_RESET,
+            overloadFocusCycle: OVERLOAD_FOCUS_RESET,
+            focusedHistogramBar: null
         });
     }
 }));

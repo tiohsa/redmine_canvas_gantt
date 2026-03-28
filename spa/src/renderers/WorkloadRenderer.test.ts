@@ -10,10 +10,13 @@ function createMockContext() {
         beginPath: vi.fn(),
         clearRect: vi.fn(),
         fillRect: vi.fn(),
+        strokeRect: vi.fn(),
         stroke: vi.fn(),
         moveTo: vi.fn(),
         lineTo: vi.fn(),
         setLineDash: vi.fn(),
+        save: vi.fn(),
+        restore: vi.fn(),
         fillStyle: '',
         strokeStyle: '',
         lineWidth: 0
@@ -110,7 +113,9 @@ describe('WorkloadRenderer', () => {
             capacityThreshold: 8,
             verticalScroll: 0,
             hoveredAssigneeId: null,
-            hoveredDateStr: null
+            hoveredDateStr: null,
+            focusedAssigneeId: null,
+            focusedDateStr: null
         });
 
         const baselineFillRectCount = vi.mocked(ctx.fillRect).mock.calls.length;
@@ -122,7 +127,9 @@ describe('WorkloadRenderer', () => {
             capacityThreshold: 8,
             verticalScroll: 0,
             hoveredAssigneeId: null,
-            hoveredDateStr: null
+            hoveredDateStr: null,
+            focusedAssigneeId: null,
+            focusedDateStr: null
         });
 
         expect(vi.mocked(ctx.fillRect).mock.calls.length).toBeGreaterThan(baselineFillRectCount);
@@ -145,7 +152,9 @@ describe('WorkloadRenderer', () => {
             capacityThreshold: 8,
             verticalScroll: 0,
             hoveredAssigneeId: null,
-            hoveredDateStr: null
+            hoveredDateStr: null,
+            focusedAssigneeId: null,
+            focusedDateStr: null
         });
 
         const baselineFillRectCount = vi.mocked(ctx.fillRect).mock.calls.length;
@@ -157,7 +166,9 @@ describe('WorkloadRenderer', () => {
             capacityThreshold: 8,
             verticalScroll: 0,
             hoveredAssigneeId: null,
-            hoveredDateStr: null
+            hoveredDateStr: null,
+            focusedAssigneeId: null,
+            focusedDateStr: null
         });
 
         expect(vi.mocked(ctx.fillRect).mock.calls.length).toBeGreaterThan(baselineFillRectCount);
@@ -186,7 +197,9 @@ describe('WorkloadRenderer', () => {
             capacityThreshold: 8,
             verticalScroll: 0,
             hoveredAssigneeId: null,
-            hoveredDateStr: null
+            hoveredDateStr: null,
+            focusedAssigneeId: null,
+            focusedDateStr: null
         });
 
         const baselineFillRectCount = vi.mocked(ctx.fillRect).mock.calls.length;
@@ -198,7 +211,9 @@ describe('WorkloadRenderer', () => {
             capacityThreshold: 8,
             verticalScroll: 0,
             hoveredAssigneeId: null,
-            hoveredDateStr: null
+            hoveredDateStr: null,
+            focusedAssigneeId: null,
+            focusedDateStr: null
         });
 
         expect(vi.mocked(ctx.fillRect).mock.calls.length).toBeGreaterThan(baselineFillRectCount);
@@ -221,7 +236,9 @@ describe('WorkloadRenderer', () => {
             capacityThreshold: 8,
             verticalScroll: 72,
             hoveredAssigneeId: null,
-            hoveredDateStr: null
+            hoveredDateStr: null,
+            focusedAssigneeId: null,
+            focusedDateStr: null
         });
 
         const barDraws = vi.mocked(ctx.fillRect).mock.calls.filter(([, y, , height]) => Number(y) >= 0 && Number(height) > 0);
@@ -272,5 +289,29 @@ describe('WorkloadRenderer', () => {
         });
 
         expect(hit).toEqual({ assigneeId: 2, dateStr: '2026-01-01' });
+    });
+
+    it('draws an outline for the focused histogram bar', () => {
+        const ctx = createMockContext();
+        const canvas = {
+            width: 800,
+            height: 240,
+            getContext: vi.fn(() => ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new WorkloadRenderer(canvas);
+
+        renderer.render({
+            viewport: buildViewport({ scale: 10 / ONE_DAY }),
+            zoomLevel: 2,
+            workloadData: buildWorkloadData(0),
+            capacityThreshold: 8,
+            verticalScroll: 0,
+            hoveredAssigneeId: null,
+            hoveredDateStr: null,
+            focusedAssigneeId: 1,
+            focusedDateStr: '2026-01-01'
+        });
+
+        expect(vi.mocked(ctx.strokeRect)).toHaveBeenCalled();
     });
 });

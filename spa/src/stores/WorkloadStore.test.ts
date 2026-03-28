@@ -47,6 +47,57 @@ const buildWorkloadData = (entries: Array<{
     overloadedDayCount: 0
 });
 
+const buildOverloadWorkloadData = () => ({
+    assignees: new Map([
+        [1, {
+            assigneeId: 1,
+            assigneeName: 'Alice',
+            totalLoad: 24,
+            peakLoad: 12,
+            dailyWorkloads: new Map([
+                ['2026-01-05', {
+                    dateStr: '2026-01-05',
+                    timestamp: START + 4 * 24 * 60 * 60 * 1000,
+                    totalLoad: 12,
+                    isOverload: true,
+                    contributingTasks: [
+                        { task: buildTask({ id: 'late', assignedToId: 1, assignedToName: 'Alice', estimatedHours: 12 }), dailyLoad: 12 }
+                    ]
+                }],
+                ['2026-01-02', {
+                    dateStr: '2026-01-02',
+                    timestamp: START + 1 * 24 * 60 * 60 * 1000,
+                    totalLoad: 9,
+                    isOverload: true,
+                    contributingTasks: [
+                        { task: buildTask({ id: 'early', assignedToId: 1, assignedToName: 'Alice', estimatedHours: 9 }), dailyLoad: 9 }
+                    ]
+                }],
+                ['2026-01-04', {
+                    dateStr: '2026-01-04',
+                    timestamp: START + 3 * 24 * 60 * 60 * 1000,
+                    totalLoad: 10,
+                    isOverload: true,
+                    contributingTasks: [
+                        { task: buildTask({ id: 'middle', assignedToId: 1, assignedToName: 'Alice', estimatedHours: 10 }), dailyLoad: 10 }
+                    ]
+                }],
+                ['2026-01-03', {
+                    dateStr: '2026-01-03',
+                    timestamp: START + 2 * 24 * 60 * 60 * 1000,
+                    totalLoad: 2,
+                    isOverload: false,
+                    contributingTasks: [
+                        { task: buildTask({ id: 'normal', assignedToId: 1, assignedToName: 'Alice', estimatedHours: 2 }), dailyLoad: 2 }
+                    ]
+                }]
+            ])
+        }]
+    ]),
+    overloadedAssigneeCount: 1,
+    overloadedDayCount: 3
+});
+
 describe('WorkloadStore histogram selection', () => {
     beforeEach(() => {
         window.localStorage.clear();
@@ -139,5 +190,32 @@ describe('WorkloadStore histogram selection', () => {
         useWorkloadStore.getState().calculateWorkloadData();
 
         expect(useWorkloadStore.getState().resolveNextHistogramTask(1, '2026-01-05').taskId).toBe('high');
+    });
+
+    it('cycles overload bars in ascending date order and stores the focused bar', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildOverloadWorkloadData()
+        });
+
+        expect(useWorkloadStore.getState().resolveNextOverloadBar(1)).toEqual({ assigneeId: 1, dateStr: '2026-01-02' });
+        expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({ assigneeId: 1, dateStr: '2026-01-02' });
+        expect(useWorkloadStore.getState().resolveNextOverloadBar(1)).toEqual({ assigneeId: 1, dateStr: '2026-01-04' });
+        expect(useWorkloadStore.getState().resolveNextOverloadBar(1)).toEqual({ assigneeId: 1, dateStr: '2026-01-05' });
+        expect(useWorkloadStore.getState().resolveNextOverloadBar(1)).toEqual({ assigneeId: 1, dateStr: '2026-01-02' });
+    });
+
+    it('clears overload focus when workload data is recalculated', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildOverloadWorkloadData()
+        });
+
+        useWorkloadStore.getState().resolveNextOverloadBar(1);
+        expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({ assigneeId: 1, dateStr: '2026-01-02' });
+
+        useWorkloadStore.getState().calculateWorkloadData();
+
+        expect(useWorkloadStore.getState().focusedHistogramBar).toBeNull();
     });
 });

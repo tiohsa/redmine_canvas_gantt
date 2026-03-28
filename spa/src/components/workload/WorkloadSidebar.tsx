@@ -12,7 +12,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
     scrollTop = 0,
     onScroll
 }) => {
-    const { workloadData } = useWorkloadStore();
+    const { workloadData, focusedHistogramBar, resolveNextOverloadBar } = useWorkloadStore();
     const { viewport } = useTaskStore();
     const scrollRef = React.useRef<HTMLDivElement>(null);
     const rowHeight = viewport.rowHeight * 2;
@@ -61,6 +61,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                     <div style={{ minHeight: `${assignees.length * rowHeight}px` }}>
                         {assignees.map((assignee) => {
                             const hasOverload = Array.from(assignee.dailyWorkloads.values()).some(d => d.isOverload);
+                            const isFocusedAssignee = focusedHistogramBar?.assigneeId === assignee.assigneeId;
                             return (
                                 <div
                                     key={assignee.assigneeId}
@@ -79,16 +80,25 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                             {assignee.assigneeName}
                                         </div>
                                         {hasOverload && (
-                                            <div style={{
-                                                backgroundColor: '#fce8e6',
-                                                color: '#d93025',
-                                                padding: '2px 6px',
-                                                borderRadius: '4px',
-                                                fontSize: '11px',
-                                                fontWeight: 600
-                                            }}>
+                                            <button
+                                                type="button"
+                                                aria-label={`Focus overload histogram for ${assignee.assigneeName}`}
+                                                onClick={() => {
+                                                    resolveNextOverloadBar(assignee.assigneeId);
+                                                }}
+                                                style={{
+                                                    backgroundColor: isFocusedAssignee ? '#d93025' : '#fce8e6',
+                                                    color: isFocusedAssignee ? '#fff' : '#d93025',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '11px',
+                                                    fontWeight: 600,
+                                                    border: 'none',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
                                                 OVERLOAD
-                                            </div>
+                                            </button>
                                         )}
                                     </div>
                                     <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>

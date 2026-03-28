@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { WorkloadSidebar } from './WorkloadSidebar';
 import { useTaskStore } from '../../stores/TaskStore';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
@@ -36,6 +36,42 @@ const buildWorkloadData = (): WorkloadData => ({
     overloadedDayCount: 0
 });
 
+const buildOverloadWorkloadData = (): WorkloadData => ({
+    assignees: new Map([
+        [1, {
+            assigneeId: 1,
+            assigneeName: 'Alice',
+            totalLoad: 31,
+            peakLoad: 13,
+            dailyWorkloads: new Map([
+                ['2026-01-05', {
+                    dateStr: '2026-01-05',
+                    timestamp: ONE_DAY * 4,
+                    totalLoad: 13,
+                    isOverload: true,
+                    contributingTasks: []
+                }],
+                ['2026-01-02', {
+                    dateStr: '2026-01-02',
+                    timestamp: ONE_DAY,
+                    totalLoad: 11,
+                    isOverload: true,
+                    contributingTasks: []
+                }],
+                ['2026-01-04', {
+                    dateStr: '2026-01-04',
+                    timestamp: ONE_DAY * 3,
+                    totalLoad: 7,
+                    isOverload: false,
+                    contributingTasks: []
+                }]
+            ])
+        }]
+    ]),
+    overloadedAssigneeCount: 1,
+    overloadedDayCount: 2
+});
+
 describe('WorkloadSidebar', () => {
     beforeEach(() => {
         useTaskStore.setState({
@@ -46,6 +82,7 @@ describe('WorkloadSidebar', () => {
                 rowHeight: 36
             }
         }, true);
+        useWorkloadStore.setState(useWorkloadStore.getInitialState(), true);
     });
 
     it('keeps assignees visible even when the gantt pane is vertically scrolled', () => {
@@ -109,5 +146,23 @@ describe('WorkloadSidebar', () => {
         render(<WorkloadSidebar />);
 
         expect(screen.getByText('No workload data matches the current filters.')).toBeInTheDocument();
+    });
+
+    it('renders overload as a clickable control that cycles the focused histogram bar', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildOverloadWorkloadData()
+        });
+
+        render(<WorkloadSidebar />);
+
+        const overloadControl = screen.getByRole('button', { name: 'Focus overload histogram for Alice' });
+        fireEvent.click(overloadControl);
+
+        expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({ assigneeId: 1, dateStr: '2026-01-02' });
+
+        fireEvent.click(overloadControl);
+
+        expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({ assigneeId: 1, dateStr: '2026-01-05' });
     });
 });

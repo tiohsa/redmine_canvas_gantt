@@ -13,10 +13,13 @@ const mockContext = {
     beginPath: vi.fn(),
     clearRect: vi.fn(),
     fillRect: vi.fn(),
+    strokeRect: vi.fn(),
     stroke: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     setLineDash: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 0
@@ -59,6 +62,43 @@ const buildWorkloadData = (contributingTasks: Task[] = []): WorkloadData => ({
     ]),
     overloadedAssigneeCount: 0,
     overloadedDayCount: 0
+});
+
+const buildFocusedOverloadWorkloadData = (): WorkloadData => ({
+    assignees: new Map([
+        [1, {
+            assigneeId: 1,
+            assigneeName: 'Alice',
+            totalLoad: 9,
+            peakLoad: 9,
+            dailyWorkloads: new Map([
+                ['2026-01-06', {
+                    dateStr: '2026-01-06',
+                    timestamp: ONE_DAY * 5,
+                    totalLoad: 9,
+                    isOverload: true,
+                    contributingTasks: []
+                }]
+            ])
+        }],
+        [2, {
+            assigneeId: 2,
+            assigneeName: 'Bob',
+            totalLoad: 10,
+            peakLoad: 10,
+            dailyWorkloads: new Map([
+                ['2026-01-12', {
+                    dateStr: '2026-01-12',
+                    timestamp: ONE_DAY * 40,
+                    totalLoad: 10,
+                    isOverload: true,
+                    contributingTasks: []
+                }]
+            ])
+        }]
+    ]),
+    overloadedAssigneeCount: 2,
+    overloadedDayCount: 2
 });
 
 beforeEach(() => {
@@ -367,5 +407,30 @@ describe('WorkloadCanvasPanel', () => {
 
         expect(useTaskStore.getState().selectedTaskId).toBeNull();
         expect(useUIStore.getState().notifications.at(-1)?.message).toBe('Selected task is hidden by the current filters.');
+    });
+
+    it('scrolls the workload pane to the focused overload assignee row', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildFocusedOverloadWorkloadData(),
+            focusedHistogramBar: { assigneeId: 2, dateStr: '2026-01-12' }
+        });
+
+        render(<WorkloadCanvasPanel />);
+
+        const viewportElement = screen.getByTestId('workload-canvas-viewport');
+        expect(viewportElement.scrollTop).toBe(80);
+    });
+
+    it('adjusts the shared viewport horizontally to reveal the focused overload bar', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildFocusedOverloadWorkloadData(),
+            focusedHistogramBar: { assigneeId: 2, dateStr: '2026-01-12' }
+        });
+
+        render(<WorkloadCanvasPanel />);
+
+        expect(useTaskStore.getState().viewport.scrollX).toBeGreaterThan(50);
     });
 });

@@ -29,11 +29,12 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
     onScroll
 }) => {
     const HEADER_HEIGHT = 40;
+    const FOCUS_PADDING_X = 24;
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const viewportRef = useRef<HTMLDivElement>(null);
     const renderEngine = useRef<WorkloadRenderer | null>(null);
-    const { workloadData, capacityThreshold } = useWorkloadStore();
+    const { workloadData, capacityThreshold, focusedHistogramBar } = useWorkloadStore();
     const { viewport, zoomLevel } = useTaskStore();
     const isSidebarResizing = useUIStore((state) => state.isSidebarResizing);
     const dragStateRef = useRef<DragState>({
@@ -109,7 +110,9 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                    capacityThreshold,
                    verticalScroll: scrollTop,
                    hoveredAssigneeId: null,
-                   hoveredDateStr: null
+                   hoveredDateStr: null,
+                   focusedAssigneeId: focusedHistogramBar?.assigneeId ?? null,
+                   focusedDateStr: focusedHistogramBar?.dateStr ?? null
                });
             }
         });
@@ -122,7 +125,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         }
         
         return () => resizeObserver.disconnect();
-    }, [capacityThreshold, scrollTop, updateCanvasSize, viewport, zoomLevel, workloadData]);
+    }, [capacityThreshold, focusedHistogramBar, scrollTop, updateCanvasSize, viewport, zoomLevel, workloadData]);
 
     useLayoutEffect(() => {
         updateCanvasSize();
@@ -137,10 +140,12 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                 capacityThreshold,
                 verticalScroll: scrollTop,
                 hoveredAssigneeId: null,
-                hoveredDateStr: null
+                hoveredDateStr: null,
+                focusedAssigneeId: focusedHistogramBar?.assigneeId ?? null,
+                focusedDateStr: focusedHistogramBar?.dateStr ?? null
             });
         }
-    }, [capacityThreshold, scrollTop, viewport, zoomLevel, workloadData]);
+    }, [capacityThreshold, focusedHistogramBar, scrollTop, viewport, zoomLevel, workloadData]);
 
     useEffect(() => {
         if (!viewportRef.current) return;
@@ -148,6 +153,39 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
             viewportRef.current.scrollTop = scrollTop;
         }
     }, [scrollTop]);
+
+    useEffect(() => {
+        if (!focusedHistogramBar || !workloadData || !viewportRef.current) return;
+
+        const assignees = Array.from(workloadData.assignees.values()).sort((a, b) => a.assigneeName.localeCompare(b.assigneeName));
+        const assigneeIndex = assignees.findIndex((assignee) => assignee.assigneeId === focusedHistogramBar.assigneeId);
+        if (assigneeIndex < 0) return;
+
+        const daily = workloadData.assignees.get(focusedHistogramBar.assigneeId)?.dailyWorkloads.get(focusedHistogramBar.dateStr);
+        if (!daily) return;
+
+        const nextScrollTop = assigneeIndex * rowHeight;
+        if (Math.abs(viewportRef.current.scrollTop - nextScrollTop) > 1) {
+            viewportRef.current.scrollTop = nextScrollTop;
+        }
+
+        const barStartX = (daily.timestamp - viewport.startDate) * viewport.scale;
+        const barEndX = (daily.timestamp + 24 * 60 * 60 * 1000 - viewport.startDate) * viewport.scale;
+        const viewportWidth = viewportRef.current.clientWidth;
+        const visibleStartX = viewport.scrollX;
+        const visibleEndX = viewport.scrollX + viewportWidth;
+        let nextScrollX = viewport.scrollX;
+
+        if (barStartX < visibleStartX + FOCUS_PADDING_X) {
+            nextScrollX = Math.max(0, barStartX - FOCUS_PADDING_X);
+        } else if (barEndX > visibleEndX - FOCUS_PADDING_X) {
+            nextScrollX = Math.max(0, barEndX - viewportWidth + FOCUS_PADDING_X);
+        }
+
+        if (Math.abs(nextScrollX - viewport.scrollX) > 1) {
+            useTaskStore.getState().updateViewport({ scrollX: nextScrollX });
+        }
+    }, [focusedHistogramBar, rowHeight, viewport, workloadData]);
 
     const isScrollInteractionLocked = useCallback(() => useUIStore.getState().isSidebarResizing, []);
 
