@@ -53,6 +53,43 @@ const buildWorkloadData = (timestamp: number): WorkloadData => ({
     overloadedDayCount: 0
 });
 
+const buildTwoAssigneeWorkloadData = (timestamp: number): WorkloadData => ({
+    assignees: new Map([
+        [1, {
+            assigneeId: 1,
+            assigneeName: 'Alice',
+            totalLoad: 8,
+            peakLoad: 8,
+            dailyWorkloads: new Map([
+                ['2026-01-01', {
+                    dateStr: '2026-01-01',
+                    timestamp,
+                    totalLoad: 8,
+                    isOverload: false,
+                    contributingTasks: []
+                }]
+            ])
+        }],
+        [2, {
+            assigneeId: 2,
+            assigneeName: 'Bob',
+            totalLoad: 8,
+            peakLoad: 8,
+            dailyWorkloads: new Map([
+                ['2026-01-01', {
+                    dateStr: '2026-01-01',
+                    timestamp,
+                    totalLoad: 8,
+                    isOverload: false,
+                    contributingTasks: []
+                }]
+            ])
+        }]
+    ]),
+    overloadedAssigneeCount: 0,
+    overloadedDayCount: 0
+});
+
 describe('WorkloadRenderer', () => {
     it('draws visible bars using the same horizontal scroll direction as the gantt viewport', () => {
         const ctx = createMockContext();
@@ -71,6 +108,7 @@ describe('WorkloadRenderer', () => {
             zoomLevel: 2,
             workloadData: null,
             capacityThreshold: 8,
+            verticalScroll: 0,
             hoveredAssigneeId: null,
             hoveredDateStr: null
         });
@@ -82,6 +120,7 @@ describe('WorkloadRenderer', () => {
             zoomLevel: 2,
             workloadData: buildWorkloadData(timestampAtVisibleStart),
             capacityThreshold: 8,
+            verticalScroll: 0,
             hoveredAssigneeId: null,
             hoveredDateStr: null
         });
@@ -104,6 +143,7 @@ describe('WorkloadRenderer', () => {
             zoomLevel: 2,
             workloadData: null,
             capacityThreshold: 8,
+            verticalScroll: 0,
             hoveredAssigneeId: null,
             hoveredDateStr: null
         });
@@ -115,6 +155,7 @@ describe('WorkloadRenderer', () => {
             zoomLevel: 2,
             workloadData: buildWorkloadData(0),
             capacityThreshold: 8,
+            verticalScroll: 0,
             hoveredAssigneeId: null,
             hoveredDateStr: null
         });
@@ -143,6 +184,7 @@ describe('WorkloadRenderer', () => {
             zoomLevel: 1,
             workloadData: null,
             capacityThreshold: 8,
+            verticalScroll: 0,
             hoveredAssigneeId: null,
             hoveredDateStr: null
         });
@@ -154,10 +196,35 @@ describe('WorkloadRenderer', () => {
             zoomLevel: 1,
             workloadData: buildWorkloadData(Date.parse('2026-03-14T00:00:00.000Z')),
             capacityThreshold: 8,
+            verticalScroll: 0,
             hoveredAssigneeId: null,
             hoveredDateStr: null
         });
 
         expect(vi.mocked(ctx.fillRect).mock.calls.length).toBeGreaterThan(baselineFillRectCount);
+    });
+
+    it('renders later assignee rows when vertically scrolled within the workload pane', () => {
+        const ctx = createMockContext();
+        const canvas = {
+            width: 800,
+            height: 72,
+            getContext: vi.fn(() => ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new WorkloadRenderer(canvas);
+        const viewport = buildViewport({ rowHeight: 36 });
+
+        renderer.render({
+            viewport,
+            zoomLevel: 2,
+            workloadData: buildTwoAssigneeWorkloadData(0),
+            capacityThreshold: 8,
+            verticalScroll: 72,
+            hoveredAssigneeId: null,
+            hoveredDateStr: null
+        });
+
+        const barDraws = vi.mocked(ctx.fillRect).mock.calls.filter(([, y, , height]) => Number(y) >= 0 && Number(height) > 0);
+        expect(barDraws.length).toBeGreaterThan(1);
     });
 });

@@ -7,6 +7,7 @@ export interface WorkloadRenderState {
     zoomLevel: ZoomLevel;
     workloadData: WorkloadData | null;
     capacityThreshold: number;
+    verticalScroll: number;
     hoveredAssigneeId: number | null;
     hoveredDateStr: string | null;
 }
@@ -23,7 +24,7 @@ export class WorkloadRenderer {
     }
 
     render(state: WorkloadRenderState) {
-        const { viewport, zoomLevel, workloadData, capacityThreshold, hoveredAssigneeId } = state;
+        const { viewport, zoomLevel, workloadData, capacityThreshold, verticalScroll, hoveredAssigneeId } = state;
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
@@ -68,7 +69,7 @@ export class WorkloadRenderer {
         });
 
         // Workload rows are independent from the task list vertical scroll.
-        let y = 0;
+        let y = -(verticalScroll % rowHeight);
         while (y < this.canvas.height) {
             ctx.moveTo(0, Math.floor(y) + 0.5);
             ctx.lineTo(this.canvas.width, Math.floor(y) + 0.5);
@@ -83,7 +84,7 @@ export class WorkloadRenderer {
 
         // Draw workload histograms
         assignees.forEach((assignee, index) => {
-            const rowY = index * rowHeight;
+            const rowY = index * rowHeight - verticalScroll;
             
             // Skip rows outside viewport
             if (rowY + rowHeight < 0 || rowY > this.canvas.height) return;

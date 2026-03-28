@@ -13,9 +13,6 @@ test('shows workload pane in the lower split view area', async ({ page, baseURL 
   const histogramHeader = page.getByText('HISTOGRAM (DAILY WORKLOAD)');
   await expect(histogramHeader).toBeVisible();
   await expect(page.getByText('Assignees', { exact: true })).toBeVisible();
-  await expect(
-    page.getByText('Planned workload approximation based on estimated hours and scheduled business days.')
-  ).toBeVisible();
 
   const workloadMenu = page.getByText('Capacity Threshold (hours/day)');
   await expect(workloadMenu).toBeVisible();

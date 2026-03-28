@@ -3,6 +3,7 @@ import { GanttContainer } from './GanttContainer';
 import { useUIStore } from '../stores/UIStore';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useTaskStore } from '../stores/TaskStore';
+import { useWorkloadStore } from '../stores/WorkloadStore';
 import { SIDEBAR_RESIZE_CURSOR } from '../constants';
 import type { Relation, Task } from '../types';
 
@@ -64,8 +65,10 @@ HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
     moveTo: () => { },
     lineTo: () => { },
     stroke: () => { },
+    fillRect: () => { },
     fillText: () => { },
     clearRect: () => { },
+    setLineDash: () => { },
     translate: () => { },
     scale: () => { },
     save: () => { },
@@ -117,6 +120,11 @@ describe('GanttContainer Resize', () => {
             layoutRows: [],
             rowCount: 0
         });
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getInitialState(),
+            workloadPaneVisible: false,
+            workloadData: null
+        }, true);
         fetchDataMock.mockClear();
         vi.clearAllMocks();
         backgroundRenderMock.mockClear();
@@ -257,6 +265,77 @@ describe('GanttContainer Resize', () => {
         expect(screen.queryByTestId('left-pane')).not.toBeInTheDocument();
         expect(screen.queryByTestId('sidebar-resize-handle')).not.toBeInTheDocument();
         expect(screen.getByTestId('right-pane')).toHaveStyle('display: flex');
+    });
+
+    it('updates the workload split ratio when dragging the horizontal split handle', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadPaneVisible: true,
+            workloadData: {
+                assignees: new Map(),
+                overloadedAssigneeCount: 0,
+                overloadedDayCount: 0
+            }
+        });
+
+        render(<GanttContainer />);
+
+        const layout = screen.getByTestId('workload-split-layout-left');
+        const handle = screen.getByTestId('workload-split-handle-left');
+        const initialRows = layout.style.gridTemplateRows;
+
+        vi.spyOn(layout, 'getBoundingClientRect').mockReturnValue({
+            left: 0,
+            top: 0,
+            width: 300,
+            height: 600,
+            bottom: 600,
+            right: 300,
+            x: 0,
+            y: 0,
+            toJSON: () => { },
+        });
+
+        fireEvent.mouseDown(handle, { clientY: 360 });
+        fireEvent.mouseMove(window, { clientY: 240 });
+        fireEvent.mouseUp(window);
+
+        expect(layout.style.gridTemplateRows).not.toBe(initialRows);
+        expect(document.body.style.cursor).toBe('');
+        expect(document.body.style.userSelect).toBe('');
+    });
+
+    it('keeps the gantt viewport DOM stable when toggling the workload pane', () => {
+        const { container } = render(<GanttContainer />);
+
+        const initialScrollPane = container.querySelector('.rcg-gantt-scroll-pane');
+        const initialViewport = container.querySelector('.rcg-gantt-viewport');
+        const initialCanvases = container.querySelectorAll('.rcg-gantt-viewport canvas');
+
+        expect(initialScrollPane).not.toBeNull();
+        expect(initialViewport).not.toBeNull();
+        expect(initialCanvases).toHaveLength(3);
+
+        act(() => {
+            useWorkloadStore.setState({
+                ...useWorkloadStore.getState(),
+                workloadPaneVisible: true,
+                workloadData: {
+                    assignees: new Map(),
+                    overloadedAssigneeCount: 0,
+                    overloadedDayCount: 0
+                }
+            });
+        });
+
+        const nextScrollPane = container.querySelector('.rcg-gantt-scroll-pane');
+        const nextViewport = container.querySelector('.rcg-gantt-viewport');
+        const nextCanvases = container.querySelectorAll('.rcg-gantt-viewport canvas');
+
+        expect(nextScrollPane).toBe(initialScrollPane);
+        expect(nextViewport).toBe(initialViewport);
+        expect(nextCanvases).toHaveLength(3);
+        expect(screen.getByTestId('workload-split-layout-right')).toBeInTheDocument();
     });
 
     it('renders task and overlay canvases from the same updated task snapshot', async () => {

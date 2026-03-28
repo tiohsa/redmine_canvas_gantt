@@ -1,11 +1,20 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
 import { useTaskStore } from '../../stores/TaskStore';
 import { useUIStore } from '../../stores/UIStore';
 import { WorkloadRenderer } from '../../renderers/WorkloadRenderer';
 import { panViewportByPixels } from '../../engines/viewportPan';
 
-export const WorkloadCanvasPanel: React.FC = () => {
+interface WorkloadCanvasPanelProps {
+    scrollTop?: number;
+    onScroll?: (scrollTop: number) => void;
+}
+
+export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
+    scrollTop = 0,
+    onScroll
+}) => {
+    const HEADER_HEIGHT = 40;
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const viewportRef = useRef<HTMLDivElement>(null);
@@ -19,13 +28,20 @@ export const WorkloadCanvasPanel: React.FC = () => {
     const { workloadData, capacityThreshold } = useWorkloadStore();
     const { viewport, zoomLevel } = useTaskStore();
     const isSidebarResizing = useUIStore((state) => state.isSidebarResizing);
-    const hasAssignees = (workloadData?.assignees.size ?? 0) > 0;
+    const rowHeight = viewport.rowHeight * 2;
+    const workloadAssigneeCount = workloadData?.assignees.size ?? 0;
+    const hasAssignees = workloadAssigneeCount > 0;
+    const contentHeight = hasAssignees ? workloadAssigneeCount * rowHeight : 0;
 
-    // Use a fixed or proportion height, but here we just take the parent flex space
     const updateCanvasSize = useCallback(() => {
-        if (!containerRef.current || !canvasRef.current) return;
-        const width = containerRef.current.clientWidth;
-        const height = containerRef.current.clientHeight;
+        if (!canvasRef.current) return;
+
+        const viewportElement = viewportRef.current;
+        const containerElement = containerRef.current;
+        if (!viewportElement && !containerElement) return;
+
+        const width = viewportElement?.clientWidth ?? containerElement?.clientWidth ?? 0;
+        const height = viewportElement?.clientHeight ?? Math.max(0, (containerElement?.clientHeight ?? 0) - HEADER_HEIGHT);
         if (width > 0 && height > 0) {
             canvasRef.current.width = width;
             canvasRef.current.height = height;
@@ -45,6 +61,7 @@ export const WorkloadCanvasPanel: React.FC = () => {
                    zoomLevel,
                    workloadData,
                    capacityThreshold,
+                   verticalScroll: scrollTop,
                    hoveredAssigneeId: null,
                    hoveredDateStr: null
                });
@@ -54,9 +71,16 @@ export const WorkloadCanvasPanel: React.FC = () => {
         if (containerRef.current) {
             resizeObserver.observe(containerRef.current);
         }
+        if (viewportRef.current) {
+            resizeObserver.observe(viewportRef.current);
+        }
         
         return () => resizeObserver.disconnect();
-    }, [updateCanvasSize, viewport, zoomLevel, workloadData, capacityThreshold]);
+    }, [capacityThreshold, scrollTop, updateCanvasSize, viewport, zoomLevel, workloadData]);
+
+    useLayoutEffect(() => {
+        updateCanvasSize();
+    }, [updateCanvasSize]);
 
     useEffect(() => {
         if (renderEngine.current && canvasRef.current) {
@@ -65,11 +89,19 @@ export const WorkloadCanvasPanel: React.FC = () => {
                 zoomLevel,
                 workloadData,
                 capacityThreshold,
+                verticalScroll: scrollTop,
                 hoveredAssigneeId: null,
                 hoveredDateStr: null
             });
         }
-    }, [viewport, zoomLevel, workloadData, capacityThreshold]);
+    }, [capacityThreshold, scrollTop, viewport, zoomLevel, workloadData]);
+
+    useEffect(() => {
+        if (!viewportRef.current) return;
+        if (Math.abs(viewportRef.current.scrollTop - scrollTop) > 1) {
+            viewportRef.current.scrollTop = scrollTop;
+        }
+    }, [scrollTop]);
 
     useEffect(() => {
         const viewportElement = viewportRef.current;
@@ -102,8 +134,7 @@ export const WorkloadCanvasPanel: React.FC = () => {
             }
 
             const deltaX = event.clientX - dragStateRef.current.startX;
-            const deltaY = event.clientY - dragStateRef.current.startY;
-            panViewportByPixels(deltaX, deltaY);
+            panViewportByPixels(deltaX, 0);
             dragStateRef.current = {
                 active: true,
                 startX: event.clientX,
@@ -143,17 +174,21 @@ export const WorkloadCanvasPanel: React.FC = () => {
             <div
                 ref={viewportRef}
                 data-testid="workload-canvas-viewport"
+                onScroll={(event) => onScroll?.(event.currentTarget.scrollTop)}
                 style={{
                     position: 'absolute',
-                    top: 40,
+                    top: HEADER_HEIGHT,
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    overflow: 'hidden',
+                    overflowX: 'hidden',
+                    overflowY: hasAssignees ? 'auto' : 'hidden',
                     cursor: 'default'
                 }}
             >
-                <canvas ref={canvasRef} style={{ display: 'block', cursor: 'default' }} />
+                <div style={{ position: 'relative', minHeight: '100%', height: hasAssignees ? `${contentHeight}px` : '100%' }}>
+                    <canvas ref={canvasRef} style={{ position: 'sticky', top: 0, display: 'block', cursor: 'default' }} />
+                </div>
                 {!hasAssignees && (
                     <div style={{
                         position: 'absolute',

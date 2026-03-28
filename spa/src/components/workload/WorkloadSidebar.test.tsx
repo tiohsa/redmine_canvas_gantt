@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { WorkloadSidebar } from './WorkloadSidebar';
 import { useTaskStore } from '../../stores/TaskStore';
@@ -58,6 +58,42 @@ describe('WorkloadSidebar', () => {
 
         expect(screen.getByText('Alice')).toBeInTheDocument();
         expect(screen.getByText(/Peak 8.0h/)).toBeInTheDocument();
+    });
+
+    it('stretches to fill the workload pane width', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData()
+        });
+
+        render(<WorkloadSidebar />);
+
+        expect(screen.getByTestId('workload-sidebar')).toHaveStyle({
+            flex: '1 1 0%',
+            minWidth: '0',
+            width: '100%'
+        });
+    });
+
+    it('reports vertical scroll changes for workload sync', () => {
+        const handleScroll = vi.fn();
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData()
+        });
+
+        render(<WorkloadSidebar onScroll={handleScroll} />);
+
+        const scrollElement = screen.getByTestId('workload-sidebar-scroll');
+        Object.defineProperty(scrollElement, 'scrollTop', {
+            value: 72,
+            configurable: true,
+            writable: true
+        });
+
+        scrollElement.dispatchEvent(new Event('scroll'));
+
+        expect(handleScroll).toHaveBeenCalledWith(72);
     });
 
     it('shows an explicit empty state when no workload data matches the current filters', () => {

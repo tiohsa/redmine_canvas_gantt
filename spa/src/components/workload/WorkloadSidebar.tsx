@@ -3,20 +3,40 @@ import { useWorkloadStore } from '../../stores/WorkloadStore';
 import { useTaskStore } from '../../stores/TaskStore';
 import { i18n } from '../../utils/i18n';
 
-export const WorkloadSidebar: React.FC = () => {
+interface WorkloadSidebarProps {
+    scrollTop?: number;
+    onScroll?: (scrollTop: number) => void;
+}
+
+export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
+    scrollTop = 0,
+    onScroll
+}) => {
     const { workloadData } = useWorkloadStore();
     const { viewport } = useTaskStore();
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+    const rowHeight = viewport.rowHeight * 2;
+    const assignees = workloadData
+        ? Array.from(workloadData.assignees.values()).sort((a, b) => a.assigneeName.localeCompare(b.assigneeName))
+        : [];
+    const hasAssignees = assignees.length > 0;
+
+    React.useEffect(() => {
+        if (!scrollRef.current) return;
+        if (Math.abs(scrollRef.current.scrollTop - scrollTop) > 1) {
+            scrollRef.current.scrollTop = scrollTop;
+        }
+    }, [scrollTop]);
 
     if (!workloadData) {
         return <div style={{ padding: '10px', color: '#666', fontSize: '13px' }}>{i18n.t('label_loading') || 'Loading...'}</div>;
     }
 
-    const rowHeight = viewport.rowHeight * 2;
-    const assignees = Array.from(workloadData.assignees.values()).sort((a, b) => a.assigneeName.localeCompare(b.assigneeName));
-    const hasAssignees = assignees.length > 0;
-
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', borderTop: '1px solid #e0e0e0', backgroundColor: '#fafafa' }}>
+        <div
+            data-testid="workload-sidebar"
+            style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, width: '100%', height: '100%', borderTop: '1px solid #e0e0e0', backgroundColor: '#fafafa' }}
+        >
             <div style={{
                 height: '40px',
                 borderBottom: '1px solid #e0e0e0',
@@ -31,9 +51,14 @@ export const WorkloadSidebar: React.FC = () => {
             }}>
                 {i18n.t('label_assignee_plural') || 'Assignees'}
             </div>
-            <div style={{ flex: 1, overflowY: 'hidden', overflowX: 'hidden', position: 'relative' }}>
+            <div
+                ref={scrollRef}
+                data-testid="workload-sidebar-scroll"
+                onScroll={(event) => onScroll?.(event.currentTarget.scrollTop)}
+                style={{ flex: 1, overflowY: hasAssignees ? 'auto' : 'hidden', overflowX: 'hidden', position: 'relative' }}
+            >
                 {hasAssignees ? (
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+                    <div style={{ minHeight: `${assignees.length * rowHeight}px` }}>
                         {assignees.map((assignee) => {
                             const hasOverload = Array.from(assignee.dailyWorkloads.values()).some(d => d.isOverload);
                             return (
@@ -78,14 +103,6 @@ export const WorkloadSidebar: React.FC = () => {
                         No workload data matches the current filters.
                     </div>
                 )}
-            </div>
-            <div style={{ padding: '12px 16px', borderTop: '1px solid #e0e0e0', backgroundColor: '#fcfcfc', fontSize: '11px', color: '#777', lineHeight: '1.4' }}>
-                <div style={{ marginBottom: '6px', fontWeight: 600, color: '#444' }}>
-                    {workloadData.overloadedAssigneeCount > 0 
-                        ? `${workloadData.overloadedAssigneeCount} assignees overloaded (${workloadData.overloadedDayCount} total days)` 
-                        : 'No overloads detected'}
-                </div>
-                {i18n.t('label_workload_explanation') || 'Planned workload approximation based on estimated hours and scheduled business days.'}
             </div>
         </div>
     );

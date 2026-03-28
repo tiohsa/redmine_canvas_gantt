@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { InteractionEngine } from '../engines/InteractionEngine';
@@ -29,6 +29,9 @@ import { i18n } from '../utils/i18n';
 import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, BOTTOM_PADDING_PX, SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH, SIDEBAR_RESIZE_CURSOR } from '../constants';
 
 export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
+    const WORKLOAD_DEFAULT_RATIO = 0.4;
+    const WORKLOAD_MIN_PANE_PX = 160;
+    const WORKLOAD_SPLIT_HANDLE_HEIGHT = 8;
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollPaneRef = useRef<HTMLDivElement>(null);
     const viewportWrapperRef = useRef<HTMLDivElement>(null);
@@ -40,6 +43,11 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
     const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const isSyncingScroll = useRef(false);
+    const workloadResizeStateRef = useRef<{
+        paneRect: DOMRect;
+        previousCursor: string;
+        previousUserSelect: string;
+    } | null>(null);
 
     const { viewport, tasks, relations, selectedTaskId, selectedRelationId, draftRelation, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, setTasks, setRelations, setVersions, setCustomFields, customFields } = useTaskStore();
     const {
@@ -54,8 +62,12 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
     } = useUIStore();
     const { workloadPaneVisible } = useWorkloadStore();
     const isSplitView = leftPaneVisible && rightPaneVisible;
+    const [workloadPaneRatio, setWorkloadPaneRatio] = useState(WORKLOAD_DEFAULT_RATIO);
+    const [workloadScrollTop, setWorkloadScrollTop] = useState(0);
 
     const tasksMaxDue = useMemo(() => getMaxFiniteDueDate(tasks), [tasks]);
+    const workloadTopWeight = Math.max(1, Math.round((1 - workloadPaneRatio) * 100));
+    const workloadBottomWeight = Math.max(1, Math.round(workloadPaneRatio * 100));
 
     const { realContentSize, scrollContentSize } = useMemo(() => computeContentSizes({
         viewport,
@@ -92,6 +104,59 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         realContentSize,
         updateViewport
     });
+
+    const updateWorkloadRatio = useCallback((clientY: number) => {
+        const resizeState = workloadResizeStateRef.current;
+        if (!resizeState) return;
+
+        const paneHeight = resizeState.paneRect.height - WORKLOAD_SPLIT_HANDLE_HEIGHT;
+        const maxTopHeight = paneHeight - WORKLOAD_MIN_PANE_PX;
+        const topHeight = Math.min(
+            Math.max(clientY - resizeState.paneRect.top, WORKLOAD_MIN_PANE_PX),
+            maxTopHeight
+        );
+        const bottomHeight = paneHeight - topHeight;
+        setWorkloadPaneRatio(bottomHeight / paneHeight);
+    }, []);
+
+    const startWorkloadResize = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+        const paneElement = event.currentTarget.parentElement;
+        if (!paneElement) return;
+
+        workloadResizeStateRef.current = {
+            paneRect: paneElement.getBoundingClientRect(),
+            previousCursor: document.body.style.cursor,
+            previousUserSelect: document.body.style.userSelect
+        };
+
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+        updateWorkloadRatio(event.clientY);
+        event.preventDefault();
+    }, [updateWorkloadRatio]);
+
+    useEffect(() => {
+        const handleMouseMove = (event: MouseEvent) => {
+            if (!workloadResizeStateRef.current) return;
+            updateWorkloadRatio(event.clientY);
+        };
+
+        const handleMouseUp = () => {
+            const resizeState = workloadResizeStateRef.current;
+            if (!resizeState) return;
+            document.body.style.cursor = resizeState.previousCursor;
+            document.body.style.userSelect = resizeState.previousUserSelect;
+            workloadResizeStateRef.current = null;
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [updateWorkloadRatio]);
 
     const engines = useRef<{
         interaction?: InteractionEngine;
@@ -221,6 +286,9 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         }
     }), [captureSnapshot, customFields, relations, tasks]);
 
+    const workloadSplitRows = `minmax(${WORKLOAD_MIN_PANE_PX}px, ${workloadTopWeight}fr) ${WORKLOAD_SPLIT_HANDLE_HEIGHT}px minmax(${WORKLOAD_MIN_PANE_PX}px, ${workloadBottomWeight}fr)`;
+    const collapsedSplitRows = 'minmax(0, 1fr) 0px 0px';
+
     return (
         <>
             <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
@@ -232,14 +300,42 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
                                 ? { width: sidebarWidth, flexShrink: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }
                                 : { flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
                         >
-                            <div style={{ flex: workloadPaneVisible ? '1 1 60%' : 1, minHeight: 0, overflow: 'hidden', display: 'flex' }}>
-                                <UiSidebar />
-                            </div>
-                            {workloadPaneVisible && (
-                                <div style={{ flex: '0 0 40%', minHeight: 0, display: 'flex' }}>
-                                    <WorkloadSidebar />
+                            <div
+                                data-testid="workload-split-layout-left"
+                                style={{
+                                    flex: 1,
+                                    minHeight: 0,
+                                    display: 'grid',
+                                    gridTemplateRows: workloadPaneVisible ? workloadSplitRows : collapsedSplitRows
+                                }}
+                            >
+                                <div style={{ minHeight: 0, overflow: 'hidden', display: 'flex' }}>
+                                    <UiSidebar />
                                 </div>
-                            )}
+                                <div
+                                    data-testid="workload-split-handle-left"
+                                    onMouseDown={workloadPaneVisible ? startWorkloadResize : undefined}
+                                    style={{
+                                        cursor: workloadPaneVisible ? 'row-resize' : 'default',
+                                        backgroundColor: '#f0f0f0',
+                                        borderTop: workloadPaneVisible ? '1px solid #e0e0e0' : 'none',
+                                        borderBottom: workloadPaneVisible ? '1px solid #e0e0e0' : 'none',
+                                        pointerEvents: workloadPaneVisible ? 'auto' : 'none'
+                                    }}
+                                />
+                                <div
+                                    style={{
+                                        minHeight: 0,
+                                        display: 'flex',
+                                        width: '100%',
+                                        overflow: 'hidden',
+                                        visibility: workloadPaneVisible ? 'visible' : 'hidden',
+                                        pointerEvents: workloadPaneVisible ? 'auto' : 'none'
+                                    }}
+                                >
+                                    <WorkloadSidebar scrollTop={workloadScrollTop} onScroll={setWorkloadScrollTop} />
+                                </div>
+                            </div>
                         </div>
 
                         {isSplitView && (
@@ -269,42 +365,70 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
                         minWidth: 0
                     }}
                 >
-                    <div style={{ flex: workloadPaneVisible ? '1 1 60%' : 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                        <TimelineHeader ref={timelineHeaderRef} />
-                        <div ref={viewportWrapperRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-                            <div
-                                ref={scrollPaneRef}
-                                className="rcg-scroll rcg-gantt-scroll-pane"
-                                style={{ position: 'absolute', inset: 0, overflow: 'auto', display: 'grid' }}
-                            >
-                                <div style={{ gridArea: '1 / 1', width: scrollContentSize.width, height: scrollContentSize.height }} />
+                    <div
+                        data-testid="workload-split-layout-right"
+                        style={{
+                            flex: 1,
+                            minHeight: 0,
+                            display: 'grid',
+                            gridTemplateRows: workloadPaneVisible ? workloadSplitRows : collapsedSplitRows
+                        }}
+                    >
+                        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                            <TimelineHeader ref={timelineHeaderRef} />
+                            <div ref={viewportWrapperRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                                 <div
-                                    ref={mainPaneRef}
-                                    className="rcg-gantt-viewport"
-                                    style={{
-                                        gridArea: '1 / 1',
-                                        position: 'sticky',
-                                        top: 0,
-                                        left: 0,
-                                        width: viewport.width,
-                                        height: viewport.height,
-                                        overflow: 'hidden'
-                                    }}
+                                    ref={scrollPaneRef}
+                                    className="rcg-scroll rcg-gantt-scroll-pane"
+                                    style={{ position: 'absolute', inset: 0, overflow: 'auto', display: 'grid' }}
                                 >
-                                    <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
-                                    <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
-                                    <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
-                                    <HtmlOverlay />
-                                    <A11yLayer />
+                                    <div style={{ gridArea: '1 / 1', width: scrollContentSize.width, height: scrollContentSize.height }} />
+                                    <div
+                                        ref={mainPaneRef}
+                                        className="rcg-gantt-viewport"
+                                        style={{
+                                            gridArea: '1 / 1',
+                                            position: 'sticky',
+                                            top: 0,
+                                            left: 0,
+                                            width: viewport.width,
+                                            height: viewport.height,
+                                            overflow: 'hidden'
+                                        }}
+                                    >
+                                        <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+                                        <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
+                                        <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
+                                        <HtmlOverlay />
+                                        <A11yLayer />
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    {workloadPaneVisible && (
-                        <div style={{ flex: '0 0 40%', minHeight: 0, display: 'flex', width: '100%', overflow: 'hidden' }}>
-                            <WorkloadCanvasPanel />
+                        <div
+                            data-testid="workload-split-handle-right"
+                            onMouseDown={workloadPaneVisible ? startWorkloadResize : undefined}
+                            style={{
+                                cursor: workloadPaneVisible ? 'row-resize' : 'default',
+                                backgroundColor: '#f0f0f0',
+                                borderTop: workloadPaneVisible ? '1px solid #e0e0e0' : 'none',
+                                borderBottom: workloadPaneVisible ? '1px solid #e0e0e0' : 'none',
+                                pointerEvents: workloadPaneVisible ? 'auto' : 'none'
+                            }}
+                        />
+                        <div
+                            style={{
+                                minHeight: 0,
+                                display: 'flex',
+                                width: '100%',
+                                overflow: 'hidden',
+                                visibility: workloadPaneVisible ? 'visible' : 'hidden',
+                                pointerEvents: workloadPaneVisible ? 'auto' : 'none'
+                            }}
+                        >
+                            <WorkloadCanvasPanel scrollTop={workloadScrollTop} onScroll={setWorkloadScrollTop} />
                         </div>
-                    )}
+                    </div>
                 </div>
             </div>
             <IssueIframeDialog />
