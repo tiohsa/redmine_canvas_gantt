@@ -106,6 +106,33 @@ describe('GanttToolbar shortcuts', () => {
         });
     });
 
+    it('renders workload menu labels from frontend i18n payload', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_workload: 'ワークロード',
+                label_show_workload: 'ワークロードパネルを表示',
+                label_capacity_threshold: '負荷しきい値 (時間/日)',
+                label_leaf_issues_only: '末端チケットのみ',
+                label_include_closed_issues: '完了チケットを含める',
+                label_today_onward_only: '今日以降のみ'
+            }
+        };
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTitle('ワークロード'));
+
+        expect(screen.getByText('ワークロード')).toBeInTheDocument();
+        expect(screen.getByText('ワークロードパネルを表示')).toBeInTheDocument();
+        expect(screen.getByText('負荷しきい値 (時間/日)')).toBeInTheDocument();
+        expect(screen.getByText('末端チケットのみ')).toBeInTheDocument();
+        expect(screen.getByText('完了チケットを含める')).toBeInTheDocument();
+        expect(screen.getByText('今日以降のみ')).toBeInTheDocument();
+    });
+
     it('toggles left and right pane maximization buttons', () => {
         useTaskStore.setState({
             filterText: '',

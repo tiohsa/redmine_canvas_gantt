@@ -23,6 +23,12 @@ ja:
   label_notifications: "通知"
   label_peak: "ピーク"
   label_total: "合計"
+  label_workload: "ワークロード"
+  label_show_workload: "ワークロードパネルを表示"
+  label_capacity_threshold: "負荷しきい値 (時間/日)"
+  label_leaf_issues_only: "末端チケットのみ"
+  label_include_closed_issues: "完了チケットを含める"
+  label_today_onward_only: "今日以降のみ"
   label_critical_path_total_slack: "クリティカルパスのタスクです。総余裕期間: %{days} 稼働日。"
 
   label_sort_by: "並び替え:"
