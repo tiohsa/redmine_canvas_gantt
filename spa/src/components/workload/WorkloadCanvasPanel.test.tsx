@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { Mock } from 'vitest';
 import { WorkloadCanvasPanel } from './WorkloadCanvasPanel';
+import { WorkloadSidebar } from './WorkloadSidebar';
 import { useTaskStore } from '../../stores/TaskStore';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
 import type { WorkloadData } from '../../services/WorkloadLogicService';
@@ -146,6 +148,65 @@ const buildTwoAssigneeWorkloadData = (aliceTasks: Task[] = [], bobTasks: Task[] 
     ]),
     overloadedAssigneeCount: 0,
     overloadedDayCount: 0
+});
+
+const buildMixedInteractionWorkloadData = (aliceTasks: Task[], bobTasks: Task[]): WorkloadData => ({
+    assignees: new Map([
+        [1, {
+            assigneeId: 1,
+            assigneeName: 'Alice',
+            totalLoad: 22,
+            peakLoad: 12,
+            dailyWorkloads: new Map([
+                ['2026-01-01', {
+                    dateStr: '2026-01-01',
+                    timestamp: ONE_DAY * 3,
+                    totalLoad: 12,
+                    isOverload: true,
+                    contributingTasks: [
+                        { task: aliceTasks[0], dailyLoad: 12 }
+                    ]
+                }],
+                ['2026-01-02', {
+                    dateStr: '2026-01-02',
+                    timestamp: ONE_DAY * 4,
+                    totalLoad: 10,
+                    isOverload: true,
+                    contributingTasks: [
+                        { task: aliceTasks[1], dailyLoad: 10 }
+                    ]
+                }]
+            ])
+        }],
+        [2, {
+            assigneeId: 2,
+            assigneeName: 'Bob',
+            totalLoad: 21,
+            peakLoad: 11,
+            dailyWorkloads: new Map([
+                ['2026-01-03', {
+                    dateStr: '2026-01-03',
+                    timestamp: ONE_DAY * 5,
+                    totalLoad: 11,
+                    isOverload: true,
+                    contributingTasks: [
+                        { task: bobTasks[0], dailyLoad: 11 }
+                    ]
+                }],
+                ['2026-01-12', {
+                    dateStr: '2026-01-12',
+                    timestamp: ONE_DAY * 40,
+                    totalLoad: 10,
+                    isOverload: true,
+                    contributingTasks: [
+                        { task: bobTasks[1], dailyLoad: 10 }
+                    ]
+                }]
+            ])
+        }]
+    ]),
+    overloadedAssigneeCount: 2,
+    overloadedDayCount: 4
 });
 
 beforeEach(() => {
@@ -557,6 +618,89 @@ describe('WorkloadCanvasPanel', () => {
         render(<WorkloadCanvasPanel />);
 
         expect(useTaskStore.getState().viewport.scrollX).toBeGreaterThan(50);
+    });
+
+    it('applies overload reveal horizontal scrolling only once for the same focused bar', () => {
+        const originalUpdateViewport = useTaskStore.getState().updateViewport;
+        const updateViewportSpy: Mock<typeof originalUpdateViewport> = vi.fn((updates) => originalUpdateViewport(updates));
+        useTaskStore.setState({ updateViewport: updateViewportSpy });
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildFocusedOverloadWorkloadData(),
+            focusedHistogramBar: { assigneeId: 2, dateStr: '2026-01-12' }
+        });
+
+        render(<WorkloadCanvasPanel />);
+
+        expect(updateViewportSpy).toHaveBeenCalledTimes(1);
+        expect(updateViewportSpy).toHaveBeenCalledWith({ scrollX: 204 });
+    });
+
+    it('does not reapply overload reveal horizontal scrolling within scroll sync tolerance', () => {
+        const originalUpdateViewport = useTaskStore.getState().updateViewport;
+        const updateViewportSpy: Mock<typeof originalUpdateViewport> = vi.fn((updates) => originalUpdateViewport(updates));
+        useTaskStore.setState({
+            viewport: {
+                ...useTaskStore.getState().viewport,
+                scrollX: 202.5
+            },
+            updateViewport: updateViewportSpy
+        });
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildFocusedOverloadWorkloadData(),
+            focusedHistogramBar: { assigneeId: 2, dateStr: '2026-01-12' }
+        });
+
+        render(<WorkloadCanvasPanel />);
+
+        expect(updateViewportSpy).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().viewport.scrollX).toBe(202.5);
+    });
+
+    it('clears histogram override and local suppression across mixed overload and histogram interactions', () => {
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const tasks = [
+            buildTask({ id: 'alice-1', subject: 'Alice 1', assignedToId: 1, assignedToName: 'Alice', projectId: 'p1', startDate: ONE_DAY * 3, dueDate: ONE_DAY * 3, estimatedHours: 12 }),
+            buildTask({ id: 'alice-2', subject: 'Alice 2', assignedToId: 1, assignedToName: 'Alice', projectId: 'p1', startDate: ONE_DAY * 4, dueDate: ONE_DAY * 4, estimatedHours: 10 }),
+            buildTask({ id: 'bob-1', subject: 'Bob 1', assignedToId: 2, assignedToName: 'Bob', projectId: 'p1', startDate: ONE_DAY * 5, dueDate: ONE_DAY * 5, estimatedHours: 11 }),
+            buildTask({ id: 'bob-2', subject: 'Bob 2', assignedToId: 2, assignedToName: 'Bob', projectId: 'p1', startDate: ONE_DAY * 40, dueDate: ONE_DAY * 40, estimatedHours: 10 })
+        ];
+        useTaskStore.getState().setTasks(tasks);
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildMixedInteractionWorkloadData(tasks.slice(0, 2), tasks.slice(2))
+        });
+
+        render(
+            <>
+                <WorkloadSidebar />
+                <WorkloadCanvasPanel />
+            </>
+        );
+
+        const aliceOverload = screen.getByRole('button', { name: 'Focus overload histogram for Alice' });
+        const bobOverload = screen.getByRole('button', { name: 'Focus overload histogram for Bob' });
+        const viewportElement = screen.getByTestId('workload-canvas-viewport');
+
+        fireEvent.click(aliceOverload);
+        fireEvent.click(aliceOverload);
+
+        fireEvent.mouseDown(viewportElement, { button: 0, clientX: 55, clientY: 70 });
+        fireEvent.mouseUp(window, { clientX: 55, clientY: 70 });
+        fireEvent.mouseDown(viewportElement, { button: 0, clientX: 55, clientY: 70 });
+        fireEvent.mouseUp(window, { clientX: 55, clientY: 70 });
+
+        fireEvent.click(aliceOverload);
+        fireEvent.click(aliceOverload);
+
+        fireEvent.click(bobOverload);
+        fireEvent.click(bobOverload);
+
+        expect(consoleErrorSpy).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().viewport.scrollX).toBeGreaterThan(150);
+        expect(useTaskStore.getState().selectedTaskId).toBe('bob-2');
+        expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({ assigneeId: 2, dateStr: '2026-01-12' });
     });
 
     it('does not show histogram cycle count when only one task contributes to the selected bar', () => {

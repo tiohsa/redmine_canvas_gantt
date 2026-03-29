@@ -9,6 +9,8 @@ export type TaskNotificationDescriptor = {
     testIdSuffix: string;
 };
 
+type CriticalPathNotificationMetrics = Pick<CriticalPathTaskMetrics, 'critical' | 'totalSlackDays'>;
+
 const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskNotificationDescriptor | null => {
     if (!schedulingState || schedulingState.state === 'normal') return null;
 
@@ -47,7 +49,7 @@ const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskN
     };
 };
 
-const getCriticalPathNotification = (criticalPathMetrics?: CriticalPathTaskMetrics): TaskNotificationDescriptor | null => {
+const getCriticalPathNotification = (criticalPathMetrics?: CriticalPathNotificationMetrics): TaskNotificationDescriptor | null => {
     if (!criticalPathMetrics?.critical) return null;
 
     const days = criticalPathMetrics.totalSlackDays;
@@ -61,7 +63,7 @@ const getCriticalPathNotification = (criticalPathMetrics?: CriticalPathTaskMetri
 
 export const getTaskNotification = (
     schedulingState?: SchedulingStateInfo,
-    criticalPathMetrics?: CriticalPathTaskMetrics
+    criticalPathMetrics?: CriticalPathNotificationMetrics
 ): TaskNotificationDescriptor | null => (
     getSchedulingNotification(schedulingState) ?? getCriticalPathNotification(criticalPathMetrics)
 );
