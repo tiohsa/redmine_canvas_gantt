@@ -154,7 +154,21 @@ describe('WorkloadSidebar', () => {
         render(<WorkloadSidebar />);
 
         expect(screen.getByText('Alice')).toBeInTheDocument();
-        expect(screen.getByText(/Peak 8.0h/)).toBeInTheDocument();
+        expect(screen.getByTestId('workload-sidebar-peak-1')).toHaveTextContent('8.0h');
+        expect(screen.getByTestId('workload-sidebar-total-1')).toHaveTextContent('16.0h');
+    });
+
+    it('renders assignee, peak, and total headers', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData()
+        });
+
+        render(<WorkloadSidebar />);
+
+        expect(screen.getByText('Assignees')).toBeInTheDocument();
+        expect(screen.getByTestId('workload-sidebar-header-peak')).toHaveTextContent('Peak');
+        expect(screen.getByTestId('workload-sidebar-header-total')).toHaveTextContent('Total');
     });
 
     it('stretches to fill the workload pane width', () => {
@@ -239,7 +253,7 @@ describe('WorkloadSidebar', () => {
         render(<WorkloadSidebar />);
 
         const overloadControl = screen.getByRole('button', { name: 'Focus overload histogram for Alice' });
-        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '132px', justifyContent: 'flex-end' });
+        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '170px', justifyContent: 'flex-end' });
         expect(screen.getByTestId('overload-cycle-count-1')).toHaveTextContent('1/2');
         fireEvent.click(overloadControl);
 
@@ -311,7 +325,19 @@ describe('WorkloadSidebar', () => {
 
         render(<WorkloadSidebar />);
 
-        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '132px', justifyContent: 'flex-end' });
+        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '170px', justifyContent: 'flex-end' });
         expect(screen.getByTestId('overload-cycle-count-1')).toHaveStyle({ visibility: 'hidden', width: '32px' });
+    });
+
+    it('keeps peak and total in dedicated right-aligned cells when no overload is present', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData()
+        });
+
+        render(<WorkloadSidebar />);
+
+        expect(screen.getByTestId('workload-sidebar-peak-1')).toHaveStyle({ textAlign: 'right' });
+        expect(screen.getByTestId('workload-sidebar-total-1')).toHaveStyle({ textAlign: 'right' });
     });
 });

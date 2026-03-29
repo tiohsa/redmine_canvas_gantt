@@ -13,8 +13,8 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
     scrollTop = 0,
     onScroll
 }) => {
-    const OVERLOAD_ACTION_WIDTH = 132;
-    const OVERLOAD_COUNT_WIDTH = 32;
+    const METRIC_COLUMN_WIDTH = 72;
+    const OVERLOAD_COLUMN_WIDTH = 170;
     const {
         workloadData,
         resolveNextOverloadBar,
@@ -49,7 +49,8 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
             <div style={{
                 height: '40px',
                 borderBottom: '1px solid #e0e0e0',
-                display: 'flex',
+                display: 'grid',
+                gridTemplateColumns: `minmax(0, 1fr) ${METRIC_COLUMN_WIDTH}px ${METRIC_COLUMN_WIDTH}px ${OVERLOAD_COLUMN_WIDTH}px`,
                 alignItems: 'center',
                 padding: '0 16px',
                 fontWeight: 600,
@@ -58,7 +59,22 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px'
             }}>
-                {i18n.t('label_assignee_plural') || 'Assignees'}
+                <div style={{ minWidth: 0 }}>
+                    {i18n.t('label_assignee_plural') || 'Assignees'}
+                </div>
+                <div
+                    data-testid="workload-sidebar-header-peak"
+                    style={{ textAlign: 'right' }}
+                >
+                    {i18n.t('label_peak') || 'Peak'}
+                </div>
+                <div
+                    data-testid="workload-sidebar-header-total"
+                    style={{ textAlign: 'right' }}
+                >
+                    {i18n.t('label_total') || 'Total'}
+                </div>
+                <div />
             </div>
             <div
                 ref={scrollRef}
@@ -74,80 +90,104 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                             return (
                                 <div
                                     key={assignee.assigneeId}
+                                    data-testid={`workload-sidebar-row-${assignee.assigneeId}`}
                                     style={{
                                         height: `${rowHeight}px`,
                                         borderBottom: '1px solid #f0f0f0',
                                         padding: '8px 16px',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        justifyContent: 'center',
+                                        display: 'grid',
+                                        gridTemplateColumns: `minmax(0, 1fr) ${METRIC_COLUMN_WIDTH}px ${METRIC_COLUMN_WIDTH}px ${OVERLOAD_COLUMN_WIDTH}px`,
+                                        gridTemplateRows: '1fr 1fr',
+                                        alignItems: 'center',
                                         boxSizing: 'border-box'
                                     }}
                                 >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div style={{ fontWeight: 600, fontSize: '14px', color: '#333', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {assignee.assigneeName}
-                                        </div>
-                                        {hasOverload && (
-                                            <div
-                                                data-testid={`overload-action-area-${assignee.assigneeId}`}
+                                    <div
+                                        style={{
+                                            gridColumn: '1 / 2',
+                                            gridRow: '1 / 3',
+                                            minWidth: 0,
+                                            fontWeight: 600,
+                                            fontSize: '14px',
+                                            color: '#333',
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            alignSelf: 'center'
+                                        }}
+                                    >
+                                        {assignee.assigneeName}
+                                    </div>
+                                    <div
+                                        data-testid={`workload-sidebar-peak-${assignee.assigneeId}`}
+                                        style={{ gridColumn: '2 / 3', gridRow: '2 / 3', textAlign: 'right', fontSize: '12px', color: '#666' }}
+                                    >
+                                        {assignee.peakLoad.toFixed(1)}h
+                                    </div>
+                                    <div
+                                        data-testid={`workload-sidebar-total-${assignee.assigneeId}`}
+                                        style={{ gridColumn: '3 / 4', gridRow: '2 / 3', textAlign: 'right', fontSize: '12px', color: '#666' }}
+                                    >
+                                        {assignee.totalLoad.toFixed(1)}h
+                                    </div>
+                                    {hasOverload && (
+                                        <div
+                                            data-testid={`overload-action-area-${assignee.assigneeId}`}
+                                            style={{
+                                                gridColumn: '4 / 5',
+                                                gridRow: '1 / 3',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'flex-end',
+                                                gap: '6px',
+                                                width: `${OVERLOAD_COLUMN_WIDTH}px`,
+                                                justifySelf: 'end'
+                                            }}
+                                        >
+                                            <button
+                                                type="button"
+                                                aria-label={`Focus overload histogram for ${assignee.assigneeName}`}
+                                                onClick={() => {
+                                                    const selectedBar = resolveNextOverloadBar(assignee.assigneeId);
+                                                    if (!selectedBar) return;
+
+                                                    resetHistogramSelectionCycle();
+                                                    const { taskId } = resolveNextHistogramTask(selectedBar.assigneeId, selectedBar.dateStr);
+                                                    if (!taskId) return;
+
+                                                    const result = useTaskStore.getState().focusTask(taskId);
+                                                    if (result.status === 'filtered_out') {
+                                                        useUIStore.getState().addNotification('Selected task is hidden by the current filters.', 'warning');
+                                                    }
+                                                }}
                                                 style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'flex-end',
-                                                    gap: '6px',
-                                                    width: `${OVERLOAD_ACTION_WIDTH}px`,
-                                                    flexShrink: 0
+                                                    backgroundColor: '#fce8e6',
+                                                    color: '#d93025',
+                                                    padding: '2px 6px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '11px',
+                                                    fontWeight: 600,
+                                                    border: 'none',
+                                                    cursor: 'pointer'
                                                 }}
                                             >
-                                                <button
-                                                    type="button"
-                                                    aria-label={`Focus overload histogram for ${assignee.assigneeName}`}
-                                                    onClick={() => {
-                                                        const selectedBar = resolveNextOverloadBar(assignee.assigneeId);
-                                                        if (!selectedBar) return;
-
-                                                        resetHistogramSelectionCycle();
-                                                        const { taskId } = resolveNextHistogramTask(selectedBar.assigneeId, selectedBar.dateStr);
-                                                        if (!taskId) return;
-
-                                                        const result = useTaskStore.getState().focusTask(taskId);
-                                                        if (result.status === 'filtered_out') {
-                                                            useUIStore.getState().addNotification('Selected task is hidden by the current filters.', 'warning');
-                                                        }
-                                                    }}
-                                                    style={{
-                                                        backgroundColor: '#fce8e6',
-                                                        color: '#d93025',
-                                                        padding: '2px 6px',
-                                                        borderRadius: '4px',
-                                                        fontSize: '11px',
-                                                        fontWeight: 600,
-                                                        border: 'none',
-                                                        cursor: 'pointer'
-                                                    }}
-                                                >
-                                                    OVERLOAD
-                                                </button>
-                                                <span
-                                                    data-testid={`overload-cycle-count-${assignee.assigneeId}`}
-                                                    style={{
-                                                        width: `${OVERLOAD_COUNT_WIDTH}px`,
-                                                        fontSize: '11px',
-                                                        fontWeight: 600,
-                                                        color: '#666',
-                                                        textAlign: 'right',
-                                                        visibility: overloadCycleInfo ? 'visible' : 'hidden'
-                                                    }}
-                                                >
-                                                    {overloadCycleInfo ? `${overloadCycleInfo.current}/${overloadCycleInfo.total}` : '0/0'}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                                        Peak {assignee.peakLoad.toFixed(1)}h &bull; Total {assignee.totalLoad.toFixed(1)}h
-                                    </div>
+                                                OVERLOAD
+                                            </button>
+                                            <span
+                                                data-testid={`overload-cycle-count-${assignee.assigneeId}`}
+                                                style={{
+                                                    width: '32px',
+                                                    fontSize: '11px',
+                                                    fontWeight: 600,
+                                                    color: '#666',
+                                                    textAlign: 'right',
+                                                    visibility: overloadCycleInfo ? 'visible' : 'hidden'
+                                                }}
+                                            >
+                                                {overloadCycleInfo ? `${overloadCycleInfo.current}/${overloadCycleInfo.total}` : '0/0'}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
