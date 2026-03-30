@@ -1,3 +1,23 @@
+# Help screen refresh
+
+- [x] Audit current help dialog against the live toolbar and editing flows
+- [x] Refresh the help dialog content and structure for the current UI
+- [x] Add/update localized help strings and frontend i18n payload keys
+- [x] Update frontend/backend coverage for the refreshed help content
+- [x] Run targeted verification and record results
+
+## Review
+
+- Help dialog now uses three quick-reference sections that match the live toolbar and editing flows
+- Added coverage for missing current controls including query editor, workload pane, month navigation, top, and manual save/cancel behavior
+- Replaced emoji markers in the operations area with SVG-based icons for consistency with the rest of the UI
+- Localized new help labels/descriptions in Japanese and English and exposed them through the controller i18n payload
+- Verification passed with `cd spa && npm run test -- --run src/components/HelpDialog.test.tsx src/components/GanttToolbar.test.tsx`
+- Verification passed with `cd spa && npm run lint`
+- Verification passed with `cd spa && npx tsc -b`
+- Ruby syntax checks passed for controller and controller spec
+- Docker Redmine runtime still could not execute plugin RSpec because `rspec` is not installed in the container (`bundler: command not found: rspec`)
+
 # Query refactor
 
 - [x] Split backend query resolution responsibilities in `lib/redmine_canvas_gantt/query_state_resolver.rb`

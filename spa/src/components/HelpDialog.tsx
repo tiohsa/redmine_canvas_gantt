@@ -1,6 +1,18 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
+
+type HelpItem = {
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    active?: boolean;
+};
+
+type HelpSection = {
+    title: string;
+    items: HelpItem[];
+};
 
 const IconWrapper: React.FC<{ children: React.ReactNode; active?: boolean }> = ({ children, active }) => (
     <div style={{
@@ -19,7 +31,7 @@ const IconWrapper: React.FC<{ children: React.ReactNode; active?: boolean }> = (
     </div>
 );
 
-const HelpRow: React.FC<{ icon: React.ReactNode; title: string; description: string; active?: boolean }> = ({ icon, title, description, active }) => (
+const HelpRow: React.FC<HelpItem> = ({ icon, title, description, active }) => (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', marginBottom: '20px' }}>
         <IconWrapper active={active}>{icon}</IconWrapper>
         <div>
@@ -29,10 +41,42 @@ const HelpRow: React.FC<{ icon: React.ReactNode; title: string; description: str
     </div>
 );
 
+const HelpSectionCard: React.FC<HelpSection> = ({ title, items }) => (
+    <section>
+        <h3 style={{ fontSize: '16px', color: '#1a73e8', borderBottom: '2px solid #e8f0fe', paddingBottom: '8px', marginBottom: '20px' }}>
+            {title}
+        </h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+            {items.map(item => (
+                <HelpRow
+                    key={`${item.title}-${item.description}`}
+                    icon={item.icon}
+                    title={item.title}
+                    description={item.description}
+                    active={item.active}
+                />
+            ))}
+        </div>
+    </section>
+);
+
+const iconStroke = { fill: 'none', stroke: 'currentColor', strokeWidth: '2', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+
+const listIcon = (
+    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="15" y1="3" x2="15" y2="21" /></svg>
+);
+
+const chartIcon = (
+    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="9" y1="3" x2="9" y2="21" /></svg>
+);
+
+const questionIcon = (
+    <svg width="20" height="20" viewBox="0 0 24 24" {...iconStroke}><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+);
+
 export const HelpDialog: React.FC = () => {
     const isHelpDialogOpen = useUIStore(state => state.isHelpDialogOpen);
     const closeHelpDialog = useUIStore(state => state.closeHelpDialog);
-    const dialogRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!isHelpDialogOpen) return;
@@ -52,6 +96,176 @@ export const HelpDialog: React.FC = () => {
     }, [isHelpDialogOpen, closeHelpDialog]);
 
     if (!isHelpDialogOpen) return null;
+
+    const sections: HelpSection[] = [
+        {
+            title: i18n.t('help_label_layout_filters') || '1. Layout and Filters',
+            items: [
+                {
+                    icon: listIcon,
+                    title: i18n.t('label_maximize_left_pane') || 'Maximize List / Restore Split View',
+                    description: i18n.t('help_desc_maximize_left') || 'Expands the task list to fill the screen, hiding the chart. Click again to restore the split view.'
+                },
+                {
+                    icon: chartIcon,
+                    title: i18n.t('label_maximize_right_pane') || 'Maximize Chart / Restore Split View',
+                    description: i18n.t('help_desc_maximize_right') || 'Expands the Gantt chart to fill the screen, hiding the task list. Click again to restore the split view.'
+                },
+                {
+                    icon: <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>,
+                    title: i18n.t('label_issue_new') || 'New Issue',
+                    description: i18n.t('help_desc_issue_new') || 'Opens a dialog to create a new issue.'
+                },
+                {
+                    icon: <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>,
+                    title: i18n.t('label_filter_tasks') || 'Filter Tasks (Subject)',
+                    description: i18n.t('help_desc_filter_tasks') || 'Filter the visible tasks by matching the issue subject. Shortcut: Ctrl+F.'
+                },
+                {
+                    icon: <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}><path d="M3 5h18" /><path d="M6 12h12" /><path d="M10 19h4" /></svg>,
+                    title: i18n.t('label_edit_query_in_redmine') || 'Edit Query in Redmine',
+                    description: i18n.t('help_desc_edit_query') || 'Open the current query in Redmine to edit the shared filter conditions.'
+                },
+                {
+                    icon: <><svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" /></svg><div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} /></>,
+                    title: i18n.t('label_column_plural') || 'Columns',
+                    description: i18n.t('help_desc_columns') || 'Select which columns are visible in the left task list.',
+                    active: true
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>,
+                    title: i18n.t('label_workload') || 'Workload',
+                    description: i18n.t('help_desc_workload') || 'Toggle the workload pane and configure workload-specific filters and thresholds.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>,
+                    title: i18n.t('field_assigned_to') || 'Assignee Filter',
+                    description: i18n.t('help_desc_assignee_filter') || 'Filter tasks by specific assignees, or group tasks by their assignee.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" /></svg>,
+                    title: i18n.t('label_project_plural') || 'Project Filter',
+                    description: i18n.t('help_desc_project_filter') || 'Filter tasks by project, or group tasks by their parent project.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></svg>,
+                    title: i18n.t('label_version_plural') || 'Target Version Filter',
+                    description: i18n.t('help_desc_version_filter') || 'Filter tasks by target version, or toggle the visibility of version group headers.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>,
+                    title: i18n.t('field_status') || 'Status Filter',
+                    description: i18n.t('help_desc_status_filter') || 'Filter tasks by their current issue status.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M4 12h6" /><path d="M14 12h6" /><circle cx="10" cy="12" r="2" /><circle cx="14" cy="12" r="2" /></svg>,
+                    title: i18n.t('label_relation_title') || 'Dependency Settings',
+                    description: i18n.t('help_desc_dependency_settings') || 'Configure default dependency behavior, including relation type, auto-calculated delay, and how linked tasks move during auto scheduling.'
+                }
+            ]
+        },
+        {
+            title: i18n.t('help_label_timeline_view') || '2. Timeline and View Controls',
+            items: [
+                {
+                    icon: <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}><polyline points="15 18 9 12 15 6" /><polyline points="9 18 15 12 9 6" /></svg>,
+                    title: `${i18n.t('label_prev_month') || 'Previous month'} / ${i18n.t('label_next_month') || 'Next month'}`,
+                    description: i18n.t('help_desc_prev_next_month') || 'Use the previous and next month buttons to jump the visible timeline window by whole months.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>,
+                    title: i18n.t('label_today') || 'Today',
+                    description: i18n.t('help_desc_today') || 'Scrolls the timeline view to center on the current day.'
+                },
+                {
+                    icon: <span style={{ fontSize: '13px', fontWeight: 600 }}>M/W/D</span>,
+                    title: i18n.t('help_label_zoom') || 'Zoom Levels (Month, Week, Day)',
+                    description: i18n.t('help_desc_zoom') || 'Adjust the timescale of the Gantt chart. Month view for high-level planning, Day view for details.'
+                },
+                {
+                    icon: <div style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '13px', fontWeight: 500 }}>M<svg width="12" height="12" viewBox="0 0 24 24" {...iconStroke}><polyline points="6 9 12 15 18 9" /></svg></div>,
+                    title: i18n.t('label_row_height') || 'Row Height',
+                    description: i18n.t('help_desc_row_height') || 'Change the vertical size of task rows.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>,
+                    title: i18n.t('label_progress_line') || 'Progress Line',
+                    description: i18n.t('help_desc_progress_line') || 'Toggle the visibility of a progress line on the chart to visualize if tasks are ahead or behind schedule.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M5 6h6v6H5z" /><path d="M13 12h6v6h-6z" /><path d="M11 9l2 2" /><path d="M7 12l6-6" /></svg>,
+                    title: i18n.t('label_organize_by_dependency') || 'Organize by Dependency',
+                    description: i18n.t('help_desc_organize_by_dependency') || 'Sort tasks based on their dependencies. Preceding tasks will be listed before succeeding tasks.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M12 2l3 5h6l-5 4 2 6-6-4-6 4 2-6-5-4h6z" /></svg>,
+                    title: i18n.t('label_toggle_points_orphans') || 'Toggle Orphan Date Points',
+                    description: i18n.t('help_desc_points_orphans') || 'Show or hide milestone indicators for tasks that only have a start date or a due date.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>,
+                    title: i18n.t('label_export') || 'Export',
+                    description: i18n.t('help_desc_export') || 'Export the current Gantt view as a PNG image, or download the visible task data as CSV including hierarchy and dependency columns.'
+                },
+                {
+                    icon: <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></svg>,
+                    title: i18n.t('help_label_fullscreen') || 'Full Screen',
+                    description: i18n.t('help_desc_fullscreen') || 'Toggle full screen mode to maximize your workspace.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /><line x1="5" y1="5" x2="19" y2="5" /></svg>,
+                    title: i18n.t('button_top') || 'Top',
+                    description: i18n.t('help_desc_top') || 'Scroll the task list back to the top.'
+                }
+            ]
+        },
+        {
+            title: i18n.t('help_label_editing_saving') || '3. Editing and Saving',
+            items: [
+                {
+                    icon: <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}><line x1="3" y1="12" x2="21" y2="12" /><polyline points="8 7 3 12 8 17" /><polyline points="16 7 21 12 16 17" /></svg>,
+                    title: i18n.t('help_op_drag_drop') || 'Drag & Drop',
+                    description: i18n.t('help_op_drag_drop_desc') || 'Drag a task bar in the chart to change its start and due dates. Drag the edges of a bar to change its duration.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M4 12h6" /><path d="M14 12h6" /><circle cx="10" cy="12" r="2" /><circle cx="14" cy="12" r="2" /></svg>,
+                    title: i18n.t('help_op_dependency') || 'Draw Dependencies',
+                    description: i18n.t('help_op_dependency_desc') || 'Hover over a task bar to see connection points. Click and drag from a point to another task to create a dependency relation.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M4 20l4-1 9-9-3-3-9 9-1 4z" /><path d="M13 6l3 3" /></svg>,
+                    title: i18n.t('help_op_inline_edit') || 'Inline Editing',
+                    description: i18n.t('help_op_inline_edit_desc') || 'Double-click or press Enter on a cell in the left task list to quickly edit its value without opening the full issue page.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></svg>,
+                    title: i18n.t('help_op_context_menu') || 'Context Menu',
+                    description: i18n.t('help_op_context_menu_desc') || 'Right-click on a task row or task bar to access a context menu for editing, assigning, updating status, or opening the issue.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>,
+                    title: i18n.t('help_op_unscheduled') || 'Schedule Tasks',
+                    description: i18n.t('help_op_unscheduled_desc') || 'For tasks without dates, edit the start date or due date directly in the left task list. Once dates are set, the task will also appear on the chart.'
+                },
+                {
+                    icon: <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>,
+                    title: i18n.t('help_label_autosave') || 'Auto Save',
+                    description: i18n.t('help_desc_autosave') || 'When enabled, changes are saved immediately. When disabled, use Save to apply them manually.',
+                    active: true
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M5 3h11l3 3v15H5z" /><path d="M9 3v6h6" /><path d="M9 17h6" /></svg>,
+                    title: i18n.t('button_save') || 'Save',
+                    description: i18n.t('help_desc_save') || 'When auto save is off, save all pending changes at once.'
+                },
+                {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
+                    title: i18n.t('button_cancel') || 'Cancel',
+                    description: i18n.t('help_desc_cancel') || 'When auto save is off, discard the unsaved changes currently pending in the toolbar.'
+                }
+            ]
+        }
+    ];
 
     return (
         <div
@@ -75,7 +289,6 @@ export const HelpDialog: React.FC = () => {
             }}
         >
             <div
-                ref={dialogRef}
                 style={{
                     width: '100%',
                     maxWidth: '1200px',
@@ -100,11 +313,7 @@ export const HelpDialog: React.FC = () => {
                     backgroundColor: '#f8f9fa'
                 }}>
                     <h2 style={{ margin: 0, fontSize: '18px', color: '#333', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                            <line x1="12" y1="17" x2="12.01" y2="17" />
-                        </svg>
+                        {questionIcon}
                         {i18n.t('label_help') || 'Help'}
                     </h2>
                     <button
@@ -137,167 +346,9 @@ export const HelpDialog: React.FC = () => {
                     flexDirection: 'column',
                     gap: '40px'
                 }}>
-
-                    {/* Chapter 1: Toolbar Icons */}
-                    <section>
-                        <h3 style={{ fontSize: '16px', color: '#1a73e8', borderBottom: '2px solid #e8f0fe', paddingBottom: '8px', marginBottom: '20px' }}>
-                            {i18n.t('label_help_toolbar_icons') || '1. Header Menu Icons'}
-                        </h3>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: 'x20px' }}>
-                            <HelpRow
-                                icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="15" y1="3" x2="15" y2="21" /></svg>}
-                                title={i18n.t('label_maximize_left_pane') || 'Maximize List / Restore Split View'}
-                                description={i18n.t('help_desc_maximize_left') || 'Expands the task list to fill the screen, hiding the chart. Click again to restore the split view.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="9" y1="3" x2="9" y2="21" /></svg>}
-                                title={i18n.t('label_maximize_right_pane') || 'Maximize Chart / Restore Split View'}
-                                description={i18n.t('help_desc_maximize_right') || 'Expands the Gantt chart to fill the screen, hiding the task list. Click again to restore the split view.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>}
-                                title={i18n.t('label_issue_new') || 'New Issue'}
-                                description={i18n.t('help_desc_issue_new') || 'Opens a dialog to create a new Redmine issue without leaving the Gantt view.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>}
-                                title={i18n.t('label_filter_tasks') || 'Filter Tasks (Subject)'}
-                                description={i18n.t('help_desc_filter_tasks') || 'Quickly filter the visible tasks by typing a keyword that matches the issue subject. Shortcut: Ctrl+F.'}
-                            />
-                            <HelpRow
-                                icon={<><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" /></svg><div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} /></>}
-                                title={i18n.t('label_column_plural') || 'Columns'}
-                                description={i18n.t('help_desc_columns') || 'Select which columns (Status, Assignee, Start Date, Due Date, etc.) are visible in the left task list.'}
-                                active
-                            />
-                            <HelpRow
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>}
-                                title={i18n.t('field_assigned_to') || 'Assignee Filter'}
-                                description={i18n.t('help_desc_assignee_filter') || 'Filter tasks by specific assignees, or group tasks by their assignee.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" /></svg>}
-                                title={i18n.t('label_project_plural') || 'Project Filter'}
-                                description={i18n.t('help_desc_project_filter') || 'Filter tasks by project, or group tasks by their parent project.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></svg>}
-                                title={i18n.t('label_version_plural') || 'Target Version Filter'}
-                                description={i18n.t('help_desc_version_filter') || 'Filter tasks by target version, or toggle the visibility of version group headers.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>}
-                                title={i18n.t('field_status') || 'Status Filter'}
-                                description={i18n.t('help_desc_status_filter') || 'Filter tasks by their current issue status (e.g., New, In Progress, Closed).'}
-                            />
-                            <HelpRow
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>}
-                                title={i18n.t('label_progress_line') || 'Progress Line'}
-                                description={i18n.t('help_desc_progress_line') || 'Toggle the visibility of a progress line on the chart to visualize if tasks are ahead or behind schedule.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12h6" /><path d="M14 12h6" /><circle cx="10" cy="12" r="2" /><circle cx="14" cy="12" r="2" /></svg>}
-                                title={i18n.t('label_relation_title') || 'Dependency Settings'}
-                                description={i18n.t('help_desc_dependency_settings') || 'Configure default behavior for drawing dependencies, such as relation type and auto-calculating delay.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>}
-                                title={i18n.t('label_export') || 'Export'}
-                                description={i18n.t('help_desc_export') || 'Export the current Gantt view as a PNG image, or download the visible task data as CSV including hierarchy and dependency columns.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 6h6v6H5z" /><path d="M13 12h6v6h-6z" /><path d="M11 9l2 2" /><path d="M7 12l6-6" /></svg>}
-                                title={i18n.t('label_organize_by_dependency') || 'Organize by Dependency'}
-                                description={i18n.t('help_desc_organize_by_dependency') || 'Sort tasks based on their dependencies. Preceding tasks will be listed before succeeding tasks.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3 5h6l-5 4 2 6-6-4-6 4 2-6-5-4h6z" /></svg>}
-                                title={i18n.t('label_toggle_points_orphans') || 'Toggle Orphan Date Points'}
-                                description={i18n.t('help_desc_points_orphans') || 'Show or hide milestone indicators for tasks that only have a start date or a due date.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>}
-                                title={i18n.t('label_today') || 'Today'}
-                                description={i18n.t('help_desc_today') || 'Scrolls the timeline view to center on the current day.'}
-                            />
-                            <HelpRow
-                                icon={<span style={{ fontSize: '13px', fontWeight: 600 }}>M</span>}
-                                title={i18n.t('help_label_zoom') || 'Zoom Levels (Month, Week, Day)'}
-                                description={i18n.t('help_desc_zoom') || 'Adjust the timescale of the Gantt chart. Month view for high-level planning, Day view for details.'}
-                            />
-                            <HelpRow
-                                icon={<div style={{ display: 'flex', alignItems: 'center', gap: '2px', fontSize: '13px', fontWeight: 500 }}>M<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg></div>}
-                                title={i18n.t('label_row_height') || 'Row Height'}
-                                description={i18n.t('help_desc_row_height') || 'Change the vertical size of task rows to fit more tasks on screen or to make them easier to read.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></svg>}
-                                title={i18n.t('help_label_fullscreen') || 'Full Screen'}
-                                description={i18n.t('help_desc_fullscreen') || 'Toggle full screen mode to maximize your workspace.'}
-                            />
-                            <HelpRow
-                                icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>}
-                                title={i18n.t('help_label_autosave') || 'Auto Save'}
-                                description={i18n.t('help_desc_autosave') || 'When enabled, changes (like dragging tasks) are saved to Redmine immediately. When disabled, you must manually click "Save".'}
-                                active
-                            />
-                        </div>
-                    </section>
-
-                    {/* Chapter 2: Additional Essential Operations (Basic placeholder examples as per instructions) */}
-                    <section>
-                        <h3 style={{ fontSize: '16px', color: '#1a73e8', borderBottom: '2px solid #e8f0fe', paddingBottom: '8px', marginBottom: '20px' }}>
-                            {i18n.t('help_label_basic_operations') || '2. Basic Operations'}
-                        </h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '20px' }}>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <div style={{ fontSize: '24px', color: '#666', marginTop: '-4px' }}>🖱️</div>
-                                <div>
-                                    <div style={{ fontWeight: 600, color: '#333' }}>{i18n.t('help_op_drag_drop') || 'Drag & Drop'}</div>
-                                    <div style={{ fontSize: '13px', color: '#555', marginTop: '4px' }}>
-                                        {i18n.t('help_op_drag_drop_desc') || 'Drag a task bar in the chart to change its start and due dates. Drag the edges of a bar to change its duration.'}
-                                    </div>
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <div style={{ fontSize: '24px', color: '#666', marginTop: '-4px' }}>🔗</div>
-                                <div>
-                                    <div style={{ fontWeight: 600, color: '#333' }}>{i18n.t('help_op_dependency') || 'Draw Dependencies'}</div>
-                                    <div style={{ fontSize: '13px', color: '#555', marginTop: '4px' }}>
-                                        {i18n.t('help_op_dependency_desc') || 'Hover over a task bar to see connection points. Click and drag from a point to another task to create a dependency relation.'}
-                                    </div>
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <div style={{ fontSize: '24px', color: '#666', marginTop: '-4px' }}>✏️</div>
-                                <div>
-                                    <div style={{ fontWeight: 600, color: '#333' }}>{i18n.t('help_op_inline_edit') || 'Inline Editing'}</div>
-                                    <div style={{ fontSize: '13px', color: '#555', marginTop: '4px' }}>
-                                        {i18n.t('help_op_inline_edit_desc') || 'Double-click or press Enter on a cell in the left task list to quickly edit its value without opening the full issue page.'}
-                                    </div>
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <div style={{ fontSize: '24px', color: '#666', marginTop: '-4px' }}>📋</div>
-                                <div>
-                                    <div style={{ fontWeight: 600, color: '#333' }}>{i18n.t('help_op_context_menu') || 'Context Menu'}</div>
-                                    <div style={{ fontSize: '13px', color: '#555', marginTop: '4px' }}>
-                                        {i18n.t('help_op_context_menu_desc') || 'Right-click on a task row or task bar to access a context menu for editing, assigning, updating status, or opening the issue.'}
-                                    </div>
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '12px' }}>
-                                <div style={{ fontSize: '24px', color: '#666', marginTop: '-4px' }}>📅</div>
-                                <div>
-                                    <div style={{ fontWeight: 600, color: '#333' }}>{i18n.t('help_op_unscheduled') || 'Schedule Tasks'}</div>
-                                    <div style={{ fontSize: '13px', color: '#555', marginTop: '4px' }}>
-                                        {i18n.t('help_op_unscheduled_desc') || 'For tasks with no dates (which do not appear on the chart), you can drag them from the left list onto the chart to set their dates.'}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
+                    {sections.map(section => (
+                        <HelpSectionCard key={section.title} title={section.title} items={section.items} />
+                    ))}
                 </div>
 
                 {/* Footer with Close Button */}
