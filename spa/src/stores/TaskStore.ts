@@ -41,6 +41,12 @@ type DerivedTaskState = DerivedSchedulingSummary & {
 
 type DerivedTaskStatePatch = Pick<TaskState, 'tasks' | 'layoutRows' | 'rowCount' | 'schedulingStates' | 'criticalPathMetrics' | 'criticalPathProjectFinish'>;
 
+const queueRefreshData = (refreshData: () => Promise<void>) => {
+    queueMicrotask(() => {
+        void refreshData().catch((error) => console.error('Failed to refresh data', error));
+    });
+};
+
 interface TaskState {
     allTasks: Task[];
     tasks: Task[];
@@ -1031,7 +1037,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             rowCount: layout.rowCount
         };
         syncQueryStateUrl({ ...state, ...nextState });
-        queueMicrotask(() => void get().refreshData());
+        queueRefreshData(get().refreshData);
         return nextState;
     }),
 
@@ -1044,7 +1050,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             rowCount: layout.rowCount
         };
         syncQueryStateUrl({ ...state, ...nextState });
-        queueMicrotask(() => void get().refreshData());
+        queueRefreshData(get().refreshData);
         return nextState;
     }),
     setSelectedVersionIds: (ids) => set((state) => {
@@ -1056,7 +1062,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             rowCount: layout.rowCount
         };
         syncQueryStateUrl({ ...state, ...nextState });
-        queueMicrotask(() => void get().refreshData());
+        queueRefreshData(get().refreshData);
         return nextState;
     }),
 

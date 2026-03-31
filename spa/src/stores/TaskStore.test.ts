@@ -283,6 +283,26 @@ describe('TaskStore project filter with subproject toggle', () => {
     });
 });
 
+describe('TaskStore background refresh safety', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        vi.mocked(apiClient.fetchData).mockReset();
+    });
+
+    it('setSelectedAssigneeIds catches failed background refreshes', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.mocked(apiClient.fetchData).mockRejectedValueOnce(new Error('network down'));
+
+        useTaskStore.getState().setSelectedAssigneeIds([10]);
+        await vi.waitFor(() => {
+            expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+            expect(consoleError).toHaveBeenCalledWith('Failed to refresh data', expect.any(Error));
+        });
+
+        consoleError.mockRestore();
+    });
+});
+
 describe('TaskStore focusTask', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
