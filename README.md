@@ -94,19 +94,20 @@ Canvas Gantt separates shared business conditions from personal UI preferences.
 
 - Shared business conditions are resolved from the URL and optional `query_id`
 - Personal UI state such as zoom, viewport, sidebar width, and visible columns stays in `localStorage`
-- When the same condition is provided by multiple sources, the precedence is:
-  URL parameters -> saved query (`query_id`) -> `localStorage` -> defaults
+- Shared query conditions do not fall back to `localStorage`
+- When the same shared condition is provided by multiple sources, the precedence is:
+  URL parameters -> saved query (`query_id`) -> defaults
 
 ### Query editing flow
 
-Canvas Gantt does not reimplement Redmine's query editor. Query creation, editing, and saving are done in the standard Redmine issue list, and Canvas Gantt consumes the saved query through `query_id`.
+Canvas Gantt does not reimplement Redmine's query editor. Query creation, editing, and saving are done in the standard Redmine issue list, and Canvas Gantt consumes both saved queries and the supported subset of Redmine issue-list URL parameters.
 
 - Use **Edit Query in Redmine** in the Canvas Gantt toolbar to open the standard issue list for the current project
 - Adjust filters in the Redmine issue list and save the query with Redmine's built-in **Save** action
 - After the query is saved, use **Open in Canvas Gantt** in the issue list to return to Canvas Gantt with `query_id`
 - If the query is not saved yet, Canvas Gantt does not receive a `query_id`, so the issue list shows a save notice instead of returning directly
 
-Phase 1 supports the saved-query flow only. Unsaved Redmine filter parameters are not converted back into Canvas Gantt URLs yet.
+`query_id` alone is enough only when the current view exactly matches the saved query. If Canvas Gantt adds extra shared filters on top of that saved query, the toolbar sends `query_id` plus standard Redmine filter parameters so the issue list can reproduce the same view as closely as possible.
 
 ### Supported shared parameters
 
@@ -118,6 +119,38 @@ Phase 1 supports the saved-query flow only. Unsaved Redmine filter parameters ar
 - `group_by`: `project` or `assigned_to`
 - `sort`: frontend sort key plus direction, for example `subject:asc` or `startDate:desc`
 - `show_subprojects`: `0` to hide subprojects, omit it or use `1` to include them
+
+Canvas Gantt also reads the following Redmine-standard issue list parameters:
+
+- `set_filter=1`
+- `f[]`
+- `op[field]`
+- `v[field][]`
+- `group_by`
+- `sort`
+
+Supported Redmine-standard fields:
+
+- `status_id`
+- `assigned_to_id`
+- `project_id`
+- `fixed_version_id`
+- `subproject_id`
+
+Supported Redmine-standard operators:
+
+- `=`
+- `*`
+- `!*`
+- `o`
+- `c`
+
+Current compatibility limits:
+
+- Unsupported Redmine fields or operators are ignored and shown as warnings
+- `assigned_to_id` with both specific assignees and unassigned issues cannot be represented exactly when exporting back to the Redmine issue list, so the unassigned part is omitted with a warning
+- Issues without a target version are supported in Canvas-specific URLs via `fixed_version_ids[]=none`, but that case is omitted when exporting a Redmine-standard issue-list URL
+- Default sort (`startDate:asc`) may be omitted when exporting a Redmine issue-list URL
 
 ### Example URLs
 
@@ -131,6 +164,12 @@ Override a saved query with explicit status and assignee filters:
 
 ```text
 /projects/demo/canvas_gantt?query_id=12&status_ids[]=1&status_ids[]=2&assigned_to_ids[]=5
+```
+
+Open Canvas Gantt directly from a supported Redmine-standard issue-list URL:
+
+```text
+/projects/demo/canvas_gantt?query_id=12&set_filter=1&f[]=status_id&op[status_id]==&v[status_id][]=1&group_by=assigned_to&sort=start_date:desc
 ```
 
 Open a shared project/version view without relying on browser storage:
