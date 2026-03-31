@@ -887,6 +887,8 @@ describe('TaskStore drag parent updates', () => {
         const result = await moveTaskToRoot('child');
 
         expect(result.status).toBe('ok');
+        expect(result.parentId).toBeUndefined();
+        expect(result.siblingPosition).toBe('tail');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBeUndefined();
         expect(useTaskStore.getState().modifiedTaskIds.has('child')).toBe(true);
         expect(vi.mocked(apiClient.updateTaskFields)).not.toHaveBeenCalled();
@@ -909,6 +911,8 @@ describe('TaskStore drag parent updates', () => {
         const result = await moveTaskToRoot('child');
 
         expect(result.status).toBe('ok');
+        expect(result.parentId).toBeUndefined();
+        expect(result.siblingPosition).toBe('tail');
         expect(vi.mocked(apiClient.updateTaskFields)).toHaveBeenCalledWith('child', {
             parent_issue_id: null,
             lock_version: 2
@@ -917,25 +921,53 @@ describe('TaskStore drag parent updates', () => {
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.lockVersion).toBe(3);
     });
 
-    it('moveTaskAsChild rolls back when API response parentId does not match target', async () => {
+    it('moveTaskAsChild sends parent_issue_id and returns the target parent when autoSave is ON', async () => {
         const { setTasks, moveTaskAsChild } = useTaskStore.getState();
 
         useTaskStore.setState({ autoSave: true });
         setTasks([
-            buildTask({ id: 'parent', projectId: 'p1', displayOrder: 1 }),
-            buildTask({ id: 'source', projectId: 'p1', displayOrder: 2, lockVersion: 2 })
+            buildTask({ id: '11', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: '10', projectId: 'p1', displayOrder: 2, lockVersion: 2 })
         ]);
 
         vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
             status: 'ok',
-            lockVersion: 3
+            lockVersion: 3,
+            parentId: '11'
         });
 
-        const result = await moveTaskAsChild('source', 'parent');
+        const result = await moveTaskAsChild('10', '11');
+
+        expect(result).toEqual({
+            status: 'ok',
+            lockVersion: 3,
+            parentId: '11',
+            siblingPosition: 'tail'
+        });
+        expect(vi.mocked(apiClient.updateTaskFields)).toHaveBeenCalledWith('10', {
+            parent_issue_id: 11,
+            lock_version: 2
+        });
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.parentId).toBe('11');
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.lockVersion).toBe(3);
+    });
+
+    it('moveTaskAsChild rolls back when API request fails', async () => {
+        const { setTasks, moveTaskAsChild } = useTaskStore.getState();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: '11', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: '10', projectId: 'p1', displayOrder: 2, lockVersion: 2 })
+        ]);
+
+        vi.mocked(apiClient.updateTaskFields).mockRejectedValueOnce(new Error('network down'));
+
+        const result = await moveTaskAsChild('10', '11');
 
         expect(result.status).toBe('error');
-        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'source')?.parentId).toBeUndefined();
-        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'source')?.lockVersion).toBe(2);
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.parentId).toBeUndefined();
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.lockVersion).toBe(2);
     });
 
     it('moveTaskToRoot rolls back when API response still has parentId', async () => {

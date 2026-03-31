@@ -13,7 +13,8 @@ import { buildLayout } from './taskStore/layout';
 import { applyFilters } from './taskStore/filters';
 import { isDescendantTask, tailDisplayOrderForParent, tailDisplayOrderForRoot } from './taskStore/hierarchy';
 import { computeCenteredViewport } from './taskStore/viewport';
-import { buildMoveTaskResult, createTaskLayoutSnapshot, restoreTaskSnapshot, saveModifiedTasks } from './taskStore/taskPersistence';
+import { buildMoveTaskResult, saveModifiedTasks } from './taskStore/taskPersistence';
+import { runParentMove } from './taskStore/parentMove';
 import { buildUniformExpansionMaps, initializeExpansionMaps } from './taskStore/expansion';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
@@ -152,7 +153,7 @@ const DEFAULT_VIEWPORT: Viewport = {
 };
 
 
-const resolveLayoutState = (state: TaskState, overrides: Partial<LayoutState> = {}): LayoutState => ({
+const resolveLayoutState = (state: LayoutState, overrides: Partial<LayoutState> = {}): LayoutState => ({
     allTasks: overrides.allTasks ?? state.allTasks,
     relations: overrides.relations ?? state.relations,
     versions: overrides.versions ?? state.versions,
@@ -173,7 +174,7 @@ const resolveLayoutState = (state: TaskState, overrides: Partial<LayoutState> = 
     currentProjectId: overrides.currentProjectId ?? state.currentProjectId
 });
 
-const buildLayoutFromState = (state: TaskState, overrides: Partial<LayoutState> = {}) => {
+const buildLayoutFromState = (state: LayoutState, overrides: Partial<LayoutState> = {}) => {
     const layoutState = resolveLayoutState(state, overrides);
     const filteredTasks = applyFilters(
         layoutState.allTasks,
@@ -252,6 +253,48 @@ const toDerivedTaskStatePatch = (derived: DerivedTaskState): DerivedTaskStatePat
     schedulingStates: derived.schedulingStates,
     criticalPathMetrics: derived.criticalPathMetrics,
     criticalPathProjectFinish: derived.criticalPathProjectFinish
+});
+
+type ParentMoveStoreState = LayoutState & {
+    tasks: Task[];
+    layoutRows: LayoutRow[];
+    rowCount: number;
+    modifiedTaskIds: Set<string>;
+    autoSave: boolean;
+};
+
+const buildParentMoveOptimisticPatch = (state: ParentMoveStoreState, nextAllTasks: Task[]) => {
+    const layout = buildLayoutFromState(state, { allTasks: nextAllTasks });
+    return {
+        allTasks: nextAllTasks,
+        tasks: layout.tasks,
+        layoutRows: layout.layoutRows,
+        rowCount: layout.rowCount
+    };
+};
+
+const buildParentMoveSuccessPatch = (state: ParentMoveStoreState, sourceBefore: Task, result: { lockVersion?: number }) => {
+    const sourceTaskId = sourceBefore.id;
+    const updatedAllTasks = state.allTasks.map((task) => (
+        task.id === sourceTaskId
+            ? { ...task, lockVersion: result.lockVersion ?? task.lockVersion }
+            : task
+    ));
+    const layout = buildLayoutFromState(state, { allTasks: updatedAllTasks });
+    const nextModified = new Set(state.modifiedTaskIds);
+    nextModified.delete(sourceTaskId);
+
+    return {
+        allTasks: updatedAllTasks,
+        tasks: layout.tasks,
+        layoutRows: layout.layoutRows,
+        rowCount: layout.rowCount,
+        modifiedTaskIds: nextModified
+    };
+};
+
+const buildParentMoveFailure = (error?: string) => buildMoveTaskResult('error', {
+    error: error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent')
 });
 
 const buildRelationChange = (state: TaskState, relation: Relation, nextRelations: Relation[]) => {
@@ -589,74 +632,28 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         }
 
         const { apiClient } = await import('../api/client');
-        const beforeState = get();
-        const snapshot = createTaskLayoutSnapshot(beforeState);
-        const sourceBefore = beforeState.allTasks.find(task => task.id === sourceTaskId);
-        if (!sourceBefore) {
-            return buildMoveTaskResult('error', { error: i18n.t('label_parent_drop_failed') || 'Failed to update parent' });
-        }
-
-        const nextOrder = tailDisplayOrderForParent(beforeState.allTasks, targetTaskId, sourceTaskId);
-        const nextAllTasks = beforeState.allTasks.map(task => (
-            task.id === sourceTaskId
-                ? { ...task, parentId: targetTaskId, displayOrder: nextOrder }
-                : task
-        ));
-
-        const layout = buildLayoutFromState(beforeState, { allTasks: nextAllTasks });
-        set({
-            allTasks: nextAllTasks,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
+        return runParentMove({
+            sourceTaskId,
+            expectedParentId: targetTaskId,
+            getState: () => get(),
+            setState: (patch) => set(patch),
+            restoreSnapshot: (snapshot) => set(snapshot),
+            buildNextOrder: (allTasks) => tailDisplayOrderForParent(allTasks, targetTaskId, sourceTaskId),
+            buildNextAllTasks: (allTasks, movingTaskId, nextOrder) => allTasks.map((task) => (
+                task.id === movingTaskId
+                    ? { ...task, parentId: targetTaskId, displayOrder: nextOrder }
+                    : task
+            )),
+            buildOptimisticPatch: buildParentMoveOptimisticPatch,
+            buildSuccessPatch: buildParentMoveSuccessPatch,
+            updateTaskFields: (taskId, payload) => apiClient.updateTaskFields(taskId, {
+                parent_issue_id: Number(targetTaskId),
+                lock_version: payload.lock_version
+            }),
+            validatePersistedResult: (result) => result.parentId === targetTaskId,
+            missingSourceResult: buildParentMoveFailure(),
+            failedResult: buildParentMoveFailure
         });
-
-        if (!beforeState.autoSave) {
-            const nextModified = new Set(beforeState.modifiedTaskIds);
-            nextModified.add(sourceTaskId);
-            set({ modifiedTaskIds: nextModified });
-            return buildMoveTaskResult('ok', { lockVersion: sourceBefore.lockVersion, parentId: targetTaskId });
-        }
-
-        const result = await apiClient.updateTaskFields(sourceTaskId, {
-            parent_issue_id: Number(targetTaskId),
-            lock_version: sourceBefore.lockVersion
-        });
-
-        if (result.status !== 'ok') {
-            restoreTaskSnapshot((restoredSnapshot) => set(restoredSnapshot), snapshot);
-            return buildMoveTaskResult(result.status, { error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent') });
-        }
-
-        if (result.parentId !== targetTaskId) {
-            restoreTaskSnapshot((restoredSnapshot) => set(restoredSnapshot), snapshot);
-            return buildMoveTaskResult('error', { error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent') });
-        }
-
-        const updatedAllTasks = get().allTasks.map(task => (
-            task.id === sourceTaskId
-                ? {
-                    ...task,
-                    parentId: targetTaskId,
-                    lockVersion: result.lockVersion ?? task.lockVersion,
-                    displayOrder: tailDisplayOrderForParent(get().allTasks, targetTaskId, sourceTaskId)
-                }
-                : task
-        ));
-        const updatedLayout = buildLayoutFromState(get(), { allTasks: updatedAllTasks });
-        set({
-            allTasks: updatedAllTasks,
-            tasks: updatedLayout.tasks,
-            layoutRows: updatedLayout.layoutRows,
-            rowCount: updatedLayout.rowCount,
-            modifiedTaskIds: (() => {
-                const nextModified = new Set(get().modifiedTaskIds);
-                nextModified.delete(sourceTaskId);
-                return nextModified;
-            })()
-        });
-
-        return buildMoveTaskResult('ok', { lockVersion: result.lockVersion, parentId: targetTaskId });
     },
     moveTaskToRoot: async (sourceTaskId) => {
         if (!get().canDropToRoot(sourceTaskId)) {
@@ -664,77 +661,28 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         }
 
         const { apiClient } = await import('../api/client');
-        const beforeState = get();
-        const snapshot = createTaskLayoutSnapshot(beforeState);
-        const sourceBefore = beforeState.allTasks.find(task => task.id === sourceTaskId);
-        if (!sourceBefore) {
-            return buildMoveTaskResult('error', { error: i18n.t('label_parent_drop_failed') || 'Failed to update parent' });
-        }
-
-        const nextOrder = tailDisplayOrderForRoot(beforeState.allTasks, sourceBefore);
-        const nextAllTasks = beforeState.allTasks.map(task => (
-            task.id === sourceTaskId
-                ? { ...task, parentId: undefined, displayOrder: nextOrder }
-                : task
-        ));
-
-        const layout = buildLayoutFromState(beforeState, { allTasks: nextAllTasks });
-        set({
-            allTasks: nextAllTasks,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
+        return runParentMove({
+            sourceTaskId,
+            expectedParentId: undefined,
+            getState: () => get(),
+            setState: (patch) => set(patch),
+            restoreSnapshot: (snapshot) => set(snapshot),
+            buildNextOrder: (allTasks, sourceBefore) => tailDisplayOrderForRoot(allTasks, sourceBefore),
+            buildNextAllTasks: (allTasks, movingTaskId, nextOrder) => allTasks.map((task) => (
+                task.id === movingTaskId
+                    ? { ...task, parentId: undefined, displayOrder: nextOrder }
+                    : task
+            )),
+            buildOptimisticPatch: buildParentMoveOptimisticPatch,
+            buildSuccessPatch: buildParentMoveSuccessPatch,
+            updateTaskFields: (taskId, payload) => apiClient.updateTaskFields(taskId, {
+                parent_issue_id: null,
+                lock_version: payload.lock_version
+            }),
+            validatePersistedResult: (result) => result.parentId === undefined,
+            missingSourceResult: buildParentMoveFailure(),
+            failedResult: buildParentMoveFailure
         });
-
-        if (!beforeState.autoSave) {
-            const nextModified = new Set(beforeState.modifiedTaskIds);
-            nextModified.add(sourceTaskId);
-            set({ modifiedTaskIds: nextModified });
-            return buildMoveTaskResult('ok', { lockVersion: sourceBefore.lockVersion, parentId: undefined });
-        }
-
-        const result = await apiClient.updateTaskFields(sourceTaskId, {
-            parent_issue_id: null,
-            lock_version: sourceBefore.lockVersion
-        });
-
-        if (result.status !== 'ok') {
-            restoreTaskSnapshot((restoredSnapshot) => set(restoredSnapshot), snapshot);
-            return buildMoveTaskResult(result.status, { error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent') });
-        }
-
-        if (result.parentId !== undefined) {
-            restoreTaskSnapshot((restoredSnapshot) => set(restoredSnapshot), snapshot);
-            return buildMoveTaskResult('error', { error: result.error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent') });
-        }
-
-        const currentState = get();
-        const sourceAfter = currentState.allTasks.find(task => task.id === sourceTaskId);
-        const fallbackSource = sourceAfter ?? sourceBefore;
-        const updatedAllTasks = currentState.allTasks.map(task => (
-            task.id === sourceTaskId
-                ? {
-                    ...task,
-                    parentId: undefined,
-                    lockVersion: result.lockVersion ?? task.lockVersion,
-                    displayOrder: tailDisplayOrderForRoot(currentState.allTasks, fallbackSource)
-                }
-                : task
-        ));
-        const updatedLayout = buildLayoutFromState(currentState, { allTasks: updatedAllTasks });
-        set({
-            allTasks: updatedAllTasks,
-            tasks: updatedLayout.tasks,
-            layoutRows: updatedLayout.layoutRows,
-            rowCount: updatedLayout.rowCount,
-            modifiedTaskIds: (() => {
-                const nextModified = new Set(get().modifiedTaskIds);
-                nextModified.delete(sourceTaskId);
-                return nextModified;
-            })()
-        });
-
-        return buildMoveTaskResult('ok', { lockVersion: result.lockVersion, parentId: undefined });
     },
 
     updateTask: (id, updates) => set((state) => {

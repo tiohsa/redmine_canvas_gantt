@@ -376,27 +376,17 @@ class CanvasGanttsController < ApplicationController
     issue_to = Issue.visible.find(relation_params[:issue_to_id])
     return unless ensure_relation_createable!(issue_from, issue_to)
 
-    relation_type = relation_params[:relation_type].to_s
-    return unless ensure_editable_relation_type!(relation_type)
-
-    delay = normalized_relation_delay(relation_type)
-    return if performed?
-    return unless ensure_relation_change_valid!(
-      issue_from: issue_from,
-      issue_to: issue_to,
-      relation_id: '__pending__',
-      relation_type: relation_type,
-      delay: delay
-    )
-
     relation = IssueRelation.new(
       issue_from: issue_from,
-      issue_to: issue_to,
-      relation_type: relation_type,
-      delay: delay
+      issue_to: issue_to
     )
 
-    render_relation_save_result(relation)
+    save_relation_change(
+      relation: relation,
+      issue_from: issue_from,
+      issue_to: issue_to,
+      relation_id: '__pending__'
+    )
   rescue ActiveRecord::RecordNotFound
     render json: { error: l(:error_canvas_gantt_task_not_found) }, status: :not_found
   rescue => e
@@ -408,24 +398,13 @@ class CanvasGanttsController < ApplicationController
     relation = IssueRelation.find(params[:id])
     return unless ensure_relation_editable!(relation)
 
-    relation_type = relation_params[:relation_type].to_s
-    return unless ensure_editable_relation_type!(relation_type)
-
-    delay = normalized_relation_delay(relation_type)
-    return if performed?
-    return unless ensure_relation_change_valid!(
+    save_relation_change(
+      relation: relation,
       issue_from: relation.issue_from,
       issue_to: relation.issue_to,
       relation_id: relation.id,
-      relation_type: relation_type,
-      delay: delay,
       replacing_relation_id: relation.id
     )
-
-    relation.relation_type = relation_type
-    relation.delay = delay
-
-    render_relation_save_result(relation)
   rescue ActiveRecord::RecordNotFound
     render json: { error: l(:error_canvas_gantt_relation_not_found) }, status: :not_found
   rescue => e
@@ -600,6 +579,27 @@ class CanvasGanttsController < ApplicationController
         render json: { errors: [l(message_key)] }, status: :unprocessable_entity
       }
     )
+  end
+
+  def save_relation_change(relation:, issue_from:, issue_to:, relation_id:, replacing_relation_id: nil)
+    relation_type = relation_params[:relation_type].to_s
+    return unless ensure_editable_relation_type!(relation_type)
+
+    delay = normalized_relation_delay(relation_type)
+    return if performed?
+    return unless ensure_relation_change_valid!(
+      issue_from: issue_from,
+      issue_to: issue_to,
+      relation_id: relation_id,
+      relation_type: relation_type,
+      delay: delay,
+      replacing_relation_id: replacing_relation_id
+    )
+
+    relation.relation_type = relation_type
+    relation.delay = delay
+
+    render_relation_save_result(relation)
   end
 
   def build_candidate_relation(relation_id:, issue_from:, issue_to:, relation_type:, delay:)

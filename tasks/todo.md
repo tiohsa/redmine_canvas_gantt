@@ -86,3 +86,22 @@
 - Phase 1 targeted frontend verification passed with `npm run test -- --run src/components/GanttToolbar.test.tsx src/utils/queryParams.test.ts src/api/client.test.ts`
 - Phase 1 Ruby syntax checks passed for the new hook, controller, and issue-index partial
 - Phase 1 plugin load check passed with `docker compose exec -T redmine bundle exec rails runner "require Rails.root.join('plugins','redmine_canvas_gantt','init.rb'); puts 'plugin-init-ok'"`
+
+# Mixed refactor wave 1
+
+- [x] Refactor `spa/src/stores/TaskStore.ts` parent-move flows into shared helpers under `spa/src/stores/taskStore/`
+- [x] Preserve `TaskStore` behavior for autosave off/on, rollback, and parent/root move results with focused frontend coverage
+- [x] Refactor relation create/update orchestration in `app/controllers/canvas_gantts_controller.rb`
+- [x] Preserve relation endpoint JSON/status behavior with focused controller coverage
+- [x] Run targeted frontend/backend verification and record results
+
+## Review
+
+- Extracted `TaskStore` parent-move orchestration into `spa/src/stores/taskStore/parentMove.ts`, keeping optimistic updates, autosave branching, rollback, and `lockVersion` handling centralized
+- Added focused `TaskStore` coverage for autosave ON/OFF, API failure rollback, and returned `parentId` / `siblingPosition` values
+- Centralized relation create/update save orchestration in `CanvasGanttsController` without changing endpoint JSON or status behavior
+- Verification passed with `cd spa && npm run test -- --run src/stores/TaskStore.test.ts`
+- Verification passed with `cd spa && npx tsc -b`
+- Verification passed with `cd spa && npm run lint`
+- Ruby syntax checks passed for controller and controller spec
+- Docker Redmine runtime still could not execute controller RSpec because `rspec` is not installed in the container (`bundler: command not found: rspec`)
