@@ -1,8 +1,8 @@
 import type { Relation, Project, Task, Version, TaskStatus } from '../types';
 import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption } from '../types/editMeta';
-import type { BaselineSnapshot, BaselineTaskState } from '../types/baseline';
+import type { BaselineSaveScope, BaselineSnapshot, BaselineTaskState } from '../types/baseline';
 import { buildIssueQueryParams, parseResolvedQueryState, type ResolvedQueryState } from '../utils/queryParams';
-import { parseBaselineDateValue } from '../utils/baseline';
+import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/baseline';
 
 type ApiTask = Record<string, unknown>;
 type ApiRelation = Record<string, unknown>;
@@ -194,6 +194,7 @@ const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | n
     const capturedAtValue = root.captured_at;
     const capturedByIdValue = root.captured_by_id;
     const capturedByNameValue = root.captured_by_name;
+    const scopeValue = root.scope;
     const tasksByIssueIdValue = asRecord(root.tasks_by_issue_id);
 
     if (typeof snapshotIdValue !== 'string' || snapshotIdValue.trim() === '') {
@@ -256,6 +257,7 @@ const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | n
                 ? capturedByIdValue
                 : null,
             capturedByName: typeof capturedByNameValue === 'string' ? capturedByNameValue : null,
+            scope: normalizeBaselineSaveScope(scopeValue),
             tasksByIssueId
         },
         warnings
@@ -414,17 +416,21 @@ export const apiClient = {
         };
     },
 
-    saveBaseline: async (params?: { query?: ResolvedQueryState; rawSearch?: string }): Promise<BaselineSaveResult> => {
+    saveBaseline: async (params?: { query?: ResolvedQueryState; rawSearch?: string; scope?: BaselineSaveScope }): Promise<BaselineSaveResult> => {
         const config = getConfig();
+        const scope = params?.scope ?? 'filtered';
 
-        const qs = params?.rawSearch
-            ? params.rawSearch.replace(/^\?/, '')
-            : buildIssueQueryParams(params?.query ?? {}).toString();
+        const qs = scope === 'filtered'
+            ? (params?.rawSearch
+                ? params.rawSearch.replace(/^\?/, '')
+                : buildIssueQueryParams(params?.query ?? {}).toString())
+            : '';
         const url = new URL(`${config.apiBase}/baseline.json` + (qs ? `?${qs}` : ''), window.location.origin).toString();
 
         const response = await fetch(url, {
             method: 'POST',
-            headers: buildJsonHeaders(config, true)
+            headers: buildJsonHeaders(config, true),
+            body: JSON.stringify({ scope })
         });
 
         if (!response.ok) {

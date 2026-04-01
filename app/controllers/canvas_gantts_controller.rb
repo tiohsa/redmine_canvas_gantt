@@ -171,11 +171,16 @@ class CanvasGanttsController < ApplicationController
     label_hide_baseline_tooltip: :label_hide_baseline_tooltip,
     label_show_baseline_tooltip: :label_show_baseline_tooltip,
     label_save_baseline_tooltip: :label_save_baseline_tooltip,
+    label_save_baseline_filtered: :label_save_baseline_filtered,
+    label_save_baseline_project: :label_save_baseline_project,
     label_baseline_saved: :label_baseline_saved,
     label_baseline_save_failed: :label_baseline_save_failed,
     label_baseline_comparison: :label_baseline_comparison,
     label_baseline_duration: :label_baseline_duration,
     label_baseline_saved_meta: :label_baseline_saved_meta,
+    label_baseline_scope: :label_baseline_scope,
+    label_baseline_scope_filtered: :label_baseline_scope_filtered,
+    label_baseline_scope_project: :label_baseline_scope_project,
     label_no_baseline_for_task: :label_no_baseline_for_task,
     label_baseline_diff_exists: :label_baseline_diff_exists,
     label_baseline_diff_none: :label_baseline_diff_none,
@@ -314,19 +319,25 @@ class CanvasGanttsController < ApplicationController
     return unless ensure_baseline_edit_permission
 
     project_ids = descendant_project_ids
-    resolved_query = query_state_resolver.resolve(project_ids: project_ids)
+    baseline_scope = baseline_save_scope
+    return if performed?
+
+    baseline_issues, warnings = baseline_save_issues(baseline_scope, project_ids)
     baseline_snapshot = baseline_repository.build_snapshot(
       project: @project,
-      issues: resolved_query[:issues],
-      current_user: User.current
+      issues: baseline_issues,
+      current_user: User.current,
+      scope: baseline_scope
     )
     saved_snapshot = baseline_repository.replace(project_id: @project.id, snapshot: baseline_snapshot)
 
     render json: {
       status: 'ok',
       baseline: saved_snapshot.to_payload_hash,
-      warnings: resolved_query[:warnings]
+      warnings: warnings
     }
+  rescue ArgumentError => e
+    render json: { error: e.message }, status: :unprocessable_entity
   rescue => e
     render json: { error: e.message }, status: :internal_server_error
   end
@@ -515,6 +526,27 @@ class CanvasGanttsController < ApplicationController
     scope = Issue.visible.where(project_id: project_ids).includes(*ISSUE_INCLUDES)
     scope = scope.where(status_id: params[:status_ids]) if params[:status_ids].present?
     scope
+  end
+
+  def baseline_project_issues(project_ids)
+    Issue.visible.where(project_id: project_ids).includes(*ISSUE_INCLUDES).to_a
+  end
+
+  def baseline_save_scope
+    raw_scope = params[:scope].to_s
+    return 'filtered' if raw_scope.blank?
+    return raw_scope if RedmineCanvasGantt::BaselineSnapshot::VALID_SCOPES.include?(raw_scope)
+
+    raise ArgumentError, 'scope is invalid'
+  end
+
+  def baseline_save_issues(scope, project_ids)
+    if scope == 'project'
+      [baseline_project_issues(project_ids), []]
+    else
+      resolved_query = query_state_resolver.resolve(project_ids: project_ids)
+      [resolved_query[:issues], resolved_query[:warnings]]
+    end
   end
 
   def query_state_resolver

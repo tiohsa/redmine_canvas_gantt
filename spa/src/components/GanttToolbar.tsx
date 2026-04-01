@@ -2,6 +2,7 @@ import React from 'react';
 
 import type { TaskStatus, ZoomLevel } from '../types';
 import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DefaultRelationType } from '../types/constraints';
+import type { BaselineSaveScope } from '../types/baseline';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { useBaselineStore } from '../stores/BaselineStore';
@@ -79,6 +80,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         relationSettingsMenuRef,
         exportMenuRef,
         workloadMenuRef,
+        baselineSaveMenuRef,
         isMenuOpen,
         toggleMenu,
         openMenuByKey,
@@ -116,6 +118,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const showRelationSettingsMenu = isMenuOpen('relationSettings');
     const showExportMenu = isMenuOpen('export');
     const showWorkloadMenu = isMenuOpen('workload');
+    const showBaselineSaveMenu = isMenuOpen('baselineSave');
 
     React.useEffect(() => {
         if (!showFilterMenu) return;
@@ -203,7 +206,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         }
     };
 
-    const handleSaveBaseline = async () => {
+    const handleSaveBaseline = async (scope: BaselineSaveScope) => {
         if (!permissions.baselineEditable || baselineSaveStatus === 'saving') {
             return;
         }
@@ -222,7 +225,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             }
 
             const result = await apiClient.saveBaseline({
-                query: toResolvedQueryStateFromStore(useTaskStore.getState())
+                query: scope === 'filtered' ? toResolvedQueryStateFromStore(useTaskStore.getState()) : undefined,
+                scope
             });
 
             if (result.status === 'error') {
@@ -234,6 +238,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
             baselineStore.setSnapshot(result.baseline, result.warnings ?? []);
             baselineStore.setSaveStatus('ready');
+            closeMenu('baselineSave');
 
             if (result.warnings?.length) {
                 result.warnings.forEach((warning) => useUIStore.getState().addNotification(warning, 'warning'));
@@ -1748,31 +1753,75 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                 {permissions.baselineEditable && (
                     <>
                         <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
-                        <button
-                            type="button"
-                            onClick={() => void handleSaveBaseline()}
-                            aria-label={i18n.t('label_save_baseline') || 'Save Baseline'}
-                            title={i18n.t('label_save_baseline_tooltip') || 'Save current plan as baseline'}
-                            disabled={baselineSaveStatus === 'saving'}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                padding: '0 12px',
-                                borderRadius: '6px',
-                                border: '1px solid #b45309',
-                                backgroundColor: baselineSaveStatus === 'saving' ? '#fef3c7' : '#fff7ed',
-                                color: '#b45309',
-                                cursor: baselineSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
-                                height: '32px',
-                                fontSize: '13px',
-                                fontWeight: 600
-                            }}
-                        >
-                            {baselineSaveStatus === 'saving'
-                                ? (i18n.t('label_saving_baseline') || 'Saving Baseline...')
-                                : (i18n.t('label_save_baseline') || 'Save Baseline')}
-                        </button>
+                        <div ref={baselineSaveMenuRef} style={{ position: 'relative' }}>
+                            <button
+                                type="button"
+                                onClick={() => toggleMenu('baselineSave')}
+                                aria-label={i18n.t('label_save_baseline') || 'Save Baseline'}
+                                title={i18n.t('label_save_baseline_tooltip') || 'Save a baseline snapshot'}
+                                disabled={baselineSaveStatus === 'saving'}
+                                data-testid="baseline-save-menu-button"
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '4px',
+                                    padding: '0 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid #b45309',
+                                    backgroundColor: baselineSaveStatus === 'saving' ? '#fef3c7' : '#fff7ed',
+                                    color: '#b45309',
+                                    cursor: baselineSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                                    height: '32px',
+                                    width: '40px'
+                                }}
+                            >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: baselineSaveStatus === 'saving' ? 0.6 : 1 }}>
+                                    <path d="M12 3v12" />
+                                    <path d="m7 10 5 5 5-5" />
+                                    <path d="M5 21h14" />
+                                </svg>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <polyline points="6 9 12 15 18 9" />
+                                </svg>
+                            </button>
+                            {showBaselineSaveMenu && baselineSaveStatus !== 'saving' && (
+                                <div
+                                    data-testid="baseline-save-menu"
+                                    style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        right: 0,
+                                        marginTop: '4px',
+                                        background: '#fff',
+                                        border: '1px solid #e0e0e0',
+                                        borderRadius: '8px',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                        padding: '8px',
+                                        zIndex: 20,
+                                        minWidth: '220px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '4px'
+                                    }}
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleSaveBaseline('filtered')}
+                                        style={{ border: 'none', background: '#fff', textAlign: 'left', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}
+                                    >
+                                        {i18n.t('label_save_baseline_filtered') || 'Save filtered view as baseline'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleSaveBaseline('project')}
+                                        style={{ border: 'none', background: '#fff', textAlign: 'left', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}
+                                    >
+                                        {i18n.t('label_save_baseline_project') || 'Save whole project as baseline'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </>
                 )}
 
@@ -1790,8 +1839,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '6px',
-                                padding: '0 12px',
+                                justifyContent: 'center',
                                 borderRadius: '6px',
                                 border: '1px solid #e0e0e0',
                                 backgroundColor: showBaseline ? '#e8f0fe' : '#fff',
@@ -1799,11 +1847,13 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 cursor: hasBaseline ? 'pointer' : 'not-allowed',
                                 opacity: hasBaseline ? 1 : 0.75,
                                 height: '32px',
-                                fontSize: '13px',
-                                fontWeight: 600
+                                width: '32px'
                             }}
                         >
-                            {i18n.t('label_show_baseline') || 'Show Baseline'}
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg>
                         </button>
                     </>
                 )}

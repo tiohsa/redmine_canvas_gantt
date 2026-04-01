@@ -112,6 +112,7 @@ describe('apiClient.fetchData', () => {
                     captured_at: '2026-04-01T00:00:00.000Z',
                     captured_by_id: 9,
                     captured_by_name: 'Alice',
+                    scope: 'project',
                     tasks_by_issue_id: {
                         '10': {
                             issue_id: 10,
@@ -132,6 +133,7 @@ describe('apiClient.fetchData', () => {
             capturedAt: '2026-04-01T00:00:00.000Z',
             capturedById: 9,
             capturedByName: 'Alice',
+            scope: 'project',
             tasksByIssueId: {
                 '10': {
                     issueId: '10',
@@ -281,6 +283,7 @@ describe('apiClient.saveBaseline', () => {
                     captured_at: '2026-04-02T00:00:00.000Z',
                     captured_by_id: 7,
                     captured_by_name: 'Bob',
+                    scope: 'project',
                     tasks_by_issue_id: {}
                 },
                 warnings: ['baseline warning']
@@ -292,13 +295,15 @@ describe('apiClient.saveBaseline', () => {
             query: {
                 queryId: 7,
                 selectedStatusIds: [1]
-            }
+            },
+            scope: 'project'
         });
 
         expect(fetchMock).toHaveBeenCalledWith(
-            'http://localhost:3000/projects/1/canvas_gantt/baseline.json?query_id=7&status_ids%5B%5D=1',
+            'http://localhost:3000/projects/1/canvas_gantt/baseline.json',
             expect.objectContaining({
-                method: 'POST'
+                method: 'POST',
+                body: JSON.stringify({ scope: 'project' })
             })
         );
         expect(result).toEqual({
@@ -309,6 +314,7 @@ describe('apiClient.saveBaseline', () => {
                 capturedAt: '2026-04-02T00:00:00.000Z',
                 capturedById: 7,
                 capturedByName: 'Bob',
+                scope: 'project',
                 tasksByIssueId: {}
             },
             warnings: ['baseline warning']

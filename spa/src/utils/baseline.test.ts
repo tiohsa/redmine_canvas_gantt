@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateBaselineDiff } from './baseline';
+import { calculateBaselineDiff, formatBaselineCapturedAt, normalizeBaselineSaveScope } from './baseline';
 import type { Task } from '../types';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -45,5 +45,14 @@ describe('baseline diff helpers', () => {
         const task = buildTask({});
         expect(calculateBaselineDiff(task, null)).toBeNull();
     });
-});
 
+    it('normalizes unknown baseline scope values to filtered', () => {
+        expect(normalizeBaselineSaveScope('project')).toBe('project');
+        expect(normalizeBaselineSaveScope('unexpected')).toBe('filtered');
+        expect(normalizeBaselineSaveScope(undefined)).toBe('filtered');
+    });
+
+    it('formats captured timestamps for baseline metadata', () => {
+        expect(formatBaselineCapturedAt('2026-04-01T00:00:00.000Z')).toBe('2026-04-01 00:00 UTC');
+    });
+});

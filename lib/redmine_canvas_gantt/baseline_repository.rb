@@ -33,13 +33,14 @@ module RedmineCanvasGantt
       snapshot
     end
 
-    def build_snapshot(project:, issues:, current_user:, snapshot_id: SecureRandom.uuid, captured_at: Time.now.utc)
+    def build_snapshot(project:, issues:, current_user:, snapshot_id: SecureRandom.uuid, captured_at: Time.now.utc, scope: 'filtered')
       BaselineSnapshot.new(
         snapshot_id: snapshot_id,
         project_id: project.id,
         captured_at: captured_at,
         captured_by_id: current_user.id,
         captured_by_name: current_user.name.to_s,
+        scope: scope,
         task_states: issues.filter_map { |issue| build_task_state(issue) }
       )
     end
@@ -93,6 +94,7 @@ module RedmineCanvasGantt
       captured_at = parse_time(raw_snapshot['captured_at'] || raw_snapshot[:captured_at])
       captured_by_id = parse_integer(raw_snapshot['captured_by_id'] || raw_snapshot[:captured_by_id])
       captured_by_name = raw_snapshot['captured_by_name'] || raw_snapshot[:captured_by_name]
+      scope = raw_snapshot['scope'] || raw_snapshot[:scope] || 'filtered'
 
       unless snapshot_id.present? && project_id && captured_at && captured_by_id && captured_by_name.present?
         warnings << 'Baseline snapshot payload is incomplete and was ignored.'
@@ -118,6 +120,7 @@ module RedmineCanvasGantt
         captured_at: captured_at,
         captured_by_id: captured_by_id,
         captured_by_name: captured_by_name,
+        scope: scope,
         task_states: task_states
       )
 

@@ -1,5 +1,5 @@
 import type { Task } from '../types';
-import type { BaselineSnapshot, BaselineTaskState } from '../types/baseline';
+import type { BaselineSaveScope, BaselineSnapshot, BaselineTaskState } from '../types/baseline';
 import { LayoutEngine } from '../engines/LayoutEngine';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -39,6 +39,21 @@ export const formatBaselineDate = (value: number | null | undefined): string => 
     }
 
     return new Date(value).toISOString().slice(0, 10);
+};
+
+export const formatBaselineCapturedAt = (value: string | null | undefined): string => {
+    if (!value) return '-';
+
+    const parsed = new Date(value);
+    if (!Number.isFinite(parsed.getTime())) {
+        return value;
+    }
+
+    return parsed.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+};
+
+export const normalizeBaselineSaveScope = (value: unknown): BaselineSaveScope => {
+    return value === 'project' ? 'project' : 'filtered';
 };
 
 export const buildBaselineTaskDurationDays = (start: number | null, due: number | null): number | null => {
@@ -109,4 +124,3 @@ export const getBaselineTaskState = (
 ): BaselineTaskState | null => snapshot?.tasksByIssueId[taskId] ?? null;
 
 export const buildBaselineLookup = (snapshot: BaselineSnapshot | null | undefined) => snapshot?.tasksByIssueId ?? {};
-

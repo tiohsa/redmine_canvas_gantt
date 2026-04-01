@@ -211,6 +211,7 @@ describe('GanttToolbar shortcuts', () => {
                 capturedAt: '2026-04-01T00:00:00.000Z',
                 capturedById: 1,
                 capturedByName: 'Alice',
+                scope: 'project',
                 tasksByIssueId: {}
             },
             warnings: []
@@ -237,9 +238,10 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByRole('button', { name: 'Show Baseline' })).toBeDisabled();
 
         fireEvent.click(screen.getByRole('button', { name: 'Save Baseline' }));
+        fireEvent.click(screen.getByText('Save whole project as baseline'));
 
         await waitFor(() => {
-            expect(saveBaselineMock).toHaveBeenCalled();
+            expect(saveBaselineMock).toHaveBeenCalledWith(expect.objectContaining({ scope: 'project' }));
         });
 
         await waitFor(() => {

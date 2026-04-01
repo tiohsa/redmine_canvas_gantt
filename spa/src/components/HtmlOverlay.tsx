@@ -10,7 +10,7 @@ import { useBaselineStore } from '../stores/BaselineStore';
 import type { DraftRelation, Relation, Task } from '../types';
 import type { BaselineDiff } from '../utils/baseline';
 import { buildRedmineUrl } from '../utils/redmineUrl';
-import { calculateBaselineDiff, formatBaselineDate, getBaselineTaskState } from '../utils/baseline';
+import { calculateBaselineDiff, formatBaselineCapturedAt, formatBaselineDate, getBaselineTaskState } from '../utils/baseline';
 import {
     buildRelationRenderContext,
     buildRelationRoutePoints,
@@ -82,7 +82,8 @@ const BaselineDiffPopover: React.FC<{
     diff: BaselineDiff | null;
     baselineCapturedAt: string;
     baselineCapturedBy: string;
-}> = ({ popoverRef, position, task, diff, baselineCapturedAt, baselineCapturedBy }) => {
+    baselineScope: string;
+}> = ({ popoverRef, position, task, diff, baselineCapturedAt, baselineCapturedBy, baselineScope }) => {
     const [resolvedPosition, setResolvedPosition] = React.useState(position);
     const currentDurationDays = diff?.currentDurationDays ?? null;
     const baselineDurationDays = diff?.baselineDurationDays ?? null;
@@ -153,6 +154,9 @@ const BaselineDiffPopover: React.FC<{
                     {(i18n.t('label_baseline_saved_meta') || 'Saved %{captured_at} by %{captured_by}')
                         .replace('%{captured_at}', baselineCapturedAt)
                         .replace('%{captured_by}', baselineCapturedBy || (i18n.t('label_none') || 'Unknown'))}
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
+                    {(i18n.t('label_baseline_scope') || 'Scope')}: {baselineScope}
                 </div>
             </div>
 
@@ -1082,8 +1086,11 @@ export const HtmlOverlay: React.FC = () => {
                     position={baselinePopoverPosition}
                     task={activeBaselineTask}
                     diff={activeBaselineDiff}
-                    baselineCapturedAt={new Date(baselineSnapshot.capturedAt).toISOString()}
+                    baselineCapturedAt={formatBaselineCapturedAt(baselineSnapshot.capturedAt)}
                     baselineCapturedBy={baselineSnapshot.capturedByName ?? ''}
+                    baselineScope={baselineSnapshot.scope === 'project'
+                        ? (i18n.t('label_baseline_scope_project') || 'Whole project')
+                        : (i18n.t('label_baseline_scope_filtered') || 'Current filtered view')}
                 />
             )}
 

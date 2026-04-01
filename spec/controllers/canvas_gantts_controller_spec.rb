@@ -39,6 +39,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         captured_at: '2026-04-01T00:00:00Z',
         captured_by_id: 7,
         captured_by_name: 'Alice',
+        scope: 'filtered',
         tasks_by_issue_id: {}
       })
       allow(controller).to receive(:set_permissions) do
@@ -103,6 +104,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         captured_at: Time.utc(2026, 4, 1, 12, 0, 0),
         captured_by_id: 7,
         captured_by_name: 'Alice',
+        scope: 'filtered',
         task_states: [
           RedmineCanvasGantt::BaselineTaskState.new(
             issue_id: 10,
@@ -131,10 +133,15 @@ RSpec.describe CanvasGanttsController, type: :controller do
         initial_state: nil,
         warnings: ['query warning']
       })
-      allow(baseline_repository).to receive(:build_snapshot).and_return(baseline_snapshot)
+      expect(baseline_repository).to receive(:build_snapshot).with(
+        project: project,
+        issues: [issue],
+        current_user: current_user,
+        scope: 'filtered'
+      ).and_return(baseline_snapshot)
       allow(baseline_repository).to receive(:replace).with(project_id: 1, snapshot: baseline_snapshot).and_return(baseline_snapshot)
 
-      post :save_baseline, params: { project_id: 'demo' }, format: :json
+      post :save_baseline, params: { project_id: 'demo', scope: 'filtered' }, format: :json
 
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
@@ -142,7 +149,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(body['baseline']).to include(
         'snapshot_id' => 'baseline-1',
         'project_id' => 1,
-        'captured_by_name' => 'Alice'
+        'captured_by_name' => 'Alice',
+        'scope' => 'filtered'
       )
       expect(body['baseline']['tasks_by_issue_id']['10']).to include(
         'issue_id' => 10,
@@ -150,6 +158,55 @@ RSpec.describe CanvasGanttsController, type: :controller do
         'baseline_due_date' => '2026-04-15'
       )
       expect(body['warnings']).to eq(['query warning'])
+    end
+
+    it 'can save a whole-project baseline snapshot' do
+      filtered_issue = double('Issue', id: 10, start_date: Date.new(2026, 4, 10), due_date: Date.new(2026, 4, 15))
+      project_issue = double('Issue', id: 11, start_date: Date.new(2026, 4, 11), due_date: Date.new(2026, 4, 16))
+      project_snapshot = RedmineCanvasGantt::BaselineSnapshot.new(
+        snapshot_id: 'baseline-2',
+        project_id: 1,
+        captured_at: Time.utc(2026, 4, 2, 12, 0, 0),
+        captured_by_id: 7,
+        captured_by_name: 'Alice',
+        scope: 'project',
+        task_states: [
+          RedmineCanvasGantt::BaselineTaskState.new(
+            issue_id: 11,
+            baseline_start_date: Date.new(2026, 4, 11),
+            baseline_due_date: Date.new(2026, 4, 16)
+          )
+        ]
+      )
+
+      allow(resolver).to receive(:resolve).and_return({
+        issues: [filtered_issue],
+        initial_state: nil,
+        warnings: ['query warning']
+      })
+      allow(controller).to receive(:baseline_project_issues).with([1]).and_return([project_issue])
+      expect(baseline_repository).to receive(:build_snapshot).with(
+        project: project,
+        issues: [project_issue],
+        current_user: current_user,
+        scope: 'project'
+      ).and_return(project_snapshot)
+      allow(baseline_repository).to receive(:replace).with(project_id: 1, snapshot: project_snapshot).and_return(project_snapshot)
+
+      post :save_baseline, params: { project_id: 'demo', scope: 'project' }, format: :json
+
+      expect(response).to have_http_status(:ok)
+      body = JSON.parse(response.body)
+      expect(body['baseline']).to include('scope' => 'project')
+      expect(body['baseline']['tasks_by_issue_id'].keys).to eq(['11'])
+      expect(body['warnings']).to eq([])
+    end
+
+    it 'returns unprocessable entity for an invalid baseline scope' do
+      post :save_baseline, params: { project_id: 'demo', scope: 'unexpected' }, format: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(JSON.parse(response.body)).to eq('error' => 'scope is invalid')
     end
 
     it 'returns forbidden when edit permission is missing' do
@@ -188,6 +245,9 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(i18n_payload['label_leaf_issues_only']).to eq(I18n.t(:label_leaf_issues_only))
       expect(i18n_payload['label_include_closed_issues']).to eq(I18n.t(:label_include_closed_issues))
       expect(i18n_payload['label_today_onward_only']).to eq(I18n.t(:label_today_onward_only))
+      expect(i18n_payload['label_save_baseline_filtered']).to eq(I18n.t(:label_save_baseline_filtered))
+      expect(i18n_payload['label_save_baseline_project']).to eq(I18n.t(:label_save_baseline_project))
+      expect(i18n_payload['label_baseline_scope']).to eq(I18n.t(:label_baseline_scope))
     end
 
     it 'includes localized help labels in Japanese frontend i18n payload' do

@@ -10,7 +10,8 @@ export type ToolbarMenuKey =
     | 'rowHeight'
     | 'relationSettings'
     | 'export'
-    | 'workload';
+    | 'workload'
+    | 'baselineSave';
 
 type ToolbarMenuRefs = Record<ToolbarMenuKey, React.RefObject<HTMLDivElement | null>>;
 
@@ -27,6 +28,7 @@ export const useToolbarMenuState = () => {
     const relationSettingsRef = React.useRef<HTMLDivElement>(null);
     const exportRef = React.useRef<HTMLDivElement>(null);
     const workloadRef = React.useRef<HTMLDivElement>(null);
+    const baselineSaveRef = React.useRef<HTMLDivElement>(null);
 
     const refsByMenu = React.useMemo<ToolbarMenuRefs>(() => ({
         column: columnRef,
@@ -38,7 +40,8 @@ export const useToolbarMenuState = () => {
         rowHeight: rowHeightRef,
         relationSettings: relationSettingsRef,
         export: exportRef,
-        workload: workloadRef
+        workload: workloadRef,
+        baselineSave: baselineSaveRef
     }), []);
 
     React.useEffect(() => {
@@ -86,6 +89,7 @@ export const useToolbarMenuState = () => {
         relationSettingsMenuRef: relationSettingsRef,
         exportMenuRef: exportRef,
         workloadMenuRef: workloadRef,
+        baselineSaveMenuRef: baselineSaveRef,
         isMenuOpen,
         toggleMenu,
         openMenuByKey,

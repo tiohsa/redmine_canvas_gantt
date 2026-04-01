@@ -30,6 +30,7 @@ Redmine Canvas Gantt provides a fast, interactive Gantt chart for Redmine by ren
 - Inline quick edit for subject, assignee, status, progress, due date, and custom fields
 - Drag and drop to change parent-child relationships in the sidebar
 - Bulk subtask creation from multiple subject lines
+- Baseline snapshots for visual comparison, with filtered-view or whole-project save scope
 - Filters and grouping by project, assignee, status, version, and subject text
 - Version headers, progress line, row height presets, and persistent UI preferences
 
@@ -87,6 +88,14 @@ Redmine Canvas Gantt provides a fast, interactive Gantt chart for Redmine by ren
    - Open dependency editing to adjust relation type or delay, or remove the relation.
    - Drag a sidebar row onto another task to make it a child issue.
    - Use bulk subtask creation to add multiple child issues at once.
+
+### Baseline snapshots
+
+- Baseline is a comparison-only feature. It is not used as input for scheduling or CPM calculations.
+- Each project stores a single baseline snapshot, and saving a new one replaces the previous snapshot.
+- The toolbar lets you save either the current filtered view or the whole project as the baseline scope.
+- Baseline bars and diff popovers only render for tasks currently visible in the chart, even when the saved scope was the whole project.
+- Viewing baseline comparison requires `view_canvas_gantt`. Saving a baseline requires `edit_canvas_gantt`.
 
 ## Shared Views and Query Parameters
 

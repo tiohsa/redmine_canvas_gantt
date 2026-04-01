@@ -37,6 +37,7 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
       expect(snapshot.snapshot_id).to eq('baseline-1')
       expect(snapshot.project_id).to eq(1)
       expect(snapshot.captured_by_name).to eq('Alice')
+      expect(snapshot.scope).to eq('filtered')
       expect(snapshot.task_states_by_issue_id['10'].baseline_due_date).to eq(Date.new(2026, 4, 15))
     end
   end
@@ -49,6 +50,7 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
         captured_at: Time.utc(2026, 4, 1, 12, 0, 0),
         captured_by_id: 7,
         captured_by_name: 'Alice',
+        scope: 'project',
         task_states: [
           RedmineCanvasGantt::BaselineTaskState.new(
             issue_id: 10,
@@ -75,6 +77,7 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
           'captured_at' => '2026-04-01T12:00:00Z',
           'captured_by_id' => 7,
           'captured_by_name' => 'Alice',
+          'scope' => 'project',
           'task_states' => [
             { 'issue_id' => 10, 'baseline_start_date' => '2026-04-10', 'baseline_due_date' => '2026-04-15' },
             { 'baseline_start_date' => '2026-04-11', 'baseline_due_date' => '2026-04-16' }
@@ -85,6 +88,7 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
       result = repository.load(project_id: 1)
 
       expect(result.snapshot).to be_a(RedmineCanvasGantt::BaselineSnapshot)
+      expect(result.snapshot.scope).to eq('project')
       expect(result.snapshot.task_states_by_issue_id.keys).to eq(['10'])
       expect(result.snapshot.task_states_by_issue_id['10'].baseline_start_date).to eq(Date.new(2026, 4, 10))
       expect(result.warnings).to include('A baseline task state was skipped because it is missing issue_id.')
@@ -106,6 +110,24 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
 
       expect(result.snapshot).to be_nil
       expect(result.warnings.join("\n")).to include('Baseline snapshot project mismatch and was ignored.')
+    end
+
+    it 'defaults missing scope to filtered for older payloads' do
+      settings_hash['baseline_snapshots'] = {
+        '1' => {
+          'snapshot_id' => 'baseline-1',
+          'project_id' => 1,
+          'captured_at' => '2026-04-01T12:00:00Z',
+          'captured_by_id' => 7,
+          'captured_by_name' => 'Alice',
+          'task_states' => []
+        }
+      }
+
+      result = repository.load(project_id: 1)
+
+      expect(result.snapshot).to be_a(RedmineCanvasGantt::BaselineSnapshot)
+      expect(result.snapshot.scope).to eq('filtered')
     end
   end
 end

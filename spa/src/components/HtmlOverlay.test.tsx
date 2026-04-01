@@ -253,6 +253,7 @@ describe('HtmlOverlay', () => {
                 capturedAt: '2026-04-01T00:00:00.000Z',
                 capturedById: 1,
                 capturedByName: 'Alice',
+                scope: 'project',
                 tasksByIssueId: {
                     '1': {
                         issueId: '1',
@@ -268,6 +269,7 @@ describe('HtmlOverlay', () => {
         expect(await screen.findByTestId('baseline-diff-popover')).toBeInTheDocument();
         expect(screen.getByText('Baseline comparison')).toBeInTheDocument();
         expect(screen.getByText(/Task 1/)).toBeInTheDocument();
+        expect(screen.getByText('Scope: Whole project')).toBeInTheDocument();
         expect(screen.getAllByText('+1d')).toHaveLength(2);
     });
 
