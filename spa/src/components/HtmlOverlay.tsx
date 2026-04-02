@@ -1,16 +1,14 @@
 import React from 'react';
-import { createPortal } from 'react-dom';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { apiClient } from '../api/client';
-import { RelationType, type DefaultRelationType } from '../types/constraints';
+import { RelationType } from '../types/constraints';
 import { useUIStore } from '../stores/UIStore';
 import { useBaselineStore } from '../stores/BaselineStore';
-import type { DraftRelation, Relation, Task } from '../types';
-import type { BaselineDiff } from '../utils/baseline';
+import type { DraftRelation, Task } from '../types';
 import { buildRedmineUrl } from '../utils/redmineUrl';
-import { calculateBaselineDiff, formatBaselineCapturedAt, formatBaselineDate, getBaselineTaskState } from '../utils/baseline';
+import { calculateBaselineDiff, formatBaselineCapturedAt, getBaselineTaskState } from '../utils/baseline';
 import {
     buildRelationRenderContext,
     buildRelationRoutePoints,
@@ -19,31 +17,11 @@ import {
 } from '../renderers/relationGeometry';
 import {
     calculateDelay,
-    getRelationInfoText,
-    getRelationTypeLabel,
-    supportsDelayForUiType,
     toEditableRelationView,
-    toRawRelationType,
-    validateRelationDelayConsistency,
-    type RelationDirection
 } from '../utils/relationEditing';
-
-type TaskLabel = {
-    id: string;
-    subject: string;
-};
-
-type RelationPopoverTarget = {
-    relation: Relation | DraftRelation;
-    relationId: string | null;
-    isDraft: boolean;
-    direction: RelationDirection;
-    initialType: DefaultRelationType;
-    initialDelay?: number;
-    initialAutoDelayMessage?: string;
-    from: TaskLabel;
-    to: TaskLabel;
-};
+import { BaselineDiffPopover } from './BaselineDiffPopover';
+import { RelationEditorPopover, type RelationPopoverTarget } from './RelationEditorPopover';
+import { TaskContextMenu } from './TaskContextMenu';
 
 const RELATION_POPOVER_OFFSET = 12;
 const RESIZE_HANDLE_HOVER_BG = 'rgba(26, 115, 232, 0.18)';
@@ -54,443 +32,6 @@ const RESIZE_HANDLE_GRIP = 'rgba(26, 115, 232, 0.92)';
 const RESIZE_HANDLE_SHADOW = '0 1px 3px rgba(26, 115, 232, 0.18)';
 const BASELINE_POPOVER_OFFSET = 12;
 
-const parseDelayInput = (value: string): number | null => {
-    if (!/^\d+$/.test(value.trim())) {
-        return null;
-    }
-
-    const parsed = Number.parseInt(value, 10);
-    return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
-};
-
-const formatDeltaDays = (value: number | null) => {
-    if (value === null || !Number.isFinite(value)) {
-        return '-';
-    }
-
-    if (value === 0) {
-        return '0d';
-    }
-
-    return `${value > 0 ? '+' : ''}${value}d`;
-};
-
-const BaselineDiffPopover: React.FC<{
-    popoverRef: React.RefObject<HTMLDivElement | null>;
-    position: { x: number; y: number };
-    task: Task;
-    diff: BaselineDiff | null;
-    baselineCapturedAt: string;
-    baselineCapturedBy: string;
-    baselineScope: string;
-}> = ({ popoverRef, position, task, diff, baselineCapturedAt, baselineCapturedBy, baselineScope }) => {
-    const [resolvedPosition, setResolvedPosition] = React.useState(position);
-    const currentDurationDays = diff?.currentDurationDays ?? null;
-    const baselineDurationDays = diff?.baselineDurationDays ?? null;
-
-    React.useLayoutEffect(() => {
-        if (!popoverRef.current) {
-            setResolvedPosition(position);
-            return;
-        }
-
-        const clampPosition = () => {
-            if (!popoverRef.current) return;
-            const rect = popoverRef.current.getBoundingClientRect();
-            const margin = 8;
-            const nextX = Math.max(margin, Math.min(position.x, window.innerWidth - rect.width - margin));
-            const nextY = Math.max(margin, Math.min(position.y, window.innerHeight - rect.height - margin));
-            setResolvedPosition((current) => {
-                if (current.x === nextX && current.y === nextY) {
-                    return current;
-                }
-                return { x: nextX, y: nextY };
-            });
-        };
-
-        clampPosition();
-
-        const handleResize = () => clampPosition();
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, [popoverRef, position]);
-
-    const rows = [
-        { label: i18n.t('field_start_date') || 'Start', current: formatBaselineDate(diff?.currentStartDate ?? null), baseline: formatBaselineDate(diff?.baselineStartDate ?? null), delta: formatDeltaDays(diff?.startDeltaDays ?? null) },
-        { label: i18n.t('field_due_date') || 'Due', current: formatBaselineDate(diff?.currentDueDate ?? null), baseline: formatBaselineDate(diff?.baselineDueDate ?? null), delta: formatDeltaDays(diff?.dueDeltaDays ?? null) },
-        { label: i18n.t('label_baseline_duration') || 'Duration', current: currentDurationDays === null ? '-' : `${currentDurationDays}d`, baseline: baselineDurationDays === null ? '-' : `${baselineDurationDays}d`, delta: formatDeltaDays(diff?.durationDeltaDays ?? null) }
-    ];
-
-    return createPortal(
-        <div
-            ref={popoverRef}
-            data-testid="baseline-diff-popover"
-            style={{
-                position: 'fixed',
-                top: resolvedPosition.y,
-                left: resolvedPosition.x,
-                width: 320,
-                boxSizing: 'border-box',
-                background: '#fff',
-                border: '1px solid rgba(15, 23, 42, 0.12)',
-                borderRadius: 12,
-                boxShadow: '0 18px 36px rgba(15, 23, 42, 0.18), 0 2px 6px rgba(15, 23, 42, 0.08)',
-                padding: 14,
-                zIndex: 10001,
-                pointerEvents: 'none',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10
-            }}
-        >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
-                    {i18n.t('label_baseline_comparison') || 'Baseline comparison'}
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.45 }}>
-                    <span style={{ fontWeight: 600, color: '#0f172a' }}>#{task.id}</span> {task.subject}
-                </div>
-                <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
-                    {(i18n.t('label_baseline_saved_meta') || 'Saved %{captured_at} by %{captured_by}')
-                        .replace('%{captured_at}', baselineCapturedAt)
-                        .replace('%{captured_by}', baselineCapturedBy || (i18n.t('label_none') || 'Unknown'))}
-                </div>
-                <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
-                    {(i18n.t('label_baseline_scope') || 'Scope')}: {baselineScope}
-                </div>
-            </div>
-
-            {!diff ? (
-                <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
-                    {i18n.t('label_no_baseline_for_task') || 'No baseline data for this task.'}
-                </div>
-            ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {diff.hasDifference ? (
-                        <div style={{ fontSize: 12, color: '#b45309', lineHeight: 1.45 }}>
-                            {i18n.t('label_baseline_diff_exists') || 'Baseline differs from the current plan.'}
-                        </div>
-                    ) : (
-                        <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
-                            {i18n.t('label_baseline_diff_none') || 'No baseline difference.'}
-                        </div>
-                    )}
-                    {rows.map((row) => (
-                        <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '72px 1fr 52px', gap: 8, fontSize: 12, color: '#334155', lineHeight: 1.35 }}>
-                            <div style={{ fontWeight: 600 }}>{row.label}</div>
-                            <div style={{ color: '#0f172a' }}>{row.current} / {row.baseline}</div>
-                            <div style={{ textAlign: 'right', color: '#b45309', fontWeight: 600 }}>{row.delta}</div>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>,
-        document.body
-    );
-};
-
-const RelationEditorPopover: React.FC<{
-    popoverRef: React.RefObject<HTMLDivElement | null>;
-    target: RelationPopoverTarget;
-    taskById: Map<string, Task>;
-    relations: Relation[];
-    position: { x: number; y: number };
-    onClose: () => void;
-    onCreate: (draftRelation: DraftRelation, rawType: string, delay?: number) => Promise<void>;
-    onUpdate: (relationId: string, rawType: string, delay?: number) => Promise<void>;
-    onDelete: (relationId: string) => Promise<void>;
-}> = ({ popoverRef, target, taskById, relations, position, onClose, onCreate, onUpdate, onDelete }) => {
-    const [relationType, setRelationType] = React.useState<DefaultRelationType>(target.initialType);
-    const [delayValue, setDelayValue] = React.useState(target.initialDelay !== undefined ? String(target.initialDelay) : '');
-    const [autoDelayMessage, setAutoDelayMessage] = React.useState<string | null>(target.initialAutoDelayMessage ?? null);
-    const [error, setError] = React.useState<string | null>(null);
-    const [saving, setSaving] = React.useState(false);
-    React.useEffect(() => {
-        setRelationType(target.initialType);
-        setDelayValue(target.initialDelay !== undefined ? String(target.initialDelay) : '');
-        setAutoDelayMessage(target.initialAutoDelayMessage ?? null);
-        setError(null);
-        setSaving(false);
-    }, [target]);
-
-    const supportsDelay = supportsDelayForUiType(relationType);
-    const helperText = getRelationInfoText(relationType);
-
-    const updateDelayForType = React.useCallback((nextType: DefaultRelationType) => {
-        setRelationType(nextType);
-        setError(null);
-
-        if (!supportsDelayForUiType(nextType)) {
-            setDelayValue('');
-            setAutoDelayMessage(null);
-            return;
-        }
-
-        const fromTask = taskById.get(target.from.id);
-        const toTask = taskById.get(target.to.id);
-        const autoDelay = calculateDelay(RelationType.Precedes, fromTask, toTask);
-        setDelayValue(autoDelay.delay !== undefined ? String(autoDelay.delay) : '');
-        setAutoDelayMessage(autoDelay.message ?? null);
-    }, [target.from.id, target.to.id, taskById]);
-
-    const handleSave = React.useCallback(async () => {
-        const rawType = target.isDraft
-            ? relationType
-            : toRawRelationType(relationType, target.direction);
-
-        let delay: number | undefined;
-        if (supportsDelay) {
-            if (delayValue.trim() === '') {
-                setError(i18n.t('label_relation_delay_required') || 'Delay is required for this relation type');
-                return;
-            }
-
-            const parsedDelay = parseDelayInput(delayValue);
-            if (parsedDelay === null) {
-                setError(i18n.t('label_relation_delay_invalid') || 'Delay must be 0 or greater');
-                return;
-            }
-            delay = parsedDelay;
-        }
-
-        const consistency = validateRelationDelayConsistency(
-            rawType,
-            delay,
-            taskById.get(target.relation.from),
-            taskById.get(target.relation.to)
-        );
-        if (!consistency.valid) {
-            setError(consistency.message);
-            return;
-        }
-
-        const duplicate = relations.some((relation) => {
-            if (!target.isDraft && relation.id === target.relationId) {
-                return false;
-            }
-            return relation.from === target.relation.from && relation.to === target.relation.to && relation.type === rawType;
-        });
-        if (duplicate) {
-            setError(i18n.t('label_relation_already_exists') || 'Relation already exists');
-            return;
-        }
-
-        setSaving(true);
-        try {
-            if (target.isDraft) {
-                await onCreate(target.relation as DraftRelation, rawType, delay);
-            } else if (target.relationId) {
-                await onUpdate(target.relationId, rawType, delay);
-            }
-        } catch (saveError: unknown) {
-            setError(saveError instanceof Error ? saveError.message : (i18n.t('label_failed_to_save') || 'Failed to save'));
-            setSaving(false);
-        }
-    }, [delayValue, onCreate, onUpdate, relationType, relations, supportsDelay, target, taskById]);
-
-    const handleDelete = React.useCallback(async () => {
-        if (!target.relationId) return;
-
-        setSaving(true);
-        try {
-            await onDelete(target.relationId);
-        } catch (deleteError: unknown) {
-            setError(deleteError instanceof Error ? deleteError.message : (i18n.t('label_relation_remove_failed') || 'Failed to remove relation'));
-            setSaving(false);
-        }
-    }, [onDelete, target.relationId]);
-
-    return createPortal(
-        <div
-            ref={popoverRef}
-            data-testid="relation-editor"
-            style={{
-                position: 'fixed',
-                top: position.y,
-                left: position.x,
-                width: 320,
-                boxSizing: 'border-box',
-                background: '#fff',
-                border: '1px solid rgba(15, 23, 42, 0.12)',
-                borderRadius: 12,
-                boxShadow: '0 18px 36px rgba(15, 23, 42, 0.18), 0 2px 6px rgba(15, 23, 42, 0.08)',
-                padding: 16,
-                zIndex: 10001,
-                pointerEvents: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-            }}
-        >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', letterSpacing: '0.02em', margin: 0 }}>
-                        {i18n.t('label_relation_title') || 'Dependency'}
-                    </div>
-                    <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.4, margin: 0 }}>
-                        <span style={{ fontWeight: 600, color: '#0f172a' }}>#{target.from.id}</span> {target.from.subject}
-                        {' '}→{' '}
-                        <span style={{ fontWeight: 600, color: '#0f172a' }}>#{target.to.id}</span> {target.to.subject}
-                    </div>
-                </div>
-
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#334155', margin: 0 }}>
-                    <span style={{ fontWeight: 600 }}>{i18n.t('label_relation_type') || 'Relation type'}</span>
-                    <select
-                        data-testid="relation-type-select"
-                        value={relationType}
-                        disabled={saving}
-                        onChange={(event) => updateDelayForType(event.target.value as DefaultRelationType)}
-                        style={{
-                            boxSizing: 'border-box',
-                            height: 36,
-                            borderRadius: 8,
-                            border: '1px solid #cbd5e1',
-                            padding: '0 10px',
-                            fontSize: 13,
-                            color: '#0f172a',
-                            margin: 0,
-                            fontFamily: 'inherit'
-                        }}
-                    >
-                        <option value={RelationType.Precedes}>{getRelationTypeLabel(RelationType.Precedes)}</option>
-                        <option value={RelationType.Relates}>{getRelationTypeLabel(RelationType.Relates)}</option>
-                        <option value={RelationType.Blocks}>{getRelationTypeLabel(RelationType.Blocks)}</option>
-                    </select>
-                </label>
-
-                {supportsDelay && (
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#334155', margin: 0 }}>
-                        <span style={{ fontWeight: 600 }}>{i18n.t('label_delay') || 'Delay'}</span>
-                        <input
-                            data-testid="relation-delay-input"
-                            type="text"
-                            inputMode="numeric"
-                            value={delayValue}
-                            disabled={saving}
-                            placeholder="0"
-                            onChange={(event) => {
-                                setDelayValue(event.target.value);
-                                setError(null);
-                            }}
-                            style={{
-                                boxSizing: 'border-box',
-                                height: 36,
-                                borderRadius: 8,
-                                border: error ? '1px solid #ef4444' : '1px solid #cbd5e1',
-                                padding: '0 10px',
-                                fontSize: 13,
-                                color: '#0f172a',
-                                margin: 0,
-                                fontFamily: 'inherit'
-                            }}
-                        />
-                    </label>
-                )}
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.45, margin: 0 }}>
-                        {helperText}
-                    </div>
-                    {supportsDelay && autoDelayMessage && (
-                        <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45, margin: 0 }}>
-                            {autoDelayMessage}
-                        </div>
-                    )}
-                    {error && (
-                        <div data-testid="relation-error" style={{ fontSize: 12, color: '#dc2626', lineHeight: 1.45, margin: 0 }}>
-                            {error}
-                        </div>
-                    )}
-                </div>
-
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-                    <button
-                        type="button"
-                        data-testid="relation-cancel-button"
-                        onClick={onClose}
-                        disabled={saving}
-                        style={{
-                            boxSizing: 'border-box',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            border: '1px solid #cbd5e1',
-                            background: '#fff',
-                            color: '#334155',
-                            borderRadius: 8,
-                            padding: '0 12px',
-                            height: 32,
-                            fontSize: 13,
-                            cursor: 'pointer',
-                            margin: 0,
-                            fontFamily: 'inherit',
-                            lineHeight: 1
-                        }}
-                    >
-                        {i18n.t('button_cancel') || 'Cancel'}
-                    </button>
-                    {!target.isDraft && target.relationId && (
-                        <button
-                            type="button"
-                            data-testid="relation-delete-button"
-                            onClick={() => {
-                                void handleDelete();
-                            }}
-                            disabled={saving}
-                            style={{
-                                boxSizing: 'border-box',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                border: '1px solid rgba(220, 38, 38, 0.18)',
-                                background: '#fff5f5',
-                                color: '#dc2626',
-                                borderRadius: 8,
-                                padding: '0 12px',
-                                height: 32,
-                                fontSize: 13,
-                                cursor: 'pointer',
-                                margin: 0,
-                                fontFamily: 'inherit',
-                                lineHeight: 1
-                            }}
-                        >
-                            {i18n.t('button_delete') || 'Delete'}
-                        </button>
-                    )}
-                    <button
-                        type="button"
-                        data-testid="relation-save-button"
-                        onClick={() => {
-                            void handleSave();
-                        }}
-                        disabled={saving}
-                        style={{
-                            boxSizing: 'border-box',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            border: '1px solid #1d4ed8',
-                            background: '#1d4ed8',
-                            color: '#fff',
-                            borderRadius: 8,
-                            padding: '0 12px',
-                            height: 32,
-                            fontSize: 13,
-                            cursor: 'pointer',
-                            margin: 0,
-                            fontFamily: 'inherit',
-                            lineHeight: 1
-                        }}
-                    >
-                        {i18n.t('button_save') || 'Save'}
-                    </button>
-                </div>
-            </div>
-        </div>,
-        document.body
-    );
-};
 
 export const HtmlOverlay: React.FC = () => {
     const hoveredTaskId = useTaskStore(state => state.hoveredTaskId);
@@ -543,7 +84,7 @@ export const HtmlOverlay: React.FC = () => {
     );
     const activeRelation = activePersistedRelation ?? draftRelation;
 
-    const getTaskLabel = React.useCallback((taskId: string): TaskLabel => {
+    const getTaskLabel = React.useCallback((taskId: string) => {
         const task = taskById.get(taskId);
         return {
             id: taskId,
@@ -897,13 +438,6 @@ export const HtmlOverlay: React.FC = () => {
         };
     }, [relationAnchor, relationPopoverTarget]);
 
-    const formatRelationLabel = React.useCallback((relation: { from: string; to: string }) => {
-        return {
-            from: getTaskLabel(relation.from),
-            to: getTaskLabel(relation.to)
-        };
-    }, [getTaskLabel]);
-
     const handleTaskDelete = React.useCallback(async (taskId: string) => {
         const message = i18n.t('text_are_you_sure') || 'Are you sure?';
         if (!window.confirm(message)) return;
@@ -1108,169 +642,40 @@ export const HtmlOverlay: React.FC = () => {
                 />
             )}
 
-            {contextMenu && createPortal(
-                <>
-                    <div
-                        style={{
-                            position: 'fixed',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            zIndex: 9999,
-                            background: 'transparent'
-                        }}
-                        onClick={() => setContextMenu(null)}
-                        onContextMenu={(event) => {
-                            event.preventDefault();
-                            setContextMenu(null);
-                        }}
-                    />
-                    <div
-                        ref={contextMenuRef}
-                        style={{
-                            position: 'fixed',
-                            top: menuPosition?.y ?? contextMenu.y,
-                            left: menuPosition?.x ?? contextMenu.x,
-                            background: 'white',
-                            borderRadius: '8px',
-                            minWidth: '200px',
-                            boxShadow: '0 4px 20px rgba(0,0,0,0.15), 0 0 1px rgba(0,0,0,0.1)',
-                            padding: '6px',
-                            zIndex: 10000,
-                            pointerEvents: 'auto',
-                            animation: 'fadeIn 0.1s ease-out'
-                        }}
-                    >
-                        <style>{`
-                        @keyframes fadeIn {
-                            from { opacity: 0; transform: translateY(-4px); }
-                            to { opacity: 1; transform: translateY(0); }
-                        }
-                        .menu-item {
-                            display: flex;
-                            align-items: center;
-                            gap: 10px;
-                            padding: 8px 12px;
-                            cursor: pointer;
-                            border-radius: 6px;
-                            font-size: 13px;
-                            color: #333;
-                            transition: background-color 0.1s;
-                        }
-                        .menu-item:hover {
-                            background-color: #f0f4f9;
-                        }
-                        .menu-item.danger {
-                            color: #d32f2f;
-                        }
-                        .menu-item.danger:hover {
-                            background-color: #fee;
-                        }
-                        .menu-divider {
-                            height: 1px;
-                            background-color: #eee;
-                            margin: 6px 0;
-                        }
-                        .menu-section-title {
-                            font-size: 11px;
-                            font-weight: 700;
-                            color: #888;
-                            padding: 6px 12px 2px;
-                            text-transform: uppercase;
-                        }
-                    `}</style>
-
-                        <div className="menu-item" onClick={() => {
-                            useUIStore.getState().openIssueDialog(buildRedmineUrl(`/issues/${contextMenu.taskId}/edit`));
-                            setContextMenu(null);
-                        }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                            {i18n.t('button_edit')}
-                        </div>
-
-                        <div className="menu-item" data-testid="context-menu-add-child-task" onClick={() => {
-                            const query = new URLSearchParams();
-                            query.set('issue[parent_issue_id]', contextMenu.taskId);
-                            query.set('parent_issue_id', contextMenu.taskId);
-                            useUIStore.getState().openIssueDialog(buildNewIssueUrl(query));
-                            setContextMenu(null);
-                        }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                            {i18n.t('label_add_child_task') || 'Add Child Task'}
-                        </div>
-
-                        <div className="menu-item" data-testid="context-menu-add-new-ticket" onClick={() => {
-                            useUIStore.getState().openIssueDialog(buildNewIssueUrl());
-                            setContextMenu(null);
-                        }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <line x1="12" y1="5" x2="12" y2="19" />
-                                <line x1="5" y1="12" x2="19" y2="12" />
-                            </svg>
-                            {i18n.t('label_issue_new') || 'Add New Ticket'}
-                        </div>
-
-                        {contextTask && canDropToRoot(contextTask.id) && (
-                            <div className="menu-item" data-testid="context-menu-unset-parent" onClick={() => {
-                                void handleUnsetParent(contextTask.id);
-                            }}>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M4 12h8" />
-                                    <path d="M9 7l-5 5 5 5" />
-                                    <path d="M20 7h-6a4 4 0 0 0-4 4" />
-                                </svg>
-                                {i18n.t('label_unset_parent_task') || 'Remove Parent'}
-                            </div>
-                        )}
-
-                        <div className="menu-item danger" onClick={() => {
-                            void handleTaskDelete(contextMenu.taskId);
-                        }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
-                            {i18n.t('button_delete')}
-                        </div>
-
-                        {relatedRelations.length > 0 && (
-                            <>
-                                <div className="menu-divider" />
-                                <div className="menu-section-title">
-                                    {i18n.t('label_relations_remove_heading') || 'Remove dependency'}
-                                </div>
-
-                                {relatedRelations.map((relation) => {
-                                    const { from, to } = formatRelationLabel(relation);
-                                    const fromIsContext = contextMenu.taskId === from.id;
-                                    const direction = fromIsContext ? '→' : '←';
-
-                                    return (
-                                        <div
-                                            key={relation.id}
-                                            className="menu-item danger"
-                                            data-testid={`remove-relation-${relation.id}`}
-                                            onClick={() => {
-                                                void handleRemoveRelation(relation.id);
-                                            }}
-                                            style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
-                                        >
-                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                    <path d="M18.36 6.64a9 9 0 1 1-12.73 12.73 9 9 0 0 1 12.73-12.73z" />
-                                                    <line x1="6" y1="6" x2="18" y2="18" />
-                                                </svg>
-                                                <span style={{ fontWeight: 600 }}>#{relation.id}</span>
-                                            </div>
-                                            <div style={{ fontSize: '11px', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }}>
-                                                {from.subject} {direction} {to.subject}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </>
-                        )}
-                    </div>
-                </>,
-                document.body
+            {contextMenu && (
+                <TaskContextMenu
+                    taskId={contextMenu.taskId}
+                    contextTask={contextTask}
+                    relatedRelations={relatedRelations}
+                    position={menuPosition ?? { x: contextMenu.x, y: contextMenu.y }}
+                    contextMenuRef={contextMenuRef}
+                    onClose={() => setContextMenu(null)}
+                    onEdit={(taskId) => {
+                        useUIStore.getState().openIssueDialog(buildRedmineUrl(`/issues/${taskId}/edit`));
+                        setContextMenu(null);
+                    }}
+                    onAddChild={(taskId) => {
+                        const query = new URLSearchParams();
+                        query.set('issue[parent_issue_id]', taskId);
+                        query.set('parent_issue_id', taskId);
+                        useUIStore.getState().openIssueDialog(buildNewIssueUrl(query));
+                        setContextMenu(null);
+                    }}
+                    onAddNew={() => {
+                        useUIStore.getState().openIssueDialog(buildNewIssueUrl());
+                        setContextMenu(null);
+                    }}
+                    onUnsetParent={(taskId) => {
+                        void handleUnsetParent(taskId);
+                    }}
+                    onDelete={(taskId) => {
+                        void handleTaskDelete(taskId);
+                    }}
+                    onRemoveRelation={(relationId) => {
+                        void handleRemoveRelation(relationId);
+                    }}
+                    getTaskLabel={getTaskLabel}
+                />
             )}
         </>
     );
