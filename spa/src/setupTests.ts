@@ -1,4 +1,6 @@
 import '@testing-library/jest-dom';
+import { afterEach, vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
 
 if (typeof window !== 'undefined') {
     let storage: Storage | null = null;
@@ -93,3 +95,10 @@ window.RedmineCanvasGantt = {
         row_height: '32',
     }
 };
+
+afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+});
