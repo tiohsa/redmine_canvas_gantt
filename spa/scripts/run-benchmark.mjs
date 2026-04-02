@@ -18,6 +18,7 @@ const MANIFEST_FILE = resolve(BUILD_DIR, '.vite', 'manifest.json');
 const BASE_URL = 'http://127.0.0.1:4173';
 const SAMPLE_COUNT = Number(process.env.BENCHMARK_SAMPLE_COUNT ?? 3);
 const REGRESSION_THRESHOLD = 1.2;
+const EXPECTED_CANVAS_COUNT = 4;
 
 const parseArgs = (argv) => {
   const args = { ci: false, output: DEFAULT_OUTPUT_FILE };
@@ -210,8 +211,8 @@ const measureScenario = async (browser, scenario) => {
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('[data-testid="cell-1-subject"]', { state: 'visible', timeout: 120_000 });
     await page.waitForFunction(
-      () => document.querySelectorAll('.rcg-gantt-viewport canvas').length === 3,
-      undefined,
+      ({ expectedCanvasCount }) => document.querySelectorAll('.rcg-gantt-viewport canvas').length === expectedCanvasCount,
+      { expectedCanvasCount: EXPECTED_CANVAS_COUNT },
       { timeout: 120_000 }
     );
 

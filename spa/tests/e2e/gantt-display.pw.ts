@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
 test('renders gantt chart on load', async ({ page }) => {
   await waitForInitialRender(page);
 
-  await expect(page.locator('.rcg-gantt-viewport canvas')).toHaveCount(3);
+  await expect(page.locator('.rcg-gantt-viewport canvas')).toHaveCount(4);
 });
 
 test('displays task bars correctly', async ({ page }) => {
