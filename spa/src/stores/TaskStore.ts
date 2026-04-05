@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FilterOptions, Task, Relation, DraftRelation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus } from '../types';
+import type { FilterOptions, Task, Relation, DraftRelation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus, SavedQuery } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences, savePreferences } from '../utils/preferences';
@@ -61,6 +61,9 @@ interface TaskState {
     taskStatuses: TaskStatus[];
     customFields: CustomFieldMeta[];
     activeQueryId: number | null;
+    savedQueries: SavedQuery[];
+    savedQueriesStatus: 'idle' | 'loading' | 'ready' | 'error';
+    savedQueriesError: string | null;
     selectedStatusIds: number[];
     viewport: Viewport;
     viewMode: ViewMode;
@@ -141,6 +144,7 @@ interface TaskState {
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
     refreshData: () => Promise<void>;
+    loadSavedQueries: (force?: boolean) => Promise<void>;
     applySavedQuery: (queryId: number) => Promise<void>;
     clearSavedQuery: () => Promise<void>;
     setSortingSuspended: (suspended: boolean) => void;
@@ -445,6 +449,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     customFields: [],
     permissions: { editable: false, viewable: false, baselineEditable: false },
     activeQueryId: initialUrlState.queryId ?? null,
+    savedQueries: [],
+    savedQueriesStatus: 'idle',
+    savedQueriesError: null,
     selectedStatusIds: [],
     viewport: DEFAULT_VIEWPORT,
     viewMode: preferences.viewMode ?? 'Week',
@@ -1232,6 +1239,27 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             query: toResolvedQueryStateFromStore(state)
         });
         applyApiDataToStore(data, state, set);
+    },
+
+    loadSavedQueries: async (force = false) => {
+        const { savedQueriesStatus } = get();
+        if (!force && (savedQueriesStatus === 'loading' || savedQueriesStatus === 'ready')) {
+            return;
+        }
+
+        set({ savedQueriesStatus: 'loading', savedQueriesError: null });
+
+        try {
+            const { apiClient } = await import('../api/client');
+            const queries = await apiClient.fetchQueries();
+            set({ savedQueries: queries, savedQueriesStatus: 'ready' });
+        } catch (error) {
+            set({
+                savedQueries: [],
+                savedQueriesStatus: 'error',
+                savedQueriesError: error instanceof Error ? error.message : (i18n.t('label_saved_query_load_failed') || 'Failed to load saved queries')
+            });
+        }
     },
 
     applySavedQuery: async (queryId) => {

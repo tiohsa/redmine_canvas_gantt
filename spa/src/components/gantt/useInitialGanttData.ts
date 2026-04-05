@@ -58,6 +58,7 @@ export const useInitialGanttData = ({
                 useTaskStore.getState().setTaskStatuses(data.statuses ?? []);
                 useTaskStore.getState().setPermissions(data.permissions ?? { editable: false, viewable: false, baselineEditable: false });
                 useBaselineStore.getState().setSnapshot(data.baseline ?? null, data.warnings ?? []);
+                void useTaskStore.getState().loadSavedQueries();
                 (data.warnings ?? []).forEach((warning) => useUIStore.getState().addNotification(warning, 'warning'));
 
                 if (!viewportFromStorage) {

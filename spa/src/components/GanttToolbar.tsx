@@ -1,6 +1,6 @@
 import React from 'react';
 
-import type { SavedQuery, TaskStatus, ZoomLevel } from '../types';
+import type { TaskStatus, ZoomLevel } from '../types';
 import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DefaultRelationType } from '../types/constraints';
 import type { BaselineSaveScope } from '../types/baseline';
 import { useTaskStore } from '../stores/TaskStore';
@@ -43,7 +43,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
         modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields, activeQueryId, sortConfig, showSubprojects, permissions, filterOptions,
         applySavedQuery: applySavedQueryFromStore,
-        clearSavedQuery: clearSavedQueryFromStore
+        clearSavedQuery: clearSavedQueryFromStore,
+        savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries
     } = useTaskStore();
     const {
         showProgressLine,
@@ -114,9 +115,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [draftAutoCalculateDelay, setDraftAutoCalculateDelay] = React.useState<boolean>(autoCalculateDelay);
     const [draftAutoApplyDefaultRelation, setDraftAutoApplyDefaultRelation] = React.useState<boolean>(autoApplyDefaultRelation);
     const [draftAutoScheduleMoveMode, setDraftAutoScheduleMoveMode] = React.useState<AutoScheduleMoveModeValue>(autoScheduleMoveMode);
-    const [savedQueries, setSavedQueries] = React.useState<SavedQuery[]>([]);
-    const [savedQueriesStatus, setSavedQueriesStatus] = React.useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-    const [savedQueriesError, setSavedQueriesError] = React.useState<string | null>(null);
     const [pendingSavedQueryId, setPendingSavedQueryId] = React.useState<number | null>(null);
     const filterInputRef = React.useRef<HTMLInputElement>(null);
     const columnMenuContentRef = React.useRef<HTMLDivElement>(null);
@@ -156,30 +154,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setDraftAutoApplyDefaultRelation(autoApplyDefaultRelation);
         setDraftAutoScheduleMoveMode(autoScheduleMoveMode);
     }, [autoApplyDefaultRelation, autoCalculateDelay, autoScheduleMoveMode, defaultRelationType, showRelationSettingsMenu]);
-
-    const loadSavedQueries = React.useCallback(async (force: boolean = false) => {
-        if (!force && savedQueriesStatus === 'loading') {
-            return;
-        }
-        if (!force && savedQueriesStatus === 'ready') {
-            return;
-        }
-
-        setSavedQueriesStatus('loading');
-        setSavedQueriesError(null);
-
-        try {
-            const queries = await apiClient.fetchQueries();
-            setSavedQueries(queries);
-            setSavedQueriesStatus('ready');
-        } catch (error) {
-            setSavedQueries([]);
-            setSavedQueriesStatus('error');
-            setSavedQueriesError(
-                error instanceof Error ? error.message : (i18n.t('label_saved_query_load_failed') || 'Failed to load saved queries')
-            );
-        }
-    }, [savedQueriesStatus]);
 
     React.useEffect(() => {
         if (showQueryMenu && savedQueriesStatus === 'idle') {
