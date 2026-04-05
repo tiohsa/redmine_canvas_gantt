@@ -355,7 +355,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             sortConfig,
             groupByProject,
             groupByAssignee,
-            showSubprojects
+            showSubprojects,
+            visibleColumns
         });
         const { params, notices } = buildRedmineIssueQueryParams(queryState);
         notices.forEach((notice) => useUIStore.getState().addNotification(notice, 'warning'));

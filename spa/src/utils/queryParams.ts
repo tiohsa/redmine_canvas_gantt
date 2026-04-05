@@ -9,6 +9,7 @@ export interface ResolvedQueryState {
     sortConfig?: BusinessQueryState['sortConfig'];
     groupBy?: 'project' | 'assignee' | null;
     showSubprojects?: boolean;
+    visibleColumns?: string[];
 }
 
 export interface QueryUrlStateSource {
@@ -21,6 +22,7 @@ export interface QueryUrlStateSource {
     groupByProject: boolean;
     groupByAssignee: boolean;
     showSubprojects: boolean;
+    visibleColumns?: string[];
 }
 
 type ResolveInitialSharedQueryStateResult = {
@@ -51,6 +53,26 @@ const SORT_FIELD_TO_REDMINE: Record<string, string> = {
 const REDMINE_SORT_TO_FIELD = Object.fromEntries(
     Object.entries(SORT_FIELD_TO_REDMINE).map(([field, redmine]) => [redmine, field])
 ) as Record<string, string>;
+
+const COLUMN_TO_REDMINE: Record<string, string> = {
+    id: 'id',
+    project: 'project',
+    tracker: 'tracker',
+    status: 'status',
+    priority: 'priority',
+    subject: 'subject',
+    author: 'author',
+    assignee: 'assigned_to',
+    updatedOn: 'updated_on',
+    category: 'category',
+    version: 'fixed_version',
+    startDate: 'start_date',
+    dueDate: 'due_date',
+    estimatedHours: 'estimated_hours',
+    ratioDone: 'done_ratio',
+    createdOn: 'created_on',
+    spentHours: 'spent_hours'
+};
 
 const isPersistedQueryId = (value: unknown): value is number =>
     typeof value === 'number' && Number.isInteger(value) && value > 0;
@@ -284,7 +306,8 @@ export const toResolvedQueryStateFromStore = (state: QueryUrlStateSource): Resol
     selectedVersionIds: state.selectedVersionIds,
     sortConfig: state.sortConfig ?? undefined,
     groupBy: state.groupByProject ? 'project' : (state.groupByAssignee ? 'assignee' : null),
-    showSubprojects: state.showSubprojects
+    showSubprojects: state.showSubprojects,
+    visibleColumns: state.visibleColumns
 });
 
 export const readIssueQueryParamsFromUrl = (search: string = window.location.search): ResolvedQueryState => {
@@ -408,6 +431,15 @@ export const buildRedmineIssueQueryParams = (
         const sortField = toRedmineSortField(businessState.sortConfig.key);
         const isDefaultSort = businessState.sortConfig.key === DEFAULT_SORT_KEY && businessState.sortConfig.direction === DEFAULT_SORT_DIRECTION;
         if (sortField && !isDefaultSort) params.set('sort', `${sortField}:${businessState.sortConfig.direction}`);
+    }
+
+    if (state.visibleColumns && state.visibleColumns.length > 0) {
+        state.visibleColumns.forEach((key) => {
+            const redmineCol = COLUMN_TO_REDMINE[key];
+            if (redmineCol) {
+                params.append('c[]', redmineCol);
+            }
+        });
     }
 
     return { params, notices };

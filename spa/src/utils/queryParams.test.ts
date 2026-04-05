@@ -377,4 +377,24 @@ describe('buildRedmineIssueQueryParams', () => {
         expect(params.get('op[assigned_to_id]')).toBe('!*');
         expect(params.getAll('v[assigned_to_id][]')).toEqual([]);
     });
+
+    it('appends visible columns as c[] parameters from shared state', () => {
+        const { params } = buildRedmineIssueQueryParams({
+            visibleColumns: ['status', 'subject', 'startDate', 'notification']
+        });
+
+        const columns = params.getAll('c[]');
+        expect(columns).toContain('status');
+        expect(columns).toContain('subject');
+        expect(columns).toContain('start_date');
+        expect(columns).not.toContain('notification');
+    });
+
+    it('appends sort configuration as sort parameter from shared state', () => {
+        const { params } = buildRedmineIssueQueryParams({
+            sortConfig: { key: 'dueDate', direction: 'desc' }
+        });
+
+        expect(params.get('sort')).toBe('due_date:desc');
+    });
 });
