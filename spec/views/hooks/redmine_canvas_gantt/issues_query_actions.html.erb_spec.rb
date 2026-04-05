@@ -30,7 +30,7 @@ RSpec.describe 'hooks/redmine_canvas_gantt/_issues_query_actions.html.erb', type
     expect(rendered).to include('canvas-gantt-query-action-link')
     expect(href.path).to eq('/projects/demo/canvas_gantt')
     expect(Rack::Utils.parse_nested_query(href.query)).to eq('query_id' => '42')
-    expect(rendered).to include(I18n.t(:label_open_in_canvas_gantt))
+    expect(rendered).to include(I18n.t(:"canvas_gantt.label_open_in_canvas_gantt"))
   end
 
   it 'renders a Canvas Gantt link for unsaved standard filters' do

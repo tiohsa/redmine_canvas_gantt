@@ -303,7 +303,7 @@ class CanvasGanttsController < ApplicationController
 
   # GET /projects/:project_id/canvas_gantt
   def index
-    @i18n = I18N_LABELS.transform_values { |label_key| l(:"canvas_gantt.#{label_key}", default: label_key) }
+    @i18n = I18N_LABELS.transform_values { |label_key| canvas_gantt_l(label_key, default: label_key) }
     @settings = plugin_settings
     @non_working_week_days = Array(Setting.non_working_week_days).map(&:to_i).uniq.sort
   end
@@ -379,7 +379,7 @@ class CanvasGanttsController < ApplicationController
       permissions: @permissions
     )
   rescue ActiveRecord::RecordNotFound
-    render json: { error: l(:error_canvas_gantt_task_not_found) }, status: :not_found
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
   rescue => e
     render json: { error: e.message }, status: :internal_server_error
   end
@@ -398,7 +398,7 @@ class CanvasGanttsController < ApplicationController
 
     if issue.save
       if requested_parent_issue_id_provided? && issue.parent_id != requested_parent_issue_id
-        render json: { errors: [l(:error_canvas_gantt_parent_linkage_failed)], parent_id: issue.parent_id }, status: :unprocessable_entity
+        render json: { errors: [canvas_gantt_l(:error_canvas_gantt_parent_linkage_failed)], parent_id: issue.parent_id }, status: :unprocessable_entity
         return
       end
 
@@ -413,9 +413,9 @@ class CanvasGanttsController < ApplicationController
       render json: { errors: issue.errors.full_messages }, status: :unprocessable_entity
     end
   rescue ActiveRecord::StaleObjectError
-    render json: { error: l(:error_canvas_gantt_conflict_reload) }, status: :conflict
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_conflict_reload) }, status: :conflict
   rescue ActiveRecord::RecordNotFound
-    render json: { error: l(:error_canvas_gantt_task_not_found) }, status: :not_found
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
   end
 
   # POST /projects/:project_id/canvas_gantt/subtasks/bulk.json
@@ -424,19 +424,19 @@ class CanvasGanttsController < ApplicationController
     return unless ensure_issue_in_scope(parent_issue)
 
     unless bulk_subtask_creator.allowed?(parent_issue)
-      render json: { error: l(:error_canvas_gantt_permission_denied) }, status: :forbidden
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
       return
     end
 
     subjects = Array(params[:subjects])
     if subjects.empty?
-      render json: { error: l(:error_canvas_gantt_subjects_non_empty_array) }, status: :unprocessable_entity
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_subjects_non_empty_array) }, status: :unprocessable_entity
       return
     end
 
     render json: bulk_subtask_creator.call(parent_issue: parent_issue, subjects: subjects)
   rescue ActiveRecord::RecordNotFound
-    render json: { error: l(:error_canvas_gantt_parent_task_not_found) }, status: :not_found
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_parent_task_not_found) }, status: :not_found
   end
 
   # POST /projects/:project_id/canvas_gantt/relations.json
@@ -457,7 +457,7 @@ class CanvasGanttsController < ApplicationController
       relation_id: '__pending__'
     )
   rescue ActiveRecord::RecordNotFound
-    render json: { error: l(:error_canvas_gantt_task_not_found) }, status: :not_found
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
   rescue => e
     render json: { error: e.message }, status: :internal_server_error
   end
@@ -475,7 +475,7 @@ class CanvasGanttsController < ApplicationController
       replacing_relation_id: relation.id
     )
   rescue ActiveRecord::RecordNotFound
-    render json: { error: l(:error_canvas_gantt_relation_not_found) }, status: :not_found
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found) }, status: :not_found
   rescue => e
     render json: { error: e.message }, status: :internal_server_error
   end
@@ -488,18 +488,22 @@ class CanvasGanttsController < ApplicationController
     relation.destroy
     render json: { status: 'ok' }
   rescue ActiveRecord::RecordNotFound
-    render json: { error: l(:error_canvas_gantt_relation_not_found) }, status: :not_found
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found) }, status: :not_found
   rescue => e
     render json: { error: e.message }, status: :internal_server_error
   end
 
   private
 
+  def canvas_gantt_l(key, **options)
+    l(:"canvas_gantt.#{key}", **options)
+  end
+
   def ensure_view_permission
     return if @permissions[:viewable]
 
     respond_to do |format|
-      format.json { render json: { error: l(:error_canvas_gantt_permission_denied) }, status: :forbidden }
+      format.json { render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden }
       format.any { deny_access }
     end
     false
@@ -507,7 +511,7 @@ class CanvasGanttsController < ApplicationController
 
   def ensure_edit_permission
     unless @permissions[:editable]
-      render json: { error: l(:error_canvas_gantt_permission_denied) }, status: :forbidden
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
       return false
     end
   end
@@ -515,7 +519,7 @@ class CanvasGanttsController < ApplicationController
   def ensure_baseline_edit_permission
     return true if User.current.allowed_to?(:edit_canvas_gantt, @project)
 
-    render json: { error: l(:error_canvas_gantt_permission_denied) }, status: :forbidden
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
     false
   end
 
@@ -587,14 +591,14 @@ class CanvasGanttsController < ApplicationController
   def ensure_issue_in_scope(issue)
     return true if descendant_project_ids.include?(issue.project_id)
 
-    render json: { error: l(:error_canvas_gantt_issue_not_found_in_project) }, status: :not_found
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_issue_not_found_in_project) }, status: :not_found
     false
   end
 
   def ensure_issue_editable(issue)
     return true if User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?
 
-    render json: { error: l(:error_canvas_gantt_permission_denied) }, status: :forbidden
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
     false
   end
 
@@ -622,18 +626,18 @@ class CanvasGanttsController < ApplicationController
     issue_to = relation.issue_to
 
     if issue_from.nil? || issue_to.nil?
-      render json: { error: l(:error_canvas_gantt_relation_not_found) }, status: :not_found
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found) }, status: :not_found
       return false
     end
 
     owned_issue = [issue_from, issue_to].find { |issue| descendant_project_ids.include?(issue.project_id) }
     unless owned_issue
-      render json: { error: l(:error_canvas_gantt_relation_not_found_in_project) }, status: :not_found
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found_in_project) }, status: :not_found
       return false
     end
 
     unless @permissions[:editable] && owned_issue.editable?
-      render json: { error: l(:error_canvas_gantt_permission_denied) }, status: :forbidden
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
       return false
     end
 
@@ -645,7 +649,7 @@ class CanvasGanttsController < ApplicationController
     return false unless ensure_issue_in_scope(issue_to)
 
     unless @permissions[:editable] && issue_from.editable?
-      render json: { error: l(:error_canvas_gantt_permission_denied) }, status: :forbidden
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
       return false
     end
 
@@ -662,7 +666,7 @@ class CanvasGanttsController < ApplicationController
   def ensure_editable_relation_type!(relation_type)
     return true if EDITABLE_RELATION_TYPES.include?(relation_type)
 
-    render json: { errors: [l(:error_canvas_gantt_relation_type_invalid)] }, status: :unprocessable_entity
+    render json: { errors: [canvas_gantt_l(:error_canvas_gantt_relation_type_invalid)] }, status: :unprocessable_entity
     false
   end
 
@@ -686,7 +690,7 @@ class CanvasGanttsController < ApplicationController
       ),
       replacing_relation_id: replacing_relation_id,
       error_renderer: lambda { |message_key|
-        render json: { errors: [l(message_key)] }, status: :unprocessable_entity
+        render json: { errors: [canvas_gantt_l(message_key)] }, status: :unprocessable_entity
       }
     )
   end
@@ -759,10 +763,10 @@ class CanvasGanttsController < ApplicationController
       raw_parent_issue_id: raw_parent_issue_id,
       issue_scope_checker: method(:ensure_issue_in_scope),
       validation_error_renderer: lambda { |message_key|
-        render json: { errors: [l(message_key)] }, status: :unprocessable_entity
+        render json: { errors: [canvas_gantt_l(message_key)] }, status: :unprocessable_entity
       },
       not_found_renderer: lambda { |message_key|
-        render json: { error: l(message_key) }, status: :not_found
+        render json: { error: canvas_gantt_l(message_key) }, status: :not_found
       }
     )
   end
@@ -791,7 +795,7 @@ class CanvasGanttsController < ApplicationController
       relation_params: relation_params,
       delay_provided: method(:relation_delay_provided?),
       error_renderer: lambda { |message_key|
-        render json: { errors: [l(message_key)] }, status: :unprocessable_entity
+        render json: { errors: [canvas_gantt_l(message_key)] }, status: :unprocessable_entity
       }
     )
   end
