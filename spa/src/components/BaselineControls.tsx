@@ -119,13 +119,17 @@ export const BaselineControls: React.FC<BaselineControlsProps> = ({
                     cursor: hasBaseline ? 'pointer' : 'not-allowed',
                     opacity: hasBaseline ? 1 : 0.75,
                     height: '32px',
-                    width: '32px'
+                    width: '32px',
+                    position: 'relative'
                 }}
             >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" />
                     <circle cx="12" cy="12" r="3" />
                 </svg>
+                {showBaseline && (
+                    <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                )}
             </button>
         </>
     );
