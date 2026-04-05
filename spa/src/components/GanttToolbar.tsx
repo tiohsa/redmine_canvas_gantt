@@ -41,7 +41,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
         setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
-        modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields, activeQueryId, sortConfig, showSubprojects, permissions, filterOptions
+        modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields, activeQueryId, sortConfig, showSubprojects, permissions, filterOptions,
+        applySavedQuery: applySavedQueryFromStore,
+        clearSavedQuery: clearSavedQueryFromStore,
+        savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries
     } = useTaskStore();
     const {
         showProgressLine,
@@ -69,13 +72,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setAutoCalculateDelay,
         setAutoApplyDefaultRelation,
         setAutoScheduleMoveMode,
-        resetRelationPreferences
+        resetRelationPreferences,
+        openQueryDialog,
+        savedQueriesReloadToken
     } = useUIStore();
     const baselineSaveStatus = useBaselineStore(state => state.saveStatus);
     const hasBaseline = useBaselineStore(state => state.hasBaseline);
     const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
     const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
     const {
+        queryMenuRef,
         columnMenuRef,
         filterMenuRef,
         assigneeMenuRef,
@@ -109,11 +115,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [draftAutoCalculateDelay, setDraftAutoCalculateDelay] = React.useState<boolean>(autoCalculateDelay);
     const [draftAutoApplyDefaultRelation, setDraftAutoApplyDefaultRelation] = React.useState<boolean>(autoApplyDefaultRelation);
     const [draftAutoScheduleMoveMode, setDraftAutoScheduleMoveMode] = React.useState<AutoScheduleMoveModeValue>(autoScheduleMoveMode);
+    const [pendingSavedQueryId, setPendingSavedQueryId] = React.useState<number | null>(null);
     const filterInputRef = React.useRef<HTMLInputElement>(null);
     const columnMenuContentRef = React.useRef<HTMLDivElement>(null);
     const selectAllStatusesRef = React.useRef<HTMLInputElement>(null);
     const completedStatusesRef = React.useRef<HTMLInputElement>(null);
     const incompleteStatusesRef = React.useRef<HTMLInputElement>(null);
+    const handledSavedQueriesReloadTokenRef = React.useRef(0);
+    const showQueryMenu = isMenuOpen('query');
     const showFilterMenu = isMenuOpen('filter');
     const showColumnMenu = isMenuOpen('column');
     const showAssigneeMenu = isMenuOpen('assignee');
@@ -125,6 +134,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const showExportMenu = isMenuOpen('export');
     const showWorkloadMenu = isMenuOpen('workload');
     const showBaselineSaveMenu = isMenuOpen('baselineSave');
+    const displayedActiveQueryId = pendingSavedQueryId ?? activeQueryId;
 
     React.useEffect(() => {
         if (!showFilterMenu) return;
@@ -144,6 +154,27 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setDraftAutoApplyDefaultRelation(autoApplyDefaultRelation);
         setDraftAutoScheduleMoveMode(autoScheduleMoveMode);
     }, [autoApplyDefaultRelation, autoCalculateDelay, autoScheduleMoveMode, defaultRelationType, showRelationSettingsMenu]);
+
+    React.useEffect(() => {
+        if (showQueryMenu && savedQueriesStatus === 'idle') {
+            void loadSavedQueries();
+        }
+    }, [loadSavedQueries, savedQueriesStatus, showQueryMenu]);
+
+    React.useEffect(() => {
+        if (savedQueriesReloadToken <= 0) return;
+        if (handledSavedQueriesReloadTokenRef.current >= savedQueriesReloadToken) return;
+
+        handledSavedQueriesReloadTokenRef.current = savedQueriesReloadToken;
+        void loadSavedQueries(true);
+    }, [loadSavedQueries, savedQueriesReloadToken]);
+
+    React.useEffect(() => {
+        if (pendingSavedQueryId === null) return;
+        // The clearing is handled in the async applySavedQuery handler for manual clicks.
+        // This effect can stay as a fallback for external changes if needed,
+        // but for now let's just keep it empty or remove it.
+    }, [activeQueryId, pendingSavedQueryId]);
 
     React.useEffect(() => {
         const handleGlobalKeyDown = (event: KeyboardEvent) => {
@@ -284,10 +315,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         updateViewport({ startDate: leftDate.getTime(), scrollX: 0 });
     };
 
-    const openRedmineQueryEditor = () => {
+    const buildQueryEditorPath = () => {
         const issueListPath = window.RedmineCanvasGantt?.issueListPath;
         const projectId = window.RedmineCanvasGantt?.projectId;
-        if (!issueListPath && !projectId) return;
+        if (!issueListPath && !projectId) return null;
 
         const queryState = toResolvedQueryStateFromStore({
             activeQueryId,
@@ -298,12 +329,60 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             sortConfig,
             groupByProject,
             groupByAssignee,
-            showSubprojects
+            showSubprojects,
+            visibleColumns
         });
         const { params, notices } = buildRedmineIssueQueryParams(queryState);
         notices.forEach((notice) => useUIStore.getState().addNotification(notice, 'warning'));
         const query = params.toString();
-        navigateToRedminePath(`${issueListPath ?? `/projects/${projectId}/issues`}${query ? `?${query}` : ''}`);
+        return `${issueListPath ?? `/projects/${projectId}/issues`}${query ? `?${query}` : ''}`;
+    };
+
+    const openRedmineQueryEditor = () => {
+        const path = buildQueryEditorPath();
+        if (!path) return;
+
+        navigateToRedminePath(path);
+    };
+
+    const openSavedQueryEditorDialog = () => {
+        const path = buildQueryEditorPath();
+        if (!path) return;
+
+        closeMenu('query');
+        openQueryDialog(path);
+    };
+
+    const applySavedQuery = async (queryId: number | null) => {
+        setPendingSavedQueryId(queryId);
+        try {
+            if (queryId !== null) {
+                await applySavedQueryFromStore(queryId);
+            } else {
+                await clearSavedQueryFromStore();
+            }
+        } catch (error) {
+            useUIStore.getState().addNotification(
+                error instanceof Error ? error.message : (i18n.t('label_refresh_failed') || 'Refresh failed'),
+                'error'
+            );
+        } finally {
+            setPendingSavedQueryId(null);
+        }
+    };
+
+    const clearSavedQuery = async () => {
+        closeMenu('query');
+        setPendingSavedQueryId(null);
+
+        try {
+            await clearSavedQueryFromStore();
+        } catch (error) {
+            useUIStore.getState().addNotification(
+                error instanceof Error ? error.message : (i18n.t('label_refresh_failed') || 'Refresh failed'),
+                'error'
+            );
+        }
     };
 
     const getColumnLabel = (key: string, fallback: string) => {
@@ -545,13 +624,17 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         color: isLeftPaneMaximized ? '#1a73e8' : '#333',
                         cursor: 'pointer',
                         width: '32px',
-                        height: '32px'
+                        height: '32px',
+                        position: 'relative'
                     }}
                 >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                         <line x1="15" y1="3" x2="15" y2="21" />
                     </svg>
+                    {isLeftPaneMaximized && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    )}
                 </button>
 
                 <button
@@ -571,13 +654,17 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         color: isRightPaneMaximized ? '#1a73e8' : '#333',
                         cursor: 'pointer',
                         width: '32px',
-                        height: '32px'
+                        height: '32px',
+                        position: 'relative'
                     }}
                 >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                         <line x1="9" y1="3" x2="9" y2="21" />
                     </svg>
+                    {isRightPaneMaximized && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    )}
                 </button>
 
                 <button
@@ -630,6 +717,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
                         </svg>
+                        {!!filterText && (
+                            <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                        )}
                     </button>
 
                     {showFilterMenu && (
@@ -687,31 +777,167 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <button
-                    type="button"
-                    onClick={openRedmineQueryEditor}
-                    title={i18n.t('label_edit_query_in_redmine_tooltip') || 'Edit filter conditions in the standard Redmine issue list'}
-                    data-testid="edit-query-in-redmine-button"
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '0',
-                        borderRadius: '6px',
-                        border: '1px solid #e0e0e0',
-                        backgroundColor: activeQueryId !== null ? '#e8f0fe' : '#fff',
-                        color: activeQueryId !== null ? '#1a73e8' : '#333',
-                        cursor: 'pointer',
-                        width: '32px',
-                        height: '32px'
-                    }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M3 5h18" />
-                        <path d="M6 12h12" />
-                        <path d="M10 19h4" />
-                    </svg>
-                </button>
+                <div ref={queryMenuRef} style={{ position: 'relative' }}>
+                    <button
+                        type="button"
+                        onClick={() => toggleMenu('query')}
+                        title={i18n.t('label_saved_queries') || 'Saved queries'}
+                        data-testid="query-menu-button"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '0',
+                            borderRadius: '6px',
+                            border: '1px solid #e0e0e0',
+                            backgroundColor: displayedActiveQueryId !== null ? '#e8f0fe' : '#fff',
+                            color: displayedActiveQueryId !== null ? '#1a73e8' : '#333',
+                            cursor: 'pointer',
+                            width: '32px',
+                            height: '32px',
+                            position: 'relative'
+                        }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M4 6h16" />
+                            <path d="M4 12h16" />
+                            <path d="M4 18h10" />
+                        </svg>
+                        {displayedActiveQueryId !== null && (
+                            <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                        )}
+                    </button>
+
+                    {showQueryMenu && (
+                        <div
+                            data-testid="query-menu"
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                background: '#fff',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                                padding: '12px',
+                                zIndex: 20,
+                                minWidth: '240px',
+                                maxHeight: '320px',
+                                overflowY: 'auto'
+                            }}
+                        >
+                            <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>
+                                {i18n.t('label_saved_queries') || 'Saved queries'}
+                            </div>
+
+                            {savedQueriesStatus === 'loading' && (
+                                <div style={{ color: '#666', fontSize: '13px' }}>
+                                    {i18n.t('label_loading_saved_queries') || 'Loading saved queries...'}
+                                </div>
+                            )}
+
+                            {savedQueriesStatus === 'error' && (
+                                <div style={{ color: '#d32f2f', fontSize: '13px' }}>
+                                    {savedQueriesError || (i18n.t('label_saved_query_load_failed') || 'Failed to load saved queries')}
+                                </div>
+                            )}
+
+                            {savedQueriesStatus === 'ready' && savedQueries.length === 0 && (
+                                <div style={{ color: '#666', fontSize: '13px' }}>
+                                    {i18n.t('label_no_saved_queries') || 'No saved queries'}
+                                </div>
+                            )}
+
+                            <div role="radiogroup" aria-label={i18n.t('label_saved_queries') || 'Saved queries'}>
+                                {savedQueries.map((query) => (
+                                <label
+                                    key={query.id}
+                                    data-testid={`saved-query-item-${query.id}`}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        width: '100%',
+                                        gap: '10px',
+                                        background: query.id === displayedActiveQueryId ? '#e8f0fe' : 'transparent',
+                                        color: query.id === displayedActiveQueryId ? '#1a73e8' : '#333',
+                                        cursor: 'pointer',
+                                        borderRadius: '6px',
+                                        padding: '8px'
+                                    }}
+                                >
+                                    <input
+                                        type="radio"
+                                        name="saved-query-selection"
+                                        checked={query.id === displayedActiveQueryId}
+                                        onChange={() => {
+                                            void applySavedQuery(query.id);
+                                        }}
+                                        aria-label={query.name}
+                                        style={{
+                                            margin: 0,
+                                            accentColor: '#1a73e8',
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                    <span style={{ flex: 1 }}>{query.name}</span>
+                                </label>
+                            ))}
+                            </div>
+
+                            <div style={{ borderTop: '1px solid #f0f0f0', marginTop: '8px', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {displayedActiveQueryId !== null && (
+                                    <button
+                                        type="button"
+                                        data-testid="clear-saved-query-button"
+                                        onClick={() => {
+                                            void clearSavedQuery();
+                                        }}
+                                        style={{
+                                            border: 'none',
+                                            background: 'transparent',
+                                            color: '#1a73e8',
+                                            cursor: 'pointer',
+                                            padding: '4px 0',
+                                            textAlign: 'left'
+                                        }}
+                                    >
+                                        {i18n.t('label_clear_saved_query') || 'Clear saved query'}
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    data-testid="save-custom-query-button"
+                                    onClick={openSavedQueryEditorDialog}
+                                    style={{
+                                        border: 'none',
+                                        background: 'transparent',
+                                        color: '#1a73e8',
+                                        cursor: 'pointer',
+                                        padding: '4px 0',
+                                        textAlign: 'left'
+                                    }}
+                                >
+                                    {i18n.t('label_save_custom_query') || 'Save custom query'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={openRedmineQueryEditor}
+                                    style={{
+                                        border: 'none',
+                                        background: 'transparent',
+                                        color: '#1a73e8',
+                                        cursor: 'pointer',
+                                        padding: '4px 0',
+                                        textAlign: 'left'
+                                    }}
+                                >
+                                    {i18n.t('label_edit_query_in_redmine') || 'Edit Query in Redmine'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 <div ref={columnMenuRef} style={{ position: 'relative' }}>
                     <button
@@ -776,7 +1002,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                         draggable={true}
                                         isDragging={draggingColumnKey === option.key}
                                         isDropBefore={dropBeforeColumnKey === option.key}
-                                        isPinned={option.key === 'subject'}
+                                        isPinned={false}
                                         onToggle={toggleColumnVisibility}
                                         onDragStart={handleColumnDragStart}
                                         onDragOver={handleColumnDragOver}
@@ -1726,18 +1952,20 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <button
                     onClick={toggleFullScreen}
+                    title={i18n.t('help_label_fullscreen') || "Full Screen"}
                     style={{
                         padding: '0',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
-                        backgroundColor: isFullScreen ? '#1a73e8' : '#fff',
-                        color: isFullScreen ? '#fff' : '#333',
+                        backgroundColor: isFullScreen ? '#e8f0fe' : '#fff',
+                        color: isFullScreen ? '#1a73e8' : '#333',
                         cursor: 'pointer',
                         height: '32px',
                         width: '32px',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center'
+                        justifyContent: 'center',
+                        position: 'relative'
                     }}
                 >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1757,6 +1985,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             </>
                         )}
                     </svg>
+                    {isFullScreen && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    )}
                 </button>
 
                 <button
@@ -1853,12 +2084,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         border: '1px solid #e0e0e0',
                         backgroundColor: autoSave ? '#e8f0fe' : '#fff',
                         color: autoSave ? '#1a73e8' : '#333',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        position: 'relative'
                     }}
                 >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
                     </svg>
+                    {autoSave && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    )}
                 </button>
 
                 <button

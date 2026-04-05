@@ -70,7 +70,7 @@ describe('IssueIframeDialog', () => {
 
         fireEvent.load(iframe);
 
-        expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc);
+        expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc, false);
     });
 
     it('hides iframe until load completes', () => {
@@ -90,7 +90,7 @@ describe('IssueIframeDialog', () => {
         fireEvent.load(iframe);
 
         expect(iframe).not.toHaveClass('issue-iframe-loading');
-        expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc);
+        expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc, false);
     });
 
     it('shows error message when iframe contains an error', () => {
@@ -182,7 +182,7 @@ describe('IssueIframeDialog', () => {
 
         await waitFor(() => {
             const dialog = screen.getByTestId('issue-dialog-header').parentElement as HTMLDivElement;
-            expect(dialog.style.height).toBe('320px');
+            expect(dialog.style.height).toBe('600px');
         });
     });
 

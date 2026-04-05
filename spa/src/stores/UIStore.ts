@@ -12,7 +12,7 @@ import {
 } from '../components/sidebar/sidebarColumnSettings';
 import { getColumnDefinitions, getDefaultVisibleColumnKeys } from '../components/sidebar/sidebarColumnCatalog';
 
-export const DEFAULT_COLUMNS = ['notification', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone'];
+export const DEFAULT_COLUMNS = ['id', 'subject', 'notification', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone'];
 
 const COLUMN_DEFINITIONS = getColumnDefinitions();
 const preferences = loadPreferences();
@@ -38,6 +38,8 @@ interface UIState {
     activeInlineEdit: { taskId: string; field: string; source?: 'cell' | 'panel' } | null;
     isFullScreen: boolean;
     issueDialogUrl: string | null;
+    queryDialogUrl: string | null;
+    savedQueriesReloadToken: number;
     isHelpDialogOpen: boolean;
     isSidebarResizing: boolean;
     defaultRelationType: DefaultRelationType;
@@ -65,6 +67,8 @@ interface UIState {
     toggleFullScreen: () => void;
     openIssueDialog: (url: string) => void;
     closeIssueDialog: () => void;
+    openQueryDialog: (url: string) => void;
+    closeQueryDialog: () => void;
     openHelpDialog: () => void;
     closeHelpDialog: () => void;
     setSidebarResizing: (value: boolean) => void;
@@ -92,7 +96,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     showPointsOrphans: preferences.showPointsOrphans ?? true,
     leftPaneVisible: true,
     rightPaneVisible: true,
-    visibleColumns: preferences.visibleColumns ?? ['id', 'notification', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone'],
+    visibleColumns: preferences.visibleColumns ?? DEFAULT_COLUMNS,
     columnSettings: preferences.columnSettings
         ? normalizeColumnSettings(COLUMN_DEFINITIONS, preferences.columnSettings)
         : defaultColumnSettings,
@@ -110,6 +114,8 @@ export const useUIStore = create<UIState>((set, get) => ({
     activeInlineEdit: null,
     isFullScreen: false,
     issueDialogUrl: null,
+    queryDialogUrl: null,
+    savedQueriesReloadToken: 0,
     isHelpDialogOpen: false,
     isSidebarResizing: false,
     defaultRelationType: preferences.defaultRelationType ?? DEFAULT_RELATION_TYPE,
@@ -176,7 +182,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     },
     resetColumns: () => {
         const next = resetColumnSettings(COLUMN_DEFINITIONS);
-        set(() => ({ visibleColumns: ['id', 'notification', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone'], columnSettings: next }));
+        set(() => ({ visibleColumns: DEFAULT_COLUMNS, columnSettings: next }));
         persistColumnSettings(next);
     },
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),
@@ -186,6 +192,11 @@ export const useUIStore = create<UIState>((set, get) => ({
     toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen })),
     openIssueDialog: (url) => set(() => ({ issueDialogUrl: buildRedmineUrl(url) })),
     closeIssueDialog: () => set(() => ({ issueDialogUrl: null })),
+    openQueryDialog: (url) => set(() => ({ queryDialogUrl: buildRedmineUrl(url) })),
+    closeQueryDialog: () => set((state) => ({
+        queryDialogUrl: null,
+        savedQueriesReloadToken: state.savedQueriesReloadToken + 1
+    })),
     openHelpDialog: () => set(() => ({ isHelpDialogOpen: true })),
     closeHelpDialog: () => set(() => ({ isHelpDialogOpen: false })),
     setSidebarResizing: (value) => set(() => ({ isSidebarResizing: value })),

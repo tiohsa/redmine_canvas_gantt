@@ -20,11 +20,16 @@ const ISSUE_DIALOG_HIDE_SELECTORS = [
     '#issue-form > input[type="submit"]',
     '#issue-form > a[href*="preview"]',
     '#issue-form a[href*="/issues"]',
-    '#issue-form a[onclick*="history.back"]'
+    '#issue-form a[onclick*="history.back"]',
+    '#query-form > p.buttons',
+    '#query-form > .buttons',
+    '#query-form > input[type="submit"]',
+    '#query-form > a[href*="preview"]',
+    '#query-form a[href*="/queries"]',
+    '#query-form a[onclick*="history.back"]'
 ];
 
-const ISSUE_DIALOG_CSS = `
-${ISSUE_DIALOG_HIDE_SELECTORS.join(', ')} { display: none !important; }
+const SHARED_DIALOG_CSS = `
 html, body, #wrapper, #main { height: auto !important; min-height: 0 !important; }
 html, body { overflow-y: auto !important; }
 #content { margin: 0 !important; padding: 16px !important; }
@@ -39,12 +44,31 @@ const ISSUE_DIALOG_ERROR_SELECTORS = [
     '.conflict'
 ];
 
-export const applyIssueDialogStyles = (doc: Document): void => {
+export const applyIssueDialogStyles = (doc: Document, isQuery = false): void => {
     if (doc.getElementById(ISSUE_DIALOG_STYLE_ID)) return;
+
+    const querySelectors = [
+        '#query-form > p.buttons',
+        '#query-form > .buttons',
+        '#query-form > input[type="submit"]',
+        '#query-form > a[href*="preview"]',
+        '#query-form a[href*="/queries"]',
+        '#query-form a[onclick*="history.back"]'
+    ];
+
+    const selectorsToHide = ISSUE_DIALOG_HIDE_SELECTORS.filter(selector => {
+        if (isQuery && querySelectors.includes(selector)) {
+            return false;
+        }
+        return true;
+    });
 
     const style = doc.createElement('style');
     style.id = ISSUE_DIALOG_STYLE_ID;
-    style.textContent = ISSUE_DIALOG_CSS;
+    style.textContent = `
+        ${selectorsToHide.join(', ')} { display: none !important; }
+        ${SHARED_DIALOG_CSS}
+    `;
     doc.head.appendChild(style);
 };
 

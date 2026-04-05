@@ -1,6 +1,7 @@
 import React from 'react';
 
 export type ToolbarMenuKey =
+    | 'query'
     | 'column'
     | 'filter'
     | 'assignee'
@@ -18,6 +19,7 @@ type ToolbarMenuRefs = Record<ToolbarMenuKey, React.RefObject<HTMLDivElement | n
 export const useToolbarMenuState = () => {
     const [openMenu, setOpenMenu] = React.useState<ToolbarMenuKey | null>(null);
 
+    const queryRef = React.useRef<HTMLDivElement>(null);
     const columnRef = React.useRef<HTMLDivElement>(null);
     const filterRef = React.useRef<HTMLDivElement>(null);
     const assigneeRef = React.useRef<HTMLDivElement>(null);
@@ -31,6 +33,7 @@ export const useToolbarMenuState = () => {
     const baselineSaveRef = React.useRef<HTMLDivElement>(null);
 
     const refsByMenu = React.useMemo<ToolbarMenuRefs>(() => ({
+        query: queryRef,
         column: columnRef,
         filter: filterRef,
         assignee: assigneeRef,
@@ -79,6 +82,7 @@ export const useToolbarMenuState = () => {
     }, []);
 
     return {
+        queryMenuRef: queryRef,
         columnMenuRef: columnRef,
         filterMenuRef: filterRef,
         assigneeMenuRef: assigneeRef,

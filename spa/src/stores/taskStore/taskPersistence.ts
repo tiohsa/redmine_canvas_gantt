@@ -1,5 +1,6 @@
 import type { Relation, Task } from '../../types';
 import type { MoveTaskAsChildResult } from '../../types';
+import { i18n } from '../../utils/i18n';
 import type { TaskLayoutSnapshot } from './types';
 
 type UpdateTaskFieldsResult = {
@@ -145,7 +146,7 @@ export const saveModifiedTasks = async (
             if (result.status === 'conflict') {
                 conflictTaskIds.push(taskId);
             }
-            failures.set(taskId, result.error || 'Unknown error');
+            failures.set(taskId, result.error || (i18n.t('label_unknown_error') || 'Unknown error'));
             nextPending.push(taskId);
         }
 

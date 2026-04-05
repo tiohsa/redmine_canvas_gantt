@@ -72,6 +72,13 @@ export interface Project {
     dueDate?: string;
 }
 
+export interface SavedQuery {
+    id: number;
+    name: string;
+    isPublic: boolean;
+    projectId: number | null;
+}
+
 export interface FilterProjectOption {
     id: string;
     name: string;

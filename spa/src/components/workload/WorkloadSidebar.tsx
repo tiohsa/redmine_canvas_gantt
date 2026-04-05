@@ -159,7 +159,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
 
                                                     const result = useTaskStore.getState().focusTask(taskId);
                                                     if (result.status === 'filtered_out') {
-                                                        useUIStore.getState().addNotification('Selected task is hidden by the current filters.', 'warning');
+                                                        useUIStore.getState().addNotification(i18n.t('label_selected_task_is_hidden') || 'Selected task is hidden by the current filters.', 'warning');
                                                     }
                                                 }}
                                                 style={{
@@ -196,7 +196,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                     </div>
                 ) : (
                     <div style={{ padding: '16px', color: '#666', fontSize: '13px', lineHeight: '1.5' }}>
-                        No workload data matches the current filters.
+                        {i18n.t('label_no_workload_data_matches_filters') || 'No workload data matches the current filters.'}
                     </div>
                 )}
             </div>

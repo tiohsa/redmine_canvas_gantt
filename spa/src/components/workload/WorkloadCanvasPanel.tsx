@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import { i18n } from '../../utils/i18n';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
 import { useTaskStore } from '../../stores/TaskStore';
 import { useUIStore } from '../../stores/UIStore';
@@ -449,7 +450,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
 
             const result = useTaskStore.getState().focusTask(taskId);
             if (result.status === 'filtered_out') {
-                useUIStore.getState().addNotification('Selected task is hidden by the current filters.', 'warning');
+                useUIStore.getState().addNotification(i18n.t('label_selected_task_is_hidden') || 'Selected task is hidden by the current filters.', 'warning');
             }
 
             updateHoverState(event.clientX, event.clientY);
@@ -522,7 +523,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                         backgroundColor: 'rgba(255, 255, 255, 0.92)',
                         cursor: 'default'
                     }}>
-                        No workload data matches the current filters.
+                        {i18n.t('label_no_workload_data_matches_filters') || 'No workload data matches the current filters.'}
                     </div>
                 )}
             </div>

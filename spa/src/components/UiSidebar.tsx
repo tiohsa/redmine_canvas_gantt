@@ -1113,7 +1113,7 @@ export const UiSidebar: React.FC = () => {
                                                                 const nextTs = new Date(next).getTime();
                                                                 if (!Number.isFinite(nextTs)) return;
                                                                 if (task.startDate !== undefined && Number.isFinite(task.startDate) && task.startDate! > nextTs) {
-                                                                    useUIStore.getState().addNotification('Invalid date range', 'warning');
+                                                                    useUIStore.getState().addNotification(i18n.t('label_invalid_date_range') || 'Invalid date range', 'warning');
                                                                     return;
                                                                 }
                                                                 // Update local state - will be saved with batch save or auto-save
@@ -1150,7 +1150,7 @@ export const UiSidebar: React.FC = () => {
                                                                 const nextTs = new Date(next).getTime();
                                                                 if (!Number.isFinite(nextTs)) return;
                                                                 if (task.dueDate !== undefined && Number.isFinite(task.dueDate) && nextTs > task.dueDate!) {
-                                                                    useUIStore.getState().addNotification('Invalid date range', 'warning');
+                                                                    useUIStore.getState().addNotification(i18n.t('label_invalid_date_range') || 'Invalid date range', 'warning');
                                                                     return;
                                                                 }
                                                                 // Update local state - will be saved with batch save or auto-save

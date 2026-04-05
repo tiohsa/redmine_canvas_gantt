@@ -97,4 +97,37 @@ describe('useInitialGanttData persistence', () => {
         expect(url.searchParams.get('group_by')).toBe('assigned_to');
         expect(url.searchParams.get('show_subprojects')).toBe('0');
     });
+
+    it('preserves the active saved query when initial data omits initialState', async () => {
+        useTaskStore.setState({
+            activeQueryId: 12,
+            selectedStatusIds: [1],
+            selectedAssigneeIds: [7],
+            selectedProjectIds: ['p1'],
+            selectedVersionIds: ['v2']
+        });
+        fetchDataMock.mockImplementationOnce(async () => ({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [] },
+            statuses: [],
+            customFields: [],
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        }));
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalled();
+        });
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().activeQueryId).toBe(12);
+            expect(useTaskStore.getState().selectedStatusIds).toEqual([1]);
+            expect(useTaskStore.getState().selectedAssigneeIds).toEqual([7]);
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+            expect(useTaskStore.getState().selectedVersionIds).toEqual(['v2']);
+        });
+    });
 });

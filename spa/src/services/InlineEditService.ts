@@ -1,6 +1,7 @@
 import type { Task } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
+import { i18n } from '../utils/i18n';
 
 export class InlineEditService {
     static async saveTaskFields(params: {
@@ -12,7 +13,7 @@ export class InlineEditService {
         const { taskId, optimisticTaskUpdates, rollbackTaskUpdates, fields } = params;
         const { allTasks, updateTask } = useTaskStore.getState();
         const current = allTasks.find((t) => t.id === taskId);
-        if (!current) throw new Error('Task not found');
+        if (!current) throw new Error(i18n.t('label_task_not_found') || 'Task not found');
 
         if (Object.keys(optimisticTaskUpdates).length > 0) {
             updateTask(taskId, optimisticTaskUpdates);
@@ -30,8 +31,8 @@ export class InlineEditService {
             updateTask(taskId, rollbackTaskUpdates);
         }
 
-        useUIStore.getState().addNotification(result.error || 'Failed to save', 'error');
-        throw new Error(result.error || 'Failed to save');
+        useUIStore.getState().addNotification(result.error || (i18n.t('label_failed_to_save') || 'Failed to save'), 'error');
+        throw new Error(result.error || (i18n.t('label_failed_to_save') || 'Failed to save'));
     }
 }
 

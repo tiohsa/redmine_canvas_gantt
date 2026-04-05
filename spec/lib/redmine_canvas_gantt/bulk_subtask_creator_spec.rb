@@ -30,7 +30,7 @@ RSpec.describe RedmineCanvasGantt::BulkSubtaskCreator do
       expect(result[:success_count]).to eq(1)
       expect(result[:fail_count]).to eq(1)
       expect(result[:results].map { |entry| entry[:status] }).to eq(%w[ok error])
-      expect(result[:results][1][:errors]).to eq([I18n.t(:error_canvas_gantt_subject_blank)])
+      expect(result[:results][1][:errors]).to eq([I18n.t(:"canvas_gantt.error_canvas_gantt_subject_blank")])
     end
   end
 end

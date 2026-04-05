@@ -81,7 +81,7 @@ export const normalizeColumnSettings = (
     }));
 };
 
-export const resolveVisibleColumnKeys = (settings: ColumnConfig[], pinnedKeys: string[] = ['subject']) => {
+export const resolveVisibleColumnKeys = (settings: ColumnConfig[], pinnedKeys: string[] = []) => {
     const pinned = pinnedKeys.filter(Boolean);
     const visible = settings.filter((entry) => entry.visible).map((entry) => entry.key);
     const result: string[] = [];

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
+import { i18n } from '../utils/i18n';
 import type { Task } from '../types';
 
 export const A11yLayer: React.FC = () => {
@@ -21,7 +22,7 @@ export const A11yLayer: React.FC = () => {
 
     const handleKeyDown = (e: React.KeyboardEvent, task: Task) => {
         if (e.key === 'Enter') {
-            alert(`Details for: ${task.subject}`);
+            alert(i18n.t('label_task_details_for', { subject: task.subject }) || `Details for: ${task.subject}`);
         }
     };
 
@@ -43,7 +44,7 @@ export const A11yLayer: React.FC = () => {
                 margin: 0,
                 padding: 0
             }}
-            aria-label="Gantt Chart Task List"
+            aria-label={i18n.t('label_gantt_chart_task_list') || 'Gantt Chart Task List'}
         >
             {tasks.map(task => (
                 <li
@@ -52,7 +53,12 @@ export const A11yLayer: React.FC = () => {
                     data-id={task.id}
                     onFocus={() => handleFocus(task.id)}
                     onKeyDown={(e) => handleKeyDown(e, task)}
-                    aria-label={`Task: ${task.subject}. Start: ${(task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toLocaleDateString() : 'Not set'}. End: ${(task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}. Status: ${task.ratioDone}%`}
+                    aria-label={i18n.t('label_task_aria_label', {
+                        subject: task.subject,
+                        start: (task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toLocaleDateString() : (i18n.t('label_not_set') || 'Not set'),
+                        end: (task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toLocaleDateString() : (i18n.t('label_not_set') || 'Not set'),
+                        status: task.ratioDone
+                    }) || `Task: ${task.subject}. Start: ${(task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toLocaleDateString() : 'Not set'}. End: ${(task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}. Status: ${task.ratioDone}%`}
                 >
                     {task.subject}
                 </li>

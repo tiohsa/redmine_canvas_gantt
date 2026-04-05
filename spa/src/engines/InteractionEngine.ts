@@ -1,5 +1,6 @@
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
+import { i18n } from '../utils/i18n';
 import { LayoutEngine } from './LayoutEngine';
 import type { Relation, Task } from '../types';
 import {
@@ -265,7 +266,7 @@ export class InteractionEngine {
             if (resolvedHit.task.hasChildren) {
                 useTaskStore.getState().selectTask(resolvedHit.task.id);
                 // Show warning and return
-                useUIStore.getState().addNotification('Cannot move parent task. Move child tasks instead.', 'warning');
+                useUIStore.getState().addNotification(i18n.t('label_cannot_move_parent_task') || 'Cannot move parent task. Move child tasks instead.', 'warning');
                 return;
             }
 

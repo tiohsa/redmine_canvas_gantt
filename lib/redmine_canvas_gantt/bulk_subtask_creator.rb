@@ -44,7 +44,7 @@ module RedmineCanvasGantt
         return {
           status: 'error',
           subject: subject,
-          errors: [I18n.t(:error_canvas_gantt_subject_blank)]
+          errors: [I18n.t(:"canvas_gantt.error_canvas_gantt_subject_blank")]
         }
       end
 
@@ -64,7 +64,7 @@ module RedmineCanvasGantt
           return {
             status: 'error',
             subject: subject,
-            errors: [I18n.t(:error_canvas_gantt_parent_linkage_failed)]
+            errors: [I18n.t(:"canvas_gantt.error_canvas_gantt_parent_linkage_failed")]
           }
         end
 

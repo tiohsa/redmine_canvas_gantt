@@ -5,6 +5,7 @@ RedmineApp::Application.routes.draw do
   resources :projects do
     get 'canvas_gantt', to: 'canvas_gantts#index'
     get 'canvas_gantt/data', to: 'canvas_gantts#data'
+    get 'canvas_gantt/queries', to: 'canvas_gantts#queries'
     post 'canvas_gantt/baseline', to: 'canvas_gantts#save_baseline'
     get 'canvas_gantt/tasks/:id/edit_meta', to: 'canvas_gantts#edit_meta'
     patch 'canvas_gantt/tasks/:id', to: 'canvas_gantts#update'

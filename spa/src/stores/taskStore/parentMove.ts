@@ -1,5 +1,6 @@
 import type { LayoutRow, MoveTaskAsChildResult, Task } from '../../types';
 import { buildMoveTaskResult, createTaskLayoutSnapshot } from './taskPersistence';
+import { i18n } from '../../utils/i18n';
 import type { LayoutState } from './types';
 import type { TaskLayoutSnapshot } from './types';
 
@@ -90,7 +91,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
     if (result.status !== 'ok' || !validatePersistedResult(result, expectedParentId)) {
         restoreSnapshot(snapshot);
         return buildMoveTaskResult(result.status === 'ok' ? 'error' : result.status, {
-            error: result.error || (failedResult().error ?? 'Failed to update parent')
+            error: result.error || (failedResult().error ?? (i18n.t('label_failed_to_update_parent') || 'Failed to update parent'))
         });
     }
 

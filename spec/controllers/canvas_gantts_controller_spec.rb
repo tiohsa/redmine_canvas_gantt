@@ -1,6 +1,10 @@
 require_relative '../spec_helper'
 
 RSpec.describe CanvasGanttsController, type: :controller do
+  def canvas_gantt_t(key)
+    I18n.t(:"canvas_gantt.#{key}")
+  end
+
   let(:project) do
     instance_double(
       Project,
@@ -104,6 +108,53 @@ RSpec.describe CanvasGanttsController, type: :controller do
       )
       expect(body['baseline']).to include('snapshot_id' => 'baseline-1', 'project_id' => 1)
       expect(body['warnings']).to contain_exactly('Invalid query_id ignored', 'Baseline warning')
+    end
+  end
+
+  describe 'GET #queries' do
+    let(:current_user) { instance_double(User, id: 7) }
+    let(:visible_query) do
+      instance_double(IssueQuery, id: 12, name: 'Open issues', visibility: 2, project_id: 1)
+    end
+    let(:project_query) do
+      instance_double(IssueQuery, id: 18, name: 'Team backlog', visibility: 0, project_id: 1)
+    end
+
+    before do
+      allow(User).to receive(:current).and_return(current_user)
+    end
+
+    it 'returns forbidden when view permission is missing' do
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: false, viewable: false, baseline_editable: false })
+      end
+
+      get :queries, params: { project_id: 'demo' }, format: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(JSON.parse(response.body)).to eq('error' => 'Permission denied')
+    end
+
+    it 'returns visible saved queries for the current project' do
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: true, viewable: true, baseline_editable: true })
+      end
+
+      relation = instance_double(ActiveRecord::Relation)
+      ordered_relation = instance_double(ActiveRecord::Relation)
+      allow(IssueQuery).to receive(:visible).with(current_user, project: project).and_return(relation)
+      allow(relation).to receive(:order).with(:name).and_return(ordered_relation)
+      allow(ordered_relation).to receive(:to_a).and_return([visible_query, project_query])
+
+      get :queries, params: { project_id: 'demo' }, format: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to eq(
+        'queries' => [
+          { 'id' => 12, 'name' => 'Open issues', 'is_public' => true, 'project_id' => 1 },
+          { 'id' => 18, 'name' => 'Team backlog', 'is_public' => false, 'project_id' => 1 }
+        ]
+      )
     end
   end
 
@@ -247,21 +298,21 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:ok)
       i18n_payload = controller.instance_variable_get(:@i18n)
-      expect(i18n_payload['label_row_height']).to eq(I18n.t(:label_row_height))
-      expect(i18n_payload['label_row_height_m']).to eq(I18n.t(:label_row_height_m))
-      expect(i18n_payload['label_status_completed']).to eq(I18n.t(:label_status_completed))
-      expect(i18n_payload['label_status_incomplete']).to eq(I18n.t(:label_status_incomplete))
-      expect(i18n_payload['label_peak']).to eq(I18n.t(:label_peak))
-      expect(i18n_payload['label_total']).to eq(I18n.t(:label_total))
-      expect(i18n_payload['label_workload']).to eq(I18n.t(:label_workload))
-      expect(i18n_payload['label_show_workload']).to eq(I18n.t(:label_show_workload))
-      expect(i18n_payload['label_capacity_threshold']).to eq(I18n.t(:label_capacity_threshold))
-      expect(i18n_payload['label_leaf_issues_only']).to eq(I18n.t(:label_leaf_issues_only))
-      expect(i18n_payload['label_include_closed_issues']).to eq(I18n.t(:label_include_closed_issues))
-      expect(i18n_payload['label_today_onward_only']).to eq(I18n.t(:label_today_onward_only))
-      expect(i18n_payload['label_save_baseline_filtered']).to eq(I18n.t(:label_save_baseline_filtered))
-      expect(i18n_payload['label_save_baseline_project']).to eq(I18n.t(:label_save_baseline_project))
-      expect(i18n_payload['label_baseline_scope']).to eq(I18n.t(:label_baseline_scope))
+      expect(i18n_payload['label_row_height']).to eq(canvas_gantt_t(:label_row_height))
+      expect(i18n_payload['label_row_height_m']).to eq(canvas_gantt_t(:label_row_height_m))
+      expect(i18n_payload['label_status_completed']).to eq(canvas_gantt_t(:label_status_completed))
+      expect(i18n_payload['label_status_incomplete']).to eq(canvas_gantt_t(:label_status_incomplete))
+      expect(i18n_payload['label_peak']).to eq(canvas_gantt_t(:label_peak))
+      expect(i18n_payload['label_total']).to eq(canvas_gantt_t(:label_total))
+      expect(i18n_payload['label_workload']).to eq(canvas_gantt_t(:label_workload))
+      expect(i18n_payload['label_show_workload']).to eq(canvas_gantt_t(:label_show_workload))
+      expect(i18n_payload['label_capacity_threshold']).to eq(canvas_gantt_t(:label_capacity_threshold))
+      expect(i18n_payload['label_leaf_issues_only']).to eq(canvas_gantt_t(:label_leaf_issues_only))
+      expect(i18n_payload['label_include_closed_issues']).to eq(canvas_gantt_t(:label_include_closed_issues))
+      expect(i18n_payload['label_today_onward_only']).to eq(canvas_gantt_t(:label_today_onward_only))
+      expect(i18n_payload['label_save_baseline_filtered']).to eq(canvas_gantt_t(:label_save_baseline_filtered))
+      expect(i18n_payload['label_save_baseline_project']).to eq(canvas_gantt_t(:label_save_baseline_project))
+      expect(i18n_payload['label_baseline_scope']).to eq(canvas_gantt_t(:label_baseline_scope))
     end
 
     it 'includes localized help labels in Japanese frontend i18n payload' do
@@ -270,29 +321,29 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
         expect(response).to have_http_status(:ok)
         i18n_payload = controller.instance_variable_get(:@i18n)
-        expect(i18n_payload['label_help']).to eq(I18n.t(:label_help))
-        expect(i18n_payload['help_label_layout_filters']).to eq(I18n.t(:help_label_layout_filters))
-        expect(i18n_payload['help_label_timeline_view']).to eq(I18n.t(:help_label_timeline_view))
-        expect(i18n_payload['help_label_editing_saving']).to eq(I18n.t(:help_label_editing_saving))
-        expect(i18n_payload['help_desc_maximize_left']).to eq(I18n.t(:help_desc_maximize_left))
-        expect(i18n_payload['help_desc_workload']).to eq(I18n.t(:help_desc_workload))
-        expect(i18n_payload['help_desc_prev_next_month']).to eq(I18n.t(:help_desc_prev_next_month))
-        expect(i18n_payload['button_close']).to eq(I18n.t(:button_close))
-        expect(i18n_payload['label_notifications']).to eq(I18n.t(:label_notifications))
-        expect(i18n_payload['label_peak']).to eq(I18n.t(:label_peak))
-        expect(i18n_payload['label_total']).to eq(I18n.t(:label_total))
-        expect(i18n_payload['label_workload']).to eq(I18n.t(:label_workload))
-        expect(i18n_payload['label_show_workload']).to eq(I18n.t(:label_show_workload))
-        expect(i18n_payload['label_unassigned']).to eq(I18n.t(:label_unassigned))
-        expect(i18n_payload['label_none']).to eq('(未設定)')
-        expect(i18n_payload['label_capacity_threshold']).to eq(I18n.t(:label_capacity_threshold))
-        expect(i18n_payload['label_leaf_issues_only']).to eq(I18n.t(:label_leaf_issues_only))
-        expect(i18n_payload['label_include_closed_issues']).to eq(I18n.t(:label_include_closed_issues))
-        expect(i18n_payload['label_today_onward_only']).to eq(I18n.t(:label_today_onward_only))
-        expect(i18n_payload['label_auto_schedule_move_mode']).to eq(I18n.t(:label_auto_schedule_move_mode))
-        expect(i18n_payload['label_auto_schedule_move_mode_off']).to eq(I18n.t(:label_auto_schedule_move_mode_off))
-        expect(i18n_payload['label_auto_schedule_move_mode_constraint_push']).to eq(I18n.t(:label_auto_schedule_move_mode_constraint_push))
-        expect(i18n_payload['label_auto_schedule_move_mode_linked_shift']).to eq(I18n.t(:label_auto_schedule_move_mode_linked_shift))
+        expect(i18n_payload['label_help']).to eq(canvas_gantt_t(:label_help))
+        expect(i18n_payload['help_label_layout_filters']).to eq(canvas_gantt_t(:help_label_layout_filters))
+        expect(i18n_payload['help_label_timeline_view']).to eq(canvas_gantt_t(:help_label_timeline_view))
+        expect(i18n_payload['help_label_editing_saving']).to eq(canvas_gantt_t(:help_label_editing_saving))
+        expect(i18n_payload['help_desc_maximize_left']).to eq(canvas_gantt_t(:help_desc_maximize_left))
+        expect(i18n_payload['help_desc_workload']).to eq(canvas_gantt_t(:help_desc_workload))
+        expect(i18n_payload['help_desc_prev_next_month']).to eq(canvas_gantt_t(:help_desc_prev_next_month))
+        expect(i18n_payload['button_close']).to eq(canvas_gantt_t(:button_close))
+        expect(i18n_payload['label_notifications']).to eq(canvas_gantt_t(:label_notifications))
+        expect(i18n_payload['label_peak']).to eq(canvas_gantt_t(:label_peak))
+        expect(i18n_payload['label_total']).to eq(canvas_gantt_t(:label_total))
+        expect(i18n_payload['label_workload']).to eq(canvas_gantt_t(:label_workload))
+        expect(i18n_payload['label_show_workload']).to eq(canvas_gantt_t(:label_show_workload))
+        expect(i18n_payload['label_unassigned']).to eq(canvas_gantt_t(:label_unassigned))
+        expect(i18n_payload['label_none']).to eq(canvas_gantt_t(:label_none))
+        expect(i18n_payload['label_capacity_threshold']).to eq(canvas_gantt_t(:label_capacity_threshold))
+        expect(i18n_payload['label_leaf_issues_only']).to eq(canvas_gantt_t(:label_leaf_issues_only))
+        expect(i18n_payload['label_include_closed_issues']).to eq(canvas_gantt_t(:label_include_closed_issues))
+        expect(i18n_payload['label_today_onward_only']).to eq(canvas_gantt_t(:label_today_onward_only))
+        expect(i18n_payload['label_auto_schedule_move_mode']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode))
+        expect(i18n_payload['label_auto_schedule_move_mode_off']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_off))
+        expect(i18n_payload['label_auto_schedule_move_mode_constraint_push']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_constraint_push))
+        expect(i18n_payload['label_auto_schedule_move_mode_linked_shift']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_linked_shift))
       end
     end
 
@@ -302,27 +353,27 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
         expect(response).to have_http_status(:ok)
         i18n_payload = controller.instance_variable_get(:@i18n)
-        expect(i18n_payload['label_help']).to eq(I18n.t(:label_help))
-        expect(i18n_payload['help_label_layout_filters']).to eq(I18n.t(:help_label_layout_filters))
-        expect(i18n_payload['help_label_timeline_view']).to eq(I18n.t(:help_label_timeline_view))
-        expect(i18n_payload['help_label_editing_saving']).to eq(I18n.t(:help_label_editing_saving))
-        expect(i18n_payload['help_desc_maximize_left']).to eq(I18n.t(:help_desc_maximize_left))
-        expect(i18n_payload['help_desc_workload']).to eq(I18n.t(:help_desc_workload))
-        expect(i18n_payload['help_desc_prev_next_month']).to eq(I18n.t(:help_desc_prev_next_month))
-        expect(i18n_payload['button_close']).to eq(I18n.t(:button_close))
-        expect(i18n_payload['label_notifications']).to eq(I18n.t(:label_notifications))
-        expect(i18n_payload['label_peak']).to eq(I18n.t(:label_peak))
-        expect(i18n_payload['label_total']).to eq(I18n.t(:label_total))
-        expect(i18n_payload['label_workload']).to eq(I18n.t(:label_workload))
-        expect(i18n_payload['label_show_workload']).to eq(I18n.t(:label_show_workload))
-        expect(i18n_payload['label_capacity_threshold']).to eq(I18n.t(:label_capacity_threshold))
-        expect(i18n_payload['label_leaf_issues_only']).to eq(I18n.t(:label_leaf_issues_only))
-        expect(i18n_payload['label_include_closed_issues']).to eq(I18n.t(:label_include_closed_issues))
-        expect(i18n_payload['label_today_onward_only']).to eq(I18n.t(:label_today_onward_only))
-        expect(i18n_payload['label_auto_schedule_move_mode']).to eq(I18n.t(:label_auto_schedule_move_mode))
-        expect(i18n_payload['label_auto_schedule_move_mode_off']).to eq(I18n.t(:label_auto_schedule_move_mode_off))
-        expect(i18n_payload['label_auto_schedule_move_mode_constraint_push']).to eq(I18n.t(:label_auto_schedule_move_mode_constraint_push))
-        expect(i18n_payload['label_auto_schedule_move_mode_linked_shift']).to eq(I18n.t(:label_auto_schedule_move_mode_linked_shift))
+        expect(i18n_payload['label_help']).to eq(canvas_gantt_t(:label_help))
+        expect(i18n_payload['help_label_layout_filters']).to eq(canvas_gantt_t(:help_label_layout_filters))
+        expect(i18n_payload['help_label_timeline_view']).to eq(canvas_gantt_t(:help_label_timeline_view))
+        expect(i18n_payload['help_label_editing_saving']).to eq(canvas_gantt_t(:help_label_editing_saving))
+        expect(i18n_payload['help_desc_maximize_left']).to eq(canvas_gantt_t(:help_desc_maximize_left))
+        expect(i18n_payload['help_desc_workload']).to eq(canvas_gantt_t(:help_desc_workload))
+        expect(i18n_payload['help_desc_prev_next_month']).to eq(canvas_gantt_t(:help_desc_prev_next_month))
+        expect(i18n_payload['button_close']).to eq(canvas_gantt_t(:button_close))
+        expect(i18n_payload['label_notifications']).to eq(canvas_gantt_t(:label_notifications))
+        expect(i18n_payload['label_peak']).to eq(canvas_gantt_t(:label_peak))
+        expect(i18n_payload['label_total']).to eq(canvas_gantt_t(:label_total))
+        expect(i18n_payload['label_workload']).to eq(canvas_gantt_t(:label_workload))
+        expect(i18n_payload['label_show_workload']).to eq(canvas_gantt_t(:label_show_workload))
+        expect(i18n_payload['label_capacity_threshold']).to eq(canvas_gantt_t(:label_capacity_threshold))
+        expect(i18n_payload['label_leaf_issues_only']).to eq(canvas_gantt_t(:label_leaf_issues_only))
+        expect(i18n_payload['label_include_closed_issues']).to eq(canvas_gantt_t(:label_include_closed_issues))
+        expect(i18n_payload['label_today_onward_only']).to eq(canvas_gantt_t(:label_today_onward_only))
+        expect(i18n_payload['label_auto_schedule_move_mode']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode))
+        expect(i18n_payload['label_auto_schedule_move_mode_off']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_off))
+        expect(i18n_payload['label_auto_schedule_move_mode_constraint_push']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_constraint_push))
+        expect(i18n_payload['label_auto_schedule_move_mode_linked_shift']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_linked_shift))
       end
     end
   end

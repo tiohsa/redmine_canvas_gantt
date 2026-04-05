@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FilterOptions, Task, Relation, DraftRelation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus } from '../types';
+import type { FilterOptions, Task, Relation, DraftRelation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus, SavedQuery } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences, savePreferences } from '../utils/preferences';
@@ -61,6 +61,9 @@ interface TaskState {
     taskStatuses: TaskStatus[];
     customFields: CustomFieldMeta[];
     activeQueryId: number | null;
+    savedQueries: SavedQuery[];
+    savedQueriesStatus: 'idle' | 'loading' | 'ready' | 'error';
+    savedQueriesError: string | null;
     selectedStatusIds: number[];
     viewport: Viewport;
     viewMode: ViewMode;
@@ -141,6 +144,9 @@ interface TaskState {
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
     refreshData: () => Promise<void>;
+    loadSavedQueries: (force?: boolean) => Promise<void>;
+    applySavedQuery: (queryId: number) => Promise<void>;
+    clearSavedQuery: () => Promise<void>;
     setSortingSuspended: (suspended: boolean) => void;
     canDropAsChild: (sourceTaskId: string, targetTaskId: string) => boolean;
     canDropToRoot: (sourceTaskId: string) => boolean;
@@ -249,6 +255,45 @@ const buildAllExpandedStates = (state: TaskState, expanded: boolean) => {
     }
 
     return buildUniformExpansionMaps(state.allTasks, false);
+};
+
+type TaskStoreSet = (partial: Partial<TaskState>) => void;
+
+const applyApiDataToStore = (
+    data: Awaited<ReturnType<typeof import('../api/client').apiClient.fetchData>>,
+    state: TaskState,
+    set: TaskStoreSet
+) => {
+    if (!data) return;
+
+    const {
+        setTasks,
+        setRelations,
+        setVersions,
+        setFilterOptions,
+        setTaskStatuses,
+        setCustomFields,
+        setPermissions,
+        applyResolvedQueryState
+    } = state;
+
+    const nextResolved = data.initialState ?? toResolvedQueryStateFromStore(state);
+    // Be defensive: if we have an active query ID and the refresh returned no specific query, 
+    // keep the one we had to avoid flickering the UI selection.
+    if (nextResolved.queryId === undefined && state.activeQueryId !== null) {
+        nextResolved.queryId = state.activeQueryId;
+    }
+    applyResolvedQueryState(nextResolved);
+    setFilterOptions(data.filterOptions);
+    setTasks(data.tasks);
+    setRelations(data.relations);
+    setVersions(data.versions);
+    setTaskStatuses(data.statuses);
+    setCustomFields(data.customFields);
+    setPermissions(data.permissions ?? { editable: false, viewable: false, baselineEditable: false });
+    useBaselineStore.getState().setSnapshot(data.baseline ?? null, data.warnings ?? []);
+    set({ modifiedTaskIds: new Set() });
+    (data.warnings ?? []).forEach((warning) => useUIStore.getState().addNotification(warning, 'warning'));
 };
 
 const toDerivedTaskStatePatch = (derived: DerivedTaskState): DerivedTaskStatePatch => ({
@@ -404,6 +449,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     customFields: [],
     permissions: { editable: false, viewable: false, baselineEditable: false },
     activeQueryId: initialUrlState.queryId ?? null,
+    savedQueries: [],
+    savedQueriesStatus: 'idle',
+    savedQueriesError: null,
     selectedStatusIds: [],
     viewport: DEFAULT_VIEWPORT,
     viewMode: preferences.viewMode ?? 'Week',
@@ -1190,19 +1238,40 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const data = await apiClient.fetchData({
             query: toResolvedQueryStateFromStore(state)
         });
-        if (!data) return;
-        const { setTasks, setRelations, setVersions, setFilterOptions, setTaskStatuses, setCustomFields, setPermissions, applyResolvedQueryState } = state;
-        applyResolvedQueryState(data.initialState);
-        setFilterOptions(data.filterOptions);
-        setTasks(data.tasks);
-        setRelations(data.relations);
-        setVersions(data.versions);
-        setTaskStatuses(data.statuses);
-        setCustomFields(data.customFields);
-        setPermissions(data.permissions ?? { editable: false, viewable: false, baselineEditable: false });
-        useBaselineStore.getState().setSnapshot(data.baseline ?? null, data.warnings ?? []);
-        set({ modifiedTaskIds: new Set() });
-        (data.warnings ?? []).forEach((warning) => useUIStore.getState().addNotification(warning, 'warning'));
+        applyApiDataToStore(data, state, set);
+    },
+
+    loadSavedQueries: async (force = false) => {
+        const { savedQueriesStatus } = get();
+        if (!force && (savedQueriesStatus === 'loading' || savedQueriesStatus === 'ready')) {
+            return;
+        }
+
+        set({ savedQueriesStatus: 'loading', savedQueriesError: null });
+
+        try {
+            const { apiClient } = await import('../api/client');
+            const queries = await apiClient.fetchQueries();
+            set({ savedQueries: queries, savedQueriesStatus: 'ready' });
+        } catch (error) {
+            set({
+                savedQueries: [],
+                savedQueriesStatus: 'error',
+                savedQueriesError: error instanceof Error ? error.message : (i18n.t('label_saved_query_load_failed') || 'Failed to load saved queries')
+            });
+        }
+    },
+
+    applySavedQuery: async (queryId) => {
+        get().applyResolvedQueryState({ queryId });
+        await get().refreshData();
+    },
+
+    clearSavedQuery: async () => {
+        const state = get();
+        set({ activeQueryId: null });
+        syncSharedQueryState({ ...state, activeQueryId: null });
+        await get().refreshData();
     },
 
     saveChanges: async () => {

@@ -45,7 +45,7 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                 failCount = result.failCount;
 
                 if (successCount > 0) {
-                    addNotification(i18n.t('label_bulk_subtask_creation_success') || `${successCount} tasks created.`, 'success');
+                    addNotification(i18n.t('label_bulk_subtask_count_success', { count: successCount }) || `${successCount} tasks created.`, 'success');
                     setSubjects('');
                     setExpanded(false);
                     onTasksCreated?.();
@@ -54,7 +54,7 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                 if (failCount > 0) {
                     const firstError = result.results.find((row) => row.status === 'error' && row.errors && row.errors.length > 0);
                     const detail = firstError?.errors?.[0];
-                    const defaultMessage = i18n.t('label_bulk_subtask_creation_partial_fail') || `${failCount} tasks failed.`;
+                    const defaultMessage = i18n.t('label_bulk_subtask_count_failed', { count: failCount }) || `${failCount} tasks failed.`;
                     addNotification(detail ? `${defaultMessage} (${detail})` : defaultMessage, 'error');
                 }
                 return { success: successCount, fail: failCount };

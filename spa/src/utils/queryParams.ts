@@ -1,4 +1,5 @@
 import type { BusinessQueryState } from '../types';
+import { i18n } from './i18n';
 
 export interface ResolvedQueryState {
     queryId?: number | null;
@@ -9,6 +10,7 @@ export interface ResolvedQueryState {
     sortConfig?: BusinessQueryState['sortConfig'];
     groupBy?: 'project' | 'assignee' | null;
     showSubprojects?: boolean;
+    visibleColumns?: string[];
 }
 
 export interface QueryUrlStateSource {
@@ -21,6 +23,7 @@ export interface QueryUrlStateSource {
     groupByProject: boolean;
     groupByAssignee: boolean;
     showSubprojects: boolean;
+    visibleColumns?: string[];
 }
 
 type ResolveInitialSharedQueryStateResult = {
@@ -51,6 +54,26 @@ const SORT_FIELD_TO_REDMINE: Record<string, string> = {
 const REDMINE_SORT_TO_FIELD = Object.fromEntries(
     Object.entries(SORT_FIELD_TO_REDMINE).map(([field, redmine]) => [redmine, field])
 ) as Record<string, string>;
+
+const COLUMN_TO_REDMINE: Record<string, string> = {
+    id: 'id',
+    project: 'project',
+    tracker: 'tracker',
+    status: 'status',
+    priority: 'priority',
+    subject: 'subject',
+    author: 'author',
+    assignee: 'assigned_to',
+    updatedOn: 'updated_on',
+    category: 'category',
+    version: 'fixed_version',
+    startDate: 'start_date',
+    dueDate: 'due_date',
+    estimatedHours: 'estimated_hours',
+    ratioDone: 'done_ratio',
+    createdOn: 'created_on',
+    spentHours: 'spent_hours'
+};
 
 const isPersistedQueryId = (value: unknown): value is number =>
     typeof value === 'number' && Number.isInteger(value) && value > 0;
@@ -284,7 +307,8 @@ export const toResolvedQueryStateFromStore = (state: QueryUrlStateSource): Resol
     selectedVersionIds: state.selectedVersionIds,
     sortConfig: state.sortConfig ?? undefined,
     groupBy: state.groupByProject ? 'project' : (state.groupByAssignee ? 'assignee' : null),
-    showSubprojects: state.showSubprojects
+    showSubprojects: state.showSubprojects,
+    visibleColumns: state.visibleColumns
 });
 
 export const readIssueQueryParamsFromUrl = (search: string = window.location.search): ResolvedQueryState => {
@@ -365,7 +389,7 @@ export const buildRedmineIssueQueryParams = (
         const includesNone = businessState.selectedAssigneeIds.includes(null);
 
         if (includesNone && numericIds.length > 0) {
-            notices.push('Unassigned assignee filter was omitted because Redmine URL export cannot combine it with specific assignees.');
+            notices.push(i18n.t('notice_unassigned_filter_omitted_in_redmine_url') || 'Unassigned assignee filter was omitted because Redmine URL export cannot combine it with specific assignees.');
         }
 
         if (numericIds.length > 0) {
@@ -386,7 +410,7 @@ export const buildRedmineIssueQueryParams = (
         const numericVersionIds = businessState.selectedVersionIds.filter((id) => id !== '_none');
 
         if (numericVersionIds.length !== businessState.selectedVersionIds.length) {
-            notices.push('No-version filter was omitted because Redmine URL export only supports explicit version IDs.');
+            notices.push(i18n.t('notice_no_version_filter_omitted_in_redmine_url') || 'No-version filter was omitted because Redmine URL export only supports explicit version IDs.');
         }
 
         if (numericVersionIds.length > 0) {
@@ -408,6 +432,15 @@ export const buildRedmineIssueQueryParams = (
         const sortField = toRedmineSortField(businessState.sortConfig.key);
         const isDefaultSort = businessState.sortConfig.key === DEFAULT_SORT_KEY && businessState.sortConfig.direction === DEFAULT_SORT_DIRECTION;
         if (sortField && !isDefaultSort) params.set('sort', `${sortField}:${businessState.sortConfig.direction}`);
+    }
+
+    if (state.visibleColumns && state.visibleColumns.length > 0) {
+        state.visibleColumns.forEach((key) => {
+            const redmineCol = COLUMN_TO_REDMINE[key];
+            if (redmineCol) {
+                params.append('c[]', redmineCol);
+            }
+        });
     }
 
     return { params, notices };

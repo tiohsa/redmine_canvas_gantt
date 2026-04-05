@@ -32,6 +32,8 @@ Redmine Canvas Gantt は、タイムラインを HTML5 Canvas で描画しつつ
 - 複数行入力による子チケット一括作成
 - フィルタ結果単位または project 全体で保存できるベースライン比較
 - プロジェクト、担当者、ステータス、バージョン、題名によるフィルタとグループ化
+- 保存済みクエリ選択時の表示列・ソート順の同期
+- クエリやフィルタが有効な際、ツールバーに視覚的なインジケータ（青いバッジ）を表示
 - バージョンヘッダー、進捗ライン、行高プリセット、UI 設定の永続化
 
 ## Demo
@@ -102,7 +104,8 @@ Redmine Canvas Gantt は、タイムラインを HTML5 Canvas で描画しつつ
 Canvas Gantt では、共有すべき業務条件と個人向けの UI 状態を分離して扱います。
 
 - 共有用の業務条件は URL パラメータと `query_id` から解決されます
-- ズーム、スクロール位置、サイドバー幅、表示列などの UI 状態は `localStorage` に保存されます
+- ズーム、スクロール位置、サイドバー幅などの個人的な UI 状態は `localStorage` に保存されます
+- 表示列やソート順は、Redmine 標準クエリと同期される共有可能な状態として扱われます
 - `Canvas Gantt` タブが bare `/canvas_gantt` を開いた場合に限り、共有クエリ条件はそのプロジェクトで最後に使った状態を `localStorage` から復元します
 - 同じ共有条件が複数ソースにある場合の優先順位は次の通りです
   URL パラメータ -> 保存済みクエリ (`query_id`) -> project 単位の last-used shared state -> デフォルト値
@@ -111,51 +114,43 @@ Canvas Gantt では、共有すべき業務条件と個人向けの UI 状態を
 
 Canvas Gantt は Redmine 標準のクエリ編集 UI を再実装しません。クエリの作成、編集、保存は Redmine 標準のチケット一覧で行い、Canvas Gantt は保存済みクエリと、対応済みの Redmine 標準 URL パラメータを受け取って表示に反映します。
 
-- Canvas Gantt のツールバーにある **Redmineでクエリ編集** で、現在のプロジェクトの標準チケット一覧を開きます
+- Canvas Gantt のツールバーにある **保存済みクエリ** メニューで、現在のプロジェクトで閲覧可能な保存済み Redmine クエリを選べます
+- 保存済みクエリを選ぶと `query_id` を適用して Canvas Gantt を再読み込みします
+- **保存済みクエリを解除** で `query_id` を外しつつ、現在解決済みの共有フィルタは URL に残せます
+- **この条件を保存** で、現在の条件を Redmine 標準のチケット一覧を iframe ダイアログで開いて保存できます
+- 同じメニューの **Redmineでクエリ編集** から、標準チケット一覧を現在のタブで開くこともできます
 - Redmine 標準の一覧画面でフィルタ条件を調整し、標準の **Save** でクエリを保存します
 - 一覧画面の **Canvas Ganttで開く** で、現在のチケット一覧 URL 状態を引き継いだまま Canvas Gantt に戻ります
 - 保存済みクエリを表示している場合は、戻り先 URL に `query_id` が含まれます
 - 未保存の標準フィルタを表示している場合は、対応している Redmine 標準 filter パラメータをそのまま引き継ぎます
 
-現在の表示が保存済みクエリそのものと一致している場合は `query_id` だけで十分です。保存済みクエリを開いたあとに Canvas Gantt 側で共有条件を追加変更した場合は、ツールバーから Redmine 一覧へ戻る際に `query_id` に加えて Redmine 標準の filter パラメータも付与し、可能な範囲で同じ表示条件を再現します。
+iframe ダイアログが使いにくい環境向けに、**新しいタブで開く** fallback も用意しています。
+
+現在の表示が保存済みクエリそのものと一致している場合は `query_id` だけで十分です。表示列やソート順も保存済みクエリの定義に従って復元されます。保存済みクエリを開いたあとに Canvas Gantt 側で共有条件（フィルタ、列表示、ソート）を追加変更した場合は、ツールバーから Redmine 一覧へ戻る際に `query_id` に加えて Redmine 標準のフィルタおよびカラム指定パラメータも付与し、可能な範囲で同じ表示条件を再現します。
 
 project menu の `Canvas Gantt` タブが shared query なしの bare URL を開いた場合は、その project で最後に使った shared filter 状態を復元し、browser URL も canonical な shared query params に書き換えます。
 
 ### 対応している共有パラメータ
 
-- `query_id`: Redmine の保存済みチケットクエリを基底条件として使います。保存済みのクエリ ID のみ対応します
-- `status_ids[]`: ステータス ID で絞り込みます
-- `assigned_to_ids[]`: 担当者 ID で絞り込みます。未割当は `none` を使います
-- `project_ids[]`: 現在のプロジェクト配下で表示対象のプロジェクトを絞り込みます
-- `fixed_version_ids[]`: 対象バージョン ID で絞り込みます。未設定は `none` を使います
-- `group_by`: `project` または `assigned_to`
-- `sort`: フロントエンドのソートキーと方向を指定します。例: `subject:asc`, `startDate:desc`
-- `show_subprojects`: `0` でサブプロジェクト非表示、未指定または `1` で表示
+| パラメータ            | 説明                                                                  |
+| :-------------------- | :-------------------------------------------------------------------- |
+| `query_id`            | Redmine の保存済みチケットクエリを基底条件として使用                  |
+| `status_ids[]`        | ステータス ID で絞り込み                                              |
+| `assigned_to_ids[]`   | 担当者 ID で絞り込み。未割当は `none` を指定                          |
+| `project_ids[]`       | 現在のプロジェクト配下で表示対象のプロジェクトを絞り込み              |
+| `fixed_version_ids[]` | 対象バージョン ID で絞り込み。未設定は `none` を指定                  |
+| `group_by`            | グループ化。`project` または `assigned_to`                            |
+| `sort`                | フロントエンドのソートキーと方向。例: `subject:asc`, `startDate:desc` |
+| `c[]`                 | 表示する列を指定（Redmine標準互換）。例: `c[]=subject&c[]=status`     |
+| `show_subprojects`    | サブプロジェクト非表示設定。`0` で非表示、未指定または `1` で表示     |
 
-さらに、以下の Redmine 標準チケット一覧パラメータも読めます:
+### Redmine 標準チケット一覧との互換性
 
-- `set_filter=1`
-- `f[]`
-- `op[field]`
-- `v[field][]`
-- `group_by`
-- `sort`
-
-対応している Redmine 標準 field:
-
-- `status_id`
-- `assigned_to_id`
-- `project_id`
-- `fixed_version_id`
-- `subproject_id`
-
-対応している Redmine 標準 operator:
-
-- `=`
-- `*`
-- `!*`
-- `o`
-- `c`
+| 項目               | 内容                                                                             |
+| :----------------- | :------------------------------------------------------------------------------- |
+| **パラメータ**     | `set_filter=1`, `f[]`, `op[field]`, `v[field][]`, `c[]`, `group_by`, `sort`      |
+| **対応フィールド** | `status_id`, `assigned_to_id`, `project_id`, `fixed_version_id`, `subproject_id` |
+| **対応演算子**     | `=` (等しい), `*` (すべて), `!*` (なし), `o` (未完了), `c` (完了)                |
 
 現在の互換性の制限:
 
@@ -200,7 +195,7 @@ project menu の `Canvas Gantt` タブが shared query なしの bare URL を開
 
 **管理** -> **プラグイン** -> **Canvas Gantt** -> **設定** から設定します。
 
-- インライン編集切替: `subject`, `assigned_to`, `status`, `done_ratio`, `due_date`, `custom_fields`
+- **インライン編集切替**: `subject`, `assigned_to`, `status`, `done_ratio`, `due_date`, `custom_fields`
 - `row_height`: デフォルト行高
 - `use_vite_dev_server`: 開発時に `http://localhost:5173` のフロントエンド資産を利用
 

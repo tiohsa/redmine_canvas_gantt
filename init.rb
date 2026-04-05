@@ -1,6 +1,4 @@
 require 'redmine'
-require_dependency File.expand_path('lib/redmine_canvas_gantt/issues_query_actions_hook', __dir__)
-require_dependency File.expand_path('app/helpers/redmine_canvas_gantt/query_link_helper', __dir__)
 
 Redmine::Plugin.register :redmine_canvas_gantt do
   name 'Redmine Canvas Gantt plugin'
@@ -11,7 +9,7 @@ Redmine::Plugin.register :redmine_canvas_gantt do
   author_url 'https://github.com/tiohsa/redmine_canvas_gantt'
 
   project_module :canvas_gantt do
-    permission :view_canvas_gantt, { canvas_gantts: [:index, :data] }
+    permission :view_canvas_gantt, { canvas_gantts: [:index, :data, :queries] }
     permission :edit_canvas_gantt, { canvas_gantts: [:update, :bulk_create_subtasks, :destroy_relation, :save_baseline] }
   end
 

@@ -7,8 +7,9 @@ import { BulkSubtaskCreator } from './BulkSubtaskCreator';
 import type { BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
-const MIN_DIALOG_HEIGHT_PX = 320;
-const DEFAULT_DIALOG_WIDTH_PX = 1600;
+const MIN_DIALOG_HEIGHT_PX = 600;
+const DEFAULT_DIALOG_WIDTH_PX = 1200;
+const MIN_DIALOG_WIDTH_PX = 800;
 
 type ObserverWindow = Window & {
     ResizeObserver?: typeof ResizeObserver;
@@ -56,7 +57,9 @@ const getIssueDialogContentHeight = (doc: Document): number => {
 
 export const IssueIframeDialog: React.FC = () => {
     const issueDialogUrl = useUIStore(state => state.issueDialogUrl);
+    const queryDialogUrl = useUIStore(state => state.queryDialogUrl);
     const closeIssueDialog = useUIStore(state => state.closeIssueDialog);
+    const closeQueryDialog = useUIStore(state => state.closeQueryDialog);
     const refreshData = useTaskStore(state => state.refreshData);
     const iframeRef = React.useRef<HTMLIFrameElement>(null);
     const bulkRef = React.useRef<BulkSubtaskCreatorHandle>(null);
@@ -70,11 +73,17 @@ export const IssueIframeDialog: React.FC = () => {
     const [iframeError, setIframeError] = React.useState<string | null>(null);
     const [isSaving, setIsSaving] = React.useState(false);
     const [dialogHeightPx, setDialogHeightPx] = React.useState<number | null>(null);
+    const activeDialogUrl = queryDialogUrl || issueDialogUrl;
+    const isQueryDialog = Boolean(queryDialogUrl);
 
     const handleClose = React.useCallback(() => {
-        closeIssueDialog();
+        if (queryDialogUrl) {
+            closeQueryDialog();
+        } else {
+            closeIssueDialog();
+        }
         void refreshData();
-    }, [closeIssueDialog, refreshData]);
+    }, [closeIssueDialog, closeQueryDialog, queryDialogUrl, refreshData]);
 
     const measureDialogHeight = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;
@@ -147,7 +156,7 @@ export const IssueIframeDialog: React.FC = () => {
             const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
             if (!doc) return;
 
-            applyIssueDialogStyles(doc);
+            applyIssueDialogStyles(doc, isQueryDialog);
             bindIframeSizeObservers(doc);
 
             iframe.classList.remove('issue-iframe-loading');
@@ -184,7 +193,13 @@ export const IssueIframeDialog: React.FC = () => {
                 const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
                 const isIssueShow = Boolean(issueMatch) && !path.includes('/edit') && !path.includes('/new');
 
-                if (!error && isIssueShow) {
+                const isQuerySuccess = isQueryDialog && !error && (
+                    path.endsWith('/issues') ||
+                    path.includes('/projects/') && path.endsWith('/issues') ||
+                    path.match(/\/queries\/\d+$/) // some plugins redirect here
+                );
+
+                if (!error && (isIssueShow || isQuerySuccess)) {
                     const newIssueId = issueMatch?.[1];
 
                     if (newIssueId && bulkRef.current?.hasSubjects()) {
@@ -205,16 +220,19 @@ export const IssueIframeDialog: React.FC = () => {
             }
             setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
         }
-    }, [bindIframeSizeObservers, handleClose, isSaving, measureDialogHeight]);
+    }, [bindIframeSizeObservers, handleClose, isQueryDialog, isSaving, measureDialogHeight]);
 
     const handleSave = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;
         if (!doc) return;
 
-        const form = doc.querySelector('#issue-form') as HTMLFormElement;
+        const issueForm = doc.querySelector('#issue-form') as HTMLFormElement;
+        const queryForm = doc.querySelector('#query-form') as HTMLFormElement;
+        const form = issueForm || queryForm;
+
         if (form) {
             setIsSaving(true);
-            const submitBtn = doc.querySelector('#issue-form input[name="commit"]') as HTMLElement;
+            const submitBtn = doc.querySelector('input[name="commit"]') as HTMLElement;
             if (submitBtn) {
                 submitBtn.click();
             } else {
@@ -224,9 +242,15 @@ export const IssueIframeDialog: React.FC = () => {
     }, []);
 
     const { issueLabel, issueSubject } = React.useMemo(() => {
-        if (!issueDialogUrl) return { issueLabel: '', issueSubject: '' };
+        if (!activeDialogUrl) return { issueLabel: '', issueSubject: '' };
+        if (isQueryDialog) {
+            return {
+                issueLabel: i18n.t('label_saved_query_editor') || 'Saved Query Editor',
+                issueSubject: ''
+            };
+        }
 
-        const url = issueDialogUrl.split('?')[0];
+        const url = activeDialogUrl.split('?')[0];
 
         // 1. Try to extract issue ID from /issues/123 or /issues/123/edit
         const issueMatch = url.match(/\/issues\/(\d+)(?:\/edit)?/);
@@ -251,13 +275,13 @@ export const IssueIframeDialog: React.FC = () => {
         // 3. General "Edit" fallback
         const label = i18n.t('button_edit') || 'Edit';
         return { issueLabel: label, issueSubject: '' };
-    }, [issueDialogUrl]);
+    }, [activeDialogUrl, isQueryDialog]);
 
     const parentId = React.useMemo(() => {
-        if (!issueDialogUrl) return undefined;
+        if (!activeDialogUrl || isQueryDialog) return undefined;
 
         try {
-            const urlParsed = new URL(issueDialogUrl, window.location.origin);
+            const urlParsed = new URL(activeDialogUrl, window.location.origin);
             const path = urlParsed.pathname;
             const params = urlParsed.searchParams;
 
@@ -278,7 +302,7 @@ export const IssueIframeDialog: React.FC = () => {
             console.error("Failed to parse issue dialog URL", e);
             return undefined;
         }
-    }, [issueDialogUrl]);
+    }, [activeDialogUrl, isQueryDialog]);
 
     React.useEffect(() => {
         iframeEscapeCleanupRef.current?.();
@@ -288,10 +312,10 @@ export const IssueIframeDialog: React.FC = () => {
         setIframeError(null);
         setIsSaving(false);
         setDialogHeightPx(null);
-    }, [issueDialogUrl]);
+    }, [activeDialogUrl]);
 
     React.useEffect(() => {
-        if (!issueDialogUrl) {
+        if (!activeDialogUrl) {
             return;
         }
 
@@ -309,7 +333,7 @@ export const IssueIframeDialog: React.FC = () => {
         return () => {
             window.removeEventListener('keydown', handleEscape, true);
         };
-    }, [issueDialogUrl, handleClose]);
+    }, [activeDialogUrl, handleClose]);
 
     React.useEffect(() => () => {
         iframeEscapeCleanupRef.current?.();
@@ -321,7 +345,7 @@ export const IssueIframeDialog: React.FC = () => {
     }, []);
 
     React.useEffect(() => {
-        if (!issueDialogUrl) {
+        if (!activeDialogUrl) {
             return;
         }
 
@@ -351,9 +375,9 @@ export const IssueIframeDialog: React.FC = () => {
             dialogResizeCleanupRef.current?.();
             dialogResizeCleanupRef.current = null;
         };
-    }, [issueDialogUrl, iframeError, measureDialogHeight]);
+    }, [activeDialogUrl, iframeError, measureDialogHeight]);
 
-    if (!issueDialogUrl) return null;
+    if (!activeDialogUrl) return null;
 
     const compactHeaderPadding = '2px 12px';
     const compactFooterPadding = '2px 12px 4px 12px';
@@ -373,7 +397,7 @@ export const IssueIframeDialog: React.FC = () => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                zIndex: 2000
+                zIndex: 2400
             }}
             onClick={(e) => {
                 if (e.target === e.currentTarget) {
@@ -385,6 +409,7 @@ export const IssueIframeDialog: React.FC = () => {
                 style={{
                     width: `${DEFAULT_DIALOG_WIDTH_PX}px`,
                     maxWidth: '98vw',
+                    minWidth: `${MIN_DIALOG_WIDTH_PX}px`,
                     height: dialogHeightPx ? `${dialogHeightPx}px` : `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
                     maxHeight: `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
                     backgroundColor: 'white',
@@ -422,7 +447,7 @@ export const IssueIframeDialog: React.FC = () => {
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                         <a
-                            href={issueDialogUrl}
+                            href={activeDialogUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             aria-label="Open issue in new tab"
@@ -490,7 +515,7 @@ export const IssueIframeDialog: React.FC = () => {
                     ) : null}
                     <iframe
                         ref={iframeRef}
-                        src={issueDialogUrl}
+                        src={activeDialogUrl}
                         onLoad={handleIframeLoad}
                         style={{
                             width: '100%',
@@ -502,18 +527,20 @@ export const IssueIframeDialog: React.FC = () => {
                     />
                 </div>
 
-                {/* Bulk Creation Section - Fixed Height */}
-                <div ref={bulkSectionRef} style={{ flex: '0 0 auto', padding: '8px 12px 0 12px', backgroundColor: '#fff', borderTop: '1px solid #e0e0e0' }}>
-                    <BulkSubtaskCreator
-                        ref={bulkRef}
-                        parentId={parentId}
-                        hideStandaloneButton={true}
-                        showTopBorder={false}
-                        onTasksCreated={() => {
-                            void refreshData();
-                        }}
-                    />
-                </div>
+                {/* Bulk Creation Section - Only for Issues */}
+                {!isQueryDialog && (
+                    <div ref={bulkSectionRef} style={{ flex: '0 0 auto', padding: '8px 12px 0 12px', backgroundColor: '#fff', borderTop: '1px solid #e0e0e0' }}>
+                        <BulkSubtaskCreator
+                            ref={bulkRef}
+                            parentId={parentId}
+                            hideStandaloneButton={true}
+                            showTopBorder={false}
+                            onTasksCreated={() => {
+                                void refreshData();
+                            }}
+                        />
+                    </div>
+                )}
 
                 {/* Footer Buttons - Fixed Height */}
                 <div
@@ -549,28 +576,30 @@ export const IssueIframeDialog: React.FC = () => {
                     >
                         {i18n.t('button_cancel') || 'Cancel'}
                     </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        style={{
-                            height: `${compactActionButtonHeight}px`,
-                            padding: '0 12px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            background: isSaving ? '#ccc' : '#1a73e8',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: 4,
-                            fontSize: 13,
-                            fontWeight: 600,
-                            cursor: isSaving ? 'default' : 'pointer',
-                            minWidth: `${compactActionButtonMinWidth}px`,
-                            boxSizing: 'border-box'
-                        }}
-                    >
-                        {isSaving ? (i18n.t('label_loading') || 'Saving...') : (i18n.t('button_save') || 'Save')}
-                    </button>
+                    {!isQueryDialog && (
+                        <button
+                            onClick={handleSave}
+                            disabled={isSaving}
+                            style={{
+                                height: `${compactActionButtonHeight}px`,
+                                padding: '0 12px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: isSaving ? '#ccc' : '#1a73e8',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 4,
+                                fontSize: 13,
+                                fontWeight: 600,
+                                cursor: isSaving ? 'default' : 'pointer',
+                                minWidth: `${compactActionButtonMinWidth}px`,
+                                boxSizing: 'border-box'
+                            }}
+                        >
+                            {isSaving ? (i18n.t('label_loading') || 'Saving...') : (i18n.t('button_save') || 'Save')}
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

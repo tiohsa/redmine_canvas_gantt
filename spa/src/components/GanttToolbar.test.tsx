@@ -1,7 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { navigateToRedminePath } from '../utils/navigation';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { GanttToolbar } from './GanttToolbar';
 import { AutoScheduleMoveMode, RelationType } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
@@ -21,7 +20,8 @@ vi.mock('../utils/navigation', () => ({
 vi.mock('../api/client', () => ({
     apiClient: {
         saveBaseline: vi.fn(),
-        fetchData: vi.fn()
+        fetchData: vi.fn(),
+        fetchQueries: vi.fn()
     }
 }));
 
@@ -52,6 +52,7 @@ describe('GanttToolbar shortcuts', () => {
             project: { id: '1', name: 'Project' },
             permissions: { editable: true, viewable: true, baselineEditable: true }
         });
+        vi.mocked(apiClient.fetchQueries).mockResolvedValue([]);
     });
 
     const setStatusFilterState = (selectedStatusIds: number[] = []) => {
@@ -221,20 +222,24 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        expect(screen.getByRole('button', { name: 'Save Baseline' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Show Baseline' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Show Baseline' })).toBeDisabled();
+        const saveBaselineButton = screen.getByRole('button', { name: 'Save Baseline' });
+        const showBaselineButton = screen.getByRole('button', { name: 'Show Baseline' });
 
-        fireEvent.click(screen.getByRole('button', { name: 'Save Baseline' }));
-        fireEvent.click(screen.getByText('Save whole project as baseline'));
+        expect(saveBaselineButton).toBeInTheDocument();
+        expect(showBaselineButton).toBeInTheDocument();
+        expect(showBaselineButton).toBeDisabled();
 
-        await waitFor(() => {
-            expect(saveBaselineMock).toHaveBeenCalledWith(expect.objectContaining({ scope: 'project' }));
+        fireEvent.click(saveBaselineButton);
+        const baselineSaveMenu = await screen.findByTestId('baseline-save-menu');
+
+        await act(async () => {
+            fireEvent.click(within(baselineSaveMenu).getByRole('button', { name: 'Save whole project as baseline' }));
+            await Promise.resolve();
         });
 
-        await waitFor(() => {
-            expect(useBaselineStore.getState().hasBaseline).toBe(true);
-        });
+        expect(saveBaselineMock).toHaveBeenCalledWith(expect.objectContaining({ scope: 'project' }));
+        expect(useBaselineStore.getState().hasBaseline).toBe(true);
+        expect(screen.getByRole('button', { name: 'Show Baseline' })).toBeEnabled();
 
         fireEvent.click(screen.getByRole('button', { name: 'Show Baseline' }));
         expect(useUIStore.getState().showBaseline).toBe(true);
@@ -270,91 +275,195 @@ describe('GanttToolbar shortcuts', () => {
         expect(useUIStore.getState().issueDialogUrl).toBe('/redmine/projects/ecookbook/issues/new');
     });
 
-    it('navigates to the Redmine issue list with query_id when editing a saved query', () => {
+    it('loads and displays saved queries from the query menu', async () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
             ...config,
-            redmineBase: '/redmine',
             i18n: {
                 ...(config.i18n ?? {}),
-                label_edit_query_in_redmine_tooltip: 'Edit query in Redmine'
+                label_saved_queries: 'Saved queries'
+            }
+        };
+        vi.mocked(apiClient.fetchQueries).mockResolvedValue([
+            { id: 12, name: 'Open issues', isPublic: true, projectId: 1 }
+        ]);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+
+        expect(await screen.findByText('Open issues')).toBeInTheDocument();
+        expect(apiClient.fetchQueries).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders saved query menu labels from frontend i18n payload', async () => {
+        const config = getCanvasGanttConfig();
+        let resolveQueries: ((value: { id: number; name: string; isPublic: boolean; projectId: number }[]) => void) | undefined;
+        vi.mocked(apiClient.fetchQueries).mockImplementation(
+            () => new Promise((resolve) => {
+                resolveQueries = resolve;
+            })
+        );
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_saved_queries: '保存済みクエリ',
+                label_loading_saved_queries: '保存済みクエリを読み込み中...',
+                label_no_saved_queries: '保存済みクエリはありません',
+                label_clear_saved_query: '保存済みクエリを解除',
+                label_save_custom_query: 'この条件を保存'
             }
         };
 
         useTaskStore.setState({
-            filterText: '',
-            allTasks: [],
-            versions: [],
-            selectedAssigneeIds: [],
-            selectedProjectIds: [],
-            selectedVersionIds: [],
-            taskStatuses: [],
-            selectedStatusIds: [],
-            modifiedTaskIds: new Set(),
-            autoSave: true,
             activeQueryId: 12
         });
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
-        fireEvent.click(screen.getByTestId('edit-query-in-redmine-button'));
+        fireEvent.click(screen.getByTestId('query-menu-button'));
 
-        expect(navigateToRedminePath).toHaveBeenCalledWith('/projects/ecookbook/issues?query_id=12');
-    });
+        expect(await screen.findByText('保存済みクエリ')).toBeInTheDocument();
+        expect(screen.getByText('保存済みクエリを読み込み中...')).toBeInTheDocument();
 
-    it('navigates to the plain Redmine issue list when no saved query is active', () => {
-        const config = getCanvasGanttConfig();
-        window.RedmineCanvasGantt = {
-            ...config,
-            redmineBase: '/redmine',
-            i18n: {
-                ...(config.i18n ?? {}),
-                label_edit_query_in_redmine_tooltip: 'Edit query in Redmine'
-            }
-        };
-
-        useTaskStore.setState({
-            filterText: '',
-            allTasks: [],
-            versions: [],
-            selectedAssigneeIds: [],
-            selectedProjectIds: [],
-            selectedVersionIds: [],
-            taskStatuses: [],
-            selectedStatusIds: [],
-            modifiedTaskIds: new Set(),
-            autoSave: true,
-            activeQueryId: null
+        await act(async () => {
+            resolveQueries?.([]);
+            await Promise.resolve();
         });
 
-        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
-        fireEvent.click(screen.getByTestId('edit-query-in-redmine-button'));
-
-        expect(navigateToRedminePath).toHaveBeenCalledWith('/projects/ecookbook/issues');
+        expect(await screen.findByText('保存済みクエリはありません')).toBeInTheDocument();
+        expect(screen.getByTestId('clear-saved-query-button')).toHaveTextContent('保存済みクエリを解除');
+        expect(screen.getByTestId('save-custom-query-button')).toHaveTextContent('この条件を保存');
     });
 
-    it('navigates to the Redmine issue list with standard filter params when overrides exist', () => {
+    it('shows saved queries as a single-select radio group and marks the active query', async () => {
+        useTaskStore.setState({
+            activeQueryId: 12
+        });
+        vi.mocked(apiClient.fetchQueries).mockResolvedValue([
+            { id: 12, name: 'Open issues', isPublic: true, projectId: 1 },
+            { id: 18, name: 'Team backlog', isPublic: false, projectId: 1 }
+        ]);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+
+        const activeRadio = await screen.findByRole('radio', { name: 'Open issues' });
+        const inactiveRadio = await screen.findByRole('radio', { name: 'Team backlog' });
+
+        expect(activeRadio).toBeChecked();
+        expect(inactiveRadio).not.toBeChecked();
+    });
+
+    it('applies a saved query selection and refreshes data', async () => {
+        const applySavedQuery = vi.fn().mockImplementation(async (queryId: number) => {
+            useTaskStore.setState({ activeQueryId: queryId });
+        });
+        useTaskStore.setState({
+            applySavedQuery
+        });
+        vi.mocked(apiClient.fetchQueries).mockResolvedValue([
+            { id: 12, name: 'Open issues', isPublic: true, projectId: 1 }
+        ]);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+        fireEvent.click(await screen.findByTestId('saved-query-item-12'));
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().activeQueryId).toBe(12);
+            expect(applySavedQuery).toHaveBeenCalledWith(12);
+            expect(screen.getByTestId('query-menu')).toBeInTheDocument();
+            expect(screen.getByRole('radio', { name: 'Open issues' })).toBeChecked();
+        });
+    });
+
+    it('marks a saved query as selected immediately while apply is still in flight', async () => {
+        let resolveApply: (() => void) | undefined;
+        const applySavedQuery = vi.fn().mockImplementation(() => new Promise<void>((resolve) => {
+            resolveApply = resolve;
+        }));
+        useTaskStore.setState({
+            applySavedQuery,
+            activeQueryId: null
+        });
+        vi.mocked(apiClient.fetchQueries).mockResolvedValue([
+            { id: 12, name: 'Open issues', isPublic: true, projectId: 1 }
+        ]);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+        fireEvent.click(await screen.findByTestId('saved-query-item-12'));
+
+        expect(screen.getByRole('radio', { name: 'Open issues' })).toBeChecked();
+
+        resolveApply?.();
+    });
+
+    it('keeps the saved query checked after data refresh when the response omits initial state', async () => {
+        vi.mocked(apiClient.fetchQueries).mockResolvedValue([
+            { id: 12, name: 'Open issues', isPublic: true, projectId: 1 }
+        ]);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+        fireEvent.click(await screen.findByTestId('saved-query-item-12'));
+
+        await waitFor(() => {
+            expect(apiClient.fetchData).toHaveBeenCalled();
+        });
+
+        await waitFor(() => {
+            expect(screen.getByRole('radio', { name: 'Open issues' })).toBeChecked();
+        });
+    });
+
+    it('clears the active saved query without dropping the current shared filters', async () => {
+        const clearSavedQuery = vi.fn().mockImplementation(async () => {
+            useTaskStore.setState({
+                activeQueryId: null,
+                selectedStatusIds: [1, 2],
+                selectedProjectIds: ['3']
+            });
+        });
+        useTaskStore.setState({
+            activeQueryId: 12,
+            selectedStatusIds: [1, 2],
+            selectedProjectIds: ['3'],
+            clearSavedQuery
+        });
+        vi.mocked(apiClient.fetchQueries).mockResolvedValue([
+            { id: 12, name: 'Open issues', isPublic: true, projectId: 1 }
+        ]);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+        fireEvent.click(await screen.findByTestId('clear-saved-query-button'));
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().activeQueryId).toBeNull();
+            expect(useTaskStore.getState().selectedStatusIds).toEqual([1, 2]);
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['3']);
+            expect(clearSavedQuery).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('opens the saved query editor in the iframe dialog from the query menu', async () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
             ...config,
             redmineBase: '/redmine',
             i18n: {
                 ...(config.i18n ?? {}),
-                label_edit_query_in_redmine_tooltip: 'Edit query in Redmine'
+                label_save_custom_query: 'Save custom query'
             }
         };
 
         useTaskStore.setState({
-            filterText: '',
-            allTasks: [],
-            versions: [],
+            activeQueryId: 12,
+            selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7],
             selectedProjectIds: ['3'],
             selectedVersionIds: ['4'],
-            taskStatuses: [],
-            selectedStatusIds: [1, 2],
-            modifiedTaskIds: new Set(),
-            autoSave: true,
-            activeQueryId: 12,
             sortConfig: { key: 'startDate', direction: 'desc' },
             groupByProject: false,
             groupByAssignee: true,
@@ -362,11 +471,47 @@ describe('GanttToolbar shortcuts', () => {
         });
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
-        fireEvent.click(screen.getByTestId('edit-query-in-redmine-button'));
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+        fireEvent.click(await screen.findByTestId('save-custom-query-button'));
 
-        expect(navigateToRedminePath).toHaveBeenCalledWith(
-            '/projects/ecookbook/issues?query_id=12&f%5B%5D=status_id&op%5Bstatus_id%5D=%3D&v%5Bstatus_id%5D%5B%5D=1&v%5Bstatus_id%5D%5B%5D=2&f%5B%5D=assigned_to_id&op%5Bassigned_to_id%5D=%3D&v%5Bassigned_to_id%5D%5B%5D=7&f%5B%5D=project_id&op%5Bproject_id%5D=%3D&v%5Bproject_id%5D%5B%5D=3&f%5B%5D=fixed_version_id&op%5Bfixed_version_id%5D=%3D&v%5Bfixed_version_id%5D%5B%5D=4&f%5B%5D=subproject_id&op%5Bsubproject_id%5D=%21*&set_filter=1&group_by=assigned_to&sort=start_date%3Adesc'
-        );
+        await waitFor(() => {
+            expect(useUIStore.getState().queryDialogUrl).toBe(
+                '/redmine/projects/ecookbook/issues?query_id=12&f%5B%5D=status_id&op%5Bstatus_id%5D=%3D&v%5Bstatus_id%5D%5B%5D=1&v%5Bstatus_id%5D%5B%5D=2&f%5B%5D=assigned_to_id&op%5Bassigned_to_id%5D=%3D&v%5Bassigned_to_id%5D%5B%5D=7&f%5B%5D=project_id&op%5Bproject_id%5D=%3D&v%5Bproject_id%5D%5B%5D=3&f%5B%5D=fixed_version_id&op%5Bfixed_version_id%5D=%3D&v%5Bfixed_version_id%5D%5B%5D=4&f%5B%5D=subproject_id&op%5Bsubproject_id%5D=%21*&set_filter=1&group_by=assigned_to&sort=start_date%3Adesc&c%5B%5D=id&c%5B%5D=subject&c%5B%5D=status&c%5B%5D=assigned_to&c%5B%5D=start_date&c%5B%5D=due_date&c%5B%5D=done_ratio'
+            );
+        });
+    });
+
+    it('reloads saved queries only once after the query dialog closes', async () => {
+        vi.mocked(apiClient.fetchQueries).mockResolvedValue([
+            { id: 12, name: 'Open issues', isPublic: true, projectId: 1 }
+        ]);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+        await screen.findByText('Open issues');
+        expect(apiClient.fetchQueries).toHaveBeenCalledTimes(1);
+
+        act(() => {
+            useUIStore.getState().closeQueryDialog();
+        });
+
+        await waitFor(() => {
+            expect(apiClient.fetchQueries).toHaveBeenCalledTimes(2);
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(apiClient.fetchQueries).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not show open in new tab action in the query menu', async () => {
+        vi.mocked(apiClient.fetchQueries).mockResolvedValue([]);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+
+        await screen.findByTestId('save-custom-query-button');
+        expect(screen.queryByText(/open in new tab/i)).not.toBeInTheDocument();
     });
 
     it('updates row height via checkbox list menu and keeps it open', () => {
@@ -592,7 +737,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByLabelText('Notifications')).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: /reset/i }));
-        expect(useUIStore.getState().visibleColumns).toEqual(['id', 'notification', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone']);
+        expect(useUIStore.getState().visibleColumns).toEqual(['id', 'subject', 'notification', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone']);
     });
 
     it('toggles category column when clicking the row label text', () => {
@@ -699,7 +844,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(useUIStore.getState().visibleColumns).not.toContain('category');
     });
 
-    it('does not toggle the pinned task name column when clicking its row label', () => {
+    it('toggles the task name column when clicking its row label', () => {
         const { columnSettings } = setVisibleColumnsForTest(['id', 'subject', 'status']);
         useUIStore.setState({ visibleColumns: ['id', 'subject', 'status'], columnSettings });
 
@@ -721,12 +866,12 @@ describe('GanttToolbar shortcuts', () => {
         fireEvent.click(screen.getByTitle('Columns'));
         fireEvent.click(screen.getByText('Task Name'));
 
-        expect(screen.getByLabelText('Task Name')).toBeDisabled();
-        expect(useUIStore.getState().columnSettings.find((column) => column.key === 'subject')?.visible).toBe(true);
-        expect(useUIStore.getState().visibleColumns).toContain('subject');
+        expect(screen.getByLabelText('Task Name')).not.toBeDisabled();
+        expect(useUIStore.getState().columnSettings.find((column) => column.key === 'subject')?.visible).toBe(false);
+        expect(useUIStore.getState().visibleColumns).not.toContain('subject');
     });
 
-    it('does not toggle the pinned task name column from keyboard interaction', () => {
+    it('toggles the task name column from keyboard interaction', () => {
         const { columnSettings } = setVisibleColumnsForTest(['id', 'subject', 'status']);
         useUIStore.setState({ visibleColumns: ['id', 'subject', 'status'], columnSettings });
 
@@ -751,8 +896,8 @@ describe('GanttToolbar shortcuts', () => {
 
         fireEvent.keyDown(taskNameRow!, { key: 'Enter' });
 
-        expect(useUIStore.getState().columnSettings.find((column) => column.key === 'subject')?.visible).toBe(true);
-        expect(useUIStore.getState().visibleColumns).toContain('subject');
+        expect(useUIStore.getState().columnSettings.find((column) => column.key === 'subject')?.visible).toBe(false);
+        expect(useUIStore.getState().visibleColumns).not.toContain('subject');
     });
 
     it('drags category column to a new position', () => {

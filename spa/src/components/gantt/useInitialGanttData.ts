@@ -5,7 +5,7 @@ import { useBaselineStore } from '../../stores/BaselineStore';
 import { getMinFiniteStartDate } from '../../utils/taskRange';
 import type { CustomFieldMeta } from '../../types/editMeta';
 import type { FilterOptions, Relation, Task, Version, Viewport } from '../../types';
-import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState } from '../../utils/queryParams';
+import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState, toResolvedQueryStateFromStore } from '../../utils/queryParams';
 import { loadLastUsedSharedQueryState } from '../../utils/sharedQueryState';
 
 type Params = {
@@ -47,7 +47,9 @@ export const useInitialGanttData = ({
                 rawSearch: initialSharedQueryState.source === 'url' ? window.location.search : undefined,
                 query: initialSharedQueryState.state
             }).then(data => {
-                useTaskStore.getState().applyResolvedQueryState(data.initialState);
+                useTaskStore.getState().applyResolvedQueryState(
+                    data.initialState ?? toResolvedQueryStateFromStore(useTaskStore.getState())
+                );
                 setFilterOptions(data.filterOptions);
                 setTasks(data.tasks);
                 setRelations(data.relations);
@@ -56,6 +58,7 @@ export const useInitialGanttData = ({
                 useTaskStore.getState().setTaskStatuses(data.statuses ?? []);
                 useTaskStore.getState().setPermissions(data.permissions ?? { editable: false, viewable: false, baselineEditable: false });
                 useBaselineStore.getState().setSnapshot(data.baseline ?? null, data.warnings ?? []);
+                void useTaskStore.getState().loadSavedQueries();
                 (data.warnings ?? []).forEach((warning) => useUIStore.getState().addNotification(warning, 'warning'));
 
                 if (!viewportFromStorage) {

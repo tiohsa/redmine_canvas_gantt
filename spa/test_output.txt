@@ -1,0 +1,586 @@
+
+> spa@0.0.0 test
+> vitest --run
+
+
+[1m[46m RUN [49m[22m [36mv4.0.15 [39m[90m/home/glorydays/projects/src/ruby/redmine-all/plugins/redmine_canvas_gantt/spa[39m
+
+ [32m✓[39m src/utils/preferences.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 260[2mms[22m[39m
+ [32m✓[39m src/stores/TaskStore.test.ts [2m([22m[2m40 tests[22m[2m)[22m[32m 144[2mms[22m[39m
+ [32m✓[39m src/components/gantt/useInitialGanttData.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 136[2mms[22m[39m
+ [32m✓[39m src/components/BulkSubtaskCreator.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 351[2mms[22m[39m
+     [33m[2m✓[22m[39m creates tasks from non-empty lines and notifies success [33m 321[2mms[22m[39m
+ [32m✓[39m src/engines/InteractionEngine.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 191[2mms[22m[39m
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ [32m✓[39m src/components/InlineEditors.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 575[2mms[22m[39m
+     [33m[2m✓[22m[39m applies explicit control dimensions to searchable selects [33m 324[2mms[22m[39m
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ [32m✓[39m src/components/workload/WorkloadSidebar.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 883[2mms[22m[39m
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ [32m✓[39m src/components/HelpDialog.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 1240[2mms[22m[39m
+     [33m[2m✓[22m[39m renders help dialog in Japanese using frontend i18n payload [33m 722[2mms[22m[39m
+     [33m[2m✓[22m[39m renders help dialog in English using frontend i18n payload [33m 515[2mms[22m[39m
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ [32m✓[39m src/components/workload/WorkloadCanvasPanel.test.tsx [2m([22m[2m24 tests[22m[2m)[22m[33m 1279[2mms[22m[39m
+     [33m[2m✓[22m[39m clears histogram override and local suppression across mixed overload and histogram interactions [33m 366[2mms[22m[39m
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ [32m✓[39m src/components/BlurSave.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 1166[2mms[22m[39m
+     [33m[2m✓[22m[39m saves Status on blur when changed [33m 625[2mms[22m[39m
+     [33m[2m✓[22m[39m reverts Status on blur when unchanged [33m 305[2mms[22m[39m
+ [32m✓[39m src/utils/iframeStyles.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 35[2mms[22m[39m
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ [32m✓[39m src/utils/queryParams.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ [32m✓[39m src/components/GanttContainer.resize.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 1164[2mms[22m[39m
+     [33m[2m✓[22m[39m should use ew-resize and restore previous body styles during sidebar resize [33m 439[2mms[22m[39m
+ [32m✓[39m src/renderers/WorkloadRenderer.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 120[2mms[22m[39m
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ [32m✓[39m src/api/client.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/scheduling/criticalPath.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m src/components/HtmlOverlay.test.tsx [2m([22m[2m20 tests[22m[2m)[22m[33m 1671[2mms[22m[39m
+     [33m[2m✓[22m[39m opens a draft relation popover after dragging a dependency handle when auto apply is off [33m 364[2mms[22m[39m
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ [32m✓[39m src/stores/WorkloadStore.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+[90mstderr[2m | src/components/UiSidebar.test.tsx[2m > [22m[2mUiSidebar[2m > [22m[2mauto-scrolls from row dragover near the body edge and keeps the child highlight
+[22m[39mAn update to UiSidebar inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+[90mstderr[2m | src/components/UiSidebar.test.tsx[2m > [22m[2mUiSidebar[2m > [22m[2mkeeps the root drop highlight while auto-scrolling over the body background
+[22m[39mAn update to UiSidebar inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+ [32m✓[39m src/components/UiSidebar.test.tsx [2m([22m[2m18 tests[22m[2m)[22m[33m 2051[2mms[22m[39m
+     [33m[2m✓[22m[39m shows the version inline edit empty option using the version-specific unset label [33m 344[2mms[22m[39m
+ [32m✓[39m src/services/TaskLogicService.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/services/InlineEditService.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/engines/LayoutEngine.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/renderers/relationGeometry.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/utils/relationEditing.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/renderers/OverlayRenderer.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/renderers/BaselineRenderer.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/services/WorkloadLogicService.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/stores/UIStore.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/scheduling/constraintGraph.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/utils/baseline.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/stores/EditMetaStore.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/utils/sharedQueryState.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/components/gantt/toolbarSelection.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/utils/sidebarWidth.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/components/sidebar/sidebarAutoScroll.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/components/gantt/contentSize.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/renderers/dependencyIndicators.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/export/csv.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m src/engines/viewportPan.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m src/renderers/dependencyRouting.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/utils/time.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m src/api/editMeta.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 4[2mms[22m[39m
+ [31m❯[39m src/components/IssueIframeDialog.test.tsx [2m([22m[2m12 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[33m 4270[2mms[22m[39m
+[31m     [31m×[31m applies iframe styles on load[39m[32m 168[2mms[22m[39m
+[31m     [31m×[31m hides iframe until load completes[39m[32m 74[2mms[22m[39m
+     [32m✓[39m shows error message when iframe contains an error[32m 64[2mms[22m[39m
+     [32m✓[39m closes the dialog when Escape key is pressed[32m 58[2mms[22m[39m
+     [33m[2m✓[22m[39m renders compact chrome with left-aligned footer actions [33m 808[2mms[22m[39m
+[31m     [31m×[31m shrinks dialog height for short iframe content[39m[33m 1080[2mms[22m[39m
+     [32m✓[39m clamps dialog height for tall iframe content[32m 65[2mms[22m[39m
+     [33m[2m✓[22m[39m closes dialog when save transitions to issue show even if issue-form remains [33m 480[2mms[22m[39m
+     [33m[2m✓[22m[39m closes dialog when save transitions to issue show without issue-form [33m 390[2mms[22m[39m
+     [33m[2m✓[22m[39m keeps dialog open on issue show path when save result has error [33m 479[2mms[22m[39m
+     [33m[2m✓[22m[39m closes dialog when saving from new issue page to issue show [33m 311[2mms[22m[39m
+     [32m✓[39m resets saving state when dialog is reopened[32m 292[2mms[22m[39m
+ [32m✓[39m src/utils/redmineUrl.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/components/sidebar/sidebarNotifications.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m src/utils/taskRange.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+[90mstderr[2m | src/components/GanttToolbar.test.tsx[2m > [22m[2mGanttToolbar shortcuts[2m > [22m[2mmarks a saved query as selected immediately while apply is still in flight
+[22m[39mAn update to GanttToolbar inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ [31m❯[39m src/components/GanttToolbar.test.tsx [2m([22m[2m40 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[33m 12795[2mms[22m[39m
+     [33m[2m✓[22m[39m opens filter input with Ctrl+F and cancels with Escape [33m 354[2mms[22m[39m
+     [33m[2m✓[22m[39m renders workload menu labels from frontend i18n payload [33m 306[2mms[22m[39m
+     [32m✓[39m toggles left and right pane maximization buttons[32m 173[2mms[22m[39m
+     [32m✓[39m shows relation settings button in toolbar[32m 163[2mms[22m[39m
+     [33m[2m✓[22m[39m shows baseline controls and saves a snapshot when permissions allow [33m 3987[2mms[22m[39m
+     [32m✓[39m opens new issue dialog with redmineBase prefix[32m 49[2mms[22m[39m
+     [32m✓[39m loads and displays saved queries from the query menu[32m 83[2mms[22m[39m
+     [32m✓[39m shows saved queries as a single-select radio group and marks the active query[32m 147[2mms[22m[39m
+     [32m✓[39m applies a saved query selection and refreshes data[32m 126[2mms[22m[39m
+     [32m✓[39m marks a saved query as selected immediately while apply is still in flight[32m 109[2mms[22m[39m
+     [32m✓[39m keeps the saved query checked after data refresh when the response omits initial state[32m 145[2mms[22m[39m
+     [32m✓[39m clears the active saved query without dropping the current shared filters[32m 77[2mms[22m[39m
+[31m     [31m×[31m opens the saved query editor in the iframe dialog from the query menu[39m[33m 1086[2mms[22m[39m
+     [32m✓[39m reloads saved queries only once after the query dialog closes[32m 171[2mms[22m[39m
+     [32m✓[39m does not show open in new tab action in the query menu[32m 82[2mms[22m[39m
+     [32m✓[39m updates row height via checkbox list menu and keeps it open[32m 122[2mms[22m[39m
+     [32m✓[39m saves relation settings from toolbar menu[32m 108[2mms[22m[39m
+     [33m[2m✓[22m[39m localizes relation default setting labels [33m 1180[2mms[22m[39m
+     [33m[2m✓[22m[39m localizes relation settings dialog labels in english [33m 1137[2mms[22m[39m
+     [32m✓[39m localizes the help button title[32m 47[2mms[22m[39m
+     [32m✓[39m opens export menu and invokes CSV export[32m 61[2mms[22m[39m
+     [33m[2m✓[22m[39m shows notification column in the column menu and includes it in reset flow [33m 1165[2mms[22m[39m
+     [32m✓[39m toggles category column when clicking the row label text[32m 115[2mms[22m[39m
+     [32m✓[39m toggles category column when clicking the row background[32m 112[2mms[22m[39m
+     [32m✓[39m toggles category column when clicking its checkbox[32m 116[2mms[22m[39m
+     [32m✓[39m does not toggle a column when clicking its drag handle[32m 105[2mms[22m[39m
+[31m     [31m×[31m does not toggle the pinned task name column when clicking its row label[39m[32m 126[2mms[22m[39m
+[31m     [31m×[31m does not toggle the pinned task name column from keyboard interaction[39m[32m 148[2mms[22m[39m
+     [32m✓[39m drags category column to a new position[32m 159[2mms[22m[39m
+     [32m✓[39m toggles custom field columns in the column menu[32m 125[2mms[22m[39m
+     [32m✓[39m drags custom field columns in the column menu[32m 178[2mms[22m[39m
+     [32m✓[39m toggles assignee filter items when clicking the label text[32m 88[2mms[22m[39m
+     [32m✓[39m keeps unassigned selection checked after a refresh round-trip[32m 102[2mms[22m[39m
+     [32m✓[39m keeps select-all checked after a refresh round-trip[32m 90[2mms[22m[39m
+     [32m✓[39m keeps no-version checked after a refresh round-trip[32m 83[2mms[22m[39m
+     [32m✓[39m keeps all descendant projects visible in the project filter menu after a project is selected[32m 52[2mms[22m[39m
+     [32m✓[39m scopes assignee and version options by selected projects while keeping selected out-of-scope entries visible[32m 71[2mms[22m[39m
+     [32m✓[39m toggles the project select-all checkbox between all projects and no explicit project selection after refresh[32m 88[2mms[22m[39m
+     [32m✓[39m toggles completed and incomplete status groups[32m 77[2mms[22m[39m
+     [32m✓[39m recomputes grouped status checkbox states from individual selections[32m 79[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 6 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/components/GanttToolbar.test.tsx[2m > [22mGanttToolbar shortcuts[2m > [22mopens the saved query editor in the iframe dialog from the query menu
+[31m[1mAssertionError[22m[39m: expected '/redmine/projects/ecookbook/issues?qu…' to be '/redmine/projects/ecookbook/issues?qu…' // Object.is equality
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<div[39m
+        [33mstyle[39m=[32m"display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; background-color: rgb(255, 255, 255); border-bottom: 1px solid rgb(224, 224, 224); height: 60px; box-sizing: border-box;"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mstyle[39m=[32m"display: flex; gap: 8px; align-items: center; position: relative;"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33mdata-testid[39m=[32m"maximize-left-pane-button"[39m
+            [33mstyle[39m=[32m"display: flex; align-items: center; justify-content: center; padding: 0px; border-radius: 6px; border: 1px solid rgb(224, 224, 224); background-color: rgb(255, 255, 255); color: rgb(51, 51, 51); cursor: pointer; width: 32px; height: 32px;"[39m
+            [33mtitle[39m=[32m"Maximize List"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"18"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"18"[39m
+            [36m>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"18"[39m
+                [33mrx[39m=[32m"2"[39m
+                [33mry[39m=[32m"2"[39m
+                [33mwidth[39m=[32m"18"[39m
+                [33mx[39m=[32m"3"[39m
+                [33my[39m=[32m"3"[39m
+              [36m/>[39m
+              [36m<line[39m
+                [33mx1[39m=[32m"15"[39m
+                [33mx2[39m=[32m"15"[39m
+                [33my1[39m=[32m"3"[39m
+                [33my2[39m=[32m"21"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+          [36m<button[39m
+            [33mdata-testid[39m=[32m"maximize-right-pane-button"[39m
+            [33mstyle[39m=[32m"display: flex; align-items: center; justify-content: center; padding: 0px; border-radius: 6px; border: 1px solid rgb(224, 224, 224); background-color: rgb(255, 255, 255); color: rgb(51, 51, 51); cursor: pointer; width: 32px; height: 32px;"[39m
+            [33mtitle[39m=[32m"Maximize Chart"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"18"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"18"[39m
+            [36m>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"18"[39m
+                [33mrx[39m=[32m"2"[39m
+                [33mry[39m=[32m"2"[39m
+                [33mwidth[39m=[32m"18"[39m
+                [33mx[39m=[32m"3"[39m
+                [33my[39m=[32m"3"[39m
+              [36m/>[39m
+              [36m<line[39m
+                [33mx1[39m=[32m"9"[39m
+                [33mx2[39m=[32m"9"[39m
+                [33my1[39m=[32m"3"[39m
+                [33my2[39m=[32m"21"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+          [36m<button[39m
+            [33mstyle[39m=[32m"display: flex; align-items: center; justify-content: center; padding: 0px; border-radius: 6px; border: 1px solid rgb(224, 224, 224); background-color: rgb(255, 255, 255); color: rgb(51, 51, 51); cursor: pointer; width: 32px; height: 32px;"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"18"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"18"[39m
+            [36m>[39m
+              [36m<line[39m
+                [33mx1[39m=[32m"12"[39m
+                [33mx2[39m=[32m"12"[39m
+                [33my1[39m=[32m"5"[39m
+                [33my2[39m=[32m"19"[39m
+              [36m/>[39m
+              [36m<line[39m
+                [33mx1[39m=[32m"5"[39m
+                [33mx2[39m=[32m"19"[39m
+                [33my1[39m=[32m"12"[39m
+                [33my2[39m=[32m"12"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+          [36m<div[39m
+            [33mstyle[39m=[32m"position: relative;"[39m
+          [36m>[39m
+            [36m<button[39m
+              [33mstyle[39m=[32m"display: flex; align-items: center; justify-content: center; padding: 0px; border-radius: 6px; border: 1px solid rgb(224, 224, 224); background-color: rgb(255, 255, 255); color: rgb(51, 51, 51); cursor: pointer; width: 32px; height: 32px;"[39m
+              [33mtitle[39m=[32m"Filter Tasks"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"18"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"18"[39m
+              [36m>[39m
+                [36m<polygon[39m
+                  [33mpoints[39m=[32m"22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+            [36m</button>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mstyle[39m=[32m"position: relative;"[39m
+          [36m>[39m
+            [36m<button[39m
+              [33mdata-testid[39m=[32m"query-menu-button"[39m
+              [33mstyle[39m=[32m"display: flex; align-items: center; justify-content: center; padding: 0px; border-radius: 6px; border: 1px solid rgb(224, 224, 224); background-color: rgb(232, 240, 254); color: rgb(26, 115, 232); cursor: pointer; width: 32px; height: 32px;"[39m
+              [33mtitle[39m=[32m"Saved queries"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"18"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-lineca...
+
+Expected: [32m"/redmine/projects/ecookbook/issues?query_id=12&f%5B%5D=status_id&op%5Bstatus_id%5D=%3D&v%5Bstatus_id%5D%5B%5D=1&v%5Bstatus_id%5D%5B%5D=2&f%5B%5D=assigned_to_id&op%5Bassigned_to_id%5D=%3D&v%5Bassigned_to_id%5D%5B%5D=7&f%5B%5D=project_id&op%5Bproject_id%5D=%3D&v%5Bproject_id%5D%5B%5D=3&f%5B%5D=fixed_version_id&op%5Bfixed_version_id%5D=%3D&v%5Bfixed_version_id%5D%5B%5D=4&f%5B%5D=subproject_id&op%5Bsubproject_id%5D=%21*&set_filter=1&group_by=assigned_to&sort=start_date%3Adesc"[39m
+Received: [31m"/redmine/projects/ecookbook/issues?query_id=12&f%5B%5D=status_id&op%5Bstatus_id%5D=%3D&v%5Bstatus_id%5D%5B%5D=1&v%5Bstatus_id%5D%5B%5D=2&f%5B%5D=assigned_to_id&op%5Bassigned_to_id%5D=%3D&v%5Bassigned_to_id%5D%5B%5D=7&f%5B%5D=project_id&op%5Bproject_id%5D=%3D&v%5Bproject_id%5D%5B%5D=3&f%5B%5D=fixed_version_id&op%5Bfixed_version_id%5D=%3D&v%5Bfixed_version_id%5D%5B%5D=4&f%5B%5D=subproject_id&op%5Bsubproject_id%5D=%21*&set_filter=1&group_by=assigned_to&sort=start_date%3Adesc[7m&c%5B%5D=id&c%5B%5D=subject&c%5B%5D=status&c%5B%5D=assigned_to&c%5B%5D=start_date&c%5B%5D=due_date&c%5B%5D=done_ratio[27m"[39m
+
+[36m [2m❯[22m src/components/GanttToolbar.test.tsx:[2m434:58[22m[39m
+
+[90m [2m❯[22m runWithExpensiveErrorDiagnosticsDisabled node_modules/@testing-library/dom/dist/config.js:[2m47:12[22m[39m
+[90m [2m❯[22m checkCallback node_modules/@testing-library/dom/dist/wait-for.js:[2m124:77[22m[39m
+[90m [2m❯[22m Timeout.checkRealTimersCallback node_modules/@testing-library/dom/dist/wait-for.js:[2m118:16[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/GanttToolbar.test.tsx[2m > [22mGanttToolbar shortcuts[2m > [22mdoes not toggle the pinned task name column when clicking its row label
+[31m[1mError[22m: [2mexpect([22m[31melement[31m[2m).toBeDisabled()[22m
+
+Received element is not disabled:
+  [31m<input
+  aria-label="Task Name"
+  checked=""
+  type="checkbox"
+/>[31m[39m
+[36m [2m❯[22m src/components/GanttToolbar.test.tsx:[2m825:52[22m[39m
+    [90m823| [39m        fireEvent[33m.[39m[34mclick[39m(screen[33m.[39m[34mgetByText[39m([32m'Task Name'[39m))[33m;[39m
+    [90m824| [39m
+    [90m825| [39m        [34mexpect[39m(screen[33m.[39m[34mgetByLabelText[39m([32m'Task Name'[39m))[33m.[39m[34mtoBeDisabled[39m()[33m;[39m
+    [90m   | [39m                                                   [31m^[39m
+    [90m826| [39m        expect(useUIStore.getState().columnSettings.find((column) => c…
+    [90m827| [39m        expect(useUIStore.getState().visibleColumns).toContain('subjec…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/GanttToolbar.test.tsx[2m > [22mGanttToolbar shortcuts[2m > [22mdoes not toggle the pinned task name column from keyboard interaction
+[31m[1mAssertionError[22m: expected false to be true // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- true[39m
+[31m+ false[39m
+
+[36m [2m❯[22m src/components/GanttToolbar.test.tsx:[2m855:106[22m[39m
+    [90m853| [39m        fireEvent[33m.[39m[34mkeyDown[39m(taskNameRow[33m![39m[33m,[39m { key[33m:[39m [32m'Enter'[39m })[33m;[39m
+    [90m854| [39m
+    [90m855| [39m        expect(useUIStore.getState().columnSettings.find((column) => c…
+    [90m   | [39m                                                                                                         [31m^[39m
+    [90m856| [39m        expect(useUIStore.getState().visibleColumns).toContain('subjec…
+    [90m857| [39m    })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/IssueIframeDialog.test.tsx[2m > [22mIssueIframeDialog[2m > [22mapplies iframe styles on load
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called with arguments: [ Document{ location: null, …(1) } ][90m
+
+Received: 
+
+[1m  1st vi.fn() call:
+
+[22m[2m  [[22m
+[2m    Document {[22m
+[2m      "location": null,[22m
+[2m    },[22m
+[31m+   false,[90m
+[2m  ][22m
+[31m[90m
+
+Number of calls: [1m1[22m
+[31m[39m
+[36m [2m❯[22m src/components/IssueIframeDialog.test.tsx:[2m73:40[22m[39m
+    [90m 71| [39m        fireEvent[33m.[39m[34mload[39m(iframe)[33m;[39m
+    [90m 72| [39m
+    [90m 73| [39m        [34mexpect[39m(applyIssueDialogStyles)[33m.[39m[34mtoHaveBeenCalledWith[39m(doc)[33m;[39m
+    [90m   | [39m                                       [31m^[39m
+    [90m 74| [39m    })[33m;[39m
+    [90m 75| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/IssueIframeDialog.test.tsx[2m > [22mIssueIframeDialog[2m > [22mhides iframe until load completes
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called with arguments: [ Document{ location: null, …(1) } ][90m
+
+Received: 
+
+[1m  1st vi.fn() call:
+
+[22m[2m  [[22m
+[2m    Document {[22m
+[2m      "location": null,[22m
+[2m    },[22m
+[31m+   false,[90m
+[2m  ][22m
+[31m[90m
+
+Number of calls: [1m1[22m
+[31m[39m
+[36m [2m❯[22m src/components/IssueIframeDialog.test.tsx:[2m93:40[22m[39m
+    [90m 91| [39m
+    [90m 92| [39m        [34mexpect[39m(iframe)[33m.[39mnot[33m.[39m[34mtoHaveClass[39m([32m'issue-iframe-loading'[39m)[33m;[39m
+    [90m 93| [39m        [34mexpect[39m(applyIssueDialogStyles)[33m.[39m[34mtoHaveBeenCalledWith[39m(doc)[33m;[39m
+    [90m   | [39m                                       [31m^[39m
+    [90m 94| [39m    })[33m;[39m
+    [90m 95| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/IssueIframeDialog.test.tsx[2m > [22mIssueIframeDialog[2m > [22mshrinks dialog height for short iframe content
+[31m[1mAssertionError[22m[39m: expected '600px' to be '320px' // Object.is equality
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<div[39m
+        [33mstyle[39m=[32m"position: fixed; top: 0px; left: 0px; right: 0px; bottom: 0px; background-color: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 2400;"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mstyle[39m=[32m"width: 1200px; max-width: 98vw; min-width: 800px; height: 600px; max-height: 691px; background-color: white; border-radius: 6px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1); display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box;"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mdata-testid[39m=[32m"issue-dialog-header"[39m
+            [33mstyle[39m=[32m"flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 2px 12px; background-color: rgb(255, 255, 255); border-bottom: 1px solid rgb(224, 224, 224);"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mstyle[39m=[32m"display: flex; align-items: center; gap: 8px; overflow: hidden; flex: 1 1 0%; padding-right: 12px;"[39m
+            [36m>[39m
+              [36m<span[39m
+                [33mstyle[39m=[32m"font-weight: 700; font-size: 14px; color: rgb(51, 51, 51); white-space: nowrap; flex-shrink: 0;"[39m
+              [36m>[39m
+                [0mIssue #123[0m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mstyle[39m=[32m"display: flex; gap: 6px; flex-shrink: 0;"[39m
+            [36m>[39m
+              [36m<a[39m
+                [33maria-label[39m=[32m"Open issue in new tab"[39m
+                [33mhref[39m=[32m"/issues/123/edit"[39m
+                [33mrel[39m=[32m"noopener noreferrer"[39m
+                [33mstyle[39m=[32m"display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgb(224, 224, 224); background-color: rgb(255, 255, 255); color: rgb(51, 51, 51);"[39m
+                [33mtarget[39m=[32m"_blank"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"14"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"14"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"[39m
+                  [36m/>[39m
+                  [36m<polyline[39m
+                    [33mpoints[39m=[32m"15 3 21 3 21 9"[39m
+                  [36m/>[39m
+                  [36m<line[39m
+                    [33mx1[39m=[32m"10"[39m
+                    [33mx2[39m=[32m"21"[39m
+                    [33my1[39m=[32m"14"[39m
+                    [33my2[39m=[32m"3"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+              [36m</a>[39m
+              [36m<button[39m
+                [33maria-label[39m=[32m"Close issue dialog"[39m
+                [33mstyle[39m=[32m"display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgb(224, 224, 224); background-color: rgb(255, 255, 255); color: rgb(51, 51, 51); cursor: pointer;"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"15"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"15"[39m
+                [36m>[39m
+                  [36m<line[39m
+                    [33mx1[39m=[32m"18"[39m
+                    [33mx2[39m=[32m"6"[39m
+                    [33my1[39m=[32m"6"[39m
+                    [33my2[39m=[32m"18"[39m
+                  [36m/>[39m
+                  [36m<line[39m
+                    [33mx1[39m=[32m"6"[39m
+                    [33mx2[39m=[32m"18"[39m
+                    [33my1[39m=[32m"6"[39m
+                    [33my2[39m=[32m"18"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+              [36m</button>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mstyle[39m=[32m"flex: 1 1 auto; position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;"[39m
+          [36m>[39m
+            [36m<iframe[39m
+              [33mclass[39m=[32m""[39m
+              [33msrc[39m=[32m"/issues/123/edit"[39m
+              [33mstyle[39m=[32m"width: 100%; height: 100%; border: medium; flex: 1 1 0%;"[39m
+            [36m/>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mstyle[39m=[32m"flex: 0 0 auto; padding: 8px 12px 0px; background-color: rgb(255, 255, 255); border-top: 1px solid rgb(224, 224, 224);"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mstyle[39m=[32m"margin-top: 0px; border-top: medium; padding-top: 8px;"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mstyle[39m=[32m"display: flex; align-items: center; cursor: pointer; user-select: none; margin-bottom: 8px;"[39m
+              [36m>[39m
+                [36m<div[39m
+                  [33mstyle[39m=[32m"transform: rotate(0deg); transition: transform 0.2s; margin-right: 6px; font-size: 10px; color: rgb(102, 102, 102);"[39m
+                [36m>[39m
+                  [0m▶[0m
+                [36m</div>[39m
+                [36m<div[39m
+                  [33mstyle[39m=[32m"font-size: 13px; font-weight: 600; color: rgb(51, 51, 51);"[39m
+                [36m>[39m
+                  [0mBulk Ticket Creation[0m
+                [36m</div>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mdata-testid[39m=[32m"issue-dialog-footer"[39m
+            [33mstyle[39m=[32m"flex: 0 0 auto; padding: 2px 12px 4px; display: flex; justify-content: flex-start; gap: 6px; background-color: rgb(255, 255, 255);"[39m
+          [36m>[39m
+            [36m<button[39m
+              [33mstyle[39m=[32m"height: 28px; padding: 0px 12px; display: inline-flex; align-items: center; justify-content: center; background: rgb(255, 255, 255); color: rgb(51, 51, 51); border: 1px solid rgb(204, 204, 204); border-radius: 4px; font-size: 13px; cursor: pointer; min-width: 88px; box-sizing: border-box;"[39m
+            [36m>[39m
+              [0mCancel[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mstyle[39m=[32m"height: 28px; padding: 0px 12px; display: inline-flex; align-items: center; justify-content: center; background: rgb(26, 115, 232); color: rgb(255, 255, 255); border: medium; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; min-width: 88px; box-sizing: border-box;"[39m
+            [36m>[39m
+              [0mSave[0m
+            [36m</button>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+[36m</html>[39m
+
+Expected: [32m"[7m32[27m0px"[39m
+Received: [31m"[7m60[27m0px"[39m
+
+[36m [2m❯[22m src/components/IssueIframeDialog.test.tsx:[2m185:41[22m[39m
+    [90m183| [39m        [35mawait[39m [34mwaitFor[39m(() [33m=>[39m {
+    [90m184| [39m            const dialog = screen.getByTestId('issue-dialog-header').p…
+    [90m185| [39m            [34mexpect[39m(dialog[33m.[39mstyle[33m.[39mheight)[33m.[39m[34mtoBe[39m([32m'320px'[39m)[33m;[39m
+    [90m   | [39m                                        [31m^[39m
+    [90m186| [39m        })[33m;[39m
+    [90m187| [39m    })[33m;[39m
+[90m [2m❯[22m runWithExpensiveErrorDiagnosticsDisabled node_modules/@testing-library/dom/dist/config.js:[2m47:12[22m[39m
+[90m [2m❯[22m checkCallback node_modules/@testing-library/dom/dist/wait-for.js:[2m124:77[22m[39m
+[90m [2m❯[22m Timeout.checkRealTimersCallback node_modules/@testing-library/dom/dist/wait-for.js:[2m118:16[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m45 passed[39m[22m[90m (47)[39m
+[2m      Tests [22m [1m[31m6 failed[39m[22m[2m | [22m[1m[32m388 passed[39m[22m[90m (394)[39m
+[2m   Start at [22m 16:49:26
+[2m   Duration [22m 14.93s[2m (transform 9.58s, setup 10.45s, import 12.14s, tests 28.68s, environment 37.67s)[22m
+
