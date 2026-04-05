@@ -8,10 +8,32 @@
     query: query,
     request_query_parameters: request.query_parameters
   ) %>
+  <div id="canvas-gantt-query-action-source" style="display:none;">
+    <%= link_to(
+      l(:label_open_in_canvas_gantt),
+      canvas_gantt_url,
+      class: 'canvas-gantt-query-action',
+      id: 'canvas-gantt-query-action-link',
+      title: l(:label_open_in_canvas_gantt_tooltip),
+      style: 'margin-left: 0.75em;'
+    ) %>
+  </div>
   <script>
     (function() {
       var body = document.body;
       if (!body || !body.classList.contains('controller-issues') || !body.classList.contains('action-index')) return;
+
+      var source = document.getElementById('canvas-gantt-query-action-source');
+      var target = document.querySelector('#query_form_with_buttons p.buttons');
+      var action = source && source.firstElementChild;
+
+      if (target && action) {
+        var existing = action.id ? document.getElementById(action.id) : null;
+
+        if (!existing || existing === action) {
+          target.appendChild(action);
+        }
+      }
 
       var candidateSelectors = ['#main-menu a[href*="/canvas_gantt"]', '#project-menu a[href*="/canvas_gantt"]'];
       var menuLink = null;
