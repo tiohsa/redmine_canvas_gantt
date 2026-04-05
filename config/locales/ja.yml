@@ -71,8 +71,6 @@ ja:
     label_saved_query_editor_fallback: "埋め込みエディタを完全には読み込めませんでした。必要に応じてこのダイアログを閉じて Redmine エディタを開き直してください。"
     label_open_in_new_tab: "新しいタブで開く"
     label_close_saved_query_editor: "保存済みクエリエディタを閉じる"
-    label_open_in_canvas_gantt: "Canvas Ganttで開く"
-    label_open_in_canvas_gantt_tooltip: "現在のチケット一覧条件で Canvas Gantt を開きます"
     label_canvas_gantt_query_requires_save: "Canvas Gantt で再利用するには、まずクエリを保存してください。"
     label_critical_path_total_slack: "クリティカルパスのタスクです。総余裕期間: %{days} 稼働日。"
     notice_unassigned_filter_omitted_in_redmine_url: "担当者なしのフィルタは Redmine URL エクスポートでは他の担当者と組み合わせて指定できないため除外されました。"

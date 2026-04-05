@@ -71,8 +71,6 @@ en:
     label_saved_query_editor_fallback: "The embedded editor could not be fully loaded. Close this dialog and reopen the Redmine editor if needed."
     label_open_in_new_tab: "Open in new tab"
     label_close_saved_query_editor: "Close saved query editor"
-    label_open_in_canvas_gantt: "Open in Canvas Gantt"
-    label_open_in_canvas_gantt_tooltip: "Open Canvas Gantt with the current issue list query"
     label_canvas_gantt_query_requires_save: "To reuse this query in Canvas Gantt, save it first."
     label_critical_path_total_slack: "Critical path task. Total slack: %{days} working day(s)."
     notice_unassigned_filter_omitted_in_redmine_url: "Unassigned assignee filter was omitted because Redmine URL export cannot combine it with specific assignees."
