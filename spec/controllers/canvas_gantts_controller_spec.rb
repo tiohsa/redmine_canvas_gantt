@@ -111,6 +111,53 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe 'GET #queries' do
+    let(:current_user) { instance_double(User, id: 7) }
+    let(:visible_query) do
+      instance_double(IssueQuery, id: 12, name: 'Open issues', visibility: 2, project_id: 1)
+    end
+    let(:project_query) do
+      instance_double(IssueQuery, id: 18, name: 'Team backlog', visibility: 0, project_id: 1)
+    end
+
+    before do
+      allow(User).to receive(:current).and_return(current_user)
+    end
+
+    it 'returns forbidden when view permission is missing' do
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: false, viewable: false, baseline_editable: false })
+      end
+
+      get :queries, params: { project_id: 'demo' }, format: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(JSON.parse(response.body)).to eq('error' => 'Permission denied')
+    end
+
+    it 'returns visible saved queries for the current project' do
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: true, viewable: true, baseline_editable: true })
+      end
+
+      relation = instance_double(ActiveRecord::Relation)
+      ordered_relation = instance_double(ActiveRecord::Relation)
+      allow(IssueQuery).to receive(:visible).with(current_user, project: project).and_return(relation)
+      allow(relation).to receive(:order).with(:name).and_return(ordered_relation)
+      allow(ordered_relation).to receive(:to_a).and_return([visible_query, project_query])
+
+      get :queries, params: { project_id: 'demo' }, format: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to eq(
+        'queries' => [
+          { 'id' => 12, 'name' => 'Open issues', 'is_public' => true, 'project_id' => 1 },
+          { 'id' => 18, 'name' => 'Team backlog', 'is_public' => false, 'project_id' => 1 }
+        ]
+      )
+    end
+  end
+
   describe 'POST #save_baseline' do
     let(:baseline_repository) { instance_double(RedmineCanvasGantt::BaselineRepository) }
     let(:resolver) { instance_double(RedmineCanvasGantt::QueryStateResolver) }

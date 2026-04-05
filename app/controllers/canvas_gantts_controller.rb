@@ -52,6 +52,17 @@ class CanvasGanttsController < ApplicationController
     label_leaf_issues_only: :label_leaf_issues_only,
     label_include_closed_issues: :label_include_closed_issues,
     label_today_onward_only: :label_today_onward_only,
+    label_saved_queries: :label_saved_queries,
+    label_loading_saved_queries: :label_loading_saved_queries,
+    label_saved_query_load_failed: :label_saved_query_load_failed,
+    label_no_saved_queries: :label_no_saved_queries,
+    label_active_saved_query: :label_active_saved_query,
+    label_clear_saved_query: :label_clear_saved_query,
+    label_save_custom_query: :label_save_custom_query,
+    label_saved_query_editor: :label_saved_query_editor,
+    label_saved_query_editor_fallback: :label_saved_query_editor_fallback,
+    label_open_in_new_tab: :label_open_in_new_tab,
+    label_close_saved_query_editor: :label_close_saved_query_editor,
     label_edit_query_in_redmine: :label_edit_query_in_redmine,
     label_edit_query_in_redmine_tooltip: :label_edit_query_in_redmine_tooltip,
     label_critical_path_total_slack: :label_critical_path_total_slack,
@@ -279,11 +290,11 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'baseline_repository').to_s
 
   helper RedmineCanvasGantt::ViteAssetHelper
-  accept_api_auth :data, :edit_meta, :update, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation, :save_baseline
+  accept_api_auth :data, :queries, :edit_meta, :update, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation, :save_baseline
 
   before_action :find_project_by_project_id
   before_action :set_permissions
-  before_action :ensure_view_permission, only: [:index, :data, :edit_meta]
+  before_action :ensure_view_permission, only: [:index, :data, :queries, :edit_meta]
   before_action :ensure_edit_permission, only: [:update, :bulk_create_subtasks, :update_relation, :destroy_relation]
   skip_forgery_protection only: [:asset]
   skip_before_action :find_project_by_project_id, :set_permissions, only: [:asset]
@@ -329,6 +340,24 @@ class CanvasGanttsController < ApplicationController
     rescue => e
       render json: { error: e.message }, status: :internal_server_error
     end
+  end
+
+  # GET /projects/:project_id/canvas_gantt/queries.json
+  def queries
+    queries = IssueQuery.visible(User.current, project: @project).order(:name).to_a
+
+    render json: {
+      queries: queries.map do |query|
+        {
+          id: query.id,
+          name: query.name,
+          is_public: saved_query_public?(query),
+          project_id: query.project_id
+        }
+      end
+    }
+  rescue => e
+    render json: { error: e.message }, status: :internal_server_error
   end
 
   # POST /projects/:project_id/canvas_gantt/baseline.json
@@ -586,6 +615,12 @@ class CanvasGanttsController < ApplicationController
 
   def filter_option_issues(project_ids)
     Issue.visible.where(project_id: project_ids).includes(:assigned_to, :project).to_a
+  end
+
+  def saved_query_public?(query)
+    return query.is_public? if query.respond_to?(:is_public?)
+
+    query.visibility.to_i == 2
   end
 
   def ensure_issue_in_scope(issue)

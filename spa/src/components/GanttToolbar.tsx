@@ -833,7 +833,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                             {savedQueriesStatus === 'loading' && (
                                 <div style={{ color: '#666', fontSize: '13px' }}>
-                                    {i18n.t('label_loading') || 'Loading...'}
+                                    {i18n.t('label_loading_saved_queries') || 'Loading saved queries...'}
                                 </div>
                             )}
 
@@ -845,7 +845,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                             {savedQueriesStatus === 'ready' && savedQueries.length === 0 && (
                                 <div style={{ color: '#666', fontSize: '13px' }}>
-                                    {i18n.t('label_saved_query_empty') || 'No saved queries'}
+                                    {i18n.t('label_no_saved_queries') || 'No saved queries'}
                                 </div>
                             )}
 

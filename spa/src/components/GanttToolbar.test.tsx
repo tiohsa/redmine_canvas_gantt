@@ -295,6 +295,46 @@ describe('GanttToolbar shortcuts', () => {
         expect(apiClient.fetchQueries).toHaveBeenCalledTimes(1);
     });
 
+    it('renders saved query menu labels from frontend i18n payload', async () => {
+        const config = getCanvasGanttConfig();
+        let resolveQueries: ((value: { id: number; name: string; isPublic: boolean; projectId: number }[]) => void) | undefined;
+        vi.mocked(apiClient.fetchQueries).mockImplementation(
+            () => new Promise((resolve) => {
+                resolveQueries = resolve;
+            })
+        );
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_saved_queries: '保存済みクエリ',
+                label_loading_saved_queries: '保存済みクエリを読み込み中...',
+                label_no_saved_queries: '保存済みクエリはありません',
+                label_clear_saved_query: '保存済みクエリを解除',
+                label_save_custom_query: 'この条件を保存'
+            }
+        };
+
+        useTaskStore.setState({
+            activeQueryId: 12
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+
+        expect(await screen.findByText('保存済みクエリ')).toBeInTheDocument();
+        expect(screen.getByText('保存済みクエリを読み込み中...')).toBeInTheDocument();
+
+        await act(async () => {
+            resolveQueries?.([]);
+            await Promise.resolve();
+        });
+
+        expect(await screen.findByText('保存済みクエリはありません')).toBeInTheDocument();
+        expect(screen.getByTestId('clear-saved-query-button')).toHaveTextContent('保存済みクエリを解除');
+        expect(screen.getByTestId('save-custom-query-button')).toHaveTextContent('この条件を保存');
+    });
+
     it('shows saved queries as a single-select radio group and marks the active query', async () => {
         useTaskStore.setState({
             activeQueryId: 12
