@@ -77,8 +77,13 @@ export const useColumnMenuDrag = ({
     }, [effectiveColumnSettings]);
 
     const handleColumnDragStart = React.useCallback((key: string, event: React.DragEvent<HTMLElement>) => {
-        setDraggingColumnKey(key);
-        setDropBeforeColumnKey(key);
+        // Delay state updates to the next frame to allow the browser to capture 
+        // the correct drag preview image before React re-renders with the "dragging" state
+        requestAnimationFrame(() => {
+            setDraggingColumnKey(key);
+            setDropBeforeColumnKey(key);
+        });
+
         if (event.dataTransfer) {
             event.dataTransfer.effectAllowed = 'move';
             event.dataTransfer.setData('text/plain', key);

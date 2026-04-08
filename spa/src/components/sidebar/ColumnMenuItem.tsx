@@ -84,7 +84,7 @@ export const ColumnMenuItem: React.FC<ColumnMenuItemProps> = ({
         border: 'none',
         background: 'transparent',
         color: 'inherit',
-        cursor: draggable ? 'grab' : 'default',
+        cursor: draggable ? 'move' : 'default',
         padding: 0
       }}
     >
