@@ -1102,7 +1102,6 @@ export const UiSidebar: React.FC = () => {
                                                             initialValue={toDateInputValue(task.dueDate)}
                                                             min={toDateInputValue(task.startDate)}
                                                             controlHeight={inlineControlHeight}
-                                                            pickerOnly
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 // Handle clearing the date
@@ -1148,7 +1147,6 @@ export const UiSidebar: React.FC = () => {
                                                             initialValue={toDateInputValue(task.startDate)}
                                                             max={toDateInputValue(task.dueDate)}
                                                             controlHeight={inlineControlHeight}
-                                                            pickerOnly
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 // Handle clearing the date

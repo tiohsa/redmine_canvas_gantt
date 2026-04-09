@@ -136,11 +136,10 @@ describe('InlineEditors', () => {
         expect(screen.getByText(new Date(2025, 0, 15).toLocaleDateString())).toHaveStyle({ padding: '0px' });
     });
 
-    it('keeps the date label visible in pickerOnly mode', () => {
+    it('keeps the date label visible while the native date picker overlay is mounted', () => {
         render(
             <DueDateEditor
                 initialValue="2025-01-15"
-                pickerOnly
                 onCancel={vi.fn()}
                 onCommit={vi.fn().mockResolvedValue(undefined)}
             />

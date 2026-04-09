@@ -330,8 +330,7 @@ export const DueDateEditor: React.FC<{
     min?: string;
     max?: string;
     controlHeight?: number;
-    pickerOnly?: boolean;
-}> = ({ initialValue, onCommit, onCancel, min, max, controlHeight, pickerOnly = false }) => {
+}> = ({ initialValue, onCommit, onCancel, min, max, controlHeight }) => {
     const [value, setValue] = React.useState(initialValue);
     const [saving, setSaving] = React.useState(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
