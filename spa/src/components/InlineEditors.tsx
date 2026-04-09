@@ -2,6 +2,7 @@ import React from 'react';
 import { useUIStore } from '../stores/UIStore';
 import type { CustomFieldMeta } from '../types/editMeta';
 import { i18n } from '../utils/i18n';
+import { parseLocalDateInputValue } from '../utils/time';
 
 const DEFAULT_CONTROL_HEIGHT = 24;
 
@@ -329,10 +330,12 @@ export const DueDateEditor: React.FC<{
     min?: string;
     max?: string;
     controlHeight?: number;
-}> = ({ initialValue, onCommit, onCancel, min, max, controlHeight }) => {
+    pickerOnly?: boolean;
+}> = ({ initialValue, onCommit, onCancel, min, max, controlHeight, pickerOnly = false }) => {
     const [value, setValue] = React.useState(initialValue);
     const [saving, setSaving] = React.useState(false);
     const inputRef = React.useRef<HTMLInputElement>(null);
+    const lastCommittedValueRef = React.useRef<string | null>(null);
     const resolvedControlHeight = getResolvedControlHeight(controlHeight);
 
     React.useEffect(() => {
@@ -350,23 +353,35 @@ export const DueDateEditor: React.FC<{
     }, []);
 
     const commit = async (next: string) => {
-        if (next === initialValue) {
-            onCancel();
-            return;
-        }
-        setSaving(true);
+        if (next === lastCommittedValueRef.current) return;
+        lastCommittedValueRef.current = next;
+        let hasPendingAsyncCommit = false;
         try {
-            await onCommit(next);
+            const maybePromise = onCommit(next);
+            if (maybePromise && typeof (maybePromise as PromiseLike<void>).then === 'function') {
+                hasPendingAsyncCommit = true;
+                setSaving(true);
+                await maybePromise;
+            }
         } catch (e) {
+            lastCommittedValueRef.current = null;
             useUIStore.getState().addNotification(
                 e instanceof Error ? e.message : (i18n.t('label_failed_to_save') || 'Failed to save'),
                 'error'
             );
-            setSaving(false);
+        } finally {
+            if (hasPendingAsyncCommit) {
+                setSaving(false);
+            }
         }
     };
 
-    const displayValue = value ? value.replace(/-/g, '/') : '';
+    const displayValue = React.useMemo(() => {
+        if (!value) return '';
+        const timestamp = parseLocalDateInputValue(value);
+        if (!Number.isFinite(timestamp)) return value.replace(/-/g, '/');
+        return new Date(timestamp).toLocaleDateString();
+    }, [value]);
 
     return (
         <div
@@ -381,7 +396,7 @@ export const DueDateEditor: React.FC<{
             <span
                 style={{
                     color: '#666',
-                    padding: '0 8px',
+                    padding: 0,
                     fontSize: 13,
                     lineHeight: `${Math.max(resolvedControlHeight - 2, 18)}px`
                 }}
@@ -396,18 +411,24 @@ export const DueDateEditor: React.FC<{
                 value={value}
                 disabled={saving}
                 onChange={(e) => {
-                    setValue(e.target.value);
+                    const next = e.target.value;
+                    setValue(next);
+                    void commit(next);
                 }}
                 onKeyDown={(e) => {
-                    if (e.key === 'Enter') void commit(value);
                     if (e.key === 'Escape') onCancel();
                 }}
-                onBlur={() => {
-                    if (value === initialValue) {
-                        onCancel();
-                    } else {
-                        void commit(value);
+                onDoubleClick={() => {
+                    if (inputRef.current && typeof inputRef.current.showPicker === 'function') {
+                        try {
+                            inputRef.current.showPicker();
+                        } catch {
+                            // ignore
+                        }
                     }
+                }}
+                onBlur={() => {
+                    onCancel();
                 }}
                 style={{
                     position: 'absolute',

@@ -41,3 +41,20 @@ export function snapToLocalMonth(timestampMs: number): number {
     const shifted = new Date(timestampMs + (daysInMonth * ONE_DAY_MS) / 2);
     return new Date(shifted.getFullYear(), shifted.getMonth(), 1).getTime();
 }
+
+export function formatLocalDateInputValue(timestampMs: number | undefined): string {
+    if (timestampMs === undefined || !Number.isFinite(timestampMs)) return '';
+    const date = new Date(timestampMs);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+export function parseLocalDateInputValue(value: string): number {
+    if (!value) return Number.NaN;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return Number.NaN;
+    const [, year, month, day] = match;
+    return new Date(Number(year), Number(month) - 1, Number(day)).getTime();
+}

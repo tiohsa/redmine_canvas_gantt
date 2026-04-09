@@ -346,26 +346,232 @@ describe('UiSidebar', () => {
         const cell = await screen.findByTestId(`cell-${taskId}-startDate`);
         fireEvent.doubleClick(cell);
 
-        // Date input is likely not 'textbox' role
-        // Use selector
         const input = await waitFor(() => {
             const el = document.querySelector('input[type="date"]');
             if (!el) throw new Error('Date input not found');
-            return el;
+            return el as HTMLInputElement;
         });
 
         fireEvent.change(input, { target: { value: '2025-01-02' } });
-        fireEvent.keyDown(input, { key: 'Enter' });
 
         // Date changes should update local state only (for batch save)
         await waitFor(() => {
             const t = useTaskStore.getState().allTasks[0];
-            const expectedDate = new Date('2025-01-02').getTime();
+            const expectedDate = new Date(2025, 0, 2).getTime();
             expect(t?.startDate).toBe(expectedDate);
         });
 
-        // Verify task is marked for batch save
-        expect(useTaskStore.getState().modifiedTaskIds.has(taskId)).toBe(true);
+        // Verify task is marked for batch save and editor closes immediately
+        await waitFor(() => {
+            expect(useTaskStore.getState().modifiedTaskIds.has(taskId)).toBe(true);
+            expect(useUIStore.getState().activeInlineEdit).toBeNull();
+            expect(document.querySelector('input[type="date"]')).toBeNull();
+        });
+    });
+
+    it('applies start date selection immediately after calendar change without requiring blur', async () => {
+        const taskId = '123-calendar-change';
+
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key',
+            i18n: { button_edit: 'Edit', field_subject: 'Subject', field_assigned_to: 'Assignee', field_status: 'Status', field_done_ratio: 'Done', field_due_date: 'Due', label_none: 'Unassigned' },
+            settings: { inline_edit_start_date: '1' }
+        };
+
+        useUIStore.setState({ visibleColumns: ['id', 'startDate'], columnSettings: buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['id', 'startDate']), activeInlineEdit: null });
+        useEditMetaStore.setState({ metaByTaskId: {}, loadingTaskId: null, error: null });
+
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false,
+            selectedTaskId: null,
+            modifiedTaskIds: new Set()
+        });
+
+        const task: Task = {
+            id: taskId,
+            subject: 'Immediate calendar apply',
+            startDate: new Date('2025-01-01').getTime(),
+            dueDate: new Date('2025-01-05').getTime(),
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+
+        useTaskStore.getState().setTasks([task]);
+
+        render(<UiSidebar />);
+
+        const cell = await screen.findByTestId(`cell-${taskId}-startDate`);
+        fireEvent.doubleClick(cell);
+
+        const input = await waitFor(() => {
+            const el = document.querySelector('input[type="date"]');
+            if (!el) throw new Error('Date input not found');
+            return el as HTMLInputElement;
+        });
+
+        fireEvent.change(input, { target: { value: '2025-01-03' } });
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().allTasks[0]?.startDate).toBe(new Date(2025, 0, 3).getTime());
+            expect(useTaskStore.getState().modifiedTaskIds.has(taskId)).toBe(true);
+            expect(useUIStore.getState().activeInlineEdit).toBeNull();
+            expect(document.querySelector('input[type="date"]')).toBeNull();
+        });
+    });
+
+    it('applies due date selection immediately after calendar change without requiring blur', async () => {
+        const taskId = '123-due-calendar-change';
+
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key',
+            i18n: { button_edit: 'Edit', field_subject: 'Subject', field_assigned_to: 'Assignee', field_status: 'Status', field_done_ratio: 'Done', field_due_date: 'Due', label_none: 'Unassigned' },
+            settings: { inline_edit_due_date: '1' }
+        };
+
+        useUIStore.setState({ visibleColumns: ['id', 'dueDate'], columnSettings: buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['id', 'dueDate']), activeInlineEdit: null });
+        useEditMetaStore.setState({ metaByTaskId: {}, loadingTaskId: null, error: null });
+
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false,
+            selectedTaskId: null,
+            modifiedTaskIds: new Set()
+        });
+
+        const task: Task = {
+            id: taskId,
+            subject: 'Immediate due date apply',
+            startDate: new Date('2025-01-01').getTime(),
+            dueDate: new Date('2025-01-05').getTime(),
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+
+        useTaskStore.getState().setTasks([task]);
+
+        render(<UiSidebar />);
+
+        const cell = await screen.findByTestId(`cell-${taskId}-dueDate`);
+        fireEvent.doubleClick(cell);
+
+        const input = await waitFor(() => {
+            const el = document.querySelector('input[type="date"]');
+            if (!el) throw new Error('Date input not found');
+            return el as HTMLInputElement;
+        });
+
+        fireEvent.change(input, { target: { value: '2025-02-06' } });
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().allTasks[0]?.dueDate).toBe(new Date(2025, 1, 6).getTime());
+            expect(useTaskStore.getState().modifiedTaskIds.has(taskId)).toBe(true);
+            expect(useUIStore.getState().activeInlineEdit).toBeNull();
+            expect(document.querySelector('input[type="date"]')).toBeNull();
+        });
+    });
+
+    it('reopens start date inline edit immediately after blur when double clicking the same cell again', async () => {
+        const taskId = '123-reopen-start-date';
+
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key',
+            i18n: { button_edit: 'Edit', field_subject: 'Subject', field_assigned_to: 'Assignee', field_status: 'Status', field_done_ratio: 'Done', field_due_date: 'Due', label_none: 'Unassigned' },
+            settings: { inline_edit_start_date: '1' }
+        };
+
+        useUIStore.setState({ visibleColumns: ['id', 'startDate'], columnSettings: buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['id', 'startDate']), activeInlineEdit: null });
+        useEditMetaStore.setState({ metaByTaskId: {}, loadingTaskId: null, error: null });
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false,
+            selectedTaskId: null,
+            modifiedTaskIds: new Set()
+        });
+
+        const task: Task = {
+            id: taskId,
+            subject: 'Reopen start date',
+            startDate: new Date('2025-01-01').getTime(),
+            dueDate: new Date('2025-01-05').getTime(),
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+
+        useTaskStore.getState().setTasks([task]);
+
+        render(<UiSidebar />);
+
+        const cell = await screen.findByTestId(`cell-${taskId}-startDate`);
+        fireEvent.doubleClick(cell);
+
+        const firstInput = await waitFor(() => {
+            const el = document.querySelector('input[type="date"]');
+            if (!el) throw new Error('Date input not found');
+            return el as HTMLInputElement;
+        });
+
+        fireEvent.change(firstInput, { target: { value: '2025-01-03' } });
+
+        await waitFor(() => {
+            expect(useUIStore.getState().activeInlineEdit).toBeNull();
+            expect(document.querySelector('input[type="date"]')).toBeNull();
+        });
+
+        fireEvent.doubleClick(cell);
+
+        await waitFor(() => {
+            expect(document.querySelector('input[type="date"]')).not.toBeNull();
+            expect(useUIStore.getState().activeInlineEdit).toEqual({ taskId, field: 'startDate', source: 'cell' });
+        });
     });
 
     it('shows the version inline edit empty option using the version-specific unset label', async () => {

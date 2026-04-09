@@ -13,6 +13,7 @@ import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption } fr
 import type { BaselineSaveScope, BaselineSnapshot, BaselineTaskState } from '../types/baseline';
 import { buildIssueQueryParams, parseResolvedQueryState, type ResolvedQueryState } from '../utils/queryParams';
 import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/baseline';
+import { formatLocalDateInputValue, parseLocalDateInputValue } from '../utils/time';
 
 type ApiTask = Record<string, unknown>;
 type ApiRelation = Record<string, unknown>;
@@ -403,7 +404,7 @@ export const apiClient = {
 
         const parseDate = (value: string | null | undefined): number | null => {
             if (!value) return null;
-            const ts = new Date(value).getTime();
+            const ts = parseLocalDateInputValue(value);
             return Number.isFinite(ts) ? ts : null;
         };
 
@@ -727,8 +728,8 @@ export const apiClient = {
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
                 task: {
-                    start_date: (task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toISOString().split('T')[0] : null,
-                    due_date: (task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toISOString().split('T')[0] : null,
+                    start_date: (task.startDate && Number.isFinite(task.startDate)) ? formatLocalDateInputValue(task.startDate) : null,
+                    due_date: (task.dueDate && Number.isFinite(task.dueDate)) ? formatLocalDateInputValue(task.dueDate) : null,
                     parent_issue_id: task.parentId ? Number(task.parentId) : null,
                     lock_version: task.lockVersion
                 }

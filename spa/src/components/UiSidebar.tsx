@@ -10,6 +10,7 @@ import { CustomFieldEditor, DoneRatioEditor, DueDateEditor, EstimatedHoursEditor
 import { useEditMetaStore } from '../stores/EditMetaStore';
 import type { InlineEditSettings } from '../types/editMeta';
 import { i18n } from '../utils/i18n';
+import { parseLocalDateInputValue } from '../utils/time';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import { customFieldEditField, customFieldIdFromEditField, formatCustomFieldCellValue, type SidebarColumn } from './sidebar/sidebarColumns';
 import { mergeColumnSettings, resolveVisibleColumnKeys } from './sidebar/sidebarColumnSettings';
@@ -1101,20 +1102,25 @@ export const UiSidebar: React.FC = () => {
                                                             initialValue={toDateInputValue(task.dueDate)}
                                                             min={toDateInputValue(task.startDate)}
                                                             controlHeight={inlineControlHeight}
+                                                            pickerOnly
                                                             onCancel={close}
-                                                            onCommit={(next) => {
+                                                            onCommit={async (next) => {
                                                                 // Handle clearing the date
                                                                 if (next === '') {
                                                                     const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
                                                                     updateTask(task.id, { dueDate: undefined });
                                                                     if (autoSave) {
-                                                                        saveChanges().catch(console.error);
+                                                                        try {
+                                                                            await saveChanges();
+                                                                        } catch (error) {
+                                                                            console.error(error);
+                                                                        }
                                                                     }
                                                                     close();
                                                                     return;
                                                                 }
 
-                                                                const nextTs = new Date(next).getTime();
+                                                                const nextTs = parseLocalDateInputValue(next);
                                                                 if (!Number.isFinite(nextTs)) return;
                                                                 if (task.startDate !== undefined && Number.isFinite(task.startDate) && task.startDate! > nextTs) {
                                                                     useUIStore.getState().addNotification(i18n.t('label_invalid_date_range') || 'Invalid date range', 'warning');
@@ -1124,7 +1130,11 @@ export const UiSidebar: React.FC = () => {
                                                                 const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
                                                                 updateTask(task.id, { dueDate: nextTs });
                                                                 if (autoSave) {
-                                                                    saveChanges().catch(console.error);
+                                                                    try {
+                                                                        await saveChanges();
+                                                                    } catch (error) {
+                                                                        console.error(error);
+                                                                    }
                                                                 }
                                                                 close();
                                                             }}
@@ -1138,20 +1148,25 @@ export const UiSidebar: React.FC = () => {
                                                             initialValue={toDateInputValue(task.startDate)}
                                                             max={toDateInputValue(task.dueDate)}
                                                             controlHeight={inlineControlHeight}
+                                                            pickerOnly
                                                             onCancel={close}
-                                                            onCommit={(next) => {
+                                                            onCommit={async (next) => {
                                                                 // Handle clearing the date
                                                                 if (next === '') {
                                                                     const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
                                                                     updateTask(task.id, { startDate: undefined });
                                                                     if (autoSave) {
-                                                                        saveChanges().catch(console.error);
+                                                                        try {
+                                                                            await saveChanges();
+                                                                        } catch (error) {
+                                                                            console.error(error);
+                                                                        }
                                                                     }
                                                                     close();
                                                                     return;
                                                                 }
 
-                                                                const nextTs = new Date(next).getTime();
+                                                                const nextTs = parseLocalDateInputValue(next);
                                                                 if (!Number.isFinite(nextTs)) return;
                                                                 if (task.dueDate !== undefined && Number.isFinite(task.dueDate) && nextTs > task.dueDate!) {
                                                                     useUIStore.getState().addNotification(i18n.t('label_invalid_date_range') || 'Invalid date range', 'warning');
@@ -1161,7 +1176,11 @@ export const UiSidebar: React.FC = () => {
                                                                 const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
                                                                 updateTask(task.id, { startDate: nextTs });
                                                                 if (autoSave) {
-                                                                    saveChanges().catch(console.error);
+                                                                    try {
+                                                                        await saveChanges();
+                                                                    } catch (error) {
+                                                                        console.error(error);
+                                                                    }
                                                                 }
                                                                 close();
                                                             }}

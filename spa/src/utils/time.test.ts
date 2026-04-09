@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { snapToUtcDay } from './time';
+import { formatLocalDateInputValue, parseLocalDateInputValue, snapToUtcDay } from './time';
 
 describe('snapToUtcDay', () => {
     it('UTC 00:00 にスナップする', () => {
@@ -20,3 +20,19 @@ describe('snapToUtcDay', () => {
     });
 });
 
+describe('local date input helpers', () => {
+    it('formats a local-midnight timestamp without shifting the calendar day', () => {
+        const timestamp = new Date(2026, 3, 7).getTime();
+        expect(formatLocalDateInputValue(timestamp)).toBe('2026-04-07');
+    });
+
+    it('parses a date input value as local midnight instead of UTC midnight', () => {
+        const timestamp = parseLocalDateInputValue('2026-04-07');
+        expect(timestamp).toBe(new Date(2026, 3, 7).getTime());
+    });
+
+    it('round-trips a local calendar day without shifting', () => {
+        const original = new Date(2026, 3, 7).getTime();
+        expect(parseLocalDateInputValue(formatLocalDateInputValue(original))).toBe(original);
+    });
+});
