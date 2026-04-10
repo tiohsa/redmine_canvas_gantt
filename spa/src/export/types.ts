@@ -17,6 +17,7 @@ export interface GanttExportSnapshot {
     selectedRelationId: string | null;
     draftRelation: DraftRelation | null;
     showPointsOrphans: boolean;
+    showTaskTitles: boolean;
     showProgressLine: boolean;
     customFields: CustomFieldMeta[];
 }

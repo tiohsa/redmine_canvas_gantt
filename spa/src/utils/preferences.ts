@@ -9,6 +9,7 @@ export interface StoredPreferences {
     viewMode?: ViewMode;
     viewport?: Partial<StoredViewport>;
     showProgressLine?: boolean;
+    showTaskTitles?: boolean;
     showPointsOrphans?: boolean;
     showVersions?: boolean;
     showBaseline?: boolean;
@@ -39,6 +40,7 @@ const sanitizePreferences = (prefs: StoredPreferences): StoredPreferences => Obj
         viewMode: prefs.viewMode,
         viewport: prefs.viewport,
         showProgressLine: prefs.showProgressLine,
+        showTaskTitles: prefs.showTaskTitles,
         showPointsOrphans: prefs.showPointsOrphans,
         showVersions: prefs.showVersions,
         showBaseline: prefs.showBaseline,
@@ -159,4 +161,3 @@ export const savePreferences = (prefs: StoredPreferences, projectId?: string | n
         persistEnvelope(toEnvelope(nextProjectPrefs, projectKey));
     }
 };
-

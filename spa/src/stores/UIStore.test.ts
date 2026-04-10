@@ -40,6 +40,22 @@ describe('UIStore', () => {
         expect(useUIStore.getState().notifications).toHaveLength(0);
     });
 
+    it('toggles task title visibility', () => {
+        type UIStoreState = ReturnType<typeof useUIStore.getState> & {
+            showTaskTitles: boolean;
+            toggleTaskTitles: () => void;
+        };
+        const uiStore = useUIStore.getState() as UIStoreState;
+
+        expect(uiStore.showTaskTitles).toBe(true);
+
+        uiStore.toggleTaskTitles();
+        expect((useUIStore.getState() as UIStoreState).showTaskTitles).toBe(false);
+
+        uiStore.toggleTaskTitles();
+        expect((useUIStore.getState() as UIStoreState).showTaskTitles).toBe(true);
+    });
+
     it('toggles fullscreen and pane maximization states', () => {
         expect(useUIStore.getState().isFullScreen).toBe(false);
         expect(useUIStore.getState().leftPaneVisible).toBe(true);

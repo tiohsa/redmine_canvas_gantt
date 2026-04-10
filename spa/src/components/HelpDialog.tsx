@@ -203,6 +203,11 @@ export const HelpDialog: React.FC = () => {
                     description: i18n.t('help_desc_points_orphans') || 'Show or hide milestone indicators for tasks that only have a start date or a due date.'
                 },
                 {
+                    icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" /><circle cx="12" cy="12" r="2.5" /><line x1="4" y1="20" x2="14" y2="20" /></svg>,
+                    title: i18n.t('label_toggle_task_titles') || 'Toggle Task Titles',
+                    description: i18n.t('help_desc_task_titles') || 'Show or hide the task titles rendered on the chart next to task bars and milestone points.'
+                },
+                {
                     icon: <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>,
                     title: i18n.t('label_export') || 'Export',
                     description: i18n.t('help_desc_export') || 'Export the current Gantt view as a PNG image, or download the visible task data as CSV including hierarchy and dependency columns.'

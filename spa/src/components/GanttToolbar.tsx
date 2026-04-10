@@ -49,6 +49,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const {
         showProgressLine,
         toggleProgressLine,
+        showTaskTitles,
+        toggleTaskTitles,
         showBaseline,
         toggleBaseline,
         visibleColumns,
@@ -1702,6 +1704,35 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <path d="M12 2l3 5h6l-5 4 2 6-6-4-6 4 2-6-5-4h6z" />
                     </svg>
                     {showPointsOrphans && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    )}
+                </button>
+
+                <button
+                    data-testid="task-titles-toggle-button"
+                    onClick={toggleTaskTitles}
+                    title={i18n.t('label_toggle_task_titles') || 'Toggle Task Titles'}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: showTaskTitles ? '#e8f0fe' : '#fff',
+                        color: showTaskTitles ? '#1a73e8' : '#333',
+                        cursor: 'pointer',
+                        height: '32px',
+                        width: '32px',
+                        position: 'relative'
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
+                        <circle cx="12" cy="12" r="2.5" />
+                        <line x1="4" y1="20" x2="14" y2="20" />
+                    </svg>
+                    {showTaskTitles && (
                         <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
                     )}
                 </button>

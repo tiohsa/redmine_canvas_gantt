@@ -61,6 +61,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         leftPaneVisible,
         rightPaneVisible,
         showProgressLine,
+        showTaskTitles,
         showPointsOrphans,
         isSidebarResizing,
         setSidebarResizing
@@ -259,7 +260,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
             });
         }
         if (engines.current.task) {
-            engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows, showPointsOrphans, baselineSnapshot, showBaseline);
+            engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows, showTaskTitles, showPointsOrphans, baselineSnapshot, showBaseline);
         }
         if (engines.current.overlay) {
             engines.current.overlay.render(overlayRenderState);
@@ -267,6 +268,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
     }, [
         layoutRows,
         selectedTaskId,
+        showTaskTitles,
         showPointsOrphans,
         tasks,
         viewport,
@@ -303,11 +305,12 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
             selectedTaskId,
             selectedRelationId,
             draftRelation,
+            showTaskTitles,
             showPointsOrphans,
             showProgressLine,
             customFields
         };
-    }, [customFields, draftRelation, layoutRows, relations, rightPaneVisible, rowCount, selectedRelationId, selectedTaskId, showPointsOrphans, showProgressLine, tasks, viewport, zoomLevel]);
+    }, [customFields, draftRelation, layoutRows, relations, rightPaneVisible, rowCount, selectedRelationId, selectedTaskId, showTaskTitles, showPointsOrphans, showProgressLine, tasks, viewport, zoomLevel]);
 
     useImperativeHandle(ref, () => ({
         exportPng: async () => {

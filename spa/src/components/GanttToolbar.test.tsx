@@ -140,6 +140,33 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByText('今日以降のみ')).toBeInTheDocument();
     });
 
+    it('renders and toggles the task title visibility button', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_toggle_task_titles: 'タイトル表示切替'
+            }
+        };
+
+        useUIStore.setState({
+            ...useUIStore.getState(),
+            showTaskTitles: true
+        } as never);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        const button = screen.getAllByTitle('タイトル表示切替')[0];
+        expect(button).toBeInTheDocument();
+
+        fireEvent.click(button);
+        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(false);
+
+        fireEvent.click(button);
+        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
+    });
+
     it('toggles left and right pane maximization buttons', () => {
         useTaskStore.setState({
             filterText: '',
@@ -722,6 +749,35 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
         expect(screen.getByTitle('ヘルプ')).toBeInTheDocument();
+    });
+
+    it('renders task title toggle to the right of orphan points toggle and switches the flag', () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [],
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        const orphanToggle = screen.getByTitle('Toggle Orphan Date Points');
+        const titleToggle = screen.getByTitle('Toggle Task Titles');
+
+        expect(orphanToggle.compareDocumentPosition(titleToggle) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
+
+        fireEvent.click(titleToggle);
+        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(false);
+
+        fireEvent.click(titleToggle);
+        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
     });
 
     it('opens export menu and invokes CSV export', async () => {

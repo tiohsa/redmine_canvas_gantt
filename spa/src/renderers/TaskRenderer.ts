@@ -28,6 +28,7 @@ export class TaskRenderer {
         zoomLevel: ZoomLevel,
         relations: Relation[],
         layoutRows: LayoutRow[] = [],
+        showTaskTitles: boolean = true,
         showPointsOrphans: boolean = true,
         baselineSnapshot: BaselineSnapshot | null = null,
         showBaseline: boolean = false
@@ -69,8 +70,9 @@ export class TaskRenderer {
                         const x2 = LayoutEngine.dateToX(d + ONE_DAY, viewport) - viewport.scrollX;
                         const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
                         this.drawVersionSummaryBar(ctx, x1, x2, y, viewport.rowHeight, row.ratioDone ?? 0);
-                        // Draw Name
-                        this.drawSubjectBeforeBar(ctx, { subject: row.name } as Task, x1, y, x2 - x1, viewport.rowHeight);
+                        if (showTaskTitles) {
+                            this.drawSubjectBeforeBar(ctx, { subject: row.name } as Task, x1, y, x2 - x1, viewport.rowHeight);
+                        }
                     }
                 }
             }
@@ -101,8 +103,9 @@ export class TaskRenderer {
                     }
                 }
 
-                // Draw Subject BEFORE the bar (to the left)
-                this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
+                if (showTaskTitles) {
+                    this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
+                }
                 if (showBaseline) {
                     this.drawBaselineMarker(ctx, task, bounds, baselineSnapshot);
                 }
@@ -113,8 +116,9 @@ export class TaskRenderer {
                 const startX = LayoutEngine.dateToX(startDate, viewport) - viewport.scrollX;
                 this.drawTaskAsPoint(ctx, task, startX, rowY, viewport.rowHeight, 'triangle_right');
 
-                // Draw Subject BEFORE the point
-                this.drawSubjectBeforeBar(ctx, task, startX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
+                if (showTaskTitles) {
+                    this.drawSubjectBeforeBar(ctx, task, startX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
+                }
                 if (showBaseline) {
                     const pointBounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
                     this.drawBaselineMarker(ctx, task, pointBounds, baselineSnapshot);
@@ -126,8 +130,9 @@ export class TaskRenderer {
                 const dueX = LayoutEngine.dateToX(dueDate, viewport) - viewport.scrollX;
                 this.drawTaskAsPoint(ctx, task, dueX, rowY, viewport.rowHeight, 'diamond');
 
-                // Draw Subject BEFORE the point
-                this.drawSubjectBeforeBar(ctx, task, dueX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
+                if (showTaskTitles) {
+                    this.drawSubjectBeforeBar(ctx, task, dueX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
+                }
                 if (showBaseline) {
                     const pointBounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
                     this.drawBaselineMarker(ctx, task, pointBounds, baselineSnapshot);

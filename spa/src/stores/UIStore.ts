@@ -28,6 +28,7 @@ interface Notification {
 interface UIState {
     notifications: Notification[];
     showProgressLine: boolean;
+    showTaskTitles: boolean;
     showBaseline: boolean;
     visibleColumns: string[];
     columnSettings: ColumnConfig[];
@@ -50,6 +51,7 @@ interface UIState {
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
+    toggleTaskTitles: () => void;
     toggleBaseline: () => void;
     setShowBaseline: (value: boolean) => void;
     togglePointsOrphans: () => void;
@@ -94,6 +96,7 @@ const persistColumnSettings = (columnSettings: ColumnConfig[]) => {
 export const useUIStore = create<UIState>((set, get) => ({
     notifications: [],
     showProgressLine: preferences.showProgressLine ?? false,
+    showTaskTitles: preferences.showTaskTitles ?? true,
     showBaseline: preferences.showBaseline ?? false,
     showPointsOrphans: preferences.showPointsOrphans ?? true,
     leftPaneVisible: true,
@@ -142,6 +145,7 @@ export const useUIStore = create<UIState>((set, get) => ({
             notifications: state.notifications.filter((n) => n.id !== id)
         })),
     toggleProgressLine: () => set((state) => ({ showProgressLine: !state.showProgressLine })),
+    toggleTaskTitles: () => set((state) => ({ showTaskTitles: !state.showTaskTitles })),
     toggleBaseline: () => set((state) => ({ showBaseline: !state.showBaseline })),
     setShowBaseline: (value) => set(() => ({ showBaseline: value })),
     togglePointsOrphans: () => set((state) => ({ showPointsOrphans: !state.showPointsOrphans })),

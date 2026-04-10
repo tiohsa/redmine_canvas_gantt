@@ -23,6 +23,7 @@ const buildHelpTranslations = (language: 'ja' | 'en'): Record<string, string> =>
             label_relation_title: '日本語依存関係',
             label_organize_by_dependency: '日本語依存整理',
             label_toggle_points_orphans: '日本語ポイント切替',
+            label_toggle_task_titles: '日本語タイトル切替',
             label_prev_month: '日本語前月',
             label_next_month: '日本語次月',
             label_today: '日本語今日',
@@ -49,6 +50,7 @@ const buildHelpTranslations = (language: 'ja' | 'en'): Record<string, string> =>
             help_desc_export: '日本語 エクスポート説明',
             help_desc_organize_by_dependency: '日本語 依存整理説明',
             help_desc_points_orphans: '日本語 ポイント説明',
+            help_desc_task_titles: '日本語 タイトル説明',
             help_desc_prev_next_month: '日本語 前月次月説明',
             help_desc_today: '日本語 今日説明',
             help_desc_zoom: '日本語 ズーム説明',
@@ -90,6 +92,7 @@ const buildHelpTranslations = (language: 'ja' | 'en'): Record<string, string> =>
         label_relation_title: 'English Dependency',
         label_organize_by_dependency: 'English Organize',
         label_toggle_points_orphans: 'English Orphans',
+        label_toggle_task_titles: 'English Task Titles',
         label_prev_month: 'English Previous Month',
         label_next_month: 'English Next Month',
         label_today: 'English Today',
@@ -116,6 +119,7 @@ const buildHelpTranslations = (language: 'ja' | 'en'): Record<string, string> =>
         help_desc_export: 'English export description',
         help_desc_organize_by_dependency: 'English organize description',
         help_desc_points_orphans: 'English orphan points description',
+        help_desc_task_titles: 'English task titles description',
         help_desc_prev_next_month: 'English previous next month description',
         help_desc_today: 'English today description',
         help_desc_zoom: 'English zoom description',
@@ -171,7 +175,7 @@ describe('HelpDialog', () => {
 
         render(<HelpDialog />);
 
-        expect(screen.getByText('日本語ヘルプ')).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: '日本語ヘルプ' })).toBeInTheDocument();
         expect(screen.getByText('日本語レイアウトと絞り込み')).toBeInTheDocument();
         expect(screen.getByText('日本語タイムライン')).toBeInTheDocument();
         expect(screen.getByText('日本語編集と保存')).toBeInTheDocument();
@@ -183,6 +187,7 @@ describe('HelpDialog', () => {
         expect(screen.getByText('日本語 トップ説明')).toBeInTheDocument();
         expect(screen.getByText('日本語 ドラッグ説明')).toBeInTheDocument();
         expect(screen.getByText('日本語 依存設定説明 自動適用あり')).toBeInTheDocument();
+        expect(screen.getByText('日本語 タイトル説明')).toBeInTheDocument();
         expect(screen.getByText('日本語 自動保存説明 インライン編集含む')).toBeInTheDocument();
         expect(screen.getByText('日本語 保存説明 未保存時のみ表示')).toBeInTheDocument();
         expect(screen.getByText('日本語 キャンセル説明 未保存時のみ表示')).toBeInTheDocument();
@@ -197,7 +202,7 @@ describe('HelpDialog', () => {
 
         render(<HelpDialog />);
 
-        expect(screen.getByText('English Help')).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'English Help' })).toBeInTheDocument();
         expect(screen.getByText('English Layout and Filters')).toBeInTheDocument();
         expect(screen.getByText('English Timeline and View')).toBeInTheDocument();
         expect(screen.getByText('English Editing and Saving')).toBeInTheDocument();
@@ -209,6 +214,7 @@ describe('HelpDialog', () => {
         expect(screen.getByText('English top description')).toBeInTheDocument();
         expect(screen.getByText('English drag and drop description')).toBeInTheDocument();
         expect(screen.getByText('English dependency settings description including auto apply')).toBeInTheDocument();
+        expect(screen.getByText('English task titles description')).toBeInTheDocument();
         expect(screen.getByText('English auto save description including inline edits')).toBeInTheDocument();
         expect(screen.getByText('English save description shown only with pending edits')).toBeInTheDocument();
         expect(screen.getByText('English cancel description shown only with pending edits')).toBeInTheDocument();
