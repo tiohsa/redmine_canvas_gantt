@@ -55,6 +55,10 @@ const getIssueDialogContentHeight = (doc: Document): number => {
     return 0;
 };
 
+const isIssueShowDialogPath = (path: string): boolean => {
+    return /\/issues\/\d+\/?$/.test(path) && !path.includes('/edit') && !path.includes('/new');
+};
+
 export const IssueIframeDialog: React.FC = () => {
     const issueDialogUrl = useUIStore(state => state.issueDialogUrl);
     const queryDialogUrl = useUIStore(state => state.queryDialogUrl);
@@ -156,7 +160,11 @@ export const IssueIframeDialog: React.FC = () => {
             const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
             if (!doc) return;
 
-            applyIssueDialogStyles(doc, isQueryDialog);
+            const currentUrl = iframe.contentWindow?.location.href || '';
+            const urlParsed = new URL(currentUrl, window.location.origin);
+            const isIssueShowPage = !isQueryDialog && isIssueShowDialogPath(urlParsed.pathname);
+
+            applyIssueDialogStyles(doc, isQueryDialog, isIssueShowPage);
             bindIframeSizeObservers(doc);
 
             iframe.classList.remove('issue-iframe-loading');
@@ -177,7 +185,7 @@ export const IssueIframeDialog: React.FC = () => {
                 };
             }
 
-            const currentUrl = iframeWindow?.location.href || '';
+            const loadedUrl = iframeWindow?.location.href || '';
 
             const error = getIssueDialogErrorMessage(doc);
             setIframeError(error);
@@ -188,7 +196,7 @@ export const IssueIframeDialog: React.FC = () => {
             // If we were saving, close when we transition to issue show page without error.
             // Validation failures usually remain on /edit or /new and keep error blocks in DOM.
             if (isSaving) {
-                const urlParsed = new URL(currentUrl, window.location.origin);
+                const urlParsed = new URL(loadedUrl, window.location.origin);
                 const path = urlParsed.pathname;
                 const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
                 const isIssueShow = Boolean(issueMatch) && !path.includes('/edit') && !path.includes('/new');

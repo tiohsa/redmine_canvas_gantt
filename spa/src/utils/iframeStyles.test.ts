@@ -13,12 +13,26 @@ describe('iframeStyles', () => {
         const css = styleTags[0]?.textContent || '';
         expect(css).toContain('#top-menu');
         expect(css).toContain('#content > h2');
+        expect(css).toContain('#content > .contextual');
         expect(css).toContain('#issue-form > p.buttons');
         expect(css).toContain('#issue-form > .buttons');
         expect(css).toContain('html, body, #wrapper, #main');
         expect(css).toContain('overflow-y: auto');
         expect(css).not.toContain(', p.buttons,');
         expect(css).not.toContain(', .buttons,');
+    });
+
+    it('preserves issue contextual actions on issue show pages', () => {
+        const doc = document.implementation.createHTMLDocument('iframe');
+
+        applyIssueDialogStyles(doc, false, true);
+
+        const styleTag = doc.querySelector(`#${ISSUE_DIALOG_STYLE_ID}`);
+        const css = styleTag?.textContent || '';
+
+        expect(css).not.toContain('#content > .contextual');
+        expect(css).toContain('#top-menu');
+        expect(css).toContain('#issue-form > p.buttons');
     });
 
     it('detects error message from standard error elements', () => {
