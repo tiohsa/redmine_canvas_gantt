@@ -10,6 +10,7 @@ export interface StoredPreferences {
     viewport?: Partial<StoredViewport>;
     showProgressLine?: boolean;
     showTaskTitles?: boolean;
+    showHierarchyLines?: boolean;
     showPointsOrphans?: boolean;
     showVersions?: boolean;
     showBaseline?: boolean;
@@ -41,6 +42,7 @@ const sanitizePreferences = (prefs: StoredPreferences): StoredPreferences => Obj
         viewport: prefs.viewport,
         showProgressLine: prefs.showProgressLine,
         showTaskTitles: prefs.showTaskTitles,
+        showHierarchyLines: prefs.showHierarchyLines,
         showPointsOrphans: prefs.showPointsOrphans,
         showVersions: prefs.showVersions,
         showBaseline: prefs.showBaseline,

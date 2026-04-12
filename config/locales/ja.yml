@@ -155,6 +155,7 @@ ja:
     label_none: "(未設定)"
     label_toggle_points_orphans: "開始日のみ・期日のみタスクの表示切替"
     label_toggle_task_titles: "チケットタイトルの表示切替"
+    label_toggle_hierarchy_lines: "階層線の表示切替"
     label_points_short: "Pts"
     label_parent_drop_success: "タスクを子チケットとして移動しました"
     label_parent_drop_unset_success: "子チケットを解除しました"

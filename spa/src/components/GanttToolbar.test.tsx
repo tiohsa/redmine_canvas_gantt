@@ -167,6 +167,55 @@ describe('GanttToolbar shortcuts', () => {
         expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
     });
 
+    it('renders and toggles the hierarchy line visibility button', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_toggle_hierarchy_lines: '階層線の表示切替'
+            }
+        };
+
+        useUIStore.setState({
+            ...useUIStore.getState(),
+            showHierarchyLines: true
+        } as never);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        const button = screen.getByTitle('階層線の表示切替');
+        expect(button).toBeInTheDocument();
+
+        fireEvent.click(button);
+        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showHierarchyLines: boolean }).showHierarchyLines).toBe(false);
+
+        fireEvent.click(button);
+        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showHierarchyLines: boolean }).showHierarchyLines).toBe(true);
+    });
+
+    it('keeps the Today button icon-only while preserving its accessible name', () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [],
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        const todayButton = screen.getByRole('button', { name: 'Today' });
+        expect(todayButton).toBeInTheDocument();
+        expect(todayButton.querySelector('svg')).toBeInTheDocument();
+        expect(todayButton.textContent?.trim()).toBe('');
+    });
+
     it('toggles left and right pane maximization buttons', () => {
         useTaskStore.setState({
             filterText: '',

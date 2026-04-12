@@ -170,6 +170,57 @@ describe('UiSidebar', () => {
         expect(screen.queryByTestId('sidebar-column-resize-handle-subject')).not.toBeInTheDocument();
     });
 
+    it('hides hierarchy guide lines when the toggle is off', () => {
+        const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['subject']);
+        useUIStore.setState({ visibleColumns: ['subject'], columnSettings, showHierarchyLines: true });
+
+        const task: Task = {
+            id: '126',
+            subject: 'Hierarchy line task',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: true,
+            treeLevelGuides: [true, true],
+            isLastChild: false
+        };
+
+        useTaskStore.setState({
+            tasks: [task],
+            layoutRows: [{ type: 'task', taskId: task.id, rowIndex: 0 }],
+            rowCount: 1,
+            selectedTaskId: null,
+            taskExpansion: {},
+            projectExpansion: {},
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            }
+        });
+
+        const { rerender } = render(<UiSidebar />);
+
+        expect(screen.getAllByTestId('task-tree-guide-line')).not.toHaveLength(0);
+        expect(screen.getAllByTestId('task-tree-current-guide')).not.toHaveLength(0);
+        expect(screen.getAllByTestId('task-tree-branch-guide')).not.toHaveLength(0);
+
+        useUIStore.setState({ showHierarchyLines: false });
+        rerender(<UiSidebar />);
+
+        expect(screen.queryAllByTestId('task-tree-guide-line')).toHaveLength(0);
+        expect(screen.queryAllByTestId('task-tree-current-guide')).toHaveLength(0);
+        expect(screen.queryAllByTestId('task-tree-branch-guide')).toHaveLength(0);
+    });
+
     it('keeps task rows draggable while using pointer cursor', () => {
         const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['id', 'status']);
         useUIStore.setState({ visibleColumns: ['id', 'status'], columnSettings });

@@ -177,6 +177,7 @@ class CanvasGanttsController < ApplicationController
     label_none: :label_none,
     label_toggle_points_orphans: :label_toggle_points_orphans,
     label_toggle_task_titles: :label_toggle_task_titles,
+    label_toggle_hierarchy_lines: :label_toggle_hierarchy_lines,
     label_points_short: :label_points_short,
     label_parent_drop_success: :label_parent_drop_success,
     label_parent_drop_unset_success: :label_parent_drop_unset_success,

@@ -99,10 +99,19 @@ describe('Preferences storage', () => {
         expect(loadPreferences(2).showTaskTitles).toBeUndefined();
     });
 
+    it('saves and loads hierarchy line visibility preference', () => {
+        savePreferences({ showHierarchyLines: false } as Parameters<typeof savePreferences>[0], 1);
+
+        const loaded = loadPreferences(1) as Record<string, unknown>;
+        expect(loaded.showHierarchyLines).toBe(false);
+        expect(loadPreferences(2).showHierarchyLines).toBeUndefined();
+    });
+
     it('store modules restore persisted filter preferences on reload', async () => {
         savePreferences({
             showProgressLine: true,
             showTaskTitles: false,
+            showHierarchyLines: false,
             showBaseline: true,
             showPointsOrphans: false,
             visibleColumns: ['id', 'category'],
@@ -122,10 +131,11 @@ describe('Preferences storage', () => {
             import('../stores/UIStore'),
             import('../stores/TaskStore')
         ]);
-        type UIStoreState = ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean };
+        type UIStoreState = ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean; showHierarchyLines: boolean };
 
         expect(useUIStore.getState().showProgressLine).toBe(true);
         expect((useUIStore.getState() as UIStoreState).showTaskTitles).toBe(false);
+        expect((useUIStore.getState() as UIStoreState).showHierarchyLines).toBe(false);
         expect(useUIStore.getState().showBaseline).toBe(true);
         expect(useUIStore.getState().showPointsOrphans).toBe(false);
         expect(useUIStore.getState().visibleColumns).toEqual(['id', 'category']);
