@@ -155,6 +155,7 @@ en:
     label_none: "(No version)"
     label_toggle_points_orphans: "Toggle Orphan Date Points"
     label_toggle_task_titles: "Toggle Task Titles"
+    label_toggle_hierarchy_lines: "Toggle Hierarchy Lines"
     label_points_short: "Pts"
     label_parent_drop_success: "Task moved under target task"
     label_parent_drop_unset_success: "Task moved to root level"

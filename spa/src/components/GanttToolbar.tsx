@@ -51,6 +51,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         toggleProgressLine,
         showTaskTitles,
         toggleTaskTitles,
+        showHierarchyLines,
+        toggleHierarchyLines,
         showBaseline,
         toggleBaseline,
         visibleColumns,
@@ -1737,6 +1739,39 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
                     )}
                 </button>
+
+                <button
+                    data-testid="hierarchy-lines-toggle-button"
+                    onClick={toggleHierarchyLines}
+                    title={i18n.t('label_toggle_hierarchy_lines') || 'Toggle Hierarchy Lines'}
+                    aria-label={i18n.t('label_toggle_hierarchy_lines') || 'Toggle Hierarchy Lines'}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0',
+                        backgroundColor: showHierarchyLines ? '#e8f0fe' : '#fff',
+                        color: showHierarchyLines ? '#1a73e8' : '#333',
+                        cursor: 'pointer',
+                        height: '32px',
+                        width: '32px',
+                        position: 'relative'
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M7 5v14" />
+                        <path d="M7 5h6" />
+                        <path d="M7 12h6" />
+                        <path d="M7 19h6" />
+                        <path d="M13 5v14" />
+                        <path d="M13 12h4" />
+                    </svg>
+                    {showHierarchyLines && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    )}
+                </button>
             </div>
 
             {/* Right: Zoom Level & Today */}
@@ -1786,19 +1821,20 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <button
                     onClick={handleTodayClick}
+                    title={i18n.t('label_today') || 'Today'}
+                    aria-label={i18n.t('label_today') || 'Today'}
                     style={{
-                        padding: '0 12px',
+                        padding: '0',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0',
                         backgroundColor: '#fff',
                         color: '#333',
-                        fontSize: '13px',
-                        fontWeight: 500,
                         cursor: 'pointer',
                         height: '32px',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px'
+                        justifyContent: 'center',
+                        width: '32px'
                     }}
                 >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1807,7 +1843,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <line x1="8" y1="2" x2="8" y2="6" />
                         <line x1="3" y1="10" x2="21" y2="10" />
                     </svg>
-                    {i18n.t('label_today') || 'Today'}
                 </button>
 
 

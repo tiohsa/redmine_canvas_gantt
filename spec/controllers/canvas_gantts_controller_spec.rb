@@ -314,6 +314,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(i18n_payload['label_save_baseline_filtered']).to eq(canvas_gantt_t(:label_save_baseline_filtered))
       expect(i18n_payload['label_save_baseline_project']).to eq(canvas_gantt_t(:label_save_baseline_project))
       expect(i18n_payload['label_baseline_scope']).to eq(canvas_gantt_t(:label_baseline_scope))
+      expect(i18n_payload['label_toggle_hierarchy_lines']).to eq(canvas_gantt_t(:label_toggle_hierarchy_lines))
     end
 
     it 'includes localized help labels in Japanese frontend i18n payload' do
@@ -346,6 +347,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         expect(i18n_payload['label_auto_schedule_move_mode_off']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_off))
         expect(i18n_payload['label_auto_schedule_move_mode_constraint_push']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_constraint_push))
         expect(i18n_payload['label_auto_schedule_move_mode_linked_shift']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_linked_shift))
+        expect(i18n_payload['label_toggle_hierarchy_lines']).to eq(canvas_gantt_t(:label_toggle_hierarchy_lines))
       end
     end
 
@@ -376,6 +378,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         expect(i18n_payload['label_auto_schedule_move_mode_off']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_off))
         expect(i18n_payload['label_auto_schedule_move_mode_constraint_push']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_constraint_push))
         expect(i18n_payload['label_auto_schedule_move_mode_linked_shift']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_linked_shift))
+        expect(i18n_payload['label_toggle_hierarchy_lines']).to eq(canvas_gantt_t(:label_toggle_hierarchy_lines))
       end
     end
   end

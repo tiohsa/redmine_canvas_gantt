@@ -44,7 +44,7 @@ const ISSUE_DIALOG_ERROR_SELECTORS = [
     '.conflict'
 ];
 
-export const applyIssueDialogStyles = (doc: Document, isQuery = false): void => {
+export const applyIssueDialogStyles = (doc: Document, isQuery = false, preserveContextual = false): void => {
     if (doc.getElementById(ISSUE_DIALOG_STYLE_ID)) return;
 
     const querySelectors = [
@@ -58,6 +58,9 @@ export const applyIssueDialogStyles = (doc: Document, isQuery = false): void => 
 
     const selectorsToHide = ISSUE_DIALOG_HIDE_SELECTORS.filter(selector => {
         if (isQuery && querySelectors.includes(selector)) {
+            return false;
+        }
+        if (preserveContextual && selector === '#content > .contextual') {
             return false;
         }
         return true;

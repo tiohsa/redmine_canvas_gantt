@@ -169,6 +169,7 @@ export const UiSidebar: React.FC = () => {
     const visibleColumns = useUIStore(state => state.visibleColumns);
     const setActiveInlineEdit = useUIStore(state => state.setActiveInlineEdit);
     const activeInlineEdit = useUIStore(state => state.activeInlineEdit);
+    const showHierarchyLines = useUIStore(state => state.showHierarchyLines);
     const columnWidths = useUIStore(state => state.columnWidths);
     const setColumnWidth = useUIStore(state => state.setColumnWidth);
     const sidebarFontSize = useUIStore(state => state.sidebarFontSize);
@@ -178,6 +179,7 @@ export const UiSidebar: React.FC = () => {
 
     const editMetaByTaskId = useEditMetaStore((s) => s.metaByTaskId);
     const fetchEditMeta = useEditMetaStore((s) => s.fetchEditMeta);
+    const treeGuideWidth = showHierarchyLines ? 16 : 8;
 
     const settings = React.useMemo(() => {
         return (window as unknown as { RedmineCanvasGantt?: { settings?: InlineEditSettings } }).RedmineCanvasGantt?.settings ?? {};
@@ -324,8 +326,8 @@ export const UiSidebar: React.FC = () => {
                                 {/* Tree Lines */}
                                 <div style={{ display: 'flex', height: '100%', flexShrink: 0, paddingLeft: 8 }}>
                                     {(t.treeLevelGuides ?? []).map((hasLine, i) => (
-                                        <div key={i} style={{ width: 16, height: '100%', position: 'relative' }}>
-                                            {hasLine && (
+                                        <div key={i} style={{ width: treeGuideWidth, height: '100%', position: 'relative' }}>
+                                            {showHierarchyLines && hasLine && (
                                                 <div style={{
                                                     position: 'absolute',
                                                     left: '50%',
@@ -334,31 +336,35 @@ export const UiSidebar: React.FC = () => {
                                                     width: 1,
                                                     backgroundColor: '#e0e0e0',
                                                     transform: 'translateX(-50%)'
-                                                }} />
+                                                }} data-testid="task-tree-guide-line" />
                                             )}
                                         </div>
                                     ))}
                                     <div style={{ width: 16, height: '100%', position: 'relative' }}>
                                         {/* Vertical line for the current node */}
-                                        <div style={{
-                                            position: 'absolute',
-                                            left: '50%',
-                                            top: 0,
-                                            bottom: t.isLastChild ? '50%' : 0,
-                                            width: 1,
-                                            backgroundColor: '#e0e0e0',
-                                            transform: 'translateX(-50%)'
-                                        }} />
+                                        {showHierarchyLines && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                left: '50%',
+                                                top: 0,
+                                                bottom: t.isLastChild ? '50%' : 0,
+                                                width: 1,
+                                                backgroundColor: '#e0e0e0',
+                                                transform: 'translateX(-50%)'
+                                            }} data-testid="task-tree-current-guide" />
+                                        )}
                                         {/* Horizontal line for the current node */}
-                                        <div style={{
-                                            position: 'absolute',
-                                            left: '50%',
-                                            top: '50%',
-                                            right: 0,
-                                            height: 1,
-                                            backgroundColor: '#e0e0e0',
-                                            transform: 'translateY(-50%)'
-                                        }} />
+                                        {showHierarchyLines && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                left: '50%',
+                                                top: '50%',
+                                                right: 0,
+                                                height: 1,
+                                                backgroundColor: '#e0e0e0',
+                                                transform: 'translateY(-50%)'
+                                            }} data-testid="task-tree-branch-guide" />
+                                        )}
 
                                         {/* Expansion Trigger (Chevron) overlaying on the line branch */}
                                         {t.hasChildren && (

@@ -70,7 +70,7 @@ describe('IssueIframeDialog', () => {
 
         fireEvent.load(iframe);
 
-        expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc, false);
+        expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc, false, false);
     });
 
     it('hides iframe until load completes', () => {
@@ -90,7 +90,7 @@ describe('IssueIframeDialog', () => {
         fireEvent.load(iframe);
 
         expect(iframe).not.toHaveClass('issue-iframe-loading');
-        expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc, false);
+        expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc, false, false);
     });
 
     it('shows error message when iframe contains an error', () => {

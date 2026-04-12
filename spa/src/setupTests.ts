@@ -90,6 +90,8 @@ window.RedmineCanvasGantt = {
         label_export_csv: 'Export CSV',
         label_export_unavailable: 'Export is unavailable in the current layout',
         label_export_failed: 'Export failed',
+        label_today: 'Today',
+        label_toggle_hierarchy_lines: 'Toggle Hierarchy Lines',
         help_desc_export: 'Export the current Gantt view as a PNG image, or download the visible task data as CSV including hierarchy and dependency columns.'
     },
     settings: {

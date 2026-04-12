@@ -56,6 +56,22 @@ describe('UIStore', () => {
         expect((useUIStore.getState() as UIStoreState).showTaskTitles).toBe(true);
     });
 
+    it('toggles hierarchy line visibility', () => {
+        type UIStoreState = ReturnType<typeof useUIStore.getState> & {
+            showHierarchyLines: boolean;
+            toggleHierarchyLines: () => void;
+        };
+        const uiStore = useUIStore.getState() as UIStoreState;
+
+        expect(uiStore.showHierarchyLines).toBe(true);
+
+        uiStore.toggleHierarchyLines();
+        expect((useUIStore.getState() as UIStoreState).showHierarchyLines).toBe(false);
+
+        uiStore.toggleHierarchyLines();
+        expect((useUIStore.getState() as UIStoreState).showHierarchyLines).toBe(true);
+    });
+
     it('toggles fullscreen and pane maximization states', () => {
         expect(useUIStore.getState().isFullScreen).toBe(false);
         expect(useUIStore.getState().leftPaneVisible).toBe(true);
