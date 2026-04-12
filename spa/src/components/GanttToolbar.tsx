@@ -602,6 +602,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         { value: 15, label: i18n.t('label_font_size_large') || 'Large' }
     ];
     const currentRowHeightOption = ROW_HEIGHT_OPTIONS.find(option => option.value === viewport.rowHeight) || ROW_HEIGHT_OPTIONS[2];
+    const zoomWheelHint = i18n.t('help_desc_zoom_wheel') || 'Hold Ctrl and use the mouse wheel to change the date display width.';
 
     return (
         <div style={{
@@ -1895,7 +1896,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
                                 padding: '12px',
                                 zIndex: 20,
-                                minWidth: '120px'
+                                minWidth: '220px'
                             }}
                         >
                             <div style={{ fontWeight: 600, marginBottom: '8px', color: '#333' }}>
@@ -1955,6 +1956,20 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     </label>
                                 );
                             })}
+
+                            <div
+                                data-testid="row-height-zoom-hint"
+                                style={{
+                                    borderTop: '1px solid #f0f0f0',
+                                    marginTop: '12px',
+                                    paddingTop: '12px',
+                                    fontSize: '11px',
+                                    lineHeight: 1.5,
+                                    color: '#666'
+                                }}
+                            >
+                                {zoomWheelHint}
+                            </div>
                         </div>
                     )}
                 </div>

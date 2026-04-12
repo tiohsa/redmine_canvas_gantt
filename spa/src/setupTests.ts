@@ -50,6 +50,7 @@ window.RedmineCanvasGantt = {
         label_sort_by: 'Sort by',
         label_project: 'Project',
         label_row_height: 'Row height',
+        help_desc_zoom_wheel: 'Hold Ctrl and use the mouse wheel to change the date display width.',
         button_edit: 'Edit',
         button_delete: 'Delete',
         button_save: 'Save',

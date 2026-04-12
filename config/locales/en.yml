@@ -258,6 +258,7 @@ en:
     help_desc_dependency_settings: "Configure default dependency behavior, including relation type, auto-calculated delay, auto-applying the default dependency, and how tasks move during auto scheduling."
     help_desc_export: "Export the current Gantt view as a PNG image, or download the visible task data as CSV including hierarchy and dependency columns."
     help_desc_organize_by_dependency: "Sort tasks based on their dependencies. Preceding tasks will be listed before succeeding tasks."
+    help_desc_zoom_wheel: "Hold Ctrl and use the mouse wheel to change the date display width."
     help_desc_points_orphans: "Show or hide milestone indicators for tasks that only have a start date or a due date."
     help_desc_task_titles: "Show or hide the task titles rendered on the chart next to task bars and milestone points."
     help_label_timeline_view: "2. Timeline and View Controls"
