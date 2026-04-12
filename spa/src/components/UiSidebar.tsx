@@ -410,15 +410,16 @@ export const UiSidebar: React.FC = () => {
                                         useUIStore.getState().openIssueDialog(buildRedmineUrl(`/issues/${t.id}`));
                                     }}
                                     style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
                                         color: isSelected ? '#1a73e8' : '#3c4043',
                                         textDecoration: 'none',
                                         whiteSpace: 'nowrap',
-                                        flex: 1,
                                         background: 'none',
                                         border: 'none',
-                                        padding: '0 8px',
+                                        padding: 0,
                                         font: 'inherit',
                                         cursor: 'pointer',
                                         textAlign: 'left'
@@ -644,6 +645,7 @@ export const UiSidebar: React.FC = () => {
         .map((key) => columns.find((col) => col.key === key))
         .filter((col): col is SidebarColumn => Boolean(col));
 
+    const sidebarColumnBorder = '1px solid #e0e0e0';
     const inlineControlHeight = Math.max(20, Math.min(24, viewport.rowHeight - 6));
 
     return (
@@ -670,7 +672,8 @@ export const UiSidebar: React.FC = () => {
                 overflow: 'hidden'
             }}>
                 {
-                    activeColumns.map((col) => {
+                    activeColumns.map((col, idx) => {
+                        const isLastColumn = idx === activeColumns.length - 1;
                         const sortConfig = useTaskStore.getState().sortConfig;
                         const sortField = getSortField(col.key);
                         const isSorted = sortConfig?.key === sortField;
@@ -679,9 +682,11 @@ export const UiSidebar: React.FC = () => {
                                 key={col.key}
                                 data-testid={`sidebar-header-${col.key}`}
                                 style={{
-                                    width: col.width,
-                                    flexShrink: 0,
+                                    width: isLastColumn ? 0 : col.width,
+                                    flex: isLastColumn ? '1 1 0px' : '0 0 auto',
+                                    minWidth: isLastColumn ? 0 : undefined,
                                     padding: '0 8px',
+                                    borderRight: isLastColumn ? 'none' : sidebarColumnBorder,
                                     display: 'flex',
                                     alignItems: 'center',
                                     overflow: 'hidden',
@@ -767,30 +772,25 @@ export const UiSidebar: React.FC = () => {
                                     )
                                 }
 
-                                <div
-                                    data-testid={`sidebar-column-resize-handle-${col.key}`}
-                                    style={{
-                                        position: 'absolute',
-                                        right: 0,
-                                        bottom: 0,
-                                        width: 4, // Hit area
-                                        height: '100%',
-                                        cursor: SIDEBAR_RESIZE_CURSOR,
-                                        zIndex: 10,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onMouseDown={(e) => handleResizeStart(e, col.key, col.width)}
-                                >
-                                    <div style={{
-                                        width: 1,
-                                        height: 12,
-                                        backgroundColor: '#d0d0d0',
-                                        pointerEvents: 'none'
-                                    }} />
-                                </div>
+                                {!isLastColumn && (
+                                    <div
+                                        data-testid={`sidebar-column-resize-handle-${col.key}`}
+                                        style={{
+                                            position: 'absolute',
+                                            right: 0,
+                                            bottom: 0,
+                                            width: 4, // Hit area
+                                            height: '100%',
+                                            cursor: SIDEBAR_RESIZE_CURSOR,
+                                            zIndex: 10,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => handleResizeStart(e, col.key, col.width)}
+                                    />
+                                )}
                             </div>
                         )
                     })
@@ -936,18 +936,18 @@ export const UiSidebar: React.FC = () => {
                                     selectTask(task.id);
                                     scrollToTask(task.id);
                                 }}
-                                style={{
-                                    position: 'absolute',
-                                    top: top,
-                                    left: 0,
-                                    height: viewport.rowHeight,
-                                    width: '100%',
-                                    display: 'flex',
-                                    borderBottom: '1px solid #f1f3f4',
-                                    backgroundColor: isDropTarget ? '#e6f4ea' : (isSelected ? '#e8f0fe' : 'transparent'),
-                                    boxShadow: isDropTarget ? 'inset 0 0 0 1px #34a853' : 'none',
-                                    cursor: 'pointer',
-                                     fontSize: `${sidebarFontSize}px`,
+                                    style={{
+                                        position: 'absolute',
+                                        top: top,
+                                        left: 0,
+                                        height: viewport.rowHeight,
+                                        width: '100%',
+                                        display: 'flex',
+                                        borderBottom: '1px solid #e0e0e0',
+                                        backgroundColor: isDropTarget ? '#e6f4ea' : (isSelected ? '#e8f0fe' : 'transparent'),
+                                        boxShadow: isDropTarget ? 'inset 0 0 0 1px #34a853' : 'none',
+                                        cursor: 'pointer',
+                                         fontSize: `${sidebarFontSize}px`,
                                     color: '#3c4043',
                                     transition: 'background-color 0.2s, color 0.2s'
                                 }}
@@ -962,12 +962,15 @@ export const UiSidebar: React.FC = () => {
                                     });
                                 }}
                             >
-                                {activeColumns.map((col, idx) => (
-                                    <div key={idx} style={{
-                                        width: col.width,
-                                        flexShrink: 0,
+                                {activeColumns.map((col, idx) => {
+                                    const isLastColumn = idx === activeColumns.length - 1;
+                                    return (
+                                    <div key={col.key} style={{
+                                        width: isLastColumn ? 0 : col.width,
+                                        flex: isLastColumn ? '1 1 0px' : '0 0 auto',
+                                        minWidth: isLastColumn ? 0 : undefined,
                                         padding: '0 8px',
-                                        borderRight: '1px solid #f9f9f9',
+                                        borderRight: isLastColumn ? 'none' : sidebarColumnBorder,
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: col.key === NOTIFICATION_COLUMN_KEY ? 'center' : 'flex-start',
@@ -1384,7 +1387,8 @@ export const UiSidebar: React.FC = () => {
                                             })()}
                                         </div>
                                     </div>
-                                ))}
+                                );
+                                })}
                             </div>
                         );
                     })

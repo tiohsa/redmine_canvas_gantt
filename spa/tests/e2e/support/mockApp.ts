@@ -176,7 +176,7 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
   const data = options?.mockData ?? defaultMockData;
   const preferences = {
     groupByProject: false,
-    visibleColumns: ['id', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone'],
+    visibleColumns: ['id', 'subject', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone'],
     sidebarWidth: 420,
     viewport: {
       scrollX: 0,

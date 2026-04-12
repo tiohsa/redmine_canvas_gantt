@@ -605,9 +605,12 @@ describe('GanttToolbar shortcuts', () => {
 
         fireEvent.click(screen.getByLabelText('S'));
         expect(useTaskStore.getState().viewport.rowHeight).toBe(28);
-        expect(screen.getByTestId('row-height-menu')).toBeInTheDocument();
+        const rowHeightMenu = screen.getByTestId('row-height-menu');
+        expect(rowHeightMenu).toBeInTheDocument();
         expect(screen.getByLabelText('S')).toBeChecked();
         expect(screen.getByTestId('row-height-menu-button')).toHaveTextContent('S');
+        expect(within(rowHeightMenu).getByTestId('row-height-zoom-hint')).toHaveTextContent('Ctrl');
+        expect(rowHeightMenu.lastElementChild).toHaveAttribute('data-testid', 'row-height-zoom-hint');
 
         fireEvent.click(rowHeightButton);
         expect(screen.queryByTestId('row-height-menu')).not.toBeInTheDocument();

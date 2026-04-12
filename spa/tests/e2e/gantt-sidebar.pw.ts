@@ -21,6 +21,20 @@ test('sidebar task cells keep pointer cursor while rows stay draggable', async (
 
   await expect(taskRow).toHaveAttribute('draggable', 'true');
   await expect
+    .poll(() => taskRow.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        color: style.borderBottomColor,
+        style: style.borderBottomStyle,
+        width: style.borderBottomWidth,
+      };
+    }))
+    .toEqual({
+      color: 'rgb(224, 224, 224)',
+      style: 'solid',
+      width: '1px',
+    });
+  await expect
     .poll(() => taskRow.evaluate((el) => getComputedStyle(el).cursor))
     .toBe('pointer');
   await expect
@@ -29,6 +43,7 @@ test('sidebar task cells keep pointer cursor while rows stay draggable', async (
   await expect
     .poll(() => statusCell.evaluate((el) => getComputedStyle(el).cursor))
     .toBe('pointer');
+  await expect(page.getByTestId('sidebar-column-resize-handle-ratioDone')).toHaveCount(0);
 });
 
 test('resize handles use ew-resize and column resizing still works', async ({ page }) => {
@@ -81,18 +96,35 @@ test('resize handles use ew-resize and column resizing still works', async ({ pa
   }, { x: endX, y: centerY });
 });
 
-test('resizing left pane does not shrink column width', async ({ page }) => {
+test('resizing left pane keeps the rightmost column aligned to the boundary', async ({ page }) => {
+  await page.addInitScript((prefs) => {
+    localStorage.clear();
+    localStorage.setItem('canvasGantt:preferences', JSON.stringify(prefs));
+  }, {
+    groupByProject: false,
+    sidebarWidth: 700,
+    visibleColumns: ['id', 'subject', 'status', 'assignee', 'ratioDone'],
+    viewport: {
+      scrollX: 0,
+      scrollY: 0,
+    },
+  });
+
   await waitForInitialRender(page);
 
-  const subjectHeader = page.getByTestId('sidebar-header-subject');
+  const ratioDoneHeader = page.getByTestId('sidebar-header-ratioDone');
   const assigneeHeader = page.getByTestId('sidebar-header-assignee');
   const sidebar = page.getByTestId('left-pane');
   const resizeHandle = page.getByTestId('sidebar-resize-handle');
 
-  const subjectWidthBefore = (await subjectHeader.boundingBox())?.width;
-  const sidebarWidthBefore = (await sidebar.boundingBox())?.width;
-  expect(subjectWidthBefore).toBeTruthy();
-  expect(sidebarWidthBefore).toBeTruthy();
+  await expect(page.getByTestId('sidebar-column-resize-handle-ratioDone')).toHaveCount(0);
+
+  const ratioDoneBoxBefore = await ratioDoneHeader.boundingBox();
+  const assigneeBoxBefore = await assigneeHeader.boundingBox();
+  const sidebarBoxBefore = await sidebar.boundingBox();
+  expect(ratioDoneBoxBefore?.width).toBeTruthy();
+  expect(assigneeBoxBefore?.width).toBeTruthy();
+  expect(sidebarBoxBefore?.width).toBeTruthy();
   await expect
     .poll(() => resizeHandle.evaluate((el) => getComputedStyle(el).cursor))
     .toBe('ew-resize');
@@ -101,20 +133,22 @@ test('resizing left pane does not shrink column width', async ({ page }) => {
   expect(handleBox).toBeTruthy();
   await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
   await page.mouse.down();
-  await page.mouse.move(220, handleBox!.y + handleBox!.height / 2, { steps: 8 });
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2 + 200, handleBox!.y + handleBox!.height / 2, { steps: 8 });
   await page.mouse.up();
 
-  await expect.poll(async () => (await sidebar.boundingBox())?.width ?? 0).toBeLessThan(sidebarWidthBefore! - 100);
+  const sidebarBoxAfter = await sidebar.boundingBox();
+  expect(sidebarBoxAfter).toBeTruthy();
+  expect(sidebarBoxAfter!.width).toBeGreaterThan(sidebarBoxBefore!.width + 100);
 
-  const subjectWidthAfter = (await subjectHeader.boundingBox())?.width;
-  expect(subjectWidthAfter).toBeTruthy();
-  expect(Math.abs(subjectWidthAfter! - subjectWidthBefore!)).toBeLessThanOrEqual(1);
-
-  const sidebarBox = await sidebar.boundingBox();
-  const assigneeBox = await assigneeHeader.boundingBox();
-  expect(sidebarBox).toBeTruthy();
-  expect(assigneeBox).toBeTruthy();
-  expect(assigneeBox!.x).toBeGreaterThanOrEqual(sidebarBox!.x + sidebarBox!.width - 1);
+  const ratioDoneBoxAfter = await ratioDoneHeader.boundingBox();
+  const assigneeBoxAfter = await assigneeHeader.boundingBox();
+  expect(ratioDoneBoxAfter).toBeTruthy();
+  expect(assigneeBoxAfter).toBeTruthy();
+  expect(ratioDoneBoxAfter!.width).toBeGreaterThan(ratioDoneBoxBefore!.width);
+  expect(Math.abs(assigneeBoxAfter!.width - assigneeBoxBefore!.width)).toBeLessThanOrEqual(1);
+  const sidebarDelta = sidebarBoxAfter!.width - sidebarBoxBefore!.width;
+  const ratioDoneDelta = ratioDoneBoxAfter!.width - ratioDoneBoxBefore!.width;
+  expect(Math.abs(ratioDoneDelta - sidebarDelta)).toBeLessThanOrEqual(1);
 });
 
 test('left pane maximize keeps sidebar tasks visible', async ({ page }) => {

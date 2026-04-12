@@ -9,6 +9,24 @@ test('selects task on click', async ({ page }) => {
   await expect(page.getByTestId('task-row-101')).toHaveClass(/is-selected/);
 });
 
+test('opens issue dialog when clicking the task title text', async ({ page }) => {
+  await setupMockApp(page);
+  await waitForInitialRender(page);
+
+  await page.getByRole('link', { name: 'Implement sidebar resize behavior' }).dispatchEvent('click');
+  await expect(page.getByTestId('issue-dialog-header')).toBeVisible();
+});
+
+test('selects task when clicking empty space in the subject column', async ({ page }) => {
+  await setupMockApp(page);
+  await waitForInitialRender(page);
+
+  await page.getByTestId('cell-101-subject').dispatchEvent('click');
+
+  await expect(page.getByTestId('task-row-101')).toHaveClass(/is-selected/);
+  await expect(page.getByTestId('issue-dialog-header')).toHaveCount(0);
+});
+
 test.skip('edits status inline', async ({ page }) => {
   const patchPayloads: unknown[] = [];
   await setupMockApp(page, { onPatchTask: (payload) => patchPayloads.push(payload) });

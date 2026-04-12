@@ -34,6 +34,7 @@ class CanvasGanttsController < ApplicationController
     label_prev_month: :label_prev_month,
     label_next_month: :label_next_month,
     label_today: :label_today,
+    help_desc_zoom_wheel: :help_desc_zoom_wheel,
     button_top: :button_top,
     label_toggle_sidebar: :label_toggle_sidebar,
     label_maximize_left_pane: :label_maximize_left_pane,
