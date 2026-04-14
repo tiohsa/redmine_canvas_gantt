@@ -8,6 +8,7 @@ module RedmineCanvasGantt
       selected_assignee_ids: [],
       selected_project_ids: [],
       selected_version_ids: [],
+      member_projects_only: false,
       sort_config: { key: 'startDate', direction: 'asc' },
       group_by_project: true,
       group_by_assignee: false,
@@ -58,6 +59,7 @@ module RedmineCanvasGantt
       selected_project_ids = resolve_selected_project_ids(project_ids)
       state[:selected_project_ids] = selected_project_ids.map(&:to_s)
       state[:show_subprojects] = resolve_show_subprojects
+      state[:member_projects_only] = resolve_member_projects_only
 
       query_resolution = resolve_query_resolution
       state.merge!(state_from_query(query_resolution.query)) if query_resolution.query
@@ -206,8 +208,15 @@ module RedmineCanvasGantt
       apply_version_override!(state)
       apply_project_override!(state)
       apply_show_subprojects_override!(state)
+      apply_member_projects_only_override!(state)
       apply_sort_override!(state)
       apply_group_by_override!(state)
+    end
+
+    def apply_member_projects_only_override!(state)
+      return unless @params.key?(:member_projects_only) || @params.key?('member_projects_only')
+
+      state[:member_projects_only] = resolve_member_projects_only
     end
 
     def apply_status_override!(state)
@@ -412,6 +421,13 @@ module RedmineCanvasGantt
     def resolve_show_subprojects
       raw = @params[:show_subprojects]
       return DEFAULT_STATE[:show_subprojects] if raw.nil?
+
+      ActiveModel::Type::Boolean.new.cast(raw)
+    end
+
+    def resolve_member_projects_only
+      raw = @params[:member_projects_only]
+      return DEFAULT_STATE[:member_projects_only] if raw.nil?
 
       ActiveModel::Type::Boolean.new.cast(raw)
     end

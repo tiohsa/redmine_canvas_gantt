@@ -132,6 +132,7 @@ describe('apiClient.fetchData', () => {
         expect(data.initialState).toEqual({
             queryId: 7,
             selectedStatusIds: [1],
+            memberProjectsOnly: undefined,
             groupBy: 'project',
             sortConfig: { key: 'startDate', direction: 'desc' }
         });

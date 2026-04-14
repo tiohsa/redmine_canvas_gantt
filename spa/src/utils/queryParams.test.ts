@@ -29,6 +29,7 @@ describe('parseResolvedQueryState', () => {
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
             selectedProjectIds: ['1'],
+            memberProjectsOnly: undefined,
             sortConfig: { key: 'subject', direction: 'desc' },
             groupBy: 'assignee',
             showSubprojects: false
@@ -43,6 +44,7 @@ describe('parseResolvedQueryState', () => {
 
         expect(parsed).toEqual({
             selectedStatusIds: [1],
+            memberProjectsOnly: undefined,
             groupBy: null
         });
     });
@@ -59,6 +61,7 @@ describe('parseResolvedQueryState', () => {
             selectedAssigneeIds: [null, 7],
             selectedProjectIds: undefined,
             selectedVersionIds: ['_none'],
+            memberProjectsOnly: undefined,
             sortConfig: undefined,
             groupBy: null,
             showSubprojects: undefined
@@ -74,6 +77,7 @@ describe('readIssueQueryParamsFromUrl', () => {
             selectedAssigneeIds: undefined,
             selectedProjectIds: undefined,
             selectedVersionIds: undefined,
+            memberProjectsOnly: undefined,
             sortConfig: undefined,
             groupBy: null,
             showSubprojects: undefined
@@ -95,6 +99,7 @@ describe('readIssueQueryParamsFromUrl', () => {
             selectedAssigneeIds: [7, null],
             selectedProjectIds: ['3'],
             selectedVersionIds: ['4'],
+            memberProjectsOnly: undefined,
             sortConfig: { key: 'startDate', direction: 'desc' },
             groupBy: 'assignee',
             showSubprojects: false
@@ -108,6 +113,7 @@ describe('readIssueQueryParamsFromUrl', () => {
             selectedAssigneeIds: undefined,
             selectedProjectIds: undefined,
             selectedVersionIds: undefined,
+            memberProjectsOnly: undefined,
             sortConfig: undefined,
             groupBy: null,
             showSubprojects: undefined
@@ -156,6 +162,10 @@ describe('hasSharedQueryStateInUrl', () => {
     it('returns true for a persisted query id', () => {
         expect(hasSharedQueryStateInUrl('?query_id=7')).toBe(true);
     });
+
+    it('returns true when member_projects_only is present', () => {
+        expect(hasSharedQueryStateInUrl('?member_projects_only=0')).toBe(true);
+    });
 });
 
 describe('resolveInitialSharedQueryState', () => {
@@ -185,6 +195,7 @@ describe('resolveInitialSharedQueryState', () => {
                 selectedAssigneeIds: undefined,
                 selectedProjectIds: undefined,
                 selectedVersionIds: undefined,
+                memberProjectsOnly: undefined,
                 sortConfig: undefined,
                 groupBy: null,
                 showSubprojects: undefined
@@ -202,6 +213,7 @@ describe('toResolvedQueryStateFromStore', () => {
             selectedAssigneeIds: [7, null],
             selectedProjectIds: ['3'],
             selectedVersionIds: ['4'],
+            memberProjectsOnly: true,
             sortConfig: { key: 'subject', direction: 'asc' },
             groupByProject: false,
             groupByAssignee: true,
@@ -212,6 +224,7 @@ describe('toResolvedQueryStateFromStore', () => {
             selectedAssigneeIds: [7, null],
             selectedProjectIds: ['3'],
             selectedVersionIds: ['4'],
+            memberProjectsOnly: true,
             sortConfig: { key: 'subject', direction: 'asc' },
             groupBy: 'assignee',
             showSubprojects: false
@@ -231,6 +244,7 @@ describe('toBusinessQueryState', () => {
             selectedAssigneeIds: [],
             selectedProjectIds: [],
             selectedVersionIds: [],
+            memberProjectsOnly: false,
             sortConfig: null,
             groupByProject: true,
             groupByAssignee: false,
@@ -313,6 +327,7 @@ describe('query parameter round-trips for special selections', () => {
             selectedAssigneeIds: [null],
             selectedProjectIds: undefined,
             selectedVersionIds: ['_none'],
+            memberProjectsOnly: undefined,
             sortConfig: undefined,
             groupBy: null,
             showSubprojects: undefined
@@ -332,10 +347,29 @@ describe('query parameter round-trips for special selections', () => {
             selectedAssigneeIds: undefined,
             selectedProjectIds: [],
             selectedVersionIds: undefined,
+            memberProjectsOnly: undefined,
             sortConfig: undefined,
             groupBy: null,
             showSubprojects: undefined
         });
+    });
+
+    it('round-trips member_projects_only from URL params', () => {
+        const parsed = readIssueQueryParamsFromUrl('?member_projects_only=1');
+        expect(parsed).toEqual({
+            queryId: undefined,
+            selectedStatusIds: undefined,
+            selectedAssigneeIds: undefined,
+            selectedProjectIds: undefined,
+            selectedVersionIds: undefined,
+            memberProjectsOnly: true,
+            sortConfig: undefined,
+            groupBy: null,
+            showSubprojects: undefined
+        });
+
+        const encoded = buildIssueQueryParams({ memberProjectsOnly: true });
+        expect(encoded.get('member_projects_only')).toBe('1');
     });
 });
 

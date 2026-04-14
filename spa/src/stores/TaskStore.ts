@@ -87,6 +87,7 @@ interface TaskState {
     selectedAssigneeIds: (number | null)[];
     selectedProjectIds: string[];
     selectedVersionIds: string[];
+    memberProjectsOnly: boolean;
 
     sortConfig: SortConfig;
     customScales: Record<number, number>;
@@ -140,6 +141,7 @@ interface TaskState {
     setSelectedAssigneeIds: (ids: (number | null)[]) => void;
     setSelectedProjectIds: (ids: string[]) => void;
     setSelectedVersionIds: (ids: string[]) => void;
+    setMemberProjectsOnly: (enabled: boolean) => Promise<void>;
     scrollToTask: (taskId: string) => void;
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
@@ -283,6 +285,8 @@ const applyApiDataToStore = (
     if (nextResolved.queryId === undefined && state.activeQueryId !== null) {
         nextResolved.queryId = state.activeQueryId;
     }
+    const candidateProjectIds = new Set((data.filterOptions?.projects ?? []).map((project) => project.id));
+    nextResolved.selectedProjectIds = (nextResolved.selectedProjectIds ?? []).filter((projectId) => candidateProjectIds.has(projectId));
     applyResolvedQueryState(nextResolved);
     setFilterOptions(data.filterOptions);
     setTasks(data.tasks);
@@ -475,6 +479,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     selectedAssigneeIds: [],
     selectedProjectIds: [],
     selectedVersionIds: [],
+    memberProjectsOnly: initialUrlState.memberProjectsOnly ?? false,
     sortConfig: { key: 'startDate', direction: 'asc' },
     customScales: preferences.customScales ?? {},
     currentProjectId: window.RedmineCanvasGantt?.projectId?.toString() || null,
@@ -538,6 +543,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const selectedAssigneeIds = queryState.selectedAssigneeIds;
         const selectedProjectIds = queryState.selectedProjectIds;
         const selectedVersionIds = queryState.selectedVersionIds;
+        const memberProjectsOnly = queryState.memberProjectsOnly;
         const activeQueryId = queryState.queryId;
         const layout = buildLayoutFromState(state, {
             groupByProject,
@@ -558,6 +564,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             groupByProject,
             groupByAssignee,
             showSubprojects,
+            memberProjectsOnly,
             sortConfig,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -1116,6 +1123,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         queueRefreshData(get().refreshData);
         return nextState;
     }),
+    setMemberProjectsOnly: async (enabled) => {
+        const current = get();
+        if (current.memberProjectsOnly === enabled) return;
+
+        set({ memberProjectsOnly: enabled });
+        syncSharedQueryState({ ...get(), memberProjectsOnly: enabled });
+        await get().refreshData();
+    },
 
     scrollToTask: (taskId: string) => set((state) => {
         const targetTask = state.tasks.find(t => t.id === taskId)

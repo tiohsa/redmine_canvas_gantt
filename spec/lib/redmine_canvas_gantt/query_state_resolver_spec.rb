@@ -63,6 +63,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       selected_status_ids: [1, 2],
       selected_assignee_ids: [7],
       selected_project_ids: ['9'],
+      member_projects_only: false,
       show_subprojects: false,
       sort_config: { key: 'subject', direction: 'desc' },
       group_by_assignee: true,
@@ -128,6 +129,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       selected_assignee_ids: [7, nil],
       selected_project_ids: ['9'],
       selected_version_ids: ['11'],
+      member_projects_only: false,
       show_subprojects: false,
       sort_config: { key: 'startDate', direction: 'desc' },
       group_by_project: true,
@@ -340,8 +342,27 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       query_id: 42,
       selected_status_ids: [],
       selected_assignee_ids: [nil],
+      member_projects_only: false,
       show_subprojects: true,
       sort_config: { key: 'startDate', direction: 'asc' }
+    )
+  end
+
+  it 'parses member_projects_only from url params' do
+    params = ActionController::Parameters.new(member_projects_only: '1')
+
+    resolver = described_class.new(
+      project: project,
+      params: params,
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    )
+
+    result = resolver.resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state]).to include(
+      member_projects_only: true
     )
   end
 end

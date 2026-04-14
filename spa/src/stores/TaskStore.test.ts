@@ -231,6 +231,35 @@ describe('TaskStore shared query persistence', () => {
             showSubprojects: false
         });
     });
+
+    it('setMemberProjectsOnly updates shared query state and refreshes data', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: {
+                projects: [{ id: 'p1', name: 'Alpha' }],
+                assignees: []
+            },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: {
+                memberProjectsOnly: true,
+                selectedProjectIds: ['p1', 'p2']
+            }
+        });
+
+        await useTaskStore.getState().setMemberProjectsOnly(true);
+
+        expect(apiClient.fetchData).toHaveBeenCalled();
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            memberProjectsOnly: true,
+            selectedProjectIds: ['p1']
+        });
+    });
 });
 
 describe('TaskStore version label visibility', () => {

@@ -52,7 +52,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:descendant_project_ids).and_return([1, 2])
       filter_option_project = double('ProjectOption', id: 1, name: 'Demo')
       filter_option_issue = double('FilterOptionIssue')
-      allow(controller).to receive(:filter_option_projects).with([1, 2]).and_return([filter_option_project])
+      allow(controller).to receive(:filter_option_projects).with([1, 2], member_projects_only: false).and_return([filter_option_project])
       allow(controller).to receive(:filter_option_issues).with([1, 2]).and_return([filter_option_issue])
       allow(controller).to receive(:query_state_resolver).and_return(resolver)
       allow(controller).to receive(:baseline_repository).and_return(baseline_repository)
@@ -108,6 +108,101 @@ RSpec.describe CanvasGanttsController, type: :controller do
       )
       expect(body['baseline']).to include('snapshot_id' => 'baseline-1', 'project_id' => 1)
       expect(body['warnings']).to contain_exactly('Invalid query_id ignored', 'Baseline warning')
+    end
+
+    it 'filters project candidates before building the data payload' do
+      payload_builder = instance_double(RedmineCanvasGantt::DataPayloadBuilder)
+      baseline_repository = instance_double(RedmineCanvasGantt::BaselineRepository)
+      resolver = instance_double(RedmineCanvasGantt::QueryStateResolver)
+      filter_option_project = double('ProjectOption', id: 1, name: 'Demo')
+      filter_option_issue = double('FilterOptionIssue')
+      issue = double('Issue', project_id: 1)
+
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: true, viewable: true, baseline_editable: true })
+      end
+      allow(controller).to receive(:descendant_project_ids).and_return([1, 2])
+      allow(controller).to receive(:filter_option_projects).with([1, 2], member_projects_only: true).and_return([filter_option_project])
+      allow(controller).to receive(:filter_option_issues).with([1, 2]).and_return([filter_option_issue])
+      allow(controller).to receive(:query_state_resolver).and_return(resolver)
+      allow(controller).to receive(:baseline_repository).and_return(baseline_repository)
+      allow(resolver).to receive(:resolve).and_return({
+        issues: [issue],
+        initial_state: { query_id: 7, member_projects_only: true },
+        warnings: []
+      })
+      allow(baseline_repository).to receive(:load).and_return(
+        RedmineCanvasGantt::BaselineRepository::LoadResult.new(snapshot: nil, warnings: [])
+      )
+      allow(controller).to receive(:data_payload_builder).and_return(payload_builder)
+      allow(payload_builder).to receive(:build).and_return(
+        {
+          tasks: [],
+          relations: [],
+          versions: [],
+          custom_fields: [],
+          filter_options: { projects: [], assignees: [] },
+          statuses: [],
+          project: { id: 1, name: 'Demo' },
+          permissions: { editable: true, viewable: true, baseline_editable: true },
+          initial_state: { query_id: 7, member_projects_only: true }
+        }
+      )
+
+      get :data, params: { project_id: 'demo', member_projects_only: '1' }, format: :json
+
+      expect(response).to have_http_status(:ok)
+    end
+  end
+
+  describe '#filter_option_projects' do
+    let(:visible_scope) { instance_double(ActiveRecord::Relation) }
+    let(:member_active_scope) { instance_double(ActiveRecord::Relation) }
+    let(:descendant_filtered_scope) { instance_double(ActiveRecord::Relation) }
+    let(:member_joined_scope) { instance_double(ActiveRecord::Relation) }
+    let(:member_filtered_scope) { instance_double(ActiveRecord::Relation) }
+    let(:descendant_project) { double('ProjectOption', id: 1) }
+    let(:member_project) { double('ProjectOption', id: 3) }
+
+    before do
+      allow(Project).to receive(:visible).and_return(visible_scope)
+      allow(visible_scope).to receive(:where).with(id: [1, 2]).and_return(descendant_filtered_scope)
+      allow(visible_scope).to receive(:active).and_return(member_active_scope)
+      allow(member_active_scope).to receive(:joins).with(:members).and_return(member_joined_scope)
+    end
+
+    it 'returns visible descendant projects when memberProjectsOnly is disabled' do
+      allow(descendant_filtered_scope).to receive(:to_a).and_return([descendant_project])
+
+      result = controller.send(:filter_option_projects, [1, 2])
+
+      expect(result).to eq([descendant_project])
+    end
+
+    it 'returns only visible member projects when memberProjectsOnly is enabled' do
+      user = instance_double(User, id: 7, group_ids: [11, 12])
+
+      allow(User).to receive(:current).and_return(user)
+      allow(descendant_filtered_scope).to receive(:to_a).and_return([descendant_project])
+      expect(member_joined_scope).to receive(:where).with(
+        members: { user_id: [7, 11, 12] }
+      ).and_return(member_filtered_scope)
+      allow(member_filtered_scope).to receive(:distinct).and_return(member_filtered_scope)
+      allow(member_filtered_scope).to receive(:to_a).and_return([member_project])
+
+      result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
+
+      expect(result).to eq([member_project])
+    end
+
+    it 'returns no member projects when current user is unavailable' do
+      allow(User).to receive(:current).and_return(nil)
+
+      allow(descendant_filtered_scope).to receive(:to_a).and_return([descendant_project])
+
+      result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
+
+      expect(result).to eq([])
     end
   end
 

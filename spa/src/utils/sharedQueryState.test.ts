@@ -14,13 +14,14 @@ describe('shared query state storage', () => {
     });
 
     it('stores shared query state per project', () => {
-        saveLastUsedSharedQueryState({ queryId: 12, selectedStatusIds: [1], groupBy: 'assignee' }, 1);
+        saveLastUsedSharedQueryState({ queryId: 12, selectedStatusIds: [1], groupBy: 'assignee', memberProjectsOnly: true }, 1);
         saveLastUsedSharedQueryState({ selectedProjectIds: ['3'] }, 2);
 
         expect(loadLastUsedSharedQueryState(1)).toEqual({
             queryId: 12,
             selectedStatusIds: [1],
-            groupBy: 'assignee'
+            groupBy: 'assignee',
+            memberProjectsOnly: true
         });
         expect(loadLastUsedSharedQueryState(2)).toEqual({
             selectedProjectIds: ['3']
@@ -34,6 +35,7 @@ describe('shared query state storage', () => {
             selectedAssigneeIds: [],
             selectedProjectIds: [],
             selectedVersionIds: [],
+            memberProjectsOnly: false,
             sortConfig: { key: 'startDate', direction: 'asc' },
             groupBy: 'project',
             showSubprojects: true
