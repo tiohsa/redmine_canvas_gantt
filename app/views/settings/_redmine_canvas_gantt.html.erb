@@ -35,4 +35,11 @@
     <label><%= l(:"canvas_gantt.label_row_height") %></label>
     <%= number_field_tag 'settings[row_height]', settings['row_height'], min: 20, max: 100 %>
   </p>
+
+  <p>
+    <label><%= l(:"canvas_gantt.label_tracker_icon_map") %></label>
+    <%= text_area_tag 'settings[tracker_icon_map]', settings['tracker_icon_map'], rows: 3, style: 'width: 100%; font-family: monospace;' %>
+    <br>
+    <em><%= l(:"canvas_gantt.label_tracker_icon_map_help") %></em>
+  </p>
 </fieldset>

@@ -150,6 +150,8 @@ en:
     label_selected_projects_outside_candidates: "Some selected projects are hidden from the current candidate list."
     label_relation_add_failed: "Failed to create relation"
     label_row_height: "Row height"
+    label_tracker_icon_map: "Tracker icon map"
+    label_tracker_icon_map_help: "JSON object that maps tracker IDs to icon kinds. Example: {\"1\":\"bug\",\"2\":\"feature\",\"3\":\"support\"}"
     label_font_size: "Font size"
     label_font_size_small: "Small"
     label_font_size_medium: "Medium"

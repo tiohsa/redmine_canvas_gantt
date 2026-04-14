@@ -150,6 +150,8 @@ ja:
     label_selected_projects_outside_candidates: "現在選択中の一部プロジェクトは候補一覧には表示されません"
     label_relation_add_failed: "関連の作成に失敗しました"
     label_row_height: "行の高さ"
+    label_tracker_icon_map: "トラッカーアイコンマップ"
+    label_tracker_icon_map_help: "トラッカーIDとアイコン種別を対応付けるJSONオブジェクトです。例: {\"1\":\"bug\",\"2\":\"feature\",\"3\":\"support\"}"
     label_font_size: "フォントサイズ"
     label_font_size_small: "小"
     label_font_size_medium: "中"
