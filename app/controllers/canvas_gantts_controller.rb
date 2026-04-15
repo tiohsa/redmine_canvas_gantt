@@ -144,6 +144,9 @@ class CanvasGanttsController < ApplicationController
     label_column_short: :label_column_short,
     label_dependencies_short: :label_dependencies_short,
     label_refresh_failed: :label_refresh_failed,
+    label_project_candidates_load_failed: :label_project_candidates_load_failed,
+    label_member_projects_only: :label_member_projects_only,
+    label_selected_projects_outside_candidates: :label_selected_projects_outside_candidates,
     label_relation_add_failed: :label_relation_add_failed,
     label_dependency_edit_mode: :label_dependency_edit_mode,
     label_relation_type_precedes_info: :label_relation_type_precedes_info,
@@ -333,13 +336,14 @@ class CanvasGanttsController < ApplicationController
       project_ids = descendant_project_ids
       resolved_query = query_state_resolver.resolve(project_ids: project_ids)
       baseline_load = baseline_repository.load(project_id: @project.id)
+      member_projects_only = resolved_query[:initial_state].fetch(:member_projects_only, false)
 
       render json: data_payload_builder.build(
         project: @project,
         permissions: @permissions,
         project_ids: project_ids,
         issues: resolved_query[:issues],
-        filter_option_projects: filter_option_projects(project_ids),
+        filter_option_projects: filter_option_projects(project_ids, member_projects_only: member_projects_only),
         filter_option_issues: filter_option_issues(project_ids),
         initial_state: resolved_query[:initial_state],
         warnings: resolved_query[:warnings] + baseline_load.warnings,
@@ -617,12 +621,62 @@ class CanvasGanttsController < ApplicationController
     )
   end
 
-  def filter_option_projects(project_ids)
-    Project.visible.where(id: project_ids).to_a
+  def filter_option_projects(project_ids, member_projects_only: false)
+    return visible_member_projects if member_projects_only
+
+    visible_member_projects(project_ids)
+  end
+
+  def visible_member_projects(project_ids = nil)
+    return [] if member_candidate_ids.empty?
+
+    scope = Project.visible.active
+    scope = scope.where(id: candidate_project_ids(project_ids)) if project_ids.present?
+
+    scope
+      .joins(:members)
+      # Redmine stores users and groups in users; members.user_id references users.id.
+      .where(members: { user_id: member_candidate_ids })
+      .distinct
+      .to_a
   end
 
   def filter_option_issues(project_ids)
     Issue.visible.where(project_id: project_ids).includes(:assigned_to, :project).to_a
+  end
+
+  def member_candidate_ids
+    @member_candidate_ids ||= begin
+      user_id = User.current&.id
+      if user_id
+        ([user_id] + current_user_group_ids).map(&:to_i).select(&:positive?).uniq
+      else
+        []
+      end
+    end
+  end
+
+  def current_user_group_ids
+    @current_user_group_ids ||= begin
+      user = User.current
+
+      if user.nil?
+        []
+      elsif user.respond_to?(:group_ids)
+        Array(user.group_ids).map(&:to_i).uniq
+      elsif user.respond_to?(:groups)
+        user.groups.pluck(:id)
+      else
+        []
+      end
+    end
+  end
+
+  def candidate_project_ids(project_ids)
+    Array(project_ids)
+      .map(&:to_i)
+      .select(&:positive?)
+      .uniq
   end
 
   def saved_query_public?(query)

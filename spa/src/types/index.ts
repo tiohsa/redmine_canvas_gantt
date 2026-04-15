@@ -108,6 +108,7 @@ export interface BusinessQueryState {
     selectedAssigneeIds: (number | null)[];
     selectedProjectIds: string[];
     selectedVersionIds: string[];
+    memberProjectsOnly: boolean;
     sortConfig: { key: string; direction: 'asc' | 'desc' } | null;
     groupByProject: boolean;
     groupByAssignee: boolean;

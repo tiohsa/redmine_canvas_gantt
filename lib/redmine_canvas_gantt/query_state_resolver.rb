@@ -8,6 +8,7 @@ module RedmineCanvasGantt
       selected_assignee_ids: [],
       selected_project_ids: [],
       selected_version_ids: [],
+      member_projects_only: false,
       sort_config: { key: 'startDate', direction: 'asc' },
       group_by_project: true,
       group_by_assignee: false,
@@ -36,6 +37,8 @@ module RedmineCanvasGantt
     QUERY_FIELD_TO_SORT = SORT_FIELD_TO_QUERY.invert.freeze
     URL_OVERRIDE_FILTERS = %w[status_id assigned_to_id fixed_version_id].freeze
     STANDARD_FILTER_FIELDS = %w[status_id assigned_to_id project_id fixed_version_id subproject_id].freeze
+    LIST_SPLIT_PATTERN = /[|,]/
+    NONE_MARKERS = %w[_none none].freeze
     STANDARD_FILTER_OPERATORS = {
       'status_id' => %w[= * o c],
       'assigned_to_id' => %w[= * !*],
@@ -58,6 +61,7 @@ module RedmineCanvasGantt
       selected_project_ids = resolve_selected_project_ids(project_ids)
       state[:selected_project_ids] = selected_project_ids.map(&:to_s)
       state[:show_subprojects] = resolve_show_subprojects
+      state[:member_projects_only] = resolve_member_projects_only
 
       query_resolution = resolve_query_resolution
       state.merge!(state_from_query(query_resolution.query)) if query_resolution.query
@@ -206,8 +210,15 @@ module RedmineCanvasGantt
       apply_version_override!(state)
       apply_project_override!(state)
       apply_show_subprojects_override!(state)
+      apply_member_projects_only_override!(state)
       apply_sort_override!(state)
       apply_group_by_override!(state)
+    end
+
+    def apply_member_projects_only_override!(state)
+      return unless @params.key?(:member_projects_only) || @params.key?('member_projects_only')
+
+      state[:member_projects_only] = resolve_member_projects_only
     end
 
     def apply_status_override!(state)
@@ -401,7 +412,7 @@ module RedmineCanvasGantt
     end
 
     def resolve_selected_project_ids(fallback_project_ids)
-      project_ids = parse_integer_list(Array(@params[:project_ids]))
+      project_ids = parse_integer_list(@params[:project_ids])
       return project_ids if project_ids.present?
 
       show_subprojects = resolve_show_subprojects
@@ -412,6 +423,13 @@ module RedmineCanvasGantt
     def resolve_show_subprojects
       raw = @params[:show_subprojects]
       return DEFAULT_STATE[:show_subprojects] if raw.nil?
+
+      ActiveModel::Type::Boolean.new.cast(raw)
+    end
+
+    def resolve_member_projects_only
+      raw = @params[:member_projects_only]
+      return DEFAULT_STATE[:member_projects_only] if raw.nil?
 
       ActiveModel::Type::Boolean.new.cast(raw)
     end
@@ -430,33 +448,31 @@ module RedmineCanvasGantt
     end
 
     def parse_integer_list(values)
-      Array(values).flat_map { |value| value.to_s.split(/[|,]/) }.filter_map do |value|
-        stripped = value.strip
-        stripped.to_i if stripped.match?(/\A-?\d+\z/)
-      end
+      split_list_values(values).filter_map { |value| value.to_i if integer_string?(value) }
     end
 
     def parse_integer_or_none_list(values)
-      Array(values).flat_map { |value| value.to_s.split(/[|,]/) }.each_with_object([]) do |value, parsed|
-        stripped = value.strip
-        if %w[_none none].include?(stripped)
+      split_list_values(values).each_with_object([]) do |value, parsed|
+        if none_marker?(value)
           parsed << nil
-        elsif stripped.match?(/\A-?\d+\z/)
-          parsed << stripped.to_i
+        elsif integer_string?(value)
+          parsed << value.to_i
         end
       end.uniq
     end
 
     def parse_version_list(values)
-      Array(values).flat_map { |value| value.to_s.split(/[|,]/) }.filter_map do |value|
-        stripped = value.strip
-        next '_none' if %w[_none none].include?(stripped)
-        next stripped if stripped.match?(/\A-?\d+\z/)
+      split_list_values(values).each_with_object([]) do |value, parsed|
+        if none_marker?(value)
+          parsed << '_none'
+        elsif integer_string?(value)
+          parsed << value
+        end
       end.uniq
     end
 
     def parse_string_list(values)
-      Array(values).flat_map { |value| value.to_s.split(/[|,]/) }.map(&:strip).reject(&:blank?).uniq
+      split_list_values(values).uniq
     end
 
     def standard_filtering_enabled?
@@ -490,6 +506,18 @@ module RedmineCanvasGantt
     def url_filter_values(name)
       plural = "#{name.to_s.sub(/_id\z/, '')}_ids"
       Array(@params[name] || @params[plural] || @params["#{plural}[]"])
+    end
+
+    def split_list_values(values)
+      Array(values).flat_map { |value| value.to_s.split(LIST_SPLIT_PATTERN) }.map(&:strip).reject(&:blank?)
+    end
+
+    def integer_string?(value)
+      value.match?(/\A-?\d+\z/)
+    end
+
+    def none_marker?(value)
+      NONE_MARKERS.include?(value)
     end
   end
 end

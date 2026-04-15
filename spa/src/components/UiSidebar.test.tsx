@@ -127,6 +127,60 @@ describe('UiSidebar', () => {
         expect(screen.getByTestId('task-id-123')).toHaveTextContent('123');
     });
 
+    it('renders the subject tracker icon from the trackerId map', () => {
+        const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['subject']);
+        useUIStore.setState({ visibleColumns: ['subject'], columnSettings });
+        const previousSettings = window.RedmineCanvasGantt?.settings;
+        try {
+            window.RedmineCanvasGantt = {
+                ...window.RedmineCanvasGantt!,
+                settings: {
+                    ...(window.RedmineCanvasGantt?.settings ?? {}),
+                    tracker_icon_map: '{"7":"bug"}'
+                }
+            };
+
+            useTaskStore.setState({
+                viewport: {
+                    startDate: 0,
+                    scrollX: 0,
+                    scrollY: 0,
+                    scale: 1,
+                    width: 800,
+                    height: 600,
+                    rowHeight: 32
+                },
+                groupByProject: false
+            });
+
+            const task: Task = {
+                id: '127',
+                subject: 'Mapped tracker task',
+                trackerId: 7,
+                trackerName: '機能',
+                startDate: 0,
+                dueDate: 1,
+                ratioDone: 0,
+                statusId: 1,
+                lockVersion: 0,
+                editable: true,
+                rowIndex: 0,
+                hasChildren: false
+            };
+
+            useTaskStore.getState().setTasks([task]);
+
+            render(<UiSidebar />);
+
+            expect(screen.getByTestId('tracker-icon-bug')).toBeInTheDocument();
+        } finally {
+            window.RedmineCanvasGantt = {
+                ...window.RedmineCanvasGantt!,
+                settings: previousSettings ?? {}
+            };
+        }
+    });
+
     it('shows a visible border between sidebar columns', () => {
         const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['id', 'subject']);
         useUIStore.setState({ visibleColumns: ['id', 'subject'], columnSettings });

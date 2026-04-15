@@ -1393,6 +1393,90 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByText('Beta')).toBeInTheDocument();
     });
 
+    it('toggles member-project candidates filter and prunes hidden project selections', async () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [] as never,
+            filterOptions: {
+                projects: [
+                    { id: 'p1', name: 'Alpha' },
+                    { id: 'p2', name: 'Beta' }
+                ],
+                assignees: []
+            },
+            selectedProjectIds: ['p1', 'p2'],
+            selectedAssigneeIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            memberProjectsOnly: false
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: {
+                projects: [{ id: 'p1', name: 'Alpha' }],
+                assignees: []
+            },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: {
+                memberProjectsOnly: true,
+                selectedProjectIds: ['p1', 'p2']
+            }
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTitle('Filter by project'));
+        fireEvent.click(screen.getByLabelText('Show only my member projects'));
+
+        await waitFor(() => {
+            expect(apiClient.fetchData).toHaveBeenCalledWith(expect.objectContaining({
+                query: expect.objectContaining({
+                    memberProjectsOnly: true
+                })
+            }));
+        });
+        await waitFor(() => {
+            expect(useTaskStore.getState().memberProjectsOnly).toBe(true);
+        });
+        await waitFor(() => {
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        });
+        expect(screen.queryByText('Beta')).not.toBeInTheDocument();
+    });
+
+    it('does not fall back to task-derived project options in the project filter', () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [
+                { id: '1', subject: 'Task 1', projectId: 'p1', projectName: 'Alpha', statusId: 1, lockVersion: 0, editable: true, rowIndex: 0, hasChildren: false },
+                { id: '2', subject: 'Task 2', projectId: 'p2', projectName: 'Beta', statusId: 1, lockVersion: 0, editable: true, rowIndex: 0, hasChildren: false }
+            ] as never,
+            filterOptions: {
+                projects: [],
+                assignees: []
+            },
+            selectedProjectIds: [],
+            selectedAssigneeIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            memberProjectsOnly: false
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTitle('Filter by project'));
+
+        expect(screen.queryByText('Alpha')).not.toBeInTheDocument();
+        expect(screen.queryByText('Beta')).not.toBeInTheDocument();
+    });
+
     it('scopes assignee and version options by selected projects while keeping selected out-of-scope entries visible', () => {
         useTaskStore.setState({
             filterText: '',

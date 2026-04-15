@@ -101,7 +101,7 @@ declare global {
             authToken: string;
             apiKey: string;
             nonWorkingWeekDays?: number[];
-            settings?: InlineEditSettings & { row_height?: string };
+            settings?: InlineEditSettings & { row_height?: string; tracker_icon_map?: string };
             i18n?: Record<string, string>;
         };
     }

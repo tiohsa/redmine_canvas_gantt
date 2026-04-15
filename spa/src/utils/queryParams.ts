@@ -7,6 +7,7 @@ export interface ResolvedQueryState {
     selectedAssigneeIds?: (number | null)[];
     selectedProjectIds?: string[];
     selectedVersionIds?: string[];
+    memberProjectsOnly?: boolean;
     sortConfig?: BusinessQueryState['sortConfig'];
     groupBy?: 'project' | 'assignee' | null;
     showSubprojects?: boolean;
@@ -19,6 +20,7 @@ export interface QueryUrlStateSource {
     selectedAssigneeIds: (number | null)[];
     selectedProjectIds: string[];
     selectedVersionIds: string[];
+    memberProjectsOnly: boolean;
     sortConfig: BusinessQueryState['sortConfig'];
     groupByProject: boolean;
     groupByAssignee: boolean;
@@ -228,6 +230,7 @@ const CONTROLLED_KEYS = [
     'fixed_version_ids',
     'fixed_version_id[]',
     'fixed_version_id',
+    'member_projects_only',
     'group_by',
     'sort',
     'show_subprojects'
@@ -258,6 +261,7 @@ export const toBusinessQueryState = (state: Partial<ResolvedQueryState> = {}): B
     selectedAssigneeIds: state.selectedAssigneeIds ?? [],
     selectedProjectIds: state.selectedProjectIds ?? [],
     selectedVersionIds: state.selectedVersionIds ?? [],
+    memberProjectsOnly: state.memberProjectsOnly ?? false,
     sortConfig: state.sortConfig ?? null,
     groupByProject: state.groupBy === 'project',
     groupByAssignee: state.groupBy === 'assignee',
@@ -274,6 +278,7 @@ export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>)
     if (state.selectedAssigneeIds?.length) normalized.selectedAssigneeIds = [...state.selectedAssigneeIds];
     if (state.selectedProjectIds?.length) normalized.selectedProjectIds = [...state.selectedProjectIds];
     if (state.selectedVersionIds?.length) normalized.selectedVersionIds = [...state.selectedVersionIds];
+    if (state.memberProjectsOnly === true) normalized.memberProjectsOnly = true;
     if (state.sortConfig?.key && !(state.sortConfig.key === DEFAULT_SORT_KEY && state.sortConfig.direction === DEFAULT_SORT_DIRECTION)) {
         normalized.sortConfig = { ...state.sortConfig };
     }
@@ -289,7 +294,7 @@ export const hasSharedQueryStateInUrl = (search: string = window.location.search
     const parsedQueryId = queryIdRaw && /^-?\d+$/.test(queryIdRaw) ? Number(queryIdRaw) : undefined;
 
     if (isPersistedQueryId(parsedQueryId)) return true;
-    if (params.has('group_by') || params.has('sort') || params.has('show_subprojects')) return true;
+    if (params.has('group_by') || params.has('sort') || params.has('show_subprojects') || params.has('member_projects_only')) return true;
     if (hasValueForAnyParam(params, ['status_ids[]', 'status_ids', 'status_id[]', 'status_id'])) return true;
     if (hasValueForAnyParam(params, ['assigned_to_ids[]', 'assigned_to_ids', 'assigned_to_id[]', 'assigned_to_id'])) return true;
     if (hasValueForAnyParam(params, ['project_ids[]', 'project_ids'])) return true;
@@ -305,6 +310,7 @@ export const toResolvedQueryStateFromStore = (state: QueryUrlStateSource): Resol
     selectedAssigneeIds: state.selectedAssigneeIds,
     selectedProjectIds: state.selectedProjectIds,
     selectedVersionIds: state.selectedVersionIds,
+    memberProjectsOnly: state.memberProjectsOnly,
     sortConfig: state.sortConfig ?? undefined,
     groupBy: state.groupByProject ? 'project' : (state.groupByAssignee ? 'assignee' : null),
     showSubprojects: state.showSubprojects,
@@ -324,6 +330,7 @@ export const readIssueQueryParamsFromUrl = (search: string = window.location.sea
         selectedAssigneeIds: standardState.selectedAssigneeIds ?? parseAssigneeList(params),
         selectedProjectIds: standardState.selectedProjectIds ?? parseProjectList(params),
         selectedVersionIds: standardState.selectedVersionIds ?? parseVersionList(params),
+        memberProjectsOnly: params.get('member_projects_only') === null ? undefined : params.get('member_projects_only') === '1',
         sortConfig: parseSortConfig(params.get('sort')),
         groupBy: groupBy === 'assigned_to' || groupBy === 'assignee' ? 'assignee' : (groupBy === 'project' ? 'project' : null),
         showSubprojects: params.get('show_subprojects') === null ? standardState.showSubprojects : params.get('show_subprojects') !== '0'
@@ -361,6 +368,7 @@ export const buildIssueQueryParams = (state: Partial<ResolvedQueryState>): URLSe
         businessState.selectedProjectIds.forEach((id) => params.append('project_ids[]', id));
     }
     businessState.selectedVersionIds.forEach((id) => params.append('fixed_version_ids[]', id === '_none' ? 'none' : id));
+    if (state.memberProjectsOnly === true) params.set('member_projects_only', '1');
     if (state.groupBy === 'project') params.set('group_by', 'project');
     if (state.groupBy === 'assignee') params.set('group_by', 'assigned_to');
     if (businessState.sortConfig?.key) params.set('sort', `${businessState.sortConfig.key}:${businessState.sortConfig.direction}`);
@@ -495,6 +503,7 @@ export const parseResolvedQueryState = (value: unknown): ResolvedQueryState | un
                 return normalized.match(/^-?\d+$/) ? [normalized] : [];
             })))
             : undefined,
+        memberProjectsOnly: typeof record.member_projects_only === 'boolean' ? record.member_projects_only : undefined,
         sortConfig: sortRecord && sortRecord.key
             ? { key: String(sortRecord.key), direction: sortRecord.direction === 'desc' ? 'desc' : 'asc' }
             : undefined,

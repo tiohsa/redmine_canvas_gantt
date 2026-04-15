@@ -18,7 +18,14 @@ import { useSidebarDragAndDrop } from './sidebar/useSidebarDragAndDrop';
 import { useSidebarInlineEdit } from './sidebar/useSidebarInlineEdit';
 import { SvgIcon } from '../icons/SvgIcon';
 import { getTaskNotification } from './sidebar/sidebarNotifications';
+import { parseTrackerIconMap, resolveTrackerIconKind } from './sidebar/trackerIconUtils';
+import { TrackerIcon } from './sidebar/trackerIcon';
 const NOTIFICATION_COLUMN_KEY = 'notification';
+
+type CanvasGanttSettings = InlineEditSettings & {
+    row_height?: string;
+    tracker_icon_map?: string;
+};
 
 const getAvatarColor = (name: string) => {
     const colors = ['#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800', '#ff5722'];
@@ -89,47 +96,6 @@ const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
     </svg>
 );
 
-const TrackerIcon = ({ name }: { name?: string }) => {
-    const lowerName = name?.toLowerCase() || '';
-
-    // Bug icon
-    if (lowerName.includes('bug')) {
-        return (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d93025" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <circle cx="12" cy="12" r="8" fill="#d93025" fillOpacity="0.1" />
-                <path d="M12 4v2m0 12v2M4 12h2m12 0h2M6.34 6.34l1.42 1.42M16.24 16.24l1.42 1.42M6.34 17.66l1.42-1.42M16.24 7.76l1.42-1.42" />
-            </svg>
-        );
-    }
-
-    // Feature icon
-    if (lowerName.includes('feature')) {
-        return (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#188038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" fill="#188038" fillOpacity="0.1" />
-            </svg>
-        );
-    }
-
-    // Support icon
-    if (lowerName.includes('support')) {
-        return (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a73e8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <circle cx="12" cy="12" r="10" fill="#1a73e8" fillOpacity="0.1" />
-                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01" />
-            </svg>
-        );
-    }
-
-    // Task icon (default)
-    return (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5f6368" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
-            <polyline points="13 2 13 9 20 9" />
-        </svg>
-    );
-};
-
 const ExpandAllIcon = () => (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="7 15 12 20 17 15" />
@@ -182,8 +148,9 @@ export const UiSidebar: React.FC = () => {
     const treeGuideWidth = showHierarchyLines ? 16 : 8;
 
     const settings = React.useMemo(() => {
-        return (window as unknown as { RedmineCanvasGantt?: { settings?: InlineEditSettings } }).RedmineCanvasGantt?.settings ?? {};
+        return (window as unknown as { RedmineCanvasGantt?: { settings?: CanvasGanttSettings } }).RedmineCanvasGantt?.settings ?? {};
     }, []);
+    const trackerIconMap = React.useMemo(() => parseTrackerIconMap(settings.tracker_icon_map), [settings]);
     const bodyRef = React.useRef<HTMLDivElement>(null);
 
     const { handleResizeStart } = useSidebarColumnSizing({ tasks, customFields, setColumnWidth });
@@ -403,7 +370,7 @@ export const UiSidebar: React.FC = () => {
                                 </div>
 
                                 <div style={{ marginLeft: 8, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                    <TrackerIcon name={t.trackerName} />
+                                    <TrackerIcon kind={resolveTrackerIconKind(t.trackerId, t.trackerName, trackerIconMap)} />
                                 </div>
                                 <a
                                     href={buildRedmineUrl(`/issues/${t.id}`)}

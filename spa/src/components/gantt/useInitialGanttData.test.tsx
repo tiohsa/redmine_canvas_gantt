@@ -130,4 +130,28 @@ describe('useInitialGanttData persistence', () => {
             expect(useTaskStore.getState().selectedVersionIds).toEqual(['v2']);
         });
     });
+
+    it('restores memberProjectsOnly from shared state', async () => {
+        saveLastUsedSharedQueryState({
+            memberProjectsOnly: true
+        });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalledWith({
+                rawSearch: undefined,
+                query: {
+                    memberProjectsOnly: true
+                }
+            });
+        });
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().memberProjectsOnly).toBe(true);
+        });
+
+        const url = new URL(window.location.href);
+        expect(url.searchParams.get('member_projects_only')).toBe('1');
+    });
 });

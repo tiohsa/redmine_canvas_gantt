@@ -8,6 +8,7 @@ export type SharedQuerySyncState = {
     selectedAssigneeIds: (number | null)[];
     selectedProjectIds: string[];
     selectedVersionIds: string[];
+    memberProjectsOnly: boolean;
     sortConfig: SortConfig;
     groupByProject: boolean;
     groupByAssignee: boolean;

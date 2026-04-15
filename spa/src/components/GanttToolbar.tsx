@@ -28,6 +28,8 @@ import {
 import { COLUMN_CATALOG } from './sidebar/sidebarColumnCatalog';
 import { ColumnMenuItem } from './sidebar/ColumnMenuItem';
 import { useColumnMenuDrag } from './sidebar/useColumnMenuDrag';
+import { useSavedQueriesLoader } from './gantt/useSavedQueriesLoader';
+import { useToolbarShortcuts } from './gantt/useToolbarShortcuts';
 
 interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
@@ -39,7 +41,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, groupByAssignee, setGroupByAssignee, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
-        selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds,
+        selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
         setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
         modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields, activeQueryId, sortConfig, showSubprojects, permissions, filterOptions,
         applySavedQuery: applySavedQueryFromStore,
@@ -121,13 +123,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [draftAutoCalculateDelay, setDraftAutoCalculateDelay] = React.useState<boolean>(autoCalculateDelay);
     const [draftAutoApplyDefaultRelation, setDraftAutoApplyDefaultRelation] = React.useState<boolean>(autoApplyDefaultRelation);
     const [draftAutoScheduleMoveMode, setDraftAutoScheduleMoveMode] = React.useState<AutoScheduleMoveModeValue>(autoScheduleMoveMode);
+    const [projectFilterLoading, setProjectFilterLoading] = React.useState(false);
+    const [projectFilterError, setProjectFilterError] = React.useState<string | null>(null);
     const [pendingSavedQueryId, setPendingSavedQueryId] = React.useState<number | null>(null);
     const filterInputRef = React.useRef<HTMLInputElement>(null);
     const columnMenuContentRef = React.useRef<HTMLDivElement>(null);
     const selectAllStatusesRef = React.useRef<HTMLInputElement>(null);
     const completedStatusesRef = React.useRef<HTMLInputElement>(null);
     const incompleteStatusesRef = React.useRef<HTMLInputElement>(null);
-    const handledSavedQueriesReloadTokenRef = React.useRef(0);
     const showQueryMenu = isMenuOpen('query');
     const showFilterMenu = isMenuOpen('filter');
     const showColumnMenu = isMenuOpen('column');
@@ -142,16 +145,20 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const showBaselineSaveMenu = isMenuOpen('baselineSave');
     const displayedActiveQueryId = pendingSavedQueryId ?? activeQueryId;
 
-    React.useEffect(() => {
-        if (!showFilterMenu) return;
+    useToolbarShortcuts({
+        closeMenu,
+        filterInputRef,
+        openMenuByKey,
+        setFilterText,
+        showFilterMenu
+    });
 
-        const requestId = window.requestAnimationFrame(() => {
-            filterInputRef.current?.focus();
-            filterInputRef.current?.select();
-        });
-
-        return () => window.cancelAnimationFrame(requestId);
-    }, [showFilterMenu]);
+    useSavedQueriesLoader({
+        loadSavedQueries,
+        savedQueriesReloadToken,
+        savedQueriesStatus,
+        showQueryMenu
+    });
 
     React.useEffect(() => {
         if (!showRelationSettingsMenu) return;
@@ -160,52 +167,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setDraftAutoApplyDefaultRelation(autoApplyDefaultRelation);
         setDraftAutoScheduleMoveMode(autoScheduleMoveMode);
     }, [autoApplyDefaultRelation, autoCalculateDelay, autoScheduleMoveMode, defaultRelationType, showRelationSettingsMenu]);
-
-    React.useEffect(() => {
-        if (showQueryMenu && savedQueriesStatus === 'idle') {
-            void loadSavedQueries();
-        }
-    }, [loadSavedQueries, savedQueriesStatus, showQueryMenu]);
-
-    React.useEffect(() => {
-        if (savedQueriesReloadToken <= 0) return;
-        if (handledSavedQueriesReloadTokenRef.current >= savedQueriesReloadToken) return;
-
-        handledSavedQueriesReloadTokenRef.current = savedQueriesReloadToken;
-        void loadSavedQueries(true);
-    }, [loadSavedQueries, savedQueriesReloadToken]);
-
-    React.useEffect(() => {
-        if (pendingSavedQueryId === null) return;
-        // The clearing is handled in the async applySavedQuery handler for manual clicks.
-        // This effect can stay as a fallback for external changes if needed,
-        // but for now let's just keep it empty or remove it.
-    }, [activeQueryId, pendingSavedQueryId]);
-
-    React.useEffect(() => {
-        const handleGlobalKeyDown = (event: KeyboardEvent) => {
-            if (event.defaultPrevented) return;
-
-            const key = event.key.toLowerCase();
-
-            if (event.ctrlKey && !event.altKey && !event.metaKey && key === 'f') {
-                event.preventDefault();
-                event.stopPropagation();
-                openMenuByKey('filter');
-                return;
-            }
-
-            if (key === 'escape' && showFilterMenu) {
-                event.preventDefault();
-                event.stopPropagation();
-                setFilterText('');
-                closeMenu('filter');
-            }
-        };
-
-        window.addEventListener('keydown', handleGlobalKeyDown, true);
-        return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
-    }, [closeMenu, openMenuByKey, showFilterMenu, setFilterText]);
 
     const handleSaveRelationSettings = () => {
         setDefaultRelationType(draftRelationType);
@@ -332,6 +293,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             selectedAssigneeIds,
             selectedProjectIds,
             selectedVersionIds,
+            memberProjectsOnly,
             sortConfig,
             groupByProject,
             groupByAssignee,
@@ -474,16 +436,17 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         }));
     }, [allTasks]);
 
-    const projectOptions = filterOptions.projects.length > 0 ? filterOptions.projects : fallbackProjects;
+    const projectOptions = projectFilterLoading ? [] : filterOptions.projects;
     const assigneeOptions = filterOptions.assignees.length > 0 ? filterOptions.assignees : fallbackAssignees;
+    const projectScopeOptions = filterOptions.projects.length > 0 ? filterOptions.projects : fallbackProjects;
 
     const projects = React.useMemo(() => (
         [...projectOptions].sort((a, b) => a.name.localeCompare(b.name))
     ), [projectOptions]);
 
     const scopedProjectIds = React.useMemo(() => (
-        new Set(selectedProjectIds.length > 0 ? selectedProjectIds : projects.map((project) => project.id))
-    ), [projects, selectedProjectIds]);
+        new Set(selectedProjectIds.length > 0 ? selectedProjectIds : projectScopeOptions.map((project) => project.id))
+    ), [projectScopeOptions, selectedProjectIds]);
 
     const assignees = React.useMemo(() => {
         const selectedAssigneeIdSet = new Set(selectedAssigneeIds);
@@ -524,6 +487,24 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const toggleAllProjects = () => {
         setSelectedProjectIds(toggleAllSelectionValues(isAllProjectsSelected, projects.map(p => p.id)));
     };
+
+    const handleMemberProjectsOnlyToggle = async (enabled: boolean) => {
+        setProjectFilterError(null);
+        setProjectFilterLoading(true);
+        try {
+            await setMemberProjectsOnly(enabled);
+        } catch (error) {
+            setProjectFilterError(error instanceof Error
+                ? error.message
+                : (i18n.t('label_project_candidates_load_failed') || 'Failed to load project candidates'));
+        } finally {
+            setProjectFilterLoading(false);
+        }
+    };
+
+    const projectOptionIds = React.useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
+    const hasSelectedProjectsOutsideCandidates = memberProjectsOnly
+        && selectedProjectIds.some((selectedProjectId) => !projectOptionIds.has(selectedProjectId));
 
     const versionsList = React.useMemo(() => (
         versions
@@ -1287,6 +1268,30 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 />
                                 <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
                             </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 0 8px', color: '#444', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', marginBottom: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={memberProjectsOnly}
+                                    onChange={(event) => { void handleMemberProjectsOnlyToggle(event.target.checked); }}
+                                    aria-label={i18n.t('label_member_projects_only') || 'Show only my member projects'}
+                                />
+                                <span>{i18n.t('label_member_projects_only') || 'Show only my member projects'}</span>
+                            </label>
+                            {projectFilterLoading && (
+                                <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+                                    {i18n.t('label_loading') || 'Loading...'}
+                                </div>
+                            )}
+                            {projectFilterError && (
+                                <div style={{ fontSize: '12px', color: '#c62828', marginBottom: '8px' }}>
+                                    {projectFilterError}
+                                </div>
+                            )}
+                            {hasSelectedProjectsOutsideCandidates && (
+                                <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+                                    {i18n.t('label_selected_projects_outside_candidates') || 'Some selected projects are hidden from the current candidate list.'}
+                                </div>
+                            )}
                             {projects.map(project => (
                                 <label key={project.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: '#444', cursor: 'pointer' }}>
                                     <input
