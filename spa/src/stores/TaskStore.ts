@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { FilterOptions, Task, Relation, DraftRelation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus, SavedQuery } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
-import { loadPreferences, savePreferences } from '../utils/preferences';
+import { loadPreferences } from '../utils/preferences';
 import { getMaxFiniteDueDate } from '../utils/taskRange';
 import { i18n } from '../utils/i18n';
 import { useUIStore } from './UIStore';
@@ -587,7 +587,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     },
     setShowVersions: (show) => set((state) => {
         const layout = buildLayoutFromState(state, { showVersions: show });
-        savePreferences({ showVersions: show });
         return {
             showVersions: show,
             tasks: layout.tasks,

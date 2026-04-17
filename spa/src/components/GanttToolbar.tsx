@@ -16,6 +16,7 @@ import { buildRedmineIssueQueryParams, toResolvedQueryStateFromStore } from '../
 import { useToolbarMenuState } from './gantt/useToolbarMenuState';
 import { useWorkloadStore } from '../stores/WorkloadStore';
 import type { GanttExportHandle } from '../export/types';
+import { DisplaySettingsControls } from './DisplaySettingsControls';
 import { BaselineControls } from './BaselineControls';
 import {
     applyIndeterminateState,
@@ -96,6 +97,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         projectMenuRef,
         versionMenuRef,
         statusMenuRef,
+        displaySettingsMenuRef,
         rowHeightMenuRef,
         relationSettingsMenuRef,
         exportMenuRef,
@@ -138,6 +140,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const showProjectMenu = isMenuOpen('project');
     const showVersionMenu = isMenuOpen('version');
     const showStatusMenu = isMenuOpen('status');
+    const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const showRowHeightMenu = isMenuOpen('rowHeight');
     const showRelationSettingsMenu = isMenuOpen('relationSettings');
     const showExportMenu = isMenuOpen('export');
@@ -1553,7 +1556,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </button>
 
-
                 <div
                     ref={relationSettingsMenuRef}
                     style={{ display: 'flex', alignItems: 'center', position: 'relative' }}
@@ -1888,6 +1890,13 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         );
                     })}
                 </div>
+
+                <DisplaySettingsControls
+                    displaySettingsMenuRef={displaySettingsMenuRef}
+                    showDisplaySettingsMenu={showDisplaySettingsMenu}
+                    onToggleDisplaySettingsMenu={() => toggleMenu('displaySettings')}
+                    onCloseDisplaySettingsMenu={() => closeMenu('displaySettings')}
+                />
 
                 <div
                     ref={rowHeightMenuRef}

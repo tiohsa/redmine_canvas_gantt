@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DefaultRelationType } from '../types/constraints';
-import { loadPreferences, savePreferences } from '../utils/preferences';
+import { loadDisplayPreferencesWithSource, loadPreferences, type DisplayPreferencesSource } from '../utils/preferences';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import {
     buildColumnSettingsFromVisibleKeys,
@@ -15,7 +15,7 @@ import { getColumnDefinitions, getDefaultVisibleColumnKeys } from '../components
 export const DEFAULT_COLUMNS = ['id', 'subject', 'notification', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone'];
 
 const COLUMN_DEFINITIONS = getColumnDefinitions();
-const preferences = loadPreferences();
+const generalPreferences = loadPreferences();
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
 
@@ -49,6 +49,8 @@ interface UIState {
     autoApplyDefaultRelation: boolean;
     autoScheduleMoveMode: AutoScheduleMoveModeValue;
     sidebarFontSize: number;
+    displayPreferencesSource: DisplayPreferencesSource;
+    displayPreferencesGlobalEnabled: boolean;
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
@@ -82,6 +84,7 @@ interface UIState {
     setAutoApplyDefaultRelation: (value: boolean) => void;
     setAutoScheduleMoveMode: (value: AutoScheduleMoveModeValue) => void;
     setSidebarFontSize: (size: number) => void;
+    setDisplayPreferencesGlobalEnabled: (enabled: boolean) => void;
     resetRelationPreferences: () => void;
 }
 
@@ -90,25 +93,24 @@ const defaultColumnSettings = buildColumnSettingsFromVisibleKeys(COLUMN_DEFINITI
 export const DEFAULT_COLUMN_SETTINGS = defaultColumnSettings;
 
 const toVisibleColumns = (columnSettings: ColumnConfig[]) => columnSettings.filter((entry) => entry.visible).map((entry) => entry.key);
-
-const persistColumnSettings = (columnSettings: ColumnConfig[]) => {
-    savePreferences({ columnSettings, visibleColumns: toVisibleColumns(columnSettings) });
-};
+const loadedDisplayPreferences = loadDisplayPreferencesWithSource();
+const displayPreferences = loadedDisplayPreferences.preferences;
+const displayPreferencesSource: DisplayPreferencesSource = loadedDisplayPreferences.source;
 
 export const useUIStore = create<UIState>((set, get) => ({
     notifications: [],
-    showProgressLine: preferences.showProgressLine ?? false,
-    showTaskTitles: preferences.showTaskTitles ?? true,
-    showHierarchyLines: preferences.showHierarchyLines ?? true,
-    showBaseline: preferences.showBaseline ?? false,
-    showPointsOrphans: preferences.showPointsOrphans ?? true,
+    showProgressLine: displayPreferences.showProgressLine ?? false,
+    showTaskTitles: displayPreferences.showTaskTitles ?? true,
+    showHierarchyLines: displayPreferences.showHierarchyLines ?? true,
+    showBaseline: displayPreferences.showBaseline ?? false,
+    showPointsOrphans: displayPreferences.showPointsOrphans ?? true,
     leftPaneVisible: true,
     rightPaneVisible: true,
-    visibleColumns: preferences.visibleColumns ?? DEFAULT_COLUMNS,
-    columnSettings: preferences.columnSettings
-        ? normalizeColumnSettings(COLUMN_DEFINITIONS, preferences.columnSettings)
+    visibleColumns: displayPreferences.visibleColumns ?? DEFAULT_COLUMNS,
+    columnSettings: displayPreferences.columnSettings
+        ? normalizeColumnSettings(COLUMN_DEFINITIONS, displayPreferences.columnSettings)
         : defaultColumnSettings,
-    columnWidths: preferences.columnWidths ?? {
+    columnWidths: displayPreferences.columnWidths ?? {
         id: 72,
         notification: 44,
         subject: 280,
@@ -118,7 +120,7 @@ export const useUIStore = create<UIState>((set, get) => ({
         dueDate: 90,
         ratioDone: 80
     },
-    sidebarWidth: preferences.sidebarWidth ?? 400,
+    sidebarWidth: displayPreferences.sidebarWidth ?? 400,
     activeInlineEdit: null,
     isFullScreen: false,
     issueDialogUrl: null,
@@ -126,11 +128,13 @@ export const useUIStore = create<UIState>((set, get) => ({
     savedQueriesReloadToken: 0,
     isHelpDialogOpen: false,
     isSidebarResizing: false,
-    defaultRelationType: preferences.defaultRelationType ?? DEFAULT_RELATION_TYPE,
-    autoCalculateDelay: preferences.autoCalculateDelay ?? true,
-    autoApplyDefaultRelation: preferences.autoApplyDefaultRelation ?? true,
-    autoScheduleMoveMode: preferences.autoScheduleMoveMode ?? AutoScheduleMoveMode.ConstraintPush,
-    sidebarFontSize: preferences.sidebarFontSize ?? 13,
+    defaultRelationType: generalPreferences.defaultRelationType ?? DEFAULT_RELATION_TYPE,
+    autoCalculateDelay: generalPreferences.autoCalculateDelay ?? true,
+    autoApplyDefaultRelation: generalPreferences.autoApplyDefaultRelation ?? true,
+    autoScheduleMoveMode: generalPreferences.autoScheduleMoveMode ?? AutoScheduleMoveMode.ConstraintPush,
+    sidebarFontSize: displayPreferences.sidebarFontSize ?? 13,
+    displayPreferencesSource,
+    displayPreferencesGlobalEnabled: loadedDisplayPreferences.globalEnabled,
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
@@ -174,27 +178,22 @@ export const useUIStore = create<UIState>((set, get) => ({
     setVisibleColumns: (cols) => {
         const next = buildColumnSettingsFromVisibleKeys(COLUMN_DEFINITIONS, cols);
         set(() => ({ visibleColumns: cols, columnSettings: next }));
-        persistColumnSettings(next);
     },
     toggleColumnVisibility: (key) => {
         const next = toggleColumnSetting(get().columnSettings, key);
         set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next }));
-        persistColumnSettings(next);
     },
     moveColumnUp: (key) => {
         const next = moveColumnSetting(get().columnSettings, key, 'up');
         set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next }));
-        persistColumnSettings(next);
     },
     moveColumnDown: (key) => {
         const next = moveColumnSetting(get().columnSettings, key, 'down');
         set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next }));
-        persistColumnSettings(next);
     },
     resetColumns: () => {
         const next = resetColumnSettings(COLUMN_DEFINITIONS);
         set(() => ({ visibleColumns: DEFAULT_COLUMNS, columnSettings: next }));
-        persistColumnSettings(next);
     },
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),
     setSidebarWidth: (width) => set(() => ({ sidebarWidth: width })),
@@ -215,10 +214,8 @@ export const useUIStore = create<UIState>((set, get) => ({
     setAutoCalculateDelay: (value) => set(() => ({ autoCalculateDelay: value })),
     setAutoApplyDefaultRelation: (value) => set(() => ({ autoApplyDefaultRelation: value })),
     setAutoScheduleMoveMode: (value) => set(() => ({ autoScheduleMoveMode: value })),
-    setSidebarFontSize: (size) => {
-        set(() => ({ sidebarFontSize: size }));
-        savePreferences({ sidebarFontSize: size });
-    },
+    setSidebarFontSize: (size) => set(() => ({ sidebarFontSize: size })),
+    setDisplayPreferencesGlobalEnabled: (enabled) => set(() => ({ displayPreferencesGlobalEnabled: enabled })),
     resetRelationPreferences: () => set(() => ({
         defaultRelationType: DEFAULT_RELATION_TYPE,
         autoCalculateDelay: true,

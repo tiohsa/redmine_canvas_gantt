@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { loadPreferences, savePreferences } from './preferences';
+import {
+    loadDisplayPreferencesWithSource,
+    loadPreferences,
+    saveDisplayPreferences,
+    saveGlobalDisplayPreferences,
+    savePreferences
+} from './preferences';
 
 describe('Preferences storage', () => {
     beforeEach(() => {
@@ -35,8 +41,8 @@ describe('Preferences storage', () => {
     });
 
     it('merges with existing preferences in same project', () => {
-        savePreferences({ zoomLevel: 2 }, 1);
-        savePreferences({ showProgressLine: true }, 1);
+        saveDisplayPreferences({ zoomLevel: 2 }, 1);
+        saveDisplayPreferences({ showProgressLine: true }, 1);
 
         const loaded = loadPreferences(1);
         expect(loaded.zoomLevel).toBe(2);
@@ -65,8 +71,9 @@ describe('Preferences storage', () => {
 
         const raw = window.localStorage.getItem('canvasGantt:preferences');
         const parsed = raw ? JSON.parse(raw) : null;
-        expect(parsed?.version).toBe(3);
-        expect(parsed?.projects?.['project:1']?.selectedProjectIds).toBeUndefined();
+        expect(parsed?.version).toBe(4);
+        expect(parsed?.display?.projects?.['project:1']?.selectedProjectIds).toBeUndefined();
+        expect(parsed?.display?.global?.enabled).toBe(false);
     });
 
     it('saves and loads relation preferences', () => {
@@ -85,14 +92,14 @@ describe('Preferences storage', () => {
     });
 
     it('saves and loads baseline visibility preference', () => {
-        savePreferences({ showBaseline: true }, 1);
+        saveDisplayPreferences({ showBaseline: true }, 1);
 
         expect(loadPreferences(1).showBaseline).toBe(true);
         expect(loadPreferences(2).showBaseline).toBeUndefined();
     });
 
     it('saves and loads task title visibility preference', () => {
-        savePreferences({ showTaskTitles: false } as Parameters<typeof savePreferences>[0], 1);
+        saveDisplayPreferences({ showTaskTitles: false }, 1);
 
         const loaded = loadPreferences(1) as Record<string, unknown>;
         expect(loaded.showTaskTitles).toBe(false);
@@ -100,15 +107,68 @@ describe('Preferences storage', () => {
     });
 
     it('saves and loads hierarchy line visibility preference', () => {
-        savePreferences({ showHierarchyLines: false } as Parameters<typeof savePreferences>[0], 1);
+        saveDisplayPreferences({ showHierarchyLines: false }, 1);
 
         const loaded = loadPreferences(1) as Record<string, unknown>;
         expect(loaded.showHierarchyLines).toBe(false);
         expect(loadPreferences(2).showHierarchyLines).toBeUndefined();
     });
 
+    it('uses shared display preferences when sharing is enabled', () => {
+        saveGlobalDisplayPreferences({ showTaskTitles: false, sidebarWidth: 460 }, true);
+        saveDisplayPreferences({ showBaseline: true, sidebarWidth: 520, sidebarFontSize: 15 }, 1);
+
+        const projectLoaded = loadDisplayPreferencesWithSource(1);
+        expect(projectLoaded.source).toBe('global');
+        expect(projectLoaded.globalEnabled).toBe(true);
+        expect(projectLoaded.preferences.showTaskTitles).toBe(false);
+        expect(projectLoaded.preferences.sidebarWidth).toBe(460);
+
+        const globalLoaded = loadDisplayPreferencesWithSource(2);
+        expect(globalLoaded.source).toBe('global');
+        expect(globalLoaded.globalEnabled).toBe(true);
+        expect(globalLoaded.preferences.showTaskTitles).toBe(false);
+        expect(globalLoaded.preferences.sidebarWidth).toBe(460);
+
+        saveGlobalDisplayPreferences({ showTaskTitles: true }, false);
+
+        const disabledLoaded = loadDisplayPreferencesWithSource(2);
+        expect(disabledLoaded.source).toBe('default');
+        expect(disabledLoaded.globalEnabled).toBe(false);
+        expect(disabledLoaded.preferences).toEqual({});
+
+        saveGlobalDisplayPreferences({}, true);
+
+        const reenabledLoaded = loadDisplayPreferencesWithSource(2);
+        expect(reenabledLoaded.source).toBe('global');
+        expect(reenabledLoaded.globalEnabled).toBe(true);
+        expect(reenabledLoaded.preferences.showTaskTitles).toBe(true);
+        expect(reenabledLoaded.preferences.sidebarWidth).toBe(460);
+    });
+
+    it('treats a project copy that matches the shared settings as shared source', () => {
+        saveGlobalDisplayPreferences({
+            showTaskTitles: false,
+            sidebarWidth: 460,
+            showProgressLine: true
+        }, true);
+        saveDisplayPreferences({
+            showTaskTitles: false,
+            sidebarWidth: 460,
+            showProgressLine: true
+        }, 1);
+
+        const loaded = loadDisplayPreferencesWithSource(1);
+
+        expect(loaded.source).toBe('global');
+        expect(loaded.globalEnabled).toBe(true);
+        expect(loaded.preferences.showTaskTitles).toBe(false);
+        expect(loaded.preferences.sidebarWidth).toBe(460);
+        expect(loaded.preferences.showProgressLine).toBe(true);
+    });
+
     it('store modules restore persisted filter preferences on reload', async () => {
-        savePreferences({
+        saveDisplayPreferences({
             showProgressLine: true,
             showTaskTitles: false,
             showHierarchyLines: false,
