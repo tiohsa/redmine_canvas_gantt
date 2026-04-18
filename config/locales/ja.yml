@@ -206,6 +206,9 @@ ja:
     button_save: "保存"
     button_cancel: "キャンセル"
 
+    general_format_date: "%Y/%m/%d"
+    year_month_format: "%Y年%m月"
+
     label_relation_type_precedes_info: "先行タスクが完了してから後続タスクを開始する依存関係です"
     label_relation_type_relates_info: "関連を示すだけで、日程の制約はかかりません"
     label_relation_type_blocks_info: "元タスクが完了するまで、対象タスクを進められない依存関係です"

@@ -1,9 +1,13 @@
 import { format as dateFnsFormat } from 'date-fns';
-import { ja, enUS } from 'date-fns/locale';
+import {
+    ja, enUS, fr, de, es, zhCN, zhTW, ko, ru, ptBR, it, nl,
+    pl, pt, sv, tr, da, fi, nb, hu, cs, sk, uk
+} from 'date-fns/locale';
 
 interface RedmineCanvasGanttGlobal {
     language?: string;
     dateFormat?: string;
+    yearMonthFormat?: string;
 }
 
 const getGlobal = () => (window as unknown as { RedmineCanvasGantt?: RedmineCanvasGanttGlobal }).RedmineCanvasGantt ?? {};
@@ -74,9 +78,34 @@ export function convertStrftimeToDateFns(rubyFormat: string): string {
  * 現在のRedmine設定に基づいたロケールオブジェクトを取得する
  */
 export function getCurrentLocale() {
-    const lang = getGlobal().language || 'en';
-    if (lang === 'ja') return ja;
-    return enUS;
+    const lang = (getGlobal().language || 'en').toLowerCase();
+    const localeMap: Record<string, any> = {
+        'en': enUS,
+        'ja': ja,
+        'fr': fr,
+        'de': de,
+        'es': es,
+        'zh': zhCN,
+        'zh-tw': zhTW,
+        'ko': ko,
+        'ru': ru,
+        'pt-br': ptBR,
+        'it': it,
+        'nl': nl,
+        'pl': pl,
+        'pt': pt,
+        'sv': sv,
+        'tr': tr,
+        'da': da,
+        'fi': fi,
+        'nb': nb,
+        'no': nb,
+        'hu': hu,
+        'cs': cs,
+        'sk': sk,
+        'uk': uk,
+    };
+    return localeMap[lang] || enUS;
 }
 
 /**
@@ -84,8 +113,6 @@ export function getCurrentLocale() {
  */
 export function getDateFormat(): string {
     let rubyFormat = getGlobal().dateFormat || '%Y-%m-%d';
-    // ユーザーの要望により区切り文字をスラッシュに統一
-    rubyFormat = rubyFormat.replace(/[-.]/g, '/');
     return convertStrftimeToDateFns(rubyFormat);
 }
 
@@ -110,8 +137,11 @@ export function formatDate(date: Date | number | null | undefined): string {
  * 日（%d, %e, %-d）の部分を取り除き、区切り文字を正規化して返す。
  */
 export function getYearMonthFormat(): string {
-    const rubyFormat = getGlobal().dateFormat || '%Y-%m-%d';
-
+    const global = getGlobal();
+    if (global.yearMonthFormat) {
+        return convertStrftimeToDateFns(global.yearMonthFormat);
+    }
+    let rubyFormat = global.dateFormat || '%Y-%m-%d';
     // 日トークンとその周囲のリテラル区切り文字を除去
     const yearMonth = rubyFormat
         .replace(/%-d|%d|%e/g, '')
