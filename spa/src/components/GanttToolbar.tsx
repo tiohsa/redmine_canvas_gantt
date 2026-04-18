@@ -2113,15 +2113,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '6px',
-                                padding: '0 12px',
-                                borderRadius: '6px',
-                                border: `1px solid ${designTokens.controlActiveFg}`,
-                                backgroundColor: designTokens.controlActiveFg,
-                                color: designTokens.controlBg,
+                                padding: '0 14px',
+                                borderRadius: '9999px',
+                                border: 'none',
+                                backgroundColor: '#181e25',
+                                color: '#ffffff',
                                 cursor: 'pointer',
                                 height: '32px',
                                 fontSize: '10px',
-                                fontWeight: 600
+                                fontWeight: 600,
+                                transition: 'background 0.2s'
                             }}
                         >
                             {i18n.t('button_save') || "Save"}
@@ -2133,15 +2134,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '6px',
-                                padding: '0 12px',
-                                borderRadius: '6px',
-                                border: `1px solid ${designTokens.controlErrorFg}`,
-                                backgroundColor: designTokens.controlBg,
-                                color: designTokens.controlErrorFg,
+                                padding: '0 14px',
+                                borderRadius: '9999px',
+                                border: 'none',
+                                backgroundColor: '#f0f0f0',
+                                color: '#45515e',
                                 cursor: 'pointer',
                                 height: '32px',
                                 fontSize: '10px',
-                                fontWeight: 500
+                                fontWeight: 500,
+                                transition: 'background 0.2s'
                             }}
                         >
                             {i18n.t('button_cancel') || "Cancel"}

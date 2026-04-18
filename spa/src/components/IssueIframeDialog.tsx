@@ -426,13 +426,14 @@ export const IssueIframeDialog: React.FC = () => {
                         minWidth: `${MIN_DIALOG_WIDTH_PX}px`,
                         height: dialogHeightPx ? `${dialogHeightPx}px` : `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
                         maxHeight: `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
-                        backgroundColor: designTokens.controlBg,
-                        borderRadius: '8px',
-                        boxShadow: designTokens.dialogShadow,
+                        backgroundColor: '#ffffff',
+                        borderRadius: '13px',
+                        boxShadow: '0px 0px 22.576px rgba(0,0,0,0.08), 6.5px 2px 17.5px rgba(44,30,116,0.11)',
                         display: 'flex',
                         flexDirection: 'column',
                         overflow: 'hidden',
-                        boxSizing: 'border-box'
+                        boxSizing: 'border-box',
+                        border: '1px solid rgba(0,0,0,0.06)'
                 }}
             >
                 {/* Header - Fixed Height */}
@@ -459,7 +460,7 @@ export const IssueIframeDialog: React.FC = () => {
                             </span>
                         )}
                     </div>
-                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                         <a
                             href={activeDialogUrl}
                             target="_blank"
@@ -472,10 +473,11 @@ export const IssueIframeDialog: React.FC = () => {
                                 justifyContent: 'center',
                                 width: `${compactIconButtonSize}px`,
                                 height: `${compactIconButtonSize}px`,
-                                borderRadius: '6px',
-                                border: `1px solid ${designTokens.controlBorder}`,
-                                backgroundColor: designTokens.controlBg,
-                                color: designTokens.controlFg
+                                borderRadius: '9999px',
+                                border: `1px solid rgba(0,0,0,0.1)`,
+                                backgroundColor: 'rgba(0,0,0,0.04)',
+                                color: designTokens.textMuted,
+                                transition: 'background 0.2s'
                             }}
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -494,11 +496,12 @@ export const IssueIframeDialog: React.FC = () => {
                                 justifyContent: 'center',
                                 width: `${compactIconButtonSize}px`,
                                 height: `${compactIconButtonSize}px`,
-                                borderRadius: '6px',
-                                border: `1px solid ${designTokens.controlBorder}`,
-                                backgroundColor: designTokens.controlBg,
-                                color: designTokens.controlFg,
-                                cursor: 'pointer'
+                                borderRadius: '9999px',
+                                border: `1px solid rgba(0,0,0,0.1)`,
+                                backgroundColor: 'rgba(0,0,0,0.04)',
+                                color: designTokens.textMuted,
+                                cursor: 'pointer',
+                                transition: 'background 0.2s'
                             }}
                         >
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -566,7 +569,8 @@ export const IssueIframeDialog: React.FC = () => {
                         display: 'flex',
                         justifyContent: 'flex-start',
                         gap: '8px',
-                        backgroundColor: designTokens.controlBg
+                        backgroundColor: '#ffffff',
+                        borderTop: '1px solid rgba(0,0,0,0.06)'
                     }}
                 >
                     <button
@@ -574,18 +578,20 @@ export const IssueIframeDialog: React.FC = () => {
                         disabled={isSaving}
                             style={{
                                 height: `${compactActionButtonHeight}px`,
-                                padding: '0 12px',
+                                padding: '0 16px',
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                background: designTokens.controlBg,
-                                color: designTokens.controlFg,
-                                border: `1px solid ${designTokens.controlBorderStrong}`,
-                                borderRadius: 6,
+                                background: '#f0f0f0',
+                                color: '#222222',
+                                border: 'none',
+                                borderRadius: 9999,
                                 fontSize: 13,
+                                fontWeight: 500,
                                 cursor: isSaving ? 'default' : 'pointer',
                                 minWidth: `${compactActionButtonMinWidth}px`,
-                                boxSizing: 'border-box'
+                                boxSizing: 'border-box',
+                                transition: 'background 0.2s'
                             }}
                     >
                         {i18n.t('button_cancel') || 'Cancel'}
@@ -596,19 +602,21 @@ export const IssueIframeDialog: React.FC = () => {
                             disabled={isSaving}
                             style={{
                                 height: `${compactActionButtonHeight}px`,
-                                padding: '0 12px',
+                                padding: '0 16px',
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                background: isSaving ? designTokens.disabledFg : designTokens.controlActiveFg,
-                                color: designTokens.controlBg,
+                                background: isSaving ? '#8e8e93' : '#181e25',
+                                color: '#ffffff',
                                 border: 'none',
-                                borderRadius: 6,
+                                borderRadius: 9999,
                                 fontSize: 13,
                                 fontWeight: 600,
                                 cursor: isSaving ? 'default' : 'pointer',
                                 minWidth: `${compactActionButtonMinWidth}px`,
-                                boxSizing: 'border-box'
+                                boxSizing: 'border-box',
+                                transition: 'background 0.2s',
+                                opacity: isSaving ? 0.7 : 1
                             }}
                         >
                             {isSaving ? (i18n.t('label_loading') || 'Saving...') : (i18n.t('button_save') || 'Save')}

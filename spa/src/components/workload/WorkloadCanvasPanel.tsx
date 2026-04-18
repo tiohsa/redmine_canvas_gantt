@@ -92,6 +92,22 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
             : viewport.scrollX
     }), [histogramScrollXOverride, isHistogramScrollXOverrideActive, viewport]);
     const histogramViewportRef = useRef(histogramViewport);
+    const renderCurrentState = useCallback(() => {
+        if (renderEngine.current && canvasRef.current) {
+            renderEngine.current.render({
+                viewport: histogramViewport,
+                zoomLevel,
+                workloadData,
+                capacityThreshold,
+                verticalScroll: scrollTop,
+                hoveredAssigneeId: null,
+                hoveredDateStr: null,
+                focusedAssigneeId: focusedHistogramBar?.assigneeId ?? null,
+                focusedDateStr: focusedHistogramBar?.dateStr ?? null,
+                getBarLabelInfo: useWorkloadStore.getState().getHistogramBarLabelInfo
+            });
+        }
+    }, [capacityThreshold, focusedHistogramBar, histogramViewport, scrollTop, workloadData, zoomLevel]);
 
     useEffect(() => {
         histogramViewportRef.current = histogramViewport;
@@ -146,21 +162,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         
         const resizeObserver = new ResizeObserver(() => {
             updateCanvasSize();
-            // Trigger render on resize
-            if (renderEngine.current) {
-               renderEngine.current.render({
-                   viewport: histogramViewport,
-                   zoomLevel,
-                   workloadData,
-                   capacityThreshold,
-                   verticalScroll: scrollTop,
-                   hoveredAssigneeId: null,
-                   hoveredDateStr: null,
-                   focusedAssigneeId: focusedHistogramBar?.assigneeId ?? null,
-                   focusedDateStr: focusedHistogramBar?.dateStr ?? null,
-                   getBarLabelInfo: useWorkloadStore.getState().getHistogramBarLabelInfo
-                });
-            }
+            renderCurrentState();
         });
         
         if (containerRef.current) {
@@ -171,28 +173,16 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         }
         
         return () => resizeObserver.disconnect();
-    }, [capacityThreshold, focusedHistogramBar, histogramViewport, scrollTop, updateCanvasSize, zoomLevel, workloadData]);
+    }, [renderCurrentState, updateCanvasSize]);
 
     useLayoutEffect(() => {
         updateCanvasSize();
-    }, [updateCanvasSize]);
+        renderCurrentState();
+    }, [renderCurrentState, updateCanvasSize]);
 
     useEffect(() => {
-        if (renderEngine.current && canvasRef.current) {
-            renderEngine.current.render({
-                viewport: histogramViewport,
-                zoomLevel,
-                workloadData,
-                capacityThreshold,
-                verticalScroll: scrollTop,
-                hoveredAssigneeId: null,
-                hoveredDateStr: null,
-                focusedAssigneeId: focusedHistogramBar?.assigneeId ?? null,
-                focusedDateStr: focusedHistogramBar?.dateStr ?? null,
-                getBarLabelInfo: useWorkloadStore.getState().getHistogramBarLabelInfo
-            });
-        }
-    }, [capacityThreshold, focusedHistogramBar, histogramViewport, scrollTop, zoomLevel, workloadData]);
+        renderCurrentState();
+    }, [renderCurrentState]);
 
     useEffect(() => {
         if (!viewportRef.current) return;
@@ -506,7 +496,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                 }}
             >
                 <div style={{ position: 'relative', minHeight: '100%', height: hasAssignees ? `${contentHeight}px` : '100%' }}>
-                    <canvas ref={canvasRef} style={{ position: 'sticky', top: 0, display: 'block', cursor }} />
+                    <canvas ref={canvasRef} data-testid="workload-canvas" style={{ position: 'sticky', top: 0, display: 'block', cursor }} />
                 </div>
                 {!hasAssignees && (
                     <div style={{

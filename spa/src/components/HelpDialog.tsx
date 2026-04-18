@@ -481,45 +481,49 @@ export const HelpDialog: React.FC = () => {
                     width: '100%',
                     maxWidth: '1200px',
                     height: '100%',
-                    backgroundColor: designTokens.controlBg,
-                    borderRadius: '8px',
-                    boxShadow: designTokens.dialogShadow,
+                    backgroundColor: '#ffffff',
+                    borderRadius: '13px',
+                    boxShadow: '0px 0px 22.576px rgba(0,0,0,0.08), 6.5px 2px 17.5px rgba(44,30,116,0.11)',
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
+                    border: '1px solid rgba(0,0,0,0.06)'
                 }}
             >
                 <div
                     style={{
                         flex: '0 0 auto',
                         padding: '16px 24px',
-                        borderBottom: `1px solid ${designTokens.controlBorder}`,
+                        borderBottom: `1px solid rgba(0,0,0,0.06)`,
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        backgroundColor: designTokens.surfaceSubtle
+                        backgroundColor: '#ffffff'
                     }}
                 >
-                    <h2 style={{ margin: 0, fontFamily: fontFamilies.display, fontSize: '18px', fontWeight: 600, color: designTokens.controlFg, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h2 style={{ margin: 0, fontFamily: fontFamilies.display, fontSize: '18px', fontWeight: 600, color: '#222222', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {questionIcon}
                         {i18n.t('label_help') || 'Help'}
                     </h2>
                     <button
                         onClick={closeHelpDialog}
                         style={{
-                            background: 'transparent',
+                            background: 'rgba(0,0,0,0.04)',
                             border: 'none',
                             cursor: 'pointer',
-                            color: designTokens.textMuted,
+                            color: '#45515e',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            padding: '4px',
-                            borderRadius: '4px'
+                            width: '32px',
+                            height: '32px',
+                            padding: 0,
+                            borderRadius: '9999px',
+                            transition: 'background 0.2s'
                         }}
                     >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <line x1="18" y1="6" x2="6" y2="18" />
                             <line x1="6" y1="6" x2="18" y2="18" />
                         </svg>
@@ -545,8 +549,8 @@ export const HelpDialog: React.FC = () => {
                     style={{
                         flex: '0 0 auto',
                         padding: '16px 24px',
-                        borderTop: `1px solid ${designTokens.controlBorder}`,
-                        backgroundColor: designTokens.surfaceSubtle,
+                        borderTop: `1px solid rgba(0,0,0,0.06)`,
+                        backgroundColor: '#ffffff',
                         display: 'flex',
                         justifyContent: 'flex-start'
                     }}
@@ -559,15 +563,16 @@ export const HelpDialog: React.FC = () => {
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: designTokens.controlBg,
-                            border: `1px solid ${designTokens.controlBorderStrong}`,
-                            borderRadius: '4px',
-                            color: designTokens.controlFg,
-                            fontSize: '14px',
+                            backgroundColor: '#f0f0f0',
+                            border: 'none',
+                            borderRadius: '9999px',
+                            color: '#222222',
+                            fontSize: '13px',
                             cursor: 'pointer',
                             fontWeight: 500,
                             lineHeight: 1,
-                            boxSizing: 'border-box'
+                            boxSizing: 'border-box',
+                            transition: 'background 0.2s'
                         }}
                     >
                         {i18n.t('button_close') || 'Close'}

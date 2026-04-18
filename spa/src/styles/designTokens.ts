@@ -8,8 +8,8 @@ export const fontFamilies = {
 
 export const canvasFonts = {
     body: `500 12px ${fontFamilies.ui}`,
-    bodyStrong: `600 10px ${fontFamilies.data}`,
-    header: `500 12px ${fontFamilies.data}`
+    bodyStrong: `600 11px ${fontFamilies.data}`,
+    header: `600 11px ${fontFamilies.data}`
 } as const;
 
 export const designTokens = {
@@ -39,7 +39,7 @@ export const designTokens = {
     controlErrorFg: '#d32f2f',
     controlLoadingFg: '#666666',
     menuShadow: '0 4px 12px rgba(0,0,0,0.08)',
-    dialogShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
+    dialogShadow: '0px 0px 22.576px rgba(0,0,0,0.08), 6.5px 2px 17.5px rgba(44,30,116,0.11)',
     controlInsetShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)',
     controlActiveShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)',
     sidebarProgressTrack: '#e0e0e0',
