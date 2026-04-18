@@ -22,14 +22,35 @@ import {
 import { BaselineDiffPopover } from './BaselineDiffPopover';
 import { RelationEditorPopover, type RelationPopoverTarget } from './RelationEditorPopover';
 import { TaskContextMenu } from './TaskContextMenu';
+import { designTokens } from '../styles/designTokens';
 
 const RELATION_POPOVER_OFFSET = 12;
-const RESIZE_HANDLE_HOVER_BG = 'rgba(26, 115, 232, 0.18)';
-const RESIZE_HANDLE_HOVER_BORDER = 'rgba(26, 115, 232, 0.68)';
-const RESIZE_HANDLE_SELECTED_BG = 'rgba(26, 115, 232, 0.24)';
-const RESIZE_HANDLE_SELECTED_BORDER = 'rgba(26, 115, 232, 0.82)';
-const RESIZE_HANDLE_GRIP = 'rgba(26, 115, 232, 0.92)';
-const RESIZE_HANDLE_SHADOW = '0 1px 3px rgba(26, 115, 232, 0.18)';
+const PRIMARY_COLOR = designTokens.controlActiveFg;
+
+const toRgb = (hex: string) => {
+    const normalized = hex.replace('#', '');
+    const value = normalized.length === 3
+        ? normalized.split('').map((char) => char + char).join('')
+        : normalized;
+    const int = Number.parseInt(value, 16);
+    return {
+        r: (int >> 16) & 255,
+        g: (int >> 8) & 255,
+        b: int & 255
+    };
+};
+
+const rgbaFromPrimary = (alpha: number) => {
+    const { r, g, b } = toRgb(PRIMARY_COLOR);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const RESIZE_HANDLE_HOVER_BG = rgbaFromPrimary(0.18);
+const RESIZE_HANDLE_HOVER_BORDER = rgbaFromPrimary(0.68);
+const RESIZE_HANDLE_SELECTED_BG = rgbaFromPrimary(0.24);
+const RESIZE_HANDLE_SELECTED_BORDER = rgbaFromPrimary(0.82);
+const RESIZE_HANDLE_GRIP = designTokens.controlActiveFg;
+const RESIZE_HANDLE_SHADOW = `0 1px 3px ${rgbaFromPrimary(0.18)}`;
 const BASELINE_POPOVER_OFFSET = 12;
 
 
@@ -518,9 +539,9 @@ export const HtmlOverlay: React.FC = () => {
                         width: 10,
                         height: 10,
                         borderRadius: '50%',
-                        backgroundColor: '#1a73e8',
-                        border: '2px solid #fff',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+                        backgroundColor: designTokens.controlActiveFg,
+                        border: `2px solid ${designTokens.appBg}`,
+                        boxShadow: `0 1px 2px ${rgbaFromPrimary(0.2)}`,
                         pointerEvents: 'auto',
                         cursor: 'crosshair',
                         zIndex: 100
@@ -597,7 +618,7 @@ export const HtmlOverlay: React.FC = () => {
                     <svg width="100%" height="100%" style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
                         <defs>
                             <marker id="draft-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
-                                <path d="M0,0 L0,6 L6,3 z" fill="#1a73e8" />
+                                <path d="M0,0 L0,6 L6,3 z" fill={designTokens.controlActiveFg} />
                             </marker>
                         </defs>
                         <line
@@ -605,7 +626,7 @@ export const HtmlOverlay: React.FC = () => {
                             y1={dragDraft.start.y}
                             x2={dragDraft.pointer.x}
                             y2={dragDraft.pointer.y}
-                            stroke="#1a73e8"
+                            stroke={designTokens.controlActiveFg}
                             strokeWidth={2}
                             strokeDasharray="5 5"
                             markerEnd="url(#draft-arrow)"

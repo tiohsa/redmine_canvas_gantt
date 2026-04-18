@@ -1,6 +1,7 @@
 import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Task, Viewport, ZoomLevel } from '../types';
 import type { BaselineSnapshot, BaselineTaskState } from '../types/baseline';
+import { designTokens } from '../styles/designTokens';
 
 type BaselineRenderState = {
     viewport: Viewport;
@@ -78,8 +79,8 @@ export class BaselineRenderer {
         }
 
         ctx.save();
-        ctx.fillStyle = 'rgba(71, 85, 105, 0.18)';
-        ctx.strokeStyle = 'rgba(71, 85, 105, 0.48)';
+        ctx.fillStyle = designTokens.baselineFill;
+        ctx.strokeStyle = designTokens.baselineStroke;
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 3]);
         ctx.fillRect(Math.floor(x), Math.floor(y), Math.floor(width), Math.floor(height));
@@ -89,8 +90,8 @@ export class BaselineRenderer {
 
     private drawDiamond(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
         ctx.save();
-        ctx.fillStyle = 'rgba(71, 85, 105, 0.22)';
-        ctx.strokeStyle = 'rgba(71, 85, 105, 0.6)';
+        ctx.fillStyle = designTokens.baselineFill;
+        ctx.strokeStyle = designTokens.baselineStroke;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x, y - size / 2);
@@ -105,8 +106,8 @@ export class BaselineRenderer {
 
     private drawTriangle(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, pointRight: boolean) {
         ctx.save();
-        ctx.fillStyle = 'rgba(71, 85, 105, 0.22)';
-        ctx.strokeStyle = 'rgba(71, 85, 105, 0.6)';
+        ctx.fillStyle = designTokens.baselineFill;
+        ctx.strokeStyle = designTokens.baselineStroke;
         ctx.lineWidth = 1;
         ctx.beginPath();
         if (pointRight) {

@@ -106,6 +106,8 @@ Canvas Gantt separates shared business conditions from personal UI preferences.
 - Shared business conditions are resolved from the URL and optional `query_id`
 - Personal UI state such as zoom, viewport, and sidebar width stays in `localStorage`
 - Display columns and sorting are treated as shared state that synchronizes with Redmine's standard queries
+- Display settings can also be shared across projects from the display settings menu. Shared display features include zoom level, view mode, chart position, progress line, task titles, hierarchy lines, orphan-point display, version headers, baseline visibility, visible columns, column order, dependency-based organization, column widths, sidebar width, custom zoom scales, row height, and sidebar font size.
+- Project-specific query and filter state such as `query_id`, project selection, status, assignee, version, or custom field conditions is not shared
 - When the Canvas Gantt tab opens a bare `/canvas_gantt` URL, shared query conditions fall back to the last-used state stored in `localStorage` for that project
 - When the same shared condition is provided by multiple sources, the precedence is:
   URL parameters -> saved query (`query_id`) -> project-scoped last-used shared state -> defaults

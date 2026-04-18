@@ -9,6 +9,7 @@ import { useBaselineStore } from '../stores/BaselineStore';
 import type { GanttExportHandle } from '../export/types';
 import { apiClient } from '../api/client';
 import { navigateToRedminePath } from '../utils/navigation';
+import { saveDisplayPreferences } from '../utils/preferences';
 import '../stores/preferencesWatcher';
 import { resetCanvasGanttTestState } from '../test/testSetup';
 import { setVisibleColumnsForTest } from '../test/columnTestHelpers';
@@ -138,6 +139,111 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByText('末端チケットのみ')).toBeInTheDocument();
         expect(screen.getByText('完了チケットを含める')).toBeInTheDocument();
         expect(screen.getByText('今日以降のみ')).toBeInTheDocument();
+    });
+
+    it('shows display source and saves shared display settings explicitly', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_display_settings: '表示設定',
+                label_display_settings_source: '現在使用中',
+                label_display_settings_source_project: 'このプロジェクト専用設定を使用中',
+                label_share_display_settings_across_projects: '表示設定を全プロジェクトで共通化',
+                button_save: '保存',
+                button_cancel: 'キャンセル'
+            }
+        };
+
+        useUIStore.setState({
+            ...useUIStore.getState(),
+            showProgressLine: true,
+            showTaskTitles: false,
+            showHierarchyLines: false,
+            showBaseline: true,
+            showPointsOrphans: false,
+            visibleColumns: ['id', 'subject'],
+            columnSettings: setVisibleColumnsForTest(['id', 'subject']).columnSettings,
+            columnWidths: {
+                id: 72,
+                notification: 44,
+                subject: 280,
+                status: 100,
+                assignee: 80,
+                startDate: 90,
+                dueDate: 90,
+                ratioDone: 80
+            },
+            sidebarWidth: 420,
+            sidebarFontSize: 15
+        } as never);
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            zoomLevel: 2,
+            viewMode: 'Week',
+            viewport: {
+                ...useTaskStore.getState().viewport,
+                startDate: 1_700_000_000_000,
+                scrollX: 120,
+                scrollY: 45,
+                scale: 1.25,
+                rowHeight: 44
+            },
+            showVersions: false,
+            organizeByDependency: true,
+            customScales: { 1: 1.5 }
+        } as never);
+        saveDisplayPreferences({
+            showTaskTitles: false,
+            showProgressLine: true,
+            visibleColumns: ['id', 'subject']
+        }, 1);
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
+
+        const displayMenu = screen.getByTestId('display-settings-menu');
+        expect(within(displayMenu).getByText('表示設定')).toBeInTheDocument();
+        expect(within(displayMenu).getByText('現在使用中', { selector: 'span' })).toBeInTheDocument();
+        expect(within(displayMenu).getByText('このプロジェクト専用設定を使用中', { selector: 'span' })).toBeInTheDocument();
+
+        const checkbox = screen.getByLabelText('表示設定を全プロジェクトで共通化') as HTMLInputElement;
+        expect(checkbox.checked).toBe(false);
+
+        fireEvent.click(checkbox);
+        fireEvent.click(screen.getByTestId('display-settings-save-button'));
+
+        const storedPreferences = JSON.parse(window.localStorage.getItem('canvasGantt:preferences') ?? '{}') as {
+            display?: {
+                projects?: Record<string, {
+                    showProgressLine?: boolean;
+                    showTaskTitles?: boolean;
+                    visibleColumns?: string[];
+                    sidebarWidth?: number;
+                }>;
+                global?: {
+                    enabled?: boolean;
+                    preferences?: {
+                        showProgressLine?: boolean;
+                        showTaskTitles?: boolean;
+                        visibleColumns?: string[];
+                        sidebarWidth?: number;
+                    };
+                };
+            };
+        };
+
+        expect(storedPreferences.display?.global?.enabled).toBe(true);
+        expect(storedPreferences.display?.global?.preferences?.showProgressLine).toBe(true);
+        expect(storedPreferences.display?.global?.preferences?.showTaskTitles).toBe(false);
+        expect(storedPreferences.display?.global?.preferences?.visibleColumns).toEqual(['id', 'subject']);
+        expect(storedPreferences.display?.global?.preferences?.sidebarWidth).toBe(420);
+        expect(storedPreferences.display?.projects?.['project:1']?.showProgressLine).toBe(true);
+        expect(storedPreferences.display?.projects?.['project:1']?.showTaskTitles).toBe(false);
+        expect(storedPreferences.display?.projects?.['project:1']?.visibleColumns).toEqual(['id', 'subject']);
+        expect(screen.queryByTestId('display-settings-menu')).not.toBeInTheDocument();
     });
 
     it('renders and toggles the task title visibility button', () => {
@@ -640,7 +746,8 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
         const rowHeightButton = screen.getByTestId('row-height-menu-button');
-        expect(rowHeightButton).toHaveTextContent('M');
+        expect(rowHeightButton).toHaveAccessibleName('Row height: M');
+        expect(rowHeightButton).toHaveStyle({ width: '32px', height: '32px', padding: '0px' });
 
         fireEvent.click(rowHeightButton);
         expect(screen.getByTestId('row-height-menu')).toBeInTheDocument();
@@ -650,14 +757,14 @@ describe('GanttToolbar shortcuts', () => {
         expect(useTaskStore.getState().viewport.rowHeight).toBe(52);
         expect(screen.getByTestId('row-height-menu')).toBeInTheDocument();
         expect(screen.getByLabelText('XL')).toBeChecked();
-        expect(screen.getByTestId('row-height-menu-button')).toHaveTextContent('XL');
+        expect(screen.getByTestId('row-height-menu-button')).toHaveAccessibleName('Row height: XL');
 
         fireEvent.click(screen.getByLabelText('S'));
         expect(useTaskStore.getState().viewport.rowHeight).toBe(28);
         const rowHeightMenu = screen.getByTestId('row-height-menu');
         expect(rowHeightMenu).toBeInTheDocument();
         expect(screen.getByLabelText('S')).toBeChecked();
-        expect(screen.getByTestId('row-height-menu-button')).toHaveTextContent('S');
+        expect(screen.getByTestId('row-height-menu-button')).toHaveAccessibleName('Row height: S');
         expect(within(rowHeightMenu).getByTestId('row-height-zoom-hint')).toHaveTextContent('Ctrl');
         expect(rowHeightMenu.lastElementChild).toHaveAttribute('data-testid', 'row-height-zoom-hint');
 
@@ -669,6 +776,48 @@ describe('GanttToolbar shortcuts', () => {
 
         fireEvent.mouseDown(document.body);
         expect(screen.queryByTestId('row-height-menu')).not.toBeInTheDocument();
+    });
+
+    it('opens the display settings menu before row height and shows the source label', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_display_settings: '表示設定',
+                label_display_settings_source: '現在使用中',
+                label_display_settings_source_default: 'デフォルト設定を使用中',
+                label_share_display_settings_across_projects: '表示設定を全プロジェクトで共通化'
+            }
+        };
+        window.localStorage.clear();
+
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [],
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        const displaySettingsButton = screen.getByTestId('display-settings-menu-button');
+        const rowHeightButton = screen.getByTestId('row-height-menu-button');
+
+        expect(displaySettingsButton.compareDocumentPosition(rowHeightButton) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+
+        fireEvent.click(displaySettingsButton);
+
+        const displayMenu = screen.getByTestId('display-settings-menu');
+        expect(displayMenu).toBeInTheDocument();
+        expect(within(displayMenu).getByText('現在使用中', { selector: 'span' })).toBeInTheDocument();
+        expect(screen.getByLabelText('表示設定を全プロジェクトで共通化')).toBeInTheDocument();
     });
 
     it('saves relation settings from toolbar menu', () => {
@@ -1115,10 +1264,12 @@ describe('GanttToolbar shortcuts', () => {
         fireEvent.click(screen.getByText('Client Code'));
 
         const storedPreferences = JSON.parse(window.localStorage.getItem('canvasGantt:preferences') ?? '{}') as {
-            projects?: Record<string, { visibleColumns?: string[] }>;
+            display?: {
+                projects?: Record<string, { visibleColumns?: string[] }>;
+            };
         };
 
-        expect(storedPreferences.projects?.['project:1']?.visibleColumns).toContain('cf:101');
+        expect(storedPreferences.display?.projects?.['project:1']?.visibleColumns).toContain('cf:101');
 
         expect(useUIStore.getState().columnSettings.find((column) => column.key === 'cf:101')?.visible).toBe(true);
         expect(useUIStore.getState().visibleColumns).toContain('cf:101');

@@ -1,16 +1,50 @@
 :root {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-ui: "DM Sans", "Noto Sans JP", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-display: "Outfit", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mid: "Poppins", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-data: "Roboto", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   line-height: 1.5;
   font-weight: 400;
 
   color-scheme: light;
-  color: #333;
-  background-color: #f4f5f7;
+  color: var(--col-text00);
+  background-color: var(--col-bg13);
+
+  /* MiniMax Colors */
+  --brand-6: #1456f0;
+  --col-brand00: #3daeff;
+  --col-brand02: #ea5ec1;
+  --color-primary-200: #bfdbfe;
+  --color-primary-light: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-surface-subtle: #f7f9fc;
+  --color-surface-muted: #f3f6fb;
+  --color-border-subtle: #e5e7eb;
+  --color-border-strong: #d6deea;
+  --tooltip-bg: #333333;
+  --tooltip-fg: #ffffff;
+  --tooltip-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  --col-text00: #222222;
+  --col-text04: #45515e;
+  --col-bg13: #ffffff;
+
+  /* MiniMax Shadows */
+  --shadow-standard: rgba(0, 0, 0, 0.08) 0px 4px 6px;
+  --shadow-ambient: rgba(0, 0, 0, 0.08) 0px 0px 22.576px;
+  --shadow-brand-glow: rgba(44, 30, 116, 0.16) 0px 0px 15px;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Keep the plugin scoped fonts inside the Redmine mount points. */
+#redmine-canvas-gantt-root,
+#root {
+  font-family: var(--font-ui);
 }
 
 /* Remove global body overrides that break Redmine layout */
@@ -21,12 +55,67 @@
   height: 100%;
   overflow: hidden;
   /* Ensure content stays within the provided box */
-  background-color: #f4f5f7;
+  background-color: var(--col-bg13);
 }
 
 #root {
   width: 100%;
   height: 100%;
+}
+
+/* MiniMax Utility Classes */
+.minimax-pill-nav {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #18181b;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.minimax-pill-nav:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+.minimax-pill-nav.active {
+  background-color: var(--color-primary-200);
+  color: var(--color-primary-700);
+}
+
+.minimax-btn-primary {
+  background-color: #181e25;
+  color: #ffffff;
+  padding: 11px 20px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+}
+.minimax-btn-primary:hover {
+  background-color: #333333;
+}
+
+.minimax-btn-secondary {
+  background-color: #f0f0f0;
+  color: #333333;
+  padding: 11px 20px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+}
+.minimax-btn-secondary:hover {
+  background-color: #e5e7eb;
+}
+
+.minimax-card-menu {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 11px;
+  box-shadow: var(--shadow-standard);
 }
 
 /* Scrollbar styling (scoped) */
@@ -84,3 +173,149 @@
 iframe.issue-iframe-loading {
   visibility: hidden;
 }
+
+.rcg-tooltip {
+  font-family: var(--font-ui);
+}
+
+/* React Datepicker Custom Styling (MiniMax) */
+.minimax-datepicker {
+  font-family: var(--font-ui) !important;
+  border: 1px solid var(--color-border-subtle) !important;
+  border-radius: 10px !important;
+  box-shadow: var(--shadow-standard) !important;
+  background-color: #ffffff !important;
+  z-index: 10000 !important;
+}
+
+.react-datepicker-popper {
+  z-index: 10000 !important;
+}
+
+.minimax-datepicker .react-datepicker__header {
+  background-color: var(--color-surface-subtle) !important;
+  border-bottom: 1px solid var(--color-border-subtle) !important;
+  border-top-left-radius: 10px !important;
+  border-top-right-radius: 10px !important;
+  padding-top: 6px !important;
+}
+
+.minimax-datepicker .react-datepicker__current-month {
+  font-family: var(--font-display) !important;
+  font-weight: 600 !important;
+  color: var(--col-text00) !important;
+  font-size: 0.76rem !important;
+}
+
+.minimax-datepicker .react-datepicker__day-name {
+  color: var(--col-text04) !important;
+  font-weight: 500 !important;
+}
+
+.minimax-datepicker .react-datepicker__day {
+  border-radius: 50% !important;
+  transition: background-color 0.2s, color 0.2s !important;
+  width: 1.52rem !important;
+  line-height: 1.52rem !important;
+  margin: 0.12rem !important;
+}
+
+.minimax-datepicker .react-datepicker__day:hover {
+  background-color: var(--color-surface-muted) !important;
+}
+
+.minimax-datepicker .react-datepicker__day--selected {
+  background-color: var(--brand-6) !important;
+  color: #ffffff !important;
+}
+
+.minimax-datepicker .react-datepicker__day--keyboard-selected {
+  background-color: var(--color-primary-200) !important;
+  color: var(--col-text00) !important;
+}
+
+.minimax-datepicker .react-datepicker__day--outside-month {
+  color: #ccc !important;
+}
+
+.minimax-datepicker .react-datepicker__navigation {
+  top: 6px !important;
+}
+
+.minimax-datepicker .react-datepicker__header__dropdown {
+  margin: 10px 0 !important;
+  display: flex !important;
+  justify-content: center !important;
+  gap: 8px !important;
+}
+
+.minimax-datepicker .react-datepicker__month-read-view,
+.minimax-datepicker .react-datepicker__year-read-view {
+  visibility: visible !important;
+}
+
+.minimax-datepicker select.react-datepicker__month-select,
+.minimax-datepicker select.react-datepicker__year-select {
+  padding: 2px 4px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--color-border-strong) !important;
+  font-family: var(--font-ui) !important;
+  font-size: 11px !important;
+  background-color: #ffffff !important;
+  cursor: pointer !important;
+}
+
+.minimax-datepicker-footer {
+  display: flex !important;
+  justify-content: space-between !important;
+  padding: 6px 10px !important;
+  border-top: 1px solid var(--color-border-subtle) !important;
+  background-color: var(--color-surface-subtle) !important;
+  border-bottom-left-radius: 10px !important;
+  border-bottom-right-radius: 10px !important;
+}
+
+.minimax-datepicker-btn {
+  background-color: #ffffff !important;
+  border: 1px solid var(--color-border-strong) !important;
+  color: var(--col-text00) !important;
+  padding: 4px 12px !important;
+  border-radius: 6px !important;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  font-family: var(--font-ui) !important;
+}
+
+.minimax-datepicker-btn:hover {
+  background-color: var(--color-primary-200) !important;
+  border-color: var(--color-primary-500) !important;
+}
+
+.minimax-datepicker-btn--clear {
+  color: #d94242 !important;
+}
+
+.minimax-datepicker-btn--clear:hover {
+  background-color: #fee2e2 !important;
+  border-color: #ef4444 !important;
+  color: #b91c1c !important;
+}
+
+.font-ui {
+  font-family: var(--font-ui);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mid {
+  font-family: var(--font-mid);
+}
+
+.font-data {
+  font-family: var(--font-data);
+}
+

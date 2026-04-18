@@ -1,6 +1,7 @@
 import type { Viewport, ZoomLevel } from '../types';
 import { getGridScales } from '../utils/grid';
 import type { AssigneeWorkload, DailyWorkload, WorkloadData } from '../services/WorkloadLogicService';
+import { canvasFonts, designTokens } from '../styles/designTokens';
 
 export interface WorkloadRenderState {
     viewport: Viewport;
@@ -31,9 +32,9 @@ export interface WorkloadHitTestState {
 
 export class WorkloadRenderer {
     private canvas: HTMLCanvasElement;
-    private static readonly WEEKEND_BG = '#fcfcfc';
-    private static readonly BAR_COLOR_NORMAL = '#4285f4'; // Blue
-    private static readonly BAR_COLOR_OVERLOAD = '#ea4335'; // Red
+    private static readonly WEEKEND_BG = designTokens.weekendBg;
+    private static readonly BAR_COLOR_NORMAL = designTokens.brandPrimary;
+    private static readonly BAR_COLOR_OVERLOAD = designTokens.taskDelayed;
     private static readonly MAX_EXPECTED_LOAD = 24; // For scaling the histogram
     private static readonly DAY_MS = 24 * 60 * 60 * 1000;
     private static readonly LABEL_MIN_BAR_WIDTH = 22;
@@ -139,7 +140,7 @@ export class WorkloadRenderer {
 
         // Clear
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = designTokens.appBg;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         const scales = getGridScales(viewport, zoomLevel);
@@ -165,7 +166,7 @@ export class WorkloadRenderer {
         }
 
         // Draw grid lines
-        ctx.strokeStyle = '#f0f0f0';
+        ctx.strokeStyle = designTokens.borderSubtle;
         ctx.lineWidth = 1;
         ctx.beginPath();
         let ticks = scales.bottom;
@@ -200,7 +201,7 @@ export class WorkloadRenderer {
 
             // Highlight if hovered
             if (hoveredAssigneeId === assignee.assigneeId) {
-                ctx.fillStyle = '#f8f9fa';
+                ctx.fillStyle = designTokens.rowHover;
                 ctx.fillRect(0, rowY, this.canvas.width, rowHeight);
             }
 
@@ -208,7 +209,7 @@ export class WorkloadRenderer {
             const maxGraphLoad = Math.max(capacityThreshold * 1.5, Math.ceil(assignee.peakLoad), WorkloadRenderer.MAX_EXPECTED_LOAD);
             const thresholdY = rowY + rowHeight - (capacityThreshold / maxGraphLoad) * rowHeight;
             
-            ctx.strokeStyle = '#fad2cf'; // Light red dashed line for threshold
+            ctx.strokeStyle = designTokens.threshold;
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
             ctx.moveTo(0, Math.floor(thresholdY) + 0.5);
@@ -234,8 +235,8 @@ export class WorkloadRenderer {
 
                     const labelInfo = getBarLabelInfo?.(assignee.assigneeId, daily.dateStr) ?? null;
                     if (labelInfo && rect.width >= WorkloadRenderer.LABEL_MIN_BAR_WIDTH && rect.y > WorkloadRenderer.LABEL_TOP_PADDING + 10) {
-                        ctx.fillStyle = '#5f6368';
-                        ctx.font = '600 10px sans-serif';
+                        ctx.fillStyle = designTokens.textSecondary;
+                        ctx.font = canvasFonts.bodyStrong;
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'bottom';
                         ctx.fillText(
@@ -246,7 +247,7 @@ export class WorkloadRenderer {
                     }
 
                     if (focusedAssigneeId === assignee.assigneeId && focusedDateStr === daily.dateStr) {
-                        ctx.strokeStyle = '#ff9800';
+                        ctx.strokeStyle = designTokens.focus;
                         ctx.lineWidth = 2;
                         ctx.setLineDash([4, 2]);
                         ctx.strokeRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4);

@@ -146,4 +146,34 @@ describe('UIStore', () => {
         useUIStore.getState().resetRelationPreferences();
         expect(useUIStore.getState().autoScheduleMoveMode).toBe('constraint_push');
     });
+
+    it('loads display preference source metadata on store initialization', async () => {
+        window.localStorage.setItem('canvasGantt:preferences', JSON.stringify({
+            version: 4,
+            general: {},
+            display: {
+                projects: {
+                    'project:1': {
+                        showBaseline: true,
+                        sidebarWidth: 444
+                    }
+                },
+                global: {
+                    enabled: true,
+                    preferences: {
+                        showTaskTitles: false,
+                        sidebarWidth: 420
+                    }
+                }
+            }
+        }));
+
+        vi.resetModules();
+        const { useUIStore: freshUIStore } = await import('./UIStore');
+
+        expect(freshUIStore.getState().displayPreferencesSource).toBe('global');
+        expect(freshUIStore.getState().displayPreferencesGlobalEnabled).toBe(true);
+        expect(freshUIStore.getState().showTaskTitles).toBe(false);
+        expect(freshUIStore.getState().sidebarWidth).toBe(420);
+    });
 });

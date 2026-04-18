@@ -418,6 +418,12 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(i18n_payload['label_save_baseline_project']).to eq(canvas_gantt_t(:label_save_baseline_project))
       expect(i18n_payload['label_baseline_scope']).to eq(canvas_gantt_t(:label_baseline_scope))
       expect(i18n_payload['label_toggle_hierarchy_lines']).to eq(canvas_gantt_t(:label_toggle_hierarchy_lines))
+      expect(i18n_payload['label_display_settings']).to eq(canvas_gantt_t(:label_display_settings))
+      expect(i18n_payload['label_share_display_settings_across_projects']).to eq(canvas_gantt_t(:label_share_display_settings_across_projects))
+      expect(i18n_payload['label_display_settings_source']).to eq(canvas_gantt_t(:label_display_settings_source))
+      expect(i18n_payload['label_display_settings_source_project']).to eq(canvas_gantt_t(:label_display_settings_source_project))
+      expect(i18n_payload['label_display_settings_source_global']).to eq(canvas_gantt_t(:label_display_settings_source_global))
+      expect(i18n_payload['label_display_settings_source_default']).to eq(canvas_gantt_t(:label_display_settings_source_default))
     end
 
     it 'includes localized help labels in Japanese frontend i18n payload' do
@@ -451,6 +457,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
         expect(i18n_payload['label_auto_schedule_move_mode_constraint_push']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_constraint_push))
         expect(i18n_payload['label_auto_schedule_move_mode_linked_shift']).to eq(canvas_gantt_t(:label_auto_schedule_move_mode_linked_shift))
         expect(i18n_payload['label_toggle_hierarchy_lines']).to eq(canvas_gantt_t(:label_toggle_hierarchy_lines))
+        expect(i18n_payload['label_display_settings']).to eq(canvas_gantt_t(:label_display_settings))
+        expect(i18n_payload['label_display_settings_source_global']).to eq(canvas_gantt_t(:label_display_settings_source_global))
       end
     end
 
@@ -468,6 +476,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
         expect(i18n_payload['help_desc_workload']).to eq(canvas_gantt_t(:help_desc_workload))
         expect(i18n_payload['help_desc_prev_next_month']).to eq(canvas_gantt_t(:help_desc_prev_next_month))
         expect(i18n_payload['button_close']).to eq(canvas_gantt_t(:button_close))
+        expect(i18n_payload['label_display_settings']).to eq(canvas_gantt_t(:label_display_settings))
+        expect(i18n_payload['label_display_settings_source_project']).to eq(canvas_gantt_t(:label_display_settings_source_project))
         expect(i18n_payload['label_notifications']).to eq(canvas_gantt_t(:label_notifications))
         expect(i18n_payload['label_peak']).to eq(canvas_gantt_t(:label_peak))
         expect(i18n_payload['label_total']).to eq(canvas_gantt_t(:label_total))

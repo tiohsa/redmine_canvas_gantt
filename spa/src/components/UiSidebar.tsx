@@ -20,6 +20,8 @@ import { SvgIcon } from '../icons/SvgIcon';
 import { getTaskNotification } from './sidebar/sidebarNotifications';
 import { parseTrackerIconMap, resolveTrackerIconKind } from './sidebar/trackerIconUtils';
 import { TrackerIcon } from './sidebar/trackerIcon';
+import { designTokens, fontFamilies } from '../styles/designTokens';
+import { formatDate } from '../utils/dateUtils';
 const NOTIFICATION_COLUMN_KEY = 'notification';
 
 type CanvasGanttSettings = InlineEditSettings & {
@@ -48,7 +50,7 @@ const ProgressCircle = ({ ratio }: { ratio: number, statusId: number }) => {
     const offset = c - (ratio / 100) * c;
 
     // Matching TaskRenderer.DONE_GREEN
-    const color = '#50c878';
+    const color = designTokens.sidebarProgressFill;
 
     return (
         <div
@@ -56,7 +58,7 @@ const ProgressCircle = ({ ratio }: { ratio: number, statusId: number }) => {
             data-tooltip={`${ratio}%`}
         >
             <svg width="20" height="20" viewBox="0 0 20 20" style={{ transform: 'rotate(-90deg)' }}>
-                <circle cx="10" cy="10" r={r} fill="none" stroke="#e0e0e0" strokeWidth="3" />
+                <circle cx="10" cy="10" r={r} fill="none" stroke={designTokens.sidebarProgressTrack} strokeWidth="3" />
                 <circle cx="10" cy="10" r={r} fill="none" stroke={color} strokeWidth="3" strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round" />
             </svg>
         </div>
@@ -89,7 +91,7 @@ const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
         style={{
             transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
             transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-            color: '#5f6368'
+            color: designTokens.textMuted
         }}
     >
         <polyline points="9 18 15 12 9 6" />
@@ -146,6 +148,26 @@ export const UiSidebar: React.FC = () => {
     const editMetaByTaskId = useEditMetaStore((s) => s.metaByTaskId);
     const fetchEditMeta = useEditMetaStore((s) => s.fetchEditMeta);
     const treeGuideWidth = showHierarchyLines ? 16 : 8;
+    const sidebarPaddingX = 8;
+    const sidebarGapSm = 4;
+    const sidebarGapMd = 6;
+    const sidebarControlSize = 20;
+    const sidebarButtonSize = 24;
+    const sidebarHeaderHeight = 48;
+    const sidebarRowPaddingX = 12;
+    const sidebarRowIndentX = 32;
+    const sidebarHeaderBg = designTokens.surfaceHover;
+    const sidebarRowBorder = `1px solid ${designTokens.controlBorder}`;
+    const sidebarMutedText = designTokens.textMuted;
+    const sidebarSecondaryText = designTokens.textSecondary;
+    const sidebarPlaceholderText = designTokens.disabledFg;
+    const sidebarLoadingText = designTokens.controlLoadingFg;
+    const sidebarSelectedRowBg = designTokens.sidebarSelectedRowBg;
+    const sidebarDropTargetBg = designTokens.sidebarDropTargetBg;
+    const sidebarDropTargetBorder = designTokens.sidebarDropTargetBorder;
+    const sidebarRootDropBg = designTokens.sidebarRootDropBg;
+    const sidebarRootDropBorder = designTokens.sidebarRootDropBorder;
+    const tr = (key: string) => i18n.t(key) ?? '';
 
     const settings = React.useMemo(() => {
         return (window as unknown as { RedmineCanvasGantt?: { settings?: CanvasGanttSettings } }).RedmineCanvasGantt?.settings ?? {};
@@ -238,7 +260,7 @@ export const UiSidebar: React.FC = () => {
             render: (t: Task) => (
                 <span
                     data-testid={`task-id-${t.id}`}
-                    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', color: '#666', fontSize: `${mediumSmallFontSize}px` }}
+                    style={{ fontFamily: fontFamilies.mono, color: designTokens.textMuted, fontSize: `${mediumSmallFontSize}px` }}
                 >
                     {t.id}
                 </span>
@@ -246,7 +268,7 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: NOTIFICATION_COLUMN_KEY,
-            title: i18n.t('label_notifications') || 'Notifications',
+            title: tr('label_notifications'),
             width: columnWidths[NOTIFICATION_COLUMN_KEY] ?? 44,
             render: (t: Task) => {
                 const notification = getTaskNotification(schedulingStates[t.id], criticalPathMetrics[t.id]);
@@ -272,14 +294,14 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'subject',
-            title: i18n.t('field_subject') || 'Task Name',
+            title: tr('field_subject'),
             width: columnWidths['subject'] ?? 280,
             render: (t: Task) => (
-                <div
+                    <div
                     style={{
                         display: 'flex',
                         alignItems: 'center',
-                        fontWeight: t.hasChildren ? 600 : 400,
+                        fontWeight: t.hasChildren ? 500 : 400,
                         height: '100%',
                         width: '100%',
                         position: 'relative'
@@ -291,7 +313,7 @@ export const UiSidebar: React.FC = () => {
                         return (
                             <>
                                 {/* Tree Lines */}
-                                <div style={{ display: 'flex', height: '100%', flexShrink: 0, paddingLeft: 8 }}>
+                                <div style={{ display: 'flex', height: '100%', flexShrink: 0, paddingLeft: sidebarPaddingX }}>
                                     {(t.treeLevelGuides ?? []).map((hasLine, i) => (
                                         <div key={i} style={{ width: treeGuideWidth, height: '100%', position: 'relative' }}>
                                             {showHierarchyLines && hasLine && (
@@ -301,7 +323,7 @@ export const UiSidebar: React.FC = () => {
                                                     top: 0,
                                                     bottom: 0,
                                                     width: 1,
-                                                    backgroundColor: '#e0e0e0',
+                                                    backgroundColor: designTokens.controlBorder,
                                                     transform: 'translateX(-50%)'
                                                 }} data-testid="task-tree-guide-line" />
                                             )}
@@ -310,34 +332,34 @@ export const UiSidebar: React.FC = () => {
                                     <div style={{ width: 16, height: '100%', position: 'relative' }}>
                                         {/* Vertical line for the current node */}
                                         {showHierarchyLines && (
-                                            <div style={{
-                                                position: 'absolute',
-                                                left: '50%',
-                                                top: 0,
-                                                bottom: t.isLastChild ? '50%' : 0,
-                                                width: 1,
-                                                backgroundColor: '#e0e0e0',
-                                                transform: 'translateX(-50%)'
-                                            }} data-testid="task-tree-current-guide" />
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    left: '50%',
+                                                    top: 0,
+                                                    bottom: t.isLastChild ? '50%' : 0,
+                                                    width: 1,
+                                                    backgroundColor: designTokens.controlBorder,
+                                                    transform: 'translateX(-50%)'
+                                                }} data-testid="task-tree-current-guide" />
                                         )}
                                         {/* Horizontal line for the current node */}
                                         {showHierarchyLines && (
-                                            <div style={{
-                                                position: 'absolute',
-                                                left: '50%',
-                                                top: '50%',
-                                                right: 0,
-                                                height: 1,
-                                                backgroundColor: '#e0e0e0',
-                                                transform: 'translateY(-50%)'
-                                            }} data-testid="task-tree-branch-guide" />
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    left: '50%',
+                                                    top: '50%',
+                                                    right: 0,
+                                                    height: 1,
+                                                    backgroundColor: designTokens.controlBorder,
+                                                    transform: 'translateY(-50%)'
+                                                }} data-testid="task-tree-branch-guide" />
                                         )}
 
                                         {/* Expansion Trigger (Chevron) overlaying on the line branch */}
                                         {t.hasChildren && (
                                             <button
                                                 type="button"
-                                                aria-label={(taskExpansion[t.id] ?? true) ? (i18n.t('button_collapse') || 'Collapse') : (i18n.t('button_expand') || 'Expand')}
+                                                aria-label={(taskExpansion[t.id] ?? true) ? tr('button_collapse') : tr('button_expand')}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     setActiveInlineEdit(null);
@@ -353,14 +375,14 @@ export const UiSidebar: React.FC = () => {
                                                     display: 'inline-flex',
                                                     alignItems: 'center',
                                                     justifyContent: 'center',
-                                                    border: '1px solid #d0d0d0',
+                                                    border: `1px solid ${designTokens.controlBorder}`,
                                                     borderRadius: '50%',
-                                                    background: '#fff',
+                                                    background: designTokens.controlBg,
                                                     cursor: 'pointer',
                                                     flexShrink: 0,
                                                     zIndex: 1,
                                                     padding: 0,
-                                                    boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                                                    boxShadow: designTokens.controlActiveShadow
                                                 }}
                                             >
                                                 <ChevronIcon expanded={taskExpansion[t.id] ?? true} />
@@ -369,7 +391,7 @@ export const UiSidebar: React.FC = () => {
                                     </div>
                                 </div>
 
-                                <div style={{ marginLeft: 8, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                <div style={{ marginLeft: sidebarPaddingX, display: 'flex', alignItems: 'center', gap: sidebarGapMd, flexShrink: 0 }}>
                                     <TrackerIcon kind={resolveTrackerIconKind(t.trackerId, t.trackerName, trackerIconMap)} />
                                 </div>
                                 <a
@@ -387,7 +409,7 @@ export const UiSidebar: React.FC = () => {
                                         alignItems: 'center',
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
-                                        color: isSelected ? '#1a73e8' : '#3c4043',
+                                        color: isSelected ? designTokens.controlActiveFg : sidebarSecondaryText,
                                         textDecoration: 'none',
                                         whiteSpace: 'nowrap',
                                         background: 'none',
@@ -409,7 +431,7 @@ export const UiSidebar: React.FC = () => {
                                         e.stopPropagation();
                                         useUIStore.getState().openIssueDialog(buildRedmineUrl(`/issues/${t.id}/edit`));
                                     }}
-                                    title={i18n.t('button_edit') || 'Edit'}
+                                    title={tr('button_edit')}
                                     style={{
                                         background: 'transparent',
                                         border: 'none',
@@ -418,8 +440,8 @@ export const UiSidebar: React.FC = () => {
                                         display: 'flex', // Hidden by CSS by default, shown on hover
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        color: '#5f6368',
-                                        marginLeft: '4px'
+                                        color: sidebarMutedText,
+                                        marginLeft: sidebarPaddingX / 2
                                     }}
                                 >
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -435,7 +457,7 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'status',
-            title: i18n.t('field_status') || 'Status',
+            title: tr('field_status'),
             width: columnWidths['status'] ?? 100,
             render: (t: Task) => {
                 const style = getStatusColor(t.statusId);
@@ -446,7 +468,7 @@ export const UiSidebar: React.FC = () => {
                         padding: '2px 8px',
                         borderRadius: '12px',
                         fontSize: `${smallFontSize}px`,
-                        fontWeight: 600,
+                        fontWeight: 500,
                         display: 'inline-block',
                         whiteSpace: 'nowrap'
                     }}>
@@ -457,7 +479,7 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'assignee',
-            title: i18n.t('field_assigned_to') || 'Assignee',
+            title: tr('field_assigned_to'),
             width: columnWidths['assignee'] ?? 80,
             render: (t: Task) => renderEditableCell(t, 'assignedToId', (
                 <div style={{ display: 'flex', alignItems: 'center', width: '100%', minHeight: '24px' }}>
@@ -472,30 +494,30 @@ export const UiSidebar: React.FC = () => {
                             </div>
                         </>
                     ) : (
-                        <span style={{ color: '#ccc', fontSize: `${mediumSmallFontSize}px` }}>-</span>
+                        <span style={{ color: sidebarPlaceholderText, fontSize: `${mediumSmallFontSize}px` }}>-</span>
                     )}
                 </div>
             ))
         },
         {
             key: 'startDate',
-            title: i18n.t('field_start_date') || 'Start Date',
+            title: tr('field_start_date'),
             width: columnWidths['startDate'] ?? 90,
             render: (t: Task) => renderEditableCell(t, 'startDate', (
-                <span style={{ color: '#666' }}>{(t.startDate !== undefined && Number.isFinite(t.startDate)) ? new Date(t.startDate).toLocaleDateString() : '-'}</span>
+                <span style={{ color: designTokens.textMuted }}>{formatDate(t.startDate)}</span>
             ))
         },
         {
             key: 'dueDate',
-            title: i18n.t('field_due_date') || 'Due Date',
+            title: tr('field_due_date'),
             width: columnWidths['dueDate'] ?? 90,
             render: (t: Task) => renderEditableCell(t, 'dueDate', (
-                <span style={{ color: '#666' }}>{(t.dueDate !== undefined && Number.isFinite(t.dueDate)) ? new Date(t.dueDate).toLocaleDateString() : '-'}</span>
+                <span style={{ color: designTokens.textMuted }}>{formatDate(t.dueDate)}</span>
             ))
         },
         {
             key: 'ratioDone',
-            title: i18n.t('field_done_ratio') || 'Progress',
+            title: tr('field_done_ratio'),
             width: columnWidths['ratioDone'] ?? 80,
             render: (t: Task) => renderEditableCell(t, 'ratioDone', (
                 <ProgressCircle ratio={t.ratioDone} statusId={t.statusId} />
@@ -503,35 +525,35 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'project',
-            title: i18n.t('field_project') || 'Project',
+            title: tr('field_project'),
             width: columnWidths['project'] ?? 120,
             render: (t: Task) => renderEditableCell(t, 'projectId', (
-                <span style={{ color: '#666', fontSize: `${mediumSmallFontSize}px` }}>{t.projectName || '-'}</span>
+                <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.projectName || '-'}</span>
             ))
         },
         {
             key: 'tracker',
-            title: i18n.t('field_tracker') || 'Tracker',
+            title: tr('field_tracker'),
             width: columnWidths['tracker'] ?? 100,
             render: (t: Task) => renderEditableCell(t, 'trackerId', (
-                <span style={{ color: '#666', fontSize: `${mediumSmallFontSize}px` }}>{t.trackerName || '-'}</span>
+                <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.trackerName || '-'}</span>
             ))
         },
         {
             key: 'priority',
-            title: i18n.t('field_priority') || 'Priority',
+            title: tr('field_priority'),
             width: columnWidths['priority'] ?? 90,
             render: (t: Task) => {
                 const priorityId = t.priorityId || 0;
                 const style = getPriorityColor(priorityId, t.priorityPosition);
                 return renderEditableCell(t, 'priorityId', (
-                    <span style={{
+                <span style={{
                         backgroundColor: style.bg,
                         color: style.text,
                         padding: '2px 8px',
                         borderRadius: '12px',
                         fontSize: `${smallFontSize}px`,
-                        fontWeight: 600,
+                        fontWeight: 500,
                         display: 'inline-block',
                         whiteSpace: 'nowrap'
                     }}>
@@ -542,52 +564,52 @@ export const UiSidebar: React.FC = () => {
         },
         {
             key: 'author',
-            title: i18n.t('field_author') || 'Author',
+            title: tr('field_author'),
             width: columnWidths['author'] ?? 100,
             render: (t: Task) => renderEditableCell(t, 'authorId', (
-                <span style={{ color: '#666', fontSize: `${mediumSmallFontSize}px` }}>{t.authorName || '-'}</span>
+                <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.authorName || '-'}</span>
             ))
         },
         {
             key: 'category',
-            title: i18n.t('field_category') || 'Category',
+            title: tr('field_category'),
             width: columnWidths['category'] ?? 100,
             render: (t: Task) => renderEditableCell(t, 'categoryId', (
-                <span style={{ color: '#666', fontSize: `${mediumSmallFontSize}px` }}>{t.categoryName || '-'}</span>
+                <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.categoryName || '-'}</span>
             ))
         },
         {
             key: 'estimatedHours',
-            title: i18n.t('field_estimated_hours') || 'Estimated Time',
+            title: tr('field_estimated_hours'),
             width: columnWidths['estimatedHours'] ?? 80,
             render: (t: Task) => renderEditableCell(t, 'estimatedHours', (
-                <span style={{ color: '#666', fontSize: `${mediumSmallFontSize}px` }}>{t.estimatedHours !== undefined ? `${t.estimatedHours}h` : '-'}</span>
+                <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.estimatedHours !== undefined ? `${t.estimatedHours}h` : '-'}</span>
             ))
         },
         {
             key: 'createdOn',
-            title: i18n.t('field_created_on') || 'Created',
+            title: tr('field_created_on'),
             width: columnWidths['createdOn'] ?? 120,
-            render: (t: Task) => <span style={{ color: '#666', fontSize: `${mediumSmallFontSize}px` }}>{t.createdOn ? new Date(t.createdOn).toLocaleString() : '-'}</span>
+            render: (t: Task) => <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.createdOn ? new Date(t.createdOn).toLocaleString() : '-'}</span>
         },
         {
             key: 'updatedOn',
-            title: i18n.t('field_updated_on') || 'Updated',
+            title: tr('field_updated_on'),
             width: columnWidths['updatedOn'] ?? 120,
-            render: (t: Task) => <span style={{ color: '#666', fontSize: `${mediumSmallFontSize}px` }}>{t.updatedOn ? new Date(t.updatedOn).toLocaleString() : '-'}</span>
+            render: (t: Task) => <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.updatedOn ? new Date(t.updatedOn).toLocaleString() : '-'}</span>
         },
         {
             key: 'spentHours',
-            title: i18n.t('field_spent_hours') || 'Spent Time',
+            title: tr('field_spent_hours'),
             width: columnWidths['spentHours'] ?? 80,
-            render: (t: Task) => <span style={{ color: '#666', fontSize: `${mediumSmallFontSize}px` }}>{t.spentHours !== undefined ? `${t.spentHours}h` : '-'}</span>
+            render: (t: Task) => <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.spentHours !== undefined ? `${t.spentHours}h` : '-'}</span>
         },
         {
             key: 'version',
-            title: i18n.t('field_version') || 'Target Version',
+            title: tr('field_version'),
             width: columnWidths['version'] ?? 120,
             render: (t: Task) => renderEditableCell(t, 'fixedVersionId', (
-                <span style={{ color: '#666', fontSize: `${mediumSmallFontSize}px` }}>{t.fixedVersionName || '-'}</span>
+                <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.fixedVersionName || '-'}</span>
             ))
         },
         ...customFields.map((customField) => ({
@@ -598,7 +620,7 @@ export const UiSidebar: React.FC = () => {
                 const displayValue = formatCustomFieldCellValue(t, customField);
                 return renderEditableCell(t, customFieldEditField(String(customField.id)), (
                     <span
-                        style={{ color: displayValue === '-' ? '#999' : '#666', fontSize: `${mediumSmallFontSize}px` }}
+                        style={{ color: displayValue === '-' ? sidebarPlaceholderText : sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}
                         data-tooltip={displayValue !== '-' ? displayValue : undefined}
                     >
                         {displayValue}
@@ -618,15 +640,15 @@ export const UiSidebar: React.FC = () => {
         .map((key) => columns.find((col) => col.key === key))
         .filter((col): col is SidebarColumn => Boolean(col));
 
-    const sidebarColumnBorder = '1px solid #e0e0e0';
+    const sidebarColumnBorder = `1px solid ${designTokens.controlBorder}`;
     const inlineControlHeight = Math.max(20, Math.min(24, viewport.rowHeight - 6));
 
     return (
         <div
             style={{
                 width: '100%',
-                backgroundColor: '#ffffff',
-                borderRight: '1px solid #e0e0e0',
+                backgroundColor: designTokens.controlBg,
+                borderRight: `1px solid ${designTokens.controlBorder}`,
                 display: 'flex',
                 flexDirection: 'column',
                 height: '100%',
@@ -635,12 +657,12 @@ export const UiSidebar: React.FC = () => {
         >
             {/* Header */}
             <div style={{
-                height: 48,
-                borderBottom: '1px solid #e0e0e0',
+                height: sidebarHeaderHeight,
+                borderBottom: sidebarRowBorder,
                 display: 'flex',
-                fontWeight: 600,
-                backgroundColor: '#f8f9fa',
-                color: '#444',
+                fontWeight: 500,
+                backgroundColor: sidebarHeaderBg,
+                color: sidebarSecondaryText,
                 fontSize: `${sidebarFontSize}px`,
                 overflow: 'hidden'
             }}>
@@ -658,7 +680,7 @@ export const UiSidebar: React.FC = () => {
                                     width: isLastColumn ? 0 : col.width,
                                     flex: isLastColumn ? '1 1 0px' : '0 0 auto',
                                     minWidth: isLastColumn ? 0 : undefined,
-                                    padding: '0 8px',
+                                    padding: `0 ${sidebarPaddingX}px`,
                                     borderRight: isLastColumn ? 'none' : sidebarColumnBorder,
                                     display: 'flex',
                                     alignItems: 'center',
@@ -681,7 +703,7 @@ export const UiSidebar: React.FC = () => {
 
                                 {
                                     isSorted && (
-                                        <span style={{ marginLeft: 4, display: 'flex', alignItems: 'center' }}>
+                                        <span style={{ marginLeft: sidebarGapSm, display: 'flex', alignItems: 'center' }}>
                                             {sortConfig?.direction === 'asc' ? (
                                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                                     <polyline points="18 15 12 9 6 15"></polyline>
@@ -697,7 +719,7 @@ export const UiSidebar: React.FC = () => {
 
                                 {
                                     col.key === 'subject' && (
-                                        <div style={{ display: 'flex', gap: '4px', marginLeft: 'auto', marginRight: '12px' }}>
+                                        <div style={{ display: 'flex', gap: sidebarGapSm, marginLeft: 'auto', marginRight: sidebarRowPaddingX }}>
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -712,21 +734,21 @@ export const UiSidebar: React.FC = () => {
                                                         Object.values(projectExpansion).some(v => v === false);
                                                     const anyTaskCollapsed = tasks.some(t => t.hasChildren && taskExpansion[t.id] === false);
                                                     return (anyProjectCollapsed || anyAssigneeCollapsed || anyTaskCollapsed)
-                                                        ? (i18n.t('button_expand_all') || 'すべて展開')
-                                                        : (i18n.t('button_collapse_all') || 'すべて折りたたむ');
+                                                        ? tr('button_expand_all')
+                                                        : tr('button_collapse_all');
                                                 })()}
                                                 className="header-action-button"
                                                 style={{
                                                     display: 'flex',
                                                     alignItems: 'center',
                                                     justifyContent: 'center',
-                                                    width: '24px',
-                                                    height: '24px',
+                                                    width: `${sidebarButtonSize}px`,
+                                                    height: `${sidebarButtonSize}px`,
                                                     padding: 0,
-                                                    border: '1px solid #dadce0',
+                                                    border: `1px solid ${designTokens.borderSubtle}`,
                                                     borderRadius: '4px',
-                                                    backgroundColor: '#fff',
-                                                    color: '#5f6368',
+                                                    backgroundColor: designTokens.controlBg,
+                                                    color: sidebarMutedText,
                                                     cursor: 'pointer'
                                                 }}
                                             >
@@ -778,8 +800,8 @@ export const UiSidebar: React.FC = () => {
                     flex: 1,
                     position: 'relative',
                     overflow: 'hidden',
-                    backgroundColor: isRootDropActive ? '#fff8e1' : 'transparent',
-                    boxShadow: isRootDropActive ? 'inset 0 0 0 1px #f9ab00' : 'none',
+                    backgroundColor: isRootDropActive ? sidebarRootDropBg : 'transparent',
+                    boxShadow: isRootDropActive ? `inset 0 0 0 1px ${sidebarRootDropBorder}` : 'none',
                     transition: 'background-color 0.2s, box-shadow 0.2s'
                 }}
                 onWheel={handleWheel}
@@ -803,12 +825,12 @@ export const UiSidebar: React.FC = () => {
                                         width: '100%',
                                         display: 'flex',
                                         alignItems: 'center',
-                                        padding: '0 12px',
-                                        backgroundColor: '#f8f9fa',
-                                        color: '#3c4043',
-                                        fontWeight: 600,
-                                        borderTop: '1px solid #e0e0e0',
-                                        borderBottom: '1px solid #e0e0e0',
+                                        padding: `0 ${sidebarRowPaddingX}px`,
+                                        backgroundColor: sidebarHeaderBg,
+                                        color: sidebarSecondaryText,
+                                        fontWeight: 500,
+                                        borderTop: sidebarRowBorder,
+                                        borderBottom: sidebarRowBorder,
                                         marginTop: -1,
                                         boxSizing: 'border-box',
                                         cursor: 'pointer',
@@ -826,16 +848,16 @@ export const UiSidebar: React.FC = () => {
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        width: 20,
-                                        height: 20,
-                                        marginRight: 8
+                                        width: sidebarControlSize,
+                                        height: sidebarControlSize,
+                                        marginRight: sidebarPaddingX
                                     }}>
                                         <ChevronIcon expanded={expanded} />
                                     </div>
-                                    <div style={{ marginRight: 8, display: 'flex', alignItems: 'center', color: '#5f6368' }}>
+                                    <div style={{ marginRight: sidebarPaddingX, display: 'flex', alignItems: 'center', color: sidebarMutedText }}>
                                         {row.groupKind === 'assignee' ? <AssigneeIcon /> : <ProjectIcon />}
                                     </div>
-                                    {row.projectName || (row.groupKind === 'assignee' ? (i18n.t('field_assigned_to') || 'Assignee') : (i18n.t('label_project') || 'Project'))}
+                                        {row.projectName || (row.groupKind === 'assignee' ? tr('field_assigned_to') : tr('label_project'))}
                                 </div>
                             );
                         } else if (row.type === 'version') {
@@ -852,12 +874,12 @@ export const UiSidebar: React.FC = () => {
                                         width: '100%',
                                         display: 'flex',
                                         alignItems: 'center',
-                                        padding: '0 12px 0 32px',
-                                        backgroundColor: '#f8f9fa',
-                                        color: '#3c4043',
-                                        fontWeight: 600,
-                                        borderTop: '1px solid #e0e0e0',
-                                        borderBottom: '1px solid #e0e0e0',
+                                        padding: `0 ${sidebarRowPaddingX}px 0 ${sidebarRowIndentX}px`,
+                                        backgroundColor: sidebarHeaderBg,
+                                        color: sidebarSecondaryText,
+                                        fontWeight: 500,
+                                        borderTop: sidebarRowBorder,
+                                        borderBottom: sidebarRowBorder,
                                         marginTop: -1,
                                         boxSizing: 'border-box',
                                         cursor: 'pointer',
@@ -873,13 +895,13 @@ export const UiSidebar: React.FC = () => {
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        width: 20,
-                                        height: 20,
-                                        marginRight: 8
+                                        width: sidebarControlSize,
+                                        height: sidebarControlSize,
+                                        marginRight: sidebarPaddingX
                                     }}>
                                         <ChevronIcon expanded={expanded} />
                                     </div>
-                                    <div style={{ marginRight: 8, display: 'flex', alignItems: 'center', color: '#009688' }}>
+                                    <div style={{ marginRight: sidebarPaddingX, display: 'flex', alignItems: 'center', color: designTokens.trackerFeatureStroke }}>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                             <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
                                             <line x1="4" y1="22" x2="4" y2="15" />
@@ -913,19 +935,19 @@ export const UiSidebar: React.FC = () => {
                                     selectTask(task.id);
                                     scrollToTask(task.id);
                                 }}
-                                    style={{
+                                style={{
                                         position: 'absolute',
                                         top: top,
                                         left: 0,
                                         height: viewport.rowHeight,
                                         width: '100%',
                                         display: 'flex',
-                                        borderBottom: '1px solid #e0e0e0',
-                                        backgroundColor: isDropTarget ? '#e6f4ea' : (isSelected ? '#e8f0fe' : 'transparent'),
-                                        boxShadow: isDropTarget ? 'inset 0 0 0 1px #34a853' : 'none',
+                                        borderBottom: sidebarRowBorder,
+                                        backgroundColor: isDropTarget ? sidebarDropTargetBg : (isSelected ? sidebarSelectedRowBg : 'transparent'),
+                                        boxShadow: isDropTarget ? `inset 0 0 0 1px ${sidebarDropTargetBorder}` : 'none',
                                         cursor: 'pointer',
                                          fontSize: `${sidebarFontSize}px`,
-                                    color: '#3c4043',
+                                    color: sidebarSecondaryText,
                                     transition: 'background-color 0.2s, color 0.2s'
                                 }}
                                 className={`task-row ${isSelected ? 'is-selected' : ''}`}
@@ -946,7 +968,7 @@ export const UiSidebar: React.FC = () => {
                                         width: isLastColumn ? 0 : col.width,
                                         flex: isLastColumn ? '1 1 0px' : '0 0 auto',
                                         minWidth: isLastColumn ? 0 : undefined,
-                                        padding: '0 8px',
+                                        padding: `0 ${sidebarPaddingX}px`,
                                         borderRight: isLastColumn ? 'none' : sidebarColumnBorder,
                                         display: 'flex',
                                         alignItems: 'center',
@@ -1007,7 +1029,7 @@ export const UiSidebar: React.FC = () => {
 
                                                 if (field === 'assignedToId') {
                                                     const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
+                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
                                                     const current = task.assignedToId ?? null;
                                                     return (
                                                         <SelectEditor
@@ -1034,7 +1056,7 @@ export const UiSidebar: React.FC = () => {
 
                                                 if (field === 'statusId') {
                                                     const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
+                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
                                                     return (
                                                         <SelectEditor
                                                             value={task.statusId}
@@ -1097,7 +1119,7 @@ export const UiSidebar: React.FC = () => {
                                                                 const nextTs = new Date(next).getTime();
                                                                 if (!Number.isFinite(nextTs)) return;
                                                                 if (task.startDate !== undefined && Number.isFinite(task.startDate) && task.startDate! > nextTs) {
-                                                                    useUIStore.getState().addNotification(i18n.t('label_invalid_date_range') || 'Invalid date range', 'warning');
+                                                                    useUIStore.getState().addNotification(tr('label_invalid_date_range'), 'warning');
                                                                     return;
                                                                 }
                                                                 // Update local state - will be saved with batch save or auto-save
@@ -1134,7 +1156,7 @@ export const UiSidebar: React.FC = () => {
                                                                 const nextTs = new Date(next).getTime();
                                                                 if (!Number.isFinite(nextTs)) return;
                                                                 if (task.dueDate !== undefined && Number.isFinite(task.dueDate) && nextTs > task.dueDate!) {
-                                                                    useUIStore.getState().addNotification(i18n.t('label_invalid_date_range') || 'Invalid date range', 'warning');
+                                                                    useUIStore.getState().addNotification(tr('label_invalid_date_range'), 'warning');
                                                                     return;
                                                                 }
                                                                 // Update local state - will be saved with batch save or auto-save
@@ -1151,7 +1173,7 @@ export const UiSidebar: React.FC = () => {
 
                                                 if (field === 'priorityId') {
                                                     const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
+                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
                                                     return (
                                                         <SelectEditor
                                                             value={task.priorityId ?? null}
@@ -1176,7 +1198,7 @@ export const UiSidebar: React.FC = () => {
 
                                                 if (field === 'authorId') {
                                                     const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
+                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
                                                     return (
                                                         <SelectEditor
                                                             value={task.authorId ?? null}
@@ -1199,7 +1221,7 @@ export const UiSidebar: React.FC = () => {
 
                                                 if (field === 'categoryId') {
                                                     const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
+                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
                                                     return (
                                                         <SelectEditor
                                                             value={task.categoryId ?? null}
@@ -1242,7 +1264,7 @@ export const UiSidebar: React.FC = () => {
 
                                                 if (field === 'projectId') {
                                                     const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
+                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
                                                     return (
                                                         <SelectEditor
                                                             value={task.projectId ? Number(task.projectId) : null}
@@ -1266,7 +1288,7 @@ export const UiSidebar: React.FC = () => {
 
                                                 if (field === 'trackerId') {
                                                     const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
+                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
                                                     return (
                                                         <SelectEditor
                                                             value={task.trackerId ?? null}
@@ -1290,7 +1312,7 @@ export const UiSidebar: React.FC = () => {
 
                                                 if (field === 'fixedVersionId') {
                                                     const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
+                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
 
                                                     const allVersions = useTaskStore.getState().versions;
                                                     const closedVersionIds = new Set(allVersions.filter(v => v.status === 'closed').map(v => Number(v.id)));
@@ -1301,7 +1323,7 @@ export const UiSidebar: React.FC = () => {
                                                             value={task.fixedVersionId ? Number(task.fixedVersionId) : null}
                                                             options={filteredVersions}
                                                             includeUnassigned
-                                                            emptyOptionLabel={i18n.t('label_none') || '(No version)'}
+                                                            emptyOptionLabel={tr('label_none')}
                                                             controlHeight={inlineControlHeight}
                                                             onCancel={close}
                                                             onCommit={async (next) => {
@@ -1319,16 +1341,16 @@ export const UiSidebar: React.FC = () => {
                                                 }
 
                                                 {
-                                                    if (!field) return <span>{i18n.t('button_edit')}</span>;
+                                                    if (!field) return <span>{tr('button_edit')}</span>;
                                                     const customFieldId = customFieldIdFromEditField(field);
                                                     if (customFieldId) {
                                                         const taskMeta = editMetaByTaskId[task.id];
-                                                        if (!taskMeta) return <span style={{ fontSize: mediumSmallFontSize, color: '#666' }}>{i18n.t('label_loading') || 'Loading...'}</span>;
-                                                        if (!taskMeta.editable.customFieldValues) return <span>{i18n.t('button_edit')}</span>;
+                                                        if (!taskMeta) return <span style={{ fontSize: mediumSmallFontSize, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
+                                                        if (!taskMeta.editable.customFieldValues) return <span>{tr('button_edit')}</span>;
 
                                                         const customField = taskMeta.options.customFields.find((cf) => String(cf.id) === customFieldId)
                                                             ?? customFields.find((cf) => String(cf.id) === customFieldId);
-                                                        if (!customField) return <span>{i18n.t('button_edit')}</span>;
+                                                        if (!customField) return <span>{tr('button_edit')}</span>;
 
                                                         return (
                                                             <CustomFieldEditor
@@ -1360,7 +1382,7 @@ export const UiSidebar: React.FC = () => {
                                                     }
                                                 }
 
-                                                return <span>{i18n.t('button_edit')}</span>;
+                                                return <span>{tr('button_edit')}</span>;
                                             })()}
                                         </div>
                                     </div>

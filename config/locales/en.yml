@@ -156,6 +156,12 @@ en:
     label_font_size_small: "Small"
     label_font_size_medium: "Medium"
     label_font_size_large: "Large"
+    label_display_settings: "Display settings"
+    label_share_display_settings_across_projects: "Share display settings across all projects"
+    label_display_settings_source: "Currently using"
+    label_display_settings_source_project: "This project's settings"
+    label_display_settings_source_global: "Shared settings across all projects"
+    label_display_settings_source_default: "Default settings"
     label_show_versions: "Show version headers"
     label_none: "(No version)"
     label_toggle_points_orphans: "Toggle Orphan Date Points"
@@ -199,6 +205,9 @@ en:
     label_baseline_diff_none: "No baseline difference."
     button_save: "Save"
     button_cancel: "Cancel"
+
+    general_format_date: "%m/%d/%Y"
+    year_month_format: "%B %Y"
 
     label_relation_type_precedes_info: "The predecessor task must finish before the successor task starts."
     label_relation_type_relates_info: "Creates a reference link only. It does not apply any schedule constraint."

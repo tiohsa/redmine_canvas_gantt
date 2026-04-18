@@ -1,7 +1,11 @@
 import React from 'react';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import { useUIStore } from '../stores/UIStore';
 import type { CustomFieldMeta } from '../types/editMeta';
 import { i18n } from '../utils/i18n';
+import { designTokens } from '../styles/designTokens';
+import { formatDate, getDateFormat, getCurrentLocale } from '../utils/dateUtils';
 
 const DEFAULT_CONTROL_HEIGHT = 24;
 
@@ -95,12 +99,12 @@ export const SubjectEditor: React.FC<{
                     disabled={saving}
                     style={buildControlStyle({
                         controlHeight,
-                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                        border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
                     })}
                 />
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
+                {saving ? <span style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || '...'}</span> : null}
             </div>
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+            {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
         </div>
     );
 };
@@ -150,7 +154,7 @@ export const SelectEditor: React.FC<{
                     style={buildControlStyle({
                         controlHeight,
                         fontSize: 12,
-                        border: '1px solid #ccc'
+                        border: `1px solid ${designTokens.controlBorder}`
                     })}
                     disabled={saving}
                 />
@@ -172,7 +176,7 @@ export const SelectEditor: React.FC<{
             style={buildControlStyle({
                 controlHeight,
                 padding: '0 24px 0 8px',
-                border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
             })}
         >
                 {includeUnassigned ? <option value="">{emptyOptionLabel || i18n.t('label_unassigned') || 'Unassigned'}</option> : null}
@@ -180,7 +184,7 @@ export const SelectEditor: React.FC<{
                     <option key={o.id} value={String(o.id)}>{o.name}</option>
                 ))}
             </select>
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+            {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
         </div>
     );
 };
@@ -243,13 +247,13 @@ export const DoneRatioEditor: React.FC<{
                     style={buildControlStyle({
                         controlHeight,
                         width: '54px',
-                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                        border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
                     })}
                 />
-                <span style={{ fontSize: 12, color: '#444' }}>%</span>
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
+                <span style={{ fontSize: 12, color: designTokens.controlFg }}>%</span>
+                {saving ? <span style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || '...'}</span> : null}
             </div>
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+            {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
         </div>
     );
 };
@@ -311,16 +315,40 @@ export const EstimatedHoursEditor: React.FC<{
                     style={buildControlStyle({
                         controlHeight,
                         width: '72px',
-                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                        border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
                     })}
                 />
-                <span style={{ fontSize: 12, color: '#444' }}>h</span>
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
+                <span style={{ fontSize: 12, color: designTokens.controlFg }}>h</span>
+                {saving ? <span style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || '...'}</span> : null}
             </div>
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+            {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
         </div>
     );
 };
+
+const CustomDateInput = React.forwardRef<HTMLDivElement, { value: string; onClick?: () => void; controlHeight: number }>(
+    ({ value, onClick, controlHeight }, ref) => (
+        <div
+            ref={ref}
+            onClick={onClick}
+            style={{
+                color: designTokens.textMuted,
+                padding: 0,
+                fontSize: 13,
+                lineHeight: `${Math.max(controlHeight - 2, 18)}px`,
+                width: '100%',
+                backgroundColor: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center'
+            }}
+        >
+            {value ? formatDate(new Date(value)) : '-'}
+        </div>
+    )
+);
+CustomDateInput.displayName = 'CustomDateInput';
 
 export const DueDateEditor: React.FC<{
     initialValue: string;
@@ -330,24 +358,22 @@ export const DueDateEditor: React.FC<{
     max?: string;
     controlHeight?: number;
 }> = ({ initialValue, onCommit, onCancel, min, max, controlHeight }) => {
-    const [value, setValue] = React.useState(initialValue);
     const [saving, setSaving] = React.useState(false);
-    const inputRef = React.useRef<HTMLInputElement>(null);
     const resolvedControlHeight = getResolvedControlHeight(controlHeight);
 
-    React.useEffect(() => {
-        const timer = setTimeout(() => {
-            if (inputRef.current && typeof inputRef.current.showPicker === 'function') {
-                try {
-                    inputRef.current.showPicker();
-                } catch {
-                    // ignore
-                }
-            }
-            inputRef.current?.focus();
-        }, 100);
-        return () => clearTimeout(timer);
-    }, []);
+    const parseValue = (val: string) => {
+        if (!val) return null;
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : d;
+    };
+
+    const formatDate = (d: Date | null) => {
+        if (!d) return '';
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
 
     const commit = async (next: string) => {
         if (next === initialValue) {
@@ -366,7 +392,9 @@ export const DueDateEditor: React.FC<{
         }
     };
 
-    const displayValue = value ? value.replace(/-/g, '/') : '';
+    const startDate = parseValue(initialValue);
+    const minDate = parseValue(min ?? '');
+    const maxDate = parseValue(max ?? '');
 
     return (
         <div
@@ -378,50 +406,53 @@ export const DueDateEditor: React.FC<{
                 alignItems: 'center'
             }}
         >
-            <span
-                style={{
-                    color: '#666',
-                    padding: '0 8px',
-                    fontSize: 13,
-                    lineHeight: `${Math.max(resolvedControlHeight - 2, 18)}px`
-                }}
-            >
-                {displayValue}
-            </span>
-            <input
-                ref={inputRef}
-                type="date"
-                min={min}
-                max={max}
-                value={value}
-                disabled={saving}
-                onChange={(e) => {
-                    setValue(e.target.value);
-                }}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') void commit(value);
-                    if (e.key === 'Escape') onCancel();
-                }}
-                onBlur={() => {
-                    if (value === initialValue) {
-                        onCancel();
-                    } else {
-                        void commit(value);
+            <DatePicker
+                selected={startDate}
+                onChange={(date: Date | null) => {
+                    if (!date) {
+                        void commit('');
+                        return;
                     }
+                    void commit(formatDate(date));
                 }}
-                style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: resolvedControlHeight,
-                    opacity: 0,
-                    border: 'none',
-                    margin: 0,
-                    padding: 0,
-                    cursor: 'pointer'
-                }}
-            />
+                onClickOutside={onCancel}
+                minDate={minDate || undefined}
+                maxDate={maxDate || undefined}
+                portalId="root"
+                showMonthDropdown
+                showYearDropdown
+                dropdownMode="select"
+                autoFocus
+                startOpen
+                calendarClassName="minimax-datepicker"
+                disabled={saving}
+                dateFormat={getDateFormat()}
+                locale={getCurrentLocale()}
+                customInput={<CustomDateInput value={initialValue} controlHeight={resolvedControlHeight} />}
+            >
+                <div className="minimax-datepicker-footer">
+                    <button
+                        type="button"
+                        className="minimax-datepicker-btn"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            void commit(formatDate(new Date()));
+                        }}
+                    >
+                        {i18n.t('label_today') || 'Today'}
+                    </button>
+                    <button
+                        type="button"
+                        className="minimax-datepicker-btn minimax-datepicker-btn--clear"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            void commit('');
+                        }}
+                    >
+                        {i18n.t('button_clear') || 'Clear'}
+                    </button>
+                </div>
+            </DatePicker>
         </div>
     );
 };
@@ -498,7 +529,7 @@ export const CustomFieldEditor: React.FC<{
                     style={buildControlStyle({
                         controlHeight,
                         padding: '0 24px 0 8px',
-                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                        border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
                     })}
                 >
                     {!customField.isRequired ? <option value="">-</option> : null}
@@ -506,8 +537,8 @@ export const CustomFieldEditor: React.FC<{
                         <option key={pv} value={pv}>{pv}</option>
                     ))}
                 </select>
-                {saving ? <div style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
-                {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+                {saving ? <div style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
+                {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
             </div>
         );
     }
@@ -533,8 +564,8 @@ export const CustomFieldEditor: React.FC<{
                         }
                     }}
                 />
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Saving...'}</span> : null}
-                {error ? <span style={{ fontSize: 12, color: '#d32f2f' }}>{error}</span> : null}
+                {saving ? <span style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || 'Saving...'}</span> : null}
+                {error ? <span style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</span> : null}
             </div>
         );
     }
@@ -574,7 +605,7 @@ export const CustomFieldEditor: React.FC<{
                             void commit(value);
                         }
                     }}
-                    style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4, resize: 'vertical' }}
+                    style={{ fontSize: 13, padding: '6px 8px', border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`, borderRadius: 4, resize: 'vertical' }}
                 />
             ) : (
                 <input
@@ -595,12 +626,12 @@ export const CustomFieldEditor: React.FC<{
                     }}
                     style={buildControlStyle({
                         controlHeight,
-                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                        border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
                     })}
                 />
             )}
-            {saving ? <div style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+            {saving ? <div style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
+            {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
         </div>
     );
 };

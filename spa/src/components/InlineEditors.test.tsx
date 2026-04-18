@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { CustomFieldEditor, SelectEditor, SubjectEditor } from './InlineEditors';
+import { CustomFieldEditor, DueDateEditor, SelectEditor, SubjectEditor } from './InlineEditors';
 
 describe('InlineEditors', () => {
     it('applies explicit control dimensions to searchable selects', () => {
@@ -59,5 +59,24 @@ describe('InlineEditors', () => {
 
         const select = screen.getByRole('combobox');
         expect(select).toHaveStyle({ height: '21px', padding: '0 24px 0 8px' });
+    });
+
+    it('calls onCommit when a day is selected in DatePicker', async () => {
+        const onCommit = vi.fn().mockResolvedValue(undefined);
+        const onCancel = vi.fn();
+        
+        render(
+            <DueDateEditor
+                initialValue="2023-01-01"
+                onCommit={onCommit}
+                onCancel={onCancel}
+            />
+        );
+
+        // Find a day in the calendar (e.g. 15th)
+        const day = screen.getByText('15');
+        fireEvent.click(day);
+
+        expect(onCommit).toHaveBeenCalledWith('2023-01-15');
     });
 });

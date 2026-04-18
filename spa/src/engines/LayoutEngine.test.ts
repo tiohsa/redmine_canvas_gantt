@@ -36,10 +36,10 @@ describe('LayoutEngine', () => {
         };
 
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
-        // height = Math.max(2, Math.round(40 * 0.4)) = 16
-        // yOffset = Math.round((40 - 16) / 2) = 12
-        expect(bounds.height).toBe(16);
-        expect(bounds.y).toBe(12);
+        // height = Math.max(2, Math.round(40 * 0.6)) = 24
+        // yOffset = Math.round((40 - 24) / 2) = 8
+        expect(bounds.height).toBe(24);
+        expect(bounds.y).toBe(8);
     });
 
     it('getTaskBounds centers single-date tasks in the day cell', () => {

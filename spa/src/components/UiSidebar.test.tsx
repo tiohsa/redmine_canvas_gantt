@@ -494,16 +494,8 @@ describe('UiSidebar', () => {
         const cell = await screen.findByTestId(`cell-${taskId}-startDate`);
         fireEvent.doubleClick(cell);
 
-        // Date input is likely not 'textbox' role
-        // Use selector
-        const input = await waitFor(() => {
-            const el = document.querySelector('input[type="date"]');
-            if (!el) throw new Error('Date input not found');
-            return el;
-        });
-
-        fireEvent.change(input, { target: { value: '2025-01-02' } });
-        fireEvent.keyDown(input, { key: 'Enter' });
+        const day = await screen.findByText('2');
+        fireEvent.click(day);
 
         // Date changes should update local state only (for batch save)
         await waitFor(() => {

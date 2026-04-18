@@ -2,6 +2,7 @@ import React from 'react';
 
 import { i18n } from '../utils/i18n';
 import type { BaselineSaveScope } from '../types/baseline';
+import { fontFamilies, designTokens } from '../styles/designTokens';
 
 interface BaselineControlsProps {
     baselineSaveStatus: 'idle' | 'saving' | 'ready' | 'error';
@@ -45,9 +46,9 @@ export const BaselineControls: React.FC<BaselineControlsProps> = ({
                         gap: '4px',
                         padding: '0 8px',
                         borderRadius: '6px',
-                        border: '1px solid #b45309',
-                        backgroundColor: baselineSaveStatus === 'saving' ? '#fef3c7' : '#fff7ed',
-                        color: '#b45309',
+                        border: `1px solid ${designTokens.warningFg}`,
+                        backgroundColor: baselineSaveStatus === 'saving' ? designTokens.warningBgSoft : designTokens.warningBg,
+                        color: designTokens.warningFg,
                         cursor: baselineSaveStatus === 'saving' ? 'not-allowed' : 'pointer',
                         height: '32px',
                         width: '40px'
@@ -69,30 +70,33 @@ export const BaselineControls: React.FC<BaselineControlsProps> = ({
                             position: 'absolute',
                             top: '100%',
                             right: 0,
-                            marginTop: '4px',
-                            background: '#fff',
-                            border: '1px solid #e0e0e0',
+                            marginTop: '8px',
+                            background: designTokens.controlBg,
+                            border: `1px solid ${designTokens.controlBorder}`,
                             borderRadius: '8px',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                            boxShadow: designTokens.menuShadow,
                             padding: '8px',
                             zIndex: 20,
                             minWidth: '220px',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '4px'
+                            gap: '8px',
+                            fontFamily: fontFamilies.ui,
+                            fontSize: '13px',
+                            lineHeight: 1.5
                         }}
                     >
                         <button
                             type="button"
                             onClick={() => onSaveBaseline('filtered')}
-                            style={{ border: 'none', background: '#fff', textAlign: 'left', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}
+                            style={{ border: 'none', background: designTokens.controlBg, color: designTokens.controlFg, textAlign: 'left', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}
                         >
                             {i18n.t('label_save_baseline_filtered') || 'Save filtered view as baseline'}
                         </button>
                         <button
                             type="button"
                             onClick={() => onSaveBaseline('project')}
-                            style={{ border: 'none', background: '#fff', textAlign: 'left', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}
+                            style={{ border: 'none', background: designTokens.controlBg, color: designTokens.controlFg, textAlign: 'left', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}
                         >
                             {i18n.t('label_save_baseline_project') || 'Save whole project as baseline'}
                         </button>
@@ -113,9 +117,9 @@ export const BaselineControls: React.FC<BaselineControlsProps> = ({
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderRadius: '6px',
-                    border: '1px solid #e0e0e0',
-                    backgroundColor: showBaseline ? '#e8f0fe' : '#fff',
-                    color: hasBaseline ? (showBaseline ? '#1a73e8' : '#333') : '#94a3b8',
+                    border: `1px solid ${designTokens.controlBorder}`,
+                    backgroundColor: showBaseline ? designTokens.controlActiveBg : designTokens.controlBg,
+                    color: hasBaseline ? (showBaseline ? designTokens.controlActiveFg : designTokens.controlFg) : designTokens.disabledFg,
                     cursor: hasBaseline ? 'pointer' : 'not-allowed',
                     opacity: hasBaseline ? 1 : 0.75,
                     height: '32px',
@@ -128,7 +132,7 @@ export const BaselineControls: React.FC<BaselineControlsProps> = ({
                     <circle cx="12" cy="12" r="3" />
                 </svg>
                 {showBaseline && (
-                    <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.iconActiveDot, borderRadius: '50%' }} />
                 )}
             </button>
         </>

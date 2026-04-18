@@ -1,4 +1,5 @@
 import type { Viewport, ZoomLevel } from '../types';
+import { formatExplicit, getYearMonthFormat } from './dateUtils';
 
 // Milliseconds constants
 const ONE_HOUR = 60 * 60 * 1000;
@@ -115,7 +116,7 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
             },
             (t) => {
                 const d = new Date(t);
-                return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return formatExplicit(d, getYearMonthFormat());
             },
             scales.middle
         );
@@ -141,7 +142,7 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
             },
             (t) => {
                 const d = new Date(t);
-                return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return formatExplicit(d, getYearMonthFormat());
             },
             scales.top
         );
@@ -180,7 +181,7 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
             },
             (t) => {
                 const d = new Date(t);
-                return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return formatExplicit(d, getYearMonthFormat());
             },
             scales.top
         );

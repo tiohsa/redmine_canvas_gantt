@@ -131,6 +131,12 @@ class CanvasGanttsController < ApplicationController
     label_font_size_small: :label_font_size_small,
     label_font_size_medium: :label_font_size_medium,
     label_font_size_large: :label_font_size_large,
+    label_display_settings: :label_display_settings,
+    label_share_display_settings_across_projects: :label_share_display_settings_across_projects,
+    label_display_settings_source: :label_display_settings_source,
+    label_display_settings_source_project: :label_display_settings_source_project,
+    label_display_settings_source_global: :label_display_settings_source_global,
+    label_display_settings_source_default: :label_display_settings_source_default,
     label_row_height_xs: :label_row_height_xs,
     label_row_height_s: :label_row_height_s,
     label_row_height_m: :label_row_height_m,
@@ -328,6 +334,9 @@ class CanvasGanttsController < ApplicationController
     @i18n = I18N_LABELS.transform_values { |label_key| canvas_gantt_l(label_key, default: label_key) }
     @settings = plugin_settings
     @non_working_week_days = Array(Setting.non_working_week_days).map(&:to_i).uniq.sort
+    @language = (User.current.language.presence || Setting.default_language).to_s
+    @date_format = Setting.date_format.presence || canvas_gantt_l(:general_format_date)
+    @year_month_format = canvas_gantt_l(:year_month_format)
   end
 
   # GET /projects/:project_id/canvas_gantt/data.json

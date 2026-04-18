@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useImperativeHandle, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { getGridScales } from '../utils/grid';
+import { canvasFonts, designTokens } from '../styles/designTokens';
 
 export interface TimelineHeaderHandle {
     getCanvas: () => HTMLCanvasElement | null;
@@ -21,9 +22,9 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // Header Background
-        ctx.fillStyle = '#f8f9fa';
+        ctx.fillStyle = designTokens.surfaceSubtle;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = '#e0e0e0';
+        ctx.strokeStyle = designTokens.borderSubtle;
         ctx.strokeRect(0, 0, canvas.width, canvas.height);
 
         // Calculate Scales
@@ -50,14 +51,14 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
             ctx.fillRect(0, y, canvas.width, h);
 
             // Bottom border
-            ctx.strokeStyle = '#dee2e6';
+            ctx.strokeStyle = designTokens.borderStrong;
             ctx.beginPath();
             ctx.moveTo(0, y + h);
             ctx.lineTo(canvas.width, y + h);
             ctx.stroke();
 
             ctx.fillStyle = txtColor;
-            ctx.font = '500 12px sans-serif';
+            ctx.font = canvasFonts.header;
             ctx.textAlign = align;
 
             ticks.forEach((tick, i) => {
@@ -65,7 +66,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
                 ctx.beginPath();
                 ctx.moveTo(Math.floor(tick.x) + 0.5, y);
                 ctx.lineTo(Math.floor(tick.x) + 0.5, y + h);
-                ctx.strokeStyle = '#dee2e6'; // Subtle separator
+                ctx.strokeStyle = designTokens.borderStrong;
                 ctx.stroke();
 
                 // Text
@@ -105,12 +106,12 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
 
         // Customize colors per row "level"
 
-        if (hasTop) drawRow(scales.top, '#f1f3f5', '#495057');
+        if (hasTop) drawRow(scales.top, designTokens.surfaceMuted, designTokens.textSecondary);
 
         // Middle Row
         const middleAlign: 'left' | 'center' = 'left';
-        const middleBg = zoomLevel === 0 ? '#f1f3f5' : '#ffffff';
-        const middleTxt = zoomLevel === 0 ? '#495057' : '#333333';
+        const middleBg = zoomLevel === 0 ? designTokens.surfaceMuted : designTokens.appBg;
+        const middleTxt = zoomLevel === 0 ? designTokens.textSecondary : designTokens.textPrimary;
         if (hasMiddle) drawRow(scales.middle, middleBg, middleTxt, middleAlign);
 
         if (hasBottom) {
@@ -118,7 +119,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
             const h = rowHeight;
 
             // Background (base)
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = designTokens.appBg;
             ctx.fillRect(0, y, canvas.width, h);
 
             // Weekends
@@ -130,22 +131,22 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
                         if (i < scales.bottom.length - 1) w = scales.bottom[i + 1].x - tick.x;
                         else w = (24 * 3600 * 1000 * viewport.scale);
 
-                        ctx.fillStyle = '#eeeeee';
+                        ctx.fillStyle = designTokens.weekendBg;
                         ctx.fillRect(tick.x, y, w, h);
                     }
                 });
             }
 
             // Draw Ticks/Text
-            ctx.fillStyle = '#333';
-            ctx.font = '500 12px sans-serif';
+            ctx.fillStyle = designTokens.textPrimary;
+            ctx.font = canvasFonts.header;
             ctx.textAlign = 'center'; // Always center bottom (Days)
 
             scales.bottom.forEach((tick, i) => {
                 ctx.beginPath();
                 ctx.moveTo(Math.floor(tick.x) + 0.5, y);
                 ctx.lineTo(Math.floor(tick.x) + 0.5, y + h);
-                ctx.strokeStyle = '#e0e0e0';
+                ctx.strokeStyle = designTokens.borderSubtle;
                 ctx.stroke();
 
                 // Width for centering
@@ -186,7 +187,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
     }), []);
 
     return (
-        <div style={{ height: 48, backgroundColor: '#f8f9fa', borderBottom: '1px solid #e0e0e0', overflow: 'hidden' }}>
+        <div style={{ height: 48, backgroundColor: designTokens.surfaceSubtle, borderBottom: `1px solid ${designTokens.borderSubtle}`, overflow: 'hidden' }}>
             <canvas ref={canvasRef} height={48} style={{ display: 'block' }} />
         </div>
     );

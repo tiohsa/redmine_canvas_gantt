@@ -146,7 +146,7 @@ describe('IssueIframeDialog', () => {
         expect(closeButton.style.height).toBe('24px');
 
         expect(footer.style.justifyContent).toBe('flex-start');
-        expect(footer.style.gap).toBe('6px');
+        expect(footer.style.gap).toBe('8px');
         expect(footer.style.paddingTop).toBe('2px');
         expect(footer.style.paddingRight).toBe('12px');
         expect(footer.style.paddingBottom).toBe('4px');

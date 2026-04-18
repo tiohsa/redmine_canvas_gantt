@@ -32,7 +32,7 @@ export class LayoutEngine {
         const due = task.dueDate;
 
         // Logic for single date tasks
-        const POINT_SIZE = 12;
+        const POINT_SIZE = 16;
 
         if (!Number.isFinite(start) && !Number.isFinite(due)) {
             // Return empty bounds if both dates are missing
@@ -70,8 +70,9 @@ export class LayoutEngine {
         }
 
         // Calculate task bar height based on rowHeight.
-        // We use 40% of rowHeight for the bar, but at least 2px.
-        const height = Math.max(2, Math.round(viewport.rowHeight * 0.4));
+        // For leaf tasks, use 60% of rowHeight. For parent tasks, use 40% (TaskRenderer will halve this to 20%).
+        const heightRatio = task.hasChildren ? 0.4 : 0.6;
+        const height = Math.max(2, Math.round(viewport.rowHeight * heightRatio));
         const yOffset = Math.round((viewport.rowHeight - height) / 2);
 
         return { x, y: y + yOffset, width, height };
