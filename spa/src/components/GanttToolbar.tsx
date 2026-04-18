@@ -588,6 +588,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         { value: 15, label: i18n.t('label_font_size_large') || 'Large' }
     ];
     const currentRowHeightOption = ROW_HEIGHT_OPTIONS.find(option => option.value === viewport.rowHeight) || ROW_HEIGHT_OPTIONS[2];
+    const rowHeightButtonLabel = `${i18n.t('label_row_height') || 'Row height'}: ${currentRowHeightOption.label}`;
     const zoomWheelHint = i18n.t('help_desc_zoom_wheel') || 'Hold Ctrl and use the mouse wheel to change the date display width.';
 
     return (
@@ -1905,29 +1906,30 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <button
                         type="button"
                         onClick={() => toggleMenu('rowHeight')}
-                        title={i18n.t('label_row_height') || 'Row height'}
+                        title={rowHeightButtonLabel}
+                        aria-label={rowHeightButtonLabel}
                         aria-haspopup="menu"
                         aria-expanded={showRowHeightMenu}
                         data-testid="row-height-menu-button"
                         style={{
-                            padding: '0 8px',
+                            padding: '0',
                             borderRadius: '6px',
                             border: '1px solid #e0e0e0',
                             backgroundColor: '#fff',
                             color: '#333',
-                            fontSize: '13px',
-                            fontWeight: 500,
                             cursor: 'pointer',
                             height: '32px',
+                            width: '32px',
                             outline: 'none',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px'
+                            justifyContent: 'center'
                         }}
                     >
-                        {currentRowHeightOption.label}
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="6 9 12 15 18 9" />
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <polyline points="8 9 12 5 16 9" />
+                            <polyline points="8 15 12 19 16 15" />
                         </svg>
                     </button>
                     {showRowHeightMenu && (
@@ -2161,7 +2163,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 color: '#fff',
                                 cursor: 'pointer',
                                 height: '32px',
-                                fontSize: '13px',
+                                fontSize: '10px',
                                 fontWeight: 600
                             }}
                         >
@@ -2181,7 +2183,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 color: '#d32f2f',
                                 cursor: 'pointer',
                                 height: '32px',
-                                fontSize: '13px',
+                                fontSize: '10px',
                                 fontWeight: 500
                             }}
                         >

@@ -746,7 +746,8 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
         const rowHeightButton = screen.getByTestId('row-height-menu-button');
-        expect(rowHeightButton).toHaveTextContent('M');
+        expect(rowHeightButton).toHaveAccessibleName('Row height: M');
+        expect(rowHeightButton).toHaveStyle({ width: '32px', height: '32px', padding: '0px' });
 
         fireEvent.click(rowHeightButton);
         expect(screen.getByTestId('row-height-menu')).toBeInTheDocument();
@@ -756,14 +757,14 @@ describe('GanttToolbar shortcuts', () => {
         expect(useTaskStore.getState().viewport.rowHeight).toBe(52);
         expect(screen.getByTestId('row-height-menu')).toBeInTheDocument();
         expect(screen.getByLabelText('XL')).toBeChecked();
-        expect(screen.getByTestId('row-height-menu-button')).toHaveTextContent('XL');
+        expect(screen.getByTestId('row-height-menu-button')).toHaveAccessibleName('Row height: XL');
 
         fireEvent.click(screen.getByLabelText('S'));
         expect(useTaskStore.getState().viewport.rowHeight).toBe(28);
         const rowHeightMenu = screen.getByTestId('row-height-menu');
         expect(rowHeightMenu).toBeInTheDocument();
         expect(screen.getByLabelText('S')).toBeChecked();
-        expect(screen.getByTestId('row-height-menu-button')).toHaveTextContent('S');
+        expect(screen.getByTestId('row-height-menu-button')).toHaveAccessibleName('Row height: S');
         expect(within(rowHeightMenu).getByTestId('row-height-zoom-hint')).toHaveTextContent('Ctrl');
         expect(rowHeightMenu.lastElementChild).toHaveAttribute('data-testid', 'row-height-zoom-hint');
 
