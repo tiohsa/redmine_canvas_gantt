@@ -1,9 +1,9 @@
 import type { Task, Viewport, ZoomLevel } from '../types';
 import { getGridScales } from '../utils/grid';
+import { designTokens } from '../styles/designTokens';
 
 export class BackgroundRenderer {
     private canvas: HTMLCanvasElement;
-    private static readonly WEEKEND_BG = '#eeeeee';
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -15,7 +15,7 @@ export class BackgroundRenderer {
 
         // Clear
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        ctx.fillStyle = '#f5f5f5';
+        ctx.fillStyle = designTokens.appBg;
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         const scales = getGridScales(viewport, zoomLevel);
@@ -35,7 +35,7 @@ export class BackgroundRenderer {
 
                     // Only draw if within canvas
                     if (tick.x + w > 0 && tick.x < this.canvas.width) {
-                        ctx.fillStyle = BackgroundRenderer.WEEKEND_BG;
+                        ctx.fillStyle = designTokens.weekendBg;
                         ctx.fillRect(Math.floor(tick.x), 0, Math.ceil(w), this.canvas.height);
                     }
                 }
@@ -48,14 +48,14 @@ export class BackgroundRenderer {
             if (selectedTask) {
                 const y = selectedTask.rowIndex * viewport.rowHeight - viewport.scrollY;
                 if (y + viewport.rowHeight > 0 && y < this.canvas.height) {
-                    ctx.fillStyle = '#e8f0fe'; // Match sidebar selection color
+                    ctx.fillStyle = designTokens.selectedRow;
                     ctx.fillRect(0, y, this.canvas.width, viewport.rowHeight);
                 }
             }
         }
 
         // Grid (vertical lines)
-        ctx.strokeStyle = '#f0f0f0';
+        ctx.strokeStyle = designTokens.borderSubtle;
         ctx.lineWidth = 1;
         ctx.beginPath();
 
@@ -75,7 +75,7 @@ export class BackgroundRenderer {
 
         // Horizontal lines
         // Ensure color is correct
-        ctx.strokeStyle = '#e0e0e0';
+        ctx.strokeStyle = designTokens.borderStrong;
 
         let y = -viewport.scrollY % viewport.rowHeight;
         while (y < this.canvas.height) {

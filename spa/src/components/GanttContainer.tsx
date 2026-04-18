@@ -27,6 +27,7 @@ import type { GanttExportHandle, GanttExportSnapshot } from '../export/types';
 import type { TimelineHeaderHandle } from './TimelineHeader';
 import { i18n } from '../utils/i18n';
 import { useBaselineStore } from '../stores/BaselineStore';
+import { designTokens } from '../styles/designTokens';
 
 import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, BOTTOM_PADDING_PX, SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH, SIDEBAR_RESIZE_CURSOR } from '../constants';
 
@@ -352,9 +353,9 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
                                     onMouseDown={workloadPaneVisible ? startWorkloadResize : undefined}
                                     style={{
                                         cursor: workloadPaneVisible ? WORKLOAD_SPLIT_CURSOR : 'default',
-                                        backgroundColor: '#f0f0f0',
-                                        borderTop: workloadPaneVisible ? '1px solid #e0e0e0' : 'none',
-                                        borderBottom: workloadPaneVisible ? '1px solid #e0e0e0' : 'none',
+                                        backgroundColor: designTokens.surfaceMuted,
+                                        borderTop: workloadPaneVisible ? `1px solid ${designTokens.controlBorder}` : 'none',
+                                        borderBottom: workloadPaneVisible ? `1px solid ${designTokens.controlBorder}` : 'none',
                                         pointerEvents: workloadPaneVisible ? 'auto' : 'none'
                                     }}
                                 />
@@ -381,9 +382,9 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
                                     width: SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH,
                                     boxSizing: 'border-box',
                                     cursor: SIDEBAR_RESIZE_CURSOR,
-                                    backgroundColor: '#f0f0f0',
-                                    borderRight: '1px solid #e0e0e0',
-                                    borderLeft: '1px solid #e0e0e0',
+                                    backgroundColor: designTokens.surfaceMuted,
+                                    borderRight: `1px solid ${designTokens.controlBorder}`,
+                                    borderLeft: `1px solid ${designTokens.controlBorder}`,
                                     zIndex: 10
                                 }}
                             />
@@ -446,9 +447,9 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
                             onMouseDown={workloadPaneVisible ? startWorkloadResize : undefined}
                             style={{
                                 cursor: workloadPaneVisible ? WORKLOAD_SPLIT_CURSOR : 'default',
-                                backgroundColor: '#f0f0f0',
-                                borderTop: workloadPaneVisible ? '1px solid #e0e0e0' : 'none',
-                                borderBottom: workloadPaneVisible ? '1px solid #e0e0e0' : 'none',
+                                backgroundColor: designTokens.surfaceMuted,
+                                borderTop: workloadPaneVisible ? `1px solid ${designTokens.controlBorder}` : 'none',
+                                borderBottom: workloadPaneVisible ? `1px solid ${designTokens.controlBorder}` : 'none',
                                 pointerEvents: workloadPaneVisible ? 'auto' : 'none'
                             }}
                         />

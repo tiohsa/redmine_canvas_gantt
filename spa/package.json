@@ -17,6 +17,7 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@fontsource/dm-sans": "^5.2.8",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zustand": "^5.0.9"

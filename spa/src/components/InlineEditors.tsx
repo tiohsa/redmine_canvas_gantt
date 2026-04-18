@@ -2,6 +2,7 @@ import React from 'react';
 import { useUIStore } from '../stores/UIStore';
 import type { CustomFieldMeta } from '../types/editMeta';
 import { i18n } from '../utils/i18n';
+import { designTokens } from '../styles/designTokens';
 
 const DEFAULT_CONTROL_HEIGHT = 24;
 
@@ -95,12 +96,12 @@ export const SubjectEditor: React.FC<{
                     disabled={saving}
                     style={buildControlStyle({
                         controlHeight,
-                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                        border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
                     })}
                 />
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
+                {saving ? <span style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || '...'}</span> : null}
             </div>
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+            {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
         </div>
     );
 };
@@ -150,7 +151,7 @@ export const SelectEditor: React.FC<{
                     style={buildControlStyle({
                         controlHeight,
                         fontSize: 12,
-                        border: '1px solid #ccc'
+                        border: `1px solid ${designTokens.controlBorder}`
                     })}
                     disabled={saving}
                 />
@@ -172,7 +173,7 @@ export const SelectEditor: React.FC<{
             style={buildControlStyle({
                 controlHeight,
                 padding: '0 24px 0 8px',
-                border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
             })}
         >
                 {includeUnassigned ? <option value="">{emptyOptionLabel || i18n.t('label_unassigned') || 'Unassigned'}</option> : null}
@@ -180,7 +181,7 @@ export const SelectEditor: React.FC<{
                     <option key={o.id} value={String(o.id)}>{o.name}</option>
                 ))}
             </select>
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+            {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
         </div>
     );
 };
@@ -243,13 +244,13 @@ export const DoneRatioEditor: React.FC<{
                     style={buildControlStyle({
                         controlHeight,
                         width: '54px',
-                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                        border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
                     })}
                 />
-                <span style={{ fontSize: 12, color: '#444' }}>%</span>
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
+                <span style={{ fontSize: 12, color: designTokens.controlFg }}>%</span>
+                {saving ? <span style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || '...'}</span> : null}
             </div>
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+            {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
         </div>
     );
 };
@@ -311,13 +312,13 @@ export const EstimatedHoursEditor: React.FC<{
                     style={buildControlStyle({
                         controlHeight,
                         width: '72px',
-                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                        border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
                     })}
                 />
-                <span style={{ fontSize: 12, color: '#444' }}>h</span>
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || '...'}</span> : null}
+                <span style={{ fontSize: 12, color: designTokens.controlFg }}>h</span>
+                {saving ? <span style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || '...'}</span> : null}
             </div>
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+            {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
         </div>
     );
 };
@@ -380,7 +381,7 @@ export const DueDateEditor: React.FC<{
         >
             <span
                 style={{
-                    color: '#666',
+                    color: designTokens.textMuted,
                     padding: '0 8px',
                     fontSize: 13,
                     lineHeight: `${Math.max(resolvedControlHeight - 2, 18)}px`
@@ -498,7 +499,7 @@ export const CustomFieldEditor: React.FC<{
                     style={buildControlStyle({
                         controlHeight,
                         padding: '0 24px 0 8px',
-                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                        border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
                     })}
                 >
                     {!customField.isRequired ? <option value="">-</option> : null}
@@ -506,8 +507,8 @@ export const CustomFieldEditor: React.FC<{
                         <option key={pv} value={pv}>{pv}</option>
                     ))}
                 </select>
-                {saving ? <div style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
-                {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+                {saving ? <div style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
+                {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
             </div>
         );
     }
@@ -533,8 +534,8 @@ export const CustomFieldEditor: React.FC<{
                         }
                     }}
                 />
-                {saving ? <span style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Saving...'}</span> : null}
-                {error ? <span style={{ fontSize: 12, color: '#d32f2f' }}>{error}</span> : null}
+                {saving ? <span style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || 'Saving...'}</span> : null}
+                {error ? <span style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</span> : null}
             </div>
         );
     }
@@ -574,7 +575,7 @@ export const CustomFieldEditor: React.FC<{
                             void commit(value);
                         }
                     }}
-                    style={{ fontSize: 13, padding: '6px 8px', border: error ? '1px solid #d32f2f' : '1px solid #ccc', borderRadius: 4, resize: 'vertical' }}
+                    style={{ fontSize: 13, padding: '6px 8px', border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`, borderRadius: 4, resize: 'vertical' }}
                 />
             ) : (
                 <input
@@ -595,12 +596,12 @@ export const CustomFieldEditor: React.FC<{
                     }}
                     style={buildControlStyle({
                         controlHeight,
-                        border: error ? '1px solid #d32f2f' : '1px solid #ccc'
+                        border: error ? `1px solid ${designTokens.controlErrorBorder}` : `1px solid ${designTokens.controlBorder}`
                     })}
                 />
             )}
-            {saving ? <div style={{ fontSize: 12, color: '#666' }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
-            {error ? <div style={{ fontSize: 12, color: '#d32f2f' }}>{error}</div> : null}
+            {saving ? <div style={{ fontSize: 12, color: designTokens.controlLoadingFg }}>{i18n.t('label_loading') || 'Saving...'}</div> : null}
+            {error ? <div style={{ fontSize: 12, color: designTokens.controlErrorFg }}>{error}</div> : null}
         </div>
     );
 };

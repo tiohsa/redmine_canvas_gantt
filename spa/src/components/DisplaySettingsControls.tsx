@@ -9,6 +9,7 @@ import {
     saveGlobalDisplayPreferences
 } from '../utils/preferences';
 import { i18n } from '../utils/i18n';
+import { fontFamilies, designTokens } from '../styles/designTokens';
 
 interface DisplaySettingsControlsProps {
     displaySettingsMenuRef: React.RefObject<HTMLDivElement | null>;
@@ -22,7 +23,7 @@ const resolveSourceLabel = (source: 'project' | 'global' | 'default') => {
         case 'project':
             return i18n.t('label_display_settings_source_project') || "This project's settings";
         case 'global':
-            return i18n.t('label_display_settings_source_global') || 'Shared settings across all projects';
+            return i18n.t('label_display_settings_source_global') || 'Shared settings across projects';
         default:
             return i18n.t('label_display_settings_source_default') || 'Default settings';
     }
@@ -104,7 +105,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
     const menuIsActive = displayPreferences.source !== 'default';
 
     return (
-        <div ref={displaySettingsMenuRef} style={{ display: 'flex', alignItems: 'center', marginLeft: '4px', position: 'relative' }}>
+        <div ref={displaySettingsMenuRef} style={{ display: 'flex', alignItems: 'center', marginLeft: '8px', position: 'relative' }}>
             <button
                 type="button"
                 onClick={onToggleDisplaySettingsMenu}
@@ -116,9 +117,9 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     justifyContent: 'center',
                     padding: '0',
                     borderRadius: '6px',
-                    border: '1px solid #e0e0e0',
-                    backgroundColor: menuIsActive ? '#e8f0fe' : '#fff',
-                    color: menuIsActive ? '#1a73e8' : '#333',
+                    border: `1px solid ${designTokens.controlBorder}`,
+                    backgroundColor: menuIsActive ? designTokens.controlActiveBg : designTokens.controlBg,
+                    color: menuIsActive ? designTokens.controlActiveFg : designTokens.controlFg,
                     cursor: 'pointer',
                     height: '32px',
                     width: '32px',
@@ -134,7 +135,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     <path d="m17 8-3 8" />
                 </svg>
                 {menuIsActive && (
-                    <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} />
+                    <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.iconActiveDot, borderRadius: '50%' }} />
                 )}
             </button>
 
@@ -145,37 +146,40 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                         position: 'absolute',
                         top: '100%',
                         right: 0,
-                        marginTop: 6,
-                        background: '#fff',
-                        border: '1px solid #e0e0e0',
+                        marginTop: 8,
+                        background: designTokens.controlBg,
+                        border: `1px solid ${designTokens.controlBorder}`,
                         borderRadius: 8,
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                        boxShadow: designTokens.menuShadow,
                         padding: 12,
                         minWidth: 280,
                         zIndex: 20,
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: 10
+                        gap: 8,
+                        fontFamily: fontFamilies.ui,
+                        fontSize: '13px',
+                        lineHeight: 1.5
                     }}
                 >
                     <div>
-                        <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                        <div style={{ fontWeight: 600, marginBottom: 8 }}>
                             {i18n.t('label_display_settings') || 'Display settings'}
                         </div>
-                        <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>
+                        <div style={{ fontSize: 13, color: designTokens.textMuted, lineHeight: 1.5 }}>
                             <span>{i18n.t('label_display_settings_source') || 'Currently using'}</span>
                             <span>{': '}</span>
                             <span>{resolveSourceLabel(displayPreferences.source)}</span>
                         </div>
                     </div>
 
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                         <input
                             type="checkbox"
                             checked={draftShareAcrossProjects}
                             onChange={(event) => setDraftShareAcrossProjects(event.target.checked)}
                         />
-                        <span>{i18n.t('label_share_display_settings_across_projects') || 'Share display settings across all projects'}</span>
+                        <span>{i18n.t('label_share_display_settings_across_projects') || 'Share settings across all projects'}</span>
                     </label>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -183,8 +187,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                             type="button"
                             onClick={onCloseDisplaySettingsMenu}
                             style={{
-                                border: '1px solid #ddd',
-                                background: '#fff',
+                                border: `1px solid ${designTokens.controlBorderStrong}`,
+                                background: designTokens.controlBg,
                                 borderRadius: 6,
                                 height: 28,
                                 padding: '0 8px',
@@ -198,9 +202,9 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                             onClick={handleSave}
                             data-testid="display-settings-save-button"
                             style={{
-                                border: '1px solid #1d4ed8',
-                                background: '#1d4ed8',
-                                color: '#fff',
+                                border: `1px solid ${designTokens.brandPrimaryStrong}`,
+                                background: designTokens.brandPrimaryStrong,
+                                color: designTokens.controlBg,
                                 borderRadius: 6,
                                 height: 28,
                                 padding: '0 8px',

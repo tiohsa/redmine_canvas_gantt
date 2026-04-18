@@ -91,7 +91,7 @@ describe('DisplaySettingsControls', () => {
         expect(screen.getByText('Currently using')).toBeInTheDocument();
         expect(screen.getByText("This project's settings")).toBeInTheDocument();
 
-        const shareCheckbox = screen.getByLabelText('Share display settings across all projects');
+        const shareCheckbox = screen.getByLabelText('Share settings across all projects');
         expect(shareCheckbox).toBeChecked();
 
         fireEvent.click(shareCheckbox);

@@ -5,6 +5,7 @@ import { i18n } from '../utils/i18n';
 import { applyIssueDialogStyles, getIssueDialogErrorMessage } from '../utils/iframeStyles';
 import { BulkSubtaskCreator } from './BulkSubtaskCreator';
 import type { BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
+import { fontFamilies, designTokens } from '../styles/designTokens';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
@@ -403,11 +404,14 @@ export const IssueIframeDialog: React.FC = () => {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                backgroundColor: designTokens.surfaceOverlay,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                zIndex: 2400
+                zIndex: 2400,
+                fontFamily: fontFamilies.ui,
+                fontSize: '13px',
+                lineHeight: 1.5
             }}
             onClick={(e) => {
                 if (e.target === e.currentTarget) {
@@ -416,19 +420,19 @@ export const IssueIframeDialog: React.FC = () => {
             }}
         >
             <div
-                style={{
-                    width: `${DEFAULT_DIALOG_WIDTH_PX}px`,
-                    maxWidth: '98vw',
-                    minWidth: `${MIN_DIALOG_WIDTH_PX}px`,
-                    height: dialogHeightPx ? `${dialogHeightPx}px` : `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
-                    maxHeight: `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
-                    backgroundColor: 'white',
-                    borderRadius: '6px',
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden',
-                    boxSizing: 'border-box'
+                    style={{
+                        width: `${DEFAULT_DIALOG_WIDTH_PX}px`,
+                        maxWidth: '98vw',
+                        minWidth: `${MIN_DIALOG_WIDTH_PX}px`,
+                        height: dialogHeightPx ? `${dialogHeightPx}px` : `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
+                        maxHeight: `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
+                        backgroundColor: designTokens.controlBg,
+                        borderRadius: '8px',
+                        boxShadow: designTokens.dialogShadow,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
+                        boxSizing: 'border-box'
                 }}
             >
                 {/* Header - Fixed Height */}
@@ -441,21 +445,21 @@ export const IssueIframeDialog: React.FC = () => {
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: compactHeaderPadding,
-                        backgroundColor: '#ffffff',
-                        borderBottom: '1px solid #e0e0e0'
+                        backgroundColor: designTokens.controlBg,
+                        borderBottom: `1px solid ${designTokens.controlBorder}`
                     }}
                 >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flex: 1, paddingRight: '12px' }}>
-                        <span style={{ fontWeight: 700, fontSize: '14px', color: '#333', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flex: 1, paddingRight: '16px' }}>
+                        <span style={{ fontWeight: 700, fontSize: '14px', color: designTokens.controlFg, whiteSpace: 'nowrap', flexShrink: 0 }}>
                             {issueLabel}
                         </span>
                         {issueSubject && (
-                            <span style={{ fontSize: '14px', color: '#5f6368', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <span style={{ fontSize: '14px', color: designTokens.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {issueSubject}
                             </span>
                         )}
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                         <a
                             href={activeDialogUrl}
                             target="_blank"
@@ -469,9 +473,9 @@ export const IssueIframeDialog: React.FC = () => {
                                 width: `${compactIconButtonSize}px`,
                                 height: `${compactIconButtonSize}px`,
                                 borderRadius: '6px',
-                                border: '1px solid #e0e0e0',
-                                backgroundColor: '#fff',
-                                color: '#333'
+                                border: `1px solid ${designTokens.controlBorder}`,
+                                backgroundColor: designTokens.controlBg,
+                                color: designTokens.controlFg
                             }}
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -491,9 +495,9 @@ export const IssueIframeDialog: React.FC = () => {
                                 width: `${compactIconButtonSize}px`,
                                 height: `${compactIconButtonSize}px`,
                                 borderRadius: '6px',
-                                border: '1px solid #e0e0e0',
-                                backgroundColor: '#fff',
-                                color: '#333',
+                                border: `1px solid ${designTokens.controlBorder}`,
+                                backgroundColor: designTokens.controlBg,
+                                color: designTokens.controlFg,
                                 cursor: 'pointer'
                             }}
                         >
@@ -514,9 +518,9 @@ export const IssueIframeDialog: React.FC = () => {
                             style={{
                                 flex: '0 0 auto',
                                 padding: '12px 16px',
-                                backgroundColor: '#fdecea',
-                                color: '#b71c1c',
-                                borderBottom: '1px solid #f5c6cb',
+                                backgroundColor: designTokens.errorBg,
+                                color: designTokens.errorFg,
+                                borderBottom: `1px solid ${designTokens.errorBorder}`,
                                 fontSize: 13
                             }}
                         >
@@ -539,7 +543,7 @@ export const IssueIframeDialog: React.FC = () => {
 
                 {/* Bulk Creation Section - Only for Issues */}
                 {!isQueryDialog && (
-                    <div ref={bulkSectionRef} style={{ flex: '0 0 auto', padding: '8px 12px 0 12px', backgroundColor: '#fff', borderTop: '1px solid #e0e0e0' }}>
+                    <div ref={bulkSectionRef} style={{ flex: '0 0 auto', padding: '8px 16px 0 16px', backgroundColor: designTokens.controlBg, borderTop: `1px solid ${designTokens.controlBorder}` }}>
                         <BulkSubtaskCreator
                             ref={bulkRef}
                             parentId={parentId}
@@ -561,28 +565,28 @@ export const IssueIframeDialog: React.FC = () => {
                         padding: compactFooterPadding,
                         display: 'flex',
                         justifyContent: 'flex-start',
-                        gap: '6px',
-                        backgroundColor: '#fff'
+                        gap: '8px',
+                        backgroundColor: designTokens.controlBg
                     }}
                 >
                     <button
                         onClick={handleClose}
                         disabled={isSaving}
-                        style={{
-                            height: `${compactActionButtonHeight}px`,
-                            padding: '0 12px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            background: '#fff',
-                            color: '#333',
-                            border: '1px solid #ccc',
-                            borderRadius: 4,
-                            fontSize: 13,
-                            cursor: isSaving ? 'default' : 'pointer',
-                            minWidth: `${compactActionButtonMinWidth}px`,
-                            boxSizing: 'border-box'
-                        }}
+                            style={{
+                                height: `${compactActionButtonHeight}px`,
+                                padding: '0 12px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: designTokens.controlBg,
+                                color: designTokens.controlFg,
+                                border: `1px solid ${designTokens.controlBorderStrong}`,
+                                borderRadius: 6,
+                                fontSize: 13,
+                                cursor: isSaving ? 'default' : 'pointer',
+                                minWidth: `${compactActionButtonMinWidth}px`,
+                                boxSizing: 'border-box'
+                            }}
                     >
                         {i18n.t('button_cancel') || 'Cancel'}
                     </button>
@@ -596,10 +600,10 @@ export const IssueIframeDialog: React.FC = () => {
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                background: isSaving ? '#ccc' : '#1a73e8',
-                                color: '#fff',
+                                background: isSaving ? designTokens.disabledFg : designTokens.controlActiveFg,
+                                color: designTokens.controlBg,
                                 border: 'none',
-                                borderRadius: 4,
+                                borderRadius: 6,
                                 fontSize: 13,
                                 fontWeight: 600,
                                 cursor: isSaving ? 'default' : 'pointer',

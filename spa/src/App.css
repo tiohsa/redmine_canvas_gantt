@@ -10,8 +10,8 @@
   position: fixed;
   inset: 0;
   z-index: 2000;
-  background-color: #f4f5f7;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  background-color: var(--color-surface-subtle);
+  box-shadow: var(--shadow-standard);
 }
 
 .logo {
@@ -50,18 +50,18 @@
 }
 
 .read-the-docs {
-  color: #888;
+  color: var(--col-text04);
 }
 .task-row:hover {
-  background-color: #f8f9fa !important;
+  background-color: var(--color-surface-subtle) !important;
 }
 
 .task-row.is-selected:hover {
-  background-color: #e8f0fe !important;
+  background-color: var(--color-primary-200) !important;
 }
 
 .project-header-row:hover {
-  background-color: #f1f3f4 !important;
+  background-color: var(--color-surface-muted) !important;
 }
 
 .task-subject:hover {
@@ -71,12 +71,12 @@
 .rcg-tooltip {
   pointer-events: none;
   z-index: 9999;
-  background-color: #333;
-  color: #fff;
+  background-color: var(--tooltip-bg, #333);
+  color: var(--tooltip-fg, #fff);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 12px;
   white-space: pre-wrap;
   max-width: 300px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  box-shadow: var(--tooltip-shadow, 0 2px 8px rgba(0,0,0,0.2));
 }

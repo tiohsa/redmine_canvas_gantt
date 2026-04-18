@@ -6,6 +6,7 @@ import { SIDEBAR_RESIZE_CURSOR } from '../../constants';
 import { getStatusColor } from '../../utils/styles';
 import { i18n } from '../../utils/i18n';
 import { formatCustomFieldCellValue } from './sidebarColumns';
+import { canvasFonts, fontFamilies } from '../../styles/designTokens';
 
 type Params = {
     tasks: Task[];
@@ -74,13 +75,13 @@ export const useSidebarColumnSizing = ({ tasks, customFields, setColumnWidth }: 
         const context = canvas.getContext('2d');
         if (!context) return;
 
-        context.font = '13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+        context.font = `13px ${fontFamilies.mono}`;
         const idWidth = Math.max(
             context.measureText('ID').width,
             ...tasks.slice(0, 50).map(t => context.measureText(String(t.id)).width)
         ) + 24;
 
-        context.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+        context.font = canvasFonts.body.replace('12px', '13px');
 
         const measure = (text: string) => context.measureText(text).width;
         const getColWidth = (title: string, accessor: (t: Task) => string) => {

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
+import { fontFamilies, designTokens } from '../styles/designTokens';
 
 type HelpItem = {
     icon: React.ReactNode;
@@ -22,9 +23,9 @@ const IconWrapper: React.FC<{ children: React.ReactNode; active?: boolean }> = (
         width: '32px',
         height: '32px',
         borderRadius: '6px',
-        border: '1px solid #e0e0e0',
-        backgroundColor: active ? '#e8f0fe' : '#fff',
-        color: active ? '#1a73e8' : '#333',
+        border: `1px solid ${designTokens.controlBorder}`,
+        backgroundColor: active ? designTokens.controlActiveBg : designTokens.controlBg,
+        color: active ? designTokens.controlActiveFg : designTokens.controlFg,
         flexShrink: 0
     }}>
         {children}
@@ -35,15 +36,15 @@ const HelpRow: React.FC<HelpItem> = ({ icon, title, description, active }) => (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', marginBottom: '20px' }}>
         <IconWrapper active={active}>{icon}</IconWrapper>
         <div>
-            <div style={{ fontWeight: 600, fontSize: '14px', color: '#333', marginBottom: '4px' }}>{title}</div>
-            <div style={{ fontSize: '13px', color: '#555', lineHeight: 1.5 }}>{description}</div>
+            <div style={{ fontWeight: 600, fontSize: '14px', color: designTokens.controlFg, marginBottom: '4px' }}>{title}</div>
+            <div style={{ fontSize: '13px', color: designTokens.textSecondary, lineHeight: 1.5 }}>{description}</div>
         </div>
     </div>
 );
 
 const HelpSectionCard: React.FC<HelpSection> = ({ title, items }) => (
     <section>
-        <h3 style={{ fontSize: '16px', color: '#1a73e8', borderBottom: '2px solid #e8f0fe', paddingBottom: '8px', marginBottom: '20px' }}>
+        <h3 style={{ fontSize: '16px', color: designTokens.controlActiveFg, borderBottom: `2px solid ${designTokens.controlActiveBg}`, paddingBottom: '8px', marginBottom: '20px' }}>
             {title}
         </h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
@@ -127,7 +128,7 @@ export const HelpDialog: React.FC = () => {
                     description: i18n.t('help_desc_edit_query') || 'Open the current query in Redmine to edit the shared filter conditions.'
                 },
                 {
-                    icon: <><svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" /></svg><div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: '#1a73e8', borderRadius: '50%' }} /></>,
+                    icon: <><svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" /></svg><div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.iconActiveDot, borderRadius: '50%' }} /></>,
                     title: i18n.t('label_column_plural') || 'Columns',
                     description: i18n.t('help_desc_columns') || 'Select which columns are visible in the left task list.',
                     active: true
@@ -280,12 +281,15 @@ export const HelpDialog: React.FC = () => {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                backgroundColor: designTokens.surfaceOverlay,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 zIndex: 2500, // Higher than IssueIframeDialog if needed, or similar
-                padding: '24px' // Gap around the dialog
+                padding: '24px', // Gap around the dialog
+                fontFamily: fontFamilies.ui,
+                fontSize: '13px',
+                lineHeight: 1.5
             }}
             onClick={(e) => {
                 if (e.target === e.currentTarget) {
@@ -298,9 +302,9 @@ export const HelpDialog: React.FC = () => {
                     width: '100%',
                     maxWidth: '1200px',
                     height: '100%',
-                    backgroundColor: 'white',
+                    backgroundColor: designTokens.controlBg,
                     borderRadius: '8px',
-                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)',
+                    boxShadow: designTokens.dialogShadow,
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden',
@@ -311,13 +315,13 @@ export const HelpDialog: React.FC = () => {
                 <div style={{
                     flex: '0 0 auto',
                     padding: '16px 24px',
-                    borderBottom: '1px solid #e0e0e0',
+                    borderBottom: `1px solid ${designTokens.controlBorder}`,
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    backgroundColor: '#f8f9fa'
+                    backgroundColor: designTokens.surfaceSubtle
                 }}>
-                    <h2 style={{ margin: 0, fontSize: '18px', color: '#333', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h2 style={{ margin: 0, fontSize: '18px', color: designTokens.controlFg, display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {questionIcon}
                         {i18n.t('label_help') || 'Help'}
                     </h2>
@@ -327,7 +331,7 @@ export const HelpDialog: React.FC = () => {
                             background: 'transparent',
                             border: 'none',
                             cursor: 'pointer',
-                            color: '#666',
+                            color: designTokens.textMuted,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -360,8 +364,8 @@ export const HelpDialog: React.FC = () => {
                 <div style={{
                     flex: '0 0 auto',
                     padding: '16px 24px',
-                    borderTop: '1px solid #e0e0e0',
-                    backgroundColor: '#f8f9fa',
+                    borderTop: `1px solid ${designTokens.controlBorder}`,
+                    backgroundColor: designTokens.surfaceSubtle,
                     display: 'flex',
                     justifyContent: 'flex-start'
                 }}>
@@ -373,10 +377,10 @@ export const HelpDialog: React.FC = () => {
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: '#fff',
-                            border: '1px solid #ccc',
+                            backgroundColor: designTokens.controlBg,
+                            border: `1px solid ${designTokens.controlBorderStrong}`,
                             borderRadius: '4px',
-                            color: '#333',
+                            color: designTokens.controlFg,
                             fontSize: '14px',
                             cursor: 'pointer',
                             fontWeight: 500,

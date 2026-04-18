@@ -1,6 +1,7 @@
 import type { CriticalPathTaskMetrics } from '../../scheduling/criticalPath';
 import type { SchedulingStateInfo } from '../../scheduling/constraintGraph';
 import { i18n } from '../../utils/i18n';
+import { designTokens } from '../../styles/designTokens';
 
 export type TaskNotificationDescriptor = {
     iconName: 'rcg-icon-notification-unscheduled' | 'rcg-icon-notification-warning' | 'rcg-icon-notification-critical';
@@ -17,7 +18,7 @@ const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskN
     if (schedulingState.state === 'invalid') {
         return {
             iconName: 'rcg-icon-notification-warning',
-            color: '#ea8600',
+            color: designTokens.notificationError,
             tooltip: schedulingState.message,
             testIdSuffix: 'invalid'
         };
@@ -26,7 +27,7 @@ const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskN
     if (schedulingState.state === 'cyclic') {
         return {
             iconName: 'rcg-icon-notification-warning',
-            color: '#d93025',
+            color: designTokens.notificationWarning,
             tooltip: schedulingState.message,
             testIdSuffix: 'cyclic'
         };
@@ -35,7 +36,7 @@ const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskN
     if (schedulingState.state === 'conflicted') {
         return {
             iconName: 'rcg-icon-notification-warning',
-            color: '#f9ab00',
+            color: designTokens.notificationBlocked,
             tooltip: schedulingState.message,
             testIdSuffix: 'conflicted'
         };
@@ -43,7 +44,7 @@ const getSchedulingNotification = (schedulingState?: SchedulingStateInfo): TaskN
 
     return {
         iconName: 'rcg-icon-notification-unscheduled',
-        color: '#5f6368',
+        color: designTokens.notificationMuted,
         tooltip: schedulingState.message,
         testIdSuffix: 'unscheduled'
     };
@@ -55,7 +56,7 @@ const getCriticalPathNotification = (criticalPathMetrics?: CriticalPathNotificat
     const days = criticalPathMetrics.totalSlackDays;
     return {
         iconName: 'rcg-icon-notification-critical',
-        color: '#b42318',
+        color: designTokens.notificationCritical,
         tooltip: i18n.t('label_critical_path_total_slack', { days }) || `Critical path task. Total slack: ${days} working day(s).`,
         testIdSuffix: 'critical'
     };

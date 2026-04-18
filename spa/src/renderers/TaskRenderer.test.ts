@@ -77,6 +77,6 @@ describe('TaskRenderer', () => {
         new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], false, true, null, false);
 
         expect(ctx.fillText).not.toHaveBeenCalled();
-        expect(ctx.fillRect).toHaveBeenCalled();
+        expect(ctx.fill).toHaveBeenCalled();
     });
 });

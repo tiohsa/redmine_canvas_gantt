@@ -3,15 +3,16 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 import { buildDependencySummary } from './dependencyIndicators';
 import type { BaselineSnapshot } from '../types/baseline';
 import { calculateBaselineDiff, getBaselineTaskState } from '../utils/baseline';
+import { canvasFonts, designTokens } from '../styles/designTokens';
 
 export class TaskRenderer {
     private canvas: HTMLCanvasElement;
 
-    // Redmine standard-like bar colors
-    private static readonly DONE_GREEN = '#50c878';
-    private static readonly DELAY_RED = '#ff6b6b';
-    private static readonly PLAN_GRAY = '#dddddd';
-    private static readonly DEPENDENCY_COLOR = '#9ca3af';
+    // MiniMax standard-like bar colors
+    private static readonly DONE_GREEN = designTokens.taskDone;
+    private static readonly DELAY_RED = designTokens.taskDelayed;
+    private static readonly PLAN_GRAY = designTokens.taskPlanned;
+    private static readonly DEPENDENCY_COLOR = designTokens.dependency;
 
 
 
@@ -154,8 +155,8 @@ export class TaskRenderer {
         ctx.save();
 
         // Use a semi-transparent theme blue for the diamonds
-        ctx.fillStyle = 'rgba(26, 115, 232, 0.8)';
-        ctx.strokeStyle = '#1a73e8';
+        ctx.fillStyle = designTokens.projectSummaryFill;
+        ctx.strokeStyle = designTokens.projectSummaryStroke;
         ctx.lineWidth = 1;
 
         // Draw Diamond at Start
@@ -166,7 +167,7 @@ export class TaskRenderer {
 
         // Draw Dotted Line between diamonds
         ctx.setLineDash([2, 2]);
-        ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
+        ctx.strokeStyle = designTokens.projectSummaryLine;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(startDiamondX, centerY);
@@ -192,8 +193,8 @@ export class TaskRenderer {
         ctx.save();
 
         // Diamonds Color
-        ctx.fillStyle = '#009688';
-        ctx.strokeStyle = '#00695c';
+        ctx.fillStyle = designTokens.versionFill;
+        ctx.strokeStyle = designTokens.versionStroke;
         ctx.lineWidth = 1;
 
         // Draw Diamond at Start
@@ -204,7 +205,7 @@ export class TaskRenderer {
 
         // Draw Dotted Line (Background)
         ctx.setLineDash([2, 2]);
-        ctx.strokeStyle = '#bdbdbd';
+        ctx.strokeStyle = designTokens.projectSummaryLine;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(startDiamondX, centerY);
@@ -214,7 +215,7 @@ export class TaskRenderer {
         // Draw Progress (Solid Line)
         if (progressWidth > 0) {
             ctx.setLineDash([]);
-            ctx.strokeStyle = '#4db6ac'; // Light teal
+            ctx.strokeStyle = designTokens.versionProgress;
             ctx.lineWidth = 3; // Thicker to be visible
             ctx.beginPath();
             ctx.moveTo(startDiamondX, centerY);
@@ -237,8 +238,8 @@ export class TaskRenderer {
         void width;
 
         ctx.save();
-        ctx.font = '12px sans-serif';
-        ctx.fillStyle = '#000000';
+        ctx.font = canvasFonts.body;
+        ctx.fillStyle = designTokens.textPrimary;
 
         const textX = x - 30; // Increased offset to 30px to avoid dependency lines
         const textY = y + height / 2;
@@ -290,14 +291,29 @@ export class TaskRenderer {
         }
 
         // === 2. Drawing (Z-Order) ===
+        const radius = Math.min(6, currentBarHeight / 2);
+        
         // 1. Base Bar (Planned Duration) - Standard Color
         ctx.fillStyle = TaskRenderer.PLAN_GRAY;
-        ctx.fillRect(baseX, barY, baseWidth, currentBarHeight);
+        ctx.beginPath();
+        if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(baseX, barY, baseWidth, currentBarHeight, radius);
+        } else {
+            ctx.rect(baseX, barY, baseWidth, currentBarHeight);
+        }
+        ctx.fill();
 
-        // 2. Progress Bar - Green
+        // 2. Progress Bar - Green/Brand Blue
         if (progressWidth > 0) {
             ctx.fillStyle = TaskRenderer.DONE_GREEN;
-            ctx.fillRect(baseX, barY, progressWidth, currentBarHeight);
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+                const rightRadii = progressWidth >= baseWidth ? radius : 0;
+                ctx.roundRect(baseX, barY, progressWidth, currentBarHeight, [radius, rightRadii, rightRadii, radius]);
+            } else {
+                ctx.rect(baseX, barY, progressWidth, currentBarHeight);
+            }
+            ctx.fill();
         }
 
         // 3. Delay Section - Red Hatched
@@ -312,14 +328,20 @@ export class TaskRenderer {
             const capH = height + capOverflow * 2;
             const capY = y - capOverflow;
             const capWidth = Math.max(2, Math.round(height * 0.3));
+            const capRadius = Math.min(2, capWidth / 2);
 
-            ctx.fillStyle = '#666666'; // Cap color (Dark Gray)
+            ctx.fillStyle = designTokens.parentCap;
 
+            ctx.beginPath();
             // Left Cap
-            ctx.fillRect(baseX, capY, capWidth, capH);
-
-            // Right Cap
-            ctx.fillRect(baseX + baseWidth - capWidth, capY, capWidth, capH);
+            if (typeof ctx.roundRect === 'function') {
+                ctx.roundRect(baseX, capY, capWidth, capH, capRadius);
+                ctx.roundRect(baseX + baseWidth - capWidth, capY, capWidth, capH, capRadius);
+            } else {
+                ctx.rect(baseX, capY, capWidth, capH);
+                ctx.rect(baseX + baseWidth - capWidth, capY, capWidth, capH);
+            }
+            ctx.fill();
         }
 
         return {
@@ -337,7 +359,7 @@ export class TaskRenderer {
         ctx.clip();
 
         ctx.fillStyle = TaskRenderer.DELAY_RED;
-        ctx.strokeStyle = '#e03e3e'; // Darker red for stripes
+        ctx.strokeStyle = designTokens.taskDelayedStroke;
         ctx.lineWidth = 1;
 
         const step = 4;
@@ -400,8 +422,8 @@ export class TaskRenderer {
         const markerY = Math.floor(bar.y - size / 2);
 
         ctx.save();
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.95)';
-        ctx.strokeStyle = '#ffffff';
+        ctx.fillStyle = designTokens.baselineMarkerFill;
+        ctx.strokeStyle = designTokens.baselineMarkerStroke;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(markerX + size / 2, markerY);
@@ -431,7 +453,7 @@ export class TaskRenderer {
         ctx.save();
 
         // Color determination
-        let color = TaskRenderer.PLAN_GRAY;
+        let color: string = TaskRenderer.PLAN_GRAY;
         const now = new Date().setHours(0, 0, 0, 0);
         let isDelayed = false;
 
@@ -446,7 +468,7 @@ export class TaskRenderer {
         }
 
         ctx.fillStyle = color;
-        ctx.strokeStyle = '#555';
+        ctx.strokeStyle = designTokens.textMuted;
         ctx.lineWidth = 1;
 
         if (isDelayed) {
