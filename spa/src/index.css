@@ -182,7 +182,7 @@ iframe.issue-iframe-loading {
 .minimax-datepicker {
   font-family: var(--font-ui) !important;
   border: 1px solid var(--color-border-subtle) !important;
-  border-radius: 12px !important;
+  border-radius: 10px !important;
   box-shadow: var(--shadow-standard) !important;
   background-color: #ffffff !important;
   z-index: 10000 !important;
@@ -195,16 +195,16 @@ iframe.issue-iframe-loading {
 .minimax-datepicker .react-datepicker__header {
   background-color: var(--color-surface-subtle) !important;
   border-bottom: 1px solid var(--color-border-subtle) !important;
-  border-top-left-radius: 12px !important;
-  border-top-right-radius: 12px !important;
-  padding-top: 8px !important;
+  border-top-left-radius: 10px !important;
+  border-top-right-radius: 10px !important;
+  padding-top: 6px !important;
 }
 
 .minimax-datepicker .react-datepicker__current-month {
   font-family: var(--font-display) !important;
   font-weight: 600 !important;
   color: var(--col-text00) !important;
-  font-size: 0.95rem !important;
+  font-size: 0.76rem !important;
 }
 
 .minimax-datepicker .react-datepicker__day-name {
@@ -215,9 +215,9 @@ iframe.issue-iframe-loading {
 .minimax-datepicker .react-datepicker__day {
   border-radius: 50% !important;
   transition: background-color 0.2s, color 0.2s !important;
-  width: 1.9rem !important;
-  line-height: 1.9rem !important;
-  margin: 0.15rem !important;
+  width: 1.52rem !important;
+  line-height: 1.52rem !important;
+  margin: 0.12rem !important;
 }
 
 .minimax-datepicker .react-datepicker__day:hover {
@@ -239,7 +239,7 @@ iframe.issue-iframe-loading {
 }
 
 .minimax-datepicker .react-datepicker__navigation {
-  top: 8px !important;
+  top: 6px !important;
 }
 
 .minimax-datepicker .react-datepicker__header__dropdown {
@@ -260,7 +260,7 @@ iframe.issue-iframe-loading {
   border-radius: 6px !important;
   border: 1px solid var(--color-border-strong) !important;
   font-family: var(--font-ui) !important;
-  font-size: 13px !important;
+  font-size: 11px !important;
   background-color: #ffffff !important;
   cursor: pointer !important;
 }
@@ -268,11 +268,11 @@ iframe.issue-iframe-loading {
 .minimax-datepicker-footer {
   display: flex !important;
   justify-content: space-between !important;
-  padding: 8px 12px !important;
+  padding: 6px 10px !important;
   border-top: 1px solid var(--color-border-subtle) !important;
   background-color: var(--color-surface-subtle) !important;
-  border-bottom-left-radius: 12px !important;
-  border-bottom-right-radius: 12px !important;
+  border-bottom-left-radius: 10px !important;
+  border-bottom-right-radius: 10px !important;
 }
 
 .minimax-datepicker-btn {
@@ -281,7 +281,7 @@ iframe.issue-iframe-loading {
   color: var(--col-text00) !important;
   padding: 4px 12px !important;
   border-radius: 6px !important;
-  font-size: 12px !important;
+  font-size: 10px !important;
   font-weight: 500 !important;
   cursor: pointer !important;
   transition: all 0.2s ease !important;
