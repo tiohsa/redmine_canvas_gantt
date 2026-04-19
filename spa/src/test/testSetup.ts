@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { useBaselineStore } from '../stores/BaselineStore';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
@@ -52,5 +53,5 @@ if (typeof HTMLCanvasElement !== 'undefined') {
         transform: vi.fn(),
         rect: vi.fn(),
         clip: vi.fn(),
-    })) as any;
+    })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 }

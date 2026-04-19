@@ -6,7 +6,7 @@ type SvgIconProps = {
     className?: string;
     style?: CSSProperties;
     title?: string;
-    [key: string]: any;
+    [key: string]: unknown;
 };
 
 export const SvgIcon = ({ name, size = 16, className, style, title, ...props }: SvgIconProps) => (

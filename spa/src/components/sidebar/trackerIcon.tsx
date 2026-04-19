@@ -3,9 +3,9 @@ import { designTokens } from '../../styles/designTokens';
 import { SvgIcon } from '../../icons/SvgIcon';
 
 export const TrackerIcon = ({ kind }: { kind: TrackerIconKind }) => {
-    let iconName: string = `rcg-icon-${kind}`;
+    const iconName: string = `rcg-icon-${kind}`;
     let color: string = designTokens.trackerTicketStroke;
-    let testId: string = `tracker-icon-${kind}`;
+    const testId: string = `tracker-icon-${kind}`;
 
     if (kind === 'defect') {
         color = designTokens.trackerDefectStroke;
