@@ -2,6 +2,7 @@ import React from 'react';
 import type { Task } from '../../types';
 import type { InlineEditSettings, TaskEditMeta } from '../../types/editMeta';
 import { InlineEditService } from '../../services/InlineEditService';
+import { useUIStore } from '../../stores/UIStore';
 import { customFieldIdFromColumnKey, customFieldEditField, customFieldIdFromEditField, isCustomFieldColumnKey } from './sidebarColumns';
 
 type Params = {
@@ -116,6 +117,13 @@ export const useSidebarInlineEdit = ({
 
     const startCellEdit = React.useCallback(async (task: Task, field: string) => {
         if (!shouldEnableField(field, task)) return;
+
+        // Guard against redundant activation if already editing this cell
+        const currentActive = useUIStore.getState().activeInlineEdit;
+        if (currentActive?.taskId === task.id && currentActive?.field === field && currentActive?.source === 'cell') {
+            return;
+        }
+
         selectTask(task.id);
 
         const requiresMeta = [

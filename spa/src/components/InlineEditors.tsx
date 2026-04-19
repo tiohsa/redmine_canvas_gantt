@@ -78,7 +78,10 @@ export const SubjectEditor: React.FC<{
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div 
+            style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            onDoubleClick={(e) => e.stopPropagation()}
+        >
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input
                     ref={inputRef}
@@ -145,7 +148,10 @@ export const SelectEditor: React.FC<{
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div 
+            style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            onDoubleClick={(e) => e.stopPropagation()}
+        >
             {options.length > 20 ? (
                 <input
                     value={filter}
@@ -222,7 +228,10 @@ export const DoneRatioEditor: React.FC<{
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div 
+            style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            onDoubleClick={(e) => e.stopPropagation()}
+        >
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input
                     type="number"
@@ -291,7 +300,10 @@ export const EstimatedHoursEditor: React.FC<{
     };
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div 
+            style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            onDoubleClick={(e) => e.stopPropagation()}
+        >
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input
                     type="number"
@@ -405,6 +417,7 @@ export const DueDateEditor: React.FC<{
                 display: 'flex',
                 alignItems: 'center'
             }}
+            onDoubleClick={(e) => e.stopPropagation()}
         >
             <DatePicker
                 selected={startDate}
@@ -507,7 +520,10 @@ export const CustomFieldEditor: React.FC<{
     if (customField.fieldFormat === 'list') {
         const possibleValues = customField.possibleValues ?? [];
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div 
+                style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+                onDoubleClick={(e) => e.stopPropagation()}
+            >
                 <select
                     value={value}
                     disabled={saving}
@@ -546,7 +562,10 @@ export const CustomFieldEditor: React.FC<{
     if (customField.fieldFormat === 'bool') {
         const checked = value === '1';
         return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div 
+                style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                onDoubleClick={(e) => e.stopPropagation()}
+            >
                 <input
                     type="checkbox"
                     checked={checked}
@@ -587,7 +606,10 @@ export const CustomFieldEditor: React.FC<{
     const isText = customField.fieldFormat === 'text';
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div 
+            style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            onDoubleClick={(e) => e.stopPropagation()}
+        >
             {isText ? (
                 <textarea
                     value={value}
