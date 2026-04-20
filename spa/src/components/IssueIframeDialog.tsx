@@ -2,7 +2,7 @@ import React from 'react';
 import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
-import { applyIssueDialogStyles, getIssueDialogErrorMessage } from '../utils/iframeStyles';
+import { applyIssueDialogStyles, applyLinkTargetBlank, getIssueDialogErrorMessage } from '../utils/iframeStyles';
 import { BulkSubtaskCreator } from './BulkSubtaskCreator';
 import type { BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
 import { fontFamilies, designTokens } from '../styles/designTokens';
@@ -166,6 +166,7 @@ export const IssueIframeDialog: React.FC = () => {
             const isIssueShowPage = !isQueryDialog && isIssueShowDialogPath(urlParsed.pathname);
 
             applyIssueDialogStyles(doc, isQueryDialog, isIssueShowPage);
+            applyLinkTargetBlank(doc);
             bindIframeSizeObservers(doc);
 
             iframe.classList.remove('issue-iframe-loading');
