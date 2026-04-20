@@ -1,3 +1,6 @@
+.playwright-mcp/
+output/
+spec-docs/
 tasks/
 tasks/
 .codex

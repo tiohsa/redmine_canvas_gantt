@@ -75,6 +75,14 @@ export const applyIssueDialogStyles = (doc: Document, isQuery = false, preserveC
     doc.head.appendChild(style);
 };
 
+export const applyLinkTargetBlank = (doc: Document): void => {
+    const links = doc.querySelectorAll<HTMLAnchorElement>('.wiki a');
+    links.forEach((a) => {
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+    });
+};
+
 export const findIssueDialogErrorElement = (doc: Document): HTMLElement | null => {
     for (const selector of ISSUE_DIALOG_ERROR_SELECTORS) {
         const element = doc.querySelector(selector);

@@ -7,6 +7,7 @@ import { applyIssueDialogStyles, findIssueDialogErrorElement, getIssueDialogErro
 
 vi.mock('../utils/iframeStyles', () => ({
     applyIssueDialogStyles: vi.fn(),
+    applyLinkTargetBlank: vi.fn(),
     findIssueDialogErrorElement: vi.fn(),
     getIssueDialogErrorMessage: vi.fn()
 }));

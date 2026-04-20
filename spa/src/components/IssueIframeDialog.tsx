@@ -2,7 +2,7 @@ import React from 'react';
 import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
-import { applyIssueDialogStyles, getIssueDialogErrorMessage } from '../utils/iframeStyles';
+import { applyIssueDialogStyles, applyLinkTargetBlank, getIssueDialogErrorMessage } from '../utils/iframeStyles';
 import { BulkSubtaskCreator } from './BulkSubtaskCreator';
 import type { BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
 import { fontFamilies, designTokens } from '../styles/designTokens';
@@ -78,6 +78,7 @@ export const IssueIframeDialog: React.FC = () => {
     const [iframeError, setIframeError] = React.useState<string | null>(null);
     const [isSaving, setIsSaving] = React.useState(false);
     const [dialogHeightPx, setDialogHeightPx] = React.useState<number | null>(null);
+    const [isIframeLoaded, setIsIframeLoaded] = React.useState(false);
     const activeDialogUrl = queryDialogUrl || issueDialogUrl;
     const isQueryDialog = Boolean(queryDialogUrl);
 
@@ -166,9 +167,10 @@ export const IssueIframeDialog: React.FC = () => {
             const isIssueShowPage = !isQueryDialog && isIssueShowDialogPath(urlParsed.pathname);
 
             applyIssueDialogStyles(doc, isQueryDialog, isIssueShowPage);
+            applyLinkTargetBlank(doc);
             bindIframeSizeObservers(doc);
 
-            iframe.classList.remove('issue-iframe-loading');
+            setIsIframeLoaded(true);
 
             const iframeWindow = iframe.contentWindow;
             if (iframeWindow && typeof iframeWindow.addEventListener === 'function') {
@@ -323,6 +325,7 @@ export const IssueIframeDialog: React.FC = () => {
         setIframeError(null);
         setIsSaving(false);
         setDialogHeightPx(null);
+        setIsIframeLoaded(false);
     }, [activeDialogUrl]);
 
     React.useEffect(() => {
@@ -540,7 +543,7 @@ export const IssueIframeDialog: React.FC = () => {
                             border: 'none',
                             flex: 1
                         }}
-                        className="issue-iframe-loading"
+                        className={isIframeLoaded ? undefined : 'issue-iframe-loading'}
                     />
                 </div>
 

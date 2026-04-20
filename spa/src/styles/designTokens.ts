@@ -59,7 +59,7 @@ export const designTokens = {
     errorBg: '#fdecea',
     errorBorder: '#f5c6cb',
     errorFg: '#b71c1c',
-    taskDone: '#4ab34fff',
+    taskDone: '#50c878',
     taskPlanned: 'rgba(125, 132, 125, 0.28)',
     taskDelayed: '#ea4335',
     taskDelayedStroke: '#d93025',
