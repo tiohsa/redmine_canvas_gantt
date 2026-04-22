@@ -497,6 +497,63 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe 'GET #edit_meta' do
+    let(:issue_scope) { double('IssueScope') }
+    let(:issue_project) do
+      instance_double(Project, id: 99, issue_categories: [], trackers: [])
+    end
+    let(:issue) do
+      instance_double(
+        Issue,
+        id: 42,
+        project_id: 99,
+        project: issue_project,
+        editable?: true,
+        safe_attribute?: true
+      )
+    end
+
+    before do
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: true, viewable: true, baseline_editable: false })
+      end
+      allow(Issue).to receive(:visible).and_return(issue_scope)
+      allow(issue_scope).to receive(:find).with('42').and_return(issue)
+      allow(controller).to receive(:current_view_scope).and_return({ issue_ids: Set[42], visible_project_ids: [1, 99] })
+      allow(issue).to receive(:new_statuses_allowed_to).and_return([])
+      allow(issue).to receive(:assignable_users).and_return([])
+      allow(issue).to receive(:subject).and_return('Scoped issue')
+      allow(issue).to receive(:assigned_to_id).and_return(nil)
+      allow(issue).to receive(:status_id).and_return(1)
+      allow(issue).to receive(:done_ratio).and_return(0)
+      allow(issue).to receive(:due_date).and_return(nil)
+      allow(issue).to receive(:start_date).and_return(nil)
+      allow(issue).to receive(:priority_id).and_return(nil)
+      allow(issue).to receive(:category_id).and_return(nil)
+      allow(issue).to receive(:estimated_hours).and_return(nil)
+      allow(issue).to receive(:tracker_id).and_return(nil)
+      allow(issue).to receive(:fixed_version_id).and_return(nil)
+      allow(issue).to receive(:lock_version).and_return(1)
+      allow(issue).to receive(:status).and_return(nil)
+      allow(IssuePriority).to receive(:active).and_return([])
+      allow(Project).to receive_message_chain(:allowed_to, :active, :where).and_return([])
+      allow(Version).to receive_message_chain(:visible, :where).and_return([])
+      allow(controller).to receive(:custom_field_extractor).and_return(
+        instance_double(
+          RedmineCanvasGantt::CustomFieldExtractor,
+          extract_custom_fields: [[], {}]
+        )
+      )
+    end
+
+    it 'allows edit_meta for a non-descendant issue when member-project mode view scope includes it' do
+      get :edit_meta, params: { project_id: 'demo', id: '42', member_projects_only: '1' }, format: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).dig('task', 'id')).to eq(42)
+    end
+  end
+
   describe 'PATCH #update' do
     let(:issue_scope) { double('IssueScope') }
     let(:issue) do

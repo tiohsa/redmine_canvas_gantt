@@ -945,7 +945,10 @@ class CanvasGanttsController < ApplicationController
       project: @project,
       params: params,
       current_user: User.current,
-      issue_includes: ISSUE_INCLUDES
+      issue_includes: ISSUE_INCLUDES,
+      member_project_ids_resolver: lambda {
+        visible_member_projects.map(&:id)
+      }
     ).resolve
   end
 
