@@ -62,7 +62,10 @@ module RedmineCanvasGantt
     end
 
     def build_relations(issues)
-      issues.flat_map(&:relations).uniq.map do |relation|
+      visible_ids = issues.map(&:id).to_set
+      issues.flat_map(&:relations).uniq.filter do |relation|
+        visible_ids.include?(relation.issue_from_id) && visible_ids.include?(relation.issue_to_id)
+      end.map do |relation|
         serialize_relation(relation)
       end
     end

@@ -1,4 +1,5 @@
 require_relative '../spec_helper'
+require 'set'
 
 RSpec.describe CanvasGanttsController, type: :controller do
   def canvas_gantt_t(key)
@@ -516,6 +517,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(issue_scope).to receive(:find).with('10').and_return(issue)
       allow(controller).to receive(:ensure_issue_in_scope).and_return(true)
       allow(controller).to receive(:ensure_issue_editable).and_return(true)
+      allow(controller).to receive(:ensure_project_move_valid!).and_return(true)
     end
 
     it 'returns conflict on stale object error' do
@@ -711,20 +713,24 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
   describe 'PATCH #update_relation' do
     let(:relation) { instance_double(IssueRelation, id: 77, issue_from_id: 10, issue_to_id: 11, save: true) }
-    let(:issue_from) { instance_double(Issue, project_id: 1, editable?: false) }
-    let(:issue_to) { instance_double(Issue, project_id: 2, editable?: true) }
+    let(:project_from) { instance_double(Project, id: 1) }
+    let(:project_to) { instance_double(Project, id: 2) }
+    let(:issue_from) { instance_double(Issue, id: 10, project_id: 1, project: project_from, editable?: true) }
+    let(:issue_to) { instance_double(Issue, id: 11, project_id: 2, project: project_to, editable?: true) }
 
     before do
       allow(controller).to receive(:set_permissions) do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
       end
-      allow(controller).to receive(:descendant_project_ids).and_return([1, 2])
-      allow(controller).to receive(:issue_scope).with([1, 2]).and_return(double(to_a: []))
+      allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
+      allow(controller).to receive(:current_view_scope).and_return({ issues: [] })
       allow(IssueRelation).to receive(:find).with('77').and_return(relation)
       allow(relation).to receive(:issue_from).and_return(issue_from)
       allow(relation).to receive(:issue_to).and_return(issue_to)
       allow(relation).to receive(:errors).and_return(double(full_messages: ['Save failed']))
       allow(Setting).to receive(:non_working_week_days).and_return([0, 6])
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_from).and_return(true)
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_to).and_return(true)
 
       current_type = 'precedes'
       current_delay = 2
@@ -753,6 +759,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
 
     it 'returns forbidden when owned issue is not editable' do
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_from).and_return(false)
       patch :update_relation,
             params: { project_id: 'demo', id: '77', relation: { relation_type: 'blocks' } },
             format: :json
@@ -762,8 +769,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
 
     it 'returns not found when relation is outside the current project' do
-      allow(relation).to receive(:issue_from).and_return(instance_double(Issue, project_id: 3, editable?: true))
-      allow(relation).to receive(:issue_to).and_return(instance_double(Issue, project_id: 4, editable?: true))
+      allow(relation).to receive(:issue_from).and_return(instance_double(Issue, id: 30, project_id: 3, project: project_from, editable?: true))
+      allow(relation).to receive(:issue_to).and_return(instance_double(Issue, id: 40, project_id: 4, project: project_to, editable?: true))
 
       patch :update_relation,
             params: { project_id: 'demo', id: '77', relation: { relation_type: 'blocks' } },
@@ -834,7 +841,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     it 'rejects relation updates that would create a scheduling cycle' do
       allow(issue_from).to receive(:editable?).and_return(true)
       existing_relations = [{ id: '12', from: 11, to: 10, type: 'precedes', delay: 0 }]
-      allow(controller).to receive(:issue_scope).with([1, 2]).and_return(double(to_a: [double('Issue')]))
+      allow(controller).to receive(:current_view_scope).and_return({ issues: [double('Issue')] })
       allow(controller).to receive(:build_relations).and_return(existing_relations)
 
       patch :update_relation,
@@ -859,21 +866,23 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
   describe 'POST #create_relation' do
     let(:issue_scope) { double('IssueScope') }
-    let(:issue_from) { instance_double(Issue, id: 10, project_id: 1, editable?: true, due_date: Date.new(2026, 1, 2), start_date: Date.new(2026, 1, 1)) }
-    let(:issue_to) { instance_double(Issue, id: 11, project_id: 1, editable?: true, due_date: Date.new(2026, 1, 5), start_date: Date.new(2026, 1, 4)) }
+    let(:issue_project) { instance_double(Project, id: 1) }
+    let(:issue_from) { instance_double(Issue, id: 10, project_id: 1, project: issue_project, editable?: true, due_date: Date.new(2026, 1, 2), start_date: Date.new(2026, 1, 1)) }
+    let(:issue_to) { instance_double(Issue, id: 11, project_id: 1, project: issue_project, editable?: true, due_date: Date.new(2026, 1, 5), start_date: Date.new(2026, 1, 4)) }
     let(:relation) { instance_double(IssueRelation, id: 88, issue_from_id: 10, issue_to_id: 11, relation_type: 'precedes', delay: 2, save: true) }
 
     before do
       allow(controller).to receive(:set_permissions) do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
       end
-      allow(controller).to receive(:descendant_project_ids).and_return([1])
-      allow(controller).to receive(:issue_scope).with([1]).and_return(double(to_a: []))
+      allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
+      allow(controller).to receive(:current_view_scope).and_return({ issues: [] })
       allow(Issue).to receive(:visible).and_return(issue_scope)
       allow(issue_scope).to receive(:find).with('10').and_return(issue_from)
       allow(issue_scope).to receive(:find).with('11').and_return(issue_to)
       allow(IssueRelation).to receive(:new).and_return(relation)
       allow(Setting).to receive(:non_working_week_days).and_return([0, 6])
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, kind_of(Project)).and_return(true)
     end
 
     it 'creates a relation when delay matches current task dates' do
@@ -904,7 +913,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
 
     it 'rejects relation creation that would create a scheduling cycle' do
-      allow(controller).to receive(:issue_scope).with([1]).and_return(double(to_a: [double('Issue')]))
+      allow(controller).to receive(:current_view_scope).and_return({ issues: [double('Issue')] })
       allow(controller).to receive(:build_relations).and_return([
         { id: '12', from: 11, to: 10, type: 'precedes', delay: 0 }
       ])
@@ -930,22 +939,27 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
   describe 'DELETE #destroy_relation' do
     let(:relation) { instance_double(IssueRelation) }
-    let(:issue_from) { instance_double(Issue, project_id: 1, editable?: false) }
-    let(:issue_to) { instance_double(Issue, project_id: 2, editable?: true) }
+    let(:project_from) { instance_double(Project, id: 1) }
+    let(:project_to) { instance_double(Project, id: 2) }
+    let(:issue_from) { instance_double(Issue, id: 10, project_id: 1, project: project_from, editable?: false) }
+    let(:issue_to) { instance_double(Issue, id: 11, project_id: 2, project: project_to, editable?: true) }
 
     before do
       allow(controller).to receive(:set_permissions) do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
       end
-      allow(controller).to receive(:descendant_project_ids).and_return([1, 2])
+      allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
       allow(IssueRelation).to receive(:find).with('77').and_return(relation)
       allow(relation).to receive(:issue_from).and_return(issue_from)
       allow(relation).to receive(:issue_to).and_return(issue_to)
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_from).and_return(false)
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_to).and_return(true)
     end
 
     it 'destroys a relation when either side belongs to a descendant project' do
-      allow(relation).to receive(:issue_from).and_return(instance_double(Issue, project_id: 2, editable?: true))
-      allow(relation).to receive(:issue_to).and_return(instance_double(Issue, project_id: 3, editable?: true))
+      allow(relation).to receive(:issue_from).and_return(instance_double(Issue, id: 10, project_id: 2, project: project_from, editable?: true))
+      allow(relation).to receive(:issue_to).and_return(instance_double(Issue, id: 11, project_id: 3, project: project_to, editable?: true))
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_from).and_return(true)
       allow(relation).to receive(:destroy)
 
       delete :destroy_relation, params: { project_id: 'demo', id: '77' }, format: :json
@@ -963,8 +977,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
 
     it 'returns not found when relation is outside the current project' do
-      allow(relation).to receive(:issue_from).and_return(instance_double(Issue, project_id: 3, editable?: true))
-      allow(relation).to receive(:issue_to).and_return(instance_double(Issue, project_id: 4, editable?: true))
+      allow(relation).to receive(:issue_from).and_return(instance_double(Issue, id: 30, project_id: 3, project: project_from, editable?: true))
+      allow(relation).to receive(:issue_to).and_return(instance_double(Issue, id: 40, project_id: 4, project: project_to, editable?: true))
 
       delete :destroy_relation, params: { project_id: 'demo', id: '77' }, format: :json
 

@@ -59,11 +59,11 @@ describe('apiClient.fetchEditMeta', () => {
             dueDate: '2025-01-02',
             lockVersion: 3,
             startDate: null,
-            priorityId: NaN,
+            priorityId: 0,
             categoryId: null,
             estimatedHours: null,
-            projectId: NaN,
-            trackerId: NaN,
+            projectId: 0,
+            trackerId: 0,
             fixedVersionId: null
         });
         expect(meta.options.statuses).toEqual([{ id: 1, name: 'New' }]);

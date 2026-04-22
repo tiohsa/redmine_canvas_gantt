@@ -23,6 +23,12 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
         status_id: 12,
         done_ratio: 34,
         due_date: Date.new(2026, 1, 1),
+        start_date: Date.new(2025, 12, 1),
+        priority_id: 3,
+        category_id: 4,
+        estimated_hours: 12.5,
+        tracker_id: 5,
+        fixed_version_id: 6,
         lock_version: 9,
         status: current_status,
         project: project,
@@ -33,7 +39,7 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
       allow(issue).to receive(:assignable_users).and_return([assignable_user])
 
       allow(IssuePriority).to receive(:active).and_return([priority])
-      project_scope = double(active: [visible_project])
+      project_scope = double(active: double(where: [visible_project]))
       allow(Project).to receive(:allowed_to).with(:add_issues).and_return(project_scope)
       version_scope = double(where: [instance_double(Version, id: 6, name: 'v1')])
       allow(Version).to receive(:visible).and_return(version_scope)
@@ -43,7 +49,8 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
         editable: { subject: true },
         custom_fields: [{ id: 99 }],
         custom_field_values: { '99' => 'abc' },
-        permissions: { editable: true, viewable: true }
+        permissions: { editable: true, viewable: true },
+        visible_project_ids: [20]
       )
 
       expect(payload).to include(
@@ -51,7 +58,19 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
         custom_field_values: { '99' => 'abc' },
         permissions: { editable: true, viewable: true }
       )
-      expect(payload[:task]).to include(id: 10, subject: 'Fix bug', status_id: 12, lock_version: 9)
+      expect(payload[:task]).to include(
+        id: 10,
+        subject: 'Fix bug',
+        status_id: 12,
+        start_date: Date.new(2025, 12, 1),
+        priority_id: 3,
+        category_id: 4,
+        estimated_hours: 12.5,
+        project_id: 1,
+        tracker_id: 5,
+        fixed_version_id: 6,
+        lock_version: 9
+      )
       expect(payload[:options][:statuses]).to eq([{ id: 1, name: 'Open' }, { id: 2, name: 'In Progress' }])
       expect(payload[:options][:assignees]).to eq([{ id: 7, name: 'Alice' }])
       expect(payload[:options][:custom_fields]).to eq([{ id: 99 }])

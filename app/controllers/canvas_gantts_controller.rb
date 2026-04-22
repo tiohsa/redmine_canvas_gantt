@@ -302,6 +302,7 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'bulk_subtask_creator').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'parent_issue_resolver').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'query_state_resolver').to_s
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'view_scope_resolver').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'baseline_task_state').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'baseline_snapshot').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'baseline_repository').to_s
@@ -309,12 +310,11 @@ class CanvasGanttsController < ApplicationController
   helper RedmineCanvasGantt::ViteAssetHelper
   accept_api_auth :data, :queries, :edit_meta, :update, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation, :save_baseline
 
-  before_action :find_project_by_project_id
+  before_action :resolve_canvas_project
   before_action :set_permissions
   before_action :ensure_view_permission, only: [:index, :data, :queries, :edit_meta]
-  before_action :ensure_edit_permission, only: [:update, :bulk_create_subtasks, :update_relation, :destroy_relation]
   skip_forgery_protection only: [:asset]
-  skip_before_action :find_project_by_project_id, :set_permissions, only: [:asset]
+  skip_before_action :resolve_canvas_project, :set_permissions, only: [:asset]
 
   # GET /plugin_assets/redmine_canvas_gantt/build/*asset_path
   # Fallback asset delivery when public/plugin_assets static serving is disabled.
@@ -414,7 +414,7 @@ class CanvasGanttsController < ApplicationController
     issue = Issue.visible.find(params[:id])
     return unless ensure_issue_in_scope(issue)
 
-    editable = @permissions[:editable] && issue.editable?
+    editable = User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?
     field_editable = build_field_editable(issue, editable)
     custom_fields, custom_field_values = custom_field_extractor.extract_custom_fields(
       issue,
@@ -426,7 +426,8 @@ class CanvasGanttsController < ApplicationController
       editable: field_editable,
       custom_fields: custom_fields,
       custom_field_values: custom_field_values,
-      permissions: @permissions
+      permissions: @permissions,
+      visible_project_ids: current_view_scope[:visible_project_ids]
     )
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
@@ -445,6 +446,7 @@ class CanvasGanttsController < ApplicationController
     # Optimistic Locking Check handled by ActiveRecord automatically if lock_version is present
     issue.init_journal(User.current)
     issue.safe_attributes = permitted_task_params
+    return unless ensure_project_move_valid!(issue)
 
     if issue.save
       if requested_parent_issue_id_provided? && issue.parent_id != requested_parent_issue_id
@@ -559,11 +561,21 @@ class CanvasGanttsController < ApplicationController
     false
   end
 
-  def ensure_edit_permission
-    unless @permissions[:editable]
-      render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
-      return false
+  def resolve_canvas_project
+    if request.path_parameters[:project_id].present?
+      find_project_by_project_id
+      return
     end
+
+    project_id = params[:canvas_project_id]
+    if project_id.present?
+      @project = Project.visible.find(project_id)
+      return
+    end
+
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
+  rescue ActiveRecord::RecordNotFound
+    render_404
   end
 
   def ensure_baseline_edit_permission
@@ -695,14 +707,14 @@ class CanvasGanttsController < ApplicationController
   end
 
   def ensure_issue_in_scope(issue)
-    return true if descendant_project_ids.include?(issue.project_id)
+    return true if current_view_issue_ids.include?(issue.id)
 
     render json: { error: canvas_gantt_l(:error_canvas_gantt_issue_not_found_in_project) }, status: :not_found
     false
   end
 
   def ensure_issue_editable(issue)
-    return true if User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?
+    return true if issue_editable?(issue)
 
     render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
     false
@@ -736,13 +748,12 @@ class CanvasGanttsController < ApplicationController
       return false
     end
 
-    owned_issue = [issue_from, issue_to].find { |issue| descendant_project_ids.include?(issue.project_id) }
-    unless owned_issue
+    unless current_view_issue_ids.include?(issue_from.id) && current_view_issue_ids.include?(issue_to.id)
       render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found_in_project) }, status: :not_found
       return false
     end
 
-    unless @permissions[:editable] && owned_issue.editable?
+    unless issue_editable?(issue_from) && issue_editable?(issue_to)
       render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
       return false
     end
@@ -753,13 +764,14 @@ class CanvasGanttsController < ApplicationController
   def ensure_relation_createable!(issue_from, issue_to)
     return false unless ensure_issue_in_scope(issue_from)
     return false unless ensure_issue_in_scope(issue_to)
-
-    unless @permissions[:editable] && issue_from.editable?
-      render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
-      return false
-    end
+    return false unless ensure_issue_editable(issue_from)
+    return false unless ensure_issue_editable(issue_to)
 
     true
+  end
+
+  def issue_editable?(issue)
+    User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?
   end
 
   def relation_non_working_week_days
@@ -786,7 +798,7 @@ class CanvasGanttsController < ApplicationController
       issue_to: issue_to,
       relation_type: relation_type,
       delay: delay,
-      existing_relations: data_payload_builder.build_relations(issue_scope(descendant_project_ids).to_a),
+      existing_relations: build_relations(current_view_scope[:issues]),
       candidate_relation: build_candidate_relation(
         relation_id: relation_id,
         issue_from: issue_from,
@@ -922,5 +934,53 @@ class CanvasGanttsController < ApplicationController
 
   def parent_issue_resolver
     @parent_issue_resolver ||= RedmineCanvasGantt::ParentIssueResolver.new
+  end
+
+  def build_relations(issues)
+    data_payload_builder.build_relations(issues)
+  end
+
+  def current_view_scope
+    @current_view_scope ||= RedmineCanvasGantt::ViewScopeResolver.new(
+      project: @project,
+      params: params,
+      current_user: User.current,
+      issue_includes: ISSUE_INCLUDES
+    ).resolve
+  end
+
+  def current_view_issue_ids
+    current_view_scope[:issue_ids]
+  end
+
+  def ensure_project_move_valid!(issue)
+    destination_project = issue.project
+    return true unless destination_project
+    return true unless permitted_task_params.key?(:project_id) || permitted_task_params.key?('project_id')
+
+    unless current_view_scope[:visible_project_ids].include?(destination_project.id) &&
+           User.current.allowed_to?(:add_issues, destination_project)
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
+      return false
+    end
+
+    unless destination_project.trackers.include?(issue.tracker)
+      issue.errors.add(:tracker, :invalid)
+      render json: { errors: issue.errors.full_messages }, status: :unprocessable_entity
+      return false
+    end
+
+    if issue.assigned_to_id.present? && !issue.assignable_users.map(&:id).include?(issue.assigned_to_id)
+      issue.errors.add(:assigned_to, :invalid)
+      render json: { errors: issue.errors.full_messages }, status: :unprocessable_entity
+      return false
+    end
+
+    issue.fixed_version = nil if issue.fixed_version && issue.fixed_version.project_id != destination_project.id
+    if issue.category && issue.category.project_id != destination_project.id
+      issue.category = nil
+    end
+
+    true
   end
 end

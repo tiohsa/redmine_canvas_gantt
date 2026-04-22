@@ -115,6 +115,17 @@ const getConfig = (): RedmineCanvasGanttConfig => {
     return config;
 };
 
+const getGlobalApiBase = (config: RedmineCanvasGanttConfig): string => {
+    const redmineBase = (config.redmineBase || '').replace(/\/$/, '');
+    return `${redmineBase}/canvas_gantt`;
+};
+
+const buildViewContextQuery = (config: RedmineCanvasGanttConfig): string => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('canvas_project_id', String(config.projectId));
+    return params.toString();
+};
+
 const buildJsonHeaders = (config: RedmineCanvasGanttConfig, includeCsrf: boolean = false): HeadersInit => ({
     'X-Redmine-API-Key': config.apiKey,
     'Content-Type': 'application/json',
@@ -592,8 +603,8 @@ export const apiClient = {
 
     fetchEditMeta: async (taskId: string): Promise<TaskEditMeta> => {
         const config = getConfig();
-
-        const response = await fetch(`${config.apiBase}/tasks/${taskId}/edit_meta.json`, {
+        const query = buildViewContextQuery(config);
+        const response = await fetch(`${getGlobalApiBase(config)}/tasks/${taskId}/edit_meta.json?${query}`, {
             headers: buildJsonHeaders(config)
         });
 
@@ -678,17 +689,17 @@ export const apiClient = {
                 id: String(taskIdValue),
                 subject: String(subjectValue),
                 assignedToId: typeof assignedToIdValue === 'number' ? assignedToIdValue : null,
-                statusId: typeof statusIdValue === 'number' ? statusIdValue : Number(statusIdValue),
-                doneRatio: typeof doneRatioValue === 'number' ? doneRatioValue : Number(doneRatioValue),
+                statusId: typeof statusIdValue === 'number' ? statusIdValue : Number(statusIdValue || 0),
+                doneRatio: typeof doneRatioValue === 'number' ? doneRatioValue : Number(doneRatioValue || 0),
                 dueDate: typeof dueDateValue === 'string' ? dueDateValue : null,
                 startDate: typeof startDateValue === 'string' ? startDateValue : null,
-                priorityId: typeof priorityIdValue === 'number' ? priorityIdValue : Number(priorityIdValue),
+                priorityId: typeof priorityIdValue === 'number' ? priorityIdValue : Number(priorityIdValue || 0),
                 categoryId: typeof categoryIdValue === 'number' ? categoryIdValue : (categoryIdValue ? Number(categoryIdValue) : null),
                 estimatedHours: typeof estimatedHoursValue === 'number' ? estimatedHoursValue : (estimatedHoursValue ? Number(estimatedHoursValue) : null),
-                projectId: typeof projectIdValue === 'number' ? projectIdValue : Number(projectIdValue),
-                trackerId: typeof trackerIdValue === 'number' ? trackerIdValue : Number(trackerIdValue),
+                projectId: typeof projectIdValue === 'number' ? projectIdValue : Number(projectIdValue || 0),
+                trackerId: typeof trackerIdValue === 'number' ? trackerIdValue : Number(trackerIdValue || 0),
                 fixedVersionId: typeof fixedVersionIdValue === 'number' ? fixedVersionIdValue : (fixedVersionIdValue ? Number(fixedVersionIdValue) : null),
-                lockVersion: typeof lockVersionValue === 'number' ? lockVersionValue : Number(lockVersionValue)
+                lockVersion: typeof lockVersionValue === 'number' ? lockVersionValue : Number(lockVersionValue || 0)
             },
             editable: {
                 subject: editableSubject as boolean,
@@ -721,8 +732,9 @@ export const apiClient = {
 
     updateTask: async (task: Task): Promise<UpdateTaskResult> => {
         const config = getConfig();
+        const query = buildViewContextQuery(config);
 
-        const response = await fetch(`${config.apiBase}/tasks/${task.id}.json`, {
+        const response = await fetch(`${getGlobalApiBase(config)}/tasks/${task.id}.json?${query}`, {
             method: 'PATCH',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
@@ -755,8 +767,9 @@ export const apiClient = {
 
     updateTaskFields: async (taskId: string, fields: Record<string, unknown>): Promise<UpdateTaskResult> => {
         const config = getConfig();
+        const query = buildViewContextQuery(config);
 
-        const response = await fetch(`${config.apiBase}/tasks/${taskId}.json`, {
+        const response = await fetch(`${getGlobalApiBase(config)}/tasks/${taskId}.json?${query}`, {
             method: 'PATCH',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({ task: fields })
@@ -782,8 +795,9 @@ export const apiClient = {
 
     createRelation: async (fromId: string, toId: string, type: string, delay?: number): Promise<Relation> => {
         const config = getConfig();
+        const query = buildViewContextQuery(config);
 
-        const response = await fetch(`${config.apiBase}/relations.json`, {
+        const response = await fetch(`${getGlobalApiBase(config)}/relations.json?${query}`, {
             method: 'POST',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
@@ -815,7 +829,8 @@ export const apiClient = {
 
     updateRelation: async (relationId: string, type: string, delay?: number): Promise<Relation> => {
         const config = getConfig();
-        const response = await fetch(`${config.apiBase}/relations/${relationId}.json`, {
+        const query = buildViewContextQuery(config);
+        const response = await fetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
             method: 'PATCH',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
@@ -836,8 +851,9 @@ export const apiClient = {
 
     deleteRelation: async (relationId: string): Promise<void> => {
         const config = getConfig();
+        const query = buildViewContextQuery(config);
 
-        const response = await fetch(`${config.apiBase}/relations/${relationId}.json`, {
+        const response = await fetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
             method: 'DELETE',
             headers: buildJsonHeaders(config, true)
         });
@@ -850,7 +866,8 @@ export const apiClient = {
 
     bulkCreateSubtasks: async (payload: { parentId: string; subjects: string[] }): Promise<BulkCreateSubtasksResult> => {
         const config = getConfig();
-        const response = await fetch(`${config.apiBase}/subtasks/bulk.json`, {
+        const query = buildViewContextQuery(config);
+        const response = await fetch(`${getGlobalApiBase(config)}/subtasks/bulk.json?${query}`, {
             method: 'POST',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
