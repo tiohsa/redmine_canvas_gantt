@@ -73,7 +73,15 @@ describe('UiSidebar Blur-to-Save', () => {
                 return {
                     ok: true,
                     json: async () => ({
-                        task: { id: 123, subject: 'Initial Subject', status_id: 1, done_ratio: 0, lock_version: 1 },
+                        task: {
+                            id: 123,
+                            subject: 'Initial Subject',
+                            status_id: 1,
+                            done_ratio: 0,
+                            lock_version: 1,
+                            project_id: 1,
+                            tracker_id: 1
+                        },
                         editable: {
                             subject: true,
                             assigned_to_id: true,
@@ -94,7 +102,7 @@ describe('UiSidebar Blur-to-Save', () => {
                     })
                 } as unknown as Response;
             }
-            if (url.endsWith(`/tasks/${taskId}.json`) && init?.method === 'PATCH') {
+            if (url.includes(`/canvas_gantt/tasks/${taskId}.json`) && init?.method === 'PATCH') {
                 return {
                     ok: true,
                     json: async () => ({ lock_version: 2 })

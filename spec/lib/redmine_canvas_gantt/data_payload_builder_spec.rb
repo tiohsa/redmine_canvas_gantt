@@ -1,6 +1,11 @@
 require_relative '../../spec_helper'
 
 RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
+  it 'requires set explicitly for to_set usage' do
+    source = File.read(File.expand_path('../../../lib/redmine_canvas_gantt/data_payload_builder.rb', __dir__))
+    expect(source).to include("require 'set'")
+  end
+
   describe '#build' do
     it 'builds stable filter options for descendant projects and assignees' do
       custom_field_extractor = instance_double(
@@ -41,6 +46,24 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
           { id: 8, name: 'Bob', project_ids: ['2'] }
         ]
       )
+    end
+  end
+
+  describe '#build_relations' do
+    it 'returns only relations where both endpoints are visible' do
+      builder = described_class.new(
+        custom_field_extractor: instance_double(RedmineCanvasGantt::CustomFieldExtractor),
+        current_user: instance_double(User)
+      )
+
+      visible_relation = instance_double(IssueRelation, issue_from_id: 1, issue_to_id: 2, id: 10, relation_type: 'precedes', delay: 0)
+      hidden_relation = instance_double(IssueRelation, issue_from_id: 1, issue_to_id: 99, id: 11, relation_type: 'precedes', delay: 1)
+      issue_a = instance_double(Issue, id: 1, relations: [visible_relation, hidden_relation])
+      issue_b = instance_double(Issue, id: 2, relations: [visible_relation])
+
+      expect(builder.build_relations([issue_a, issue_b])).to eq([
+        { id: 10, from: 1, to: 2, type: 'precedes', delay: 0 }
+      ])
     end
   end
 end
