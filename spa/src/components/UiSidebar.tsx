@@ -44,7 +44,7 @@ const getInitials = (name?: string) => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 };
 
-const ProgressCircle = ({ ratio }: { ratio: number, statusId: number }) => {
+const ProgressCircle = ({ ratio, fontSize = 12 }: { ratio: number, statusId: number, fontSize?: number }) => {
     const r = 8;
     const c = 2 * Math.PI * r;
     const offset = c - (ratio / 100) * c;
@@ -54,7 +54,7 @@ const ProgressCircle = ({ ratio }: { ratio: number, statusId: number }) => {
 
     return (
         <div
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', width: '100%' }}
             data-tooltip={`${ratio}%`}
         >
             <svg width="20" height="20" viewBox="0 0 20 20" style={{ transform: 'rotate(-90deg)' }}>
@@ -297,7 +297,7 @@ export const UiSidebar: React.FC = () => {
             title: tr('field_subject'),
             width: columnWidths['subject'] ?? 280,
             render: (t: Task) => (
-                    <div
+                <div
                     style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -333,27 +333,27 @@ export const UiSidebar: React.FC = () => {
                                     <div style={{ width: 16, height: '100%', position: 'relative' }}>
                                         {/* Vertical line for the current node */}
                                         {showHierarchyLines && (
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    left: '50%',
-                                                    top: 0,
-                                                    bottom: t.isLastChild ? '50%' : 0,
-                                                    width: 1,
-                                                    backgroundColor: designTokens.controlBorder,
-                                                    transform: 'translateX(-50%)'
-                                                }} data-testid="task-tree-current-guide" />
+                                            <div style={{
+                                                position: 'absolute',
+                                                left: '50%',
+                                                top: 0,
+                                                bottom: t.isLastChild ? '50%' : 0,
+                                                width: 1,
+                                                backgroundColor: designTokens.controlBorder,
+                                                transform: 'translateX(-50%)'
+                                            }} data-testid="task-tree-current-guide" />
                                         )}
                                         {/* Horizontal line for the current node */}
                                         {showHierarchyLines && (
-                                                <div style={{
-                                                    position: 'absolute',
-                                                    left: '50%',
-                                                    top: '50%',
-                                                    right: 0,
-                                                    height: 1,
-                                                    backgroundColor: designTokens.controlBorder,
-                                                    transform: 'translateY(-50%)'
-                                                }} data-testid="task-tree-branch-guide" />
+                                            <div style={{
+                                                position: 'absolute',
+                                                left: '50%',
+                                                top: '50%',
+                                                right: 0,
+                                                height: 1,
+                                                backgroundColor: designTokens.controlBorder,
+                                                transform: 'translateY(-50%)'
+                                            }} data-testid="task-tree-branch-guide" />
                                         )}
 
                                         {/* Expansion Trigger (Chevron) overlaying on the line branch */}
@@ -521,7 +521,7 @@ export const UiSidebar: React.FC = () => {
             title: tr('field_done_ratio'),
             width: columnWidths['ratioDone'] ?? 80,
             render: (t: Task) => renderEditableCell(t, 'ratioDone', (
-                <ProgressCircle ratio={t.ratioDone} statusId={t.statusId} />
+                <ProgressCircle ratio={t.ratioDone} statusId={t.statusId} fontSize={mediumSmallFontSize} />
             ))
         },
         {
@@ -548,7 +548,7 @@ export const UiSidebar: React.FC = () => {
                 const priorityId = t.priorityId || 0;
                 const style = getPriorityColor(priorityId, t.priorityPosition);
                 return renderEditableCell(t, 'priorityId', (
-                <span style={{
+                    <span style={{
                         backgroundColor: style.bg,
                         color: style.text,
                         padding: '2px 8px',
@@ -858,7 +858,7 @@ export const UiSidebar: React.FC = () => {
                                     <div style={{ marginRight: sidebarPaddingX, display: 'flex', alignItems: 'center', color: sidebarMutedText }}>
                                         {row.groupKind === 'assignee' ? <AssigneeIcon /> : <ProjectIcon />}
                                     </div>
-                                        {row.projectName || (row.groupKind === 'assignee' ? tr('field_assigned_to') : tr('label_project'))}
+                                    {row.projectName || (row.groupKind === 'assignee' ? tr('field_assigned_to') : tr('label_project'))}
                                 </div>
                             );
                         } else if (row.type === 'version') {
@@ -966,450 +966,450 @@ export const UiSidebar: React.FC = () => {
                                     const isLastColumn = idx === activeColumns.length - 1;
                                     return (
                                         <div key={col.key} style={{
-                                        width: isLastColumn ? 0 : col.width,
-                                        flex: isLastColumn ? '1 1 0px' : '0 0 auto',
-                                        minWidth: isLastColumn ? 0 : undefined,
-                                        padding: `0 ${sidebarPaddingX}px`,
-                                        borderRight: isLastColumn ? 'none' : sidebarColumnBorder,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: col.key === NOTIFICATION_COLUMN_KEY ? 'center' : 'flex-start',
-                                        overflow: 'hidden',
-                                        whiteSpace: 'nowrap'
-                                    }}>
-                                        <div
-                                            data-testid={`cell-${task.id}-${col.key}`}
-                                            style={{
-                                                width: '100%',
-                                                height: '100%',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: col.key === NOTIFICATION_COLUMN_KEY ? 'center' : 'flex-start'
-                                            }}
-                                            onDoubleClick={(e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                // Prevent double click edit for subject as it is now handled by icon
-                                                if (col.key === 'subject') return;
+                                            width: isLastColumn ? 0 : col.width,
+                                            flex: isLastColumn ? '1 1 0px' : '0 0 auto',
+                                            minWidth: isLastColumn ? 0 : undefined,
+                                            padding: `0 ${sidebarPaddingX}px`,
+                                            borderRight: isLastColumn ? 'none' : sidebarColumnBorder,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: col.key === NOTIFICATION_COLUMN_KEY ? 'center' : 'flex-start',
+                                            overflow: 'hidden',
+                                            whiteSpace: 'nowrap'
+                                        }}>
+                                            <div
+                                                data-testid={`cell-${task.id}-${col.key}`}
+                                                style={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: col.key === NOTIFICATION_COLUMN_KEY ? 'center' : 'flex-start'
+                                                }}
+                                                onDoubleClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    // Prevent double click edit for subject as it is now handled by icon
+                                                    if (col.key === 'subject') return;
 
-                                                const field = getEditField(col.key);
-                                                if (!field || !shouldEnableField(field, task)) return;
-                                                void startCellEdit(task, field);
-                                            }}
-                                        >
-                                            {(() => {
-                                                const field = getEditField(col.key);
-                                                const isEditing = Boolean(
-                                                    field &&
-                                                    activeInlineEdit?.taskId === task.id &&
-                                                    activeInlineEdit?.field === field &&
-                                                    (activeInlineEdit.source ?? 'panel') === 'cell'
-                                                );
-                                                if (!isEditing) return (col.render ? col.render(task) : renderFallbackCellValue(task, col.key));
-
-                                                const close = () => setActiveInlineEdit(null);
-
-                                                if (field === 'subject') {
-                                                    return (
-                                                        <SubjectEditor
-                                                            initialValue={task.subject}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { subject: next },
-                                                                    rollbackTaskUpdates: { subject: task.subject },
-                                                                    fields: { subject: next }
-                                                                });
-                                                                close();
-                                                            }}
-                                                        />
+                                                    const field = getEditField(col.key);
+                                                    if (!field || !shouldEnableField(field, task)) return;
+                                                    void startCellEdit(task, field);
+                                                }}
+                                            >
+                                                {(() => {
+                                                    const field = getEditField(col.key);
+                                                    const isEditing = Boolean(
+                                                        field &&
+                                                        activeInlineEdit?.taskId === task.id &&
+                                                        activeInlineEdit?.field === field &&
+                                                        (activeInlineEdit.source ?? 'panel') === 'cell'
                                                     );
-                                                }
+                                                    if (!isEditing) return (col.render ? col.render(task) : renderFallbackCellValue(task, col.key));
 
-                                                if (field === 'assignedToId') {
-                                                    const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-                                                    const current = task.assignedToId ?? null;
-                                                    return (
-                                                        <SelectEditor
-                                                            value={current}
-                                                            options={taskMeta.options.assignees}
-                                                            includeUnassigned
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                const prevId = task.assignedToId ?? null;
-                                                                const prevName = task.assignedToName;
-                                                                const name = next === null ? undefined : meta.options.assignees.find((o) => o.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { assignedToId: next ?? undefined, assignedToName: next === null ? undefined : name },
-                                                                    rollbackTaskUpdates: { assignedToId: prevId ?? undefined, assignedToName: prevName },
-                                                                    fields: { assigned_to_id: next }
-                                                                });
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
+                                                    const close = () => setActiveInlineEdit(null);
 
-                                                if (field === 'statusId') {
-                                                    const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-                                                    return (
-                                                        <SelectEditor
-                                                            value={task.statusId}
-                                                            options={taskMeta.options.statuses}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                if (next === null) return;
-                                                                const nextName = meta.options.statuses.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { statusId: next, statusName: nextName },
-                                                                    rollbackTaskUpdates: { statusId: task.statusId, statusName: task.statusName },
-                                                                    fields: { status_id: next }
-                                                                });
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                if (field === 'ratioDone') {
-                                                    return (
-                                                        <DoneRatioEditor
-                                                            initialValue={task.ratioDone}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { ratioDone: next },
-                                                                    rollbackTaskUpdates: { ratioDone: task.ratioDone },
-                                                                    fields: { done_ratio: next }
-                                                                });
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                if (field === 'dueDate') {
-                                                    return (
-                                                        <DueDateEditor
-                                                            initialValue={toDateInputValue(task.dueDate)}
-                                                            min={toDateInputValue(task.startDate)}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={(next) => {
-                                                                // Handle clearing the date
-                                                                if (next === '') {
-                                                                    const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
-                                                                    updateTask(task.id, { dueDate: undefined });
-                                                                    if (autoSave) {
-                                                                        saveChanges().catch(console.error);
-                                                                    }
-                                                                    close();
-                                                                    return;
-                                                                }
-
-                                                                const nextTs = new Date(next).getTime();
-                                                                if (!Number.isFinite(nextTs)) return;
-                                                                if (task.startDate !== undefined && Number.isFinite(task.startDate) && task.startDate! > nextTs) {
-                                                                    useUIStore.getState().addNotification(tr('label_invalid_date_range'), 'warning');
-                                                                    return;
-                                                                }
-                                                                // Update local state - will be saved with batch save or auto-save
-                                                                const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
-                                                                updateTask(task.id, { dueDate: nextTs });
-                                                                if (autoSave) {
-                                                                    saveChanges().catch(console.error);
-                                                                }
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                if (field === 'startDate') {
-                                                    return (
-                                                        <DueDateEditor
-                                                            initialValue={toDateInputValue(task.startDate)}
-                                                            max={toDateInputValue(task.dueDate)}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={(next) => {
-                                                                // Handle clearing the date
-                                                                if (next === '') {
-                                                                    const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
-                                                                    updateTask(task.id, { startDate: undefined });
-                                                                    if (autoSave) {
-                                                                        saveChanges().catch(console.error);
-                                                                    }
-                                                                    close();
-                                                                    return;
-                                                                }
-
-                                                                const nextTs = new Date(next).getTime();
-                                                                if (!Number.isFinite(nextTs)) return;
-                                                                if (task.dueDate !== undefined && Number.isFinite(task.dueDate) && nextTs > task.dueDate!) {
-                                                                    useUIStore.getState().addNotification(tr('label_invalid_date_range'), 'warning');
-                                                                    return;
-                                                                }
-                                                                // Update local state - will be saved with batch save or auto-save
-                                                                const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
-                                                                updateTask(task.id, { startDate: nextTs });
-                                                                if (autoSave) {
-                                                                    saveChanges().catch(console.error);
-                                                                }
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                if (field === 'priorityId') {
-                                                    const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-                                                    return (
-                                                        <SelectEditor
-                                                            value={task.priorityId ?? null}
-                                                            options={taskMeta.options.priorities || []}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                if (next === null) return;
-                                                                const nextPriority = meta.options.priorities?.find(s => s.id === next);
-                                                                const nextName = nextPriority?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { priorityId: next, priorityName: nextName, priorityPosition: nextPriority?.position },
-                                                                    rollbackTaskUpdates: { priorityId: task.priorityId, priorityName: task.priorityName, priorityPosition: task.priorityPosition },
-                                                                    fields: { priority_id: next }
-                                                                });
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                if (field === 'authorId') {
-                                                    const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-                                                    return (
-                                                        <SelectEditor
-                                                            value={task.authorId ?? null}
-                                                            options={taskMeta.options.assignees}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                const nextName = meta.options.assignees.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { authorId: next ?? undefined, authorName: nextName },
-                                                                    rollbackTaskUpdates: { authorId: task.authorId, authorName: task.authorName },
-                                                                    fields: { author_id: next }
-                                                                });
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                if (field === 'categoryId') {
-                                                    const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-                                                    return (
-                                                        <SelectEditor
-                                                            value={task.categoryId ?? null}
-                                                            options={taskMeta.options.categories || []}
-                                                            includeUnassigned
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                const nextName = meta.options.categories?.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { categoryId: next ?? undefined, categoryName: nextName },
-                                                                    rollbackTaskUpdates: { categoryId: task.categoryId, categoryName: task.categoryName },
-                                                                    fields: { category_id: next }
-                                                                });
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                if (field === 'estimatedHours') {
-                                                    return (
-                                                        <EstimatedHoursEditor
-                                                            initialValue={task.estimatedHours || 0}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { estimatedHours: next },
-                                                                    rollbackTaskUpdates: { estimatedHours: task.estimatedHours },
-                                                                    fields: { estimated_hours: next }
-                                                                });
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                if (field === 'projectId') {
-                                                    const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-                                                    return (
-                                                        <SelectEditor
-                                                            value={task.projectId ? Number(task.projectId) : null}
-                                                            options={taskMeta.options.projects || []}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                if (next === null) return;
-                                                                await fetchEditMeta(task.id, { targetProjectId: next, force: true });
-                                                                const nextName = taskMeta.options.projects?.find(s => s.id === next)?.name;
-                                                                try {
-                                                                    await save({
-                                                                        taskId: task.id,
-                                                                        optimisticTaskUpdates: {
-                                                                            projectId: next !== null ? String(next) : undefined,
-                                                                            projectName: nextName,
-                                                                            fixedVersionId: undefined,
-                                                                            fixedVersionName: undefined,
-                                                                            categoryId: undefined,
-                                                                            categoryName: undefined
-                                                                        },
-                                                                        rollbackTaskUpdates: {
-                                                                            projectId: task.projectId,
-                                                                            projectName: task.projectName,
-                                                                            fixedVersionId: task.fixedVersionId,
-                                                                            fixedVersionName: task.fixedVersionName,
-                                                                            categoryId: task.categoryId,
-                                                                            categoryName: task.categoryName
-                                                                        },
-                                                                        fields: { project_id: next, fixed_version_id: null, category_id: null }
-                                                                    });
-                                                                    close();
-                                                                } catch (error) {
-                                                                    if (task.projectId) {
-                                                                        await fetchEditMeta(task.id, { targetProjectId: Number(task.projectId), force: true });
-                                                                    }
-                                                                    throw error;
-                                                                }
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                if (field === 'trackerId') {
-                                                    const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-                                                    return (
-                                                        <SelectEditor
-                                                            value={task.trackerId ?? null}
-                                                            options={taskMeta.options.trackers || []}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                if (next === null) return;
-                                                                const nextName = meta.options.trackers?.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { trackerId: next, trackerName: nextName },
-                                                                    rollbackTaskUpdates: { trackerId: task.trackerId, trackerName: task.trackerName },
-                                                                    fields: { tracker_id: next }
-                                                                });
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                if (field === 'fixedVersionId') {
-                                                    const taskMeta = editMetaByTaskId[task.id];
-                                                    if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-
-                                                    const allVersions = useTaskStore.getState().versions;
-                                                    const closedVersionIds = new Set(allVersions.filter(v => v.status === 'closed').map(v => Number(v.id)));
-                                                    const filteredVersions = (taskMeta.options.versions || []).filter(v => !closedVersionIds.has(v.id));
-
-                                                    return (
-                                                        <SelectEditor
-                                                            value={task.fixedVersionId ? Number(task.fixedVersionId) : null}
-                                                            options={filteredVersions}
-                                                            includeUnassigned
-                                                            emptyOptionLabel={tr('label_none')}
-                                                            controlHeight={inlineControlHeight}
-                                                            onCancel={close}
-                                                            onCommit={async (next) => {
-                                                                const nextName = taskMeta.options.versions?.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { fixedVersionId: next !== null ? String(next) : undefined, fixedVersionName: nextName },
-                                                                    rollbackTaskUpdates: { fixedVersionId: task.fixedVersionId, fixedVersionName: task.fixedVersionName },
-                                                                    fields: { fixed_version_id: next }
-                                                                });
-                                                                close();
-                                                            }}
-                                                        />
-                                                    );
-                                                }
-
-                                                {
-                                                    if (!field) return <span>{tr('button_edit')}</span>;
-                                                    const customFieldId = customFieldIdFromEditField(field);
-                                                    if (customFieldId) {
-                                                        const taskMeta = editMetaByTaskId[task.id];
-                                                        if (!taskMeta) return <span style={{ fontSize: mediumSmallFontSize, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-                                                        if (!taskMeta.editable.customFieldValues) return <span>{tr('button_edit')}</span>;
-
-                                                        const customField = taskMeta.options.customFields.find((cf) => String(cf.id) === customFieldId)
-                                                            ?? customFields.find((cf) => String(cf.id) === customFieldId);
-                                                        if (!customField) return <span>{tr('button_edit')}</span>;
-
+                                                    if (field === 'subject') {
                                                         return (
-                                                            <CustomFieldEditor
-                                                                customField={customField}
-                                                                initialValue={task.customFieldValues?.[customFieldId] ?? taskMeta.customFieldValues[customFieldId] ?? null}
+                                                            <SubjectEditor
+                                                                initialValue={task.subject}
                                                                 controlHeight={inlineControlHeight}
                                                                 onCancel={close}
                                                                 onCommit={async (next) => {
-                                                                    const prevRecord = task.customFieldValues;
-                                                                    const nextRecord = { ...(prevRecord ?? {}), [customFieldId]: next };
-                                                                    useTaskStore.getState().updateTask(task.id, { customFieldValues: nextRecord });
-                                                                    useEditMetaStore.getState().setCustomFieldValue(task.id, Number(customFieldId), next);
-                                                                    try {
-                                                                        await save({
-                                                                            taskId: task.id,
-                                                                            optimisticTaskUpdates: {},
-                                                                            rollbackTaskUpdates: {},
-                                                                            fields: { custom_field_values: { [customFieldId]: next ?? '' } }
-                                                                        });
-                                                                    } catch (e) {
-                                                                        useTaskStore.getState().updateTask(task.id, { customFieldValues: prevRecord });
-                                                                        useEditMetaStore.getState().setCustomFieldValue(task.id, Number(customFieldId), taskMeta.customFieldValues[customFieldId] ?? null);
-                                                                        throw e;
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { subject: next },
+                                                                        rollbackTaskUpdates: { subject: task.subject },
+                                                                        fields: { subject: next }
+                                                                    });
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'assignedToId') {
+                                                        const taskMeta = editMetaByTaskId[task.id];
+                                                        if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
+                                                        const current = task.assignedToId ?? null;
+                                                        return (
+                                                            <SelectEditor
+                                                                value={current}
+                                                                options={taskMeta.options.assignees}
+                                                                includeUnassigned
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    const prevId = task.assignedToId ?? null;
+                                                                    const prevName = task.assignedToName;
+                                                                    const name = next === null ? undefined : meta.options.assignees.find((o) => o.id === next)?.name;
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { assignedToId: next ?? undefined, assignedToName: next === null ? undefined : name },
+                                                                        rollbackTaskUpdates: { assignedToId: prevId ?? undefined, assignedToName: prevName },
+                                                                        fields: { assigned_to_id: next }
+                                                                    });
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'statusId') {
+                                                        const taskMeta = editMetaByTaskId[task.id];
+                                                        if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
+                                                        return (
+                                                            <SelectEditor
+                                                                value={task.statusId}
+                                                                options={taskMeta.options.statuses}
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    if (next === null) return;
+                                                                    const nextName = meta.options.statuses.find(s => s.id === next)?.name;
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { statusId: next, statusName: nextName },
+                                                                        rollbackTaskUpdates: { statusId: task.statusId, statusName: task.statusName },
+                                                                        fields: { status_id: next }
+                                                                    });
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'ratioDone') {
+                                                        return (
+                                                            <DoneRatioEditor
+                                                                initialValue={task.ratioDone}
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { ratioDone: next },
+                                                                        rollbackTaskUpdates: { ratioDone: task.ratioDone },
+                                                                        fields: { done_ratio: next }
+                                                                    });
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'dueDate') {
+                                                        return (
+                                                            <DueDateEditor
+                                                                initialValue={toDateInputValue(task.dueDate)}
+                                                                min={toDateInputValue(task.startDate)}
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={(next) => {
+                                                                    // Handle clearing the date
+                                                                    if (next === '') {
+                                                                        const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
+                                                                        updateTask(task.id, { dueDate: undefined });
+                                                                        if (autoSave) {
+                                                                            saveChanges().catch(console.error);
+                                                                        }
+                                                                        close();
+                                                                        return;
+                                                                    }
+
+                                                                    const nextTs = new Date(next).getTime();
+                                                                    if (!Number.isFinite(nextTs)) return;
+                                                                    if (task.startDate !== undefined && Number.isFinite(task.startDate) && task.startDate! > nextTs) {
+                                                                        useUIStore.getState().addNotification(tr('label_invalid_date_range'), 'warning');
+                                                                        return;
+                                                                    }
+                                                                    // Update local state - will be saved with batch save or auto-save
+                                                                    const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
+                                                                    updateTask(task.id, { dueDate: nextTs });
+                                                                    if (autoSave) {
+                                                                        saveChanges().catch(console.error);
                                                                     }
                                                                     close();
                                                                 }}
                                                             />
                                                         );
                                                     }
-                                                }
 
-                                                return <span>{tr('button_edit')}</span>;
-                                            })()}
+                                                    if (field === 'startDate') {
+                                                        return (
+                                                            <DueDateEditor
+                                                                initialValue={toDateInputValue(task.startDate)}
+                                                                max={toDateInputValue(task.dueDate)}
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={(next) => {
+                                                                    // Handle clearing the date
+                                                                    if (next === '') {
+                                                                        const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
+                                                                        updateTask(task.id, { startDate: undefined });
+                                                                        if (autoSave) {
+                                                                            saveChanges().catch(console.error);
+                                                                        }
+                                                                        close();
+                                                                        return;
+                                                                    }
+
+                                                                    const nextTs = new Date(next).getTime();
+                                                                    if (!Number.isFinite(nextTs)) return;
+                                                                    if (task.dueDate !== undefined && Number.isFinite(task.dueDate) && nextTs > task.dueDate!) {
+                                                                        useUIStore.getState().addNotification(tr('label_invalid_date_range'), 'warning');
+                                                                        return;
+                                                                    }
+                                                                    // Update local state - will be saved with batch save or auto-save
+                                                                    const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
+                                                                    updateTask(task.id, { startDate: nextTs });
+                                                                    if (autoSave) {
+                                                                        saveChanges().catch(console.error);
+                                                                    }
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'priorityId') {
+                                                        const taskMeta = editMetaByTaskId[task.id];
+                                                        if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
+                                                        return (
+                                                            <SelectEditor
+                                                                value={task.priorityId ?? null}
+                                                                options={taskMeta.options.priorities || []}
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    if (next === null) return;
+                                                                    const nextPriority = meta.options.priorities?.find(s => s.id === next);
+                                                                    const nextName = nextPriority?.name;
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { priorityId: next, priorityName: nextName, priorityPosition: nextPriority?.position },
+                                                                        rollbackTaskUpdates: { priorityId: task.priorityId, priorityName: task.priorityName, priorityPosition: task.priorityPosition },
+                                                                        fields: { priority_id: next }
+                                                                    });
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'authorId') {
+                                                        const taskMeta = editMetaByTaskId[task.id];
+                                                        if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
+                                                        return (
+                                                            <SelectEditor
+                                                                value={task.authorId ?? null}
+                                                                options={taskMeta.options.assignees}
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    const nextName = meta.options.assignees.find(s => s.id === next)?.name;
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { authorId: next ?? undefined, authorName: nextName },
+                                                                        rollbackTaskUpdates: { authorId: task.authorId, authorName: task.authorName },
+                                                                        fields: { author_id: next }
+                                                                    });
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'categoryId') {
+                                                        const taskMeta = editMetaByTaskId[task.id];
+                                                        if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
+                                                        return (
+                                                            <SelectEditor
+                                                                value={task.categoryId ?? null}
+                                                                options={taskMeta.options.categories || []}
+                                                                includeUnassigned
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    const nextName = meta.options.categories?.find(s => s.id === next)?.name;
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { categoryId: next ?? undefined, categoryName: nextName },
+                                                                        rollbackTaskUpdates: { categoryId: task.categoryId, categoryName: task.categoryName },
+                                                                        fields: { category_id: next }
+                                                                    });
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'estimatedHours') {
+                                                        return (
+                                                            <EstimatedHoursEditor
+                                                                initialValue={task.estimatedHours || 0}
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { estimatedHours: next },
+                                                                        rollbackTaskUpdates: { estimatedHours: task.estimatedHours },
+                                                                        fields: { estimated_hours: next }
+                                                                    });
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'projectId') {
+                                                        const taskMeta = editMetaByTaskId[task.id];
+                                                        if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
+                                                        return (
+                                                            <SelectEditor
+                                                                value={task.projectId ? Number(task.projectId) : null}
+                                                                options={taskMeta.options.projects || []}
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    if (next === null) return;
+                                                                    await fetchEditMeta(task.id, { targetProjectId: next, force: true });
+                                                                    const nextName = taskMeta.options.projects?.find(s => s.id === next)?.name;
+                                                                    try {
+                                                                        await save({
+                                                                            taskId: task.id,
+                                                                            optimisticTaskUpdates: {
+                                                                                projectId: next !== null ? String(next) : undefined,
+                                                                                projectName: nextName,
+                                                                                fixedVersionId: undefined,
+                                                                                fixedVersionName: undefined,
+                                                                                categoryId: undefined,
+                                                                                categoryName: undefined
+                                                                            },
+                                                                            rollbackTaskUpdates: {
+                                                                                projectId: task.projectId,
+                                                                                projectName: task.projectName,
+                                                                                fixedVersionId: task.fixedVersionId,
+                                                                                fixedVersionName: task.fixedVersionName,
+                                                                                categoryId: task.categoryId,
+                                                                                categoryName: task.categoryName
+                                                                            },
+                                                                            fields: { project_id: next, fixed_version_id: null, category_id: null }
+                                                                        });
+                                                                        close();
+                                                                    } catch (error) {
+                                                                        if (task.projectId) {
+                                                                            await fetchEditMeta(task.id, { targetProjectId: Number(task.projectId), force: true });
+                                                                        }
+                                                                        throw error;
+                                                                    }
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'trackerId') {
+                                                        const taskMeta = editMetaByTaskId[task.id];
+                                                        if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
+                                                        return (
+                                                            <SelectEditor
+                                                                value={task.trackerId ?? null}
+                                                                options={taskMeta.options.trackers || []}
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    if (next === null) return;
+                                                                    const nextName = meta.options.trackers?.find(s => s.id === next)?.name;
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { trackerId: next, trackerName: nextName },
+                                                                        rollbackTaskUpdates: { trackerId: task.trackerId, trackerName: task.trackerName },
+                                                                        fields: { tracker_id: next }
+                                                                    });
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    if (field === 'fixedVersionId') {
+                                                        const taskMeta = editMetaByTaskId[task.id];
+                                                        if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
+
+                                                        const allVersions = useTaskStore.getState().versions;
+                                                        const closedVersionIds = new Set(allVersions.filter(v => v.status === 'closed').map(v => Number(v.id)));
+                                                        const filteredVersions = (taskMeta.options.versions || []).filter(v => !closedVersionIds.has(v.id));
+
+                                                        return (
+                                                            <SelectEditor
+                                                                value={task.fixedVersionId ? Number(task.fixedVersionId) : null}
+                                                                options={filteredVersions}
+                                                                includeUnassigned
+                                                                emptyOptionLabel={tr('label_none')}
+                                                                controlHeight={inlineControlHeight}
+                                                                onCancel={close}
+                                                                onCommit={async (next) => {
+                                                                    const nextName = taskMeta.options.versions?.find(s => s.id === next)?.name;
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { fixedVersionId: next !== null ? String(next) : undefined, fixedVersionName: nextName },
+                                                                        rollbackTaskUpdates: { fixedVersionId: task.fixedVersionId, fixedVersionName: task.fixedVersionName },
+                                                                        fields: { fixed_version_id: next }
+                                                                    });
+                                                                    close();
+                                                                }}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    {
+                                                        if (!field) return <span>{tr('button_edit')}</span>;
+                                                        const customFieldId = customFieldIdFromEditField(field);
+                                                        if (customFieldId) {
+                                                            const taskMeta = editMetaByTaskId[task.id];
+                                                            if (!taskMeta) return <span style={{ fontSize: mediumSmallFontSize, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
+                                                            if (!taskMeta.editable.customFieldValues) return <span>{tr('button_edit')}</span>;
+
+                                                            const customField = taskMeta.options.customFields.find((cf) => String(cf.id) === customFieldId)
+                                                                ?? customFields.find((cf) => String(cf.id) === customFieldId);
+                                                            if (!customField) return <span>{tr('button_edit')}</span>;
+
+                                                            return (
+                                                                <CustomFieldEditor
+                                                                    customField={customField}
+                                                                    initialValue={task.customFieldValues?.[customFieldId] ?? taskMeta.customFieldValues[customFieldId] ?? null}
+                                                                    controlHeight={inlineControlHeight}
+                                                                    onCancel={close}
+                                                                    onCommit={async (next) => {
+                                                                        const prevRecord = task.customFieldValues;
+                                                                        const nextRecord = { ...(prevRecord ?? {}), [customFieldId]: next };
+                                                                        useTaskStore.getState().updateTask(task.id, { customFieldValues: nextRecord });
+                                                                        useEditMetaStore.getState().setCustomFieldValue(task.id, Number(customFieldId), next);
+                                                                        try {
+                                                                            await save({
+                                                                                taskId: task.id,
+                                                                                optimisticTaskUpdates: {},
+                                                                                rollbackTaskUpdates: {},
+                                                                                fields: { custom_field_values: { [customFieldId]: next ?? '' } }
+                                                                            });
+                                                                        } catch (e) {
+                                                                            useTaskStore.getState().updateTask(task.id, { customFieldValues: prevRecord });
+                                                                            useEditMetaStore.getState().setCustomFieldValue(task.id, Number(customFieldId), taskMeta.customFieldValues[customFieldId] ?? null);
+                                                                            throw e;
+                                                                        }
+                                                                        close();
+                                                                    }}
+                                                                />
+                                                            );
+                                                        }
+                                                    }
+
+                                                    return <span>{tr('button_edit')}</span>;
+                                                })()}
+                                            </div>
                                         </div>
-                                    </div>
-                                );
+                                    );
                                 })}
                             </div>
                         );
