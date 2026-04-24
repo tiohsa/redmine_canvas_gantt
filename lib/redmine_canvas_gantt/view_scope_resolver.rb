@@ -64,10 +64,11 @@ module RedmineCanvasGantt
     end
 
     def scope_project_ids
+      base_ids = base_project_ids
       explicit_ids = parse_integer_list(@params[:project_ids])
-      return explicit_ids if explicit_ids.present?
+      return base_ids if explicit_ids.blank?
 
-      base_project_ids
+      explicit_ids & base_ids
     end
 
     def parse_integer_list(values)

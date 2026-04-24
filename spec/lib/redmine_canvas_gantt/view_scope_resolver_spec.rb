@@ -71,4 +71,23 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
     expect(result[:initial_state][:selected_project_ids]).to eq(['6'])
     expect(result[:scope_project_ids]).to eq([6])
   end
+
+  it 'excludes explicit project_ids outside base_project_ids' do
+    params = ActionController::Parameters.new(member_projects_only: '1', project_ids: %w[6 999])
+    allow(query_state_resolver).to receive(:resolve).with(project_ids: [6]).and_return(
+      issues: [issue_b],
+      initial_state: {},
+      warnings: []
+    )
+
+    result = described_class.new(
+      project: project,
+      params: params,
+      current_user: current_user,
+      issue_includes: [],
+      member_project_ids_resolver: -> { [5, 6] }
+    ).resolve
+
+    expect(result[:scope_project_ids]).to eq([6])
+  end
 end

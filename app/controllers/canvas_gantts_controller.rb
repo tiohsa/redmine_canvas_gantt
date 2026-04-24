@@ -427,7 +427,7 @@ class CanvasGanttsController < ApplicationController
       custom_fields: custom_fields,
       custom_field_values: custom_field_values,
       permissions: @permissions,
-      visible_project_ids: current_view_scope[:scope_project_ids]
+      project_scope_ids: current_view_scope[:scope_project_ids]
     )
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found

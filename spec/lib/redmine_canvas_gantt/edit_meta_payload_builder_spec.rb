@@ -50,7 +50,7 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
         custom_fields: [{ id: 99 }],
         custom_field_values: { '99' => 'abc' },
         permissions: { editable: true, viewable: true },
-        visible_project_ids: [20]
+        project_scope_ids: [20]
       )
 
       expect(payload).to include(

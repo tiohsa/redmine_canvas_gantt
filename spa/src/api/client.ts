@@ -160,7 +160,14 @@ const parseEditOption = (value: unknown): EditOption | null => {
     };
 };
 
+const isBlankRequiredValue = (value: unknown): boolean =>
+    value === null || value === undefined || value === '';
+
 const parseRequiredPositiveNumber = (value: unknown, fieldName: string): number => {
+    if (isBlankRequiredValue(value)) {
+        throw new Error(`Invalid response: ${fieldName}`);
+    }
+
     const parsed = typeof value === 'number' ? value : Number(value);
     if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
         throw new Error(`Invalid response: ${fieldName}`);
@@ -168,17 +175,25 @@ const parseRequiredPositiveNumber = (value: unknown, fieldName: string): number 
     return parsed;
 };
 
-const parseRequiredNonNegativeNumber = (value: unknown, fieldName: string): number => {
+const parseRequiredNonNegativeInteger = (value: unknown, fieldName: string): number => {
+    if (isBlankRequiredValue(value)) {
+        throw new Error(`Invalid response: ${fieldName}`);
+    }
+
     const parsed = typeof value === 'number' ? value : Number(value);
-    if (!Number.isFinite(parsed) || parsed < 0) {
+    if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
         throw new Error(`Invalid response: ${fieldName}`);
     }
     return parsed;
 };
 
 const parseRequiredDoneRatio = (value: unknown): number => {
+    if (isBlankRequiredValue(value)) {
+        throw new Error('Invalid response: done_ratio');
+    }
+
     const parsed = typeof value === 'number' ? value : Number(value);
-    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+    if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0 || parsed > 100) {
         throw new Error('Invalid response: done_ratio');
     }
     return parsed;
@@ -725,7 +740,7 @@ export const apiClient = {
                 projectId: parseRequiredPositiveNumber(projectIdValue, 'project_id'),
                 trackerId: parseRequiredPositiveNumber(trackerIdValue, 'tracker_id'),
                 fixedVersionId: typeof fixedVersionIdValue === 'number' ? fixedVersionIdValue : (fixedVersionIdValue ? Number(fixedVersionIdValue) : null),
-                lockVersion: parseRequiredNonNegativeNumber(lockVersionValue, 'lock_version')
+                lockVersion: parseRequiredNonNegativeInteger(lockVersionValue, 'lock_version')
             },
             editable: {
                 subject: editableSubject as boolean,

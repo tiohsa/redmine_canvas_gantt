@@ -519,7 +519,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       end
       allow(Issue).to receive(:visible).and_return(issue_scope)
       allow(issue_scope).to receive(:find).with('42').and_return(issue)
-      allow(controller).to receive(:current_view_scope).and_return({ issue_ids: Set[42], visible_project_ids: [1, 99] })
+      allow(controller).to receive(:current_view_scope).and_return({ issue_ids: Set[42], scope_project_ids: [1, 99], visible_project_ids: [99] })
       allow(issue).to receive(:new_statuses_allowed_to).and_return([])
       allow(issue).to receive(:assignable_users).and_return([])
       allow(issue).to receive(:subject).and_return('Scoped issue')

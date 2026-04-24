@@ -7,7 +7,7 @@ module RedmineCanvasGantt
       @version_class = version_class
     end
 
-    def build(issue:, editable:, custom_fields:, custom_field_values:, permissions:, visible_project_ids:)
+    def build(issue:, editable:, custom_fields:, custom_field_values:, permissions:, project_scope_ids:)
       {
         task: {
           id: issue.id,
@@ -33,7 +33,7 @@ module RedmineCanvasGantt
             { id: priority.id, name: priority.name, position: priority.position }
           end,
           categories: issue.project.issue_categories.map { |category| { id: category.id, name: category.name } },
-          projects: project_options_for(visible_project_ids),
+          projects: project_options_for(project_scope_ids),
           trackers: issue.project.trackers.map { |tracker| { id: tracker.id, name: tracker.name } },
           versions: @version_class.visible.where(project_id: issue.project_id).map { |version| { id: version.id, name: version.name } },
           custom_fields: custom_fields
@@ -57,10 +57,10 @@ module RedmineCanvasGantt
         .map { |user| { id: user.id, name: user.name } }
     end
 
-    def project_options_for(visible_project_ids)
+    def project_options_for(project_scope_ids)
       @project_class.allowed_to(:add_issues)
         .active
-        .where(id: visible_project_ids)
+        .where(id: project_scope_ids)
         .map { |project| { id: project.id, name: project.name } }
     end
   end
