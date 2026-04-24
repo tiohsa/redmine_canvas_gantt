@@ -16,8 +16,13 @@ export const applyFilters = (
     const hasVersionFilter = selectedVersionIds.length > 0;
     const hasSubprojectFilter = !showSubprojects && currentProjectId !== null && !hasProjectFilter;
 
+    const markContext = (task: Task, isContextOnly: boolean): Task => {
+        if (task.isContextOnly === isContextOnly) return task;
+        return { ...task, isContextOnly };
+    };
+
     if (!hasTextFilter && !hasAssigneeFilter && !hasProjectFilter && !hasVersionFilter && !hasSubprojectFilter) {
-        return tasks;
+        return tasks.map(task => markContext(task, false));
     }
 
     const matched = tasks.filter(t => {
@@ -36,6 +41,7 @@ export const applyFilters = (
     if (matched.length === 0) return [];
 
     const taskById = new Map(tasks.map(task => [task.id, task]));
+    const matchedIds = new Set(matched.map(task => task.id));
     const visibleIds = new Set<string>();
 
     matched.forEach(task => {
@@ -48,5 +54,7 @@ export const applyFilters = (
         }
     });
 
-    return tasks.filter(task => visibleIds.has(task.id));
+    return tasks
+        .filter(task => visibleIds.has(task.id))
+        .map(task => markContext(task, !matchedIds.has(task.id)));
 };

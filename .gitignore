@@ -1,9 +1,10 @@
-.playwright-mcp/
+#DESIGN.md
+#conductor/
+#.playwright-mcp/
 output/
-spec-docs/
+#spec-docs/
 tasks/
-tasks/
-.codex
+#.codex
 .specify
 specs
 # Ruby

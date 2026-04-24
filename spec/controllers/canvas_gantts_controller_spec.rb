@@ -552,6 +552,24 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body).dig('task', 'id')).to eq(42)
     end
+
+    it 'returns destination-project options when target_project_id is authorized' do
+      destination_tracker = instance_double(Tracker, id: 7, name: 'Destination tracker')
+      destination_project = instance_double(
+        Project,
+        id: 1,
+        issue_categories: [],
+        trackers: [destination_tracker],
+        assignable_users: []
+      )
+      allow(Project).to receive(:visible).and_return(double(find: destination_project))
+      allow(User.current).to receive(:allowed_to?).with(:add_issues, destination_project).and_return(true)
+
+      get :edit_meta, params: { project_id: 'demo', id: '42', target_project_id: '1' }, format: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).dig('options', 'trackers')).to eq([{ 'id' => 7, 'name' => 'Destination tracker' }])
+    end
   end
 
   describe 'PATCH #update' do
@@ -574,6 +592,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(issue_scope).to receive(:find).with('10').and_return(issue)
       allow(controller).to receive(:ensure_issue_in_scope).and_return(true)
       allow(controller).to receive(:ensure_issue_editable).and_return(true)
+      allow(controller).to receive(:original_project_move_values).and_return({})
       allow(controller).to receive(:ensure_project_move_valid!).and_return(true)
     end
 
@@ -682,6 +701,22 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:unprocessable_entity)
       expect(JSON.parse(response.body)).to eq('error' => 'subjects must be a non-empty array')
+    end
+
+    it 'returns not found when parent is visible only as a context row outside operation scope' do
+      allow(controller).to receive(:current_view_issue_ids).and_return(Set[99, 100])
+
+      post :bulk_create_subtasks,
+           params: {
+             project_id: 'demo',
+             parent_issue_id: '99',
+             subjects: ['A'],
+             operation_issue_ids: [100]
+           },
+           format: :json
+
+      expect(response).to have_http_status(:not_found)
+      expect(JSON.parse(response.body)).to eq('error' => 'Issue not found in project')
     end
 
     it 'creates subtasks with inherited fields and reports partial failure' do
@@ -1082,7 +1117,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
   describe '#ensure_project_move_valid!' do
     let(:destination_project) { instance_double(Project, id: 3) }
-    let(:tracker) { instance_double(Tracker) }
+    let(:tracker) { instance_double(Tracker, id: 7) }
+    let(:assignable_user) { instance_double(User, id: 11) }
     let(:issue_errors) { instance_double(ActiveModel::Errors, add: nil, full_messages: ['invalid']) }
     let(:issue) do
       instance_double(
@@ -1100,7 +1136,18 @@ RSpec.describe CanvasGanttsController, type: :controller do
     before do
       allow(controller).to receive(:permitted_task_params).and_return(ActionController::Parameters.new(project_id: '3'))
       allow(destination_project).to receive(:trackers).and_return([tracker])
+      allow(destination_project).to receive(:assignable_users).and_return([assignable_user])
       allow(User.current).to receive(:allowed_to?).with(:add_issues, destination_project).and_return(true)
+    end
+
+    let(:original_values) do
+      {
+        project_id: 1,
+        tracker_id: 7,
+        assigned_to_id: nil,
+        fixed_version_id: nil,
+        category_id: nil
+      }
     end
 
     it 'allows move to a project in scope_project_ids even if not in visible_project_ids' do
@@ -1109,7 +1156,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         visible_project_ids: [5]
       )
 
-      expect(controller.send(:ensure_project_move_valid!, issue)).to be(true)
+      expect(controller.send(:ensure_project_move_valid!, issue, original_values)).to be(true)
     end
 
     it 'forbids move to a project outside scope_project_ids' do
@@ -1118,8 +1165,73 @@ RSpec.describe CanvasGanttsController, type: :controller do
         visible_project_ids: [5]
       )
 
-      expect(controller.send(:ensure_project_move_valid!, issue)).to be(false)
+      expect(controller.send(:ensure_project_move_valid!, issue, original_values)).to be(false)
       expect(response).to have_http_status(:forbidden)
+    end
+
+    it 'rejects a move when the original tracker is not available in the destination project' do
+      allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [3], visible_project_ids: [3])
+      allow(destination_project).to receive(:trackers).and_return([])
+
+      expect(controller.send(:ensure_project_move_valid!, issue, original_values)).to be(false)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(issue_errors).to have_received(:add).with(:tracker, :invalid)
+    end
+
+    it 'rejects Redmine tracker fallback when original tracker is unavailable even if current issue tracker was normalized' do
+      fallback_tracker = instance_double(Tracker, id: 99)
+      allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [3], visible_project_ids: [3])
+      allow(destination_project).to receive(:trackers).and_return([fallback_tracker])
+
+      expect(controller.send(:ensure_project_move_valid!, issue, original_values)).to be(false)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(issue_errors).to have_received(:add).with(:tracker, :invalid)
+    end
+
+    it 'rejects a requested tracker that is not available in the destination project' do
+      allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [3], visible_project_ids: [3])
+      allow(controller).to receive(:permitted_task_params).and_return(ActionController::Parameters.new(project_id: '3', tracker_id: '99'))
+
+      expect(controller.send(:ensure_project_move_valid!, issue, original_values)).to be(false)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(issue_errors).to have_received(:add).with(:tracker, :invalid)
+    end
+
+    it 'rejects a move when the original assignee is not assignable in the destination project' do
+      allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [3], visible_project_ids: [3])
+      allow(destination_project).to receive(:assignable_users).and_return([])
+
+      expect(controller.send(:ensure_project_move_valid!, issue, original_values.merge(assigned_to_id: 11))).to be(false)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(issue_errors).to have_received(:add).with(:assigned_to, :invalid)
+    end
+
+    it 'rejects a requested assignee that is not assignable in the destination project' do
+      allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [3], visible_project_ids: [3])
+      allow(controller).to receive(:permitted_task_params).and_return(ActionController::Parameters.new(project_id: '3', assigned_to_id: '99'))
+
+      expect(controller.send(:ensure_project_move_valid!, issue, original_values)).to be(false)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(issue_errors).to have_received(:add).with(:assigned_to, :invalid)
+    end
+
+    it 'clears fixed version and category that do not belong to the destination project' do
+      fixed_version = instance_double(Version, project_id: 1)
+      category = instance_double(IssueCategory, project_id: 1)
+      movable_issue = instance_double(
+        Issue,
+        project: destination_project,
+        fixed_version: fixed_version,
+        category: category,
+        errors: issue_errors
+      )
+      allow(movable_issue).to receive(:fixed_version=)
+      allow(movable_issue).to receive(:category=)
+      allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [3], visible_project_ids: [3])
+
+      expect(controller.send(:ensure_project_move_valid!, movable_issue, original_values)).to be(true)
+      expect(movable_issue).to have_received(:fixed_version=).with(nil)
+      expect(movable_issue).to have_received(:category=).with(nil)
     end
   end
 

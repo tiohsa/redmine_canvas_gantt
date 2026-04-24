@@ -7,7 +7,9 @@ module RedmineCanvasGantt
       @version_class = version_class
     end
 
-    def build(issue:, editable:, custom_fields:, custom_field_values:, permissions:, project_scope_ids:)
+    def build(issue:, editable:, custom_fields:, custom_field_values:, permissions:, project_scope_ids:, options_project: nil)
+      project_for_options = options_project || issue.project
+
       {
         task: {
           id: issue.id,
@@ -28,14 +30,14 @@ module RedmineCanvasGantt
         editable: editable,
         options: {
           statuses: statuses_for(issue),
-          assignees: assignables_for(issue),
+          assignees: assignables_for(issue, project_for_options),
           priorities: @issue_priority_class.active.sort_by(&:position).map do |priority|
             { id: priority.id, name: priority.name, position: priority.position }
           end,
-          categories: issue.project.issue_categories.map { |category| { id: category.id, name: category.name } },
+          categories: project_for_options.issue_categories.map { |category| { id: category.id, name: category.name } },
           projects: project_options_for(project_scope_ids),
-          trackers: issue.project.trackers.map { |tracker| { id: tracker.id, name: tracker.name } },
-          versions: @version_class.visible.where(project_id: issue.project_id).map { |version| { id: version.id, name: version.name } },
+          trackers: project_for_options.trackers.map { |tracker| { id: tracker.id, name: tracker.name } },
+          versions: @version_class.visible.where(project_id: project_for_options.id).map { |version| { id: version.id, name: version.name } },
           custom_fields: custom_fields
         },
         custom_field_values: custom_field_values,
@@ -51,8 +53,9 @@ module RedmineCanvasGantt
       statuses.uniq.sort_by(&:position).map { |status| { id: status.id, name: status.name } }
     end
 
-    def assignables_for(issue)
-      issue.assignable_users.to_a
+    def assignables_for(issue, project_for_options)
+      users = project_for_options == issue.project ? issue.assignable_users : project_for_options.assignable_users
+      users.to_a
         .sort_by { |user| user.name.to_s.downcase }
         .map { |user| { id: user.id, name: user.name } }
     end

@@ -70,6 +70,21 @@ describe('EditMetaStore', () => {
         expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(1);
     });
 
+    it('force refreshes metadata for destination project options', async () => {
+        const refreshed = {
+            ...metaFixture,
+            options: { ...metaFixture.options, trackers: [{ id: 3, name: 'Destination tracker' }] }
+        };
+        vi.mocked(apiClient.fetchEditMeta).mockResolvedValueOnce(metaFixture).mockResolvedValueOnce(refreshed);
+
+        await useEditMetaStore.getState().fetchEditMeta('1');
+        const result = await useEditMetaStore.getState().fetchEditMeta('1', { targetProjectId: 3, force: true });
+
+        expect(result.options.trackers).toEqual([{ id: 3, name: 'Destination tracker' }]);
+        expect(useEditMetaStore.getState().metaByTaskId['1']?.options.trackers).toEqual([{ id: 3, name: 'Destination tracker' }]);
+        expect(apiClient.fetchEditMeta).toHaveBeenLastCalledWith('1', 3);
+    });
+
     it('stores error when fetchEditMeta fails and clearError resets it', async () => {
         vi.mocked(apiClient.fetchEditMeta).mockRejectedValue(new Error('Network down'));
 

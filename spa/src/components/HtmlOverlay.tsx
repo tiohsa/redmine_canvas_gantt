@@ -99,6 +99,26 @@ export const HtmlOverlay: React.FC = () => {
     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
     const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
 
+    React.useEffect(() => {
+        const settings = window.RedmineCanvasGantt?.settings as Record<string, string> | undefined;
+        if (settings?.test_mode !== '1') return;
+
+        const testWindow = window as typeof window & {
+            RedmineCanvasGanttTest?: {
+                setDraftRelation: (relation: DraftRelation | null) => void;
+                selectRelation: (relationId: string) => void;
+            };
+        };
+        testWindow.RedmineCanvasGanttTest = {
+            setDraftRelation: useTaskStore.getState().setDraftRelation,
+            selectRelation: useTaskStore.getState().selectRelation
+        };
+
+        return () => {
+            delete testWindow.RedmineCanvasGanttTest;
+        };
+    }, []);
+
     const activePersistedRelation = React.useMemo(
         () => selectedRelationId ? relations.find((relation) => relation.id === selectedRelationId) ?? null : null,
         [relations, selectedRelationId]
@@ -596,6 +616,7 @@ export const HtmlOverlay: React.FC = () => {
                                 <>
                                     <div
                                         className="dependency-handle"
+                                        data-testid={`dependency-handle-left-${task.id}`}
                                         style={{ ...baseStyle, left: bounds.x - handleOffset - 5 }}
                                         onMouseDown={() => {
                                             startDraft(task.id, bounds.x, centerY, 'left');
@@ -603,6 +624,7 @@ export const HtmlOverlay: React.FC = () => {
                                     />
                                     <div
                                         className="dependency-handle"
+                                        data-testid={`dependency-handle-right-${task.id}`}
                                         style={{ ...baseStyle, left: bounds.x + bounds.width + handleOffset - 5 }}
                                         onMouseDown={() => {
                                             startDraft(task.id, bounds.x + bounds.width, centerY, 'right');
@@ -696,6 +718,7 @@ export const HtmlOverlay: React.FC = () => {
                         void handleRemoveRelation(relationId);
                     }}
                     getTaskLabel={getTaskLabel}
+                    canAddChild={!contextTask?.isContextOnly}
                 />
             )}
         </>

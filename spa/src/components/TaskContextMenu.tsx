@@ -24,6 +24,7 @@ export type TaskContextMenuProps = {
     onDelete: (taskId: string) => void;
     onRemoveRelation: (relationId: string) => void;
     getTaskLabel: (taskId: string) => TaskLabel;
+    canAddChild?: boolean;
 };
 
 export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
@@ -39,7 +40,8 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
     onUnsetParent,
     onDelete,
     onRemoveRelation,
-    getTaskLabel
+    getTaskLabel,
+    canAddChild = true
 }) => {
     const formatRelationLabel = React.useCallback((relation: Relation) => {
         return {
@@ -123,15 +125,17 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
                 }
             `}</style>
 
-                <div className="menu-item" onClick={() => onEdit(taskId)}>
+                <div className="menu-item" data-testid="context-menu-edit-task" onClick={() => onEdit(taskId)}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                     {i18n.t('button_edit')}
                 </div>
 
-                <div className="menu-item" data-testid="context-menu-add-child-task" onClick={() => onAddChild(taskId)}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                    {i18n.t('label_add_child_task') || 'Add Child Task'}
-                </div>
+                {canAddChild && (
+                    <div className="menu-item" data-testid="context-menu-add-child-task" onClick={() => onAddChild(taskId)}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        {i18n.t('label_add_child_task') || 'Add Child Task'}
+                    </div>
+                )}
 
                 <div className="menu-item" data-testid="context-menu-add-new-ticket" onClick={onAddNew}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

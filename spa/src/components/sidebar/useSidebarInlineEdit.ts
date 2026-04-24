@@ -8,7 +8,7 @@ import { customFieldIdFromColumnKey, customFieldEditField, customFieldIdFromEdit
 type Params = {
     settings: InlineEditSettings;
     editMetaByTaskId: Record<string, TaskEditMeta>;
-    fetchEditMeta: (taskId: string) => Promise<TaskEditMeta>;
+    fetchEditMeta: (taskId: string, options?: { targetProjectId?: number; force?: boolean }) => Promise<TaskEditMeta>;
     selectTask: (taskId: string) => void;
     setActiveInlineEdit: (value: { taskId: string; field: string; source?: 'cell' | 'panel' } | null) => void;
 };

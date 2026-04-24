@@ -5,7 +5,7 @@ interface EditMetaState {
     metaByTaskId: Record<string, TaskEditMeta>;
     loadingTaskId: string | null;
     error: string | null;
-    fetchEditMeta: (taskId: string) => Promise<TaskEditMeta>;
+    fetchEditMeta: (taskId: string, options?: { targetProjectId?: number; force?: boolean }) => Promise<TaskEditMeta>;
     setCustomFieldValue: (taskId: string, customFieldId: number, value: string | null) => void;
     clearError: () => void;
 }
@@ -15,14 +15,14 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
     loadingTaskId: null,
     error: null,
 
-    fetchEditMeta: async (taskId: string) => {
+    fetchEditMeta: async (taskId: string, options) => {
         const cached = get().metaByTaskId[taskId];
-        if (cached) return cached;
+        if (cached && !options?.force && options?.targetProjectId === undefined) return cached;
 
         set({ loadingTaskId: taskId, error: null });
         try {
             const { apiClient } = await import('../api/client');
-            const meta = await apiClient.fetchEditMeta(taskId);
+            const meta = await apiClient.fetchEditMeta(taskId, options?.targetProjectId);
             set((state) => ({
                 metaByTaskId: { ...state.metaByTaskId, [taskId]: meta },
                 loadingTaskId: null,

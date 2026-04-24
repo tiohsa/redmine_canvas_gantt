@@ -323,6 +323,8 @@ describe('TaskStore filter hierarchy', () => {
 
         const visibleTasks = useTaskStore.getState().tasks;
         expect(visibleTasks.map(task => task.id)).toEqual(['parent', 'child']);
+        expect(visibleTasks.find(task => task.id === 'parent')?.isContextOnly).toBe(true);
+        expect(visibleTasks.find(task => task.id === 'child')?.isContextOnly).toBe(false);
     });
 });
 

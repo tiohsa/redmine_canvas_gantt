@@ -14,7 +14,7 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
       visible_project = instance_double(Project, id: 20, name: 'Visible Project')
       category = instance_double(IssueCategory, id: 4, name: 'Backend')
       tracker = instance_double(Tracker, id: 5, name: 'Bug')
-      project = instance_double(Project, issue_categories: [category], trackers: [tracker])
+      project = instance_double(Project, id: 1, issue_categories: [category], trackers: [tracker])
       issue = instance_double(
         Issue,
         id: 10,
@@ -76,6 +76,67 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
       expect(payload[:options][:custom_fields]).to eq([{ id: 99 }])
       expect(payload[:options][:projects]).to eq([{ id: 20, name: 'Visible Project' }])
       expect(payload[:options][:versions]).to eq([{ id: 6, name: 'v1' }])
+    end
+
+    it 'uses the requested options project for project-dependent choices' do
+      current_user = instance_double(User)
+      builder = described_class.new(current_user: current_user)
+
+      status = instance_double(IssueStatus, id: 1, name: 'Open', position: 1)
+      source_project = instance_double(Project, id: 1, issue_categories: [], trackers: [], assignable_users: [])
+      destination_category = instance_double(IssueCategory, id: 40, name: 'Destination category')
+      destination_tracker = instance_double(Tracker, id: 30, name: 'Destination tracker')
+      destination_assignee = instance_double(User, id: 20, name: 'Destination assignee')
+      destination_project = instance_double(
+        Project,
+        id: 3,
+        issue_categories: [destination_category],
+        trackers: [destination_tracker],
+        assignable_users: [destination_assignee]
+      )
+      issue = instance_double(
+        Issue,
+        id: 10,
+        subject: 'Move issue',
+        assigned_to_id: 11,
+        status_id: 1,
+        done_ratio: 0,
+        due_date: nil,
+        start_date: nil,
+        priority_id: 1,
+        category_id: nil,
+        estimated_hours: nil,
+        tracker_id: 5,
+        fixed_version_id: nil,
+        lock_version: 1,
+        status: status,
+        project: source_project,
+        project_id: 1
+      )
+
+      allow(issue).to receive(:new_statuses_allowed_to).with(current_user).and_return([])
+      allow(issue).to receive(:assignable_users).and_return([])
+      allow(IssuePriority).to receive(:active).and_return([])
+      project_scope = double(active: double(where: []))
+      allow(Project).to receive(:allowed_to).with(:add_issues).and_return(project_scope)
+      version_scope = double(where: [instance_double(Version, id: 30, name: 'Destination version')])
+      allow(Version).to receive(:visible).and_return(version_scope)
+
+      payload = builder.build(
+        issue: issue,
+        editable: { subject: true },
+        custom_fields: [],
+        custom_field_values: {},
+        permissions: { editable: true, viewable: true },
+        project_scope_ids: [3],
+        options_project: destination_project
+      )
+
+      expect(payload[:options][:trackers]).to eq([{ id: 30, name: 'Destination tracker' }])
+      expect(payload[:options][:assignees]).to eq([{ id: 20, name: 'Destination assignee' }])
+      expect(payload[:options][:categories]).to eq([{ id: 40, name: 'Destination category' }])
+      expect(payload[:options][:versions]).to eq([{ id: 30, name: 'Destination version' }])
+      expect(Version.visible).to have_received(:where).with(project_id: 3)
     end
   end
 end

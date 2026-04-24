@@ -640,9 +640,10 @@ export const apiClient = {
         };
     },
 
-    fetchEditMeta: async (taskId: string): Promise<TaskEditMeta> => {
+    fetchEditMeta: async (taskId: string, targetProjectId?: number): Promise<TaskEditMeta> => {
         const config = getConfig();
-        const query = buildViewContextQuery(config);
+        const query = new URLSearchParams(buildViewContextQuery(config));
+        if (targetProjectId !== undefined) query.set('target_project_id', String(targetProjectId));
         const response = await fetch(`${getGlobalApiBase(config)}/tasks/${taskId}/edit_meta.json?${query}`, {
             headers: buildJsonHeaders(config)
         });
@@ -905,7 +906,7 @@ export const apiClient = {
         }
     },
 
-    bulkCreateSubtasks: async (payload: { parentId: string; subjects: string[] }): Promise<BulkCreateSubtasksResult> => {
+    bulkCreateSubtasks: async (payload: { parentId: string; subjects: string[]; operationIssueIds?: string[] }): Promise<BulkCreateSubtasksResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
         const response = await fetch(`${getGlobalApiBase(config)}/subtasks/bulk.json?${query}`, {
@@ -913,7 +914,8 @@ export const apiClient = {
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
                 parent_issue_id: Number(payload.parentId),
-                subjects: payload.subjects
+                subjects: payload.subjects,
+                operation_issue_ids: (payload.operationIssueIds ?? []).map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0)
             })
         });
 
