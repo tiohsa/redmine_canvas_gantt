@@ -44,7 +44,7 @@ const getInitials = (name?: string) => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 };
 
-const ProgressCircle = ({ ratio, fontSize = 12 }: { ratio: number, statusId: number, fontSize?: number }) => {
+const ProgressCircle = ({ ratio }: { ratio: number, statusId: number }) => {
     const r = 8;
     const c = 2 * Math.PI * r;
     const offset = c - (ratio / 100) * c;
@@ -521,7 +521,7 @@ export const UiSidebar: React.FC = () => {
             title: tr('field_done_ratio'),
             width: columnWidths['ratioDone'] ?? 80,
             render: (t: Task) => renderEditableCell(t, 'ratioDone', (
-                <ProgressCircle ratio={t.ratioDone} statusId={t.statusId} fontSize={mediumSmallFontSize} />
+                <ProgressCircle ratio={t.ratioDone} statusId={t.statusId} />
             ))
         },
         {

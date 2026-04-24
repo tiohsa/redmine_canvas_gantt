@@ -176,6 +176,7 @@ const resolveLayoutState = (state: LayoutState, overrides: Partial<LayoutState> 
     allTasks: overrides.allTasks ?? state.allTasks,
     relations: overrides.relations ?? state.relations,
     versions: overrides.versions ?? state.versions,
+    filterOptions: overrides.filterOptions ?? state.filterOptions ?? { projects: [], assignees: [] },
     groupByProject: overrides.groupByProject ?? state.groupByProject,
     groupByAssignee: overrides.groupByAssignee ?? state.groupByAssignee,
     showVersions: overrides.showVersions ?? state.showVersions,
@@ -220,7 +221,8 @@ const buildLayoutFromState = (state: LayoutState, overrides: Partial<LayoutState
         layoutState.selectedProjectIds,
         layoutState.sortConfig,
         layoutState.allTasks,
-        layoutState.customFields
+        layoutState.customFields,
+        layoutState.filterOptions.projects
     );
 };
 
@@ -287,8 +289,8 @@ const applyApiDataToStore = (
     }
     const candidateProjectIds = new Set((data.filterOptions?.projects ?? []).map((project) => project.id));
     nextResolved.selectedProjectIds = (nextResolved.selectedProjectIds ?? []).filter((projectId) => candidateProjectIds.has(projectId));
-    applyResolvedQueryState(nextResolved);
     setFilterOptions(data.filterOptions);
+    applyResolvedQueryState(nextResolved);
     setTasks(data.tasks);
     setRelations(data.relations);
     setVersions(data.versions);
@@ -530,7 +532,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             ...toDerivedTaskStatePatch(derived)
         };
     }),
-    setFilterOptions: (filterOptions) => set(() => ({ filterOptions })),
+    setFilterOptions: (filterOptions) => set((state) => {
+        const layout = buildLayoutFromState(state, { filterOptions });
+        return {
+            filterOptions,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
     setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
     setPermissions: (permissions) => set(() => ({ permissions })),
     applyResolvedQueryState: (resolved) => set((state) => {

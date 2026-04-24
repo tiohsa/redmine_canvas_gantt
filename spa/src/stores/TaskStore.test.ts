@@ -331,6 +331,7 @@ describe('TaskStore filter hierarchy', () => {
 describe('TaskStore project filter with subproject toggle', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
+        vi.mocked(apiClient.fetchData).mockReset();
     });
 
     it('サブプロジェクト非表示でもPJフィルタ選択は表示する', () => {
@@ -350,6 +351,63 @@ describe('TaskStore project filter with subproject toggle', () => {
 
         const visibleIds = useTaskStore.getState().tasks.map(t => t.id);
         expect(visibleIds).toEqual(['t2']);
+    });
+
+    it('uses filter option metadata for selected project headers without visible tasks', () => {
+        const { setTasks } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            groupByAssignee: false,
+            showVersions: false,
+            filterOptions: {
+                projects: [{ id: 'p2', name: 'Empty Project' }],
+                assignees: []
+            },
+            selectedProjectIds: ['p2']
+        });
+
+        setTasks([
+            buildTask({ id: 't1', projectId: 'p1', projectName: 'Project 1' })
+        ]);
+
+        const headerRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'header');
+        expect(headerRow).toMatchObject({
+            type: 'header',
+            projectId: 'p2',
+            projectName: 'Empty Project'
+        });
+    });
+
+    it('keeps API selected empty project headers named from filter options', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [
+                buildTask({ id: 't1', projectId: 'p1', projectName: 'Project 1' })
+            ],
+            relations: [],
+            versions: [],
+            filterOptions: {
+                projects: [{ id: 'p2', name: 'Empty Project' }],
+                assignees: []
+            },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: {
+                groupBy: 'project',
+                selectedProjectIds: ['p2']
+            }
+        });
+
+        await useTaskStore.getState().refreshData();
+
+        const headerRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'header');
+        expect(headerRow).toMatchObject({
+            type: 'header',
+            projectId: 'p2',
+            projectName: 'Empty Project'
+        });
     });
 });
 

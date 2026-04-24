@@ -47,10 +47,10 @@ export const useInitialGanttData = ({
                 rawSearch: initialSharedQueryState.source === 'url' ? window.location.search : undefined,
                 query: initialSharedQueryState.state
             }).then(data => {
+                setFilterOptions(data.filterOptions);
                 useTaskStore.getState().applyResolvedQueryState(
                     data.initialState ?? toResolvedQueryStateFromStore(useTaskStore.getState())
                 );
-                setFilterOptions(data.filterOptions);
                 setTasks(data.tasks);
                 setRelations(data.relations);
                 setVersions(data.versions);

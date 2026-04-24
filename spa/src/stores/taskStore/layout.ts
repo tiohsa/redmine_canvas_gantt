@@ -1,4 +1,4 @@
-import type { LayoutRow, Relation, Task, Version } from '../../types';
+import type { FilterProjectOption, LayoutRow, Relation, Task, Version } from '../../types';
 import { i18n } from '../../utils/i18n';
 import type { CustomFieldMeta } from '../../types/editMeta';
 import type { SortConfig } from './types';
@@ -59,7 +59,8 @@ export const buildLayout = (
     selectedProjectIds: string[],
     sortConfig: SortConfig,
     allTasks: Task[],
-    customFields: CustomFieldMeta[]
+    customFields: CustomFieldMeta[],
+    projectOptions: FilterProjectOption[] = []
 ): { tasks: Task[]; layoutRows: LayoutRow[]; rowCount: number } => {
     const ASSIGNEE_GROUP_PREFIX = 'assignee:';
     const UNASSIGNED_GROUP_ID = 'none';
@@ -80,6 +81,7 @@ export const buildLayout = (
         if (task.assignedToId === undefined || task.assignedToId === null) return;
         assigneeNameById.set(String(task.assignedToId), task.assignedToName || `${i18n.t('field_assigned_to') || 'Assignee'} #${task.assignedToId}`);
     });
+    const projectNameById = new Map(projectOptions.map((project) => [project.id, project.name]));
 
     const normalizedTasks = tasks.map((task) => ({ ...task, hasChildren: false }));
 
@@ -281,14 +283,18 @@ export const buildLayout = (
             const assigneeId = groupId.replace(ASSIGNEE_GROUP_PREFIX, '');
             projectName = assigneeNameById.get(assigneeId) || (i18n.t('label_unassigned') || 'Unassigned');
         } else {
-            const projectNode = nodeMap.get(roots[0] ?? '');
-            if (projectNode?.task.projectName) {
-                projectName = projectNode.task.projectName;
-            } else {
-                for (const node of nodeMap.values()) {
-                    if (node.task.projectId === groupId && node.task.projectName) {
-                        projectName = node.task.projectName;
-                        break;
+            projectName = projectNameById.get(groupId) ?? '';
+
+            if (!projectName) {
+                const projectNode = nodeMap.get(roots[0] ?? '');
+                if (projectNode?.task.projectName) {
+                    projectName = projectNode.task.projectName;
+                } else {
+                    for (const node of nodeMap.values()) {
+                        if (node.task.projectId === groupId && node.task.projectName) {
+                            projectName = node.task.projectName;
+                            break;
+                        }
                     }
                 }
             }

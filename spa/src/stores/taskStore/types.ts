@@ -1,4 +1,4 @@
-import type { LayoutRow, Relation, Task, Version } from '../../types';
+import type { FilterOptions, LayoutRow, Relation, Task, Version } from '../../types';
 import type { CustomFieldMeta } from '../../types/editMeta';
 
 export type SortConfig = { key: string; direction: 'asc' | 'desc' } | null;
@@ -7,6 +7,7 @@ export type LayoutState = {
     allTasks: Task[];
     relations: Relation[];
     versions: Version[];
+    filterOptions: FilterOptions;
     customFields: CustomFieldMeta[];
     groupByProject: boolean;
     groupByAssignee: boolean;
