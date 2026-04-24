@@ -1,5 +1,6 @@
 import React from 'react';
 import { useUIStore } from '../stores/UIStore';
+import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
 import { apiClient } from '../api/client';
 
@@ -21,6 +22,11 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
         const [subjects, setSubjects] = React.useState('');
         const [loading, setLoading] = React.useState(false);
         const addNotification = useUIStore(state => state.addNotification);
+        const tasks = useTaskStore(state => state.tasks);
+        const operationIssueIds = React.useMemo(
+            () => tasks.filter(task => !task.isContextOnly).map(task => task.id),
+            [tasks]
+        );
 
         const createSubtasks = async (newParentId?: string) => {
             const subjectsList = subjects.split('\n').map(s => s.trim()).filter(s => s.length > 0);
@@ -39,7 +45,10 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
 
                 const result = await apiClient.bulkCreateSubtasks({
                     parentId: targetParentId,
-                    subjects: subjectsList
+                    subjects: subjectsList,
+                    operationIssueIds: newParentId && !operationIssueIds.includes(targetParentId)
+                        ? [...operationIssueIds, targetParentId]
+                        : operationIssueIds
                 });
                 successCount = result.successCount;
                 failCount = result.failCount;
@@ -103,6 +112,7 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                 {expanded && (
                     <div style={{ paddingLeft: 16 }}>
                         <textarea
+                            data-testid="bulk-subtask-subjects"
                             value={subjects}
                             onChange={(e) => setSubjects(e.target.value)}
                             placeholder={i18n.t('placeholder_bulk_subtask_creation') || "Enter one ticket subject per line..."}
@@ -122,6 +132,7 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                         {!hideStandaloneButton && (
                             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                                 <button
+                                    data-testid="bulk-subtask-create-button"
                                     onClick={handleCreateStandalone}
                                     disabled={loading || !subjects.trim()}
                                     style={{

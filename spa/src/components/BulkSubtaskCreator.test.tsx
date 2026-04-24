@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { BulkSubtaskCreator, type BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
 import { apiClient } from '../api/client';
 import { useUIStore } from '../stores/UIStore';
+import { useTaskStore } from '../stores/TaskStore';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -14,6 +15,7 @@ vi.mock('../api/client', () => ({
 describe('BulkSubtaskCreator', () => {
     beforeEach(() => {
         useUIStore.setState(useUIStore.getInitialState(), true);
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
         vi.clearAllMocks();
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
     });
@@ -28,6 +30,11 @@ describe('BulkSubtaskCreator', () => {
             failCount: 0,
             results: []
         });
+        useTaskStore.setState({
+            tasks: [
+                { id: '100', subject: 'Parent', ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 0, hasChildren: false }
+            ]
+        });
 
         render(<BulkSubtaskCreator parentId="100" onTasksCreated={onTasksCreated} />);
 
@@ -40,9 +47,46 @@ describe('BulkSubtaskCreator', () => {
             expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledTimes(1);
         });
 
-        expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledWith({ parentId: '100', subjects: ['Task A', 'Task B'] });
+        expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledWith({
+            parentId: '100',
+            subjects: ['Task A', 'Task B'],
+            operationIssueIds: ['100']
+        });
         expect(notify).toHaveBeenCalledWith('2 tasks created.', 'success');
         expect(onTasksCreated).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends only operation-scope tasks and excludes context-only parents', async () => {
+        vi.mocked(apiClient.bulkCreateSubtasks).mockResolvedValue({
+            status: 'ok',
+            successCount: 1,
+            failCount: 0,
+            results: []
+        });
+        useTaskStore.setState({
+            tasks: [
+                { id: '100', subject: 'Parent', ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 0, hasChildren: true, isContextOnly: true },
+                { id: '101', subject: 'Child', ratioDone: 0, statusId: 1, lockVersion: 0, editable: true, rowIndex: 1, hasChildren: false }
+            ]
+        });
+
+        render(<BulkSubtaskCreator parentId="100" />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.change(screen.getByPlaceholderText('Enter one ticket subject per line...'), {
+            target: { value: 'Task A' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+        await waitFor(() => {
+            expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledTimes(1);
+        });
+
+        expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledWith({
+            parentId: '100',
+            subjects: ['Task A'],
+            operationIssueIds: ['101']
+        });
     });
 
     it('exposes hasSubjects and returns success/fail counts via imperative handle', async () => {

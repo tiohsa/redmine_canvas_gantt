@@ -1274,14 +1274,36 @@ export const UiSidebar: React.FC = () => {
                                                             onCancel={close}
                                                             onCommit={async (next) => {
                                                                 if (next === null) return;
-                                                                const nextName = meta.options.projects?.find(s => s.id === next)?.name;
-                                                                await save({
-                                                                    taskId: task.id,
-                                                                    optimisticTaskUpdates: { projectId: next !== null ? String(next) : undefined, projectName: nextName },
-                                                                    rollbackTaskUpdates: { projectId: task.projectId, projectName: task.projectName },
-                                                                    fields: { project_id: next }
-                                                                });
-                                                                close();
+                                                                await fetchEditMeta(task.id, { targetProjectId: next, force: true });
+                                                                const nextName = taskMeta.options.projects?.find(s => s.id === next)?.name;
+                                                                try {
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: {
+                                                                            projectId: next !== null ? String(next) : undefined,
+                                                                            projectName: nextName,
+                                                                            fixedVersionId: undefined,
+                                                                            fixedVersionName: undefined,
+                                                                            categoryId: undefined,
+                                                                            categoryName: undefined
+                                                                        },
+                                                                        rollbackTaskUpdates: {
+                                                                            projectId: task.projectId,
+                                                                            projectName: task.projectName,
+                                                                            fixedVersionId: task.fixedVersionId,
+                                                                            fixedVersionName: task.fixedVersionName,
+                                                                            categoryId: task.categoryId,
+                                                                            categoryName: task.categoryName
+                                                                        },
+                                                                        fields: { project_id: next, fixed_version_id: null, category_id: null }
+                                                                    });
+                                                                    close();
+                                                                } catch (error) {
+                                                                    if (task.projectId) {
+                                                                        await fetchEditMeta(task.id, { targetProjectId: Number(task.projectId), force: true });
+                                                                    }
+                                                                    throw error;
+                                                                }
                                                             }}
                                                         />
                                                     );

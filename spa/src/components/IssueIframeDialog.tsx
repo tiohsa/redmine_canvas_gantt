@@ -316,6 +316,8 @@ export const IssueIframeDialog: React.FC = () => {
             return undefined;
         }
     }, [activeDialogUrl, isQueryDialog]);
+    const parentTask = useTaskStore(state => parentId ? state.tasks.find(task => task.id === parentId) : undefined);
+    const canBulkCreateForParent = !parentTask?.isContextOnly;
 
     React.useEffect(() => {
         iframeEscapeCleanupRef.current?.();
@@ -548,7 +550,7 @@ export const IssueIframeDialog: React.FC = () => {
                 </div>
 
                 {/* Bulk Creation Section - Only for Issues */}
-                {!isQueryDialog && (
+                {!isQueryDialog && canBulkCreateForParent && (
                     <div ref={bulkSectionRef} style={{ flex: '0 0 auto', padding: '8px 16px 0 16px', backgroundColor: designTokens.controlBg, borderTop: `1px solid ${designTokens.controlBorder}` }}>
                         <BulkSubtaskCreator
                             ref={bulkRef}

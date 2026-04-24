@@ -30,6 +30,7 @@ export interface Task {
     spentHours?: number;
     fixedVersionName?: string;
     customFieldValues?: Record<string, string | null>;
+    isContextOnly?: boolean;
 
     // Computed for layout (cached)
     rowIndex: number;

@@ -1,3 +1,5 @@
+require 'set'
+
 class CanvasGanttsController < ApplicationController
   I18N_LABELS = {
     field_id: :field_id,
@@ -420,6 +422,8 @@ class CanvasGanttsController < ApplicationController
       issue,
       inline_custom_fields_enabled? && field_editable[:custom_field_values]
     )
+    options_project = edit_meta_options_project(issue)
+    return unless options_project
 
     render json: edit_meta_payload_builder.build(
       issue: issue,
@@ -427,7 +431,8 @@ class CanvasGanttsController < ApplicationController
       custom_fields: custom_fields,
       custom_field_values: custom_field_values,
       permissions: @permissions,
-      project_scope_ids: current_view_scope[:scope_project_ids]
+      project_scope_ids: current_view_scope[:scope_project_ids],
+      options_project: options_project
     )
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
@@ -445,8 +450,9 @@ class CanvasGanttsController < ApplicationController
 
     # Optimistic Locking Check handled by ActiveRecord automatically if lock_version is present
     issue.init_journal(User.current)
+    original_values = original_project_move_values(issue)
     issue.safe_attributes = permitted_task_params
-    return unless ensure_project_move_valid!(issue)
+    return unless ensure_project_move_valid!(issue, original_values)
 
     if issue.save
       if requested_parent_issue_id_provided? && issue.parent_id != requested_parent_issue_id
@@ -474,6 +480,7 @@ class CanvasGanttsController < ApplicationController
   def bulk_create_subtasks
     parent_issue = Issue.visible.find(params[:parent_issue_id])
     return unless ensure_issue_in_scope(parent_issue)
+    return unless ensure_issue_in_operation_scope(parent_issue)
 
     unless bulk_subtask_creator.allowed?(parent_issue)
       render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
@@ -956,10 +963,58 @@ class CanvasGanttsController < ApplicationController
     current_view_scope[:issue_ids]
   end
 
-  def ensure_project_move_valid!(issue)
+  def original_project_move_values(issue)
+    {
+      project_id: issue.project_id,
+      tracker_id: issue.tracker_id,
+      assigned_to_id: issue.assigned_to_id,
+      fixed_version_id: issue.fixed_version_id,
+      category_id: issue.category_id
+    }
+  end
+
+  def edit_meta_options_project(issue)
+    raw_project_id = params[:target_project_id].presence
+    return issue.project unless raw_project_id
+
+    target_project_id = Integer(raw_project_id, exception: false)
+    return issue.project unless target_project_id && target_project_id != issue.project_id
+
+    target_project = Project.visible.find(target_project_id)
+    unless current_view_scope[:scope_project_ids].include?(target_project.id) &&
+           User.current.allowed_to?(:add_issues, target_project)
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
+      return nil
+    end
+
+    target_project
+  end
+
+  def ensure_issue_in_operation_scope(issue)
+    operation_issue_ids = requested_operation_issue_ids
+    return true if operation_issue_ids.blank?
+
+    authorized_operation_issue_ids = operation_issue_ids & current_view_issue_ids
+    return true if authorized_operation_issue_ids.include?(issue.id)
+
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_issue_not_found_in_project) }, status: :not_found
+    false
+  end
+
+  def requested_operation_issue_ids
+    Array(params[:operation_issue_ids])
+      .flat_map { |value| value.to_s.split(/[|,]/) }
+      .filter_map { |value| Integer(value, exception: false) }
+      .select(&:positive?)
+      .to_set
+  end
+
+  def ensure_project_move_valid!(issue, original_values)
     destination_project = issue.project
     return true unless destination_project
-    return true unless permitted_task_params.key?(:project_id) || permitted_task_params.key?('project_id')
+    task_params = permitted_task_params
+    return true unless task_params.key?(:project_id) || task_params.key?('project_id')
+    return true if original_values[:project_id].to_i == destination_project.id.to_i
 
     unless current_view_scope[:scope_project_ids].include?(destination_project.id) &&
            User.current.allowed_to?(:add_issues, destination_project)
@@ -967,13 +1022,22 @@ class CanvasGanttsController < ApplicationController
       return false
     end
 
-    unless destination_project.trackers.include?(issue.tracker)
+    destination_tracker_ids = destination_project.trackers.map(&:id)
+    requested_tracker_id = requested_integer_param(task_params, :tracker_id)
+    unless destination_tracker_ids.include?(original_values[:tracker_id]) &&
+           (requested_tracker_id.nil? || destination_tracker_ids.include?(requested_tracker_id))
       issue.errors.add(:tracker, :invalid)
       render json: { errors: issue.errors.full_messages }, status: :unprocessable_entity
       return false
     end
 
-    if issue.assigned_to_id.present? && !issue.assignable_users.map(&:id).include?(issue.assigned_to_id)
+    destination_assignable_ids = destination_project.assignable_users.map(&:id)
+    requested_assigned_to_id = requested_integer_param(task_params, :assigned_to_id)
+    original_assignee_invalid = original_values[:assigned_to_id].present? &&
+                                !destination_assignable_ids.include?(original_values[:assigned_to_id])
+    requested_assignee_invalid = requested_assigned_to_id.present? &&
+                                 !destination_assignable_ids.include?(requested_assigned_to_id)
+    if original_assignee_invalid || requested_assignee_invalid
       issue.errors.add(:assigned_to, :invalid)
       render json: { errors: issue.errors.full_messages }, status: :unprocessable_entity
       return false
@@ -985,5 +1049,12 @@ class CanvasGanttsController < ApplicationController
     end
 
     true
+  end
+
+  def requested_integer_param(task_params, key)
+    raw_value = task_params[key] || task_params[key.to_s]
+    return nil if raw_value.blank?
+
+    Integer(raw_value, exception: false)
   end
 end

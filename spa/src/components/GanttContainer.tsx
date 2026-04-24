@@ -422,6 +422,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
                                     <div
                                         ref={mainPaneRef}
                                         className="rcg-gantt-viewport"
+                                        data-testid="gantt-viewport"
                                         style={{
                                             gridArea: '1 / 1',
                                             position: 'sticky',

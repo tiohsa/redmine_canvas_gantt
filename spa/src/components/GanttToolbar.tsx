@@ -1180,6 +1180,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <button
                         onClick={() => toggleMenu('project')}
                         title={i18n.t('label_project_plural') || 'Filter by project'}
+                        data-testid="project-filter-menu-button"
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',

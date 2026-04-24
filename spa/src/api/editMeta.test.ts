@@ -132,6 +132,67 @@ describe('apiClient.fetchEditMeta', () => {
         expect(meta.options.priorities).toEqual([{ id: 7, name: '緊急', position: 4 }]);
     });
 
+    it('requests destination project edit options when targetProjectId is provided', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key'
+        };
+
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                task: {
+                    id: 10,
+                    subject: 'S',
+                    assigned_to_id: null,
+                    status_id: 1,
+                    done_ratio: 10,
+                    due_date: null,
+                    lock_version: 3,
+                    project_id: 1,
+                    tracker_id: 2
+                },
+                editable: {
+                    subject: true,
+                    assigned_to_id: true,
+                    status_id: true,
+                    done_ratio: true,
+                    due_date: true,
+                    start_date: true,
+                    priority_id: true,
+                    category_id: true,
+                    estimated_hours: true,
+                    project_id: true,
+                    tracker_id: true,
+                    fixed_version_id: true,
+                    custom_field_values: false
+                },
+                options: {
+                    statuses: [{ id: 1, name: 'New' }],
+                    assignees: [],
+                    priorities: [],
+                    categories: [],
+                    projects: [{ id: 1, name: 'Demo' }],
+                    trackers: [{ id: 2, name: 'Bug' }],
+                    versions: [],
+                    custom_fields: []
+                },
+                custom_field_values: {}
+            })
+        });
+
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.fetchEditMeta('10', 3);
+        expect(fetchMock).toHaveBeenCalledWith(
+            expect.stringContaining('target_project_id=3'),
+            expect.any(Object)
+        );
+    });
+
     it.each([
         [{ status_id: null }, 'status_id'],
         [{ status_id: '' }, 'status_id'],
