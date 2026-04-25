@@ -332,19 +332,17 @@ describe('UiSidebar', () => {
         const { rerender } = render(<UiSidebar />);
 
         expect(screen.getAllByTestId('task-tree-guide-line')).not.toHaveLength(0);
+        expect(screen.getAllByTestId('task-tree-parent-guide')).not.toHaveLength(0);
         expect(screen.getAllByTestId('task-tree-current-guide')).not.toHaveLength(0);
         expect(screen.getAllByTestId('task-tree-branch-guide')).not.toHaveLength(0);
-        expect(screen.getAllByTestId('task-tree-guide-line')[0]).toHaveStyle({ left: '50%' });
-        expect(screen.getAllByTestId('task-tree-current-guide')[0]).toHaveStyle({ left: '50%' });
+        expect(screen.getAllByTestId('task-tree-guide-line')[0]).toHaveStyle({ left: '45px' });
+        expect(screen.getAllByTestId('task-tree-parent-guide')[0]).toHaveStyle({ left: '61px' });
+        expect(screen.getAllByTestId('task-tree-current-guide')[0]).toHaveStyle({ left: '77px' });
         expect(screen.getAllByTestId('task-tree-branch-guide')[0]).toHaveStyle({
-            left: '50%',
+            left: '61px',
             width: '16px'
         });
-        const guideSpacer = screen.getAllByTestId('task-tree-guide-line')[0].parentElement;
-        expect(guideSpacer).toHaveStyle({ width: '16px' });
-        const currentGuideSpacer = screen.getAllByTestId('task-tree-current-guide')[0].parentElement;
-        expect(currentGuideSpacer).toHaveStyle({ width: '16px' });
-        const expansionButton = currentGuideSpacer?.querySelector('button');
+        const expansionButton = screen.getByTestId('cell-126-subject').querySelector('button');
         expect(expansionButton).toHaveStyle({
             left: '50%',
             transform: 'translate(-50%, -50%)'
@@ -356,10 +354,186 @@ describe('UiSidebar', () => {
         rerender(<UiSidebar />);
 
         expect(screen.queryAllByTestId('task-tree-guide-line')).toHaveLength(0);
+        expect(screen.queryAllByTestId('task-tree-parent-guide')).toHaveLength(0);
         expect(screen.queryAllByTestId('task-tree-current-guide')).toHaveLength(0);
         expect(screen.queryAllByTestId('task-tree-branch-guide')).toHaveLength(0);
         const firstGuideSpacerWhenHidden = document.querySelector('.task-subject-cell > div > div');
         expect(firstGuideSpacerWhenHidden).toHaveStyle({ width: '16px' });
+    });
+
+    it('connects a last child hierarchy branch to its immediate parent line when the parent guide does not continue', () => {
+        const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['subject']);
+        useUIStore.setState({ visibleColumns: ['subject'], columnSettings, showHierarchyLines: true });
+
+        const task: Task = {
+            id: '130',
+            subject: 'Last child task',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false,
+            treeLevelGuides: [false],
+            isLastChild: true
+        };
+
+        useTaskStore.setState({
+            tasks: [task],
+            layoutRows: [{ type: 'task', taskId: task.id, rowIndex: 0 }],
+            rowCount: 1,
+            selectedTaskId: null,
+            taskExpansion: {},
+            projectExpansion: {},
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            }
+        });
+
+        render(<UiSidebar />);
+
+        const parentLine = screen.getByTestId('task-tree-parent-guide');
+        const branchLine = screen.getByTestId('task-tree-branch-guide');
+
+        expect(parentLine).toHaveStyle({
+            left: '45px',
+            top: '-1px',
+            bottom: '50%'
+        });
+        expect(branchLine).toHaveStyle({
+            left: '45px',
+            width: '16px'
+        });
+    });
+
+    it('overlaps parent and child hierarchy vertical lines across row borders', () => {
+        const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['subject']);
+        useUIStore.setState({ visibleColumns: ['subject'], columnSettings, showHierarchyLines: true });
+
+        const parent: Task = {
+            id: '131',
+            subject: 'Parent task',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: true,
+            treeLevelGuides: [],
+            isLastChild: true
+        };
+        const child: Task = {
+            id: '132',
+            subject: 'Last child task',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 1,
+            hasChildren: false,
+            treeLevelGuides: [false],
+            isLastChild: true
+        };
+
+        useTaskStore.setState({
+            tasks: [parent, child],
+            layoutRows: [
+                { type: 'task', taskId: parent.id, rowIndex: 0 },
+                { type: 'task', taskId: child.id, rowIndex: 1 }
+            ],
+            rowCount: 2,
+            selectedTaskId: null,
+            taskExpansion: {},
+            projectExpansion: {},
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            }
+        });
+
+        render(<UiSidebar />);
+
+        expect(screen.getByTestId('task-tree-current-guide')).toHaveStyle({
+            left: '45px',
+            bottom: '-1px'
+        });
+        expect(screen.getByTestId('task-tree-parent-guide')).toHaveStyle({
+            left: '45px',
+            top: '-1px',
+            bottom: '50%'
+        });
+    });
+
+    it('draws ancestor and parent hierarchy lines for descendants before a following sibling', () => {
+        const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['subject']);
+        useUIStore.setState({ visibleColumns: ['subject'], columnSettings, showHierarchyLines: true });
+
+        const task: Task = {
+            id: '133',
+            subject: 'Nested child before following sibling',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false,
+            treeLevelGuides: [true, false],
+            isLastChild: true
+        };
+
+        useTaskStore.setState({
+            tasks: [task],
+            layoutRows: [{ type: 'task', taskId: task.id, rowIndex: 0 }],
+            rowCount: 1,
+            selectedTaskId: null,
+            taskExpansion: {},
+            projectExpansion: {},
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            }
+        });
+
+        render(<UiSidebar />);
+
+        expect(screen.getByTestId('task-tree-guide-line')).toHaveStyle({
+            left: '45px',
+            top: '-1px',
+            bottom: '0px'
+        });
+        expect(screen.getByTestId('task-tree-parent-guide')).toHaveStyle({
+            left: '61px',
+            top: '-1px',
+            bottom: '50%'
+        });
+        expect(screen.getByTestId('task-tree-branch-guide')).toHaveStyle({
+            left: '61px',
+            width: '16px'
+        });
     });
 
     it('does not draw hierarchy connector branches for root tasks', () => {
@@ -402,10 +576,10 @@ describe('UiSidebar', () => {
         render(<UiSidebar />);
 
         expect(screen.queryAllByTestId('task-tree-guide-line')).toHaveLength(0);
-        expect(screen.queryAllByTestId('task-tree-current-guide')).toHaveLength(0);
+        expect(screen.queryAllByTestId('task-tree-parent-guide')).toHaveLength(0);
+        expect(screen.queryAllByTestId('task-tree-current-guide')).toHaveLength(1);
         expect(screen.queryAllByTestId('task-tree-branch-guide')).toHaveLength(0);
-        const rootGuideSpacer = screen.getByTestId('cell-127-subject').querySelector('.task-subject-cell > div > div');
-        const expansionButton = rootGuideSpacer?.querySelector('button');
+        const expansionButton = screen.getByTestId('cell-127-subject').querySelector('button');
         expect(expansionButton).toHaveStyle({
             left: '50%',
             transform: 'translate(-50%, -50%)'

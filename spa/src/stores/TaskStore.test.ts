@@ -432,6 +432,31 @@ describe('TaskStore filter hierarchy', () => {
     });
 });
 
+describe('TaskStore hierarchy layout guides', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('keeps ancestor vertical guides through descendants when an ancestor has following siblings', () => {
+        const { setTasks } = useTaskStore.getState();
+
+        setTasks([
+            buildTask({ id: 'root', subject: 'Root', displayOrder: 0 }),
+            buildTask({ id: 'a2', subject: 'A2', parentId: 'root', displayOrder: 0 }),
+            buildTask({ id: 'a2-child-1', subject: 'A2 child 1', parentId: 'a2', displayOrder: 0 }),
+            buildTask({ id: 'a2-child-2', subject: 'A2 child 2', parentId: 'a2', displayOrder: 1 }),
+            buildTask({ id: 'a', subject: 'A', parentId: 'root', displayOrder: 1 })
+        ]);
+
+        const tasks = useTaskStore.getState().tasks;
+        expect(tasks.map(task => task.id)).toEqual(['root', 'a2', 'a2-child-1', 'a2-child-2', 'a']);
+        expect(tasks.find(task => task.id === 'a2')?.treeLevelGuides).toEqual([false]);
+        expect(tasks.find(task => task.id === 'a2-child-1')?.treeLevelGuides).toEqual([true, false]);
+        expect(tasks.find(task => task.id === 'a2-child-2')?.treeLevelGuides).toEqual([true, false]);
+        expect(tasks.find(task => task.id === 'a')?.treeLevelGuides).toEqual([false]);
+    });
+});
+
 describe('TaskStore project filter with subproject toggle', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);

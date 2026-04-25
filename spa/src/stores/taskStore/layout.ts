@@ -268,7 +268,11 @@ export const buildLayout = (
             rowIndex += 1;
         }
 
-        const childGuides = [...guides, !isLast];
+        const childGuides = [...guides];
+        if (depth > 0) {
+            childGuides[depth - 1] = !isLast;
+        }
+        childGuides.push(false);
         node.children.forEach((childId, idx) => {
             const isChildLast = idx === node.children.length - 1;
             traverse(childId, depth + 1, shouldHideChildren, childGuides, isChildLast);
