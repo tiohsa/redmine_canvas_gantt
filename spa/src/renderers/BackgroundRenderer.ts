@@ -1,6 +1,7 @@
 import type { Task, Viewport, ZoomLevel } from '../types';
 import { getGridScales } from '../utils/grid';
 import { designTokens } from '../styles/designTokens';
+import { getCanvasLogicalSize } from '../utils/canvasDpr';
 
 export class BackgroundRenderer {
     private canvas: HTMLCanvasElement;
@@ -13,10 +14,12 @@ export class BackgroundRenderer {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
+        const { width, height } = getCanvasLogicalSize(this.canvas);
+
         // Clear
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = designTokens.appBg;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillRect(0, 0, width, height);
 
         const scales = getGridScales(viewport, zoomLevel);
 
@@ -34,9 +37,9 @@ export class BackgroundRenderer {
                         : (24 * 60 * 60 * 1000) * viewport.scale;
 
                     // Only draw if within canvas
-                    if (tick.x + w > 0 && tick.x < this.canvas.width) {
+                    if (tick.x + w > 0 && tick.x < width) {
                         ctx.fillStyle = designTokens.weekendBg;
-                        ctx.fillRect(Math.floor(tick.x), 0, Math.ceil(w), this.canvas.height);
+                        ctx.fillRect(Math.floor(tick.x), 0, Math.ceil(w), height);
                     }
                 }
             });
@@ -47,9 +50,9 @@ export class BackgroundRenderer {
             const selectedTask = tasks.find(t => t.id === selectedTaskId);
             if (selectedTask) {
                 const y = selectedTask.rowIndex * viewport.rowHeight - viewport.scrollY;
-                if (y + viewport.rowHeight > 0 && y < this.canvas.height) {
+                if (y + viewport.rowHeight > 0 && y < height) {
                     ctx.fillStyle = designTokens.selectedRow;
-                    ctx.fillRect(0, y, this.canvas.width, viewport.rowHeight);
+                    ctx.fillRect(0, y, width, viewport.rowHeight);
                 }
             }
         }
@@ -70,7 +73,7 @@ export class BackgroundRenderer {
 
         ticks.forEach(tick => {
             ctx.moveTo(Math.floor(tick.x) + 0.5, 0);
-            ctx.lineTo(Math.floor(tick.x) + 0.5, this.canvas.height);
+            ctx.lineTo(Math.floor(tick.x) + 0.5, height);
         });
 
         // Horizontal lines
@@ -78,9 +81,9 @@ export class BackgroundRenderer {
         ctx.strokeStyle = designTokens.borderStrong;
 
         let y = -viewport.scrollY % viewport.rowHeight;
-        while (y < this.canvas.height) {
+        while (y < height) {
             ctx.moveTo(0, Math.floor(y) + 0.5);
-            ctx.lineTo(this.canvas.width, Math.floor(y) + 0.5);
+            ctx.lineTo(width, Math.floor(y) + 0.5);
             y += viewport.rowHeight;
         }
 

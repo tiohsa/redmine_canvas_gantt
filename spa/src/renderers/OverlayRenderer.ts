@@ -10,6 +10,7 @@ import {
     shouldRenderRelationsAtZoom
 } from './relationGeometry';
 import { designTokens } from '../styles/designTokens';
+import { getCanvasLogicalSize } from '../utils/canvasDpr';
 
 export type OverlayRenderState = {
     viewport: Viewport;
@@ -43,7 +44,8 @@ export class OverlayRenderer {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        const { width, height } = getCanvasLogicalSize(this.canvas);
+        ctx.clearRect(0, 0, width, height);
 
         const totalRows = rowCount || tasks.length;
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, totalRows);
@@ -71,7 +73,7 @@ export class OverlayRenderer {
         this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel);
 
         // Draw "Today" line
-        this.drawTodayLine(ctx, viewport);
+        this.drawTodayLine(ctx, viewport, width, height);
     }
 
     private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[], zoomLevel: ZoomLevel) {
@@ -183,7 +185,7 @@ export class OverlayRenderer {
         });
 
         // Removed "End at Today Line at Bottom" per user request
-        // ctx.lineTo(xToday, this.canvas.height);
+        // ctx.lineTo(xToday, height);
 
         ctx.stroke();
         ctx.restore();
@@ -277,13 +279,13 @@ export class OverlayRenderer {
         ctx.setLineDash([]);
     }
 
-    private drawTodayLine(ctx: CanvasRenderingContext2D, viewport: Viewport) {
+    private drawTodayLine(ctx: CanvasRenderingContext2D, viewport: Viewport, width: number, height: number) {
         const today = new Date().setHours(0, 0, 0, 0);
         const ONE_DAY = 24 * 60 * 60 * 1000;
         // Redmine standard: draw at the right edge of "today" column.
         const x = LayoutEngine.dateToX(today + ONE_DAY, viewport) - viewport.scrollX;
 
-        if (x >= 0 && x <= this.canvas.width) {
+        if (x >= 0 && x <= width) {
             const COLOR = '#4285f4'; // Blue like the reference image
 
             ctx.save();
@@ -294,7 +296,7 @@ export class OverlayRenderer {
             // Draw Line
             ctx.beginPath();
             ctx.moveTo(x, 0);
-            ctx.lineTo(x, this.canvas.height);
+            ctx.lineTo(x, height);
             ctx.stroke();
 
             ctx.restore();

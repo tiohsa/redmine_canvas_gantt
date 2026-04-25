@@ -2,6 +2,7 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Task, Viewport, ZoomLevel } from '../types';
 import type { BaselineSnapshot, BaselineTaskState } from '../types/baseline';
 import { designTokens } from '../styles/designTokens';
+import { getCanvasLogicalSize } from '../utils/canvasDpr';
 
 type BaselineRenderState = {
     viewport: Viewport;
@@ -23,7 +24,8 @@ export class BaselineRenderer {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        const { width, height } = getCanvasLogicalSize(this.canvas);
+        ctx.clearRect(0, 0, width, height);
         if (!showBaseline || !snapshot) return;
 
         const totalRows = rowCount || tasks.length;

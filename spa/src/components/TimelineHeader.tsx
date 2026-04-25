@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useImperativeHandle, useRef } from 'react';
+import React, { useCallback, useImperativeHandle, useLayoutEffect, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { getGridScales } from '../utils/grid';
 import { canvasFonts, designTokens } from '../styles/designTokens';
@@ -170,13 +170,9 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
         }
     }, [viewport, zoomLevel]);
 
-    // Render when viewport or zoom changes
-    useEffect(() => {
-        renderHeader();
-    }, [renderHeader]);
-
-    // Keep header canvas width strictly aligned with the timeline viewport width.
-    useEffect(() => {
+    // Keep header canvas size aligned and render in the same layout pass so DPR
+    // transforms are applied before any drawing for the frame.
+    useLayoutEffect(() => {
         if (!canvasRef.current) return;
         const width = Math.max(0, Math.floor(viewport.width));
         const ctx = canvasRef.current.getContext('2d');

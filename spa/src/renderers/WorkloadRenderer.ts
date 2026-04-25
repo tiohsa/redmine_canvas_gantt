@@ -1,7 +1,8 @@
 import type { Viewport, ZoomLevel } from '../types';
 import { getGridScales } from '../utils/grid';
 import { canvasFonts, designTokens } from '../styles/designTokens';
-import { snapTextPosition, snapLinePosition } from '../utils/canvasDpr';
+import { getCanvasLogicalSize, snapTextPosition, snapLinePosition } from '../utils/canvasDpr';
+import type { AssigneeWorkload, DailyWorkload, WorkloadData } from '../services/WorkloadLogicService';
 
 export interface WorkloadRenderState {
     viewport: Viewport;
@@ -97,11 +98,11 @@ export class WorkloadRenderer {
 
         const assignees = WorkloadRenderer.getSortedAssignees(workloadData);
         const rowHeight = viewport.rowHeight * 2;
-        const canvasWidth = Math.max(0, parseInt(this.canvas.style.width || '0', 10) || (this.canvas.width / (window.devicePixelRatio || 1)));
+        const { width: canvasWidth, height: canvasHeight } = getCanvasLogicalSize(this.canvas);
 
         for (const [assigneeIndex, assignee] of assignees.entries()) {
             const rowY = assigneeIndex * rowHeight - verticalScroll;
-            if (rowY + rowHeight < 0 || rowY > this.canvas.height) continue;
+            if (rowY + rowHeight < 0 || rowY > canvasHeight) continue;
 
             for (const daily of assignee.dailyWorkloads.values()) {
                 const rect = WorkloadRenderer.getDailyBarRect({
@@ -138,8 +139,7 @@ export class WorkloadRenderer {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
-        const logicalWidth = Math.max(0, parseInt(this.canvas.style.width || '0', 10) || (this.canvas.width / (window.devicePixelRatio || 1)));
-        const logicalHeight = Math.max(0, parseInt(this.canvas.style.height || '0', 10) || (this.canvas.height / (window.devicePixelRatio || 1)));
+        const { width: logicalWidth, height: logicalHeight } = getCanvasLogicalSize(this.canvas);
 
         // Clear
         ctx.clearRect(0, 0, logicalWidth, logicalHeight);

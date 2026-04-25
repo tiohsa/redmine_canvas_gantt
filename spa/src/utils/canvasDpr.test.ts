@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getCanvasDpr, resizeCanvasForDpr, snapTextPosition, snapLinePosition } from './canvasDpr';
+import { getCanvasDpr, getCanvasLogicalSize, resizeCanvasForDpr, snapTextPosition, snapLinePosition } from './canvasDpr';
 
 describe('canvasDpr utility', () => {
     let originalDevicePixelRatio: number;
@@ -69,7 +69,7 @@ describe('canvasDpr utility', () => {
             expect(ctx.setTransform).toHaveBeenCalledWith(1.25, 0, 0, 1.25, 0, 0);
         });
 
-        it('should not setTransform if canvas buffer size is already correct', () => {
+        it('should setTransform even if canvas buffer size is already correct', () => {
             setDpr(2);
             const canvas = document.createElement('canvas');
             canvas.width = 200;
@@ -82,7 +82,7 @@ describe('canvasDpr utility', () => {
 
             expect(canvas.width).toBe(200);
             expect(canvas.height).toBe(100);
-            expect(ctx.setTransform).not.toHaveBeenCalled();
+            expect(ctx.setTransform).toHaveBeenCalledWith(2, 0, 0, 2, 0, 0);
         });
 
         it('should early return if width or height is <= 0', () => {
@@ -94,6 +94,38 @@ describe('canvasDpr utility', () => {
             resizeCanvasForDpr(canvas, ctx, 0, 50);
             expect(canvas.width).toBe(300); // default canvas width
             expect(ctx.setTransform).not.toHaveBeenCalled();
+        });
+    });
+
+
+    describe('getCanvasLogicalSize', () => {
+        it('should prefer canvas style size when available', () => {
+            setDpr(2);
+            const canvas = document.createElement('canvas');
+            canvas.width = 400;
+            canvas.height = 200;
+            canvas.style.width = '150px';
+            canvas.style.height = '75px';
+
+            expect(getCanvasLogicalSize(canvas)).toEqual({ width: 150, height: 75 });
+        });
+
+        it('should fall back to backing buffer size divided by dpr', () => {
+            setDpr(2);
+            const canvas = document.createElement('canvas');
+            canvas.width = 400;
+            canvas.height = 200;
+
+            expect(getCanvasLogicalSize(canvas)).toEqual({ width: 200, height: 100 });
+        });
+
+        it('should fall back to dpr 1 when devicePixelRatio is not defined', () => {
+            setDpr(undefined as any);
+            const canvas = document.createElement('canvas');
+            canvas.width = 320;
+            canvas.height = 120;
+
+            expect(getCanvasLogicalSize(canvas)).toEqual({ width: 320, height: 120 });
         });
     });
 
