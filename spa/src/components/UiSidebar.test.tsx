@@ -344,8 +344,9 @@ describe('UiSidebar', () => {
         });
         const expansionButton = screen.getByTestId('cell-126-subject').querySelector('button');
         expect(expansionButton).toHaveStyle({
-            left: '50%',
-            transform: 'translate(-50%, -50%)'
+            left: '37px',
+            transform: 'translate(-50%, -50%)',
+            zIndex: '3'
         });
 
         act(() => {
@@ -578,11 +579,13 @@ describe('UiSidebar', () => {
         expect(screen.queryAllByTestId('task-tree-guide-line')).toHaveLength(0);
         expect(screen.queryAllByTestId('task-tree-parent-guide')).toHaveLength(0);
         expect(screen.queryAllByTestId('task-tree-current-guide')).toHaveLength(1);
+        expect(screen.getByTestId('task-tree-current-guide')).toHaveStyle({ left: '45px' });
         expect(screen.queryAllByTestId('task-tree-branch-guide')).toHaveLength(0);
         const expansionButton = screen.getByTestId('cell-127-subject').querySelector('button');
         expect(expansionButton).toHaveStyle({
-            left: '50%',
-            transform: 'translate(-50%, -50%)'
+            left: '37px',
+            transform: 'translate(-50%, -50%)',
+            zIndex: '3'
         });
     });
 

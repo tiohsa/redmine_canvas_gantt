@@ -153,6 +153,7 @@ export const UiSidebar: React.FC = () => {
     const sidebarPaddingX = 8;
     const sidebarGapSm = 4;
     const sidebarGapMd = 6;
+    const trackerIconSize = 14;
     const sidebarControlSize = 20;
     const sidebarButtonSize = 24;
     const sidebarHeaderHeight = 48;
@@ -323,8 +324,10 @@ export const UiSidebar: React.FC = () => {
                         const isClosed = isTaskClosed(t);
                         const hasParentGuide = (t.treeLevelGuides ?? []).length > 0;
                         const level = (t.treeLevelGuides ?? []).length;
-                        const iconCenterOffset = 45; // sidebarPaddingX(8) + treeGuideWidth(16) + sidebarPaddingX(8) + offset
-                        const getIconX = (l: number) => iconCenterOffset + l * treeGuideWidth;
+                        const trackerIconCenterOffset = sidebarPaddingX + currentTreeGuideWidth + sidebarGapMd + sidebarPaddingX + trackerIconSize / 2;
+                        const getTreeColumnX = (l: number) => trackerIconCenterOffset + l * treeGuideWidth;
+                        const currentGuideStartX = sidebarPaddingX + level * treeGuideWidth;
+                        const expansionButtonLeft = getTreeColumnX(level) - currentGuideStartX;
 
                         return (
                             <>
@@ -336,7 +339,7 @@ export const UiSidebar: React.FC = () => {
                                         return (
                                             <div key={i} style={{
                                                 position: 'absolute',
-                                                left: getIconX(i),
+                                                left: getTreeColumnX(i),
                                                 top: -1,
                                                 bottom: 0,
                                                 width: 1,
@@ -350,7 +353,7 @@ export const UiSidebar: React.FC = () => {
                                     {showHierarchyLines && hasParentGuide && (
                                         <div style={{
                                             position: 'absolute',
-                                            left: getIconX(level - 1),
+                                            left: getTreeColumnX(level - 1),
                                             top: -1,
                                             bottom: t.isLastChild ? '50%' : 0,
                                             width: 1,
@@ -363,7 +366,7 @@ export const UiSidebar: React.FC = () => {
                                     {showHierarchyLines && (t.hasChildren && (taskExpansion[t.id] ?? true)) && (
                                         <div style={{
                                             position: 'absolute',
-                                            left: getIconX(level),
+                                            left: getTreeColumnX(level),
                                             top: '50%',
                                             bottom: -1,
                                             width: 1,
@@ -376,7 +379,7 @@ export const UiSidebar: React.FC = () => {
                                     {showHierarchyLines && hasParentGuide && (
                                         <div style={{
                                             position: 'absolute',
-                                            left: getIconX(level - 1),
+                                            left: getTreeColumnX(level - 1),
                                             width: treeGuideWidth,
                                             top: '50%',
                                             height: 1,
@@ -404,7 +407,7 @@ export const UiSidebar: React.FC = () => {
                                                 }}
                                                 style={{
                                                     position: 'absolute',
-                                                    left: '50%',
+                                                    left: expansionButtonLeft,
                                                     top: '50%',
                                                     transform: 'translate(-50%, -50%)',
                                                     width: 20,
@@ -417,7 +420,7 @@ export const UiSidebar: React.FC = () => {
                                                     background: isSelected ? designTokens.sidebarSelectedRowBg : designTokens.controlBg,
                                                     cursor: 'pointer',
                                                     flexShrink: 0,
-                                                    zIndex: 2,
+                                                    zIndex: 3,
                                                     padding: 0
                                                 }}
                                             >
