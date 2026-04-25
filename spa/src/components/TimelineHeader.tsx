@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useImperativeHandle, useRef } from 'reac
 import { useTaskStore } from '../stores/TaskStore';
 import { getGridScales } from '../utils/grid';
 import { canvasFonts, designTokens } from '../styles/designTokens';
+import { resizeCanvasForDpr, snapTextPosition, snapLinePosition } from '../utils/canvasDpr';
 
 export interface TimelineHeaderHandle {
     getCanvas: () => HTMLCanvasElement | null;
@@ -18,14 +19,17 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
+        const cssWidth = Math.max(0, Math.floor(viewport.width));
+        const cssHeight = 48;
+
         // Clear
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, cssWidth, cssHeight);
 
         // Header Background
         ctx.fillStyle = designTokens.surfaceSubtle;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, cssWidth, cssHeight);
         ctx.strokeStyle = designTokens.borderSubtle;
-        ctx.strokeRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeRect(0, 0, cssWidth, cssHeight);
 
         // Calculate Scales
         const scales = getGridScales(viewport, zoomLevel);
@@ -36,7 +40,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
         const hasBottom = scales.bottom.length > 0;
 
         const activeRows = [hasTop, hasMiddle, hasBottom].filter(Boolean).length;
-        const rowHeight = activeRows > 0 ? canvas.height / activeRows : canvas.height;
+        const rowHeight = activeRows > 0 ? cssHeight / activeRows : cssHeight;
 
         let currentY = 0;
 
@@ -48,13 +52,13 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
 
             // Background
             ctx.fillStyle = bgColor;
-            ctx.fillRect(0, y, canvas.width, h);
+            ctx.fillRect(0, y, cssWidth, h);
 
             // Bottom border
             ctx.strokeStyle = designTokens.borderStrong;
             ctx.beginPath();
-            ctx.moveTo(0, y + h);
-            ctx.lineTo(canvas.width, y + h);
+            ctx.moveTo(0, snapLinePosition(y + h));
+            ctx.lineTo(cssWidth, snapLinePosition(y + h));
             ctx.stroke();
 
             ctx.fillStyle = txtColor;
@@ -63,14 +67,15 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
 
             ticks.forEach((tick, i) => {
                 // Vertical Separator
+                const snappedX = snapLinePosition(tick.x);
                 ctx.beginPath();
-                ctx.moveTo(Math.floor(tick.x) + 0.5, y);
-                ctx.lineTo(Math.floor(tick.x) + 0.5, y + h);
+                ctx.moveTo(snappedX, y);
+                ctx.lineTo(snappedX, y + h);
                 ctx.strokeStyle = designTokens.borderStrong;
                 ctx.stroke();
 
                 // Text
-                let nextX = canvas.width;
+                let nextX = cssWidth;
                 if (i < ticks.length - 1) {
                     nextX = ticks[i + 1].x;
                 }
@@ -87,7 +92,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
                     textX = Math.max(tick.x, 0) + 4;
                 }
 
-                if (tick.x < canvas.width && (align === 'center' ? tick.x + width > 0 : textX < nextX - 10)) {
+                if (tick.x < cssWidth && (align === 'center' ? tick.x + width > 0 : textX < nextX - 10)) {
                     ctx.save();
                     ctx.beginPath();
                     // Snap to pixels to avoid sub-pixel misalignment with separator lines
@@ -96,7 +101,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
                     const endX = Math.floor(nextX);
                     ctx.rect(startX, y, Math.max(0, endX - startX), h);
                     ctx.clip();
-                    ctx.fillText(tick.label, textX, textY);
+                    ctx.fillText(tick.label, snapTextPosition(textX), snapTextPosition(textY));
                     ctx.restore();
                 }
             });
@@ -120,7 +125,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
 
             // Background (base)
             ctx.fillStyle = designTokens.appBg;
-            ctx.fillRect(0, y, canvas.width, h);
+            ctx.fillRect(0, y, cssWidth, h);
 
             // Weekends
             if (zoomLevel === 2) { // Day View mainly
@@ -143,21 +148,22 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
             ctx.textAlign = 'center'; // Always center bottom (Days)
 
             scales.bottom.forEach((tick, i) => {
+                const snappedX = snapLinePosition(tick.x);
                 ctx.beginPath();
-                ctx.moveTo(Math.floor(tick.x) + 0.5, y);
-                ctx.lineTo(Math.floor(tick.x) + 0.5, y + h);
+                ctx.moveTo(snappedX, y);
+                ctx.lineTo(snappedX, y + h);
                 ctx.strokeStyle = designTokens.borderSubtle;
                 ctx.stroke();
 
                 // Width for centering
-                let nextX = canvas.width;
+                let nextX = cssWidth;
                 if (i < scales.bottom.length - 1) nextX = scales.bottom[i + 1].x;
                 const width = nextX - tick.x;
 
                 const textX = tick.x + width / 2;
                 const textY = y + h / 2 + 4;
 
-                ctx.fillText(tick.label, textX, textY);
+                ctx.fillText(tick.label, snapTextPosition(textX), snapTextPosition(textY));
             });
 
             currentY += h;
@@ -173,12 +179,8 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
     useEffect(() => {
         if (!canvasRef.current) return;
         const width = Math.max(0, Math.floor(viewport.width));
-        if (canvasRef.current.width !== width) {
-            canvasRef.current.width = width;
-        }
-        if (canvasRef.current.height !== 48) {
-            canvasRef.current.height = 48;
-        }
+        const ctx = canvasRef.current.getContext('2d');
+        resizeCanvasForDpr(canvasRef.current, ctx, width, 48);
         renderHeader();
     }, [renderHeader, viewport.width]);
 

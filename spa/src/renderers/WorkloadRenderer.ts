@@ -1,7 +1,7 @@
 import type { Viewport, ZoomLevel } from '../types';
 import { getGridScales } from '../utils/grid';
-import type { AssigneeWorkload, DailyWorkload, WorkloadData } from '../services/WorkloadLogicService';
 import { canvasFonts, designTokens } from '../styles/designTokens';
+import { snapTextPosition, snapLinePosition } from '../utils/canvasDpr';
 
 export interface WorkloadRenderState {
     viewport: Viewport;
@@ -97,7 +97,7 @@ export class WorkloadRenderer {
 
         const assignees = WorkloadRenderer.getSortedAssignees(workloadData);
         const rowHeight = viewport.rowHeight * 2;
-        const canvasWidth = this.canvas.width;
+        const canvasWidth = Math.max(0, parseInt(this.canvas.style.width || '0', 10) || (this.canvas.width / (window.devicePixelRatio || 1)));
 
         for (const [assigneeIndex, assignee] of assignees.entries()) {
             const rowY = assigneeIndex * rowHeight - verticalScroll;
@@ -138,10 +138,13 @@ export class WorkloadRenderer {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
+        const logicalWidth = Math.max(0, parseInt(this.canvas.style.width || '0', 10) || (this.canvas.width / (window.devicePixelRatio || 1)));
+        const logicalHeight = Math.max(0, parseInt(this.canvas.style.height || '0', 10) || (this.canvas.height / (window.devicePixelRatio || 1)));
+
         // Clear
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.clearRect(0, 0, logicalWidth, logicalHeight);
         ctx.fillStyle = designTokens.appBg;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillRect(0, 0, logicalWidth, logicalHeight);
 
         const scales = getGridScales(viewport, zoomLevel);
         const rowHeight = viewport.rowHeight * 2; // Histogram rows are usually taller (e.g. 72px when row is 36px)
@@ -157,9 +160,9 @@ export class WorkloadRenderer {
                         ? ticks[i + 1].x - tick.x
                         : (24 * 60 * 60 * 1000) * viewport.scale;
 
-                    if (tick.x + w > 0 && tick.x < this.canvas.width) {
+                    if (tick.x + w > 0 && tick.x < logicalWidth) {
                         ctx.fillStyle = WorkloadRenderer.WEEKEND_BG;
-                        ctx.fillRect(Math.floor(tick.x), 0, Math.ceil(w), this.canvas.height);
+                        ctx.fillRect(Math.floor(tick.x), 0, Math.ceil(w), logicalHeight);
                     }
                 }
             });
@@ -174,15 +177,17 @@ export class WorkloadRenderer {
         if (ticks.length === 0) ticks = scales.top;
 
         ticks.forEach(tick => {
-            ctx.moveTo(Math.floor(tick.x) + 0.5, 0);
-            ctx.lineTo(Math.floor(tick.x) + 0.5, this.canvas.height);
+            const snappedX = snapLinePosition(tick.x);
+            ctx.moveTo(snappedX, 0);
+            ctx.lineTo(snappedX, logicalHeight);
         });
 
         // Workload rows are independent from the task list vertical scroll.
         let y = -(verticalScroll % rowHeight);
-        while (y < this.canvas.height) {
-            ctx.moveTo(0, Math.floor(y) + 0.5);
-            ctx.lineTo(this.canvas.width, Math.floor(y) + 0.5);
+        while (y < logicalHeight) {
+            const snappedY = snapLinePosition(y);
+            ctx.moveTo(0, snappedY);
+            ctx.lineTo(logicalWidth, snappedY);
             y += rowHeight;
         }
         ctx.stroke();
@@ -197,23 +202,23 @@ export class WorkloadRenderer {
             const rowY = index * rowHeight - verticalScroll;
             
             // Skip rows outside viewport
-            if (rowY + rowHeight < 0 || rowY > this.canvas.height) return;
+            if (rowY + rowHeight < 0 || rowY > logicalHeight) return;
 
             // Highlight if hovered
             if (hoveredAssigneeId === assignee.assigneeId) {
                 ctx.fillStyle = designTokens.rowHover;
-                ctx.fillRect(0, rowY, this.canvas.width, rowHeight);
+                ctx.fillRect(0, rowY, logicalWidth, rowHeight);
             }
 
             // Draw Threshold line
             const maxGraphLoad = Math.max(capacityThreshold * 1.5, Math.ceil(assignee.peakLoad), WorkloadRenderer.MAX_EXPECTED_LOAD);
-            const thresholdY = rowY + rowHeight - (capacityThreshold / maxGraphLoad) * rowHeight;
+            const thresholdY = snapLinePosition(rowY + rowHeight - (capacityThreshold / maxGraphLoad) * rowHeight);
             
             ctx.strokeStyle = designTokens.threshold;
             ctx.setLineDash([4, 4]);
             ctx.beginPath();
-            ctx.moveTo(0, Math.floor(thresholdY) + 0.5);
-            ctx.lineTo(this.canvas.width, Math.floor(thresholdY) + 0.5);
+            ctx.moveTo(0, thresholdY);
+            ctx.lineTo(logicalWidth, thresholdY);
             ctx.stroke();
             ctx.setLineDash([]); // reset
 
@@ -221,7 +226,7 @@ export class WorkloadRenderer {
             // We only need to iterate over visible days
             assignee.dailyWorkloads.forEach((daily) => {
                 const rect = WorkloadRenderer.getDailyBarRect({
-                    canvasWidth: this.canvas.width,
+                    canvasWidth: logicalWidth,
                     capacityThreshold,
                     viewport,
                     verticalScroll,
@@ -241,8 +246,8 @@ export class WorkloadRenderer {
                         ctx.textBaseline = 'bottom';
                         ctx.fillText(
                             `${labelInfo.current}/${labelInfo.total}`,
-                            rect.x + rect.width / 2,
-                            rect.y - WorkloadRenderer.LABEL_TOP_PADDING
+                            snapTextPosition(rect.x + rect.width / 2),
+                            snapTextPosition(rect.y - WorkloadRenderer.LABEL_TOP_PADDING)
                         );
                     }
 

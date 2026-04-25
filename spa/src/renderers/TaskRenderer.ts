@@ -4,6 +4,7 @@ import { buildDependencySummary } from './dependencyIndicators';
 import type { BaselineSnapshot } from '../types/baseline';
 import { calculateBaselineDiff, getBaselineTaskState } from '../utils/baseline';
 import { canvasFonts, designTokens } from '../styles/designTokens';
+import { snapTextPosition } from '../utils/canvasDpr';
 
 export class TaskRenderer {
     private canvas: HTMLCanvasElement;
@@ -37,7 +38,9 @@ export class TaskRenderer {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
 
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        const logicalWidth = Math.max(0, parseInt(this.canvas.style.width || '0', 10) || (this.canvas.width / (window.devicePixelRatio || 1)));
+        const logicalHeight = Math.max(0, parseInt(this.canvas.style.height || '0', 10) || (this.canvas.height / (window.devicePixelRatio || 1)));
+        ctx.clearRect(0, 0, logicalWidth, logicalHeight);
 
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount);
 
@@ -247,7 +250,7 @@ export class TaskRenderer {
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
 
-        ctx.fillText(task.subject, textX, textY);
+        ctx.fillText(task.subject, snapTextPosition(textX), snapTextPosition(textY));
 
         ctx.restore();
     }

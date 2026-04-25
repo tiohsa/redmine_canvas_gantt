@@ -5,6 +5,7 @@ import { useTaskStore } from '../../stores/TaskStore';
 import { useUIStore } from '../../stores/UIStore';
 import { WorkloadRenderer } from '../../renderers/WorkloadRenderer';
 import { panViewportByPixels } from '../../engines/viewportPan';
+import { resizeCanvasForDpr } from '../../utils/canvasDpr';
 
 interface WorkloadCanvasPanelProps {
     scrollTop?: number;
@@ -151,8 +152,8 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         const width = viewportElement?.clientWidth ?? containerElement?.clientWidth ?? 0;
         const height = viewportElement?.clientHeight ?? Math.max(0, (containerElement?.clientHeight ?? 0) - HEADER_HEIGHT);
         if (width > 0 && height > 0) {
-            canvasRef.current.width = width;
-            canvasRef.current.height = height;
+            const ctx = canvasRef.current.getContext('2d');
+            resizeCanvasForDpr(canvasRef.current, ctx, width, height);
         }
     }, []);
 

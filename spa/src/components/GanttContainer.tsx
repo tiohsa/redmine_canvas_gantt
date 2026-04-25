@@ -28,6 +28,7 @@ import type { TimelineHeaderHandle } from './TimelineHeader';
 import { i18n } from '../utils/i18n';
 import { useBaselineStore } from '../stores/BaselineStore';
 import { designTokens } from '../styles/designTokens';
+import { resizeCanvasForDpr } from '../utils/canvasDpr';
 
 import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, BOTTOM_PADDING_PX, SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH, SIDEBAR_RESIZE_CURSOR } from '../constants';
 
@@ -230,8 +231,8 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
 
                 [bgCanvasRef.current, baselineCanvasRef.current, taskCanvasRef.current, overlayCanvasRef.current].forEach(canvas => {
                     if (canvas) {
-                        canvas.width = width;
-                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        resizeCanvasForDpr(canvas, ctx, width, height);
                     }
                 });
                 updateViewport({ width, height });
