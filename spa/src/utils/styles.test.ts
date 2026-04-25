@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { getPriorityColor } from './styles';
+import { getPriorityColor, getStatusColor } from './styles';
+
+describe('getStatusColor', () => {
+    it('uses the closed badge style when backend status metadata marks the status closed', () => {
+        expect(getStatusColor(2, true)).toEqual({
+            bg: '#e8f5e9',
+            text: '#2e7d32',
+            bar: '#66bb6a',
+            label: 'Closed'
+        });
+    });
+});
 
 describe('getPriorityColor', () => {
     it('colors priorities by Redmine position even when the name is localized', () => {

@@ -224,6 +224,74 @@ describe('UiSidebar', () => {
         expect(screen.queryByTestId('sidebar-column-resize-handle-subject')).not.toBeInTheDocument();
     });
 
+    it('keeps closed task row background unchanged, mutes text, strikes only the subject, and renders a closed badge', () => {
+        const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['id', 'subject', 'status']);
+        useUIStore.setState({ visibleColumns: ['id', 'subject', 'status'], columnSettings });
+
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false,
+            taskStatuses: [
+                { id: 1, name: 'New', isClosed: false },
+                { id: 9, name: 'Closed', isClosed: true }
+            ]
+        });
+
+        const openTask: Task = {
+            id: '128',
+            subject: 'Open task',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+        const closedTask: Task = {
+            id: '129',
+            subject: 'Closed task',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 100,
+            statusId: 9,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 1,
+            hasChildren: false
+        };
+
+        useTaskStore.getState().setTasks([openTask, closedTask]);
+
+        render(<UiSidebar />);
+
+        expect(screen.getByText('Open task')).toHaveStyle({ textDecoration: 'none' });
+
+        expect(screen.getByTestId('task-row-129')).not.toHaveStyle({ backgroundColor: '#f5f5f5' });
+        expect(screen.getByTestId('task-row-129')).toHaveStyle({ color: '#6b7280' });
+        expect(screen.getByText('Closed task')).toHaveStyle({
+            color: '#6b7280',
+            textDecoration: 'line-through'
+        });
+        expect(screen.getByTestId('task-id-129')).not.toHaveStyle({ textDecoration: 'line-through' });
+
+        const closedBadge = screen.getByTestId('task-status-badge-129');
+        expect(closedBadge).toHaveTextContent('Closed');
+        expect(closedBadge).toHaveStyle({
+            backgroundColor: '#e8f5e9',
+            color: '#2e7d32'
+        });
+    });
+
     it('hides hierarchy guide lines when the toggle is off', () => {
         const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['subject']);
         useUIStore.setState({ visibleColumns: ['subject'], columnSettings, showHierarchyLines: true });
@@ -266,13 +334,82 @@ describe('UiSidebar', () => {
         expect(screen.getAllByTestId('task-tree-guide-line')).not.toHaveLength(0);
         expect(screen.getAllByTestId('task-tree-current-guide')).not.toHaveLength(0);
         expect(screen.getAllByTestId('task-tree-branch-guide')).not.toHaveLength(0);
+        expect(screen.getAllByTestId('task-tree-guide-line')[0]).toHaveStyle({ left: '50%' });
+        expect(screen.getAllByTestId('task-tree-current-guide')[0]).toHaveStyle({ left: '50%' });
+        expect(screen.getAllByTestId('task-tree-branch-guide')[0]).toHaveStyle({
+            left: '50%',
+            width: '8px'
+        });
+        const guideSpacer = screen.getAllByTestId('task-tree-guide-line')[0].parentElement;
+        expect(guideSpacer).toHaveStyle({ width: '16px' });
+        const currentGuideSpacer = screen.getAllByTestId('task-tree-current-guide')[0].parentElement;
+        expect(currentGuideSpacer).toHaveStyle({ width: '16px' });
+        const expansionButton = currentGuideSpacer?.querySelector('button');
+        expect(expansionButton).toHaveStyle({
+            left: '50%',
+            transform: 'translate(-50%, -50%)'
+        });
 
-        useUIStore.setState({ showHierarchyLines: false });
+        act(() => {
+            useUIStore.setState({ showHierarchyLines: false });
+        });
         rerender(<UiSidebar />);
 
         expect(screen.queryAllByTestId('task-tree-guide-line')).toHaveLength(0);
         expect(screen.queryAllByTestId('task-tree-current-guide')).toHaveLength(0);
         expect(screen.queryAllByTestId('task-tree-branch-guide')).toHaveLength(0);
+        const firstGuideSpacerWhenHidden = document.querySelector('.task-subject-cell > div > div');
+        expect(firstGuideSpacerWhenHidden).toHaveStyle({ width: '16px' });
+    });
+
+    it('does not draw hierarchy connector branches for root tasks', () => {
+        const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['subject']);
+        useUIStore.setState({ visibleColumns: ['subject'], columnSettings, showHierarchyLines: true });
+
+        const task: Task = {
+            id: '127',
+            subject: 'Root task',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 0,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: true,
+            treeLevelGuides: [],
+            isLastChild: true
+        };
+
+        useTaskStore.setState({
+            tasks: [task],
+            layoutRows: [{ type: 'task', taskId: task.id, rowIndex: 0 }],
+            rowCount: 1,
+            selectedTaskId: null,
+            taskExpansion: {},
+            projectExpansion: {},
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            }
+        });
+
+        render(<UiSidebar />);
+
+        expect(screen.queryAllByTestId('task-tree-guide-line')).toHaveLength(0);
+        expect(screen.queryAllByTestId('task-tree-current-guide')).toHaveLength(0);
+        expect(screen.queryAllByTestId('task-tree-branch-guide')).toHaveLength(0);
+        const rootGuideSpacer = screen.getByTestId('cell-127-subject').querySelector('.task-subject-cell > div > div');
+        const expansionButton = rootGuideSpacer?.querySelector('button');
+        expect(expansionButton).toHaveStyle({
+            left: '50%',
+            transform: 'translate(-50%, -50%)'
+        });
     });
 
     it('keeps task rows draggable while using pointer cursor', () => {

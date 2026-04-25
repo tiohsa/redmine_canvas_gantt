@@ -1,30 +1,17 @@
 import { useEffect, useRef } from 'react';
 import { useTaskStore } from '../../stores/TaskStore';
-import { useUIStore } from '../../stores/UIStore';
-import { useBaselineStore } from '../../stores/BaselineStore';
 import { getMinFiniteStartDate } from '../../utils/taskRange';
-import type { CustomFieldMeta } from '../../types/editMeta';
-import type { FilterOptions, Relation, Task, Version, Viewport } from '../../types';
-import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState, toResolvedQueryStateFromStore } from '../../utils/queryParams';
+import type { Viewport } from '../../types';
+import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState } from '../../utils/queryParams';
 import { loadLastUsedSharedQueryState } from '../../utils/sharedQueryState';
 
 type Params = {
     viewportFromStorage: boolean;
-    setTasks: (tasks: Task[]) => void;
-    setRelations: (relations: Relation[]) => void;
-    setVersions: (versions: Version[]) => void;
-    setFilterOptions: (filterOptions: FilterOptions) => void;
-    setCustomFields: (fields: CustomFieldMeta[]) => void;
     updateViewport: (updates: Partial<Viewport>) => void;
 };
 
 export const useInitialGanttData = ({
     viewportFromStorage,
-    setTasks,
-    setRelations,
-    setVersions,
-    setFilterOptions,
-    setCustomFields,
     updateViewport
 }: Params): void => {
     const hasFetched = useRef(false);
@@ -47,19 +34,8 @@ export const useInitialGanttData = ({
                 rawSearch: initialSharedQueryState.source === 'url' ? window.location.search : undefined,
                 query: initialSharedQueryState.state
             }).then(data => {
-                useTaskStore.getState().applyResolvedQueryState(
-                    data.initialState ?? toResolvedQueryStateFromStore(useTaskStore.getState())
-                );
-                setFilterOptions(data.filterOptions);
-                setTasks(data.tasks);
-                setRelations(data.relations);
-                setVersions(data.versions);
-                setCustomFields(data.customFields ?? []);
-                useTaskStore.getState().setTaskStatuses(data.statuses ?? []);
-                useTaskStore.getState().setPermissions(data.permissions ?? { editable: false, viewable: false, baselineEditable: false });
-                useBaselineStore.getState().setSnapshot(data.baseline ?? null, data.warnings ?? []);
+                useTaskStore.getState().applyApiData(data);
                 void useTaskStore.getState().loadSavedQueries();
-                (data.warnings ?? []).forEach((warning) => useUIStore.getState().addNotification(warning, 'warning'));
 
                 if (!viewportFromStorage) {
                     const minStart = getMinFiniteStartDate(data.tasks);
@@ -76,5 +52,5 @@ export const useInitialGanttData = ({
                 }
             }).catch(err => console.error('Failed to load Gantt data', err));
         });
-    }, [setCustomFields, setFilterOptions, setRelations, setTasks, setVersions, updateViewport, viewportFromStorage]);
+    }, [updateViewport, viewportFromStorage]);
 };

@@ -1,7 +1,11 @@
 // Shared style definitions
 import { designTokens } from '../styles/designTokens';
 
-export const getStatusColor = (statusId: number) => {
+export const getStatusColor = (statusId: number, isClosed = false) => {
+    if (isClosed) {
+        return { bg: designTokens.statusDoneBg, text: designTokens.statusDoneText, bar: designTokens.statusDoneBar, label: 'Closed' };
+    }
+
     // 1: New, 2: In Progress, 3: Resolved, 4: Feedback, 5: Closed, 6: Rejected
     switch (statusId) {
         case 2: return { bg: designTokens.statusProgressBg, text: designTokens.statusProgressText, bar: designTokens.statusProgressBar, label: 'In Progress' };

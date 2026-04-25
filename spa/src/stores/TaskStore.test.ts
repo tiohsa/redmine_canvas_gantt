@@ -214,6 +214,7 @@ describe('TaskStore shared query persistence', () => {
     beforeEach(() => {
         window.localStorage.clear();
         useTaskStore.setState(useTaskStore.getInitialState(), true);
+        vi.mocked(apiClient.fetchData).mockReset();
     });
 
     it('applyResolvedQueryState は query_id と shared state を保存する', () => {
@@ -259,6 +260,109 @@ describe('TaskStore shared query persistence', () => {
             memberProjectsOnly: true,
             selectedProjectIds: ['p1']
         });
+    });
+});
+
+describe('TaskStore API data application', () => {
+    beforeEach(() => {
+        window.localStorage.clear();
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        vi.mocked(apiClient.fetchData).mockReset();
+    });
+
+    it('refreshData applies API data with one TaskStore state update', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [buildTask({ id: 't1', projectId: 'p1', projectName: 'Project 1' })],
+            relations: [],
+            versions: [],
+            filterOptions: {
+                projects: [{ id: 'p1', name: 'Project 1' }],
+                assignees: []
+            },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: {
+                groupBy: 'project',
+                selectedProjectIds: ['p1']
+            }
+        });
+        let notifications = 0;
+        const unsubscribe = useTaskStore.subscribe(() => {
+            notifications += 1;
+        });
+
+        await useTaskStore.getState().refreshData();
+        unsubscribe();
+
+        expect(notifications).toBe(1);
+        expect(useTaskStore.getState().tasks.map(task => task.id)).toEqual(['t1']);
+    });
+
+    it('applyApiData filters selectedProjectIds without mutating initialState', () => {
+        const initialState = {
+            groupBy: 'project' as const,
+            selectedProjectIds: ['p1', 'missing']
+        };
+
+        useTaskStore.getState().applyApiData({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: {
+                projects: [{ id: 'p1', name: 'Project 1' }],
+                assignees: []
+            },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState
+        });
+
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(initialState.selectedProjectIds).toEqual(['p1', 'missing']);
+    });
+
+    it('applyApiData preserves the active query id when API initialState omits it', () => {
+        useTaskStore.setState({ activeQueryId: 12 });
+
+        useTaskStore.getState().applyApiData({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [] },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: {
+                selectedStatusIds: [1]
+            }
+        });
+
+        expect(useTaskStore.getState().activeQueryId).toBe(12);
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            queryId: 12,
+            selectedStatusIds: [1]
+        });
+    });
+
+    it('setFilterOptions only updates filterOptions', () => {
+        const { setFilterOptions, setTasks } = useTaskStore.getState();
+        setTasks([buildTask({ id: 't1', projectId: 'p1', projectName: 'Project 1' })]);
+        const layoutRows = useTaskStore.getState().layoutRows;
+        const rowCount = useTaskStore.getState().rowCount;
+
+        setFilterOptions({
+            projects: [{ id: 'p2', name: 'Project 2' }],
+            assignees: []
+        });
+
+        expect(useTaskStore.getState().filterOptions.projects).toEqual([{ id: 'p2', name: 'Project 2' }]);
+        expect(useTaskStore.getState().layoutRows).toBe(layoutRows);
+        expect(useTaskStore.getState().rowCount).toBe(rowCount);
     });
 });
 
@@ -331,6 +435,7 @@ describe('TaskStore filter hierarchy', () => {
 describe('TaskStore project filter with subproject toggle', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
+        vi.mocked(apiClient.fetchData).mockReset();
     });
 
     it('サブプロジェクト非表示でもPJフィルタ選択は表示する', () => {
@@ -350,6 +455,63 @@ describe('TaskStore project filter with subproject toggle', () => {
 
         const visibleIds = useTaskStore.getState().tasks.map(t => t.id);
         expect(visibleIds).toEqual(['t2']);
+    });
+
+    it('uses filter option metadata for selected project headers without visible tasks', () => {
+        const { setTasks } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            groupByAssignee: false,
+            showVersions: false,
+            filterOptions: {
+                projects: [{ id: 'p2', name: 'Empty Project' }],
+                assignees: []
+            },
+            selectedProjectIds: ['p2']
+        });
+
+        setTasks([
+            buildTask({ id: 't1', projectId: 'p1', projectName: 'Project 1' })
+        ]);
+
+        const headerRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'header');
+        expect(headerRow).toMatchObject({
+            type: 'header',
+            projectId: 'p2',
+            projectName: 'Empty Project'
+        });
+    });
+
+    it('keeps API selected empty project headers named from filter options', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [
+                buildTask({ id: 't1', projectId: 'p1', projectName: 'Project 1' })
+            ],
+            relations: [],
+            versions: [],
+            filterOptions: {
+                projects: [{ id: 'p2', name: 'Empty Project' }],
+                assignees: []
+            },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: {
+                groupBy: 'project',
+                selectedProjectIds: ['p2']
+            }
+        });
+
+        await useTaskStore.getState().refreshData();
+
+        const headerRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'header');
+        expect(headerRow).toMatchObject({
+            type: 'header',
+            projectId: 'p2',
+            projectName: 'Empty Project'
+        });
     });
 });
 
