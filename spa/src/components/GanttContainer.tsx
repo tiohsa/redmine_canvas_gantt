@@ -55,7 +55,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         previousUserSelect: string;
     } | null>(null);
 
-    const { viewport, tasks, relations, selectedTaskId, selectedRelationId, draftRelation, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, setTasks, setRelations, setVersions, setFilterOptions, setCustomFields, customFields } = useTaskStore();
+    const { viewport, tasks, relations, selectedTaskId, selectedRelationId, draftRelation, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, customFields } = useTaskStore();
     const {
         sidebarWidth,
         setSidebarWidth,
@@ -98,11 +98,6 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
 
     useInitialGanttData({
         viewportFromStorage,
-        setTasks,
-        setRelations,
-        setVersions,
-        setFilterOptions,
-        setCustomFields,
         updateViewport
     });
 

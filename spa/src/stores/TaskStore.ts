@@ -42,6 +42,10 @@ type DerivedTaskState = DerivedSchedulingSummary & {
 
 type DerivedTaskStatePatch = Pick<TaskState, 'tasks' | 'layoutRows' | 'rowCount' | 'schedulingStates' | 'criticalPathMetrics' | 'criticalPathProjectFinish'>;
 
+type ApiData = NonNullable<
+    Awaited<ReturnType<typeof import('../api/client').apiClient.fetchData>>
+>;
+
 const queueRefreshData = (refreshData: () => Promise<void>) => {
     queueMicrotask(() => {
         void refreshData().catch((error) => console.error('Failed to refresh data', error));
@@ -109,6 +113,7 @@ interface TaskState {
     setCustomFields: (fields: CustomFieldMeta[]) => void;
     setPermissions: (permissions: { editable: boolean; viewable: boolean; baselineEditable: boolean }) => void;
     applyResolvedQueryState: (state?: ResolvedQueryState) => void;
+    applyApiData: (data: ApiData) => void;
     setSelectedStatusFromServer: (ids: number[]) => void;
     setShowVersions: (show: boolean) => void;
     addRelation: (relation: Relation) => void;
@@ -171,6 +176,16 @@ const DEFAULT_VIEWPORT: Viewport = {
     rowHeight: preferences.rowHeight ?? (Number(window.RedmineCanvasGantt?.settings?.row_height) || 36)
 };
 
+const DEFAULT_PERMISSIONS = {
+    editable: false,
+    viewable: false,
+    baselineEditable: false
+};
+
+const EMPTY_FILTER_OPTIONS: FilterOptions = {
+    projects: [],
+    assignees: []
+};
 
 const resolveLayoutState = (state: LayoutState, overrides: Partial<LayoutState> = {}): LayoutState => ({
     allTasks: overrides.allTasks ?? state.allTasks,
@@ -261,47 +276,6 @@ const buildAllExpandedStates = (state: TaskState, expanded: boolean) => {
     return buildUniformExpansionMaps(state.allTasks, false);
 };
 
-type TaskStoreSet = (partial: Partial<TaskState>) => void;
-
-const applyApiDataToStore = (
-    data: Awaited<ReturnType<typeof import('../api/client').apiClient.fetchData>>,
-    state: TaskState,
-    set: TaskStoreSet
-) => {
-    if (!data) return;
-
-    const {
-        setTasks,
-        setRelations,
-        setVersions,
-        setFilterOptions,
-        setTaskStatuses,
-        setCustomFields,
-        setPermissions,
-        applyResolvedQueryState
-    } = state;
-
-    const nextResolved = data.initialState ?? toResolvedQueryStateFromStore(state);
-    // Be defensive: if we have an active query ID and the refresh returned no specific query, 
-    // keep the one we had to avoid flickering the UI selection.
-    if (nextResolved.queryId === undefined && state.activeQueryId !== null) {
-        nextResolved.queryId = state.activeQueryId;
-    }
-    const candidateProjectIds = new Set((data.filterOptions?.projects ?? []).map((project) => project.id));
-    nextResolved.selectedProjectIds = (nextResolved.selectedProjectIds ?? []).filter((projectId) => candidateProjectIds.has(projectId));
-    setFilterOptions(data.filterOptions);
-    applyResolvedQueryState(nextResolved);
-    setTasks(data.tasks);
-    setRelations(data.relations);
-    setVersions(data.versions);
-    setTaskStatuses(data.statuses);
-    setCustomFields(data.customFields);
-    setPermissions(data.permissions ?? { editable: false, viewable: false, baselineEditable: false });
-    useBaselineStore.getState().setSnapshot(data.baseline ?? null, data.warnings ?? []);
-    set({ modifiedTaskIds: new Set() });
-    (data.warnings ?? []).forEach((warning) => useUIStore.getState().addNotification(warning, 'warning'));
-};
-
 const toDerivedTaskStatePatch = (derived: DerivedTaskState): DerivedTaskStatePatch => ({
     tasks: derived.tasks,
     layoutRows: derived.layoutRows,
@@ -310,6 +284,84 @@ const toDerivedTaskStatePatch = (derived: DerivedTaskState): DerivedTaskStatePat
     criticalPathMetrics: derived.criticalPathMetrics,
     criticalPathProjectFinish: derived.criticalPathProjectFinish
 });
+
+const buildApiDataPatch = (data: ApiData, state: TaskState): Partial<TaskState> => {
+    const filterOptions = data.filterOptions ?? EMPTY_FILTER_OPTIONS;
+    const customFields = data.customFields ?? [];
+    const versions = data.versions ?? [];
+    const relations = data.relations ?? [];
+    const tasks = data.tasks ?? [];
+    const nextResolved: ResolvedQueryState = {
+        ...(data.initialState ?? toResolvedQueryStateFromStore(state))
+    };
+
+    if (nextResolved.queryId === undefined && state.activeQueryId !== null) {
+        nextResolved.queryId = state.activeQueryId;
+    }
+
+    const candidateProjectIds = new Set(filterOptions.projects.map((project) => project.id));
+    nextResolved.selectedProjectIds = (nextResolved.selectedProjectIds ?? [])
+        .filter((projectId) => candidateProjectIds.has(projectId));
+
+    const queryState = toBusinessQueryState(nextResolved);
+    const sortConfig = queryState.sortConfig ?? { key: 'startDate', direction: 'asc' };
+    const { projectExpansion, taskExpansion, versionExpansion } = initializeExpansionMaps(tasks, {
+        projectExpansion: state.projectExpansion,
+        versionExpansion: state.versionExpansion,
+        taskExpansion: state.taskExpansion
+    });
+    const derived = buildDerivedTaskState(state, {
+        allTasks: tasks,
+        relations,
+        versions,
+        filterOptions,
+        customFields,
+        groupByProject: queryState.groupByProject,
+        groupByAssignee: queryState.groupByAssignee,
+        showSubprojects: queryState.showSubprojects,
+        sortConfig,
+        selectedAssigneeIds: queryState.selectedAssigneeIds,
+        selectedProjectIds: queryState.selectedProjectIds,
+        selectedVersionIds: queryState.selectedVersionIds,
+        projectExpansion,
+        versionExpansion,
+        taskExpansion
+    });
+    const querySyncState = {
+        activeQueryId: queryState.queryId,
+        selectedStatusIds: queryState.selectedStatusIds,
+        selectedAssigneeIds: queryState.selectedAssigneeIds,
+        selectedProjectIds: queryState.selectedProjectIds,
+        selectedVersionIds: queryState.selectedVersionIds,
+        memberProjectsOnly: queryState.memberProjectsOnly,
+        sortConfig,
+        groupByProject: queryState.groupByProject,
+        groupByAssignee: queryState.groupByAssignee,
+        showSubprojects: queryState.showSubprojects
+    };
+
+    syncSharedQueryState(querySyncState);
+
+    return {
+        ...querySyncState,
+        allTasks: tasks,
+        relations,
+        versions,
+        filterOptions,
+        customFields,
+        taskStatuses: data.statuses ?? [],
+        permissions: data.permissions ?? DEFAULT_PERMISSIONS,
+        selectedRelationId: state.selectedRelationId && relations.some(relation => relation.id === state.selectedRelationId)
+            ? state.selectedRelationId
+            : null,
+        draftRelation: null,
+        projectExpansion,
+        versionExpansion,
+        taskExpansion,
+        modifiedTaskIds: new Set<string>(),
+        ...toDerivedTaskStatePatch(derived)
+    };
+};
 
 type ParentMoveStoreState = LayoutState & {
     tasks: Task[];
@@ -532,15 +584,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             ...toDerivedTaskStatePatch(derived)
         };
     }),
-    setFilterOptions: (filterOptions) => set((state) => {
-        const layout = buildLayoutFromState(state, { filterOptions });
-        return {
-            filterOptions,
-            tasks: layout.tasks,
-            layoutRows: layout.layoutRows,
-            rowCount: layout.rowCount
-        };
-    }),
+    setFilterOptions: (filterOptions) => set(() => ({ filterOptions })),
     setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
     setPermissions: (permissions) => set(() => ({ permissions })),
     applyResolvedQueryState: (resolved) => set((state) => {
@@ -583,6 +627,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         syncSharedQueryState(nextState);
         return nextState;
     }),
+    applyApiData: (data) => {
+        set((state) => buildApiDataPatch(data, state));
+        useBaselineStore.getState().setSnapshot(data.baseline ?? null, data.warnings ?? []);
+        (data.warnings ?? []).forEach((warning) => {
+            useUIStore.getState().addNotification(warning, 'warning');
+        });
+    },
     setCustomFields: (customFields) => set((state) => {
         const derived = buildDerivedTaskState(state, { customFields });
         return {
@@ -1262,7 +1313,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const data = await apiClient.fetchData({
             query: toResolvedQueryStateFromStore(state)
         });
-        applyApiDataToStore(data, state, set);
+        if (!data) return;
+        get().applyApiData(data);
     },
 
     loadSavedQueries: async (force = false) => {

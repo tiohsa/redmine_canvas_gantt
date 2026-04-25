@@ -16,20 +16,10 @@ vi.mock('../../api/client', () => ({
 
 const Harness = () => {
     const viewportFromStorage = useTaskStore(state => state.viewportFromStorage);
-    const setTasks = useTaskStore(state => state.setTasks);
-    const setRelations = useTaskStore(state => state.setRelations);
-    const setVersions = useTaskStore(state => state.setVersions);
-    const setFilterOptions = useTaskStore(state => state.setFilterOptions);
-    const setCustomFields = useTaskStore(state => state.setCustomFields);
     const updateViewport = useTaskStore(state => state.updateViewport);
 
     useInitialGanttData({
         viewportFromStorage,
-        setTasks,
-        setRelations,
-        setVersions,
-        setFilterOptions,
-        setCustomFields,
         updateViewport
     });
 
@@ -45,7 +35,7 @@ describe('useInitialGanttData persistence', () => {
             tasks: [],
             relations: [],
             versions: [],
-            filterOptions: { projects: [], assignees: [] },
+            filterOptions: { projects: [{ id: 'p1', name: 'Project 1' }], assignees: [] },
             statuses: [],
             customFields: [],
             permissions: { editable: true, viewable: true, baselineEditable: true },
@@ -110,7 +100,7 @@ describe('useInitialGanttData persistence', () => {
             tasks: [],
             relations: [],
             versions: [],
-            filterOptions: { projects: [], assignees: [] },
+            filterOptions: { projects: [{ id: 'p1', name: 'Project 1' }], assignees: [] },
             statuses: [],
             customFields: [],
             permissions: { editable: true, viewable: true, baselineEditable: true }
