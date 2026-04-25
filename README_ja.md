@@ -8,11 +8,13 @@ Listed on Redmine Plugins Directory:
 https://www.redmine.org/plugins/redmine_canvas_gantt
 
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/tiohsa/redmine_canvas_gantt)](https://github.com/tiohsa/redmine_canvas_gantt/releases)
 [![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#requirements)
 [![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#requirements)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#requirements)
 
-[English README](README.md) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
+[English README](README.md) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
 
 </div>
 
@@ -265,6 +267,17 @@ npm run dev
 ```bash
 npx playwright test -c playwright.redmine.config.ts
 ```
+
+## Release
+
+`v*` に一致するタグを push すると、GitHub Release が自動作成されます。
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+リリース workflow は生成ノート付きの GitHub Release を作成するだけです。SPA のビルドや拡張機能アーティファクトのパッケージングは行いません。
 
 ## Build Output
 

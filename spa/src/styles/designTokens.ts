@@ -22,7 +22,7 @@ export const designTokens = {
     borderStrong: '#d6deea',
     textPrimary: '#222222',
     textSecondary: '#45515e',
-    textMuted: '#6b7280',
+    textMuted: '#8e8e93',
     brandPrimary: '#1456f0',
     brandPrimaryStrong: '#1d4ed8',
     brandLight: '#dbe7ff',

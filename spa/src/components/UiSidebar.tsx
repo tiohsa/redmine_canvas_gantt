@@ -78,20 +78,20 @@ const AssigneeIcon = () => (
     </svg>
 );
 
-const ChevronIcon = ({ expanded }: { expanded: boolean }) => (
+const ExpansionIcon = ({ expanded }: { expanded: boolean }) => (
     <svg
         width="16"
         height="16"
         viewBox="0 0 24 24"
         fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
+        stroke={designTokens.textMuted}
+        strokeWidth="2.0"
         strokeLinecap="round"
         strokeLinejoin="round"
+        aria-hidden="true"
         style={{
             transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-            transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-            color: designTokens.textMuted
+            transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
         }}
     >
         <polyline points="9 18 15 12 9 6" />
@@ -322,7 +322,7 @@ export const UiSidebar: React.FC = () => {
                         const isSelected = t.id === selectedTaskId;
                         const isClosed = isTaskClosed(t);
                         const hasParentGuide = (t.treeLevelGuides ?? []).length > 0;
-                        const branchGuideWidth = currentTreeGuideWidth / 2;
+                        const branchGuideWidth = currentTreeGuideWidth; // Use full width (16px) to reach the icon margin (8+16+8=32)
                         return (
                             <>
                                 {/* Tree Lines */}
@@ -388,17 +388,16 @@ export const UiSidebar: React.FC = () => {
                                                     display: 'inline-flex',
                                                     alignItems: 'center',
                                                     justifyContent: 'center',
-                                                    border: `1px solid ${designTokens.controlBorder}`,
-                                                    borderRadius: '50%',
-                                                    background: designTokens.controlBg,
+                                                    border: 'none',
+                                                    borderRadius: 8,
+                                                    background: isSelected ? designTokens.sidebarSelectedRowBg : designTokens.controlBg,
                                                     cursor: 'pointer',
                                                     flexShrink: 0,
                                                     zIndex: 1,
-                                                    padding: 0,
-                                                    boxShadow: designTokens.controlActiveShadow
+                                                    padding: 0
                                                 }}
                                             >
-                                                <ChevronIcon expanded={taskExpansion[t.id] ?? true} />
+                                                <ExpansionIcon expanded={taskExpansion[t.id] ?? true} />
                                             </button>
                                         )}
                                     </div>
@@ -864,9 +863,10 @@ export const UiSidebar: React.FC = () => {
                                         justifyContent: 'center',
                                         width: sidebarControlSize,
                                         height: sidebarControlSize,
-                                        marginRight: sidebarPaddingX
+                                        marginRight: sidebarPaddingX,
+                                        flexShrink: 0
                                     }}>
-                                        <ChevronIcon expanded={expanded} />
+                                        <ExpansionIcon expanded={expanded} />
                                     </div>
                                     <div style={{ marginRight: sidebarPaddingX, display: 'flex', alignItems: 'center', color: sidebarMutedText }}>
                                         {row.groupKind === 'assignee' ? <AssigneeIcon /> : <ProjectIcon />}
@@ -911,9 +911,10 @@ export const UiSidebar: React.FC = () => {
                                         justifyContent: 'center',
                                         width: sidebarControlSize,
                                         height: sidebarControlSize,
-                                        marginRight: sidebarPaddingX
+                                        marginRight: sidebarPaddingX,
+                                        flexShrink: 0
                                     }}>
-                                        <ChevronIcon expanded={expanded} />
+                                        <ExpansionIcon expanded={expanded} />
                                     </div>
                                     <div style={{ marginRight: sidebarPaddingX, display: 'flex', alignItems: 'center', color: designTokens.trackerMilestoneStroke }}>
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

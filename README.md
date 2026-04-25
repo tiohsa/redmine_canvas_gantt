@@ -8,11 +8,13 @@ Listed on Redmine Plugins Directory:
 https://www.redmine.org/plugins/redmine_canvas_gantt
 
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/tiohsa/redmine_canvas_gantt)](https://github.com/tiohsa/redmine_canvas_gantt/releases)
 [![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#requirements)
 [![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#requirements)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#requirements)
 
-[日本語 README](README_ja.md) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
+[日本語 README](README_ja.md) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
 
 </div>
 
@@ -265,6 +267,17 @@ Run Redmine-backed Playwright tests from `spa/`:
 ```bash
 npx playwright test -c playwright.redmine.config.ts
 ```
+
+## Release
+
+GitHub Releases are created automatically when a tag matching `v*` is pushed.
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The release workflow only creates the GitHub Release with generated notes. It does not build the SPA or package extension artifacts.
 
 ## Build Output
 

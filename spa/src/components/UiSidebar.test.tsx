@@ -277,9 +277,9 @@ describe('UiSidebar', () => {
         expect(screen.getByText('Open task')).toHaveStyle({ textDecoration: 'none' });
 
         expect(screen.getByTestId('task-row-129')).not.toHaveStyle({ backgroundColor: '#f5f5f5' });
-        expect(screen.getByTestId('task-row-129')).toHaveStyle({ color: '#6b7280' });
+        expect(screen.getByTestId('task-row-129')).toHaveStyle({ color: '#8e8e93' });
         expect(screen.getByText('Closed task')).toHaveStyle({
-            color: '#6b7280',
+            color: '#8e8e93',
             textDecoration: 'line-through'
         });
         expect(screen.getByTestId('task-id-129')).not.toHaveStyle({ textDecoration: 'line-through' });
@@ -338,7 +338,7 @@ describe('UiSidebar', () => {
         expect(screen.getAllByTestId('task-tree-current-guide')[0]).toHaveStyle({ left: '50%' });
         expect(screen.getAllByTestId('task-tree-branch-guide')[0]).toHaveStyle({
             left: '50%',
-            width: '8px'
+            width: '16px'
         });
         const guideSpacer = screen.getAllByTestId('task-tree-guide-line')[0].parentElement;
         expect(guideSpacer).toHaveStyle({ width: '16px' });
