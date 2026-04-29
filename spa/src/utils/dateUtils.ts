@@ -11,6 +11,49 @@ interface RedmineCanvasGanttGlobal {
 }
 
 const getGlobal = () => (window as unknown as { RedmineCanvasGantt?: RedmineCanvasGanttGlobal }).RedmineCanvasGantt ?? {};
+const localeMap: Record<string, Locale> = {
+    'en': enUS,
+    'ja': ja,
+    'fr': fr,
+    'de': de,
+    'es': es,
+    'zh': zhCN,
+    'zh-tw': zhTW,
+    'ko': ko,
+    'ru': ru,
+    'pt-br': ptBR,
+    'it': it,
+    'nl': nl,
+    'pl': pl,
+    'pt': pt,
+    'sv': sv,
+    'tr': tr,
+    'da': da,
+    'fi': fi,
+    'nb': nb,
+    'no': nb,
+    'hu': hu,
+    'cs': cs,
+    'sk': sk,
+    'uk': uk,
+};
+
+function normalizeLanguageCode(raw: string): string {
+    return raw.trim().toLowerCase().replace(/_/g, '-');
+}
+
+function resolveDateFnsLocale(language?: string): Locale {
+    const normalized = normalizeLanguageCode(language || 'en');
+    if (!normalized) return enUS;
+
+    const direct = localeMap[normalized];
+    if (direct) return direct;
+
+    const base = normalized.split('-')[0];
+    if (!base) return enUS;
+
+    return localeMap[base] || enUS;
+}
 
 /**
  * Ruby strftime format (%Y, %m, %d, etc) を date-fns フォーマット文字列に変換する。
@@ -78,34 +121,7 @@ export function convertStrftimeToDateFns(rubyFormat: string): string {
  * 現在のRedmine設定に基づいたロケールオブジェクトを取得する
  */
 export function getCurrentLocale() {
-    const lang = (getGlobal().language || 'en').toLowerCase();
-    const localeMap: Record<string, Locale> = {
-        'en': enUS,
-        'ja': ja,
-        'fr': fr,
-        'de': de,
-        'es': es,
-        'zh': zhCN,
-        'zh-tw': zhTW,
-        'ko': ko,
-        'ru': ru,
-        'pt-br': ptBR,
-        'it': it,
-        'nl': nl,
-        'pl': pl,
-        'pt': pt,
-        'sv': sv,
-        'tr': tr,
-        'da': da,
-        'fi': fi,
-        'nb': nb,
-        'no': nb,
-        'hu': hu,
-        'cs': cs,
-        'sk': sk,
-        'uk': uk,
-    };
-    return localeMap[lang] || enUS;
+    return resolveDateFnsLocale(getGlobal().language);
 }
 
 /**
@@ -152,6 +168,18 @@ export function getYearMonthFormat(): string {
 
     if (!converted || converted.length < 4) return 'yyyy/MM';
     return converted;
+}
+
+/**
+ * 年月フォーマットから「年→月」か「月→年」かを判定する。
+ */
+export function getYearMonthOrder(): 'year-month' | 'month-year' {
+    const format = getYearMonthFormat();
+    const yearIndex = format.indexOf('y');
+    const monthIndex = format.indexOf('M');
+
+    if (yearIndex === -1 || monthIndex === -1) return 'year-month';
+    return yearIndex <= monthIndex ? 'year-month' : 'month-year';
 }
 
 /**

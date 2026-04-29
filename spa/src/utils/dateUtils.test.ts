@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { convertStrftimeToDateFns, getYearMonthFormat, getCurrentLocale } from './dateUtils';
+import { convertStrftimeToDateFns, getYearMonthFormat, getCurrentLocale, getYearMonthOrder } from './dateUtils';
 
 describe('dateUtils', () => {
     describe('convertStrftimeToDateFns', () => {
@@ -60,6 +60,37 @@ describe('dateUtils', () => {
 
             vi.stubGlobal('RedmineCanvasGantt', { language: 'UNKNOWN' });
             expect(getCurrentLocale().code).toBe('en-US');
+
+            vi.unstubAllGlobals();
+        });
+
+        it('falls back by language prefix and normalizes separators', () => {
+            vi.stubGlobal('RedmineCanvasGantt', { language: 'en-GB' });
+            expect(getCurrentLocale().code).toBe('en-US');
+
+            vi.stubGlobal('RedmineCanvasGantt', { language: 'pt_BR' });
+            expect(getCurrentLocale().code).toBe('pt-BR');
+
+            vi.stubGlobal('RedmineCanvasGantt', { language: 'zh-HK' });
+            expect(getCurrentLocale().code).toBe('zh-CN');
+
+            vi.stubGlobal('RedmineCanvasGantt', { language: '' });
+            expect(getCurrentLocale().code).toBe('en-US');
+
+            vi.unstubAllGlobals();
+        });
+    });
+
+    describe('getYearMonthOrder', () => {
+        it('detects year-month order from Redmine format', () => {
+            vi.stubGlobal('RedmineCanvasGantt', { dateFormat: '%Y-%m-%d' });
+            expect(getYearMonthOrder()).toBe('year-month');
+
+            vi.stubGlobal('RedmineCanvasGantt', { dateFormat: '%m/%d/%Y' });
+            expect(getYearMonthOrder()).toBe('month-year');
+
+            vi.stubGlobal('RedmineCanvasGantt', { yearMonthFormat: '%m月%Y年' });
+            expect(getYearMonthOrder()).toBe('month-year');
 
             vi.unstubAllGlobals();
         });

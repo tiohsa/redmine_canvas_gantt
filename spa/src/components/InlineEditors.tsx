@@ -1,11 +1,12 @@
 import React from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { format as dateFnsFormat } from 'date-fns';
 import { useUIStore } from '../stores/UIStore';
 import type { CustomFieldMeta } from '../types/editMeta';
 import { i18n } from '../utils/i18n';
 import { designTokens } from '../styles/designTokens';
-import { formatDate, getDateFormat, getCurrentLocale } from '../utils/dateUtils';
+import { formatDate, getDateFormat, getCurrentLocale, getYearMonthFormat, getYearMonthOrder } from '../utils/dateUtils';
 
 const DEFAULT_CONTROL_HEIGHT = 24;
 
@@ -407,6 +408,20 @@ export const DueDateEditor: React.FC<{
     const startDate = parseValue(initialValue);
     const minDate = parseValue(min ?? '');
     const maxDate = parseValue(max ?? '');
+    const locale = getCurrentLocale();
+    const yearMonthOrder = getYearMonthOrder();
+    const currentYear = new Date().getFullYear();
+    const selectableYears = React.useMemo(
+        () => Array.from({ length: 11 }, (_, index) => currentYear - 5 + index),
+        [currentYear]
+    );
+    const monthOptions = React.useMemo(
+        () => Array.from({ length: 12 }, (_, month) => ({
+            value: month,
+            label: dateFnsFormat(new Date(2000, month, 1), 'LLLL', { locale })
+        })),
+        [locale]
+    );
 
     return (
         <div
@@ -432,15 +447,79 @@ export const DueDateEditor: React.FC<{
                 minDate={minDate || undefined}
                 maxDate={maxDate || undefined}
                 portalId="root"
-                showMonthDropdown
-                showYearDropdown
-                dropdownMode="select"
                 autoFocus
                 startOpen
-                calendarClassName="minimax-datepicker"
+                calendarClassName={`minimax-datepicker minimax-datepicker--${yearMonthOrder}`}
                 disabled={saving}
                 dateFormat={getDateFormat()}
-                locale={getCurrentLocale()}
+                dateFormatCalendar={getYearMonthFormat()}
+                locale={locale}
+                renderCustomHeader={({
+                    date,
+                    decreaseMonth,
+                    increaseMonth,
+                    changeYear,
+                    changeMonth,
+                    prevMonthButtonDisabled,
+                    nextMonthButtonDisabled
+                }) => {
+                    const selectedYear = date.getFullYear();
+                    const selectedMonth = date.getMonth();
+                    const years = selectableYears.includes(selectedYear)
+                        ? selectableYears
+                        : [...selectableYears, selectedYear].sort((a, b) => a - b);
+
+                    const yearSelect = (
+                        <select
+                            className="minimax-datepicker-select minimax-datepicker-select--year"
+                            value={selectedYear}
+                            onChange={({ target: { value } }) => changeYear(Number(value))}
+                        >
+                            {years.map((year) => (
+                                <option key={year} value={year}>{year}</option>
+                            ))}
+                        </select>
+                    );
+
+                    const monthSelect = (
+                        <select
+                            className="minimax-datepicker-select minimax-datepicker-select--month"
+                            value={selectedMonth}
+                            onChange={({ target: { value } }) => changeMonth(Number(value))}
+                        >
+                            {monthOptions.map((month) => (
+                                <option key={month.value} value={month.value}>{month.label}</option>
+                            ))}
+                        </select>
+                    );
+
+                    return (
+                        <div className="minimax-datepicker-custom-header">
+                            <button
+                                type="button"
+                                className="minimax-datepicker-nav-btn"
+                                onClick={decreaseMonth}
+                                disabled={prevMonthButtonDisabled}
+                                aria-label={i18n.t('label_prev_month') || 'Previous month'}
+                            >
+                                ‹
+                            </button>
+                            <div className="minimax-datepicker-header-dropdowns">
+                                {yearMonthOrder === 'year-month' ? yearSelect : monthSelect}
+                                {yearMonthOrder === 'year-month' ? monthSelect : yearSelect}
+                            </div>
+                            <button
+                                type="button"
+                                className="minimax-datepicker-nav-btn"
+                                onClick={increaseMonth}
+                                disabled={nextMonthButtonDisabled}
+                                aria-label={i18n.t('label_next_month') || 'Next month'}
+                            >
+                                ›
+                            </button>
+                        </div>
+                    );
+                }}
                 customInput={<CustomDateInput value={initialValue} controlHeight={resolvedControlHeight} />}
             >
                 <div className="minimax-datepicker-footer">
