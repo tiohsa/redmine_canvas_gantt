@@ -3336,12 +3336,12 @@
     "src": "node_modules/@fontsource/roboto/files/roboto-vietnamese-700-normal.woff2"
   },
   "src/main.tsx": {
-    "file": "assets/main-bqfvheaa.js",
+    "file": "assets/main-CLTIRykm.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
     "css": [
-      "assets/main-DiY13Mb2.css"
+      "assets/main-BGu8_DbK.css"
     ],
     "assets": [
       "assets/dm-sans-latin-ext-400-normal-BtiwyxMk.woff2",
