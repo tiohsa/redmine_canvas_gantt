@@ -22,27 +22,26 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 
 ## Overview
 
-Redmine Canvas Gantt provides a fast, interactive Gantt chart for Redmine by rendering the timeline on HTML5 Canvas while keeping the left sidebar editable. It is intended for projects where the default Redmine Gantt becomes hard to read or slow to operate.
+Redmine Canvas Gantt renders the timeline on HTML5 Canvas while keeping the left task list editable. It is designed for projects where the default Redmine Gantt view becomes hard to read or slow to operate.
 
-## Features
+## Highlights
 
-- High-performance timeline rendering with smooth scrolling and zooming
-- Drag to move tasks, resize date ranges, and create dependencies from task endpoints
-- Dependency management with create, update, and remove operations
+- Fast Canvas rendering with smooth scrolling and zooming
+- Drag tasks to move them, resize date ranges, and create dependencies from task endpoints
+- Dependency management with create, update, and delete operations
 - Inline quick edit for subject, assignee, status, progress, due date, and custom fields
-- Drag and drop to change parent-child relationships in the sidebar
-- Bulk subtask creation from multiple subject lines
-- Baseline snapshots for visual comparison, with filtered-view or whole-project save scope
+- Drag and drop in the sidebar to change parent-child relationships
+- Bulk child task creation from multiple subject lines
+- Baseline snapshots for visual comparison, saved for either the current filtered view or the whole project
+- Saved queries, Redmine query editing, and round-tripping back to the issue list with supported filters
 - Filters and grouping by project, assignee, status, version, and subject text
-- Synchronization of display columns and sorting when selecting a saved query
-- Visual indicators (blue badges) on the toolbar when a query or filter is active
-- Version headers, progress line, row height presets, and persistent UI preferences
+- Workload pane, export to PNG or CSV, full screen mode, and toolbar controls for zoom, row height, and font size
+- Display settings that can be stored per project or shared across all projects
+- Version headers, progress line, hierarchy lines, orphan date points, task titles, and dependency-based organization
 
 ## Demo
 
 ![Canvas Gantt Demo](./docs/demo.gif)
-
-![Canvas Gantt Demo](./docs/demo2.gif)
 
 ## Requirements
 
@@ -84,32 +83,43 @@ Redmine Canvas Gantt provides a fast, interactive Gantt chart for Redmine by ren
 4. Open the chart.
    Click **Canvas Gantt** from the project menu.
 
-5. Interact with tasks.
-   - Zoom with Ctrl/Cmd + mouse wheel or toolbar controls.
+5. Use the chart and toolbar.
+   - Zoom with Ctrl/Cmd + mouse wheel or the toolbar controls.
    - Drag tasks to move them on the timeline.
    - Drag task edges to resize date ranges.
    - Drag from endpoint dots to create dependencies.
-   - Open dependency editing to adjust relation type or delay, or remove the relation.
+   - Open dependency editing to change the relation type, delay, or remove the relation.
    - Drag a sidebar row onto another task to make it a child issue.
    - Use bulk subtask creation to add multiple child issues at once.
+   - Open the workload pane to review capacity and focus filters.
+   - Use display settings to save and share UI preferences across projects.
+   - Export the current view as PNG or CSV when the layout supports it.
+   - Toggle full screen for more workspace when needed.
 
 ### Baseline snapshots
 
-- Baseline is a comparison-only feature. It is not used as input for scheduling or CPM calculations.
+- Baseline is comparison-only. It is not used for scheduling or CPM calculations.
 - Each project stores a single baseline snapshot, and saving a new one replaces the previous snapshot.
 - The toolbar lets you save either the current filtered view or the whole project as the baseline scope.
 - Baseline bars and diff popovers only render for tasks currently visible in the chart, even when the saved scope was the whole project.
 - Viewing baseline comparison requires `view_canvas_gantt`. Saving a baseline requires `edit_canvas_gantt`.
 
+### Workload, display settings, and export
+
+- The workload pane can show daily capacity, peak and total workload, and filters for leaf issues, closed issues, and today-onward focus.
+- Display settings can be stored per project or shared across all projects. Shared display settings cover zoom level, view mode, chart position, progress line, task titles, hierarchy lines, orphan date points, version headers, baseline visibility, visible columns, column order, dependency-based organization, column widths, sidebar width, custom zoom scales, row height, and font size.
+- The configuration screen also supports tracker icon mapping with a JSON object that maps tracker IDs to icon kinds.
+- Auto save determines whether edits are committed immediately or kept pending until you save them manually.
+- The help dialog documents the current toolbar actions and editing flows if you need a quick refresher in the UI.
+
 ## Shared Views and Query Parameters
 
 Canvas Gantt separates shared business conditions from personal UI preferences.
 
-- Shared business conditions are resolved from the URL and optional `query_id`
+- Shared business conditions are resolved from the URL and optional `query_id` parameter
 - Personal UI state such as zoom, viewport, and sidebar width stays in `localStorage`
 - Display columns and sorting are treated as shared state that synchronizes with Redmine's standard queries
-- Display settings can also be shared across projects from the display settings menu. Shared display features include zoom level, view mode, chart position, progress line, task titles, hierarchy lines, orphan-point display, version headers, baseline visibility, visible columns, column order, dependency-based organization, column widths, sidebar width, custom zoom scales, row height, and sidebar font size.
-- Project-specific query and filter state such as `query_id`, project selection, status, assignee, version, or custom field conditions is not shared
+- Project-specific query and filter state, such as project selection, status, assignee, version, or custom field conditions, is not shared
 - When the Canvas Gantt tab opens a bare `/canvas_gantt` URL, shared query conditions fall back to the last-used state stored in `localStorage` for that project
 - When the same shared condition is provided by multiple sources, the precedence is:
   URL parameters -> saved query (`query_id`) -> project-scoped last-used shared state -> defaults
@@ -201,6 +211,7 @@ Configure the plugin from **Administration** -> **Plugins** -> **Canvas Gantt** 
 
 - **Inline edit toggles**: `subject`, `assigned_to`, `status`, `done_ratio`, `due_date`, `custom_fields`
 - `row_height`: default row height
+- `tracker_icon_map`: JSON object that maps tracker IDs to icon kinds
 - `use_vite_dev_server`: load frontend assets from `http://localhost:5173` during development
 
 ### Compatibility note
@@ -257,34 +268,3 @@ For live frontend development:
 cd spa
 npm run dev
 ```
-
-Then enable `use_vite_dev_server` in the plugin settings.
-
-### Redmine integration tests
-
-Run Redmine-backed Playwright tests from `spa/`:
-
-```bash
-npx playwright test -c playwright.redmine.config.ts
-```
-
-## Release
-
-GitHub Releases are created automatically when a tag matching `v*` is pushed.
-
-```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
-```
-
-The release workflow only creates the GitHub Release with generated notes. It does not build the SPA or package extension artifacts.
-
-## Build Output
-
-- `npm run build` outputs the SPA to `assets/build/`
-- On Redmine boot, the plugin links or copies those files into `public/plugin_assets/redmine_canvas_gantt/build`
-- The fallback asset route is also available through `/plugin_assets/redmine_canvas_gantt/build/*`
-
-## License
-
-GNU General Public License v2.0 (GPL v2). See [LICENSE](LICENSE).
