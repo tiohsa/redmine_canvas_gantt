@@ -19,7 +19,7 @@
     };
   <% end %>
   <!-- In development with Vite dev server enabled, we use the Vite dev server. Otherwise, we use the manifest. -->
-  <% use_vite_dev = (@settings || {})['use_vite_dev_server'].to_s == '1' %>
+  <% use_vite_dev = Rails.env.development? && ENV['CANVAS_GANTT_USE_VITE_DEV_SERVER'] == '1' %>
   <% if use_vite_dev %>
     <%= vite_react_refresh_tag %>
     <%= vite_client_tag %>

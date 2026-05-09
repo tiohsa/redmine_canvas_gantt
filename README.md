@@ -207,12 +207,9 @@ Hide subprojects and show only unassigned issues:
 
 ## Configuration
 
-Configure the plugin from **Administration** -> **Plugins** -> **Canvas Gantt** -> **Configure**.
+Canvas Gantt does not expose a plugin configuration screen. UI defaults are fixed in code, and baseline snapshots are stored internally in `Setting.plugin_redmine_canvas_gantt` without requiring a database migration.
 
-- **Inline edit toggles**: `subject`, `assigned_to`, `status`, `done_ratio`, `due_date`, `custom_fields`
-- `row_height`: default row height
-- `tracker_icon_map`: JSON object that maps tracker IDs to icon kinds
-- `use_vite_dev_server`: load frontend assets from `http://localhost:5173` during development
+To use the Vite dev server during development, set `CANVAS_GANTT_USE_VITE_DEV_SERVER=1`.
 
 ### Compatibility note
 

@@ -48,8 +48,7 @@ module RedmineCanvasGantt
     private
 
     def use_vite_dev_server?
-      settings = Setting.plugin_redmine_canvas_gantt || {}
-      settings['use_vite_dev_server'].to_s == '1'
+      Rails.env.development? && ENV['CANVAS_GANTT_USE_VITE_DEV_SERVER'] == '1'
     end
 
     def vite_manifest

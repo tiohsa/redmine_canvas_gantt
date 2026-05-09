@@ -393,14 +393,25 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:set_permissions) do
         controller.instance_variable_set(:@permissions, { editable: false, viewable: true, baseline_editable: false })
       end
-      allow(controller).to receive(:plugin_settings).and_return({})
       allow(Setting).to receive(:non_working_week_days).and_return([0, 6])
     end
 
     it 'includes row height labels in frontend i18n payload' do
+      expect(Setting).not_to receive(:plugin_redmine_canvas_gantt)
+
       get :index, params: { project_id: 'demo' }
 
       expect(response).to have_http_status(:ok)
+      expect(controller.instance_variable_get(:@settings)).to eq(described_class::CANVAS_GANTT_UI_SETTINGS)
+      expect(controller.instance_variable_get(:@settings).keys).to contain_exactly(
+        'inline_edit_subject',
+        'inline_edit_assigned_to',
+        'inline_edit_status',
+        'inline_edit_done_ratio',
+        'inline_edit_due_date',
+        'inline_edit_custom_fields',
+        'row_height'
+      )
       i18n_payload = controller.instance_variable_get(:@i18n)
       expect(i18n_payload['label_row_height']).to eq(canvas_gantt_t(:label_row_height))
       expect(i18n_payload['label_row_height_m']).to eq(canvas_gantt_t(:label_row_height_m))
@@ -425,6 +436,9 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(i18n_payload['label_display_settings_source_project']).to eq(canvas_gantt_t(:label_display_settings_source_project))
       expect(i18n_payload['label_display_settings_source_global']).to eq(canvas_gantt_t(:label_display_settings_source_global))
       expect(i18n_payload['label_display_settings_source_default']).to eq(canvas_gantt_t(:label_display_settings_source_default))
+      expect(response.body).not_to include('baseline_snapshots')
+      expect(response.body).not_to include('tracker_icon_map')
+      expect(response.body).not_to include('use_vite_dev_server')
     end
 
     it 'includes localized help labels in Japanese frontend i18n payload' do

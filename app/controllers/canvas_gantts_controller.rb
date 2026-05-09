@@ -1,6 +1,16 @@
 require 'set'
 
 class CanvasGanttsController < ApplicationController
+  CANVAS_GANTT_UI_SETTINGS = {
+    'inline_edit_subject' => '1',
+    'inline_edit_assigned_to' => '1',
+    'inline_edit_status' => '1',
+    'inline_edit_done_ratio' => '1',
+    'inline_edit_due_date' => '1',
+    'inline_edit_custom_fields' => '1',
+    'row_height' => '36'
+  }.freeze
+
   I18N_LABELS = {
     field_id: :field_id,
     field_start_date: :field_start_date,
@@ -601,7 +611,7 @@ class CanvasGanttsController < ApplicationController
   end
 
   def plugin_settings
-    @plugin_settings ||= Setting.plugin_redmine_canvas_gantt || {}
+    CANVAS_GANTT_UI_SETTINGS
   end
 
   def baseline_repository
