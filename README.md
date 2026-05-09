@@ -2,17 +2,19 @@
 
 # Redmine Canvas Gantt
 
-High-performance Canvas-based Gantt chart plugin for Redmine.
+High-performance Canvas-based Gantt chart plugin for Redmine 6.x.
 
 Listed on Redmine Plugins Directory:
 https://www.redmine.org/plugins/redmine_canvas_gantt
 
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/tiohsa/redmine_canvas_gantt)](https://github.com/tiohsa/redmine_canvas_gantt/releases)
 [![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#requirements)
 [![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#requirements)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#requirements)
 
-[日本語 README](README_ja.md) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
+[日本語 README](README_ja.md) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
 
 </div>
 
@@ -20,19 +22,66 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 
 ## Overview
 
-Redmine Canvas Gantt provides a fast, interactive Gantt chart for Redmine by rendering the timeline on HTML5 Canvas while keeping the left sidebar editable. It is intended for projects where the default Redmine Gantt becomes hard to read or slow to operate.
+Redmine Canvas Gantt is a Redmine plugin that provides a fast, interactive Gantt chart rendered with HTML5 Canvas. It keeps the left sidebar editable while using Canvas for the timeline, making large schedules easier to browse, edit, and explain than Redmine's default Gantt view.
+
+The plugin is designed for project managers and development teams that need a practical schedule view with inline editing, dependencies, baselines, Redmine query integration, and shareable project views without changing Redmine's database schema.
+
+## Current Version
+
+- Plugin version: `0.8.4`
+- Target Redmine version: Redmine 6.x
+- Database migration: none
+- Project module: `Canvas Gantt`
+- Permissions: `view_canvas_gantt`, `edit_canvas_gantt`
 
 ## Features
 
-- High-performance timeline rendering with smooth scrolling and zooming
-- Drag to move tasks, resize date ranges, and create dependencies from task endpoints
-- Dependency management with create, update, and remove operations
+### Gantt and schedule operation
+
+- High-performance Canvas timeline rendering
+- Smooth horizontal and vertical scrolling
+- Zoom controls and Ctrl/Cmd + mouse wheel zoom
+- Drag tasks to move date ranges
+- Drag task edges to resize start and due dates
+- Version headers, progress line, hierarchy lines, task titles, and row height presets
+- Device-pixel-ratio-aware Canvas rendering for sharper text on high-DPI displays
+
+### Dependency management
+
+- Create dependencies by dragging from task endpoint dots
+- Update dependency type and delay from the dependency editing UI
+- Remove existing dependencies
+- Organize visible issues by dependency structure when enabled
+
+### Issue editing
+
 - Inline quick edit for subject, assignee, status, progress, due date, and custom fields
-- Drag and drop to change parent-child relationships in the sidebar
+- Drag and drop sidebar rows to change parent-child relationships
 - Bulk subtask creation from multiple subject lines
-- Baseline snapshots for visual comparison, with filtered-view or whole-project save scope
-- Filters and grouping by project, assignee, status, version, and subject text
-- Version headers, progress line, row height presets, and persistent UI preferences
+- Configurable inline edit toggles from the plugin settings screen
+
+### Filters, queries, and shared views
+
+- Filter by project, assignee, status, version, and subject text
+- Group by project or assignee
+- Consume Redmine saved issue queries through `query_id`
+- Synchronize visible columns and sorting from Redmine saved queries
+- Support a subset of Redmine issue-list URL parameters
+- Restore last-used project-scoped shared filter state when opening a bare Canvas Gantt URL
+- Show toolbar indicators when saved queries or filters are active
+
+### Display preferences
+
+- Store personal UI preferences such as zoom, viewport, and sidebar width in `localStorage`
+- Share display settings across projects from the display settings menu
+- Shared display settings include zoom level, view mode, chart position, progress line, task titles, hierarchy lines, orphan-point display, version headers, baseline visibility, visible columns, column order, dependency organization, column widths, sidebar width, custom zoom scales, row height, and sidebar font size
+
+### Baseline snapshots
+
+- Save a baseline from the current filtered view or from the whole project
+- Compare current schedule bars against the saved baseline
+- Display baseline differences through bars and popovers
+- Keep baseline as a visual comparison feature only; it is not used as scheduling input
 
 ## Demo
 
@@ -47,11 +96,14 @@ Redmine Canvas Gantt provides a fast, interactive Gantt chart for Redmine by ren
 - Node.js 20+ for SPA build and frontend development
 - REST API enabled in Redmine
 
-### Security and impact
+## Security and Impact
 
-- Database migration: none
-- Added permissions: `view_canvas_gantt`, `edit_canvas_gantt`
-- Uninstall: remove the plugin directory and restart Redmine
+- No database migration is added by this plugin
+- Added permissions:
+  - `view_canvas_gantt`
+  - `edit_canvas_gantt`
+- Uninstall is performed by removing the plugin directory and restarting Redmine
+- The frontend build is served from Redmine plugin assets
 
 ## Installation
 
@@ -62,9 +114,17 @@ Redmine Canvas Gantt provides a fast, interactive Gantt chart for Redmine by ren
    git clone https://github.com/tiohsa/redmine_canvas_gantt.git
    ```
 
-2. Restart Redmine.
+2. Build the SPA frontend if the release package does not already include `assets/build/`.
 
-   Restart your application server after placing the plugin.
+   ```bash
+   cd redmine_canvas_gantt/spa
+   npm ci
+   npm run build
+   ```
+
+3. Restart Redmine.
+
+   Restart your application server after placing or updating the plugin.
 
 ## Usage
 
@@ -89,80 +149,80 @@ Redmine Canvas Gantt provides a fast, interactive Gantt chart for Redmine by ren
    - Drag a sidebar row onto another task to make it a child issue.
    - Use bulk subtask creation to add multiple child issues at once.
 
-### Baseline snapshots
+## Baseline Snapshots
+
+Baseline snapshots provide a simple way to compare the current schedule against a saved reference point.
 
 - Baseline is a comparison-only feature. It is not used as input for scheduling or CPM calculations.
 - Each project stores a single baseline snapshot, and saving a new one replaces the previous snapshot.
 - The toolbar lets you save either the current filtered view or the whole project as the baseline scope.
 - Baseline bars and diff popovers only render for tasks currently visible in the chart, even when the saved scope was the whole project.
-- Viewing baseline comparison requires `view_canvas_gantt`. Saving a baseline requires `edit_canvas_gantt`.
+- Viewing baseline comparison requires `view_canvas_gantt`.
+- Saving a baseline requires `edit_canvas_gantt`.
 
 ## Shared Views and Query Parameters
 
 Canvas Gantt separates shared business conditions from personal UI preferences.
 
-- Shared business conditions are resolved from the URL and optional `query_id`
-- Personal UI state such as zoom, viewport, sidebar width, and visible columns stays in `localStorage`
-- When the Canvas Gantt tab opens a bare `/canvas_gantt` URL, shared query conditions fall back to the last-used state stored in `localStorage` for that project
+- Shared business conditions are resolved from the URL and optional `query_id`.
+- Personal UI state such as zoom, viewport, and sidebar width stays in `localStorage`.
+- Display columns and sorting are treated as shared state that synchronizes with Redmine's standard queries.
+- Project-specific query and filter state such as `query_id`, project selection, status, assignee, version, or custom field conditions is not shared as a global display preference.
+- When the Canvas Gantt tab opens a bare `/canvas_gantt` URL, shared query conditions fall back to the last-used state stored in `localStorage` for that project.
 - When the same shared condition is provided by multiple sources, the precedence is:
-  URL parameters -> saved query (`query_id`) -> project-scoped last-used shared state -> defaults
+
+```text
+URL parameters -> saved query (`query_id`) -> project-scoped last-used shared state -> defaults
+```
 
 ### Query editing flow
 
 Canvas Gantt does not reimplement Redmine's query editor. Query creation, editing, and saving are done in the standard Redmine issue list, and Canvas Gantt consumes both saved queries and the supported subset of Redmine issue-list URL parameters.
 
-- Use **Edit Query in Redmine** in the Canvas Gantt toolbar to open the standard issue list for the current project
-- Adjust filters in the Redmine issue list and save the query with Redmine's built-in **Save** action
-- Use **Open in Canvas Gantt** in the issue list to return to Canvas Gantt with the current issue-list URL state
-- When the issue list is showing a saved query, the return link includes `query_id`
-- When the issue list is showing an unsaved standard filter, the return link carries the supported Redmine-standard filter parameters directly
+- Use the **Saved Queries** menu in the Canvas Gantt toolbar to browse saved Redmine queries that are visible in the current project.
+- Select a saved query to apply its `query_id` and reload Canvas Gantt from Redmine's saved query definition.
+- Use **Clear saved query** to remove `query_id` while keeping the currently resolved shared filters in the URL.
+- Use **Save custom query** to open the standard Redmine issue list inside an iframe dialog and save the current filter set without leaving Canvas Gantt.
+- Use **Edit Query in Redmine** from the same menu to open the standard issue list in the current tab.
+- Adjust filters in the Redmine issue list and save the query with Redmine's built-in **Save** action.
+- Use **Open in Canvas Gantt** in the issue list to return to Canvas Gantt with the current issue-list URL state.
+- When the issue list is showing a saved query, the return link includes `query_id`.
+- When the issue list is showing an unsaved standard filter, the return link carries the supported Redmine-standard filter parameters directly.
 
-`query_id` alone is enough only when the current view exactly matches the saved query. If Canvas Gantt adds extra shared filters on top of that saved query, the toolbar sends `query_id` plus standard Redmine filter parameters so the issue list can reproduce the same view as closely as possible.
+The saved-query editor dialog also exposes **Open in new tab** as a fallback when the embedded Redmine page is not convenient to use.
 
-When the project menu opens a bare `Canvas Gantt` URL with no shared query input, Canvas Gantt restores the last-used shared filter state for that project and rewrites the browser URL to the canonical shared query params.
+`query_id` alone is enough only when the current view exactly matches the saved query. Display columns and sorting are also restored based on the saved query definition. If Canvas Gantt adds extra shared filters, visible columns, or sorting on top of that saved query, the toolbar sends `query_id` plus standard Redmine parameters so the issue list can reproduce the same view as closely as possible.
+
+When the project menu opens a bare `Canvas Gantt` URL with no shared query input, Canvas Gantt restores the last-used shared filter state for that project and rewrites the browser URL to the canonical shared query parameters.
 
 ### Supported shared parameters
 
-- `query_id`: use an existing Redmine saved issue query as the base condition. Only persisted query ids are supported
-- `status_ids[]`: filter by issue status ids
-- `assigned_to_ids[]`: filter by assignee ids, use `none` for unassigned issues
-- `project_ids[]`: narrow the visible projects inside the current project/subproject scope
-- `fixed_version_ids[]`: filter by target version ids, use `none` for issues without a version
-- `group_by`: `project` or `assigned_to`
-- `sort`: frontend sort key plus direction, for example `subject:asc` or `startDate:desc`
-- `show_subprojects`: `0` to hide subprojects, omit it or use `1` to include them
+| Parameter | Description |
+| :--- | :--- |
+| `query_id` | Use an existing Redmine saved issue query as the base condition |
+| `status_ids[]` | Filter by issue status IDs |
+| `assigned_to_ids[]` | Filter by assignee IDs. Use `none` for unassigned issues |
+| `project_ids[]` | Narrow the visible projects inside the current project/subproject scope |
+| `fixed_version_ids[]` | Filter by target version IDs. Use `none` for issues without a version |
+| `group_by` | Grouping criteria. `project` or `assigned_to` |
+| `sort` | Frontend sort key plus direction. Example: `subject:asc`, `startDate:desc` |
+| `c[]` | Specify visible columns compatible with Redmine's `c[]`. Example: `c[]=subject&c[]=status` |
+| `show_subprojects` | Subproject visibility. `0` to hide, omit or `1` to include |
 
-Canvas Gantt also reads the following Redmine-standard issue list parameters:
+### Compatibility with Redmine issue list
 
-- `set_filter=1`
-- `f[]`
-- `op[field]`
-- `v[field][]`
-- `group_by`
-- `sort`
-
-Supported Redmine-standard fields:
-
-- `status_id`
-- `assigned_to_id`
-- `project_id`
-- `fixed_version_id`
-- `subproject_id`
-
-Supported Redmine-standard operators:
-
-- `=`
-- `*`
-- `!*`
-- `o`
-- `c`
+| Category | Supported Items |
+| :--- | :--- |
+| **Parameters** | `set_filter=1`, `f[]`, `op[field]`, `v[field][]`, `c[]`, `group_by`, `sort` |
+| **Fields** | `status_id`, `assigned_to_id`, `project_id`, `fixed_version_id`, `subproject_id` |
+| **Operators** | `=` equal, `*` all, `!*` none, `o` open, `c` closed |
 
 Current compatibility limits:
 
-- Unsupported Redmine fields or operators are ignored and shown as warnings
-- `assigned_to_id` with both specific assignees and unassigned issues cannot be represented exactly when exporting back to the Redmine issue list, so the unassigned part is omitted with a warning
-- Issues without a target version are supported in Canvas-specific URLs via `fixed_version_ids[]=none`, but that case is omitted when exporting a Redmine-standard issue-list URL
-- Default sort (`startDate:asc`) may be omitted when exporting a Redmine issue-list URL
+- Unsupported Redmine fields or operators are ignored and shown as warnings.
+- `assigned_to_id` with both specific assignees and unassigned issues cannot be represented exactly when exporting back to the Redmine issue list, so the unassigned part is omitted with a warning.
+- Issues without a target version are supported in Canvas-specific URLs via `fixed_version_ids[]=none`, but that case is omitted when exporting a Redmine-standard issue-list URL.
+- Default sort, such as `startDate:asc`, may be omitted when exporting a Redmine issue-list URL.
 
 ### Example URLs
 
@@ -200,9 +260,16 @@ Hide subprojects and show only unassigned issues:
 
 Configure the plugin from **Administration** -> **Plugins** -> **Canvas Gantt** -> **Configure**.
 
-- Inline edit toggles: `subject`, `assigned_to`, `status`, `done_ratio`, `due_date`, `custom_fields`
-- `row_height`: default row height
-- `use_vite_dev_server`: load frontend assets from `http://localhost:5173` during development
+| Setting | Description |
+| :--- | :--- |
+| `inline_edit_subject` | Enable subject inline editing |
+| `inline_edit_assigned_to` | Enable assignee inline editing |
+| `inline_edit_status` | Enable status inline editing |
+| `inline_edit_done_ratio` | Enable progress inline editing |
+| `inline_edit_due_date` | Enable due date inline editing |
+| `inline_edit_custom_fields` | Enable custom field inline editing |
+| `row_height` | Default row height |
+| `use_vite_dev_server` | Load frontend assets from `http://localhost:5173` during development |
 
 ### Compatibility note
 
@@ -271,9 +338,20 @@ npx playwright test -c playwright.redmine.config.ts
 
 ## Build Output
 
-- `npm run build` outputs the SPA to `assets/build/`
-- On Redmine boot, the plugin links or copies those files into `public/plugin_assets/redmine_canvas_gantt/build`
-- The fallback asset route is also available through `/plugin_assets/redmine_canvas_gantt/build/*`
+- `npm run build` outputs the SPA to `assets/build/`.
+- On Redmine boot, the plugin links or copies those files into `public/plugin_assets/redmine_canvas_gantt/build`.
+- The fallback asset route is also available through `/plugin_assets/redmine_canvas_gantt/build/*`.
+
+## Release
+
+GitHub Releases are created automatically when a tag matching `v*` is pushed.
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The release workflow only creates the GitHub Release with generated notes. It does not build the SPA or package extension artifacts.
 
 ## License
 
