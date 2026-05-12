@@ -1,0 +1,46 @@
+name: Supply Chain Audit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies safely
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts
+          else
+            npm install --ignore-scripts
+          fi
+
+      - name: Audit npm dependencies
+        run: npm audit --audit-level moderate
+
+      - name: Check for TanStack dependency drift
+        shell: bash
+        run: |
+          if grep -R "@tanstack/" package.json package-lock.json pnpm-lock.yaml yarn.lock 2>/dev/null; then
+            echo "TanStack dependency detected. Verify pinned versions and advisories before merging."
+          else
+            echo "No TanStack dependency detected."
+          fi
