@@ -937,6 +937,269 @@ describe('UiSidebar', () => {
         expect(select).toBeInTheDocument();
     });
 
+    it('saves assignee inline edits with assigned_to_id and updates the displayed assignee', async () => {
+        const taskId = '128';
+
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key',
+            i18n: {
+                button_edit: 'Edit',
+                field_assigned_to: 'Assignee',
+                label_unassigned: 'Unassigned'
+            },
+            settings: { inline_edit_assigned_to: '1' }
+        };
+
+        useUIStore.setState({
+            visibleColumns: ['id', 'assignee'],
+            columnSettings: buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['id', 'assignee']),
+            activeInlineEdit: null
+        });
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false,
+            selectedTaskId: null,
+            customFields: []
+        });
+        useEditMetaStore.setState({
+            metaByTaskId: {
+                [taskId]: {
+                    task: {
+                        id: taskId,
+                        subject: 'Assignee task',
+                        assignedToId: 10,
+                        statusId: 1,
+                        doneRatio: 0,
+                        dueDate: '2025-01-01',
+                        startDate: '2025-01-01',
+                        priorityId: 1,
+                        categoryId: null,
+                        estimatedHours: null,
+                        projectId: 1,
+                        trackerId: 1,
+                        fixedVersionId: null,
+                        lockVersion: 1
+                    },
+                    editable: {
+                        subject: true,
+                        assignedToId: true,
+                        statusId: true,
+                        doneRatio: true,
+                        dueDate: true,
+                        startDate: true,
+                        priorityId: true,
+                        categoryId: true,
+                        estimatedHours: true,
+                        projectId: true,
+                        trackerId: true,
+                        fixedVersionId: true,
+                        customFieldValues: true
+                    },
+                    options: {
+                        statuses: [],
+                        assignees: [{ id: 10, name: 'Alice Able' }, { id: 11, name: 'Bob Brown' }],
+                        priorities: [],
+                        categories: [],
+                        projects: [],
+                        trackers: [],
+                        versions: [],
+                        customFields: []
+                    },
+                    customFieldValues: {}
+                }
+            },
+            loadingTaskId: null,
+            error: null
+        });
+
+        const task: Task = {
+            id: taskId,
+            subject: 'Assignee task',
+            assignedToId: 10,
+            assignedToName: 'Alice Able',
+            startDate: new Date('2025-01-01').getTime(),
+            dueDate: new Date('2025-01-05').getTime(),
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+        useTaskStore.getState().setTasks([task]);
+
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true,
+            json: async () => ({ lock_version: 2, task_id: taskId })
+        })) as unknown as typeof fetch);
+
+        render(<UiSidebar />);
+
+        const cell = await screen.findByTestId(`cell-${taskId}-assignee`);
+        fireEvent.doubleClick(cell);
+
+        const select = await screen.findByRole('combobox');
+        fireEvent.change(select, { target: { value: '11' } });
+
+        await waitFor(() => {
+            const patchCall = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'PATCH');
+            expect(patchCall).toBeTruthy();
+            const body = JSON.parse(String(patchCall?.[1]?.body));
+            expect(body.task).toMatchObject({ assigned_to_id: 11, lock_version: 1 });
+        });
+
+        await waitFor(() => {
+            const updated = useTaskStore.getState().allTasks.find((current) => current.id === taskId);
+            expect(updated?.assignedToId).toBe(11);
+            expect(updated?.assignedToName).toBe('Bob Brown');
+            expect(updated?.lockVersion).toBe(2);
+            expect(screen.getByTitle('Bob Brown')).toBeInTheDocument();
+        });
+    });
+
+    it('saves unassigned assignee inline edits as a blank Redmine value and clears local assignee state', async () => {
+        const taskId = '129';
+
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key',
+            i18n: {
+                button_edit: 'Edit',
+                field_assigned_to: 'Assignee',
+                label_unassigned: 'Unassigned'
+            },
+            settings: { inline_edit_assigned_to: '1' }
+        };
+
+        useUIStore.setState({
+            visibleColumns: ['id', 'assignee'],
+            columnSettings: buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['id', 'assignee']),
+            activeInlineEdit: null
+        });
+        useTaskStore.setState({
+            viewport: {
+                startDate: 0,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 1,
+                width: 800,
+                height: 600,
+                rowHeight: 32
+            },
+            groupByProject: false,
+            selectedTaskId: null,
+            customFields: []
+        });
+        useEditMetaStore.setState({
+            metaByTaskId: {
+                [taskId]: {
+                    task: {
+                        id: taskId,
+                        subject: 'Unassign task',
+                        assignedToId: 10,
+                        statusId: 1,
+                        doneRatio: 0,
+                        dueDate: '2025-01-01',
+                        startDate: '2025-01-01',
+                        priorityId: 1,
+                        categoryId: null,
+                        estimatedHours: null,
+                        projectId: 1,
+                        trackerId: 1,
+                        fixedVersionId: null,
+                        lockVersion: 1
+                    },
+                    editable: {
+                        subject: true,
+                        assignedToId: true,
+                        statusId: true,
+                        doneRatio: true,
+                        dueDate: true,
+                        startDate: true,
+                        priorityId: true,
+                        categoryId: true,
+                        estimatedHours: true,
+                        projectId: true,
+                        trackerId: true,
+                        fixedVersionId: true,
+                        customFieldValues: true
+                    },
+                    options: {
+                        statuses: [],
+                        assignees: [{ id: 10, name: 'Alice Able' }],
+                        priorities: [],
+                        categories: [],
+                        projects: [],
+                        trackers: [],
+                        versions: [],
+                        customFields: []
+                    },
+                    customFieldValues: {}
+                }
+            },
+            loadingTaskId: null,
+            error: null
+        });
+
+        const task: Task = {
+            id: taskId,
+            subject: 'Unassign task',
+            assignedToId: 10,
+            assignedToName: 'Alice Able',
+            startDate: new Date('2025-01-01').getTime(),
+            dueDate: new Date('2025-01-05').getTime(),
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+        useTaskStore.getState().setTasks([task]);
+
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true,
+            json: async () => ({ lock_version: 2, task_id: taskId })
+        })) as unknown as typeof fetch);
+
+        render(<UiSidebar />);
+
+        const cell = await screen.findByTestId(`cell-${taskId}-assignee`);
+        fireEvent.doubleClick(cell);
+
+        const select = await screen.findByRole('combobox');
+        fireEvent.change(select, { target: { value: '' } });
+
+        await waitFor(() => {
+            const patchCall = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'PATCH');
+            expect(patchCall).toBeTruthy();
+            const body = JSON.parse(String(patchCall?.[1]?.body));
+            expect(body.task).toMatchObject({ assigned_to_id: '', lock_version: 1 });
+        });
+
+        await waitFor(() => {
+            const updated = useTaskStore.getState().allTasks.find((current) => current.id === taskId);
+            expect(updated?.assignedToId).toBeNull();
+            expect(updated?.assignedToName).toBeNull();
+            expect(updated?.lockVersion).toBe(2);
+        });
+    });
+
     it('shows tooltip on task subject hover', () => {
         useUIStore.setState({ visibleColumns: ['subject'], columnSettings: buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['subject']) });
 

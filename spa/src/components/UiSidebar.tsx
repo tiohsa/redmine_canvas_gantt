@@ -1091,13 +1091,13 @@ export const UiSidebar: React.FC = () => {
                                                                 onCancel={close}
                                                                 onCommit={async (next) => {
                                                                     const prevId = task.assignedToId ?? null;
-                                                                    const prevName = task.assignedToName;
-                                                                    const name = next === null ? undefined : meta.options.assignees.find((o) => o.id === next)?.name;
+                                                                    const prevName = task.assignedToName ?? null;
+                                                                    const name = next === null ? null : (meta.options.assignees.find((o) => o.id === next)?.name ?? null);
                                                                     await save({
                                                                         taskId: task.id,
-                                                                        optimisticTaskUpdates: { assignedToId: next ?? undefined, assignedToName: next === null ? undefined : name },
-                                                                        rollbackTaskUpdates: { assignedToId: prevId ?? undefined, assignedToName: prevName },
-                                                                        fields: { assigned_to_id: next }
+                                                                        optimisticTaskUpdates: { assignedToId: next, assignedToName: name },
+                                                                        rollbackTaskUpdates: { assignedToId: prevId, assignedToName: prevName },
+                                                                        fields: { assigned_to_id: next ?? '' }
                                                                     });
                                                                     close();
                                                                 }}

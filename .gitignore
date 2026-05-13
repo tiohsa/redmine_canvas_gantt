@@ -36,3 +36,5 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+.venv/
+    

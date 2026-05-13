@@ -31,6 +31,7 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
         fixed_version_id: 6,
         lock_version: 9,
         status: current_status,
+        assigned_to: nil,
         project: project,
         project_id: 1
       )
@@ -110,6 +111,7 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
         fixed_version_id: nil,
         lock_version: 1,
         status: status,
+        assigned_to: nil,
         project: source_project,
         project_id: 1
       )
@@ -137,6 +139,58 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
       expect(payload[:options][:categories]).to eq([{ id: 40, name: 'Destination category' }])
       expect(payload[:options][:versions]).to eq([{ id: 30, name: 'Destination version' }])
       expect(Version.visible).to have_received(:where).with(project_id: 3)
+    end
+
+    it 'keeps the current assignee in issue-project options even when no longer assignable' do
+      current_user = instance_double(User)
+      builder = described_class.new(current_user: current_user)
+
+      status = instance_double(IssueStatus, id: 1, name: 'Open', position: 1)
+      current_assignee = instance_double(User, id: 11, name: 'Former Member')
+      assignable_user = instance_double(User, id: 7, name: 'Alice')
+      project = instance_double(Project, id: 1, issue_categories: [], trackers: [])
+      issue = instance_double(
+        Issue,
+        id: 10,
+        subject: 'Unassign former member',
+        assigned_to_id: 11,
+        assigned_to: current_assignee,
+        status_id: 1,
+        done_ratio: 0,
+        due_date: nil,
+        start_date: nil,
+        priority_id: 1,
+        category_id: nil,
+        estimated_hours: nil,
+        tracker_id: 5,
+        fixed_version_id: nil,
+        lock_version: 1,
+        status: status,
+        project: project,
+        project_id: 1
+      )
+
+      allow(issue).to receive(:new_statuses_allowed_to).with(current_user).and_return([])
+      allow(issue).to receive(:assignable_users).and_return([assignable_user])
+      allow(IssuePriority).to receive(:active).and_return([])
+      project_scope = double(active: double(where: []))
+      allow(Project).to receive(:allowed_to).with(:add_issues).and_return(project_scope)
+      version_scope = double(where: [])
+      allow(Version).to receive(:visible).and_return(version_scope)
+
+      payload = builder.build(
+        issue: issue,
+        editable: { assigned_to_id: true },
+        custom_fields: [],
+        custom_field_values: {},
+        permissions: { editable: true, viewable: true },
+        project_scope_ids: [1]
+      )
+
+      expect(payload[:options][:assignees]).to eq([
+        { id: 7, name: 'Alice' },
+        { id: 11, name: 'Former Member' }
+      ])
     end
   end
 end

@@ -55,6 +55,9 @@ module RedmineCanvasGantt
 
     def assignables_for(issue, project_for_options)
       users = project_for_options == issue.project ? issue.assignable_users : project_for_options.assignable_users
+      if project_for_options == issue.project && issue.assigned_to && !users.include?(issue.assigned_to)
+        users = users.to_a + [issue.assigned_to]
+      end
       users.to_a
         .sort_by { |user| user.name.to_s.downcase }
         .map { |user| { id: user.id, name: user.name } }

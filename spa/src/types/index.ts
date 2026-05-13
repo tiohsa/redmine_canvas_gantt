@@ -8,8 +8,8 @@ export interface Task {
     dueDate?: number; // Timestamp
     ratioDone: number;
     statusId: number;
-    assignedToId?: number;
-    assignedToName?: string;
+    assignedToId?: number | null;
+    assignedToName?: string | null;
     parentId?: string;
     lockVersion: number;
     editable: boolean;
