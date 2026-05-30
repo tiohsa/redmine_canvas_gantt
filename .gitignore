@@ -1,6 +1,12 @@
-#DESIGN.md
-#conductor/
-#.playwright-mcp/
+.vite/
+.antigravitycli/
+.codegraph/
+docs/
+graphify-out/
+spec-docs/
+DESIGN.md
+conductor/
+.playwright-mcp/
 output/
 #spec-docs/
 tasks/

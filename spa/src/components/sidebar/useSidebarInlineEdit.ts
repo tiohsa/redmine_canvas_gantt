@@ -88,6 +88,17 @@ export const useSidebarInlineEdit = ({
             return meta.options.customFields.some((cf) => String(cf.id) === customFieldId);
         }
 
+
+
+        const meta = providedMeta || editMetaByTaskId[task.id];
+        if (field === 'startDate' || field === 'dueDate') {
+            const mappedField = field === 'startDate' ? 'start_date' : 'due_date';
+            if (meta?.editable) {
+                const editableMap = meta.editable as Record<string, boolean>;
+                if (editableMap[mappedField] === false) return false;
+            }
+        }
+
         if (field === 'subject') return isInlineEditEnabled('inline_edit_subject', true);
         if (field === 'assignedToId') return isInlineEditEnabled('inline_edit_assigned_to', true);
         if (field === 'statusId') return isInlineEditEnabled('inline_edit_status', true);
@@ -96,7 +107,6 @@ export const useSidebarInlineEdit = ({
         if (field === 'startDate') return isInlineEditEnabled('inline_edit_start_date', true);
         if (field === 'estimatedHours') return isInlineEditEnabled('inline_edit_estimated_hours', true);
 
-        const meta = providedMeta || editMetaByTaskId[task.id];
         if (meta?.editable) {
             const editableMap = meta.editable as Record<string, boolean>;
             if (editableMap[field] === false) return false;
@@ -128,7 +138,8 @@ export const useSidebarInlineEdit = ({
 
         const requiresMeta = [
             'assignedToId', 'statusId', 'priorityId', 'authorId',
-            'categoryId', 'projectId', 'trackerId', 'fixedVersionId'
+            'categoryId', 'projectId', 'trackerId', 'fixedVersionId',
+            'startDate', 'dueDate'
         ].includes(field);
         const needsCustomFieldMeta = customFieldIdFromEditField(field) !== null;
 

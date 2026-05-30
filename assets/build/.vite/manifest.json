@@ -3336,10 +3336,14 @@
     "src": "node_modules/@fontsource/roboto/files/roboto-vietnamese-700-normal.woff2"
   },
   "src/main.tsx": {
-    "file": "assets/main-CNRgl_Zw.js",
+    "file": "assets/main-BTY3DIqe.js",
     "name": "main",
     "src": "src/main.tsx",
     "isEntry": true,
+    "dynamicImports": [
+      "src/utils/dateValidation.ts",
+      "src/utils/dateValidation.ts"
+    ],
     "css": [
       "assets/main-BGu8_DbK.css"
     ],
@@ -4179,5 +4183,11 @@
       "assets/roboto-latin-700-normal-BZpUvMxY.woff2",
       "assets/roboto-latin-700-normal-DLgJJpmK.woff"
     ]
+  },
+  "src/utils/dateValidation.ts": {
+    "file": "assets/dateValidation-UloCl355.js",
+    "name": "dateValidation",
+    "src": "src/utils/dateValidation.ts",
+    "isDynamicEntry": true
   }
 }

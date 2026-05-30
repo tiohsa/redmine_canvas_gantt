@@ -331,12 +331,8 @@ class CanvasGanttsController < ApplicationController
   # GET /plugin_assets/redmine_canvas_gantt/build/*asset_path
   # Fallback asset delivery when public/plugin_assets static serving is disabled.
   def asset
-    relative_path = params[:asset_path].to_s
-    return head :not_found if relative_path.blank? || relative_path.include?('..')
-
-    build_root = Rails.root.join('plugins', 'redmine_canvas_gantt', 'assets', 'build').to_s
-    file_path = File.expand_path(relative_path, build_root)
-    return head :not_found unless file_path.start_with?("#{build_root}/") && File.file?(file_path)
+    file_path = safe_build_asset_path(params[:asset_path].to_s)
+    return head :not_found unless file_path
 
     send_file file_path, type: Rack::Mime.mime_type(File.extname(file_path), 'application/octet-stream'), disposition: 'inline'
   end
@@ -566,6 +562,24 @@ class CanvasGanttsController < ApplicationController
 
   def canvas_gantt_l(key, **options)
     l(:"canvas_gantt.#{key}", **options)
+  end
+
+  def safe_build_asset_path(relative_path)
+    return nil if relative_path.blank? || relative_path.include?('..') || relative_path.start_with?('/')
+
+    build_root = Rails.root.join('plugins', 'redmine_canvas_gantt', 'assets', 'build').to_s
+    return nil unless File.directory?(build_root)
+
+    expanded_path = File.expand_path(relative_path, build_root)
+    return nil unless expanded_path.start_with?("#{build_root}/") && File.file?(expanded_path)
+
+    real_build_root = File.realpath(build_root)
+    real_file_path = File.realpath(expanded_path)
+    return nil unless real_file_path.start_with?("#{real_build_root}/")
+
+    real_file_path
+  rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR
+    nil
   end
 
   def ensure_view_permission

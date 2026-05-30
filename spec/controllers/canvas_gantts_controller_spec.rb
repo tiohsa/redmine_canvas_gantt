@@ -1,5 +1,6 @@
 require_relative '../spec_helper'
 require 'set'
+require 'tmpdir'
 
 RSpec.describe CanvasGanttsController, type: :controller do
   def canvas_gantt_t(key)
@@ -19,6 +20,42 @@ RSpec.describe CanvasGanttsController, type: :controller do
   before do
     allow(controller).to receive(:find_project_by_project_id) do
       controller.instance_variable_set(:@project, project)
+    end
+  end
+
+  describe '#safe_build_asset_path' do
+    around do |example|
+      Dir.mktmpdir do |dir|
+        @tmp_root = Pathname.new(dir)
+        example.run
+      end
+    end
+
+    before do
+      build_dir = @tmp_root.join('plugins', 'redmine_canvas_gantt', 'assets', 'build')
+      FileUtils.mkdir_p(build_dir.join('assets'))
+      File.write(build_dir.join('assets', 'main.js'), 'console.log("ok");')
+      allow(Rails).to receive(:root).and_return(@tmp_root)
+    end
+
+    it 'returns an asset path inside the build directory' do
+      result = controller.send(:safe_build_asset_path, 'assets/main.js')
+
+      expect(result).to eq(@tmp_root.join('plugins', 'redmine_canvas_gantt', 'assets', 'build', 'assets', 'main.js').to_s)
+    end
+
+    it 'rejects traversal outside the build directory' do
+      expect(controller.send(:safe_build_asset_path, '../config/database.yml')).to be_nil
+      expect(controller.send(:safe_build_asset_path, '/etc/passwd')).to be_nil
+    end
+
+    it 'rejects symlinks that resolve outside the build directory' do
+      outside_file = @tmp_root.join('outside.js')
+      symlink_path = @tmp_root.join('plugins', 'redmine_canvas_gantt', 'assets', 'build', 'assets', 'outside.js')
+      File.write(outside_file, 'console.log("outside");')
+      File.symlink(outside_file, symlink_path)
+
+      expect(controller.send(:safe_build_asset_path, 'assets/outside.js')).to be_nil
     end
   end
 

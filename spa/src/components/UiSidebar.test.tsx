@@ -771,7 +771,56 @@ describe('UiSidebar', () => {
         };
 
         useUIStore.setState({ visibleColumns: ['id', 'startDate'], columnSettings: buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['id', 'startDate']) });
-        useEditMetaStore.setState({ metaByTaskId: {}, loadingTaskId: null, error: null });
+        useEditMetaStore.setState({
+            metaByTaskId: {
+                '123': {
+                    task: {
+                        id: '123',
+                        subject: 'Old',
+                        assignedToId: null,
+                        statusId: 1,
+                        doneRatio: 0,
+                        dueDate: '2025-01-05',
+                        startDate: '2025-01-01',
+                        priorityId: 1,
+                        categoryId: null,
+                        estimatedHours: null,
+                        projectId: 1,
+                        trackerId: 1,
+                        fixedVersionId: null,
+                        lockVersion: 1
+                    },
+                    editable: {
+                        subject: true,
+                        assignedToId: true,
+                        statusId: true,
+                        doneRatio: true,
+                        dueDate: true,
+                        startDate: true,
+                        priorityId: true,
+                        categoryId: true,
+                        estimatedHours: true,
+                        projectId: true,
+                        trackerId: true,
+                        fixedVersionId: true,
+                        customFieldValues: true
+                    },
+                    options: {
+                        statuses: [],
+                        assignees: [],
+                        priorities: [],
+                        categories: [],
+                        projects: [],
+                        trackers: [],
+                        versions: [],
+                        customFields: []
+                    },
+                    customFieldValues: {}
+                }
+            },
+            loadingTaskId: null,
+            error: null
+        });
 
         useTaskStore.setState({
             viewport: {
