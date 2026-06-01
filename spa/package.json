@@ -12,6 +12,8 @@
     "preview": "vite preview",
     "benchmark": "npm run build && node ./scripts/run-benchmark.mjs",
     "benchmark:ci": "npm run build && CI=1 node ./scripts/run-benchmark.mjs --ci",
+    "security:supply-chain": "node ./scripts/check-supply-chain.mjs",
+    "security": "npm run security:supply-chain",
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"

@@ -433,8 +433,11 @@ export const DueDateEditor: React.FC<{
                 alignItems: 'center'
             }}
             onDoubleClick={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
         >
             <DatePicker
+                wrapperClassName="react-datepicker-wrapper-w-full"
                 selected={startDate}
                 onChange={(date: Date | null) => {
                     if (!date) {
@@ -468,37 +471,45 @@ export const DueDateEditor: React.FC<{
                     const years = selectableYears.includes(selectedYear)
                         ? selectableYears
                         : [...selectableYears, selectedYear].sort((a, b) => a - b);
-
+ 
                     const yearSelect = (
                         <select
                             className="minimax-datepicker-select minimax-datepicker-select--year"
                             value={selectedYear}
                             onChange={({ target: { value } }) => changeYear(Number(value))}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
                         >
                             {years.map((year) => (
                                 <option key={year} value={year}>{year}</option>
                             ))}
                         </select>
                     );
-
+ 
                     const monthSelect = (
                         <select
                             className="minimax-datepicker-select minimax-datepicker-select--month"
                             value={selectedMonth}
                             onChange={({ target: { value } }) => changeMonth(Number(value))}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
                         >
                             {monthOptions.map((month) => (
                                 <option key={month.value} value={month.value}>{month.label}</option>
                             ))}
                         </select>
                     );
-
+ 
                     return (
-                        <div className="minimax-datepicker-custom-header">
+                        <div className="minimax-datepicker-custom-header" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
                             <button
                                 type="button"
                                 className="minimax-datepicker-nav-btn"
-                                onClick={decreaseMonth}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    decreaseMonth();
+                                }}
                                 disabled={prevMonthButtonDisabled}
                                 aria-label={i18n.t('label_prev_month') || 'Previous month'}
                             >
@@ -511,7 +522,11 @@ export const DueDateEditor: React.FC<{
                             <button
                                 type="button"
                                 className="minimax-datepicker-nav-btn"
-                                onClick={increaseMonth}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    increaseMonth();
+                                }}
                                 disabled={nextMonthButtonDisabled}
                                 aria-label={i18n.t('label_next_month') || 'Next month'}
                             >
@@ -522,12 +537,13 @@ export const DueDateEditor: React.FC<{
                 }}
                 customInput={<CustomDateInput value={initialValue} controlHeight={resolvedControlHeight} />}
             >
-                <div className="minimax-datepicker-footer">
+                <div className="minimax-datepicker-footer" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
                     <button
                         type="button"
                         className="minimax-datepicker-btn"
                         onClick={(e) => {
                             e.preventDefault();
+                            e.stopPropagation();
                             void commit(formatDate(new Date()));
                         }}
                     >
@@ -538,6 +554,7 @@ export const DueDateEditor: React.FC<{
                         className="minimax-datepicker-btn minimax-datepicker-btn--clear"
                         onClick={(e) => {
                             e.preventDefault();
+                            e.stopPropagation();
                             void commit('');
                         }}
                     >

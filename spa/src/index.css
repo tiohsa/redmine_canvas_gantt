@@ -178,6 +178,10 @@ iframe.issue-iframe-loading {
   font-family: var(--font-ui);
 }
 
+.react-datepicker-wrapper-w-full {
+  width: 100%;
+}
+
 /* React Datepicker Custom Styling (MiniMax) */
 .minimax-datepicker {
   font-family: var(--font-ui) !important;

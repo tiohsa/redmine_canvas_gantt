@@ -243,7 +243,8 @@ export const UiSidebar: React.FC = () => {
     };
 
     const renderEditableCell = (t: Task, field: string, content: React.ReactNode) => {
-        if (!shouldEnableField(field, t)) return content;
+        const meta = editMetaByTaskId[t.id];
+        if (!shouldEnableField(field, t, meta)) return content;
         return (
             <div
                 className="task-cell-editable"
@@ -1155,30 +1156,28 @@ export const UiSidebar: React.FC = () => {
                                                                 min={toDateInputValue(task.startDate)}
                                                                 controlHeight={inlineControlHeight}
                                                                 onCancel={close}
-                                                                onCommit={(next) => {
-                                                                    // Handle clearing the date
-                                                                    if (next === '') {
-                                                                        const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
-                                                                        updateTask(task.id, { dueDate: undefined });
-                                                                        if (autoSave) {
-                                                                            saveChanges().catch(console.error);
-                                                                        }
-                                                                        close();
-                                                                        return;
-                                                                    }
+                                                                onCommit={async (next) => {
+                                                                    const nextTsOrUndefined = next === '' ? undefined : new Date(next).getTime();
 
-                                                                    const nextTs = new Date(next).getTime();
-                                                                    if (!Number.isFinite(nextTs)) return;
-                                                                    if (task.startDate !== undefined && Number.isFinite(task.startDate) && task.startDate! > nextTs) {
+                                                                    // Validate using extracted validateDateRange utility
+                                                                    const { validateDateRange } = await import('../utils/dateValidation');
+                                                                    const validation = validateDateRange({
+                                                                        currentStartDate: task.startDate,
+                                                                        currentDueDate: task.dueDate,
+                                                                        nextDueDate: nextTsOrUndefined
+                                                                    });
+
+                                                                    if (!validation.valid) {
                                                                         useUIStore.getState().addNotification(tr('label_invalid_date_range'), 'warning');
                                                                         return;
                                                                     }
-                                                                    // Update local state - will be saved with batch save or auto-save
-                                                                    const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
-                                                                    updateTask(task.id, { dueDate: nextTs });
-                                                                    if (autoSave) {
-                                                                        saveChanges().catch(console.error);
-                                                                    }
+
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { dueDate: nextTsOrUndefined },
+                                                                        rollbackTaskUpdates: { dueDate: task.dueDate },
+                                                                        fields: { due_date: next === '' ? '' : next }
+                                                                    });
                                                                     close();
                                                                 }}
                                                             />
@@ -1192,30 +1191,28 @@ export const UiSidebar: React.FC = () => {
                                                                 max={toDateInputValue(task.dueDate)}
                                                                 controlHeight={inlineControlHeight}
                                                                 onCancel={close}
-                                                                onCommit={(next) => {
-                                                                    // Handle clearing the date
-                                                                    if (next === '') {
-                                                                        const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
-                                                                        updateTask(task.id, { startDate: undefined });
-                                                                        if (autoSave) {
-                                                                            saveChanges().catch(console.error);
-                                                                        }
-                                                                        close();
-                                                                        return;
-                                                                    }
+                                                                onCommit={async (next) => {
+                                                                    const nextTsOrUndefined = next === '' ? undefined : new Date(next).getTime();
 
-                                                                    const nextTs = new Date(next).getTime();
-                                                                    if (!Number.isFinite(nextTs)) return;
-                                                                    if (task.dueDate !== undefined && Number.isFinite(task.dueDate) && nextTs > task.dueDate!) {
+                                                                    // Validate using extracted validateDateRange utility
+                                                                    const { validateDateRange } = await import('../utils/dateValidation');
+                                                                    const validation = validateDateRange({
+                                                                        currentStartDate: task.startDate,
+                                                                        currentDueDate: task.dueDate,
+                                                                        nextStartDate: nextTsOrUndefined
+                                                                    });
+
+                                                                    if (!validation.valid) {
                                                                         useUIStore.getState().addNotification(tr('label_invalid_date_range'), 'warning');
                                                                         return;
                                                                     }
-                                                                    // Update local state - will be saved with batch save or auto-save
-                                                                    const { updateTask, autoSave, saveChanges } = useTaskStore.getState();
-                                                                    updateTask(task.id, { startDate: nextTs });
-                                                                    if (autoSave) {
-                                                                        saveChanges().catch(console.error);
-                                                                    }
+
+                                                                    await save({
+                                                                        taskId: task.id,
+                                                                        optimisticTaskUpdates: { startDate: nextTsOrUndefined },
+                                                                        rollbackTaskUpdates: { startDate: task.startDate },
+                                                                        fields: { start_date: next === '' ? '' : next }
+                                                                    });
                                                                     close();
                                                                 }}
                                                             />
