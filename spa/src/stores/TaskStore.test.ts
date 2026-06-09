@@ -408,6 +408,294 @@ describe('TaskStore version label visibility', () => {
         const selectedVersionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version');
         expect(selectedVersionRow?.name).toBe('Version 1');
     });
+
+    it('期日未設定のバージョンでも対象タスクがあればバージョン行を表示する', () => {
+        const { setTasks, setVersions } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            {
+                id: 'v1',
+                name: 'Undated Version',
+                projectId: 'p1',
+                status: 'open'
+            }
+        ]);
+        setTasks([
+            buildTask({
+                id: 't1',
+                projectId: 'p1',
+                fixedVersionId: 'v1',
+                startDate: undefined,
+                dueDate: undefined
+            })
+        ]);
+
+        const versionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version');
+        expect(versionRow).toMatchObject({
+            type: 'version',
+            versionId: 'v1',
+            name: 'Undated Version',
+            projectId: 'p1',
+            startDate: undefined,
+            dueDate: undefined
+        });
+    });
+
+    it('effectiveDate がないバージョン行の描画範囲を配下 root タスクの日付から補完する', () => {
+        const { setTasks, setVersions } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            {
+                id: 'v1',
+                name: 'Task Range Version',
+                projectId: 'p1',
+                status: 'open'
+            }
+        ]);
+        setTasks([
+            buildTask({ id: 'a', projectId: 'p1', fixedVersionId: 'v1', startDate: TUESDAY, dueDate: WEDNESDAY, displayOrder: 0 }),
+            buildTask({ id: 'b', projectId: 'p1', fixedVersionId: 'v1', startDate: MONDAY, dueDate: FRIDAY, displayOrder: 1 })
+        ]);
+
+        const versionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version');
+        expect(versionRow).toMatchObject({
+            type: 'version',
+            versionId: 'v1',
+            startDate: MONDAY,
+            dueDate: FRIDAY
+        });
+    });
+
+    it('担当者グループ内の同じ version ID は複合 row ID で衝突しない', () => {
+        const { setTasks, setVersions, setGroupByAssignee } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            showVersions: true
+        });
+
+        setVersions([
+            {
+                id: 'v1',
+                name: 'Shared Version',
+                effectiveDate: FRIDAY,
+                projectId: 'p1',
+                status: 'open'
+            }
+        ]);
+        setTasks([
+            buildTask({ id: 'a', projectId: 'p1', fixedVersionId: 'v1', assignedToId: 10, assignedToName: 'A', displayOrder: 0 }),
+            buildTask({ id: 'b', projectId: 'p1', fixedVersionId: 'v1', assignedToId: 11, assignedToName: 'B', displayOrder: 1 })
+        ]);
+        setGroupByAssignee(true);
+
+        const versionRows = useTaskStore.getState().layoutRows.filter((row) => row.type === 'version');
+        expect(versionRows).toHaveLength(2);
+        expect(new Set(versionRows.map((row) => row.id)).size).toBe(2);
+        expect(versionRows.map((row) => row.versionId)).toEqual(['v1', 'v1']);
+    });
+
+    it('片方の担当者グループ内 version row を閉じても別グループの同じ version は閉じない', () => {
+        const { setTasks, setVersions, setGroupByAssignee, toggleVersionExpansion } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            showVersions: true
+        });
+
+        setVersions([
+            {
+                id: 'v1',
+                name: 'Shared Version',
+                effectiveDate: FRIDAY,
+                projectId: 'p1',
+                status: 'open'
+            }
+        ]);
+        setTasks([
+            buildTask({ id: 'a', projectId: 'p1', fixedVersionId: 'v1', assignedToId: 10, assignedToName: 'A', displayOrder: 0 }),
+            buildTask({ id: 'b', projectId: 'p1', fixedVersionId: 'v1', assignedToId: 11, assignedToName: 'B', displayOrder: 1 })
+        ]);
+        setGroupByAssignee(true);
+
+        const firstVersionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version');
+        expect(firstVersionRow?.type).toBe('version');
+        if (!firstVersionRow || firstVersionRow.type !== 'version') throw new Error('version row not found');
+
+        toggleVersionExpansion(firstVersionRow.id);
+
+        const state = useTaskStore.getState();
+        expect(state.versionExpansion[firstVersionRow.id]).toBe(false);
+        expect(state.tasks.map((task) => task.id)).toEqual(['b']);
+    });
+
+    it('親子で対象バージョンが異なる場合は親の version group 配下に子を残す', () => {
+        const { setTasks, setVersions } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            { id: 'v1', name: 'Parent Version', effectiveDate: WEDNESDAY, projectId: 'p1', status: 'open' },
+            { id: 'v2', name: 'Child Version', effectiveDate: FRIDAY, projectId: 'p1', status: 'open' }
+        ]);
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', fixedVersionId: 'v1', hasChildren: true, displayOrder: 0 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', fixedVersionId: 'v2', displayOrder: 1 })
+        ]);
+
+        const state = useTaskStore.getState();
+        const versionRows = state.layoutRows.filter((row) => row.type === 'version');
+        expect(versionRows.map((row) => row.versionId)).toEqual(['v1']);
+        expect(state.tasks.map((task) => task.id)).toEqual(['parent', 'child']);
+    });
+
+    it('親が未設定で子に version がある場合は未設定グループ配下に親子を残す', () => {
+        const { setTasks, setVersions } = useTaskStore.getState();
+
+        window.RedmineCanvasGantt = {
+            ...window.RedmineCanvasGantt!,
+            i18n: {
+                ...(window.RedmineCanvasGantt?.i18n ?? {}),
+                label_none: '未設定'
+            }
+        };
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            { id: 'v1', name: 'Child Version', effectiveDate: FRIDAY, projectId: 'p1', status: 'open' }
+        ]);
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', fixedVersionId: undefined, startDate: MONDAY, dueDate: THURSDAY, hasChildren: true, displayOrder: 0 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', fixedVersionId: 'v1', startDate: TUESDAY, dueDate: FRIDAY, displayOrder: 1 })
+        ]);
+
+        const state = useTaskStore.getState();
+        const versionRows = state.layoutRows.filter((row) => row.type === 'version');
+        expect(versionRows).toHaveLength(1);
+        expect(versionRows[0]).toMatchObject({
+            type: 'version',
+            versionId: '_none',
+            name: '未設定',
+            projectId: 'p1',
+            startDate: MONDAY,
+            dueDate: THURSDAY
+        });
+        expect(state.tasks.map((task) => task.id)).toEqual(['parent', 'child']);
+    });
+
+    it('通常 version と未設定 root が同じ project にある場合は未設定 row を最後に表示する', () => {
+        const { setTasks, setVersions } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            { id: 'v1', name: 'Version 1', effectiveDate: FRIDAY, projectId: 'p1', status: 'open' }
+        ]);
+        setTasks([
+            buildTask({ id: 'none-root', projectId: 'p1', fixedVersionId: undefined, displayOrder: 0 }),
+            buildTask({ id: 'version-root', projectId: 'p1', fixedVersionId: 'v1', displayOrder: 1 })
+        ]);
+
+        const versionRows = useTaskStore.getState().layoutRows.filter((row) => row.type === 'version');
+        expect(versionRows.map((row) => row.versionId)).toEqual(['v1', '_none']);
+    });
+
+    it('親が version ありで子が未設定の場合は親の version group 配下に子を残す', () => {
+        const { setTasks, setVersions } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            { id: 'v1', name: 'Parent Version', effectiveDate: WEDNESDAY, projectId: 'p1', status: 'open' }
+        ]);
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', fixedVersionId: 'v1', hasChildren: true, displayOrder: 0 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', fixedVersionId: undefined, displayOrder: 1 })
+        ]);
+
+        const state = useTaskStore.getState();
+        const versionRows = state.layoutRows.filter((row) => row.type === 'version');
+        expect(versionRows.map((row) => row.versionId)).toEqual(['v1']);
+        expect(state.tasks.map((task) => task.id)).toEqual(['parent', 'child']);
+    });
+
+    it('未設定 version row を閉じても他 version row には影響しない', () => {
+        const { setTasks, setVersions, toggleVersionExpansion } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            { id: 'v1', name: 'Version 1', effectiveDate: FRIDAY, projectId: 'p1', status: 'open' }
+        ]);
+        setTasks([
+            buildTask({ id: 'none-root', projectId: 'p1', fixedVersionId: undefined, displayOrder: 0 }),
+            buildTask({ id: 'version-root', projectId: 'p1', fixedVersionId: 'v1', displayOrder: 1 })
+        ]);
+
+        const noneVersionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version' && row.versionId === '_none');
+        expect(noneVersionRow?.type).toBe('version');
+        if (!noneVersionRow || noneVersionRow.type !== 'version') throw new Error('none version row not found');
+
+        toggleVersionExpansion(noneVersionRow.id);
+
+        const state = useTaskStore.getState();
+        expect(state.versionExpansion[noneVersionRow.id]).toBe(false);
+        expect(state.tasks.map((task) => task.id)).toEqual(['version-root']);
+        expect(state.layoutRows.filter((row) => row.type === 'version').map((row) => row.versionId)).toEqual(['v1', '_none']);
+    });
+
+    it('version filter の context-only 親が未設定なら表示 bucket は未設定になる', () => {
+        const { setTasks, setVersions, setSelectedVersionIds } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            { id: 'v1', name: 'Child Version', effectiveDate: FRIDAY, projectId: 'p1', status: 'open' }
+        ]);
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', fixedVersionId: undefined, hasChildren: true, displayOrder: 0 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', fixedVersionId: 'v1', displayOrder: 1 }),
+            buildTask({ id: 'version-root', projectId: 'p1', fixedVersionId: 'v1', displayOrder: 2 })
+        ]);
+        setSelectedVersionIds(['v1']);
+
+        const state = useTaskStore.getState();
+        const parent = state.tasks.find((task) => task.id === 'parent');
+        const versionRows = state.layoutRows.filter((row) => row.type === 'version');
+        expect(parent?.isContextOnly).toBe(true);
+        expect(versionRows.map((row) => row.versionId)).toEqual(['v1', '_none']);
+        expect(versionRows[1]).toMatchObject({
+            type: 'version',
+            versionId: '_none'
+        });
+        expect(state.tasks.map((task) => task.id)).toEqual(['version-root', 'parent', 'child']);
+    });
 });
 
 describe('TaskStore filter hierarchy', () => {
@@ -594,6 +882,74 @@ describe('TaskStore focusTask', () => {
         expect(result).toEqual({ status: 'ok' });
         expect(state.projectExpansion.p1).toBe(true);
         expect(state.versionExpansion.v1).toBe(true);
+        expect(state.taskExpansion.parent).toBe(true);
+        expect(state.selectedTaskId).toBe('child');
+        expect(state.tasks.some((task) => task.id === 'child')).toBe(true);
+    });
+
+    it('opens the rendered parent version row when focusing a child with a different version', () => {
+        const { setTasks, setVersions, toggleVersionExpansion, toggleTaskExpansion, focusTask } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            { id: 'v1', name: 'Parent Version', effectiveDate: WEDNESDAY, projectId: 'p1', status: 'open' },
+            { id: 'v2', name: 'Child Version', effectiveDate: FRIDAY, projectId: 'p1', status: 'open' }
+        ]);
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', projectName: 'Project 1', fixedVersionId: 'v1', hasChildren: true, displayOrder: 0 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', projectName: 'Project 1', fixedVersionId: 'v2', startDate: TUESDAY, dueDate: WEDNESDAY, displayOrder: 1 })
+        ]);
+
+        const parentVersionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version' && row.versionId === 'v1');
+        expect(parentVersionRow?.type).toBe('version');
+        if (!parentVersionRow || parentVersionRow.type !== 'version') throw new Error('parent version row not found');
+
+        toggleVersionExpansion(parentVersionRow.id);
+        toggleTaskExpansion('parent');
+
+        const result = focusTask('child');
+        const state = useTaskStore.getState();
+
+        expect(result).toEqual({ status: 'ok' });
+        expect(state.versionExpansion[parentVersionRow.id]).toBe(true);
+        expect(state.taskExpansion.parent).toBe(true);
+        expect(state.tasks.some((task) => task.id === 'child')).toBe(true);
+    });
+
+    it('opens project, _none version row, and parent when focusing a child under an unversioned parent', () => {
+        const { setTasks, setVersions, toggleProjectExpansion, toggleVersionExpansion, toggleTaskExpansion, focusTask } = useTaskStore.getState();
+
+        useTaskStore.setState({
+            groupByProject: true,
+            showVersions: true
+        });
+
+        setVersions([
+            { id: 'v1', name: 'Child Version', effectiveDate: FRIDAY, projectId: 'p1', status: 'open' }
+        ]);
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', projectName: 'Project 1', fixedVersionId: undefined, hasChildren: true, displayOrder: 0 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', projectName: 'Project 1', fixedVersionId: 'v1', startDate: TUESDAY, dueDate: WEDNESDAY, displayOrder: 1 })
+        ]);
+
+        const noneVersionRow = useTaskStore.getState().layoutRows.find((row) => row.type === 'version' && row.versionId === '_none');
+        expect(noneVersionRow?.type).toBe('version');
+        if (!noneVersionRow || noneVersionRow.type !== 'version') throw new Error('none version row not found');
+
+        toggleProjectExpansion('p1');
+        toggleVersionExpansion(noneVersionRow.id);
+        toggleTaskExpansion('parent');
+
+        const result = focusTask('child');
+        const state = useTaskStore.getState();
+
+        expect(result).toEqual({ status: 'ok' });
+        expect(state.projectExpansion.p1).toBe(true);
+        expect(state.versionExpansion[noneVersionRow.id]).toBe(true);
         expect(state.taskExpansion.parent).toBe(true);
         expect(state.selectedTaskId).toBe('child');
         expect(state.tasks.some((task) => task.id === 'child')).toBe(true);

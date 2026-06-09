@@ -10,7 +10,7 @@ import { useBaselineStore } from './BaselineStore';
 import type { MoveTaskAsChildResult } from '../types';
 import type { CustomFieldMeta } from '../types/editMeta';
 import type { LayoutState, SortConfig } from './taskStore/types';
-import { buildLayout } from './taskStore/layout';
+import { buildLayout, getVersionRowId, NO_VERSION_ID } from './taskStore/layout';
 import { applyFilters } from './taskStore/filters';
 import { isDescendantTask, tailDisplayOrderForParent, tailDisplayOrderForRoot } from './taskStore/hierarchy';
 import { computeCenteredViewport } from './taskStore/viewport';
@@ -269,11 +269,58 @@ const buildDerivedTaskState = (
 };
 
 const buildAllExpandedStates = (state: TaskState, expanded: boolean) => {
-    if (expanded) {
-        return buildUniformExpansionMaps(state.allTasks, true);
+    const expansionMaps = buildUniformExpansionMaps(state.allTasks, expanded);
+    const versionExpansion = { ...expansionMaps.versionExpansion };
+
+    Object.keys(state.versionExpansion).forEach((versionKey) => {
+        versionExpansion[versionKey] = expanded;
+    });
+    state.layoutRows.forEach((row) => {
+        if (row.type === 'version') {
+            versionExpansion[row.id] = expanded;
+        }
+    });
+
+    return {
+        ...expansionMaps,
+        versionExpansion
+    };
+};
+
+const getTaskGroupKey = (task: Task, state: Pick<TaskState, 'groupByAssignee' | 'groupByProject'>): string => {
+    if (state.groupByAssignee) {
+        const assigneeId = task.assignedToId === undefined || task.assignedToId === null
+            ? 'none'
+            : String(task.assignedToId);
+        return `assignee:${assigneeId}`;
     }
 
-    return buildUniformExpansionMaps(state.allTasks, false);
+    if (state.groupByProject) {
+        return task.projectId ?? 'default_project';
+    }
+
+    return '_global';
+};
+
+const getLayoutRootForTask = (task: Task, taskById: Map<string, Task>, state: Pick<TaskState, 'groupByAssignee' | 'groupByProject'>): Task => {
+    let root = task;
+    let currentParentId = task.parentId;
+    const targetGroupKey = getTaskGroupKey(task, state);
+
+    while (currentParentId) {
+        const parentTask = taskById.get(currentParentId);
+        if (!parentTask) break;
+        if (!state.groupByProject && !state.groupByAssignee) {
+            root = parentTask;
+            currentParentId = parentTask.parentId;
+            continue;
+        }
+        if (getTaskGroupKey(parentTask, state) !== targetGroupKey) break;
+        root = parentTask;
+        currentParentId = parentTask.parentId;
+    }
+
+    return root;
 };
 
 const toDerivedTaskStatePatch = (derived: DerivedTaskState): DerivedTaskStatePatch => ({
@@ -1261,9 +1308,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             : String(targetTask.assignedToId);
         nextProjectExpansion[`assignee:${assigneeId}`] = true;
 
-        if (targetTask.fixedVersionId) {
-            nextVersionExpansion[targetTask.fixedVersionId] = true;
-        }
+        const rootTask = getLayoutRootForTask(targetTask, taskById, state);
+        const rootGroupKey = getTaskGroupKey(rootTask, state);
+        const rootVersionId = rootTask.fixedVersionId || NO_VERSION_ID;
+        nextVersionExpansion[rootVersionId] = true;
+        nextVersionExpansion[getVersionRowId(rootGroupKey, rootVersionId)] = true;
 
         const layout = buildLayoutFromState(state, {
             taskExpansion: nextTaskExpansion,
