@@ -1345,14 +1345,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 />
                                 <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
                             </label>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer', fontStyle: 'italic' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={selectedVersionIds.includes('_none')}
-                                    onChange={() => toggleVersion('_none')}
-                                />
-                                {i18n.t('label_none') || '(No version)'}
-                            </label>
                             {versionsList.map(version => (
                                 <label key={version.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
                                     <input
@@ -1363,6 +1355,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     {version.name}
                                 </label>
                             ))}
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer', fontStyle: 'italic' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={selectedVersionIds.includes('_none')}
+                                    onChange={() => toggleVersion('_none')}
+                                />
+                                {i18n.t('label_none') || '(No version)'}
+                            </label>
                             <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: '8px', paddingTop: '8px' }}>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
                                     <input

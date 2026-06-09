@@ -135,7 +135,7 @@ export interface Bounds {
 
 export type LayoutRow =
     | { type: 'header'; projectId: string; projectName?: string; rowIndex: number; startDate?: number; dueDate?: number; groupKind?: 'project' | 'assignee' }
-    | { type: 'version'; id: string; name: string; rowIndex: number; startDate?: number; dueDate?: number; ratioDone?: number; projectId: string }
+    | { type: 'version'; id: string; versionId: string; name: string; rowIndex: number; startDate?: number; dueDate?: number; ratioDone?: number; projectId: string }
     | { type: 'task'; taskId: string; rowIndex: number };
 
 export type ZoomLevel = 0 | 1 | 2;

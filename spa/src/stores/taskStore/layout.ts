@@ -3,6 +3,12 @@ import { i18n } from '../../utils/i18n';
 import type { CustomFieldMeta } from '../../types/editMeta';
 import type { SortConfig } from './types';
 
+export const NO_VERSION_ID = '_none';
+
+export const getVersionRowId = (groupId: string, versionId: string): string => (
+    `version:${encodeURIComponent(groupId)}:${encodeURIComponent(versionId)}`
+);
+
 export const buildDependencyComponents = (tasks: Task[], relations: Relation[]): Map<string, string> => {
     const parent = new Map<string, string>();
     tasks.forEach(task => parent.set(task.id, task.id));
@@ -347,18 +353,18 @@ export const buildLayout = (
         const hideDescendants = shouldGroupByGroup && !expanded;
 
         if (shouldShowVersions) {
-            const versionMap = new Map<string | undefined, string[]>();
+            const versionMap = new Map<string, string[]>();
             roots.forEach(rootId => {
                 const task = nodeMap.get(rootId)?.task;
                 const versionId = task?.fixedVersionId;
-                const key = versionId || undefined;
+                const key = versionId || NO_VERSION_ID;
                 if (!versionMap.has(key)) versionMap.set(key, []);
                 versionMap.get(key)?.push(rootId);
             });
 
             const usedVersionIds = new Set<string>();
             versionMap.forEach((_, versionId) => {
-                if (versionId) usedVersionIds.add(String(versionId));
+                if (versionId !== NO_VERSION_ID) usedVersionIds.add(versionId);
             });
 
             const projectVersions = versions.filter(version => {
@@ -372,33 +378,55 @@ export const buildLayout = (
                 return aDate - bDate;
             });
 
-            projectVersions.forEach(version => {
-                const versionRoots = versionMap.get(version.id) || [];
-                const versionExpanded = versionExpansion[version.id] ?? true;
+            const getRootTaskDateRange = (rootIds: string[]) => {
+                let minStart: number | undefined;
+                let maxDue: number | undefined;
 
-                let versionStart = version.startDate;
-                if (!Number.isFinite(versionStart)) {
-                    if (versionRoots.length > 0) {
-                        let minStart = Infinity;
-                        versionRoots.forEach(rootId => {
-                            const task = nodeMap.get(rootId)?.task;
-                            if (task && task.startDate !== undefined && Number.isFinite(task.startDate)) minStart = Math.min(minStart, task.startDate);
-                        });
-                        if (minStart !== Infinity) versionStart = minStart;
-                        else versionStart = version.effectiveDate;
-                    } else {
-                        versionStart = version.effectiveDate;
+                rootIds.forEach(rootId => {
+                    const task = nodeMap.get(rootId)?.task;
+                    if (!task) return;
+
+                    if (task.startDate !== undefined && Number.isFinite(task.startDate)) {
+                        minStart = minStart === undefined ? task.startDate : Math.min(minStart, task.startDate);
                     }
-                }
+                    if (task.dueDate !== undefined && Number.isFinite(task.dueDate)) {
+                        maxDue = maxDue === undefined ? task.dueDate : Math.max(maxDue, task.dueDate);
+                    }
+                });
 
-                if (version.effectiveDate !== undefined && !hideDescendants) {
+                return { minStart, maxDue };
+            };
+
+            const renderVersionBucket = (
+                version: {
+                    id: string;
+                    name: string;
+                    startDate?: number;
+                    effectiveDate?: number;
+                    ratioDone?: number;
+                },
+                versionRoots: string[]
+            ) => {
+                const versionRowId = getVersionRowId(groupId, version.id);
+                const versionExpanded = versionExpansion[versionRowId] ?? versionExpansion[version.id] ?? true;
+                const rootTaskRange = getRootTaskDateRange(versionRoots);
+
+                const versionStart = Number.isFinite(version.startDate)
+                    ? version.startDate
+                    : rootTaskRange.minStart;
+                const versionDue = Number.isFinite(version.effectiveDate)
+                    ? version.effectiveDate
+                    : rootTaskRange.maxDue;
+
+                if (!hideDescendants) {
                     layoutRows.push({
                         type: 'version',
-                        id: version.id,
+                        id: versionRowId,
+                        versionId: version.id,
                         name: version.name,
                         rowIndex,
                         startDate: versionStart,
-                        dueDate: version.effectiveDate,
+                        dueDate: versionDue,
                         ratioDone: version.ratioDone,
                         projectId: groupId
                     });
@@ -410,9 +438,22 @@ export const buildLayout = (
                     const isLast = idx === versionRoots.length - 1;
                     traverse(rootId, 0, hideVersionChildren, [], isLast);
                 });
+            };
 
+            projectVersions.forEach(version => {
+                const versionRoots = versionMap.get(version.id) || [];
+                renderVersionBucket(version, versionRoots);
                 versionMap.delete(version.id);
             });
+
+            const noneVersionRoots = versionMap.get(NO_VERSION_ID) || [];
+            if (noneVersionRoots.length > 0) {
+                renderVersionBucket({
+                    id: NO_VERSION_ID,
+                    name: i18n.t('label_none') || '(No version)'
+                }, noneVersionRoots);
+                versionMap.delete(NO_VERSION_ID);
+            }
 
             const remainingEntries = Array.from(versionMap.entries());
             remainingEntries.forEach(([, versionRoots], entryIdx) => {

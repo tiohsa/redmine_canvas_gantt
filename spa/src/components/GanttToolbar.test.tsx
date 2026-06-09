@@ -1487,6 +1487,50 @@ describe('GanttToolbar shortcuts', () => {
 
     });
 
+    it('lists no-version after regular versions in the version filter menu', () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [] as never,
+            filterOptions: {
+                projects: [{ id: 'p1', name: 'Alpha' }],
+                assignees: []
+            },
+            versions: [
+                { id: 'v2', name: 'Version 2', projectId: 'p1', status: 'open' },
+                { id: 'v1', name: 'Version 1', projectId: 'p1', status: 'open' }
+            ],
+            selectedAssigneeIds: [],
+            selectedProjectIds: ['p1'],
+            selectedVersionIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true,
+            showVersions: false
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTitle('Filter by version'));
+
+        const selectAll = screen.getByLabelText('Select All').closest('label');
+        const version1 = screen.getByLabelText('Version 1').closest('label');
+        const version2 = screen.getByLabelText('Version 2').closest('label');
+        const noVersion = screen.getByLabelText('(No version)').closest('label');
+        const showVersionHeaders = screen.getByLabelText('Show version headers').closest('label');
+
+        expect(selectAll).not.toBeNull();
+        expect(version1).not.toBeNull();
+        expect(version2).not.toBeNull();
+        expect(noVersion).not.toBeNull();
+        expect(showVersionHeaders).not.toBeNull();
+
+        expect(selectAll!.compareDocumentPosition(version1!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(version1!.compareDocumentPosition(version2!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(version2!.compareDocumentPosition(noVersion!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(noVersion!.compareDocumentPosition(showVersionHeaders!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
     it('keeps no-version checked after a refresh round-trip', async () => {
         useTaskStore.setState({
             filterText: '',
