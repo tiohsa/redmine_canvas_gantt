@@ -124,6 +124,8 @@ export const IssueIframeDialog: React.FC = () => {
     const iframeEscapeCleanupRef = React.useRef<(() => void) | null>(null);
     const iframeSizeObserverCleanupRef = React.useRef<(() => void) | null>(null);
     const dialogResizeCleanupRef = React.useRef<(() => void) | null>(null);
+    const isSavingRef = React.useRef(false);
+    const saveTargetRef = React.useRef<SaveTarget>(null);
     const [iframeError, setIframeError] = React.useState<string | null>(null);
     const [dialogMode, setDialogMode] = React.useState<IssueDialogMode>('form');
     const [currentIframeUrl, setCurrentIframeUrl] = React.useState<string | null>(null);
@@ -169,12 +171,13 @@ export const IssueIframeDialog: React.FC = () => {
 
     const detectSaveTarget = React.useCallback((doc: Document, currentPath?: string) => {
         const activeSaveForm = getActiveSaveForm(doc, currentPath);
-        setSaveTarget(activeSaveForm?.target ?? null);
-        setIsJournalEditing(activeSaveForm?.target === 'journal');
+        const nextSaveTarget = activeSaveForm?.target ?? null;
+        setSaveTarget(nextSaveTarget);
+        setIsJournalEditing(nextSaveTarget === 'journal');
     }, []);
 
-    const handleJournalSaveCompletion = React.useCallback(async (doc: Document): Promise<boolean> => {
-        if (!isSaving || saveTarget !== 'journal') {
+    const handleJournalSaveCompletion = React.useCallback((doc: Document): boolean => {
+        if (!isSavingRef.current || saveTargetRef.current !== 'journal') {
             return false;
         }
 
@@ -183,24 +186,30 @@ export const IssueIframeDialog: React.FC = () => {
         const journalForm = findJournalEditForm(doc);
 
         if (!error && !journalForm) {
+            saveTargetRef.current = null;
             setSaveTarget(null);
             setIsJournalEditing(false);
             setDialogMode('issue-show');
+            isSavingRef.current = false;
             setIsSaving(false);
-            await refreshData();
+            void refreshData().catch((refreshError) => {
+                console.debug('Failed to refresh after comment save', refreshError);
+            });
             return true;
         }
 
         if (error) {
+            saveTargetRef.current = 'journal';
             setSaveTarget('journal');
             setIsJournalEditing(true);
             setDialogMode('error');
+            isSavingRef.current = false;
             setIsSaving(false);
             return true;
         }
 
         return false;
-    }, [isSaving, refreshData, saveTarget]);
+    }, [refreshData]);
 
     const bindIframeSizeObservers = React.useCallback((doc: Document) => {
         iframeSizeObserverCleanupRef.current?.();
@@ -228,8 +237,9 @@ export const IssueIframeDialog: React.FC = () => {
         if (typeof mutationObserverCtor !== 'undefined') {
             const mutationObserver = new mutationObserverCtor(() => {
                 measureDialogHeight();
-                detectSaveTarget(doc);
-                void handleJournalSaveCompletion(doc);
+                if (!handleJournalSaveCompletion(doc)) {
+                    detectSaveTarget(doc);
+                }
             });
             mutationObserver.observe(doc.body, {
                 childList: true,
@@ -260,8 +270,7 @@ export const IssueIframeDialog: React.FC = () => {
 
             applyIssueDialogStyles(doc, isQueryDialog, isIssueShowPage);
             applyLinkTargetBlank(doc);
-            detectSaveTarget(doc, urlParsed.pathname);
-            if (isIssueShowPage && !isSaving) {
+            if (isIssueShowPage && !isSavingRef.current) {
                 setDisplayedIssueId(getIssueShowIdFromPath(urlParsed.pathname));
                 setDialogMode('issue-show');
             }
@@ -294,13 +303,15 @@ export const IssueIframeDialog: React.FC = () => {
                 measureDialogHeight();
             });
 
-            if (await handleJournalSaveCompletion(doc)) {
+            if (handleJournalSaveCompletion(doc)) {
                 return;
             }
 
+            detectSaveTarget(doc, urlParsed.pathname);
+
             // If we were saving, update dialog mode when Redmine redirects after submit.
             // Validation failures usually remain on /edit or /new and keep error blocks in DOM.
-            if (isSaving) {
+            if (isSavingRef.current) {
                 const urlParsed = new URL(loadedUrl, window.location.origin);
                 const path = urlParsed.pathname;
                 const issueId = getIssueShowIdFromPath(path);
@@ -317,15 +328,19 @@ export const IssueIframeDialog: React.FC = () => {
                     }
 
                     setDisplayedIssueId(issueId);
+                    saveTargetRef.current = null;
                     setSaveTarget(null);
                     setIsJournalEditing(false);
                     setDialogMode('issue-show');
+                    isSavingRef.current = false;
                     setIsSaving(false);
                     await refreshData();
                     return;
                 }
 
                 if (!error && isQuerySuccess) {
+                    saveTargetRef.current = null;
+                    isSavingRef.current = false;
                     setIsSaving(false);
                     handleClose();
                     return;
@@ -333,16 +348,18 @@ export const IssueIframeDialog: React.FC = () => {
 
                 setDialogMode(error ? 'error' : 'form');
                 detectSaveTarget(doc);
+                isSavingRef.current = false;
                 setIsSaving(false);
             }
         } catch (e) {
             console.debug("Could not verify iframe URL", e);
-            if (isSaving) {
+            if (isSavingRef.current) {
+                isSavingRef.current = false;
                 setIsSaving(false);
             }
             setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
         }
-    }, [bindIframeSizeObservers, detectSaveTarget, handleClose, handleJournalSaveCompletion, isQueryDialog, isSaving, measureDialogHeight, refreshData]);
+    }, [bindIframeSizeObservers, detectSaveTarget, handleClose, handleJournalSaveCompletion, isQueryDialog, measureDialogHeight, refreshData]);
 
     const handleSave = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;
@@ -352,6 +369,8 @@ export const IssueIframeDialog: React.FC = () => {
         const saveForm = getActiveSaveForm(doc, currentPath);
         if (!saveForm) return;
 
+        saveTargetRef.current = saveForm.target;
+        isSavingRef.current = true;
         setSaveTarget(saveForm.target);
         setIsJournalEditing(saveForm.target === 'journal');
         setDialogMode('saving');
@@ -445,6 +464,8 @@ export const IssueIframeDialog: React.FC = () => {
         setDisplayedIssueId(null);
         setSaveTarget(null);
         setIsJournalEditing(false);
+        saveTargetRef.current = null;
+        isSavingRef.current = false;
         setIsSaving(false);
         setDialogHeightPx(null);
         setIsIframeLoaded(false);

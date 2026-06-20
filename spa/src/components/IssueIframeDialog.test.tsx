@@ -327,6 +327,45 @@ describe('IssueIframeDialog', () => {
         });
     });
 
+    it('finishes comment save when the journal form disappears without an iframe reload', async () => {
+        const refreshData = vi.fn().mockResolvedValue(undefined);
+        useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="journal-7-form" action="/journals/7">
+              <textarea name="journal[notes]"></textarea>
+              <input name="commit" type="submit" value="Save" />
+            </form>
+        `;
+
+        const iframeWindow = { location: { href: 'http://example.com/issues/123' }, document: doc };
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: iframeWindow,
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /Saving comment|loading|saving/i })).toBeDisabled();
+        });
+
+        doc.body.innerHTML = '<div id="content"><p>Issue detail</p></div>';
+
+        await waitFor(() => {
+            expect(refreshData).toHaveBeenCalledTimes(1);
+            expect(screen.getByRole('button', { name: 'Edit issue' })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Save comment' })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+        });
+    });
+
     it('keeps dialog open in issue detail mode when save transitions to issue show even if issue-form remains', async () => {
         const refreshData = vi.fn().mockResolvedValue(undefined);
         useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
