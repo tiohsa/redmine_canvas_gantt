@@ -2,7 +2,23 @@
 
 # Redmine Canvas Gantt
 
-High-performance Canvas-based Gantt chart plugin for Redmine.
+A fast, low-risk, Canvas-based Gantt chart plugin for Redmine 6.x.
+
+## Why this plugin?
+
+- Your Redmine Gantt becomes slow with many issues
+- You want drag-and-drop scheduling inside Redmine
+- You want to try a Gantt plugin without database migration
+- You are using Redmine 6.x and need a modern maintained plugin
+
+## Key benefits
+
+- Fast Canvas rendering
+- Drag, resize, dependency editing
+- Inline issue editing
+- No database migration
+- Easy uninstall
+- Redmine 6.x support
 
 Listed on Redmine Plugins Directory:
 https://www.redmine.org/plugins/redmine_canvas_gantt

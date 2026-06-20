@@ -36,6 +36,12 @@ html, body { overflow-y: auto !important; }
 body { background: #fff !important; }
 `;
 
+const ISSUE_SHOW_SAFE_AREA_CSS = `
+#content { padding-bottom: 96px !important; }
+form[action*="/journals/"],
+form[id^="journal-"][id$="-form"] { scroll-margin-bottom: 96px !important; }
+`;
+
 const ISSUE_DIALOG_ERROR_SELECTORS = [
     '#errorExplanation',
     '.errorExplanation',
@@ -71,6 +77,7 @@ export const applyIssueDialogStyles = (doc: Document, isQuery = false, preserveC
     style.textContent = `
         ${selectorsToHide.join(', ')} { display: none !important; }
         ${SHARED_DIALOG_CSS}
+        ${preserveContextual ? ISSUE_SHOW_SAFE_AREA_CSS : ''}
     `;
     doc.head.appendChild(style);
 };
