@@ -6,6 +6,7 @@ import { applyIssueDialogStyles, applyLinkTargetBlank, getIssueDialogErrorMessag
 import { BulkSubtaskCreator } from './BulkSubtaskCreator';
 import type { BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
 import { fontFamilies, designTokens } from '../styles/designTokens';
+import { buildRedmineUrl } from '../utils/redmineUrl';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
@@ -56,8 +57,56 @@ const getIssueDialogContentHeight = (doc: Document): number => {
     return 0;
 };
 
-const isIssueShowDialogPath = (path: string): boolean => {
-    return /\/issues\/\d+\/?$/.test(path) && !path.includes('/edit') && !path.includes('/new');
+type IssueDialogMode = 'form' | 'saving' | 'issue-show' | 'error';
+type SaveTarget = 'issue' | 'new-issue' | 'journal' | 'query' | null;
+
+const getIssueShowIdFromPath = (path: string): string | null => {
+    const issueMatch = path.match(/\/issues\/(\d+)\/?$/);
+    if (!issueMatch) return null;
+    if (path.includes('/edit') || path.includes('/new')) return null;
+    return issueMatch[1];
+};
+
+const findJournalEditForm = (doc: Document): HTMLFormElement | null => {
+    return (
+        doc.querySelector<HTMLFormElement>('form[action*="/journals/"]') ||
+        doc.querySelector<HTMLFormElement>('form[id^="journal-"][id$="-form"]') ||
+        doc.querySelector<HTMLTextAreaElement>('textarea[name="journal[notes]"]')?.closest('form') ||
+        null
+    );
+};
+
+const getActiveSaveForm = (doc: Document, currentPath?: string): { form: HTMLFormElement; target: SaveTarget } | null => {
+    const journalForm = findJournalEditForm(doc);
+    if (journalForm) return { form: journalForm, target: 'journal' };
+
+    const issueForm = doc.querySelector<HTMLFormElement>('#issue-form');
+    if (issueForm) {
+        const path = currentPath ?? doc.defaultView?.location?.pathname ?? '';
+        const isNewIssue = path.includes('/issues/new') || /\/projects\/[^/]+\/issues\/new\/?$/.test(path);
+        return { form: issueForm, target: isNewIssue ? 'new-issue' : 'issue' };
+    }
+
+    const queryForm = doc.querySelector<HTMLFormElement>('#query-form');
+    if (queryForm) return { form: queryForm, target: 'query' };
+
+    return null;
+};
+
+const submitForm = (form: HTMLFormElement): void => {
+    const submitButton = form.querySelector<HTMLElement>('input[type="submit"], button[type="submit"]');
+
+    if (submitButton) {
+        submitButton.click();
+        return;
+    }
+
+    if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+        return;
+    }
+
+    form.submit();
 };
 
 export const IssueIframeDialog: React.FC = () => {
@@ -76,6 +125,11 @@ export const IssueIframeDialog: React.FC = () => {
     const iframeSizeObserverCleanupRef = React.useRef<(() => void) | null>(null);
     const dialogResizeCleanupRef = React.useRef<(() => void) | null>(null);
     const [iframeError, setIframeError] = React.useState<string | null>(null);
+    const [dialogMode, setDialogMode] = React.useState<IssueDialogMode>('form');
+    const [currentIframeUrl, setCurrentIframeUrl] = React.useState<string | null>(null);
+    const [displayedIssueId, setDisplayedIssueId] = React.useState<string | null>(null);
+    const [saveTarget, setSaveTarget] = React.useState<SaveTarget>(null);
+    const [isJournalEditing, setIsJournalEditing] = React.useState(false);
     const [isSaving, setIsSaving] = React.useState(false);
     const [dialogHeightPx, setDialogHeightPx] = React.useState<number | null>(null);
     const [isIframeLoaded, setIsIframeLoaded] = React.useState(false);
@@ -113,6 +167,41 @@ export const IssueIframeDialog: React.FC = () => {
         setDialogHeightPx(nextHeight);
     }, []);
 
+    const detectSaveTarget = React.useCallback((doc: Document, currentPath?: string) => {
+        const activeSaveForm = getActiveSaveForm(doc, currentPath);
+        setSaveTarget(activeSaveForm?.target ?? null);
+        setIsJournalEditing(activeSaveForm?.target === 'journal');
+    }, []);
+
+    const handleJournalSaveCompletion = React.useCallback(async (doc: Document): Promise<boolean> => {
+        if (!isSaving || saveTarget !== 'journal') {
+            return false;
+        }
+
+        const error = getIssueDialogErrorMessage(doc);
+        setIframeError(error);
+        const journalForm = findJournalEditForm(doc);
+
+        if (!error && !journalForm) {
+            setSaveTarget(null);
+            setIsJournalEditing(false);
+            setDialogMode('issue-show');
+            setIsSaving(false);
+            await refreshData();
+            return true;
+        }
+
+        if (error) {
+            setSaveTarget('journal');
+            setIsJournalEditing(true);
+            setDialogMode('error');
+            setIsSaving(false);
+            return true;
+        }
+
+        return false;
+    }, [isSaving, refreshData, saveTarget]);
+
     const bindIframeSizeObservers = React.useCallback((doc: Document) => {
         iframeSizeObserverCleanupRef.current?.();
 
@@ -139,6 +228,8 @@ export const IssueIframeDialog: React.FC = () => {
         if (typeof mutationObserverCtor !== 'undefined') {
             const mutationObserver = new mutationObserverCtor(() => {
                 measureDialogHeight();
+                detectSaveTarget(doc);
+                void handleJournalSaveCompletion(doc);
             });
             mutationObserver.observe(doc.body, {
                 childList: true,
@@ -152,7 +243,7 @@ export const IssueIframeDialog: React.FC = () => {
         iframeSizeObserverCleanupRef.current = () => {
             cleanupCallbacks.forEach((cleanup) => cleanup());
         };
-    }, [measureDialogHeight]);
+    }, [detectSaveTarget, handleJournalSaveCompletion, measureDialogHeight]);
 
     const handleIframeLoad = React.useCallback(async () => {
         try {
@@ -163,11 +254,17 @@ export const IssueIframeDialog: React.FC = () => {
             if (!doc) return;
 
             const currentUrl = iframe.contentWindow?.location.href || '';
+            setCurrentIframeUrl(currentUrl || null);
             const urlParsed = new URL(currentUrl, window.location.origin);
-            const isIssueShowPage = !isQueryDialog && isIssueShowDialogPath(urlParsed.pathname);
+            const isIssueShowPage = !isQueryDialog && Boolean(getIssueShowIdFromPath(urlParsed.pathname));
 
             applyIssueDialogStyles(doc, isQueryDialog, isIssueShowPage);
             applyLinkTargetBlank(doc);
+            detectSaveTarget(doc, urlParsed.pathname);
+            if (isIssueShowPage && !isSaving) {
+                setDisplayedIssueId(getIssueShowIdFromPath(urlParsed.pathname));
+                setDialogMode('issue-show');
+            }
             bindIframeSizeObservers(doc);
 
             setIsIframeLoaded(true);
@@ -189,6 +286,7 @@ export const IssueIframeDialog: React.FC = () => {
             }
 
             const loadedUrl = iframeWindow?.location.href || '';
+            setCurrentIframeUrl(loadedUrl || null);
 
             const error = getIssueDialogErrorMessage(doc);
             setIframeError(error);
@@ -196,13 +294,16 @@ export const IssueIframeDialog: React.FC = () => {
                 measureDialogHeight();
             });
 
-            // If we were saving, close when we transition to issue show page without error.
+            if (await handleJournalSaveCompletion(doc)) {
+                return;
+            }
+
+            // If we were saving, update dialog mode when Redmine redirects after submit.
             // Validation failures usually remain on /edit or /new and keep error blocks in DOM.
             if (isSaving) {
                 const urlParsed = new URL(loadedUrl, window.location.origin);
                 const path = urlParsed.pathname;
-                const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
-                const isIssueShow = Boolean(issueMatch) && !path.includes('/edit') && !path.includes('/new');
+                const issueId = getIssueShowIdFromPath(path);
 
                 const isQuerySuccess = isQueryDialog && !error && (
                     path.endsWith('/issues') ||
@@ -210,18 +311,28 @@ export const IssueIframeDialog: React.FC = () => {
                     path.match(/\/queries\/\d+$/) // some plugins redirect here
                 );
 
-                if (!error && (isIssueShow || isQuerySuccess)) {
-                    const newIssueId = issueMatch?.[1];
-
-                    if (newIssueId && bulkRef.current?.hasSubjects()) {
-                        await bulkRef.current.createSubtasks(newIssueId);
+                if (!error && issueId && !isQueryDialog) {
+                    if (bulkRef.current?.hasSubjects()) {
+                        await bulkRef.current.createSubtasks(issueId);
                     }
 
+                    setDisplayedIssueId(issueId);
+                    setSaveTarget(null);
+                    setIsJournalEditing(false);
+                    setDialogMode('issue-show');
+                    setIsSaving(false);
+                    await refreshData();
+                    return;
+                }
+
+                if (!error && isQuerySuccess) {
                     setIsSaving(false);
                     handleClose();
                     return;
                 }
 
+                setDialogMode(error ? 'error' : 'form');
+                detectSaveTarget(doc);
                 setIsSaving(false);
             }
         } catch (e) {
@@ -231,30 +342,34 @@ export const IssueIframeDialog: React.FC = () => {
             }
             setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
         }
-    }, [bindIframeSizeObservers, handleClose, isQueryDialog, isSaving, measureDialogHeight]);
+    }, [bindIframeSizeObservers, detectSaveTarget, handleClose, handleJournalSaveCompletion, isQueryDialog, isSaving, measureDialogHeight, refreshData]);
 
     const handleSave = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;
         if (!doc) return;
 
-        const issueForm = doc.querySelector('#issue-form') as HTMLFormElement;
-        const queryForm = doc.querySelector('#query-form') as HTMLFormElement;
-        const form = issueForm || queryForm;
+        const currentPath = iframeRef.current?.contentWindow?.location?.pathname;
+        const saveForm = getActiveSaveForm(doc, currentPath);
+        if (!saveForm) return;
 
-        if (form) {
-            setIsSaving(true);
-            const submitBtn = form.querySelector('input[type="submit"], button[type="submit"]') as HTMLElement | null;
-            if (typeof form.requestSubmit === 'function') {
-                form.requestSubmit();
-            } else if (submitBtn) {
-                submitBtn.click();
-            } else {
-                form.submit();
-            }
-        }
+        setSaveTarget(saveForm.target);
+        setIsJournalEditing(saveForm.target === 'journal');
+        setDialogMode('saving');
+        setIsSaving(true);
+        submitForm(saveForm.form);
     }, []);
 
     const { issueLabel, issueSubject } = React.useMemo(() => {
+        if (displayedIssueId && !isQueryDialog) {
+            const task = useTaskStore.getState().tasks.find(t => String(t.id) === displayedIssueId);
+            if (task) {
+                const label = `${task.trackerName || i18n.t('label_issue') || 'Issue'} #${task.id}`;
+                return { issueLabel: label, issueSubject: task.subject || '' };
+            }
+            const label = `${i18n.t('label_issue') || 'Issue'} #${displayedIssueId}`;
+            return { issueLabel: label, issueSubject: '' };
+        }
+
         if (!activeDialogUrl) return { issueLabel: '', issueSubject: '' };
         if (isQueryDialog) {
             return {
@@ -288,7 +403,7 @@ export const IssueIframeDialog: React.FC = () => {
         // 3. General "Edit" fallback
         const label = i18n.t('button_edit') || 'Edit';
         return { issueLabel: label, issueSubject: '' };
-    }, [activeDialogUrl, isQueryDialog]);
+    }, [activeDialogUrl, displayedIssueId, isQueryDialog]);
 
     const parentId = React.useMemo(() => {
         if (!activeDialogUrl || isQueryDialog) return undefined;
@@ -325,6 +440,11 @@ export const IssueIframeDialog: React.FC = () => {
         iframeSizeObserverCleanupRef.current?.();
         iframeSizeObserverCleanupRef.current = null;
         setIframeError(null);
+        setDialogMode('form');
+        setCurrentIframeUrl(null);
+        setDisplayedIssueId(null);
+        setSaveTarget(null);
+        setIsJournalEditing(false);
         setIsSaving(false);
         setDialogHeightPx(null);
         setIsIframeLoaded(false);
@@ -393,7 +513,35 @@ export const IssueIframeDialog: React.FC = () => {
         };
     }, [activeDialogUrl, iframeError, measureDialogHeight]);
 
+    const handleEditAgain = React.useCallback(() => {
+        if (!displayedIssueId || !iframeRef.current?.contentWindow) return;
+
+        const editUrl = buildRedmineUrl(`/issues/${displayedIssueId}/edit`);
+        iframeRef.current.contentWindow.location.href = editUrl;
+        setCurrentIframeUrl(editUrl);
+        setDialogMode('form');
+        setDisplayedIssueId(null);
+        setSaveTarget('issue');
+        setIsJournalEditing(false);
+        setIframeError(null);
+    }, [displayedIssueId]);
+
     if (!activeDialogUrl) return null;
+
+    const externalDialogUrl = currentIframeUrl || activeDialogUrl;
+    const isIssueShowMode = dialogMode === 'issue-show' && !isQueryDialog;
+    const isJournalSaveMode = saveTarget === 'journal' || isJournalEditing;
+    const closeLabel = isIssueShowMode || isJournalSaveMode ? (i18n.t('button_close') || 'Close') : (i18n.t('button_cancel') || 'Cancel');
+    const saveLabel = saveTarget === 'new-issue'
+        ? (i18n.t('button_create_issue') || 'Create issue')
+        : saveTarget === 'journal'
+            ? (i18n.t('button_save_comment') || 'Save comment')
+            : saveTarget === 'issue'
+                ? (i18n.t('button_save_issue') || 'Save issue')
+                : (i18n.t('button_save') || 'Save');
+    const savingLabel = saveTarget === 'journal'
+        ? (i18n.t('label_saving_comment') || 'Saving comment...')
+        : (i18n.t('label_loading') || 'Saving...');
 
     const compactHeaderPadding = '2px 12px';
     const compactFooterPadding = '2px 12px 4px 12px';
@@ -467,7 +615,7 @@ export const IssueIframeDialog: React.FC = () => {
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                         <a
-                            href={activeDialogUrl}
+                            href={externalDialogUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             aria-label="Open issue in new tab"
@@ -599,9 +747,32 @@ export const IssueIframeDialog: React.FC = () => {
                                 transition: 'background 0.2s'
                             }}
                     >
-                        {i18n.t('button_cancel') || 'Cancel'}
+                        {closeLabel}
                     </button>
-                    {!isQueryDialog && (
+                    {isIssueShowMode && !isJournalSaveMode ? (
+                        <button
+                            onClick={handleEditAgain}
+                            style={{
+                                height: `${compactActionButtonHeight}px`,
+                                padding: '0 16px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: '#181e25',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: 9999,
+                                fontSize: 13,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                minWidth: `${compactActionButtonMinWidth}px`,
+                                boxSizing: 'border-box',
+                                transition: 'background 0.2s'
+                            }}
+                        >
+                            {i18n.t('button_edit_issue') || 'Edit issue'}
+                        </button>
+                    ) : (
                         <button
                             onClick={handleSave}
                             disabled={isSaving}
@@ -624,7 +795,7 @@ export const IssueIframeDialog: React.FC = () => {
                                 opacity: isSaving ? 0.7 : 1
                             }}
                         >
-                            {isSaving ? (i18n.t('label_loading') || 'Saving...') : (i18n.t('button_save') || 'Save')}
+                            {isSaving ? savingLabel : saveLabel}
                         </button>
                     )}
                 </div>

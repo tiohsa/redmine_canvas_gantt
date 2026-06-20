@@ -35,6 +35,33 @@ describe('iframeStyles', () => {
         expect(css).toContain('#issue-form > p.buttons');
     });
 
+
+    it('keeps issue form buttons hidden while leaving journal edit buttons available', () => {
+        const doc = document.implementation.createHTMLDocument('iframe');
+
+        applyIssueDialogStyles(doc, false, true);
+
+        const css = doc.querySelector(`#${ISSUE_DIALOG_STYLE_ID}`)?.textContent || '';
+        expect(css).toContain('#issue-form > p.buttons');
+        expect(css).not.toContain('form[action*="/journals/"] { display: none');
+        expect(css).not.toContain('form[id^="journal-"][id$="-form"] { display: none');
+    });
+
+    it('adds issue detail safe area styles only on issue show pages', () => {
+        const formDoc = document.implementation.createHTMLDocument('form iframe');
+        const showDoc = document.implementation.createHTMLDocument('show iframe');
+
+        applyIssueDialogStyles(formDoc, false, false);
+        applyIssueDialogStyles(showDoc, false, true);
+
+        const formCss = formDoc.querySelector(`#${ISSUE_DIALOG_STYLE_ID}`)?.textContent || '';
+        const showCss = showDoc.querySelector(`#${ISSUE_DIALOG_STYLE_ID}`)?.textContent || '';
+
+        expect(formCss).not.toContain('padding-bottom: 96px');
+        expect(showCss).toContain('#content { padding-bottom: 96px !important; }');
+        expect(showCss).toContain('scroll-margin-bottom: 96px');
+    });
+
     it('detects error message from standard error elements', () => {
         const doc = document.implementation.createHTMLDocument('iframe');
         const error = doc.createElement('div');
