@@ -6,6 +6,7 @@ import { applyIssueDialogStyles, applyLinkTargetBlank, getIssueDialogErrorMessag
 import { BulkSubtaskCreator } from './BulkSubtaskCreator';
 import type { BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
 import { fontFamilies, designTokens } from '../styles/designTokens';
+import { buildRedmineUrl } from '../utils/redmineUrl';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
@@ -56,8 +57,13 @@ const getIssueDialogContentHeight = (doc: Document): number => {
     return 0;
 };
 
-const isIssueShowDialogPath = (path: string): boolean => {
-    return /\/issues\/\d+\/?$/.test(path) && !path.includes('/edit') && !path.includes('/new');
+type IssueDialogMode = 'form' | 'saving' | 'issue-show' | 'error';
+
+const getIssueShowIdFromPath = (path: string): string | null => {
+    const issueMatch = path.match(/\/issues\/(\d+)\/?$/);
+    if (!issueMatch) return null;
+    if (path.includes('/edit') || path.includes('/new')) return null;
+    return issueMatch[1];
 };
 
 export const IssueIframeDialog: React.FC = () => {
@@ -76,6 +82,9 @@ export const IssueIframeDialog: React.FC = () => {
     const iframeSizeObserverCleanupRef = React.useRef<(() => void) | null>(null);
     const dialogResizeCleanupRef = React.useRef<(() => void) | null>(null);
     const [iframeError, setIframeError] = React.useState<string | null>(null);
+    const [dialogMode, setDialogMode] = React.useState<IssueDialogMode>('form');
+    const [currentIframeUrl, setCurrentIframeUrl] = React.useState<string | null>(null);
+    const [displayedIssueId, setDisplayedIssueId] = React.useState<string | null>(null);
     const [isSaving, setIsSaving] = React.useState(false);
     const [dialogHeightPx, setDialogHeightPx] = React.useState<number | null>(null);
     const [isIframeLoaded, setIsIframeLoaded] = React.useState(false);
@@ -163,8 +172,9 @@ export const IssueIframeDialog: React.FC = () => {
             if (!doc) return;
 
             const currentUrl = iframe.contentWindow?.location.href || '';
+            setCurrentIframeUrl(currentUrl || null);
             const urlParsed = new URL(currentUrl, window.location.origin);
-            const isIssueShowPage = !isQueryDialog && isIssueShowDialogPath(urlParsed.pathname);
+            const isIssueShowPage = !isQueryDialog && Boolean(getIssueShowIdFromPath(urlParsed.pathname));
 
             applyIssueDialogStyles(doc, isQueryDialog, isIssueShowPage);
             applyLinkTargetBlank(doc);
@@ -189,6 +199,7 @@ export const IssueIframeDialog: React.FC = () => {
             }
 
             const loadedUrl = iframeWindow?.location.href || '';
+            setCurrentIframeUrl(loadedUrl || null);
 
             const error = getIssueDialogErrorMessage(doc);
             setIframeError(error);
@@ -196,13 +207,12 @@ export const IssueIframeDialog: React.FC = () => {
                 measureDialogHeight();
             });
 
-            // If we were saving, close when we transition to issue show page without error.
+            // If we were saving, update dialog mode when Redmine redirects after submit.
             // Validation failures usually remain on /edit or /new and keep error blocks in DOM.
             if (isSaving) {
                 const urlParsed = new URL(loadedUrl, window.location.origin);
                 const path = urlParsed.pathname;
-                const issueMatch = path.match(/\/issues\/(\d+)(?:\?|$)/);
-                const isIssueShow = Boolean(issueMatch) && !path.includes('/edit') && !path.includes('/new');
+                const issueId = getIssueShowIdFromPath(path);
 
                 const isQuerySuccess = isQueryDialog && !error && (
                     path.endsWith('/issues') ||
@@ -210,18 +220,25 @@ export const IssueIframeDialog: React.FC = () => {
                     path.match(/\/queries\/\d+$/) // some plugins redirect here
                 );
 
-                if (!error && (isIssueShow || isQuerySuccess)) {
-                    const newIssueId = issueMatch?.[1];
-
-                    if (newIssueId && bulkRef.current?.hasSubjects()) {
-                        await bulkRef.current.createSubtasks(newIssueId);
+                if (!error && issueId && !isQueryDialog) {
+                    if (bulkRef.current?.hasSubjects()) {
+                        await bulkRef.current.createSubtasks(issueId);
                     }
 
+                    setDisplayedIssueId(issueId);
+                    setDialogMode('issue-show');
+                    setIsSaving(false);
+                    await refreshData();
+                    return;
+                }
+
+                if (!error && isQuerySuccess) {
                     setIsSaving(false);
                     handleClose();
                     return;
                 }
 
+                setDialogMode(error ? 'error' : 'form');
                 setIsSaving(false);
             }
         } catch (e) {
@@ -231,7 +248,7 @@ export const IssueIframeDialog: React.FC = () => {
             }
             setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
         }
-    }, [bindIframeSizeObservers, handleClose, isQueryDialog, isSaving, measureDialogHeight]);
+    }, [bindIframeSizeObservers, handleClose, isQueryDialog, isSaving, measureDialogHeight, refreshData]);
 
     const handleSave = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;
@@ -242,6 +259,7 @@ export const IssueIframeDialog: React.FC = () => {
         const form = issueForm || queryForm;
 
         if (form) {
+            setDialogMode('saving');
             setIsSaving(true);
             const submitBtn = form.querySelector('input[type="submit"], button[type="submit"]') as HTMLElement | null;
             if (typeof form.requestSubmit === 'function') {
@@ -255,6 +273,16 @@ export const IssueIframeDialog: React.FC = () => {
     }, []);
 
     const { issueLabel, issueSubject } = React.useMemo(() => {
+        if (displayedIssueId && !isQueryDialog) {
+            const task = useTaskStore.getState().tasks.find(t => String(t.id) === displayedIssueId);
+            if (task) {
+                const label = `${task.trackerName || i18n.t('label_issue') || 'Issue'} #${task.id}`;
+                return { issueLabel: label, issueSubject: task.subject || '' };
+            }
+            const label = `${i18n.t('label_issue') || 'Issue'} #${displayedIssueId}`;
+            return { issueLabel: label, issueSubject: '' };
+        }
+
         if (!activeDialogUrl) return { issueLabel: '', issueSubject: '' };
         if (isQueryDialog) {
             return {
@@ -288,7 +316,7 @@ export const IssueIframeDialog: React.FC = () => {
         // 3. General "Edit" fallback
         const label = i18n.t('button_edit') || 'Edit';
         return { issueLabel: label, issueSubject: '' };
-    }, [activeDialogUrl, isQueryDialog]);
+    }, [activeDialogUrl, displayedIssueId, isQueryDialog]);
 
     const parentId = React.useMemo(() => {
         if (!activeDialogUrl || isQueryDialog) return undefined;
@@ -325,6 +353,9 @@ export const IssueIframeDialog: React.FC = () => {
         iframeSizeObserverCleanupRef.current?.();
         iframeSizeObserverCleanupRef.current = null;
         setIframeError(null);
+        setDialogMode('form');
+        setCurrentIframeUrl(null);
+        setDisplayedIssueId(null);
         setIsSaving(false);
         setDialogHeightPx(null);
         setIsIframeLoaded(false);
@@ -393,7 +424,21 @@ export const IssueIframeDialog: React.FC = () => {
         };
     }, [activeDialogUrl, iframeError, measureDialogHeight]);
 
+    const handleEditAgain = React.useCallback(() => {
+        if (!displayedIssueId || !iframeRef.current?.contentWindow) return;
+
+        const editUrl = buildRedmineUrl(`/issues/${displayedIssueId}/edit`);
+        iframeRef.current.contentWindow.location.href = editUrl;
+        setCurrentIframeUrl(editUrl);
+        setDialogMode('form');
+        setDisplayedIssueId(null);
+        setIframeError(null);
+    }, [displayedIssueId]);
+
     if (!activeDialogUrl) return null;
+
+    const externalDialogUrl = currentIframeUrl || activeDialogUrl;
+    const isIssueShowMode = dialogMode === 'issue-show' && !isQueryDialog;
 
     const compactHeaderPadding = '2px 12px';
     const compactFooterPadding = '2px 12px 4px 12px';
@@ -467,7 +512,7 @@ export const IssueIframeDialog: React.FC = () => {
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                         <a
-                            href={activeDialogUrl}
+                            href={externalDialogUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             aria-label="Open issue in new tab"
@@ -599,9 +644,32 @@ export const IssueIframeDialog: React.FC = () => {
                                 transition: 'background 0.2s'
                             }}
                     >
-                        {i18n.t('button_cancel') || 'Cancel'}
+                        {isIssueShowMode ? (i18n.t('button_close') || 'Close') : (i18n.t('button_cancel') || 'Cancel')}
                     </button>
-                    {!isQueryDialog && (
+                    {isIssueShowMode ? (
+                        <button
+                            onClick={handleEditAgain}
+                            style={{
+                                height: `${compactActionButtonHeight}px`,
+                                padding: '0 16px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: '#181e25',
+                                color: '#ffffff',
+                                border: 'none',
+                                borderRadius: 9999,
+                                fontSize: 13,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                minWidth: `${compactActionButtonMinWidth}px`,
+                                boxSizing: 'border-box',
+                                transition: 'background 0.2s'
+                            }}
+                        >
+                            {i18n.t('button_edit') || 'Edit'}
+                        </button>
+                    ) : (
                         <button
                             onClick={handleSave}
                             disabled={isSaving}

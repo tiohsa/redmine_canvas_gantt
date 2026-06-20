@@ -50,7 +50,7 @@ const setElementHeight = (element: HTMLElement, height: number) => {
 describe('IssueIframeDialog', () => {
     beforeEach(() => {
         window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
-        useUIStore.setState({ issueDialogUrl: '/issues/123/edit' });
+        useUIStore.setState({ issueDialogUrl: '/issues/123/edit', queryDialogUrl: null });
         useTaskStore.setState({ refreshData: vi.fn() as unknown as () => Promise<void> });
         vi.mocked(applyIssueDialogStyles).mockReset();
         vi.mocked(findIssueDialogErrorElement).mockReset();
@@ -213,7 +213,7 @@ describe('IssueIframeDialog', () => {
         });
     });
 
-    it('closes dialog when save transitions to issue show even if issue-form remains', async () => {
+    it('keeps dialog open in issue detail mode when save transitions to issue show even if issue-form remains', async () => {
         const refreshData = vi.fn().mockResolvedValue(undefined);
         useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
 
@@ -245,12 +245,15 @@ describe('IssueIframeDialog', () => {
         fireEvent.load(iframe);
 
         await waitFor(() => {
-            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+            expect(useUIStore.getState().issueDialogUrl).toBe('/issues/123/edit');
             expect(refreshData).toHaveBeenCalledTimes(1);
+            expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /Edit|Edit again/ })).toBeInTheDocument();
         });
     });
 
-    it('closes dialog when save transitions to issue show without issue-form', async () => {
+    it('keeps dialog open in issue detail mode when save transitions to issue show without issue-form', async () => {
         const refreshData = vi.fn().mockResolvedValue(undefined);
         useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
         useUIStore.setState({ issueDialogUrl: '/redmine/issues/123/edit' });
@@ -286,8 +289,11 @@ describe('IssueIframeDialog', () => {
         fireEvent.load(iframe);
 
         await waitFor(() => {
-            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+            expect(useUIStore.getState().issueDialogUrl).toBe('/redmine/issues/123/edit');
             expect(refreshData).toHaveBeenCalledTimes(1);
+            expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /Edit|Edit again/ })).toBeInTheDocument();
         });
     });
 
@@ -326,7 +332,7 @@ describe('IssueIframeDialog', () => {
         });
     });
 
-    it('closes dialog when saving from new issue page to issue show', async () => {
+    it('keeps dialog open and updates header/link when saving from new issue page to issue show', async () => {
         const refreshData = vi.fn().mockResolvedValue(undefined);
         useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
         useUIStore.setState({ issueDialogUrl: '/redmine/projects/p1/issues/new' });
@@ -359,9 +365,94 @@ describe('IssueIframeDialog', () => {
         fireEvent.load(iframe);
 
         await waitFor(() => {
-            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+            expect(useUIStore.getState().issueDialogUrl).toBe('/redmine/projects/p1/issues/new');
+            expect(refreshData).toHaveBeenCalledTimes(1);
+            expect(screen.getByText('Issue #456')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: /Edit|Edit again/ })).toBeInTheDocument();
+            expect(screen.getByRole('link', { name: 'Open issue in new tab' })).toHaveAttribute('href', expect.stringContaining('/issues/456'));
+        });
+    });
+
+
+    it('keeps query save success behavior closing the query dialog', async () => {
+        const refreshData = vi.fn().mockResolvedValue(undefined);
+        useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
+        useUIStore.setState({ issueDialogUrl: null, queryDialogUrl: '/queries/1/edit' });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="query-form">
+              <input name="commit" type="submit" value="Save" />
+            </form>
+        `;
+
+        const iframeWindow = { location: { href: 'http://example.com/queries/1/edit' }, document: doc };
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: iframeWindow,
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc });
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
+        });
+
+        iframeWindow.location.href = 'http://example.com/queries/1';
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(useUIStore.getState().queryDialogUrl).toBeNull();
             expect(refreshData).toHaveBeenCalledTimes(1);
         });
+    });
+
+    it('navigates back to the edit form from issue detail mode', async () => {
+        const refreshData = vi.fn().mockResolvedValue(undefined);
+        useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="issue-form">
+              <input name="commit" type="submit" value="Save" />
+            </form>
+        `;
+
+        const iframeWindow = { location: { href: 'http://example.com/issues/123/edit' }, document: doc };
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: iframeWindow,
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc });
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
+        });
+
+        iframeWindow.location.href = 'http://example.com/issues/123';
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /Edit|Edit again/ })).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /Edit|Edit again/ }));
+
+        expect(iframeWindow.location.href).toBe('/issues/123/edit');
+        expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
     });
 
     it('resets saving state when dialog is reopened', async () => {
