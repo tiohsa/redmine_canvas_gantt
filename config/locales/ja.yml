@@ -204,6 +204,11 @@ ja:
     label_baseline_diff_exists: "ベースラインとの差分があります。"
     label_baseline_diff_none: "ベースラインとの差分はありません。"
     button_save: "保存"
+    button_save_issue: "チケットを保存"
+    button_create_issue: "チケットを作成"
+    button_save_comment: "コメントを保存"
+    button_edit_issue: "チケットを編集"
+    label_saving_comment: "コメントを保存中..."
     button_cancel: "キャンセル"
 
     general_format_date: "%Y/%m/%d"

@@ -204,6 +204,11 @@ en:
     label_baseline_diff_exists: "Baseline differs from the current plan."
     label_baseline_diff_none: "No baseline difference."
     button_save: "Save"
+    button_save_issue: "Save issue"
+    button_create_issue: "Create issue"
+    button_save_comment: "Save comment"
+    button_edit_issue: "Edit issue"
+    label_saving_comment: "Saving comment..."
     button_cancel: "Cancel"
 
     general_format_date: "%m/%d/%Y"

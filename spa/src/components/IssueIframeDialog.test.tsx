@@ -213,6 +213,120 @@ describe('IssueIframeDialog', () => {
         });
     });
 
+
+    it('shows issue detail actions without a save button on issue show pages', () => {
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = '<div id="content"><p>Issue detail</p></div>';
+
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Edit issue' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Save issue' })).not.toBeInTheDocument();
+    });
+
+    it('shows Save comment and submits the active journal edit form', () => {
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="journal-7-form" action="/journals/7">
+              <textarea name="journal[notes]"></textarea>
+              <input name="commit" type="submit" value="Save" />
+            </form>
+        `;
+
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+        const journalSubmit = doc.querySelector('input[type="submit"]') as HTMLInputElement;
+        const journalClick = vi.spyOn(journalSubmit, 'click');
+
+        fireEvent.load(iframe);
+
+        expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Save comment' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Edit issue' })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+
+        expect(journalClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns to issue detail actions and refreshes data after comment save success', async () => {
+        const refreshData = vi.fn().mockResolvedValue(undefined);
+        useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="journal-7-form" action="/journals/7">
+              <textarea name="journal[notes]"></textarea>
+              <input name="commit" type="submit" value="Save" />
+            </form>
+        `;
+        const iframeWindow = { location: { href: 'http://example.com/issues/123' }, document: doc };
+        Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /Saving comment|loading|saving/i })).toBeDisabled();
+        });
+
+        doc.body.innerHTML = '<div id="content"><p>Issue detail</p></div>';
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(refreshData).toHaveBeenCalledTimes(1);
+            expect(screen.getByRole('button', { name: 'Edit issue' })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Save comment' })).not.toBeInTheDocument();
+        });
+    });
+
+    it('keeps Save comment visible when comment save returns an error', async () => {
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="journal-7-form" action="/journals/7">
+              <textarea name="journal[notes]"></textarea>
+              <input name="commit" type="submit" value="Save" />
+            </form>
+        `;
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(screen.getByRole('button', { name: 'Save comment' }));
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue('Comment error');
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Save comment' })).not.toBeDisabled();
+            expect(screen.queryByRole('button', { name: 'Edit issue' })).not.toBeInTheDocument();
+        });
+    });
+
     it('keeps dialog open in issue detail mode when save transitions to issue show even if issue-form remains', async () => {
         const refreshData = vi.fn().mockResolvedValue(undefined);
         useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
@@ -228,13 +342,14 @@ describe('IssueIframeDialog', () => {
 
         vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
 
+        const iframeWindow = { location: { href: 'http://example.com/issues/123/edit' }, document: doc };
         Object.defineProperty(iframe, 'contentWindow', {
-            value: { location: { href: 'http://example.com/issues/123' }, document: doc }
+            value: iframeWindow
         });
         Object.defineProperty(iframe, 'contentDocument', { value: doc });
 
         fireEvent.load(iframe);
-        const saveButton = screen.getByRole('button', { name: 'Save' });
+        const saveButton = screen.getByRole('button', { name: 'Save issue' });
         fireEvent.click(saveButton);
 
         await waitFor(() => {
@@ -242,12 +357,13 @@ describe('IssueIframeDialog', () => {
         });
 
         // URL is /issues/:id and no error block -> treat as successful save.
+        iframeWindow.location.href = 'http://example.com/issues/123';
         fireEvent.load(iframe);
 
         await waitFor(() => {
             expect(useUIStore.getState().issueDialogUrl).toBe('/issues/123/edit');
             expect(refreshData).toHaveBeenCalledTimes(1);
-            expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Save issue' })).not.toBeInTheDocument();
             expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
             expect(screen.getByRole('button', { name: /Edit|Edit again/ })).toBeInTheDocument();
         });
@@ -277,7 +393,7 @@ describe('IssueIframeDialog', () => {
         Object.defineProperty(iframe, 'contentDocument', { value: doc });
 
         fireEvent.load(iframe);
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save issue' }));
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
@@ -291,7 +407,7 @@ describe('IssueIframeDialog', () => {
         await waitFor(() => {
             expect(useUIStore.getState().issueDialogUrl).toBe('/redmine/issues/123/edit');
             expect(refreshData).toHaveBeenCalledTimes(1);
-            expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Save issue' })).not.toBeInTheDocument();
             expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
             expect(screen.getByRole('button', { name: /Edit|Edit again/ })).toBeInTheDocument();
         });
@@ -316,7 +432,7 @@ describe('IssueIframeDialog', () => {
 
         vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
         fireEvent.load(iframe);
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save issue' }));
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
@@ -327,7 +443,7 @@ describe('IssueIframeDialog', () => {
         fireEvent.load(iframe);
 
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+            expect(screen.getByRole('button', { name: /Save|Save issue/ })).not.toBeDisabled();
             expect(useUIStore.getState().issueDialogUrl).toBe('/issues/123/edit');
         });
     });
@@ -355,7 +471,7 @@ describe('IssueIframeDialog', () => {
 
         vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
         fireEvent.load(iframe);
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Create issue' }));
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
@@ -368,7 +484,7 @@ describe('IssueIframeDialog', () => {
             expect(useUIStore.getState().issueDialogUrl).toBe('/redmine/projects/p1/issues/new');
             expect(refreshData).toHaveBeenCalledTimes(1);
             expect(screen.getByText('Issue #456')).toBeInTheDocument();
-            expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Save issue' })).not.toBeInTheDocument();
             expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
             expect(screen.getByRole('button', { name: /Edit|Edit again/ })).toBeInTheDocument();
             expect(screen.getByRole('link', { name: 'Open issue in new tab' })).toHaveAttribute('href', expect.stringContaining('/issues/456'));
@@ -436,7 +552,7 @@ describe('IssueIframeDialog', () => {
 
         vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
         fireEvent.load(iframe);
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save issue' }));
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
@@ -452,7 +568,7 @@ describe('IssueIframeDialog', () => {
         fireEvent.click(screen.getByRole('button', { name: /Edit|Edit again/ }));
 
         expect(iframeWindow.location.href).toBe('/issues/123/edit');
-        expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Save|Save issue/ })).toBeInTheDocument();
     });
 
     it('resets saving state when dialog is reopened', async () => {
@@ -473,7 +589,7 @@ describe('IssueIframeDialog', () => {
         Object.defineProperty(iframe, 'contentDocument', { value: doc });
 
         fireEvent.load(iframe);
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save issue' }));
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
@@ -485,7 +601,7 @@ describe('IssueIframeDialog', () => {
         });
 
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+            expect(screen.getByRole('button', { name: /Save|Save issue/ })).not.toBeDisabled();
         });
     });
 
@@ -514,6 +630,8 @@ describe('IssueIframeDialog', () => {
         const issueForm = doc.querySelector('#issue-form') as HTMLFormElement;
         const relationSubmit = doc.querySelector('#new-relation-form input[name="commit"]') as HTMLInputElement;
         const relationClick = vi.spyOn(relationSubmit, 'click');
+        const issueSubmit = doc.querySelector('#issue-form input[name="commit"]') as HTMLInputElement;
+        const issueSubmitClick = vi.spyOn(issueSubmit, 'click');
         const issueRequestSubmit = vi.fn();
         Object.defineProperty(issueForm, 'requestSubmit', {
             configurable: true,
@@ -525,9 +643,10 @@ describe('IssueIframeDialog', () => {
         });
 
         fireEvent.load(iframe);
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save issue' }));
 
-        expect(issueRequestSubmit).toHaveBeenCalledTimes(1);
+        expect(issueSubmitClick).toHaveBeenCalledTimes(1);
+        expect(issueRequestSubmit).not.toHaveBeenCalled();
         expect(relationClick).not.toHaveBeenCalled();
     });
 });
