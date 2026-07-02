@@ -1655,7 +1655,7 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
         fireEvent.click(screen.getByTitle('Filter by project'));
-        fireEvent.click(screen.getByLabelText('Show only my member projects'));
+        fireEvent.click(screen.getByLabelText('Show member projects in filter'));
 
         await waitFor(() => {
             expect(apiClient.fetchData).toHaveBeenCalledWith(expect.objectContaining({
