@@ -1235,9 +1235,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                     type="checkbox"
                                     checked={memberProjectsOnly}
                                     onChange={(event) => { void handleMemberProjectsOnlyToggle(event.target.checked); }}
-                                    aria-label={i18n.t('label_member_projects_only') || 'Show only my member projects'}
+                                    aria-label={i18n.t('label_member_projects_only') || 'Show member projects in filter'}
                                 />
-                                <span>{i18n.t('label_member_projects_only') || 'Show only my member projects'}</span>
+                                <span>{i18n.t('label_member_projects_only') || 'Show member projects in filter'}</span>
                             </label>
                             {projectFilterLoading && (
                                 <div style={{ fontSize: '12px', color: designTokens.textMuted, marginBottom: '8px' }}>
