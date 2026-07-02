@@ -1212,29 +1212,77 @@ describe('TaskStore scheduling state and relation-driven recalculation', () => {
         expect(state.schedulingStates.B.state).toBe('conflicted');
     });
 
-    it('rejects linked shift when external dependency would be violated', () => {
+    it('keeps a Monday successor fixed when moving the predecessor due date from Saturday to Friday', () => {
+        const originalConfig = window.RedmineCanvasGantt;
+        window.RedmineCanvasGantt = {
+            ...(originalConfig || {}),
+            nonWorkingWeekDays: [0, 6]
+        } as Window['RedmineCanvasGantt'];
         const addNotification = vi.fn();
-        useUIStore.setState({
-            autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift,
-            addNotification: addNotification as unknown as (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void
-        });
-        const { setTasks, setRelations, updateTask } = useTaskStore.getState();
-        setTasks([
-            buildTask({ id: 'P', startDate: MONDAY, dueDate: THURSDAY }),
-            buildTask({ id: 'A', startDate: FRIDAY, dueDate: FRIDAY + DAY }),
-            buildTask({ id: 'B', startDate: FRIDAY + DAY * 3, dueDate: FRIDAY + DAY * 4 })
-        ]);
-        setRelations([
-            { id: 'r1', from: 'A', to: 'B', type: 'precedes' },
-            { id: 'r2', from: 'P', to: 'B', type: 'precedes' }
-        ]);
 
-        updateTask('A', { startDate: THURSDAY, dueDate: FRIDAY });
+        try {
+            useUIStore.setState({
+                autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift,
+                addNotification: addNotification as unknown as (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void
+            });
+            const { setTasks, setRelations, updateTask } = useTaskStore.getState();
+            setTasks([
+                buildTask({ id: 'A', startDate: FRIDAY, dueDate: FRIDAY + DAY }),
+                buildTask({ id: 'B', startDate: FRIDAY + DAY * 3, dueDate: FRIDAY + DAY * 3 })
+            ]);
+            setRelations([
+                { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
+            ]);
 
-        expect(useTaskStore.getState().allTasks.find((task) => task.id === 'A')?.startDate).toBe(FRIDAY);
-        expect(useTaskStore.getState().allTasks.find((task) => task.id === 'B')?.startDate).toBe(FRIDAY + DAY * 3);
-        expect(addNotification).toHaveBeenCalledTimes(1);
-        expect(String(addNotification.mock.calls[0]?.[0])).toContain('external dependency');
+            updateTask('A', { startDate: THURSDAY, dueDate: FRIDAY });
+
+            expect(useTaskStore.getState().allTasks.find((task) => task.id === 'A')).toMatchObject({
+                startDate: THURSDAY,
+                dueDate: FRIDAY
+            });
+            expect(useTaskStore.getState().allTasks.find((task) => task.id === 'B')).toMatchObject({
+                startDate: FRIDAY + DAY * 3,
+                dueDate: FRIDAY + DAY * 3
+            });
+            expect(addNotification).not.toHaveBeenCalled();
+        } finally {
+            window.RedmineCanvasGantt = originalConfig;
+        }
+    });
+
+    it('rejects linked shift when external dependency would be violated', () => {
+        const originalConfig = window.RedmineCanvasGantt;
+        window.RedmineCanvasGantt = {
+            ...(originalConfig || {}),
+            nonWorkingWeekDays: [0, 6]
+        } as Window['RedmineCanvasGantt'];
+        const addNotification = vi.fn();
+
+        try {
+            useUIStore.setState({
+                autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift,
+                addNotification: addNotification as unknown as (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void
+            });
+            const { setTasks, setRelations, updateTask } = useTaskStore.getState();
+            setTasks([
+                buildTask({ id: 'P', startDate: MONDAY, dueDate: FRIDAY }),
+                buildTask({ id: 'A', startDate: FRIDAY, dueDate: FRIDAY }),
+                buildTask({ id: 'B', startDate: FRIDAY + DAY * 3, dueDate: FRIDAY + DAY * 4 })
+            ]);
+            setRelations([
+                { id: 'r1', from: 'A', to: 'B', type: 'precedes' },
+                { id: 'r2', from: 'P', to: 'B', type: 'precedes' }
+            ]);
+
+            updateTask('A', { startDate: THURSDAY, dueDate: THURSDAY });
+
+            expect(useTaskStore.getState().allTasks.find((task) => task.id === 'A')?.startDate).toBe(FRIDAY);
+            expect(useTaskStore.getState().allTasks.find((task) => task.id === 'B')?.startDate).toBe(FRIDAY + DAY * 3);
+            expect(addNotification).toHaveBeenCalledTimes(1);
+            expect(String(addNotification.mock.calls[0]?.[0])).toContain('external dependency');
+        } finally {
+            window.RedmineCanvasGantt = originalConfig;
+        }
     });
 });
 

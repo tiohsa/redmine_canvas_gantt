@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RelationType } from '../types/constraints';
 import { calculateDelay, getRelationTypeLabel, toEditableRelationView, toRawRelationType, validateRelationDelayConsistency } from './relationEditing';
 
@@ -29,6 +29,19 @@ describe('toRawRelationType', () => {
 });
 
 describe('calculateDelay', () => {
+    const originalConfig = window.RedmineCanvasGantt;
+
+    beforeEach(() => {
+        window.RedmineCanvasGantt = {
+            ...(originalConfig || {}),
+            nonWorkingWeekDays: [0, 6]
+        } as Window['RedmineCanvasGantt'];
+    });
+
+    afterEach(() => {
+        window.RedmineCanvasGantt = originalConfig;
+    });
+
     it('computes delay for precedes using logical predecessor/successor dates', () => {
         expect(calculateDelay(RelationType.Precedes, {
             startDate: 0,
@@ -43,7 +56,7 @@ describe('calculateDelay', () => {
         const originalConfig = window.RedmineCanvasGantt;
         window.RedmineCanvasGantt = {
             ...(originalConfig || {}),
-            nonWorkingWeekDays: [0, 6]
+            nonWorkingWeekDays: [6, 7]
         } as Window['RedmineCanvasGantt'];
 
         try {
