@@ -1,6 +1,7 @@
 import type { DraftRelation, Relation, Task } from '../types';
 import { RelationType, type DefaultRelationType } from '../types/constraints';
 import { i18n } from './i18n';
+import { getNonWorkingWeekDays } from './nonWorkingWeekDays';
 
 const DELAY_ENABLED_RELATIONS: ReadonlySet<string> = new Set([RelationType.Precedes, RelationType.Follows]);
 
@@ -68,20 +69,6 @@ const RELATION_INFO_FALLBACKS: Record<DefaultRelationType, string> = {
     [RelationType.Precedes]: 'The predecessor task must finish before the successor task starts.',
     [RelationType.Relates]: 'Creates a reference link only. It does not apply any schedule constraint.',
     [RelationType.Blocks]: 'The source task blocks the target task until the blocking work is finished.'
-};
-
-const getNonWorkingWeekDays = (): Set<number> => {
-    const fallback = new Set<number>([0, 6]);
-    if (typeof window === 'undefined') return fallback;
-
-    const raw = window.RedmineCanvasGantt?.nonWorkingWeekDays;
-    if (!Array.isArray(raw)) return fallback;
-
-    const normalized = raw
-        .map((day) => Number(day))
-        .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
-
-    return normalized.length > 0 ? new Set(normalized) : fallback;
 };
 
 const toUtcDayStart = (timestamp: number): Date => {

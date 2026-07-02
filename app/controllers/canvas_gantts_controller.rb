@@ -346,7 +346,7 @@ class CanvasGanttsController < ApplicationController
   def index
     @i18n = I18N_LABELS.transform_values { |label_key| canvas_gantt_l(label_key, default: label_key) }
     @settings = plugin_settings
-    @non_working_week_days = Array(Setting.non_working_week_days).map(&:to_i).uniq.sort
+    @non_working_week_days = normalized_non_working_week_days
     @language = (User.current.language.presence || Setting.default_language).to_s
     @date_format = Setting.date_format.presence || canvas_gantt_l(:general_format_date)
     @year_month_format = canvas_gantt_l(:year_month_format)
@@ -811,10 +811,18 @@ class CanvasGanttsController < ApplicationController
   end
 
   def relation_non_working_week_days
-    Array(Setting.non_working_week_days).filter_map do |day|
+    normalized_non_working_week_days.to_set
+  end
+
+  def normalized_non_working_week_days
+    normalized = Array(Setting.non_working_week_days).filter_map do |day|
       parsed = Integer(day, exception: false)
-      parsed if parsed && parsed.between?(0, 6)
-    end.to_set
+      next nil unless parsed&.between?(1, 7)
+
+      parsed % 7
+    end.uniq.sort
+
+    normalized.size >= 7 ? [] : normalized
   end
 
   def ensure_editable_relation_type!(relation_type)

@@ -1,6 +1,7 @@
 import type { Relation, Task } from '../types';
 import { RelationType } from '../types/constraints';
 import { i18n } from '../utils/i18n';
+import { getNonWorkingWeekDays } from '../utils/nonWorkingWeekDays';
 
 export type SchedulingState = 'normal' | 'unscheduled' | 'invalid' | 'conflicted' | 'cyclic';
 
@@ -17,27 +18,12 @@ export interface SchedulingEdge {
     relationType: typeof RelationType.Precedes | typeof RelationType.Follows;
 }
 
-const FALLBACK_NON_WORKING_WEEK_DAYS = new Set<number>([0, 6]);
-
 const severityByState: Record<SchedulingState, number> = {
     normal: 0,
     unscheduled: 1,
     conflicted: 2,
     cyclic: 3,
     invalid: 4
-};
-
-const getNonWorkingWeekDays = (): Set<number> => {
-    if (typeof window === 'undefined') return FALLBACK_NON_WORKING_WEEK_DAYS;
-
-    const raw = window.RedmineCanvasGantt?.nonWorkingWeekDays;
-    if (!Array.isArray(raw) || raw.length === 0) return FALLBACK_NON_WORKING_WEEK_DAYS;
-
-    const normalized = raw
-        .map((day) => Number(day))
-        .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
-
-    return normalized.length > 0 ? new Set(normalized) : FALLBACK_NON_WORKING_WEEK_DAYS;
 };
 
 const toUtcDayStart = (timestamp: number): Date => {
@@ -341,7 +327,9 @@ export const calculateLinkedDownstreamUpdates = (
     }
 
     const nonWorkingWeekDays = getNonWorkingWeekDays();
-    const workingDayDelta = diffWorkingDays(previousDueDate, nextDueDate, nonWorkingWeekDays);
+    const previousDownstreamAnchor = addWorkingDays(previousDueDate, 1, nonWorkingWeekDays);
+    const nextDownstreamAnchor = addWorkingDays(nextDueDate, 1, nonWorkingWeekDays);
+    const workingDayDelta = diffWorkingDays(previousDownstreamAnchor, nextDownstreamAnchor, nonWorkingWeekDays);
     if (workingDayDelta === 0) {
         return { updates: new Map() };
     }

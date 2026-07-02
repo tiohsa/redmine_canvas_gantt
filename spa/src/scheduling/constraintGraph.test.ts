@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Relation, Task } from '../types';
 import { RelationType } from '../types/constraints';
 import {
+    addWorkingDays,
     buildSchedulingEdges,
     deriveSchedulingStates,
     detectConstraintCycleTaskIds,
@@ -31,6 +32,23 @@ const buildTask = (overrides: Partial<Task>): Task => ({
 });
 
 describe('constraintGraph', () => {
+    it('skips Sunday when Redmine non-working weekdays are [6, 7]', () => {
+        const originalConfig = window.RedmineCanvasGantt;
+        window.RedmineCanvasGantt = {
+            ...(originalConfig || {}),
+            nonWorkingWeekDays: [6, 7]
+        } as Window['RedmineCanvasGantt'];
+
+        try {
+            const friday = Date.UTC(2026, 0, 2);
+            const monday = Date.UTC(2026, 0, 5);
+
+            expect(addWorkingDays(friday, 1)).toBe(monday);
+        } finally {
+            window.RedmineCanvasGantt = originalConfig;
+        }
+    });
+
     it('normalizes follows into canonical predecessor/successor edges', () => {
         expect(toSchedulingEdge({
             id: 'r1',

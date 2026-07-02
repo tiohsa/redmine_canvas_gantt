@@ -430,7 +430,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:set_permissions) do
         controller.instance_variable_set(:@permissions, { editable: false, viewable: true, baseline_editable: false })
       end
-      allow(Setting).to receive(:non_working_week_days).and_return([0, 6])
+      allow(Setting).to receive(:non_working_week_days).and_return(['6', '7'])
     end
 
     it 'includes row height labels in frontend i18n payload' do
@@ -476,6 +476,10 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(response.body).not_to include('baseline_snapshots')
       expect(response.body).not_to include('tracker_icon_map')
       expect(response.body).not_to include('use_vite_dev_server')
+    end
+
+    it 'normalizes Redmine non-working weekdays to internal wday format' do
+      expect(controller.send(:normalized_non_working_week_days)).to eq([0, 6])
     end
 
     it 'includes localized help labels in Japanese frontend i18n payload' do
@@ -871,7 +875,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(relation).to receive(:issue_from).and_return(issue_from)
       allow(relation).to receive(:issue_to).and_return(issue_to)
       allow(relation).to receive(:errors).and_return(double(full_messages: ['Save failed']))
-      allow(Setting).to receive(:non_working_week_days).and_return([0, 6])
+      allow(Setting).to receive(:non_working_week_days).and_return(['6', '7'])
       allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_from).and_return(true)
       allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_to).and_return(true)
 
@@ -1024,7 +1028,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(issue_scope).to receive(:find).with('10').and_return(issue_from)
       allow(issue_scope).to receive(:find).with('11').and_return(issue_to)
       allow(IssueRelation).to receive(:new).and_return(relation)
-      allow(Setting).to receive(:non_working_week_days).and_return([0, 6])
+      allow(Setting).to receive(:non_working_week_days).and_return(['6', '7'])
       allow(User.current).to receive(:allowed_to?).with(:edit_issues, kind_of(Project)).and_return(true)
     end
 

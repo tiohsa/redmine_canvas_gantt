@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { TaskLogicService } from './TaskLogicService';
 import type { Task, Relation } from '../types';
 import { AutoScheduleMoveMode } from '../types/constraints';
@@ -264,6 +264,78 @@ describe('TaskLogicService.checkDependencies', () => {
     });
 
     describe('linked downstream shift mode', () => {
+        const originalConfig = window.RedmineCanvasGantt;
+
+        beforeEach(() => {
+            window.RedmineCanvasGantt = {
+                ...(originalConfig || {}),
+                nonWorkingWeekDays: [0, 6]
+            } as Window['RedmineCanvasGantt'];
+        });
+
+        afterEach(() => {
+            window.RedmineCanvasGantt = originalConfig;
+        });
+
+        it('keeps a Monday successor fixed when moving the predecessor due date from Saturday to Friday', () => {
+            const saturday = Date.UTC(2026, 0, 10);
+            const monday = Date.UTC(2026, 0, 12);
+            const tasks = [
+                buildTask({ id: 'A', startDate: FRIDAY, dueDate: saturday }),
+                buildTask({ id: 'B', startDate: monday, dueDate: monday })
+            ];
+            const relations: Relation[] = [
+                { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
+            ];
+
+            const { updates, error } = TaskLogicService.checkDependencies(
+                tasks,
+                relations,
+                'A',
+                THURSDAY,
+                FRIDAY,
+                AutoScheduleMoveMode.LinkedDownstreamShift
+            );
+
+            expect(error).toBeUndefined();
+            expect(updates.size).toBe(0);
+        });
+
+        it('skips Sunday when Redmine non-working weekdays are [6, 7]', () => {
+            const originalConfig = window.RedmineCanvasGantt;
+            window.RedmineCanvasGantt = {
+                ...(originalConfig || {}),
+                nonWorkingWeekDays: [6, 7]
+            } as Window['RedmineCanvasGantt'];
+
+            try {
+                const thursday = Date.UTC(2026, 0, 8);
+                const friday = Date.UTC(2026, 0, 9);
+                const monday = Date.UTC(2026, 0, 12);
+                const tasks = [
+                    buildTask({ id: 'A', startDate: thursday, dueDate: thursday }),
+                    buildTask({ id: 'B', startDate: friday, dueDate: friday })
+                ];
+                const relations: Relation[] = [
+                    { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
+                ];
+
+                const { updates, error } = TaskLogicService.checkDependencies(
+                    tasks,
+                    relations,
+                    'A',
+                    thursday,
+                    friday,
+                    AutoScheduleMoveMode.LinkedDownstreamShift
+                );
+
+                expect(error).toBeUndefined();
+                expect(updates.get('B')?.startDate).toBe(monday);
+            } finally {
+                window.RedmineCanvasGantt = originalConfig;
+            }
+        });
+
         it('returns no downstream updates when auto scheduling is off', () => {
             const tasks = [
                 buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
@@ -314,8 +386,8 @@ describe('TaskLogicService.checkDependencies', () => {
 
         it('rejects linked shift when an external predecessor would be violated', () => {
             const tasks = [
-                buildTask({ id: 'P', startDate: MONDAY, dueDate: THURSDAY }),
-                buildTask({ id: 'A', startDate: FRIDAY, dueDate: FRIDAY + DAY }),
+                buildTask({ id: 'P', startDate: MONDAY, dueDate: FRIDAY }),
+                buildTask({ id: 'A', startDate: FRIDAY, dueDate: FRIDAY }),
                 buildTask({ id: 'B', startDate: FRIDAY + DAY * 3, dueDate: FRIDAY + DAY * 4 })
             ];
             const relations: Relation[] = [
@@ -328,7 +400,7 @@ describe('TaskLogicService.checkDependencies', () => {
                 relations,
                 'A',
                 THURSDAY,
-                FRIDAY,
+                THURSDAY,
                 AutoScheduleMoveMode.LinkedDownstreamShift
             );
 

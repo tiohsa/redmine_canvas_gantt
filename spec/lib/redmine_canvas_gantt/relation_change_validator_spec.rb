@@ -5,6 +5,24 @@ RSpec.describe RedmineCanvasGantt::RelationChangeValidator do
   let(:error_renderer) { instance_double(Proc, call: true) }
 
   describe '#validate!' do
+    it 'skips Sunday when validating relation delay with internal non-working weekdays' do
+      issue_from = instance_double(Issue, due_date: Date.new(2026, 1, 2), start_date: nil)
+      issue_to = instance_double(Issue, due_date: nil, start_date: Date.new(2026, 1, 5))
+      validator = described_class.new(non_working_week_days: [0, 6])
+
+      result = validator.validate!(
+        issue_from: issue_from,
+        issue_to: issue_to,
+        relation_type: 'precedes',
+        delay: 0,
+        existing_relations: [],
+        candidate_relation: { id: 1, from: 10, to: 11, type: 'precedes', delay: 0 },
+        error_renderer: error_renderer
+      )
+
+      expect(result).to be(true)
+    end
+
     it 'rejects relation delays that do not match the current dates' do
       issue_from = instance_double(Issue, due_date: Date.new(2026, 1, 2), start_date: nil)
       issue_to = instance_double(Issue, due_date: nil, start_date: Date.new(2026, 1, 4))
