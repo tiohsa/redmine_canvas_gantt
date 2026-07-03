@@ -228,6 +228,7 @@ describe('IssueIframeDialog', () => {
 
         fireEvent.load(iframe);
 
+        expect(applyIssueDialogStyles).toHaveBeenCalledWith(doc, false, true);
         expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Edit issue' })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Save issue' })).not.toBeInTheDocument();
