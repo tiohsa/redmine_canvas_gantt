@@ -22,7 +22,7 @@ describe('iframeStyles', () => {
         expect(css).not.toContain(', .buttons,');
     });
 
-    it('preserves issue contextual actions on issue show pages', () => {
+    it('preserves issue contextual actions while hiding built-in edit links on issue show pages', () => {
         const doc = document.implementation.createHTMLDocument('iframe');
 
         applyIssueDialogStyles(doc, false, true);
@@ -30,9 +30,23 @@ describe('iframeStyles', () => {
         const styleTag = doc.querySelector(`#${ISSUE_DIALOG_STYLE_ID}`);
         const css = styleTag?.textContent || '';
 
-        expect(css).not.toContain('#content > .contextual');
+        expect(css).not.toMatch(/#content > \.contextual\s*[{,]/);
+        expect(css).toContain('#content > .contextual a.icon-edit');
+        expect(css).toContain('#content > .contextual a[href*="/issues/"][href$="/edit"]');
+        expect(css).toContain('#content > .contextual a[href*="/issues/"][href*="/edit?"]');
         expect(css).toContain('#top-menu');
         expect(css).toContain('#issue-form > p.buttons');
+    });
+
+    it('does not add issue-show edit link styles on issue form pages', () => {
+        const doc = document.implementation.createHTMLDocument('iframe');
+
+        applyIssueDialogStyles(doc, false, false);
+
+        const css = doc.querySelector(`#${ISSUE_DIALOG_STYLE_ID}`)?.textContent || '';
+        expect(css).not.toContain('#content > .contextual a.icon-edit');
+        expect(css).not.toContain('#content > .contextual a[href*="/issues/"][href$="/edit"]');
+        expect(css).not.toContain('#content > .contextual a[href*="/issues/"][href*="/edit?"]');
     });
 
 

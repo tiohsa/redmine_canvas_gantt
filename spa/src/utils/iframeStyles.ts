@@ -29,6 +29,12 @@ const ISSUE_DIALOG_HIDE_SELECTORS = [
     '#query-form a[onclick*="history.back"]'
 ];
 
+const ISSUE_SHOW_HIDE_SELECTORS = [
+    '#content > .contextual a.icon-edit',
+    '#content > .contextual a[href*="/issues/"][href$="/edit"]',
+    '#content > .contextual a[href*="/issues/"][href*="/edit?"]'
+];
+
 const SHARED_DIALOG_CSS = `
 html, body, #wrapper, #main { height: auto !important; min-height: 0 !important; }
 html, body { overflow-y: auto !important; }
@@ -76,6 +82,7 @@ export const applyIssueDialogStyles = (doc: Document, isQuery = false, preserveC
     style.id = ISSUE_DIALOG_STYLE_ID;
     style.textContent = `
         ${selectorsToHide.join(', ')} { display: none !important; }
+        ${preserveContextual ? `${ISSUE_SHOW_HIDE_SELECTORS.join(', ')} { display: none !important; }` : ''}
         ${SHARED_DIALOG_CSS}
         ${preserveContextual ? ISSUE_SHOW_SAFE_AREA_CSS : ''}
     `;
