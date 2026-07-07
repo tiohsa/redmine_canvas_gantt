@@ -15,8 +15,16 @@ export type SharedQuerySyncState = {
     showSubprojects: boolean;
 };
 
+const stripImplicitEmptySelections = (state: ReturnType<typeof toResolvedQueryStateFromStore>) => ({
+    ...state,
+    selectedStatusIds: state.selectedStatusIds?.length ? state.selectedStatusIds : undefined,
+    selectedAssigneeIds: state.selectedAssigneeIds?.length ? state.selectedAssigneeIds : undefined,
+    selectedProjectIds: state.selectedProjectIds?.length ? state.selectedProjectIds : undefined,
+    selectedVersionIds: state.selectedVersionIds?.length ? state.selectedVersionIds : undefined
+});
+
 export const syncSharedQueryState = (state: SharedQuerySyncState) => {
     const resolvedState = toResolvedQueryStateFromStore(state);
     replaceIssueQueryParamsInUrl(resolvedState);
-    saveLastUsedSharedQueryState(resolvedState);
+    saveLastUsedSharedQueryState(stripImplicitEmptySelections(resolvedState));
 };

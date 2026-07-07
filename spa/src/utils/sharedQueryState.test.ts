@@ -36,6 +36,15 @@ describe('shared query state storage', () => {
         });
     });
 
+    it('stores and restores an explicit empty status selection when overriding a saved query', () => {
+        saveLastUsedSharedQueryState({ queryId: 12, selectedStatusIds: [] }, 1);
+
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            queryId: 12,
+            selectedStatusIds: []
+        });
+    });
+
     it('drops default-equivalent empty shared state when project selection is not explicit', () => {
         saveLastUsedSharedQueryState({
             queryId: null,

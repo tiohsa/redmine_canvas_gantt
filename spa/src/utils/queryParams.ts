@@ -276,7 +276,9 @@ export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>)
     const hasPersistedQueryId = isPersistedQueryId(state.queryId ?? undefined);
 
     if (hasPersistedQueryId) normalized.queryId = state.queryId;
-    if (state.selectedStatusIds?.length) normalized.selectedStatusIds = [...state.selectedStatusIds];
+    if (Array.isArray(state.selectedStatusIds) && (state.selectedStatusIds.length > 0 || hasPersistedQueryId)) {
+        normalized.selectedStatusIds = [...state.selectedStatusIds];
+    }
     if (state.selectedAssigneeIds?.length) normalized.selectedAssigneeIds = [...state.selectedAssigneeIds];
     if (Array.isArray(state.selectedProjectIds)) normalized.selectedProjectIds = [...state.selectedProjectIds];
     if (state.selectedVersionIds?.length) normalized.selectedVersionIds = [...state.selectedVersionIds];
@@ -362,9 +364,16 @@ export const resolveInitialSharedQueryState = (
 export const buildIssueQueryParams = (state: Partial<ResolvedQueryState>): URLSearchParams => {
     const params = new URLSearchParams();
     const businessState = toBusinessQueryState(state);
+    const hasPersistedQueryId = isPersistedQueryId(businessState.queryId);
+    const hasExplicitStatusSelection = Array.isArray(state.selectedStatusIds);
 
-    if (isPersistedQueryId(businessState.queryId)) params.set('query_id', String(businessState.queryId));
-    businessState.selectedStatusIds.forEach((id) => params.append('status_ids[]', String(id)));
+    if (hasPersistedQueryId) params.set('query_id', String(businessState.queryId));
+    if (businessState.selectedStatusIds.length > 0) {
+        businessState.selectedStatusIds.forEach((id) => params.append('status_ids[]', String(id)));
+    } else if (hasPersistedQueryId && hasExplicitStatusSelection) {
+        params.set('set_filter', '1');
+        appendStandardFilter(params, 'status_id', '*');
+    }
     businessState.selectedAssigneeIds.forEach((id) => params.append('assigned_to_ids[]', id === null ? 'none' : String(id)));
     if (state.selectedProjectIds !== undefined && businessState.selectedProjectIds.length === 0) {
         params.append('project_ids[]', 'none');

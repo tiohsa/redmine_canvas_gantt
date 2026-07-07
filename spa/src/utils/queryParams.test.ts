@@ -235,6 +235,19 @@ describe('resolveInitialSharedQueryState', () => {
         });
     });
 
+    it('uses an explicit empty status selection from storage when it overrides a saved query', () => {
+        expect(resolveInitialSharedQueryState('', {
+            queryId: 12,
+            selectedStatusIds: []
+        })).toEqual({
+            state: {
+                queryId: 12,
+                selectedStatusIds: []
+            },
+            source: 'storage'
+        });
+    });
+
     it('prefers explicit URL state over stored state', () => {
         expect(resolveInitialSharedQueryState('?query_id=9', {
             queryId: 12,
@@ -366,6 +379,44 @@ describe('replaceIssueQueryParamsInUrl', () => {
 });
 
 describe('query parameter round-trips for special selections', () => {
+    it('encodes an explicit empty status selection as a saved-query status clear override', () => {
+        const params = buildIssueQueryParams({
+            queryId: 42,
+            selectedStatusIds: []
+        });
+
+        expect(params.get('query_id')).toBe('42');
+        expect(params.get('set_filter')).toBe('1');
+        expect(params.getAll('f[]')).toEqual(['status_id']);
+        expect(params.get('op[status_id]')).toBe('*');
+        expect(params.getAll('status_ids[]')).toEqual([]);
+    });
+
+    it('preserves saved-query status filters when status selection is unspecified', () => {
+        const params = buildIssueQueryParams({
+            queryId: 42
+        });
+
+        expect(params.get('query_id')).toBe('42');
+        expect(params.get('set_filter')).toBeNull();
+        expect(params.getAll('f[]')).toEqual([]);
+        expect(params.get('op[status_id]')).toBeNull();
+        expect(params.getAll('status_ids[]')).toEqual([]);
+    });
+
+    it('keeps selected statuses as Canvas query params for saved queries', () => {
+        const params = buildIssueQueryParams({
+            queryId: 42,
+            selectedStatusIds: [1, 2]
+        });
+
+        expect(params.get('query_id')).toBe('42');
+        expect(params.get('set_filter')).toBeNull();
+        expect(params.getAll('f[]')).toEqual([]);
+        expect(params.get('op[status_id]')).toBeNull();
+        expect(params.getAll('status_ids[]')).toEqual(['1', '2']);
+    });
+
     it('preserves unassigned assignee and no-version selections through URL round-trips', () => {
         const params = buildIssueQueryParams({
             selectedAssigneeIds: [null],
