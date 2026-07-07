@@ -278,7 +278,7 @@ export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>)
     if (hasPersistedQueryId) normalized.queryId = state.queryId;
     if (state.selectedStatusIds?.length) normalized.selectedStatusIds = [...state.selectedStatusIds];
     if (state.selectedAssigneeIds?.length) normalized.selectedAssigneeIds = [...state.selectedAssigneeIds];
-    if (state.selectedProjectIds?.length) normalized.selectedProjectIds = [...state.selectedProjectIds];
+    if (Array.isArray(state.selectedProjectIds)) normalized.selectedProjectIds = [...state.selectedProjectIds];
     if (state.selectedVersionIds?.length) normalized.selectedVersionIds = [...state.selectedVersionIds];
     if (state.memberProjectsOnly === true) normalized.memberProjectsOnly = true;
     if (state.sortConfig?.key && !(state.sortConfig.key === DEFAULT_SORT_KEY && state.sortConfig.direction === DEFAULT_SORT_DIRECTION)) {

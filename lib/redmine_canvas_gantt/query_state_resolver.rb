@@ -134,7 +134,7 @@ module RedmineCanvasGantt
     def query_filter_keys_to_exclude
       keys = URL_OVERRIDE_FILTERS.select { |name| url_filter_values(name).present? }
       keys.concat(supported_standard_filter_fields)
-      keys << 'project_id' if @params[:project_ids].present?
+      keys << 'project_id' if explicit_project_ids_param?
       keys << 'subproject_id' if @params.key?(:show_subprojects)
       keys.uniq
     end
@@ -237,7 +237,7 @@ module RedmineCanvasGantt
     end
 
     def apply_project_override!(state)
-      return unless @params[:project_ids].present?
+      return unless explicit_project_ids_param?
 
       project_ids = resolve_selected_project_ids(nil)
       state[:selected_project_ids] = project_ids.map(&:to_s)
@@ -354,6 +354,8 @@ module RedmineCanvasGantt
     end
 
     def project_scope_ids(project_ids, selected_project_ids)
+      return selected_project_ids if explicit_project_ids_param?
+
       selected_project_ids.presence || project_ids
     end
 
@@ -415,8 +417,8 @@ module RedmineCanvasGantt
     end
 
     def resolve_selected_project_ids(fallback_project_ids)
-      project_ids = parse_integer_list(@params[:project_ids])
-      return project_ids if project_ids.present?
+      project_ids = parse_project_id_list(@params[:project_ids])
+      return project_ids unless project_ids.nil?
 
       show_subprojects = resolve_show_subprojects
       return [@project.id] unless show_subprojects
@@ -452,6 +454,16 @@ module RedmineCanvasGantt
 
     def parse_integer_list(values)
       split_list_values(values).filter_map { |value| value.to_i if integer_string?(value) }
+    end
+
+    def parse_project_id_list(values)
+      tokens = split_list_values(values)
+      return nil if tokens.empty?
+      return [] if tokens.all? { |value| none_marker?(value) }
+
+      project_ids = tokens.reject { |value| none_marker?(value) }
+                          .filter_map { |value| value.to_i if integer_string?(value) }
+      project_ids.presence
     end
 
     def parse_integer_or_none_list(values)
@@ -509,6 +521,10 @@ module RedmineCanvasGantt
     def url_filter_values(name)
       plural = "#{name.to_s.sub(/_id\z/, '')}_ids"
       Array(@params[name] || @params[plural] || @params["#{plural}[]"])
+    end
+
+    def explicit_project_ids_param?
+      @params[:project_ids].present?
     end
 
     def split_list_values(values)

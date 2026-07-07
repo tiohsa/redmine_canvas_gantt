@@ -122,7 +122,7 @@ describe('readIssueQueryParamsFromUrl', () => {
 });
 
 describe('normalizeResolvedQueryState', () => {
-    it('drops default-equivalent values', () => {
+    it('drops default-equivalent values except explicit empty project selections', () => {
         expect(normalizeResolvedQueryState({
             queryId: null,
             selectedStatusIds: [],
@@ -132,7 +132,29 @@ describe('normalizeResolvedQueryState', () => {
             sortConfig: { key: 'startDate', direction: 'asc' },
             groupBy: 'project',
             showSubprojects: true
+        })).toEqual({
+            selectedProjectIds: []
+        });
+    });
+
+    it('drops default-equivalent values when project selection is not explicit', () => {
+        expect(normalizeResolvedQueryState({
+            queryId: null,
+            selectedStatusIds: [],
+            selectedAssigneeIds: [],
+            selectedVersionIds: [],
+            sortConfig: { key: 'startDate', direction: 'asc' },
+            groupBy: 'project',
+            showSubprojects: true
         })).toBeUndefined();
+    });
+
+    it('keeps an explicit empty project selection', () => {
+        expect(normalizeResolvedQueryState({
+            selectedProjectIds: []
+        })).toEqual({
+            selectedProjectIds: []
+        });
     });
 
     it('keeps meaningful shared state values', () => {
@@ -197,6 +219,17 @@ describe('resolveInitialSharedQueryState', () => {
                 queryId: 12,
                 selectedStatusIds: [1],
                 groupBy: 'assignee'
+            },
+            source: 'storage'
+        });
+    });
+
+    it('uses an explicit empty project selection from storage for a bare Canvas Gantt URL', () => {
+        expect(resolveInitialSharedQueryState('', {
+            selectedProjectIds: []
+        })).toEqual({
+            state: {
+                selectedProjectIds: []
             },
             source: 'storage'
         });

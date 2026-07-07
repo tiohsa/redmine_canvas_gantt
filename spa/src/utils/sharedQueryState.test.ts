@@ -28,12 +28,19 @@ describe('shared query state storage', () => {
         });
     });
 
-    it('drops default-equivalent empty shared state', () => {
+    it('stores and restores an explicit empty project selection', () => {
+        saveLastUsedSharedQueryState({ selectedProjectIds: [] }, 1);
+
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            selectedProjectIds: []
+        });
+    });
+
+    it('drops default-equivalent empty shared state when project selection is not explicit', () => {
         saveLastUsedSharedQueryState({
             queryId: null,
             selectedStatusIds: [],
             selectedAssigneeIds: [],
-            selectedProjectIds: [],
             selectedVersionIds: [],
             memberProjectsOnly: false,
             sortConfig: { key: 'startDate', direction: 'asc' },

@@ -101,6 +101,30 @@ describe('useInitialGanttData persistence', () => {
         expect(url.searchParams.get('show_subprojects')).toBe('0');
     });
 
+    it('restores an explicit empty project selection from storage on a bare canvas gantt URL', async () => {
+        saveLastUsedSharedQueryState({
+            selectedProjectIds: []
+        });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalledWith({
+                rawSearch: undefined,
+                query: {
+                    selectedProjectIds: []
+                }
+            });
+        });
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().selectedProjectIds).toEqual([]);
+        });
+
+        const url = new URL(window.location.href);
+        expect(url.searchParams.getAll('project_ids[]')).toEqual(['none']);
+    });
+
     it('restores a stored saved query id before initial data resolves and checks its radio', async () => {
         saveLastUsedSharedQueryState({
             queryId: 12

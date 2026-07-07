@@ -173,6 +173,23 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     expect(result[:initial_state][:selected_project_ids]).to eq(%w[9 10 11 12])
   end
 
+  it 'treats project none as an explicit empty project selection without falling back to project scope' do
+    params = ActionController::Parameters.new(project_ids: ['none'])
+    expect(issue_scope).to receive(:where).with(project_id: []).and_return(issue_scope)
+
+    resolver = described_class.new(
+      project: project,
+      params: params,
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    )
+
+    result = resolver.resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state][:selected_project_ids]).to eq([])
+  end
+
   it 'preserves unassigned assignee selections from saved queries' do
     query = instance_double(
       IssueQuery,

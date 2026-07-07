@@ -90,4 +90,43 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
 
     expect(result[:scope_project_ids]).to eq([6])
   end
+
+  it 'treats project none as an explicit empty scope when member-project mode is off' do
+    params = ActionController::Parameters.new(project_ids: ['none'])
+    allow(query_state_resolver).to receive(:resolve).with(project_ids: []).and_return(
+      issues: [],
+      initial_state: { selected_project_ids: [] },
+      warnings: []
+    )
+
+    result = described_class.new(
+      project: project,
+      params: params,
+      current_user: current_user,
+      issue_includes: []
+    ).resolve
+
+    expect(result[:scope_project_ids]).to eq([])
+    expect(result[:visible_project_ids]).to eq([])
+  end
+
+  it 'treats project none as an explicit empty scope when member-project mode is on' do
+    params = ActionController::Parameters.new(member_projects_only: '1', project_ids: ['none'])
+    allow(query_state_resolver).to receive(:resolve).with(project_ids: []).and_return(
+      issues: [],
+      initial_state: { selected_project_ids: [] },
+      warnings: []
+    )
+
+    result = described_class.new(
+      project: project,
+      params: params,
+      current_user: current_user,
+      issue_includes: [],
+      member_project_ids_resolver: -> { [5, 6] }
+    ).resolve
+
+    expect(result[:scope_project_ids]).to eq([])
+    expect(result[:visible_project_ids]).to eq([])
+  end
 end
