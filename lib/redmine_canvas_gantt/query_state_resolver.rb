@@ -1,6 +1,6 @@
 module RedmineCanvasGantt
   class QueryStateResolver
-    QueryResolution = Struct.new(:issue_ids, :query, keyword_init: true)
+    QueryResolution = Struct.new(:issue_ids, :query, :query_id, keyword_init: true)
 
     DEFAULT_STATE = {
       query_id: nil,
@@ -65,7 +65,7 @@ module RedmineCanvasGantt
 
       query_resolution = resolve_query_resolution
       state.merge!(state_from_query(query_resolution.query)) if query_resolution.query
-      state[:query_id] = query_resolution.query.id if query_resolution.query&.id.present?
+      state[:query_id] = query_resolution.query_id if query_resolution.query_id
 
       apply_request_overrides!(state)
 
@@ -91,19 +91,19 @@ module RedmineCanvasGantt
 
     def resolve_query_resolution
       query_id = @params[:query_id].presence
-      return QueryResolution.new(issue_ids: nil, query: nil) unless query_id
+      return QueryResolution.new(issue_ids: nil, query: nil, query_id: nil) unless query_id
 
       query = IssueQuery.find_by(id: query_id)
       unless query&.visible?(@current_user)
         warn_invalid_query_id(query_id)
-        return QueryResolution.new(issue_ids: nil, query: nil)
+        return QueryResolution.new(issue_ids: nil, query: nil, query_id: nil)
       end
 
       working_query = build_working_query(query)
-      QueryResolution.new(issue_ids: working_query.issue_ids, query: working_query)
+      QueryResolution.new(issue_ids: working_query.issue_ids, query: working_query, query_id: query.id)
     rescue StandardError => e
       warn_query_resolution_failure(query_id, e)
-      QueryResolution.new(issue_ids: nil, query: nil)
+      QueryResolution.new(issue_ids: nil, query: nil, query_id: nil)
     end
 
     def build_working_query(query)
@@ -260,6 +260,9 @@ module RedmineCanvasGantt
       when 'assigned_to'
         state[:group_by_project] = false
         state[:group_by_assignee] = true
+      when 'none'
+        state[:group_by_project] = false
+        state[:group_by_assignee] = false
       when '', nil
         nil
       else

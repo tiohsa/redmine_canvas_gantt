@@ -532,7 +532,45 @@ describe('IssueIframeDialog', () => {
     });
 
 
-    it('keeps query save success behavior closing the query dialog', async () => {
+    it('shows query Save only after the iframe reaches a savable query form', async () => {
+        useUIStore.setState({ issueDialogUrl: null, queryDialogUrl: '/projects/demo/issues' });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = '<form id="query_form"><input type="submit" value="Apply" /></form>';
+        const iframeWindow = {
+            location: { href: 'http://example.com/projects/demo/issues' },
+            document: doc
+        };
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: iframeWindow,
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', {
+            value: doc,
+            configurable: true
+        });
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+
+        const footer = screen.getByTestId('issue-dialog-footer');
+        expect(within(footer).getAllByRole('button')).toHaveLength(1);
+        expect(within(footer).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+        expect(within(footer).queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+
+        doc.body.innerHTML = '<form id="query-form"><input type="submit" value="Save" /></form>';
+        iframeWindow.location.href = 'http://example.com/queries/new';
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(within(footer).getAllByRole('button')).toHaveLength(2);
+            expect(within(footer).getByRole('button', { name: 'Save' })).toBeInTheDocument();
+        });
+    });
+
+    it('submits the iframe query form from the footer and closes after success', async () => {
         const refreshData = vi.fn().mockResolvedValue(undefined);
         useTaskStore.setState({ refreshData: refreshData as unknown as () => Promise<void> });
         useUIStore.setState({ issueDialogUrl: null, queryDialogUrl: '/queries/1/edit' });
@@ -553,12 +591,26 @@ describe('IssueIframeDialog', () => {
         });
         Object.defineProperty(iframe, 'contentDocument', { value: doc });
 
+        const querySubmit = doc.querySelector('input[type="submit"]') as HTMLInputElement;
+        const querySubmitClick = vi.spyOn(querySubmit, 'click');
         vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
         fireEvent.load(iframe);
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+        const footer = screen.getByTestId('issue-dialog-footer');
+        expect(within(footer).getAllByRole('button')).toHaveLength(2);
+        expect(within(footer).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+        const saveButton = within(footer).getByRole('button', { name: 'Save' });
+
+        fireEvent.click(saveButton);
+        await act(async () => {
+            doc.body.innerHTML = '<p>Saving query...</p>';
+            await Promise.resolve();
+        });
 
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
+            expect(querySubmitClick).toHaveBeenCalledTimes(1);
+            expect(within(footer).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+            expect(within(footer).getByRole('button', { name: /loading|saving/i })).toBeDisabled();
         });
 
         iframeWindow.location.href = 'http://example.com/queries/1';
@@ -568,6 +620,45 @@ describe('IssueIframeDialog', () => {
             expect(useUIStore.getState().queryDialogUrl).toBeNull();
             expect(refreshData).toHaveBeenCalledTimes(1);
         });
+    });
+
+    it('allows the iframe query form to be submitted again after a validation error', async () => {
+        useUIStore.setState({ issueDialogUrl: null, queryDialogUrl: '/queries/1/edit' });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = '<form id="query-form"><input type="submit" value="Save" /></form>';
+        const iframeWindow = { location: { href: 'http://example.com/queries/1/edit' }, document: doc };
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: iframeWindow,
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', {
+            value: doc,
+            configurable: true
+        });
+
+        const querySubmit = doc.querySelector('input[type="submit"]') as HTMLInputElement;
+        const querySubmitClick = vi.spyOn(querySubmit, 'click');
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        expect(querySubmitClick).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue('Validation failed');
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(screen.getByTestId('issue-dialog-error')).toHaveTextContent('Validation failed');
+            expect(screen.getByRole('button', { name: 'Cancel' })).not.toBeDisabled();
+        });
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        expect(querySubmitClick).toHaveBeenCalledTimes(2);
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
     });
 
     it('navigates back to the edit form from issue detail mode', async () => {

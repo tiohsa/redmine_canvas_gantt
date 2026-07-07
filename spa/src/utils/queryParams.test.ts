@@ -148,6 +148,24 @@ describe('normalizeResolvedQueryState', () => {
             showSubprojects: false
         });
     });
+
+    it('keeps project grouping as a saved query override', () => {
+        expect(normalizeResolvedQueryState({
+            queryId: 12,
+            groupBy: 'project'
+        })).toEqual({
+            queryId: 12,
+            groupBy: 'project'
+        });
+    });
+
+    it('keeps an explicit no-grouping selection', () => {
+        expect(normalizeResolvedQueryState({
+            groupBy: null
+        })).toEqual({
+            groupBy: null
+        });
+    });
 });
 
 describe('hasSharedQueryStateInUrl', () => {
@@ -354,6 +372,13 @@ describe('query parameter round-trips for special selections', () => {
         });
     });
 
+    it('round-trips an explicit no-grouping selection through Canvas URL params', () => {
+        const params = buildIssueQueryParams({ groupBy: null });
+
+        expect(params.get('group_by')).toBe('none');
+        expect(readIssueQueryParamsFromUrl(`?${params.toString()}`).groupBy).toBeNull();
+    });
+
     it('round-trips member_projects_only from URL params', () => {
         const parsed = readIssueQueryParamsFromUrl('?member_projects_only=1');
         expect(parsed).toEqual({
@@ -430,5 +455,13 @@ describe('buildRedmineIssueQueryParams', () => {
         });
 
         expect(params.get('sort')).toBe('due_date:desc');
+    });
+
+    it('does not export the Canvas no-grouping sentinel to Redmine issue-list URLs', () => {
+        const { params } = buildRedmineIssueQueryParams({
+            groupBy: null
+        });
+
+        expect(params.get('group_by')).toBeNull();
     });
 });

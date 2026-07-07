@@ -273,7 +273,9 @@ export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>)
 
     const normalized: ResolvedQueryState = {};
 
-    if (isPersistedQueryId(state.queryId ?? undefined)) normalized.queryId = state.queryId;
+    const hasPersistedQueryId = isPersistedQueryId(state.queryId ?? undefined);
+
+    if (hasPersistedQueryId) normalized.queryId = state.queryId;
     if (state.selectedStatusIds?.length) normalized.selectedStatusIds = [...state.selectedStatusIds];
     if (state.selectedAssigneeIds?.length) normalized.selectedAssigneeIds = [...state.selectedAssigneeIds];
     if (state.selectedProjectIds?.length) normalized.selectedProjectIds = [...state.selectedProjectIds];
@@ -282,7 +284,9 @@ export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>)
     if (state.sortConfig?.key && !(state.sortConfig.key === DEFAULT_SORT_KEY && state.sortConfig.direction === DEFAULT_SORT_DIRECTION)) {
         normalized.sortConfig = { ...state.sortConfig };
     }
+    if (state.groupBy === 'project' && hasPersistedQueryId) normalized.groupBy = 'project';
     if (state.groupBy === 'assignee') normalized.groupBy = 'assignee';
+    if (state.groupBy === null) normalized.groupBy = null;
     if (state.showSubprojects === false) normalized.showSubprojects = false;
 
     return Object.keys(normalized).length > 0 ? normalized : undefined;
@@ -371,6 +375,7 @@ export const buildIssueQueryParams = (state: Partial<ResolvedQueryState>): URLSe
     if (state.memberProjectsOnly === true) params.set('member_projects_only', '1');
     if (state.groupBy === 'project') params.set('group_by', 'project');
     if (state.groupBy === 'assignee') params.set('group_by', 'assigned_to');
+    if (state.groupBy === null) params.set('group_by', 'none');
     if (businessState.sortConfig?.key) params.set('sort', `${businessState.sortConfig.key}:${businessState.sortConfig.direction}`);
     if (state.showSubprojects === false) params.set('show_subprojects', '0');
 

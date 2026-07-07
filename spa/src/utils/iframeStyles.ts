@@ -59,20 +59,8 @@ const ISSUE_DIALOG_ERROR_SELECTORS = [
 export const applyIssueDialogStyles = (doc: Document, isQuery = false, preserveContextual = false): void => {
     if (doc.getElementById(ISSUE_DIALOG_STYLE_ID)) return;
 
-    const querySelectors = [
-        '#query-form > p.buttons',
-        '#query-form > .buttons',
-        '#query-form > input[type="submit"]',
-        '#query-form > a[href*="preview"]',
-        '#query-form a[href*="/queries"]',
-        '#query-form a[onclick*="history.back"]'
-    ];
-
     const selectorsToHide = ISSUE_DIALOG_HIDE_SELECTORS.filter(selector => {
-        if (isQuery && querySelectors.includes(selector)) {
-            return false;
-        }
-        if (preserveContextual && selector === '#content > .contextual') {
+        if (!isQuery && preserveContextual && selector === '#content > .contextual') {
             return false;
         }
         return true;

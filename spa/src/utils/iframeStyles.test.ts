@@ -61,6 +61,17 @@ describe('iframeStyles', () => {
         expect(css).not.toContain('form[id^="journal-"][id$="-form"] { display: none');
     });
 
+    it('hides the built-in query action row in query dialogs', () => {
+        const doc = document.implementation.createHTMLDocument('query iframe');
+
+        applyIssueDialogStyles(doc, true);
+
+        const css = doc.querySelector(`#${ISSUE_DIALOG_STYLE_ID}`)?.textContent || '';
+        expect(css).toContain('#query-form > p.buttons');
+        expect(css).toContain('#query-form > .buttons');
+        expect(css).toContain('#query-form > input[type="submit"]');
+    });
+
     it('adds issue detail safe area styles only on issue show pages', () => {
         const formDoc = document.implementation.createHTMLDocument('form iframe');
         const showDoc = document.implementation.createHTMLDocument('show iframe');

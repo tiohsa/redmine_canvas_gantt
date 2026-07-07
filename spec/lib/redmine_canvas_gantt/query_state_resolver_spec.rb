@@ -31,6 +31,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
   let(:working_query) do
     instance_double(
       IssueQuery,
+      id: nil,
       filters: { 'status_id' => { operator: '=', values: %w[1 2] }, 'assigned_to_id' => { operator: '=', values: ['7'] } },
       sort_criteria: [['subject', 'desc']],
       group_by: 'assigned_to',
@@ -69,6 +70,24 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       group_by_assignee: true,
       group_by_project: false
     )
+  end
+
+  it 'accepts group_by none without warning and disables both grouping modes' do
+    resolver = described_class.new(
+      project: project,
+      params: ActionController::Parameters.new(group_by: 'none'),
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    )
+
+    result = resolver.resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state]).to include(
+      group_by_project: false,
+      group_by_assignee: false
+    )
+    expect(result[:warnings]).to be_empty
   end
 
   it 'warns and falls back when query_id is invalid' do

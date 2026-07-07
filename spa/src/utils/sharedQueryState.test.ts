@@ -44,6 +44,23 @@ describe('shared query state storage', () => {
         expect(loadLastUsedSharedQueryState(1)).toBeUndefined();
     });
 
+    it('stores and restores an explicit no-grouping selection', () => {
+        saveLastUsedSharedQueryState({ groupBy: null }, 1);
+
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            groupBy: null
+        });
+    });
+
+    it('stores and restores project grouping when it overrides a saved query', () => {
+        saveLastUsedSharedQueryState({ queryId: 12, groupBy: 'project' }, 1);
+
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            queryId: 12,
+            groupBy: 'project'
+        });
+    });
+
     it('clears only the targeted project state', () => {
         saveLastUsedSharedQueryState({ queryId: 7 }, 1);
         saveLastUsedSharedQueryState({ selectedVersionIds: ['9'] }, 2);
