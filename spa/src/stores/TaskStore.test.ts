@@ -233,6 +233,78 @@ describe('TaskStore shared query persistence', () => {
         });
     });
 
+    it('applySavedQuery preserves an explicit project grouping override', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [] },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: {
+                queryId: 12,
+                groupBy: 'project'
+            }
+        });
+
+        useTaskStore.getState().setGroupByProject(true);
+        await useTaskStore.getState().applySavedQuery(12);
+
+        expect(apiClient.fetchData).toHaveBeenCalledWith({
+            query: {
+                queryId: 12,
+                groupBy: 'project'
+            }
+        });
+        expect(useTaskStore.getState().activeQueryId).toBe(12);
+        expect(useTaskStore.getState().groupByProject).toBe(true);
+        expect(useTaskStore.getState().groupByAssignee).toBe(false);
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            queryId: 12,
+            groupBy: 'project'
+        });
+    });
+
+    it('applySavedQuery sends only the saved query id when grouping was not explicitly overridden', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [] },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: {
+                queryId: 12,
+                selectedStatusIds: [3]
+            }
+        });
+        useTaskStore.setState({
+            selectedStatusIds: [1, 2],
+            selectedAssigneeIds: [7],
+            selectedProjectIds: ['p1'],
+            selectedVersionIds: ['v1']
+        });
+
+        await useTaskStore.getState().applySavedQuery(12);
+
+        expect(apiClient.fetchData).toHaveBeenCalledWith({
+            query: {
+                queryId: 12
+            }
+        });
+        expect(useTaskStore.getState().activeQueryId).toBe(12);
+        expect(useTaskStore.getState().selectedStatusIds).toEqual([3]);
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            queryId: 12,
+            selectedStatusIds: [3],
+            groupBy: null
+        });
+    });
+
     it('setMemberProjectsOnly updates shared query state and refreshes data', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [],
@@ -257,6 +329,7 @@ describe('TaskStore shared query persistence', () => {
         expect(apiClient.fetchData).toHaveBeenCalled();
         expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
         expect(loadLastUsedSharedQueryState(1)).toEqual({
+            groupBy: null,
             memberProjectsOnly: true,
             selectedProjectIds: ['p1']
         });
@@ -325,7 +398,7 @@ describe('TaskStore API data application', () => {
         expect(initialState.selectedProjectIds).toEqual(['p1', 'missing']);
     });
 
-    it('applyApiData preserves the active query id when API initialState omits it', () => {
+    it('applyApiData clears the active query id when API initialState omits queryId', () => {
         useTaskStore.setState({ activeQueryId: 12 });
 
         useTaskStore.getState().applyApiData({
@@ -342,10 +415,31 @@ describe('TaskStore API data application', () => {
             }
         });
 
+        expect(useTaskStore.getState().activeQueryId).toBeNull();
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            groupBy: null,
+            selectedStatusIds: [1]
+        });
+    });
+
+    it('applyApiData preserves the active query id when API omits initialState', () => {
+        useTaskStore.setState({ activeQueryId: 12 });
+
+        useTaskStore.getState().applyApiData({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [] },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+
         expect(useTaskStore.getState().activeQueryId).toBe(12);
         expect(loadLastUsedSharedQueryState(1)).toEqual({
             queryId: 12,
-            selectedStatusIds: [1]
+            groupBy: 'project'
         });
     });
 

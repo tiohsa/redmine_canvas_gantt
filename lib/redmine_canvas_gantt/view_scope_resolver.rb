@@ -65,8 +65,8 @@ module RedmineCanvasGantt
 
     def scope_project_ids
       base_ids = base_project_ids
-      explicit_ids = parse_integer_list(@params[:project_ids])
-      return base_ids if explicit_ids.blank?
+      explicit_ids = parse_project_id_list(@params[:project_ids])
+      return base_ids if explicit_ids.nil?
 
       explicit_ids & base_ids
     end
@@ -77,6 +77,14 @@ module RedmineCanvasGantt
         .filter_map { |value| Integer(value, exception: false) }
         .select(&:positive?)
         .uniq
+    end
+
+    def parse_project_id_list(values)
+      tokens = Array(values).flat_map { |value| value.to_s.split(/[|,]/) }.map(&:strip).reject(&:blank?)
+      return nil if tokens.empty?
+      return [] if tokens.all? { |value| %w[_none none].include?(value) }
+
+      parse_integer_list(tokens).presence
     end
   end
 end

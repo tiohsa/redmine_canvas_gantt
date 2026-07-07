@@ -23,10 +23,12 @@ import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import {
     readIssueQueryParamsFromUrl,
+    replaceIssueQueryParamsInUrl,
     toBusinessQueryState,
     toResolvedQueryStateFromStore,
     type ResolvedQueryState
 } from '../utils/queryParams';
+import { saveLastUsedSharedQueryState } from '../utils/sharedQueryState';
 
 type DerivedSchedulingSummary = {
     schedulingStates: Record<string, SchedulingStateInfo>;
@@ -76,6 +78,7 @@ interface TaskState {
     rowCount: number;
     groupByProject: boolean;
     groupByAssignee: boolean;
+    explicitGroupByOverride: 'project' | 'assignee' | null | undefined;
     showVersions: boolean;
     organizeByDependency: boolean;
     viewportFromStorage: boolean;
@@ -112,6 +115,8 @@ interface TaskState {
     setTaskStatuses: (statuses: TaskStatus[]) => void;
     setCustomFields: (fields: CustomFieldMeta[]) => void;
     setPermissions: (permissions: { editable: boolean; viewable: boolean; baselineEditable: boolean }) => void;
+    restoreActiveQueryId: (queryId: number | null) => void;
+    restoreExplicitGroupByOverride: (groupBy: ResolvedQueryState['groupBy'] | undefined) => void;
     applyResolvedQueryState: (state?: ResolvedQueryState) => void;
     applyApiData: (data: ApiData) => void;
     setSelectedStatusFromServer: (ids: number[]) => void;
@@ -347,10 +352,6 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
         ...(data.initialState ?? toResolvedQueryStateFromStore(state))
     };
 
-    if (nextResolved.queryId === undefined && state.activeQueryId !== null) {
-        nextResolved.queryId = state.activeQueryId;
-    }
-
     const candidateProjectIds = new Set(filterOptions.projects.map((project) => project.id));
     nextResolved.selectedProjectIds = (nextResolved.selectedProjectIds ?? [])
         .filter((projectId) => candidateProjectIds.has(projectId));
@@ -571,6 +572,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     rowCount: 0,
     groupByProject: true,
     groupByAssignee: false,
+    explicitGroupByOverride: undefined,
     showVersions: preferences.showVersions ?? true,
     organizeByDependency: preferences.organizeByDependency ?? false,
     viewportFromStorage: Boolean(preferences.viewport),
@@ -640,6 +642,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     setFilterOptions: (filterOptions) => set(() => ({ filterOptions })),
     setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
     setPermissions: (permissions) => set(() => ({ permissions })),
+    restoreActiveQueryId: (queryId) => set({ activeQueryId: queryId }),
+    restoreExplicitGroupByOverride: (groupBy) => set({ explicitGroupByOverride: groupBy }),
     applyResolvedQueryState: (resolved) => set((state) => {
         const queryState = toBusinessQueryState(resolved);
         const groupByProject = queryState.groupByProject;
@@ -1057,6 +1061,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const nextState = {
             groupByProject: grouped,
             groupByAssignee: nextGroupByAssignee,
+            explicitGroupByOverride: grouped ? 'project' as const : (nextGroupByAssignee ? 'assignee' as const : null),
             showSubprojects: nextShowSubprojects,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -1076,6 +1081,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const nextState = {
             groupByAssignee: grouped,
             groupByProject: nextGroupByProject,
+            explicitGroupByOverride: grouped ? 'assignee' as const : (nextGroupByProject ? 'project' as const : null),
             showSubprojects: nextShowSubprojects,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -1402,8 +1408,17 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     },
 
     applySavedQuery: async (queryId) => {
-        get().applyResolvedQueryState({ queryId });
-        await get().refreshData();
+        const { apiClient } = await import('../api/client');
+        const state = get();
+        const query: ResolvedQueryState = {
+            queryId,
+            ...(state.explicitGroupByOverride !== undefined ? { groupBy: state.explicitGroupByOverride } : {})
+        };
+        set({ activeQueryId: queryId });
+        replaceIssueQueryParamsInUrl(query);
+        saveLastUsedSharedQueryState(query);
+        const data = await apiClient.fetchData({ query });
+        get().applyApiData(data);
     },
 
     clearSavedQuery: async () => {

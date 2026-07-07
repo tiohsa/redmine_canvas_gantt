@@ -1,18 +1,29 @@
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useInitialGanttData } from './useInitialGanttData';
+import { GanttToolbar } from '../GanttToolbar';
 import { useTaskStore } from '../../stores/TaskStore';
 import { resetCanvasGanttTestState } from '../../test/testSetup';
 import { saveLastUsedSharedQueryState } from '../../utils/sharedQueryState';
+import type { GanttExportHandle } from '../../export/types';
 
 const fetchDataMock = vi.fn();
+const fetchQueriesMock = vi.fn();
 
 vi.mock('../../api/client', () => ({
     apiClient: {
-        fetchData: (...args: unknown[]) => fetchDataMock(...args)
+        fetchData: (...args: unknown[]) => fetchDataMock(...args),
+        fetchQueries: (...args: unknown[]) => fetchQueriesMock(...args)
     }
 }));
+
+const exportRef: { current: GanttExportHandle | null } = {
+    current: {
+        exportPng: async () => undefined,
+        exportCsv: async () => undefined
+    }
+};
 
 const Harness = () => {
     const viewportFromStorage = useTaskStore(state => state.viewportFromStorage);
@@ -31,6 +42,8 @@ describe('useInitialGanttData persistence', () => {
         resetCanvasGanttTestState();
         window.history.replaceState({}, '', '/projects/ecookbook/canvas_gantt');
         fetchDataMock.mockReset();
+        fetchQueriesMock.mockReset();
+        fetchQueriesMock.mockResolvedValue([]);
         fetchDataMock.mockImplementation(async (args?: { query?: unknown; rawSearch?: string }) => ({
             tasks: [],
             relations: [],
@@ -88,9 +101,154 @@ describe('useInitialGanttData persistence', () => {
         expect(url.searchParams.get('show_subprojects')).toBe('0');
     });
 
+    it('restores an explicit empty project selection from storage on a bare canvas gantt URL', async () => {
+        saveLastUsedSharedQueryState({
+            selectedProjectIds: []
+        });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalledWith({
+                rawSearch: undefined,
+                query: {
+                    selectedProjectIds: []
+                }
+            });
+        });
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().selectedProjectIds).toEqual([]);
+        });
+
+        const url = new URL(window.location.href);
+        expect(url.searchParams.getAll('project_ids[]')).toEqual(['none']);
+    });
+
+    it('restores a stored saved query id before initial data resolves and checks its radio', async () => {
+        saveLastUsedSharedQueryState({
+            queryId: 12
+        });
+        fetchDataMock.mockImplementationOnce(() => new Promise(() => undefined));
+        fetchQueriesMock.mockResolvedValue([
+            { id: 12, name: 'Open issues', isPublic: true, projectId: 1 }
+        ]);
+
+        render(
+            <>
+                <Harness />
+                <GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />
+            </>
+        );
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalled();
+            expect(useTaskStore.getState().activeQueryId).toBe(12);
+        });
+
+        fireEvent.click(screen.getByTestId('query-menu-button'));
+
+        expect(await screen.findByRole('radio', { name: 'Open issues' })).toBeChecked();
+    });
+
+    it('restores project grouping as an override for a stored saved query', async () => {
+        saveLastUsedSharedQueryState({
+            queryId: 12,
+            groupBy: 'project'
+        });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalledWith({
+                rawSearch: undefined,
+                query: {
+                    queryId: 12,
+                    groupBy: 'project'
+                }
+            });
+        });
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().activeQueryId).toBe(12);
+            expect(useTaskStore.getState().groupByProject).toBe(true);
+            expect(useTaskStore.getState().groupByAssignee).toBe(false);
+        });
+
+        const url = new URL(window.location.href);
+        expect(url.searchParams.get('query_id')).toBe('12');
+        expect(url.searchParams.get('group_by')).toBe('project');
+
+        fetchDataMock.mockClear();
+        await useTaskStore.getState().applySavedQuery(18);
+
+        expect(fetchDataMock).toHaveBeenCalledWith({
+            query: {
+                queryId: 18,
+                groupBy: 'project'
+            }
+        });
+    });
+
+    it('does not treat a stored saved query id alone as an explicit project grouping override', async () => {
+        saveLastUsedSharedQueryState({
+            queryId: 12
+        });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalledWith({
+                rawSearch: undefined,
+                query: {
+                    queryId: 12
+                }
+            });
+        });
+
+        fetchDataMock.mockClear();
+        await useTaskStore.getState().applySavedQuery(18);
+
+        expect(fetchDataMock).toHaveBeenCalledWith({
+            query: {
+                queryId: 18
+            }
+        });
+    });
+
+    it('restores an explicit no-grouping selection from storage', async () => {
+        saveLastUsedSharedQueryState({
+            groupBy: null
+        });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalledWith({
+                rawSearch: undefined,
+                query: {
+                    groupBy: null
+                }
+            });
+        });
+
+        await waitFor(() => {
+            expect(useTaskStore.getState().groupByProject).toBe(false);
+            expect(useTaskStore.getState().groupByAssignee).toBe(false);
+        });
+
+        expect(new URL(window.location.href).searchParams.get('group_by')).toBe('none');
+    });
+
     it('preserves the active saved query when initial data omits initialState', async () => {
+        saveLastUsedSharedQueryState({
+            queryId: 12,
+            selectedStatusIds: [1],
+            selectedAssigneeIds: [7],
+            selectedProjectIds: ['p1'],
+            selectedVersionIds: ['v2']
+        });
         useTaskStore.setState({
-            activeQueryId: 12,
             selectedStatusIds: [1],
             selectedAssigneeIds: [7],
             selectedProjectIds: ['p1'],

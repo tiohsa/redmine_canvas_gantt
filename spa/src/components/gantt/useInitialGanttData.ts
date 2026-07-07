@@ -30,6 +30,14 @@ export const useInitialGanttData = ({
                 replaceIssueQueryParamsInUrl(initialSharedQueryState.state);
             }
 
+            useTaskStore.getState().restoreActiveQueryId(initialSharedQueryState.state.queryId ?? null);
+            const groupByWasExplicit = initialSharedQueryState.source === 'storage'
+                ? initialSharedQueryState.state.groupBy !== undefined
+                : initialSharedQueryState.source === 'url' && new URLSearchParams(window.location.search).has('group_by');
+            if (groupByWasExplicit) {
+                useTaskStore.getState().restoreExplicitGroupByOverride(initialSharedQueryState.state.groupBy);
+            }
+
             apiClient.fetchData({
                 rawSearch: initialSharedQueryState.source === 'url' ? window.location.search : undefined,
                 query: initialSharedQueryState.state

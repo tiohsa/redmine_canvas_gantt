@@ -552,6 +552,10 @@ export const IssueIframeDialog: React.FC = () => {
     const externalDialogUrl = currentIframeUrl || activeDialogUrl;
     const isIssueShowMode = dialogMode === 'issue-show' && !isQueryDialog;
     const isJournalSaveMode = saveTarget === 'journal' || isJournalEditing;
+    const shouldShowSave =
+        !isQueryDialog ||
+        saveTarget === 'query' ||
+        (isSaving && saveTargetRef.current === 'query');
     const closeLabel = isIssueShowMode || isJournalSaveMode ? (i18n.t('button_close') || 'Close') : (i18n.t('button_cancel') || 'Cancel');
     const saveLabel = saveTarget === 'new-issue'
         ? (i18n.t('button_create_issue') || 'Create issue')
@@ -793,7 +797,7 @@ export const IssueIframeDialog: React.FC = () => {
                         >
                             {i18n.t('button_edit_issue') || 'Edit issue'}
                         </button>
-                    ) : (
+                    ) : shouldShowSave ? (
                         <button
                             onClick={handleSave}
                             disabled={isSaving}
@@ -818,7 +822,7 @@ export const IssueIframeDialog: React.FC = () => {
                         >
                             {isSaving ? savingLabel : saveLabel}
                         </button>
-                    )}
+                    ) : null}
                 </div>
             </div>
         </div>

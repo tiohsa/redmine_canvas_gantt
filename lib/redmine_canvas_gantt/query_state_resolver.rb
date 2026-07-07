@@ -1,6 +1,6 @@
 module RedmineCanvasGantt
   class QueryStateResolver
-    QueryResolution = Struct.new(:issue_ids, :query, keyword_init: true)
+    QueryResolution = Struct.new(:issue_ids, :query, :query_id, keyword_init: true)
 
     DEFAULT_STATE = {
       query_id: nil,
@@ -65,7 +65,7 @@ module RedmineCanvasGantt
 
       query_resolution = resolve_query_resolution
       state.merge!(state_from_query(query_resolution.query)) if query_resolution.query
-      state[:query_id] = query_resolution.query.id if query_resolution.query&.id.present?
+      state[:query_id] = query_resolution.query_id if query_resolution.query_id
 
       apply_request_overrides!(state)
 
@@ -91,19 +91,19 @@ module RedmineCanvasGantt
 
     def resolve_query_resolution
       query_id = @params[:query_id].presence
-      return QueryResolution.new(issue_ids: nil, query: nil) unless query_id
+      return QueryResolution.new(issue_ids: nil, query: nil, query_id: nil) unless query_id
 
       query = IssueQuery.find_by(id: query_id)
       unless query&.visible?(@current_user)
         warn_invalid_query_id(query_id)
-        return QueryResolution.new(issue_ids: nil, query: nil)
+        return QueryResolution.new(issue_ids: nil, query: nil, query_id: nil)
       end
 
       working_query = build_working_query(query)
-      QueryResolution.new(issue_ids: working_query.issue_ids, query: working_query)
+      QueryResolution.new(issue_ids: working_query.issue_ids, query: working_query, query_id: query.id)
     rescue StandardError => e
       warn_query_resolution_failure(query_id, e)
-      QueryResolution.new(issue_ids: nil, query: nil)
+      QueryResolution.new(issue_ids: nil, query: nil, query_id: nil)
     end
 
     def build_working_query(query)
@@ -134,7 +134,7 @@ module RedmineCanvasGantt
     def query_filter_keys_to_exclude
       keys = URL_OVERRIDE_FILTERS.select { |name| url_filter_values(name).present? }
       keys.concat(supported_standard_filter_fields)
-      keys << 'project_id' if @params[:project_ids].present?
+      keys << 'project_id' if explicit_project_ids_param?
       keys << 'subproject_id' if @params.key?(:show_subprojects)
       keys.uniq
     end
@@ -237,7 +237,7 @@ module RedmineCanvasGantt
     end
 
     def apply_project_override!(state)
-      return unless @params[:project_ids].present?
+      return unless explicit_project_ids_param?
 
       project_ids = resolve_selected_project_ids(nil)
       state[:selected_project_ids] = project_ids.map(&:to_s)
@@ -260,6 +260,9 @@ module RedmineCanvasGantt
       when 'assigned_to'
         state[:group_by_project] = false
         state[:group_by_assignee] = true
+      when 'none'
+        state[:group_by_project] = false
+        state[:group_by_assignee] = false
       when '', nil
         nil
       else
@@ -351,6 +354,8 @@ module RedmineCanvasGantt
     end
 
     def project_scope_ids(project_ids, selected_project_ids)
+      return selected_project_ids if explicit_project_ids_param?
+
       selected_project_ids.presence || project_ids
     end
 
@@ -412,8 +417,8 @@ module RedmineCanvasGantt
     end
 
     def resolve_selected_project_ids(fallback_project_ids)
-      project_ids = parse_integer_list(@params[:project_ids])
-      return project_ids if project_ids.present?
+      project_ids = parse_project_id_list(@params[:project_ids])
+      return project_ids unless project_ids.nil?
 
       show_subprojects = resolve_show_subprojects
       return [@project.id] unless show_subprojects
@@ -449,6 +454,16 @@ module RedmineCanvasGantt
 
     def parse_integer_list(values)
       split_list_values(values).filter_map { |value| value.to_i if integer_string?(value) }
+    end
+
+    def parse_project_id_list(values)
+      tokens = split_list_values(values)
+      return nil if tokens.empty?
+      return [] if tokens.all? { |value| none_marker?(value) }
+
+      project_ids = tokens.reject { |value| none_marker?(value) }
+                          .filter_map { |value| value.to_i if integer_string?(value) }
+      project_ids.presence
     end
 
     def parse_integer_or_none_list(values)
@@ -506,6 +521,10 @@ module RedmineCanvasGantt
     def url_filter_values(name)
       plural = "#{name.to_s.sub(/_id\z/, '')}_ids"
       Array(@params[name] || @params[plural] || @params["#{plural}[]"])
+    end
+
+    def explicit_project_ids_param?
+      @params[:project_ids].present?
     end
 
     def split_list_values(values)

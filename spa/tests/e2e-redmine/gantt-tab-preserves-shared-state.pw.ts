@@ -38,4 +38,15 @@ test('restores the last-used shared query state when reopening bare Canvas Gantt
   await expect(page).toHaveURL(/status_ids%5B%5D=1/);
   await expect(page).toHaveURL(/group_by=assigned_to/);
   await expect(page).toHaveURL(/show_subprojects=0/);
+
+  initialUrl.searchParams.set('group_by', 'none');
+  await page.goto(initialUrl.toString());
+  await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
+  await expect(page).toHaveURL(/group_by=none/);
+
+  await canvasTab.click();
+  await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
+  await expect(page).toHaveURL(/status_ids%5B%5D=1/);
+  await expect(page).toHaveURL(/group_by=none/);
+  await expect(page).toHaveURL(/show_subprojects=0/);
 });

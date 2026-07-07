@@ -122,7 +122,7 @@ describe('readIssueQueryParamsFromUrl', () => {
 });
 
 describe('normalizeResolvedQueryState', () => {
-    it('drops default-equivalent values', () => {
+    it('drops default-equivalent values except explicit empty project selections', () => {
         expect(normalizeResolvedQueryState({
             queryId: null,
             selectedStatusIds: [],
@@ -132,7 +132,29 @@ describe('normalizeResolvedQueryState', () => {
             sortConfig: { key: 'startDate', direction: 'asc' },
             groupBy: 'project',
             showSubprojects: true
+        })).toEqual({
+            selectedProjectIds: []
+        });
+    });
+
+    it('drops default-equivalent values when project selection is not explicit', () => {
+        expect(normalizeResolvedQueryState({
+            queryId: null,
+            selectedStatusIds: [],
+            selectedAssigneeIds: [],
+            selectedVersionIds: [],
+            sortConfig: { key: 'startDate', direction: 'asc' },
+            groupBy: 'project',
+            showSubprojects: true
         })).toBeUndefined();
+    });
+
+    it('keeps an explicit empty project selection', () => {
+        expect(normalizeResolvedQueryState({
+            selectedProjectIds: []
+        })).toEqual({
+            selectedProjectIds: []
+        });
     });
 
     it('keeps meaningful shared state values', () => {
@@ -146,6 +168,24 @@ describe('normalizeResolvedQueryState', () => {
             selectedStatusIds: [1],
             groupBy: 'assignee',
             showSubprojects: false
+        });
+    });
+
+    it('keeps project grouping as a saved query override', () => {
+        expect(normalizeResolvedQueryState({
+            queryId: 12,
+            groupBy: 'project'
+        })).toEqual({
+            queryId: 12,
+            groupBy: 'project'
+        });
+    });
+
+    it('keeps an explicit no-grouping selection', () => {
+        expect(normalizeResolvedQueryState({
+            groupBy: null
+        })).toEqual({
+            groupBy: null
         });
     });
 });
@@ -179,6 +219,30 @@ describe('resolveInitialSharedQueryState', () => {
                 queryId: 12,
                 selectedStatusIds: [1],
                 groupBy: 'assignee'
+            },
+            source: 'storage'
+        });
+    });
+
+    it('uses an explicit empty project selection from storage for a bare Canvas Gantt URL', () => {
+        expect(resolveInitialSharedQueryState('', {
+            selectedProjectIds: []
+        })).toEqual({
+            state: {
+                selectedProjectIds: []
+            },
+            source: 'storage'
+        });
+    });
+
+    it('uses an explicit empty status selection from storage when it overrides a saved query', () => {
+        expect(resolveInitialSharedQueryState('', {
+            queryId: 12,
+            selectedStatusIds: []
+        })).toEqual({
+            state: {
+                queryId: 12,
+                selectedStatusIds: []
             },
             source: 'storage'
         });
@@ -315,6 +379,44 @@ describe('replaceIssueQueryParamsInUrl', () => {
 });
 
 describe('query parameter round-trips for special selections', () => {
+    it('encodes an explicit empty status selection as a saved-query status clear override', () => {
+        const params = buildIssueQueryParams({
+            queryId: 42,
+            selectedStatusIds: []
+        });
+
+        expect(params.get('query_id')).toBe('42');
+        expect(params.get('set_filter')).toBe('1');
+        expect(params.getAll('f[]')).toEqual(['status_id']);
+        expect(params.get('op[status_id]')).toBe('*');
+        expect(params.getAll('status_ids[]')).toEqual([]);
+    });
+
+    it('preserves saved-query status filters when status selection is unspecified', () => {
+        const params = buildIssueQueryParams({
+            queryId: 42
+        });
+
+        expect(params.get('query_id')).toBe('42');
+        expect(params.get('set_filter')).toBeNull();
+        expect(params.getAll('f[]')).toEqual([]);
+        expect(params.get('op[status_id]')).toBeNull();
+        expect(params.getAll('status_ids[]')).toEqual([]);
+    });
+
+    it('keeps selected statuses as Canvas query params for saved queries', () => {
+        const params = buildIssueQueryParams({
+            queryId: 42,
+            selectedStatusIds: [1, 2]
+        });
+
+        expect(params.get('query_id')).toBe('42');
+        expect(params.get('set_filter')).toBeNull();
+        expect(params.getAll('f[]')).toEqual([]);
+        expect(params.get('op[status_id]')).toBeNull();
+        expect(params.getAll('status_ids[]')).toEqual(['1', '2']);
+    });
+
     it('preserves unassigned assignee and no-version selections through URL round-trips', () => {
         const params = buildIssueQueryParams({
             selectedAssigneeIds: [null],
@@ -352,6 +454,13 @@ describe('query parameter round-trips for special selections', () => {
             groupBy: null,
             showSubprojects: undefined
         });
+    });
+
+    it('round-trips an explicit no-grouping selection through Canvas URL params', () => {
+        const params = buildIssueQueryParams({ groupBy: null });
+
+        expect(params.get('group_by')).toBe('none');
+        expect(readIssueQueryParamsFromUrl(`?${params.toString()}`).groupBy).toBeNull();
     });
 
     it('round-trips member_projects_only from URL params', () => {
@@ -430,5 +539,13 @@ describe('buildRedmineIssueQueryParams', () => {
         });
 
         expect(params.get('sort')).toBe('due_date:desc');
+    });
+
+    it('does not export the Canvas no-grouping sentinel to Redmine issue-list URLs', () => {
+        const { params } = buildRedmineIssueQueryParams({
+            groupBy: null
+        });
+
+        expect(params.get('group_by')).toBeNull();
     });
 });
