@@ -1051,18 +1051,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }),
 
     setGroupByProject: (grouped) => set((state) => {
-        const nextShowSubprojects = grouped;
         const nextGroupByAssignee = grouped ? false : state.groupByAssignee;
         const layout = buildLayoutFromState(state, {
             groupByProject: grouped,
-            groupByAssignee: nextGroupByAssignee,
-            showSubprojects: nextShowSubprojects
+            groupByAssignee: nextGroupByAssignee
         });
         const nextState = {
             groupByProject: grouped,
             groupByAssignee: nextGroupByAssignee,
             explicitGroupByOverride: grouped ? 'project' as const : (nextGroupByAssignee ? 'assignee' as const : null),
-            showSubprojects: nextShowSubprojects,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount

@@ -160,6 +160,12 @@ The saved-query editor dialog also exposes **Open in new tab** as a fallback whe
 
 When the project menu opens a bare `Canvas Gantt` URL with no shared query input, Canvas Gantt restores the last-used shared filter state for that project and rewrites the browser URL to the canonical shared query params.
 
+### Internal Query State Contract
+
+Canvas Gantt is being migrated toward an explicit query state contract where a saved Redmine query is treated as the base condition and Canvas-side filter changes are tracked as overrides. The PR-1 contract defines `QueryContext`, `QueryOverrides`, and filter override modes in `spa/src/query/` without changing the current runtime behavior.
+
+Project filter state distinguishes `inherit`, `all`, `subset`, and `none` so an empty project selection is not inferred from an empty array. Status, assignee, and version overrides currently use `inherit`, `all`, and `subset`; broader runtime integration, URL/storage migration, and project candidate pruning changes are planned for later PRs.
+
 ### Supported Shared Parameters
 
 | Parameter | Description |

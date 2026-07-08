@@ -32,9 +32,9 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
     expect(result[:visible_project_ids]).to eq([1])
   end
 
-  it 'uses member project ids when member-project mode is on without explicit project_ids' do
-    allow(query_state_resolver).to receive(:resolve).with(project_ids: [5, 6]).and_return(
-      issues: [issue_b],
+  it 'uses descendant project ids when member-project mode is on without explicit project_ids' do
+    allow(query_state_resolver).to receive(:resolve).with(project_ids: [1, 2]).and_return(
+      issues: [issue_a],
       initial_state: {},
       warnings: []
     )
@@ -43,20 +43,19 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
       project: project,
       params: ActionController::Parameters.new(member_projects_only: '1'),
       current_user: current_user,
-      issue_includes: [],
-      member_project_ids_resolver: -> { [5, 6] }
+      issue_includes: []
     ).resolve
 
-    expect(result[:issue_ids]).to eq(Set[20])
-    expect(result[:scope_project_ids]).to eq([5, 6])
-    expect(result[:visible_project_ids]).to eq([5])
+    expect(result[:issue_ids]).to eq(Set[10])
+    expect(result[:scope_project_ids]).to eq([1, 2])
+    expect(result[:visible_project_ids]).to eq([1])
   end
 
   it 'still lets explicit project_ids narrow scope through QueryStateResolver' do
-    params = ActionController::Parameters.new(member_projects_only: '1', project_ids: ['6'])
-    allow(query_state_resolver).to receive(:resolve).with(project_ids: [6]).and_return(
-      issues: [issue_b],
-      initial_state: { selected_project_ids: ['6'] },
+    params = ActionController::Parameters.new(member_projects_only: '1', project_ids: ['2'])
+    allow(query_state_resolver).to receive(:resolve).with(project_ids: [2]).and_return(
+      issues: [issue_a],
+      initial_state: { selected_project_ids: ['2'] },
       warnings: []
     )
 
@@ -64,18 +63,17 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
       project: project,
       params: params,
       current_user: current_user,
-      issue_includes: [],
-      member_project_ids_resolver: -> { [5, 6] }
+      issue_includes: []
     ).resolve
 
-    expect(result[:initial_state][:selected_project_ids]).to eq(['6'])
-    expect(result[:scope_project_ids]).to eq([6])
+    expect(result[:initial_state][:selected_project_ids]).to eq(['2'])
+    expect(result[:scope_project_ids]).to eq([2])
   end
 
   it 'excludes explicit project_ids outside base_project_ids' do
-    params = ActionController::Parameters.new(member_projects_only: '1', project_ids: %w[6 999])
-    allow(query_state_resolver).to receive(:resolve).with(project_ids: [6]).and_return(
-      issues: [issue_b],
+    params = ActionController::Parameters.new(member_projects_only: '1', project_ids: %w[2 999])
+    allow(query_state_resolver).to receive(:resolve).with(project_ids: [2]).and_return(
+      issues: [issue_a],
       initial_state: {},
       warnings: []
     )
@@ -84,11 +82,10 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
       project: project,
       params: params,
       current_user: current_user,
-      issue_includes: [],
-      member_project_ids_resolver: -> { [5, 6] }
+      issue_includes: []
     ).resolve
 
-    expect(result[:scope_project_ids]).to eq([6])
+    expect(result[:scope_project_ids]).to eq([2])
   end
 
   it 'treats project none as an explicit empty scope when member-project mode is off' do
@@ -122,8 +119,7 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
       project: project,
       params: params,
       current_user: current_user,
-      issue_includes: [],
-      member_project_ids_resolver: -> { [5, 6] }
+      issue_includes: []
     ).resolve
 
     expect(result[:scope_project_ids]).to eq([])

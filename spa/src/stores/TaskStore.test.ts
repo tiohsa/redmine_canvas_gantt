@@ -267,6 +267,37 @@ describe('TaskStore shared query persistence', () => {
         });
     });
 
+    it('setGroupByProject preserves showSubprojects when enabling project grouping', () => {
+        useTaskStore.setState({ showSubprojects: false });
+
+        useTaskStore.getState().setGroupByProject(true);
+
+        expect(useTaskStore.getState().groupByProject).toBe(true);
+        expect(useTaskStore.getState().groupByAssignee).toBe(false);
+        expect(useTaskStore.getState().explicitGroupByOverride).toBe('project');
+        expect(useTaskStore.getState().showSubprojects).toBe(false);
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            showSubprojects: false
+        });
+    });
+
+    it('setGroupByProject preserves showSubprojects when disabling project grouping', () => {
+        useTaskStore.setState({
+            groupByProject: true,
+            groupByAssignee: false,
+            showSubprojects: true
+        });
+
+        useTaskStore.getState().setGroupByProject(false);
+
+        expect(useTaskStore.getState().groupByProject).toBe(false);
+        expect(useTaskStore.getState().groupByAssignee).toBe(false);
+        expect(useTaskStore.getState().showSubprojects).toBe(true);
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            groupBy: null
+        });
+    });
+
     it('applySavedQuery sends only the saved query id when grouping was not explicitly overridden', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [],

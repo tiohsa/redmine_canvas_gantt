@@ -193,6 +193,26 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe '#current_view_scope' do
+    it 'builds operation scope without member-project narrowing' do
+      user = instance_double(User)
+      view_scope_resolver = instance_double(RedmineCanvasGantt::ViewScopeResolver)
+      resolved_scope = { issue_ids: Set[], scope_project_ids: [1, 2], visible_project_ids: [] }
+
+      allow(User).to receive(:current).and_return(user)
+      controller.instance_variable_set(:@project, project)
+      expect(RedmineCanvasGantt::ViewScopeResolver).to receive(:new).with(
+        project: project,
+        params: controller.params,
+        current_user: user,
+        issue_includes: CanvasGanttsController::ISSUE_INCLUDES
+      ).and_return(view_scope_resolver)
+      allow(view_scope_resolver).to receive(:resolve).and_return(resolved_scope)
+
+      expect(controller.send(:current_view_scope)).to eq(resolved_scope)
+    end
+  end
+
   describe '#filter_option_projects' do
     let(:visible_scope) { instance_double(ActiveRecord::Relation) }
     let(:member_active_scope) { instance_double(ActiveRecord::Relation) }
@@ -601,7 +621,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       )
     end
 
-    it 'allows edit_meta for a non-descendant issue when member-project mode view scope includes it' do
+    it 'allows edit_meta for an issue when the current view scope includes it' do
       get :edit_meta, params: { project_id: 'demo', id: '42', member_projects_only: '1' }, format: :json
 
       expect(response).to have_http_status(:ok)

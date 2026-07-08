@@ -2,12 +2,11 @@ require 'set'
 
 module RedmineCanvasGantt
   class ViewScopeResolver
-    def initialize(project:, params:, current_user:, issue_includes:, member_project_ids_resolver: nil)
+    def initialize(project:, params:, current_user:, issue_includes:)
       @project = project
       @params = params
       @current_user = current_user
       @issue_includes = issue_includes
-      @member_project_ids_resolver = member_project_ids_resolver
     end
 
     def resolve
@@ -43,28 +42,8 @@ module RedmineCanvasGantt
       @descendant_project_ids ||= @project.self_and_descendants.pluck(:id)
     end
 
-    def base_project_ids
-      return descendant_project_ids unless member_projects_only?
-
-      member_project_ids
-    end
-
-    def member_projects_only?
-      ActiveModel::Type::Boolean.new.cast(@params[:member_projects_only])
-    end
-
-    def member_project_ids
-      ids = if @member_project_ids_resolver
-              Array(@member_project_ids_resolver.call)
-            else
-              []
-            end
-
-      ids.map(&:to_i).select(&:positive?).uniq
-    end
-
     def scope_project_ids
-      base_ids = base_project_ids
+      base_ids = descendant_project_ids
       explicit_ids = parse_project_id_list(@params[:project_ids])
       return base_ids if explicit_ids.nil?
 
