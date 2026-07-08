@@ -79,6 +79,7 @@ module RedmineCanvasGantt
       {
         issues: issues,
         initial_state: state,
+        query_context: query_context(query_resolution),
         warnings: @warnings
       }
     end
@@ -104,6 +105,107 @@ module RedmineCanvasGantt
     rescue StandardError => e
       warn_query_resolution_failure(query_id, e)
       QueryResolution.new(issue_ids: nil, query: nil, query_id: nil)
+    end
+
+    def query_context(query_resolution)
+      {
+        query_id: query_resolution.query_id,
+        explicit_overrides: explicit_query_overrides
+      }
+    end
+
+    def explicit_query_overrides
+      overrides = {}
+
+      standard_filter_override('status_id') do |operator, values|
+        overrides[:status] = status_override_for(operator, values)
+      end
+      standard_filter_override('assigned_to_id') do |operator, values|
+        overrides[:assignee] = assignee_override_for(operator, values)
+      end
+      standard_filter_override('project_id') do |operator, values|
+        overrides[:project] = project_override_for(operator, values)
+      end
+      standard_filter_override('fixed_version_id') do |operator, values|
+        overrides[:version] = version_override_for(operator, values)
+      end
+
+      if url_filter_values('status_id').present?
+        overrides[:status] = subset_override(parse_integer_list(url_filter_values('status_id')))
+      end
+      if url_filter_values('assigned_to_id').present?
+        overrides[:assignee] = subset_override(parse_integer_or_none_list(url_filter_values('assigned_to_id')))
+      end
+      if explicit_project_ids_param?
+        project_ids = parse_project_id_list(@params[:project_ids])
+        overrides[:project] = if project_ids&.empty?
+                                { mode: 'none' }
+                              elsif project_ids
+                                subset_override(project_ids.map(&:to_s))
+                              end
+      end
+      if url_filter_values('fixed_version_id').present?
+        overrides[:version] = subset_override(parse_version_list(url_filter_values('fixed_version_id')))
+      end
+
+      overrides.compact
+    end
+
+    def standard_filter_override(field)
+      return unless standard_filtering_enabled?
+      return unless standard_filter_fields.include?(field)
+
+      operator = standard_filter_operator(field)
+      return unless STANDARD_FILTER_OPERATORS.fetch(field, []).include?(operator)
+
+      yield operator, standard_filter_values(field)
+    end
+
+    def status_override_for(operator, values)
+      case operator
+      when '='
+        subset_override(parse_integer_list(values))
+      when '*'
+        { mode: 'all' }
+      when 'o'
+        subset_override(IssueStatus.where(is_closed: false).pluck(:id))
+      when 'c'
+        subset_override(IssueStatus.where(is_closed: true).pluck(:id))
+      end
+    end
+
+    def assignee_override_for(operator, values)
+      case operator
+      when '='
+        subset_override(parse_integer_or_none_list(values))
+      when '*'
+        { mode: 'all' }
+      when '!*'
+        subset_override([nil])
+      end
+    end
+
+    def project_override_for(operator, values)
+      case operator
+      when '='
+        parsed = parse_string_list(values)
+        parsed.empty? ? { mode: 'none' } : subset_override(parsed)
+      when '*'
+        { mode: 'all' }
+      end
+    end
+
+    def version_override_for(operator, values)
+      case operator
+      when '='
+        subset_override(parse_version_list(values))
+      when '*'
+        { mode: 'all' }
+      end
+    end
+
+    def subset_override(values)
+      { mode: 'subset', values: values }
     end
 
     def build_working_query(query)
@@ -463,7 +565,7 @@ module RedmineCanvasGantt
 
       project_ids = tokens.reject { |value| none_marker?(value) }
                           .filter_map { |value| value.to_i if integer_string?(value) }
-      project_ids.presence
+      project_ids.uniq.presence
     end
 
     def parse_integer_or_none_list(values)

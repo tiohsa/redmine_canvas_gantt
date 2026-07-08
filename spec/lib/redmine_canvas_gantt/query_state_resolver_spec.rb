@@ -70,6 +70,12 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       group_by_assignee: true,
       group_by_project: false
     )
+    expect(result[:query_context]).to eq(
+      query_id: 42,
+      explicit_overrides: {
+        project: { mode: 'subset', values: ['9'] }
+      }
+    )
   end
 
   it 'accepts group_by none without warning and disables both grouping modes' do
@@ -105,6 +111,12 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
 
     expect(result[:warnings]).not_to be_empty
     expect(result[:initial_state][:query_id]).to be_nil
+    expect(result[:query_context]).to eq(
+      query_id: nil,
+      explicit_overrides: {
+        project: { mode: 'subset', values: ['9'] }
+      }
+    )
   end
 
   it 'parses supported Redmine standard issue query params' do
@@ -132,6 +144,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
 
     allow(IssueStatus).to receive(:where).with(is_closed: false).and_return(open_status_relation)
     allow(open_status_relation).to receive(:pluck).with(:id).and_return([1, 2])
+    allow(issue_scope).to receive(:or).with(issue_scope).and_return(issue_scope)
 
     resolver = described_class.new(
       project: project,
@@ -153,6 +166,15 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       sort_config: { key: 'startDate', direction: 'desc' },
       group_by_project: true,
       group_by_assignee: false
+    )
+    expect(result[:query_context]).to include(
+      query_id: nil,
+      explicit_overrides: {
+        status: { mode: 'subset', values: [1, 2] },
+        assignee: { mode: 'subset', values: [7, nil] },
+        project: { mode: 'subset', values: ['9'] },
+        version: { mode: 'subset', values: ['11'] }
+      }
     )
     expect(result[:warnings]).to include('Ignored unsupported field tracker_id')
   end
@@ -188,6 +210,9 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     result = resolver.resolve(project_ids: [1, 2])
 
     expect(result[:initial_state][:selected_project_ids]).to eq([])
+    expect(result[:query_context][:explicit_overrides]).to include(
+      project: { mode: 'none' }
+    )
   end
 
   it 'preserves unassigned assignee selections from saved queries' do
@@ -203,7 +228,9 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     )
     working_query = instance_double(
       IssueQuery,
-      filters: {},
+      filters: {
+        'assigned_to_id' => { operator: '=', values: ['none'] }
+      },
       sort_criteria: nil,
       group_by: nil,
       issue_ids: []
@@ -239,7 +266,9 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     )
     working_query = instance_double(
       IssueQuery,
-      filters: {},
+      filters: {
+        'fixed_version_id' => { operator: '=', values: ['none'] }
+      },
       sort_criteria: nil,
       group_by: nil,
       issue_ids: []
@@ -339,7 +368,9 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     )
     working_query = instance_double(
       IssueQuery,
-      filters: {},
+      filters: {
+        'fixed_version_id' => { operator: '=', values: ['none'] }
+      },
       sort_criteria: nil,
       group_by: nil,
       issue_ids: [12]
@@ -397,6 +428,13 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       member_projects_only: false,
       show_subprojects: true,
       sort_config: { key: 'startDate', direction: 'asc' }
+    )
+    expect(result[:query_context]).to eq(
+      query_id: 42,
+      explicit_overrides: {
+        status: { mode: 'all' },
+        assignee: { mode: 'subset', values: [nil] }
+      }
     )
   end
 

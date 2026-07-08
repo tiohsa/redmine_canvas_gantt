@@ -233,7 +233,7 @@ describe('TaskStore shared query persistence', () => {
         });
     });
 
-    it('applySavedQuery preserves an explicit project grouping override', async () => {
+    it('applySavedQuery clears previous manual overrides when selecting a saved query', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [],
             relations: [],
@@ -250,15 +250,28 @@ describe('TaskStore shared query persistence', () => {
         });
 
         useTaskStore.getState().setGroupByProject(true);
+        useTaskStore.setState({
+            queryContext: {
+                baseQueryId: 7,
+                overrides: {
+                    assignee: { mode: 'subset', values: [7] }
+                }
+            },
+            isQueryModified: true
+        });
         await useTaskStore.getState().applySavedQuery(12);
 
         expect(apiClient.fetchData).toHaveBeenCalledWith({
             query: {
-                queryId: 12,
-                groupBy: 'project'
+                queryId: 12
             }
         });
         expect(useTaskStore.getState().activeQueryId).toBe(12);
+        expect(useTaskStore.getState().queryContext).toEqual({
+            baseQueryId: 12,
+            overrides: {}
+        });
+        expect(useTaskStore.getState().isQueryModified).toBe(false);
         expect(useTaskStore.getState().groupByProject).toBe(true);
         expect(useTaskStore.getState().groupByAssignee).toBe(false);
         expect(loadLastUsedSharedQueryState(1)).toEqual({

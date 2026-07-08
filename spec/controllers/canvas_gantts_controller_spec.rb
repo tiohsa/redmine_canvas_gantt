@@ -98,6 +98,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(resolver).to receive(:resolve).and_return({
         issues: [issue],
         initial_state: { query_id: 7 },
+        query_context: { query_id: 7, explicit_overrides: {} },
         warnings: ['Invalid query_id ignored']
       })
       allow(baseline_repository).to receive(:load).and_return(
@@ -115,6 +116,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         filter_option_projects: [filter_option_project],
         filter_option_issues: [filter_option_issue],
         initial_state: { query_id: 7 },
+        query_context: { query_id: 7, explicit_overrides: {} },
         warnings: ['Invalid query_id ignored', 'Baseline warning'],
         baseline: baseline_snapshot
       )).and_return({
@@ -130,6 +132,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         project: { id: 1, name: 'Demo' },
         permissions: { editable: true, viewable: true, baseline_editable: true },
         initial_state: { query_id: 7 },
+        query_context: { query_id: 7, explicit_overrides: {} },
         baseline: baseline_snapshot.to_payload_hash,
         warnings: ['Invalid query_id ignored', 'Baseline warning']
       })
@@ -138,7 +141,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
-      expect(body.keys).to contain_exactly('tasks', 'custom_fields', 'relations', 'versions', 'filter_options', 'statuses', 'project', 'permissions', 'initial_state', 'baseline', 'warnings')
+      expect(body.keys).to contain_exactly('tasks', 'custom_fields', 'relations', 'versions', 'filter_options', 'statuses', 'project', 'permissions', 'initial_state', 'query_context', 'baseline', 'warnings')
       expect(body['permissions']).to eq('editable' => true, 'viewable' => true, 'baseline_editable' => true)
       expect(body['filter_options']).to eq(
         'projects' => [{ 'id' => 1, 'name' => 'Demo' }],
@@ -167,6 +170,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(resolver).to receive(:resolve).and_return({
         issues: [issue],
         initial_state: { query_id: 7, member_projects_only: true },
+        query_context: { query_id: 7, explicit_overrides: {} },
         warnings: []
       })
       allow(baseline_repository).to receive(:load).and_return(
@@ -183,7 +187,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
           statuses: [],
           project: { id: 1, name: 'Demo' },
           permissions: { editable: true, viewable: true, baseline_editable: true },
-          initial_state: { query_id: 7, member_projects_only: true }
+          initial_state: { query_id: 7, member_projects_only: true },
+          query_context: { query_id: 7, explicit_overrides: {} }
         }
       )
 

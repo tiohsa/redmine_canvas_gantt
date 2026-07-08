@@ -368,6 +368,7 @@ class CanvasGanttsController < ApplicationController
         filter_option_projects: filter_option_projects(project_ids, member_projects_only: member_projects_only),
         filter_option_issues: filter_option_issues(project_ids),
         initial_state: resolved_query[:initial_state],
+        query_context: resolved_query[:query_context],
         warnings: resolved_query[:warnings] + baseline_load.warnings,
         baseline: baseline_load.snapshot
       )

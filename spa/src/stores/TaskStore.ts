@@ -18,6 +18,16 @@ import { buildMoveTaskResult, saveModifiedTasks } from './taskStore/taskPersiste
 import { runParentMove } from './taskStore/parentMove';
 import { buildUniformExpansionMaps, initializeExpansionMaps } from './taskStore/expansion';
 import { syncSharedQueryState, type SharedQuerySyncState } from './taskStore/querySync';
+import {
+    clearSavedQueryToStandalone,
+    isQueryModified as getIsQueryModified,
+    selectSavedQuery,
+    setAssigneeOverride,
+    setProjectOverride,
+    setStatusOverride,
+    setVersionOverride
+} from '../query/queryState';
+import type { QueryContext, QueryOverrides } from '../query/types';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
@@ -67,6 +77,8 @@ interface TaskState {
     taskStatuses: TaskStatus[];
     customFields: CustomFieldMeta[];
     activeQueryId: number | null;
+    queryContext: QueryContext;
+    isQueryModified: boolean;
     savedQueries: SavedQuery[];
     savedQueriesStatus: 'idle' | 'loading' | 'ready' | 'error';
     savedQueriesError: string | null;
@@ -191,6 +203,60 @@ const EMPTY_FILTER_OPTIONS: FilterOptions = {
     projects: [],
     assignees: []
 };
+
+const queryContextFromResolvedState = (state?: ResolvedQueryState): QueryContext => {
+    const overrides: QueryOverrides = {};
+
+    if (Array.isArray(state?.selectedStatusIds)) {
+        overrides.status = state.selectedStatusIds.length > 0
+            ? { mode: 'subset', values: [...state.selectedStatusIds] }
+            : { mode: 'all' };
+    }
+    if (Array.isArray(state?.selectedAssigneeIds)) {
+        overrides.assignee = state.selectedAssigneeIds.length > 0
+            ? { mode: 'subset', values: [...state.selectedAssigneeIds] }
+            : { mode: 'all' };
+    }
+    if (Array.isArray(state?.selectedProjectIds)) {
+        overrides.project = state.selectedProjectIds.length > 0
+            ? { mode: 'subset', values: [...state.selectedProjectIds] }
+            : { mode: 'all' };
+    }
+    if (Array.isArray(state?.selectedVersionIds)) {
+        overrides.version = state.selectedVersionIds.length > 0
+            ? { mode: 'subset', values: [...state.selectedVersionIds] }
+            : { mode: 'all' };
+    }
+
+    return {
+        baseQueryId: state?.queryId ?? null,
+        overrides
+    };
+};
+
+const standaloneOverridesFromState = (state: TaskState): QueryOverrides => ({
+    status: state.selectedStatusIds.length > 0
+        ? { mode: 'subset', values: [...state.selectedStatusIds] }
+        : { mode: 'all' },
+    assignee: state.selectedAssigneeIds.length > 0
+        ? { mode: 'subset', values: [...state.selectedAssigneeIds] }
+        : { mode: 'all' },
+    project: state.queryContext.overrides.project?.mode === 'none'
+        ? { mode: 'none' }
+        : (state.selectedProjectIds.length > 0
+            ? { mode: 'subset', values: [...state.selectedProjectIds] }
+            : { mode: 'all' }),
+    version: state.selectedVersionIds.length > 0
+        ? { mode: 'subset', values: [...state.selectedVersionIds] }
+        : { mode: 'all' }
+});
+
+const queryContextPatch = (queryContext: QueryContext) => ({
+    queryContext,
+    isQueryModified: getIsQueryModified(queryContext)
+});
+
+const initialQueryContext = queryContextFromResolvedState(initialUrlState);
 
 const resolveLayoutState = (state: LayoutState, overrides: Partial<LayoutState> = {}): LayoutState => ({
     allTasks: overrides.allTasks ?? state.allTasks,
@@ -353,10 +419,13 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
     };
 
     const candidateProjectIds = new Set(filterOptions.projects.map((project) => project.id));
-    nextResolved.selectedProjectIds = (nextResolved.selectedProjectIds ?? [])
-        .filter((projectId) => candidateProjectIds.has(projectId));
+    if (Array.isArray(nextResolved.selectedProjectIds)) {
+        nextResolved.selectedProjectIds = nextResolved.selectedProjectIds
+            .filter((projectId) => candidateProjectIds.has(projectId));
+    }
 
     const queryState = toBusinessQueryState(nextResolved);
+    const queryContext = data.queryContext ?? queryContextFromResolvedState(nextResolved);
     const sortConfig = queryState.sortConfig ?? { key: 'startDate', direction: 'asc' };
     const { projectExpansion, taskExpansion, versionExpansion } = initializeExpansionMaps(tasks, {
         projectExpansion: state.projectExpansion,
@@ -397,6 +466,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
         querySyncState,
         patch: {
             ...querySyncState,
+            ...queryContextPatch(queryContext),
             allTasks: tasks,
             relations,
             versions,
@@ -561,6 +631,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     customFields: [],
     permissions: { editable: false, viewable: false, baselineEditable: false },
     activeQueryId: initialUrlState.queryId ?? null,
+    queryContext: initialQueryContext,
+    isQueryModified: getIsQueryModified(initialQueryContext),
     savedQueries: [],
     savedQueriesStatus: 'idle',
     savedQueriesError: null,
@@ -642,10 +714,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     setFilterOptions: (filterOptions) => set(() => ({ filterOptions })),
     setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
     setPermissions: (permissions) => set(() => ({ permissions })),
-    restoreActiveQueryId: (queryId) => set({ activeQueryId: queryId }),
+    restoreActiveQueryId: (queryId) => {
+        const queryContext = { ...get().queryContext, baseQueryId: queryId };
+        set({ activeQueryId: queryId, ...queryContextPatch(queryContext) });
+    },
     restoreExplicitGroupByOverride: (groupBy) => set({ explicitGroupByOverride: groupBy }),
     applyResolvedQueryState: (resolved) => set((state) => {
         const queryState = toBusinessQueryState(resolved);
+        const queryContext = queryContextFromResolvedState(resolved);
         const groupByProject = queryState.groupByProject;
         const groupByAssignee = queryState.groupByAssignee;
         const showSubprojects = queryState.showSubprojects;
@@ -668,6 +744,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
         const nextState = {
             activeQueryId,
+            ...queryContextPatch(queryContext),
             selectedStatusIds,
             selectedAssigneeIds,
             selectedProjectIds,
@@ -707,7 +784,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         };
     }),
     setSelectedStatusFromServer: (ids) => {
-        set({ selectedStatusIds: ids });
+        const queryContext = setStatusOverride(get().queryContext, ids.length > 0
+            ? { mode: 'subset', values: ids }
+            : { mode: 'all' });
+        set({ selectedStatusIds: ids, ...queryContextPatch(queryContext) });
         syncSharedQueryState(get());
         void get().refreshData().catch((error) => console.error('Failed to refresh data', error));
     },
@@ -1212,7 +1292,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     setSelectedAssigneeIds: (ids) => set((state) => {
         const layout = buildLayoutFromState(state, { selectedAssigneeIds: ids });
+        const queryContext = setAssigneeOverride(state.queryContext, ids.length > 0
+            ? { mode: 'subset', values: ids }
+            : { mode: 'all' });
         const nextState = {
+            ...queryContextPatch(queryContext),
             selectedAssigneeIds: ids,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -1225,7 +1309,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     setSelectedProjectIds: (ids) => set((state) => {
         const layout = buildLayoutFromState(state, { selectedProjectIds: ids });
+        const queryContext = setProjectOverride(state.queryContext, ids.length > 0
+            ? { mode: 'subset', values: ids }
+            : { mode: 'all' });
         const nextState = {
+            ...queryContextPatch(queryContext),
             selectedProjectIds: ids,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -1237,7 +1325,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }),
     setSelectedVersionIds: (ids) => set((state) => {
         const layout = buildLayoutFromState(state, { selectedVersionIds: ids });
+        const queryContext = setVersionOverride(state.queryContext, ids.length > 0
+            ? { mode: 'subset', values: ids }
+            : { mode: 'all' });
         const nextState = {
+            ...queryContextPatch(queryContext),
             selectedVersionIds: ids,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -1406,12 +1498,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     applySavedQuery: async (queryId) => {
         const { apiClient } = await import('../api/client');
-        const state = get();
         const query: ResolvedQueryState = {
-            queryId,
-            ...(state.explicitGroupByOverride !== undefined ? { groupBy: state.explicitGroupByOverride } : {})
+            queryId
         };
-        set({ activeQueryId: queryId });
+        set({
+            activeQueryId: queryId,
+            explicitGroupByOverride: undefined,
+            ...queryContextPatch(selectSavedQuery(queryId))
+        });
         replaceIssueQueryParamsInUrl(query);
         saveLastUsedSharedQueryState(query);
         const data = await apiClient.fetchData({ query });
@@ -1420,8 +1514,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     clearSavedQuery: async () => {
         const state = get();
-        set({ activeQueryId: null });
-        syncSharedQueryState({ ...state, activeQueryId: null });
+        const queryContext = clearSavedQueryToStandalone(standaloneOverridesFromState(state));
+        set({ activeQueryId: null, ...queryContextPatch(queryContext) });
+        syncSharedQueryState({ ...get(), activeQueryId: null });
         await get().refreshData();
     },
 
