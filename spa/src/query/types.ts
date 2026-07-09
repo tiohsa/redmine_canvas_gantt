@@ -41,5 +41,6 @@ export interface QueryContext {
 export interface SharedViewState {
     groupBy: 'project' | 'assignee' | null;
     sortConfig: { key: string; direction: 'asc' | 'desc' } | null;
+    showSubprojects?: boolean;
     visibleColumns?: string[];
 }

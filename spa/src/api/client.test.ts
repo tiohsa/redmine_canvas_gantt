@@ -110,10 +110,11 @@ describe('apiClient.fetchData', () => {
                 project: { id: 1, name: 'P' },
                 permissions: { editable: true, viewable: true, baseline_editable: true },
                 initial_state: {
-                    query_id: 7,
-                    selected_status_ids: [1],
-                    group_by: 'project',
-                    sort_config: { key: 'startDate', direction: 'desc' }
+                query_id: 7,
+                selected_status_ids: [1],
+                group_by: 'project',
+                sort_config: { key: 'startDate', direction: 'desc' },
+                visible_columns: ['subject', 'assigned_to']
                 },
                 warnings: ['Invalid query_id ignored']
             })
@@ -134,7 +135,8 @@ describe('apiClient.fetchData', () => {
             selectedStatusIds: [1],
             memberProjectsOnly: undefined,
             groupBy: 'project',
-            sortConfig: { key: 'startDate', direction: 'desc' }
+            sortConfig: { key: 'startDate', direction: 'desc' },
+            visibleColumns: ['subject', 'assignee']
         });
         expect(data.filterOptions).toEqual({
             projects: [

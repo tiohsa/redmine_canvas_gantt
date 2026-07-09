@@ -43,6 +43,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     allow(IssueQuery).to receive(:find_by).with(id: '42').and_return(query)
     allow(query).to receive(:dup).and_return(working_query)
     allow(working_query).to receive(:filters=)
+    allow(working_query).to receive(:column_names).and_return([])
     allow(issue_scope).to receive(:where).and_return(issue_scope)
     allow(issue_scope).to receive(:includes).with(*issue_includes).and_return(issue_scope)
     allow(issue_scope).to receive(:to_a).and_return([])
@@ -239,6 +240,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     allow(IssueQuery).to receive(:find_by).with(id: '99').and_return(query)
     allow(query).to receive(:dup).and_return(working_query)
     allow(working_query).to receive(:filters=)
+    allow(working_query).to receive(:column_names).and_return([])
 
     resolver = described_class.new(
       project: project,
@@ -277,6 +279,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     allow(IssueQuery).to receive(:find_by).with(id: '100').and_return(query)
     allow(query).to receive(:dup).and_return(working_query)
     allow(working_query).to receive(:filters=)
+    allow(working_query).to receive(:column_names).and_return([])
 
     resolver = described_class.new(
       project: project,
@@ -380,6 +383,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     allow(IssueQuery).to receive(:find_by).with(id: '100').and_return(query)
     allow(query).to receive(:dup).and_return(working_query)
     allow(working_query).to receive(:filters=)
+    allow(working_query).to receive(:column_names).and_return([])
 
     expect(issue_scope).to receive(:where).with(project_id: [1, 2]).and_return(issue_scope)
     expect(issue_scope).to receive(:where).with(id: [12]).and_return(issue_scope)
@@ -436,6 +440,38 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
         assignee: { mode: 'subset', values: [nil] }
       }
     )
+  end
+
+  it 'extracts visible columns from saved query column names' do
+    allow(working_query).to receive(:column_names).and_return(%w[subject assigned_to fixed_version cf_101 unknown])
+
+    resolver = described_class.new(
+      project: project,
+      params: ActionController::Parameters.new(query_id: '42'),
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    )
+
+    result = resolver.resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state][:visible_columns]).to eq(%w[subject assignee version cf:101])
+  end
+
+  it 'applies c params as visible column overrides' do
+    allow(working_query).to receive(:column_names).and_return(%w[subject assigned_to])
+
+    resolver = described_class.new(
+      project: project,
+      params: ActionController::Parameters.new(query_id: '42', c: %w[status start_date cf_101 notification]),
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    )
+
+    result = resolver.resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state][:visible_columns]).to eq(%w[status startDate cf:101])
   end
 
   it 'parses member_projects_only from url params' do

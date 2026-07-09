@@ -220,7 +220,7 @@ const queryContextFromResolvedState = (state?: ResolvedQueryState): QueryContext
     if (Array.isArray(state?.selectedProjectIds)) {
         overrides.project = state.selectedProjectIds.length > 0
             ? { mode: 'subset', values: [...state.selectedProjectIds] }
-            : { mode: 'all' };
+            : { mode: 'none' };
     }
     if (Array.isArray(state?.selectedVersionIds)) {
         overrides.version = state.selectedVersionIds.length > 0
@@ -418,14 +418,8 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
         ...(data.initialState ?? toResolvedQueryStateFromStore(state))
     };
 
-    const candidateProjectIds = new Set(filterOptions.projects.map((project) => project.id));
-    if (Array.isArray(nextResolved.selectedProjectIds)) {
-        nextResolved.selectedProjectIds = nextResolved.selectedProjectIds
-            .filter((projectId) => candidateProjectIds.has(projectId));
-    }
-
     const queryState = toBusinessQueryState(nextResolved);
-    const queryContext = data.queryContext ?? queryContextFromResolvedState(nextResolved);
+    const queryContext = data.queryContext ?? (data.initialState ? queryContextFromResolvedState(nextResolved) : state.queryContext);
     const sortConfig = queryState.sortConfig ?? { key: 'startDate', direction: 'asc' };
     const { projectExpansion, taskExpansion, versionExpansion } = initializeExpansionMaps(tasks, {
         projectExpansion: state.projectExpansion,
@@ -451,6 +445,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
     });
     const querySyncState = {
         activeQueryId: queryState.queryId,
+        queryContext,
         selectedStatusIds: queryState.selectedStatusIds,
         selectedAssigneeIds: queryState.selectedAssigneeIds,
         selectedProjectIds: queryState.selectedProjectIds,
@@ -768,6 +763,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             querySyncState = result.querySyncState;
             return result.patch;
         });
+        if (data.initialState?.visibleColumns?.length) {
+            useUIStore.getState().setVisibleColumns(data.initialState.visibleColumns);
+        }
         if (querySyncState) {
             syncSharedQueryState(querySyncState);
         }
@@ -1311,7 +1309,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const layout = buildLayoutFromState(state, { selectedProjectIds: ids });
         const queryContext = setProjectOverride(state.queryContext, ids.length > 0
             ? { mode: 'subset', values: ids }
-            : { mode: 'all' });
+            : { mode: 'none' });
         const nextState = {
             ...queryContextPatch(queryContext),
             selectedProjectIds: ids,

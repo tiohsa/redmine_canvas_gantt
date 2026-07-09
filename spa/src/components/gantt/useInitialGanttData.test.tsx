@@ -184,8 +184,7 @@ describe('useInitialGanttData persistence', () => {
 
         expect(fetchDataMock).toHaveBeenCalledWith({
             query: {
-                queryId: 18,
-                groupBy: 'project'
+                queryId: 18
             }
         });
     });
@@ -279,7 +278,7 @@ describe('useInitialGanttData persistence', () => {
         });
     });
 
-    it('restores memberProjectsOnly from shared state', async () => {
+    it('does not restore memberProjectsOnly from shared query state', async () => {
         saveLastUsedSharedQueryState({
             memberProjectsOnly: true
         });
@@ -289,17 +288,15 @@ describe('useInitialGanttData persistence', () => {
         await waitFor(() => {
             expect(fetchDataMock).toHaveBeenCalledWith({
                 rawSearch: undefined,
-                query: {
-                    memberProjectsOnly: true
-                }
+                query: {}
             });
         });
 
         await waitFor(() => {
-            expect(useTaskStore.getState().memberProjectsOnly).toBe(true);
+            expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
         });
 
         const url = new URL(window.location.href);
-        expect(url.searchParams.get('member_projects_only')).toBe('1');
+        expect(url.searchParams.get('member_projects_only')).toBeNull();
     });
 });

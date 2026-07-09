@@ -349,7 +349,7 @@ describe('TaskStore shared query persistence', () => {
         });
     });
 
-    it('setMemberProjectsOnly updates shared query state and refreshes data', async () => {
+    it('setMemberProjectsOnly refreshes data without pruning hidden selected projects or sharing the UI flag', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [],
             relations: [],
@@ -371,11 +371,10 @@ describe('TaskStore shared query persistence', () => {
         await useTaskStore.getState().setMemberProjectsOnly(true);
 
         expect(apiClient.fetchData).toHaveBeenCalled();
-        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
         expect(loadLastUsedSharedQueryState(1)).toEqual({
             groupBy: null,
-            memberProjectsOnly: true,
-            selectedProjectIds: ['p1']
+            selectedProjectIds: ['p1', 'p2']
         });
     });
 });
@@ -438,7 +437,7 @@ describe('TaskStore API data application', () => {
             initialState
         });
 
-        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'missing']);
         expect(initialState.selectedProjectIds).toEqual(['p1', 'missing']);
     });
 

@@ -1668,7 +1668,7 @@ describe('GanttToolbar shortcuts', () => {
             expect(useTaskStore.getState().memberProjectsOnly).toBe(true);
         });
         await waitFor(() => {
-            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
         });
         expect(screen.queryByText('Beta')).not.toBeInTheDocument();
     });

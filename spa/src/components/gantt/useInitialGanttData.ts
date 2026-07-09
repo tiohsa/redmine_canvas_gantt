@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useTaskStore } from '../../stores/TaskStore';
+import { useUIStore } from '../../stores/UIStore';
 import { getMinFiniteStartDate } from '../../utils/taskRange';
 import type { Viewport } from '../../types';
 import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState } from '../../utils/queryParams';
@@ -28,6 +29,10 @@ export const useInitialGanttData = ({
 
             if (initialSharedQueryState.source === 'storage') {
                 replaceIssueQueryParamsInUrl(initialSharedQueryState.state);
+            }
+
+            if (initialSharedQueryState.state.visibleColumns?.length) {
+                useUIStore.getState().setVisibleColumns(initialSharedQueryState.state.visibleColumns);
             }
 
             useTaskStore.getState().restoreActiveQueryId(initialSharedQueryState.state.queryId ?? null);

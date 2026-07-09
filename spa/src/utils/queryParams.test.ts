@@ -19,6 +19,7 @@ describe('parseResolvedQueryState', () => {
             selected_status_ids: [1, 2],
             selected_assignee_ids: [7, null],
             selected_project_ids: ['1'],
+            visible_columns: ['subject', 'assigned_to', 'cf_101', 'notification'],
             sort_config: { key: 'subject', direction: 'desc' },
             group_by_assignee: true,
             show_subprojects: false
@@ -29,6 +30,7 @@ describe('parseResolvedQueryState', () => {
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
             selectedProjectIds: ['1'],
+            visibleColumns: ['subject', 'assignee', 'cf:101'],
             memberProjectsOnly: undefined,
             sortConfig: { key: 'subject', direction: 'desc' },
             groupBy: 'assignee',
@@ -119,6 +121,21 @@ describe('readIssueQueryParamsFromUrl', () => {
             showSubprojects: undefined
         });
     });
+
+    it('reads visible columns from Redmine c params', () => {
+        expect(readIssueQueryParamsFromUrl('?c[]=subject&c[]=assigned_to&c[]=cf_101&c[]=notification')).toEqual({
+            queryId: undefined,
+            selectedStatusIds: undefined,
+            selectedAssigneeIds: undefined,
+            selectedProjectIds: undefined,
+            selectedVersionIds: undefined,
+            memberProjectsOnly: undefined,
+            sortConfig: undefined,
+            groupBy: null,
+            showSubprojects: undefined,
+            visibleColumns: ['subject', 'assignee', 'cf:101']
+        });
+    });
 });
 
 describe('normalizeResolvedQueryState', () => {
@@ -143,6 +160,7 @@ describe('normalizeResolvedQueryState', () => {
             selectedStatusIds: [],
             selectedAssigneeIds: [],
             selectedVersionIds: [],
+            memberProjectsOnly: true,
             sortConfig: { key: 'startDate', direction: 'asc' },
             groupBy: 'project',
             showSubprojects: true
@@ -188,6 +206,14 @@ describe('normalizeResolvedQueryState', () => {
             groupBy: null
         });
     });
+
+    it('keeps visible columns from stored shared state', () => {
+        expect(normalizeResolvedQueryState({
+            visibleColumns: ['subject', 'assignee']
+        })).toEqual({
+            visibleColumns: ['subject', 'assignee']
+        });
+    });
 });
 
 describe('hasSharedQueryStateInUrl', () => {
@@ -203,8 +229,12 @@ describe('hasSharedQueryStateInUrl', () => {
         expect(hasSharedQueryStateInUrl('?query_id=7')).toBe(true);
     });
 
-    it('returns true when member_projects_only is present', () => {
-        expect(hasSharedQueryStateInUrl('?member_projects_only=0')).toBe(true);
+    it('does not treat member_projects_only as shared URL state', () => {
+        expect(hasSharedQueryStateInUrl('?member_projects_only=0')).toBe(false);
+    });
+
+    it('returns true when visible column params are present', () => {
+        expect(hasSharedQueryStateInUrl('?c[]=subject')).toBe(true);
     });
 });
 
@@ -281,7 +311,8 @@ describe('toResolvedQueryStateFromStore', () => {
             sortConfig: { key: 'subject', direction: 'asc' },
             groupByProject: false,
             groupByAssignee: true,
-            showSubprojects: false
+            showSubprojects: false,
+            visibleColumns: ['subject', 'assignee']
         })).toEqual({
             queryId: 9,
             selectedStatusIds: [1, 2],
@@ -291,7 +322,8 @@ describe('toResolvedQueryStateFromStore', () => {
             memberProjectsOnly: true,
             sortConfig: { key: 'subject', direction: 'asc' },
             groupBy: 'assignee',
-            showSubprojects: false
+            showSubprojects: false,
+            visibleColumns: ['subject', 'assignee']
         });
     });
 });
@@ -319,7 +351,7 @@ describe('toBusinessQueryState', () => {
 
 describe('replaceIssueQueryParamsInUrl', () => {
     it('rewrites only known shared query params', () => {
-        window.history.replaceState({}, '', '/projects/demo/canvas_gantt?query_id=9&foo=bar');
+        window.history.replaceState({}, '', '/projects/demo/canvas_gantt?query_id=9&c[]=status&foo=bar');
 
         replaceIssueQueryParamsInUrl({
             queryId: 42,
@@ -329,7 +361,8 @@ describe('replaceIssueQueryParamsInUrl', () => {
             selectedVersionIds: ['4'],
             sortConfig: { key: 'subject', direction: 'asc' },
             groupBy: 'project',
-            showSubprojects: false
+            showSubprojects: false,
+            visibleColumns: ['subject', 'assignee', 'notification']
         });
 
         const url = new URL(window.location.href);
@@ -342,6 +375,7 @@ describe('replaceIssueQueryParamsInUrl', () => {
         expect(url.searchParams.get('group_by')).toBe('project');
         expect(url.searchParams.get('sort')).toBe('subject:asc');
         expect(url.searchParams.get('show_subprojects')).toBe('0');
+        expect(url.searchParams.getAll('c[]')).toEqual(['subject', 'assigned_to']);
     });
 
     it('removes query_id when it is not a persisted query id', () => {
@@ -375,6 +409,20 @@ describe('replaceIssueQueryParamsInUrl', () => {
         expect(url.searchParams.get('op[status_id]')).toBeNull();
         expect(url.searchParams.getAll('v[status_id][]')).toEqual([]);
         expect(url.searchParams.getAll('status_ids[]')).toEqual(['2']);
+    });
+
+    it('removes member_projects_only from the shared browser URL', () => {
+        window.history.replaceState({}, '', '/projects/demo/canvas_gantt?member_projects_only=1&foo=bar');
+
+        replaceIssueQueryParamsInUrl({
+            memberProjectsOnly: true,
+            selectedProjectIds: ['3']
+        });
+
+        const url = new URL(window.location.href);
+        expect(url.searchParams.get('foo')).toBe('bar');
+        expect(url.searchParams.get('member_projects_only')).toBeNull();
+        expect(url.searchParams.getAll('project_ids[]')).toEqual(['3']);
     });
 });
 
@@ -463,7 +511,7 @@ describe('query parameter round-trips for special selections', () => {
         expect(readIssueQueryParamsFromUrl(`?${params.toString()}`).groupBy).toBeNull();
     });
 
-    it('round-trips member_projects_only from URL params', () => {
+    it('ignores member_projects_only from shared URL params while preserving API encoding support', () => {
         const parsed = readIssueQueryParamsFromUrl('?member_projects_only=1');
         expect(parsed).toEqual({
             queryId: undefined,
@@ -471,7 +519,7 @@ describe('query parameter round-trips for special selections', () => {
             selectedAssigneeIds: undefined,
             selectedProjectIds: undefined,
             selectedVersionIds: undefined,
-            memberProjectsOnly: true,
+            memberProjectsOnly: undefined,
             sortConfig: undefined,
             groupBy: null,
             showSubprojects: undefined

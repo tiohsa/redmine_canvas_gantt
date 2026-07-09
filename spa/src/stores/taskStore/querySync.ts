@@ -1,9 +1,12 @@
 import type { SortConfig } from './types';
+import type { QueryContext } from '../../query/types';
+import { sharedViewStateFromResolvedQueryState } from '../../query/queryStateCodec';
 import { replaceIssueQueryParamsInUrl, toResolvedQueryStateFromStore } from '../../utils/queryParams';
-import { saveLastUsedSharedQueryState } from '../../utils/sharedQueryState';
+import { saveLastUsedSharedQueryProjectState } from '../../utils/sharedQueryState';
 
 export type SharedQuerySyncState = {
     activeQueryId: number | null;
+    queryContext: QueryContext;
     selectedStatusIds: number[];
     selectedAssigneeIds: (number | null)[];
     selectedProjectIds: string[];
@@ -15,16 +18,14 @@ export type SharedQuerySyncState = {
     showSubprojects: boolean;
 };
 
-const stripImplicitEmptySelections = (state: ReturnType<typeof toResolvedQueryStateFromStore>) => ({
-    ...state,
-    selectedStatusIds: state.selectedStatusIds?.length ? state.selectedStatusIds : undefined,
-    selectedAssigneeIds: state.selectedAssigneeIds?.length ? state.selectedAssigneeIds : undefined,
-    selectedProjectIds: state.selectedProjectIds?.length ? state.selectedProjectIds : undefined,
-    selectedVersionIds: state.selectedVersionIds?.length ? state.selectedVersionIds : undefined
-});
-
 export const syncSharedQueryState = (state: SharedQuerySyncState) => {
     const resolvedState = toResolvedQueryStateFromStore(state);
     replaceIssueQueryParamsInUrl(resolvedState);
-    saveLastUsedSharedQueryState(stripImplicitEmptySelections(resolvedState));
+    saveLastUsedSharedQueryProjectState({
+        queryContext: {
+            ...state.queryContext,
+            baseQueryId: state.activeQueryId
+        },
+        sharedViewState: sharedViewStateFromResolvedQueryState(resolvedState)
+    });
 };

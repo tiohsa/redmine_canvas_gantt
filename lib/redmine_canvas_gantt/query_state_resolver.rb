@@ -35,6 +35,26 @@ module RedmineCanvasGantt
       'spentHours' => 'spent_hours'
     }.freeze
     QUERY_FIELD_TO_SORT = SORT_FIELD_TO_QUERY.invert.freeze
+    CANVAS_COLUMN_TO_QUERY = {
+      'id' => 'id',
+      'subject' => 'subject',
+      'project' => 'project',
+      'tracker' => 'tracker',
+      'status' => 'status',
+      'priority' => 'priority',
+      'assignee' => 'assigned_to',
+      'author' => 'author',
+      'startDate' => 'start_date',
+      'dueDate' => 'due_date',
+      'estimatedHours' => 'estimated_hours',
+      'ratioDone' => 'done_ratio',
+      'spentHours' => 'spent_hours',
+      'version' => 'fixed_version',
+      'category' => 'category',
+      'createdOn' => 'created_on',
+      'updatedOn' => 'updated_on'
+    }.freeze
+    QUERY_COLUMN_TO_CANVAS = CANVAS_COLUMN_TO_QUERY.invert.freeze
     URL_OVERRIDE_FILTERS = %w[status_id assigned_to_id fixed_version_id].freeze
     STANDARD_FILTER_FIELDS = %w[status_id assigned_to_id project_id fixed_version_id subproject_id].freeze
     LIST_SPLIT_PATTERN = /[|,]/
@@ -244,7 +264,7 @@ module RedmineCanvasGantt
     def state_from_query(query)
       filters = query.filters || {}
 
-      {
+      query_state = {
         selected_status_ids: extract_filter_ids(filters['status_id']),
         selected_assignee_ids: extract_filter_ids(filters['assigned_to_id'], allow_none: true),
         selected_project_ids: extract_filter_ids(filters['project_id']).map(&:to_s),
@@ -254,6 +274,30 @@ module RedmineCanvasGantt
         group_by_assignee: query.group_by.to_s == 'assigned_to',
         show_subprojects: extract_show_subprojects(filters)
       }
+
+      visible_columns = extract_visible_columns(query)
+      query_state[:visible_columns] = visible_columns if visible_columns.present?
+      query_state
+    end
+
+    def extract_visible_columns(query)
+      Array(query.column_names).filter_map { |name| canvas_column_key_for_query_column(name) }.uniq
+    end
+
+    def canvas_column_key_for_query_column(name)
+      value = name.to_s
+      custom_field_match = value.match(/\Acf_(\d+)\z/)
+      return "cf:#{custom_field_match[1]}" if custom_field_match
+
+      QUERY_COLUMN_TO_CANVAS[value] || (CANVAS_COLUMN_TO_QUERY.key?(value) ? value : nil)
+    end
+
+    def query_column_for_canvas_key(key)
+      value = key.to_s
+      custom_field_match = value.match(/\Acf:(\d+)\z/)
+      return "cf_#{custom_field_match[1]}" if custom_field_match
+
+      CANVAS_COLUMN_TO_QUERY[value] || (QUERY_COLUMN_TO_CANVAS.key?(value) ? value : nil)
     end
 
     def extract_sort_config(query)
@@ -313,6 +357,7 @@ module RedmineCanvasGantt
       apply_project_override!(state)
       apply_show_subprojects_override!(state)
       apply_member_projects_only_override!(state)
+      apply_visible_columns_override!(state)
       apply_sort_override!(state)
       apply_group_by_override!(state)
     end
@@ -321,6 +366,13 @@ module RedmineCanvasGantt
       return unless @params.key?(:member_projects_only) || @params.key?('member_projects_only')
 
       state[:member_projects_only] = resolve_member_projects_only
+    end
+
+    def apply_visible_columns_override!(state)
+      return unless explicit_visible_columns_param?
+
+      columns = parse_visible_columns(url_column_values)
+      state[:visible_columns] = columns if columns.present?
     end
 
     def apply_status_override!(state)
@@ -592,6 +644,12 @@ module RedmineCanvasGantt
       split_list_values(values).uniq
     end
 
+    def parse_visible_columns(values)
+      split_list_values(values).filter_map do |value|
+        canvas_column_key_for_query_column(value) || canvas_column_key_for_query_column(query_column_for_canvas_key(value))
+      end.uniq
+    end
+
     def standard_filtering_enabled?
       @params[:set_filter].to_s == '1'
     end
@@ -618,6 +676,14 @@ module RedmineCanvasGantt
 
     def standard_filter_values(field)
       Array(@params.dig(:v, field) || @params.dig('v', field))
+    end
+
+    def url_column_values
+      Array(@params[:c] || @params['c'] || @params['c[]'])
+    end
+
+    def explicit_visible_columns_param?
+      @params.key?(:c) || @params.key?('c') || @params.key?('c[]')
     end
 
     def url_filter_values(name)

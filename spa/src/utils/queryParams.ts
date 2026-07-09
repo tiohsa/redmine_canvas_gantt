@@ -1,4 +1,6 @@
 import type { BusinessQueryState } from '../types';
+import type { QueryContext, QueryOverrides, SharedViewState } from '../query/types';
+import { toCanvasColumnKey, toRedmineColumnName } from '../components/sidebar/sidebarColumnCatalog';
 import { i18n } from './i18n';
 
 export interface ResolvedQueryState {
@@ -57,26 +59,6 @@ const REDMINE_SORT_TO_FIELD = Object.fromEntries(
     Object.entries(SORT_FIELD_TO_REDMINE).map(([field, redmine]) => [redmine, field])
 ) as Record<string, string>;
 
-const COLUMN_TO_REDMINE: Record<string, string> = {
-    id: 'id',
-    project: 'project',
-    tracker: 'tracker',
-    status: 'status',
-    priority: 'priority',
-    subject: 'subject',
-    author: 'author',
-    assignee: 'assigned_to',
-    updatedOn: 'updated_on',
-    category: 'category',
-    version: 'fixed_version',
-    startDate: 'start_date',
-    dueDate: 'due_date',
-    estimatedHours: 'estimated_hours',
-    ratioDone: 'done_ratio',
-    createdOn: 'created_on',
-    spentHours: 'spent_hours'
-};
-
 const isPersistedQueryId = (value: unknown): value is number =>
     typeof value === 'number' && Number.isInteger(value) && value > 0;
 
@@ -112,6 +94,29 @@ const parseStringList = (params: URLSearchParams, keys: string[]): string[] | un
         .flatMap((value) => value.split(/[|,]/))
         .map((value) => value.trim())
         .filter(Boolean);
+};
+
+const parseVisibleColumns = (params: URLSearchParams): string[] | undefined => {
+    const values = parseStringList(params, ['c[]', 'c']);
+    if (!values) return undefined;
+
+    const columns = values.flatMap((value) => {
+        const key = toCanvasColumnKey(value);
+        return key ? [key] : [];
+    });
+    const uniqueColumns = Array.from(new Set(columns));
+    return uniqueColumns.length > 0 ? uniqueColumns : undefined;
+};
+
+const normalizeVisibleColumns = (value: unknown): string[] | undefined => {
+    if (!Array.isArray(value)) return undefined;
+
+    const columns = value.flatMap((entry) => {
+        const key = toCanvasColumnKey(String(entry));
+        return key ? [key] : [];
+    });
+    const uniqueColumns = Array.from(new Set(columns));
+    return uniqueColumns.length > 0 ? uniqueColumns : undefined;
 };
 
 const appendStandardFilter = (params: URLSearchParams, field: string, operator: string, values: string[] = []): void => {
@@ -233,7 +238,9 @@ const CONTROLLED_KEYS = [
     'member_projects_only',
     'group_by',
     'sort',
-    'show_subprojects'
+    'show_subprojects',
+    'c[]',
+    'c'
 ] as const;
 
 const isControlledDynamicKey = (key: string): boolean =>
@@ -282,7 +289,6 @@ export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>)
     if (state.selectedAssigneeIds?.length) normalized.selectedAssigneeIds = [...state.selectedAssigneeIds];
     if (Array.isArray(state.selectedProjectIds)) normalized.selectedProjectIds = [...state.selectedProjectIds];
     if (state.selectedVersionIds?.length) normalized.selectedVersionIds = [...state.selectedVersionIds];
-    if (state.memberProjectsOnly === true) normalized.memberProjectsOnly = true;
     if (state.sortConfig?.key && !(state.sortConfig.key === DEFAULT_SORT_KEY && state.sortConfig.direction === DEFAULT_SORT_DIRECTION)) {
         normalized.sortConfig = { ...state.sortConfig };
     }
@@ -290,6 +296,7 @@ export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>)
     if (state.groupBy === 'assignee') normalized.groupBy = 'assignee';
     if (state.groupBy === null) normalized.groupBy = null;
     if (state.showSubprojects === false) normalized.showSubprojects = false;
+    if (state.visibleColumns?.length) normalized.visibleColumns = [...state.visibleColumns];
 
     return Object.keys(normalized).length > 0 ? normalized : undefined;
 };
@@ -300,11 +307,12 @@ export const hasSharedQueryStateInUrl = (search: string = window.location.search
     const parsedQueryId = queryIdRaw && /^-?\d+$/.test(queryIdRaw) ? Number(queryIdRaw) : undefined;
 
     if (isPersistedQueryId(parsedQueryId)) return true;
-    if (params.has('group_by') || params.has('sort') || params.has('show_subprojects') || params.has('member_projects_only')) return true;
+    if (params.has('group_by') || params.has('sort') || params.has('show_subprojects')) return true;
     if (hasValueForAnyParam(params, ['status_ids[]', 'status_ids', 'status_id[]', 'status_id'])) return true;
     if (hasValueForAnyParam(params, ['assigned_to_ids[]', 'assigned_to_ids', 'assigned_to_id[]', 'assigned_to_id'])) return true;
     if (hasValueForAnyParam(params, ['project_ids[]', 'project_ids'])) return true;
     if (hasValueForAnyParam(params, ['fixed_version_ids[]', 'fixed_version_ids', 'fixed_version_id[]', 'fixed_version_id'])) return true;
+    if (hasValueForAnyParam(params, ['c[]', 'c'])) return true;
 
     const standardFields = params.getAll('f[]').concat(params.getAll('f'));
     return params.get('set_filter') === '1' && standardFields.length > 0;
@@ -336,10 +344,11 @@ export const readIssueQueryParamsFromUrl = (search: string = window.location.sea
         selectedAssigneeIds: standardState.selectedAssigneeIds ?? parseAssigneeList(params),
         selectedProjectIds: standardState.selectedProjectIds ?? parseProjectList(params),
         selectedVersionIds: standardState.selectedVersionIds ?? parseVersionList(params),
-        memberProjectsOnly: params.get('member_projects_only') === null ? undefined : params.get('member_projects_only') === '1',
+        memberProjectsOnly: undefined,
         sortConfig: parseSortConfig(params.get('sort')),
         groupBy: groupBy === 'assigned_to' || groupBy === 'assignee' ? 'assignee' : (groupBy === 'project' ? 'project' : null),
-        showSubprojects: params.get('show_subprojects') === null ? standardState.showSubprojects : params.get('show_subprojects') !== '0'
+        showSubprojects: params.get('show_subprojects') === null ? standardState.showSubprojects : params.get('show_subprojects') !== '0',
+        visibleColumns: parseVisibleColumns(params)
     };
 };
 
@@ -358,14 +367,22 @@ export const resolveInitialSharedQueryState = (
         return { state: normalizedStoredState, source: 'storage' };
     }
 
-    return { state: urlState, source: 'default' };
+    return { state: {}, source: 'default' };
 };
 
-export const buildIssueQueryParams = (state: Partial<ResolvedQueryState>): URLSearchParams => {
+type BuildIssueQueryParamsOptions = {
+    includeMemberProjectsOnly?: boolean;
+};
+
+export const buildIssueQueryParams = (
+    state: Partial<ResolvedQueryState>,
+    options: BuildIssueQueryParamsOptions = {}
+): URLSearchParams => {
     const params = new URLSearchParams();
     const businessState = toBusinessQueryState(state);
     const hasPersistedQueryId = isPersistedQueryId(businessState.queryId);
     const hasExplicitStatusSelection = Array.isArray(state.selectedStatusIds);
+    const includeMemberProjectsOnly = options.includeMemberProjectsOnly ?? true;
 
     if (hasPersistedQueryId) params.set('query_id', String(businessState.queryId));
     if (businessState.selectedStatusIds.length > 0) {
@@ -381,12 +398,16 @@ export const buildIssueQueryParams = (state: Partial<ResolvedQueryState>): URLSe
         businessState.selectedProjectIds.forEach((id) => params.append('project_ids[]', id));
     }
     businessState.selectedVersionIds.forEach((id) => params.append('fixed_version_ids[]', id === '_none' ? 'none' : id));
-    if (state.memberProjectsOnly === true) params.set('member_projects_only', '1');
+    if (includeMemberProjectsOnly && state.memberProjectsOnly === true) params.set('member_projects_only', '1');
     if (state.groupBy === 'project') params.set('group_by', 'project');
     if (state.groupBy === 'assignee') params.set('group_by', 'assigned_to');
     if (state.groupBy === null) params.set('group_by', 'none');
     if (businessState.sortConfig?.key) params.set('sort', `${businessState.sortConfig.key}:${businessState.sortConfig.direction}`);
     if (state.showSubprojects === false) params.set('show_subprojects', '0');
+    state.visibleColumns?.forEach((key) => {
+        const redmineCol = toRedmineColumnName(key);
+        if (redmineCol) params.append('c[]', redmineCol);
+    });
 
     return params;
 };
@@ -458,7 +479,7 @@ export const buildRedmineIssueQueryParams = (
 
     if (state.visibleColumns && state.visibleColumns.length > 0) {
         state.visibleColumns.forEach((key) => {
-            const redmineCol = COLUMN_TO_REDMINE[key];
+            const redmineCol = toRedmineColumnName(key);
             if (redmineCol) {
                 params.append('c[]', redmineCol);
             }
@@ -475,12 +496,89 @@ export const replaceIssueQueryParamsInUrl = (state: ResolvedQueryState): void =>
             params.delete(key);
         }
     });
-    const nextParams = buildIssueQueryParams(state);
+    const nextParams = buildIssueQueryParams(state, { includeMemberProjectsOnly: false });
     nextParams.forEach((value, key) => params.append(key, value));
     const nextSearch = params.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
     window.history.replaceState(window.history.state, '', nextUrl);
 };
+
+export const queryContextFromResolvedQueryState = (state?: Partial<ResolvedQueryState>): QueryContext => {
+    const overrides: QueryOverrides = {};
+
+    if (Array.isArray(state?.selectedStatusIds)) {
+        overrides.status = state.selectedStatusIds.length > 0
+            ? { mode: 'subset', values: [...state.selectedStatusIds] }
+            : { mode: 'all' };
+    }
+    if (Array.isArray(state?.selectedAssigneeIds)) {
+        overrides.assignee = state.selectedAssigneeIds.length > 0
+            ? { mode: 'subset', values: [...state.selectedAssigneeIds] }
+            : { mode: 'all' };
+    }
+    if (Array.isArray(state?.selectedProjectIds)) {
+        overrides.project = state.selectedProjectIds.length > 0
+            ? { mode: 'subset', values: [...state.selectedProjectIds] }
+            : { mode: 'none' };
+    }
+    if (Array.isArray(state?.selectedVersionIds)) {
+        overrides.version = state.selectedVersionIds.length > 0
+            ? { mode: 'subset', values: [...state.selectedVersionIds] }
+            : { mode: 'all' };
+    }
+
+    return {
+        baseQueryId: state?.queryId ?? null,
+        overrides
+    };
+};
+
+export const resolvedQueryStateFromQueryContext = (queryContext?: QueryContext): ResolvedQueryState => {
+    const state: ResolvedQueryState = {};
+    if (!queryContext) return state;
+
+    if (queryContext.baseQueryId !== null) state.queryId = queryContext.baseQueryId;
+
+    const { overrides } = queryContext;
+    if (overrides.status) {
+        state.selectedStatusIds = overrides.status.mode === 'subset' ? [...overrides.status.values] : [];
+    }
+    if (overrides.assignee) {
+        state.selectedAssigneeIds = overrides.assignee.mode === 'subset' ? [...overrides.assignee.values] : [];
+    }
+    if (overrides.project) {
+        state.selectedProjectIds = overrides.project.mode === 'subset'
+            ? [...overrides.project.values]
+            : (overrides.project.mode === 'none' ? [] : undefined);
+    }
+    if (overrides.version) {
+        state.selectedVersionIds = overrides.version.mode === 'subset' ? [...overrides.version.values] : [];
+    }
+
+    return state;
+};
+
+export const sharedViewStateFromResolvedQueryState = (
+    state?: Partial<ResolvedQueryState>
+): Partial<SharedViewState> => {
+    const viewState: Partial<SharedViewState> = {};
+
+    if (state?.groupBy !== undefined) viewState.groupBy = state.groupBy;
+    if (state?.sortConfig?.key) viewState.sortConfig = { ...state.sortConfig };
+    if (state?.showSubprojects === false) viewState.showSubprojects = false;
+    if (state?.visibleColumns) viewState.visibleColumns = [...state.visibleColumns];
+
+    return viewState;
+};
+
+export const resolvedQueryStateFromSharedViewState = (
+    viewState?: Partial<SharedViewState>
+): ResolvedQueryState => ({
+    ...(viewState?.groupBy !== undefined ? { groupBy: viewState.groupBy } : {}),
+    ...(viewState?.sortConfig?.key ? { sortConfig: { ...viewState.sortConfig } } : {}),
+    ...(viewState?.showSubprojects === false ? { showSubprojects: false } : {}),
+    ...(viewState?.visibleColumns ? { visibleColumns: [...viewState.visibleColumns] } : {})
+});
 
 export const parseResolvedQueryState = (value: unknown): ResolvedQueryState | undefined => {
     if (!value || typeof value !== 'object') return undefined;
@@ -522,6 +620,7 @@ export const parseResolvedQueryState = (value: unknown): ResolvedQueryState | un
             ? { key: String(sortRecord.key), direction: sortRecord.direction === 'desc' ? 'desc' : 'asc' }
             : undefined,
         groupBy,
-        showSubprojects: typeof record.show_subprojects === 'boolean' ? record.show_subprojects : undefined
+        showSubprojects: typeof record.show_subprojects === 'boolean' ? record.show_subprojects : undefined,
+        visibleColumns: normalizeVisibleColumns(record.visible_columns)
     };
 };
