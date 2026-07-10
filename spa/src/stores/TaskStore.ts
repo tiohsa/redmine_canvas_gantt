@@ -408,7 +408,9 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
         // A Saved Query can define Redmine's project_id filter, but it must not
         // replace the independent Canvas project scope.
         canvasProjectIds: data.initialState?.canvasProjectIds ?? data.initialState?.selectedProjectIds ?? state.selectedProjectIds,
-        memberProjectsOnly: state.memberProjectsOnly
+        memberProjectsOnly: state.memberProjectsOnly,
+        // showSubprojects is Canvas scope state, not a Redmine Query filter.
+        showSubprojects: state.showSubprojects
     };
 
     const queryState = toBusinessQueryState(nextResolved);
@@ -1489,9 +1491,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     applySavedQuery: async (queryId) => {
         const { apiClient } = await import('../api/client');
         const state = get();
-        const preservedGroupBy = state.groupByProject
-            ? 'project'
-            : (state.groupByAssignee ? 'assignee' : null);
         const query: ResolvedQueryState = {
             queryId,
             canvasProjectIds: state.selectedProjectIds
@@ -1505,14 +1504,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         saveLastUsedSharedQueryState(query);
         const data = await apiClient.fetchData({ query });
         get().applyApiData(data);
-        // Saved Query の group_by で現在の表示グループを意図せず変更しない。
-        if (preservedGroupBy === 'project') {
-            get().setGroupByProject(true);
-        } else if (preservedGroupBy === 'assignee') {
-            get().setGroupByAssignee(true);
-        } else {
-            get().setGroupByProject(false);
-        }
     },
 
     clearSavedQuery: async () => {

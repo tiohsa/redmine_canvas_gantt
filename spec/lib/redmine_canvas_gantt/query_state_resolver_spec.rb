@@ -253,6 +253,50 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     expect(result[:initial_state][:selected_assignee_ids]).to eq([nil])
   end
 
+  it 'keeps Canvas scope separate from saved query project and subproject filters' do
+    query = instance_double(
+      IssueQuery,
+      id: 101,
+      visible?: true,
+      filters: {
+        'project_id' => { operator: '=', values: ['2'] },
+        'subproject_id' => { operator: '!*', values: [] }
+      },
+      sort_criteria: nil,
+      group_by: nil
+    )
+    working_query = instance_double(
+      IssueQuery,
+      filters: query.filters,
+      sort_criteria: nil,
+      group_by: nil,
+      issue_ids: [22]
+    )
+
+    allow(IssueQuery).to receive(:find_by).with(id: '101').and_return(query)
+    allow(query).to receive(:dup).and_return(working_query)
+    allow(working_query).to receive(:filters=)
+    allow(working_query).to receive(:column_names).and_return([])
+
+    expect(issue_scope).to receive(:where).with(project_id: [1, 2, 3]).and_return(issue_scope)
+    expect(issue_scope).to receive(:where).with(id: [22]).and_return(issue_scope)
+
+    resolver = described_class.new(
+      project: project,
+      params: ActionController::Parameters.new(query_id: '101'),
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    )
+
+    result = resolver.resolve(project_ids: [1, 2, 3])
+
+    expect(result[:initial_state]).to include(
+      selected_project_ids: %w[1 2 3],
+      show_subprojects: true
+    )
+  end
+
   it 'preserves no-version selections from saved queries as _none' do
     query = instance_double(
       IssueQuery,

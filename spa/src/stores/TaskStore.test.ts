@@ -245,7 +245,7 @@ describe('TaskStore shared query persistence', () => {
             permissions: { editable: true, viewable: true, baselineEditable: true },
             initialState: {
                 queryId: 12,
-                groupBy: null
+                groupBy: 'assignee'
             }
         });
 
@@ -273,11 +273,11 @@ describe('TaskStore shared query persistence', () => {
             overrides: {}
         });
         expect(useTaskStore.getState().isQueryModified).toBe(false);
-        expect(useTaskStore.getState().groupByProject).toBe(true);
-        expect(useTaskStore.getState().groupByAssignee).toBe(false);
+        expect(useTaskStore.getState().groupByProject).toBe(false);
+        expect(useTaskStore.getState().groupByAssignee).toBe(true);
         expect(loadLastUsedSharedQueryState(1)).toEqual({
             queryId: 12,
-            groupBy: 'project'
+            groupBy: 'assignee'
         });
     });
 
@@ -347,9 +347,49 @@ describe('TaskStore shared query persistence', () => {
         expect(loadLastUsedSharedQueryState(1)).toEqual({
             queryId: 12,
             selectedStatusIds: [3],
-            groupBy: 'project',
+            groupBy: null,
             canvasProjectIds: ['p1']
         });
+    });
+
+    it('does not restore the previous Canvas grouping when a saved query has no group_by', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [] },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: { queryId: 12, groupBy: null }
+        });
+        useTaskStore.setState({ groupByProject: true, groupByAssignee: false });
+
+        await useTaskStore.getState().applySavedQuery(12);
+
+        expect(useTaskStore.getState().groupByProject).toBe(false);
+        expect(useTaskStore.getState().groupByAssignee).toBe(false);
+    });
+
+    it('preserves Canvas showSubprojects when a saved query is applied', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [] },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: { queryId: 12, groupBy: 'project' }
+        });
+        useTaskStore.setState({ showSubprojects: false, selectedProjectIds: ['p1', 'p2'] });
+
+        await useTaskStore.getState().applySavedQuery(12);
+
+        expect(useTaskStore.getState().showSubprojects).toBe(false);
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
     });
 
     it('setMemberProjectsOnly refreshes data without pruning hidden selected projects or sharing the UI flag', async () => {

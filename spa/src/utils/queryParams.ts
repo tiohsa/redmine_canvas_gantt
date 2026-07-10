@@ -5,6 +5,7 @@ import { i18n } from './i18n';
 
 export interface ResolvedQueryState {
     queryId?: number | null;
+    // Canvas scope, not Redmine IssueQuery state. Kept here for transport compatibility.
     canvasProjectIds?: string[];
     selectedStatusIds?: number[];
     selectedAssigneeIds?: (number | null)[];

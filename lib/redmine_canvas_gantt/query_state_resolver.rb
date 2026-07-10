@@ -261,8 +261,7 @@ module RedmineCanvasGantt
         selected_version_ids: extract_filter_ids(filters['fixed_version_id'], allow_none: true).map { |id| id.nil? ? '_none' : id.to_s },
         sort_config: extract_sort_config(query) || DEFAULT_STATE[:sort_config].deep_dup,
         group_by_project: query.group_by.to_s == 'project',
-        group_by_assignee: query.group_by.to_s == 'assigned_to',
-        show_subprojects: extract_show_subprojects(filters)
+        group_by_assignee: query.group_by.to_s == 'assigned_to'
       }
 
       visible_columns = extract_visible_columns(query)
@@ -329,14 +328,6 @@ module RedmineCanvasGantt
       else
         []
       end
-    end
-
-    def extract_show_subprojects(filters)
-      subproject_filter = filters['subproject_id']
-      return DEFAULT_STATE[:show_subprojects] unless subproject_filter.is_a?(Hash)
-
-      operator = subproject_filter[:operator] || subproject_filter['operator']
-      operator != '!*'
     end
 
     def apply_request_overrides!(state)
