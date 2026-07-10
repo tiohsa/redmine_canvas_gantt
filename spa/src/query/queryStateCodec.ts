@@ -11,7 +11,10 @@ import type {
 
 export type PersistedSharedViewState = Partial<SharedViewState>;
 
-export interface SharedQueryProjectStateV2 {
+export interface SharedQueryProjectStateV3 {
+    scopeState: {
+        showSubprojects: boolean;
+    };
     queryContext: QueryContext;
     sharedViewState: PersistedSharedViewState;
 }
@@ -136,13 +139,11 @@ export const normalizeSharedViewState = (value: unknown): PersistedSharedViewSta
     const sortConfig = sortRecord && typeof sortRecord.key === 'string'
         ? { key: sortRecord.key, direction: sortRecord.direction === 'desc' ? 'desc' as const : 'asc' as const }
         : undefined;
-    const showSubprojects = typeof record.showSubprojects === 'boolean' ? record.showSubprojects : undefined;
     const visibleColumns = parseStringArray(record.visibleColumns);
 
     return {
         ...(groupBy !== undefined ? { groupBy } : {}),
         ...(sortConfig ? { sortConfig } : {}),
-        ...(showSubprojects !== undefined ? { showSubprojects } : {}),
         ...(visibleColumns ? { visibleColumns } : {})
     };
 };
@@ -190,7 +191,6 @@ export const sharedViewStateFromResolvedQueryState = (
         ...(state?.sortConfig?.key && !(state.sortConfig.key === DEFAULT_SORT_KEY && state.sortConfig.direction === DEFAULT_SORT_DIRECTION)
             ? { sortConfig: { ...state.sortConfig } }
             : {}),
-        ...(state?.showSubprojects === false ? { showSubprojects: false } : {}),
         ...(state?.visibleColumns ? { visibleColumns: [...state.visibleColumns] } : {})
     };
 };
@@ -204,7 +204,7 @@ const applyOverrideToResolved = <T>(
 };
 
 export const resolvedQueryStateFromProjectState = (
-    projectState: SharedQueryProjectStateV2
+    projectState: SharedQueryProjectStateV3
 ): ResolvedQueryState => {
     const context = normalizeQueryContext(projectState.queryContext);
     const viewState = normalizeSharedViewState(projectState.sharedViewState);
@@ -223,8 +223,11 @@ export const resolvedQueryStateFromProjectState = (
     if (selectedVersionIds !== undefined) state.selectedVersionIds = selectedVersionIds;
     if (viewState.sortConfig) state.sortConfig = viewState.sortConfig;
     if (viewState.groupBy !== undefined) state.groupBy = viewState.groupBy;
-    if (viewState.showSubprojects !== undefined) state.showSubprojects = viewState.showSubprojects;
     if (viewState.visibleColumns) state.visibleColumns = viewState.visibleColumns;
+
+    if (projectState.scopeState?.showSubprojects === false) {
+        state.showSubprojects = false;
+    }
 
     return state;
 };
@@ -254,22 +257,29 @@ const normalizeForSharedProjectState = (state: Partial<ResolvedQueryState>): Par
 
 export const projectStateFromResolvedQueryState = (
     state: Partial<ResolvedQueryState>
-): SharedQueryProjectStateV2 | undefined => {
+): SharedQueryProjectStateV3 | undefined => {
     const normalized = normalizeForSharedProjectState(state);
     const queryContext = queryContextFromResolvedQueryState(normalized);
     const sharedViewState = sharedViewStateFromResolvedQueryState(normalized);
     const hasQueryState = queryContext.baseQueryId !== null || Object.keys(queryContext.overrides).length > 0;
     const hasViewState = Object.keys(sharedViewState).length > 0;
+    const showSubprojects = state.showSubprojects ?? true;
 
-    if (!hasQueryState && !hasViewState) return undefined;
+    if (!hasQueryState && !hasViewState && showSubprojects === true) return undefined;
 
     return {
+        scopeState: {
+            showSubprojects
+        },
         queryContext,
         sharedViewState
     };
 };
 
-export const cloneProjectState = (state: SharedQueryProjectStateV2): SharedQueryProjectStateV2 => ({
+export const cloneProjectState = (state: SharedQueryProjectStateV3): SharedQueryProjectStateV3 => ({
+    scopeState: {
+        showSubprojects: state.scopeState.showSubprojects
+    },
     queryContext: {
         baseQueryId: state.queryContext.baseQueryId,
         overrides: {
@@ -282,7 +292,235 @@ export const cloneProjectState = (state: SharedQueryProjectStateV2): SharedQuery
     sharedViewState: {
         ...(state.sharedViewState.groupBy !== undefined ? { groupBy: state.sharedViewState.groupBy } : {}),
         ...(state.sharedViewState.sortConfig ? { sortConfig: { ...state.sharedViewState.sortConfig } } : {}),
-        ...(state.sharedViewState.showSubprojects === false ? { showSubprojects: false } : {}),
         ...(state.sharedViewState.visibleColumns ? { visibleColumns: [...state.sharedViewState.visibleColumns] } : {})
     }
 });
+
+// URL parsing helper functions
+const parseIntegerList = (params: URLSearchParams, keys: string[]): number[] | undefined => {
+    const values = keys.flatMap((key) => params.getAll(key));
+    if (values.length === 0) return undefined;
+    return values
+        .flatMap((value) => value.split(/[|,]/))
+        .map((value) => value.trim())
+        .filter((value) => /^-?\d+$/.test(value))
+        .map(Number);
+};
+
+const parseIntegerTokens = (values: string[]): number[] =>
+    values
+        .flatMap((value) => value.split(/[|,]/))
+        .map((value) => value.trim())
+        .filter((value) => /^-?\d+$/.test(value))
+        .map(Number);
+
+const parseStringTokens = (values: string[]): string[] =>
+    values
+        .flatMap((value) => value.split(/[|,]/))
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+const parseStringList = (params: URLSearchParams, keys: string[]): string[] | undefined => {
+    const values = keys.flatMap((key) => params.getAll(key));
+    if (values.length === 0) return undefined;
+    return values
+        .flatMap((value) => value.split(/[|,]/))
+        .map((value) => value.trim())
+        .filter(Boolean);
+};
+
+const parseAssigneeList = (params: URLSearchParams): (number | null)[] | undefined => {
+    const values = parseStringList(params, ['assigned_to_ids[]', 'assigned_to_ids', 'assigned_to_id[]', 'assigned_to_id']);
+    if (!values) return undefined;
+    return values.flatMap((value) => {
+        if (value === '_none' || value === 'none' || value === '!' || value === '!*') return [null];
+        return /^-?\d+$/.test(value) ? [Number(value)] : [];
+    });
+};
+
+const parseVersionList = (params: URLSearchParams): string[] | undefined => {
+    const values = parseStringList(params, ['fixed_version_ids[]', 'fixed_version_ids', 'fixed_version_id[]', 'fixed_version_id']);
+    if (!values) return undefined;
+    return values.flatMap((value) => {
+        if (value === '_none' || value === 'none' || value === '!' || value === '!*') return ['_none'];
+        return /^-?\d+$/.test(value) ? [value] : [];
+    });
+};
+
+const parseRedmineFilters = (params: URLSearchParams): Record<string, { operator: string; values: string[] }> => {
+    const filters: Record<string, { operator: string; values: string[] }> = {};
+    const fields = params.getAll('f[]').concat(params.getAll('f'));
+    fields.forEach((field) => {
+        const operator = params.get(`op[${field}]`) ?? '';
+        const values = params.getAll(`v[${field}][]`).concat(params.getAll(`v[${field}]`));
+        filters[field] = { operator, values };
+    });
+    return filters;
+};
+
+export const parseQueryContextFromUrl = (search: string = window.location.search): QueryContext => {
+    const params = new URLSearchParams(search);
+    const queryIdRaw = params.get('query_id');
+    const baseQueryId = queryIdRaw && /^-?\d+$/.test(queryIdRaw) ? Number(queryIdRaw) : null;
+
+    const overrides: QueryOverrides = {};
+    const hasSetFilter = params.get('set_filter') === '1';
+    const filters = parseRedmineFilters(params);
+
+    // 1. Status Filter
+    const statusValues = parseIntegerList(params, ['status_ids[]', 'status_ids', 'status_id[]', 'status_id']);
+    if (statusValues !== undefined) {
+        overrides.status = statusValues.length > 0
+            ? { mode: 'subset', values: statusValues }
+            : { mode: 'all' };
+    } else if (hasSetFilter && filters.status_id) {
+        const { operator, values } = filters.status_id;
+        if (operator === '=') {
+            overrides.status = { mode: 'subset', values: parseIntegerTokens(values) };
+        } else if (operator === '*') {
+            overrides.status = { mode: 'all' };
+        }
+    }
+
+    // 2. Assignee Filter
+    const assigneeValues = parseAssigneeList(params);
+    if (assigneeValues !== undefined) {
+        overrides.assignee = assigneeValues.length > 0
+            ? { mode: 'subset', values: assigneeValues }
+            : { mode: 'all' };
+    } else if (hasSetFilter && filters.assigned_to_id) {
+        const { operator, values } = filters.assigned_to_id;
+        if (operator === '=') {
+            const parsed = parseStringTokens(values).flatMap((value) => {
+                if (value === 'none' || value === '_none') return [null];
+                return /^-?\d+$/.test(value) ? [Number(value)] : [];
+            });
+            overrides.assignee = { mode: 'subset', values: parsed };
+        } else if (operator === '*') {
+            overrides.assignee = { mode: 'all' };
+        } else if (operator === '!*') {
+            overrides.assignee = { mode: 'subset', values: [null] };
+        }
+    }
+
+    // 3. Project Filter
+    const projectIds = params.getAll('project_ids[]');
+    const projectIdsNoBrackets = params.getAll('project_ids');
+    const projectIdsCombined = [...projectIds, ...projectIdsNoBrackets];
+    
+    if (projectIdsCombined.length > 0) {
+        const cleanValues = projectIdsCombined.flatMap(v => v.split(/[|,]/)).map(v => v.trim()).filter(Boolean);
+        if (cleanValues.every(v => v === 'none' || v === '_none')) {
+            overrides.project = { mode: 'none' };
+        } else {
+            overrides.project = { mode: 'subset', values: cleanValues.filter(v => v !== 'none' && v !== '_none') };
+        }
+    } else if (hasSetFilter && filters.project_id) {
+        const { operator, values } = filters.project_id;
+        if (operator === '=') {
+            overrides.project = { mode: 'subset', values: parseStringTokens(values) };
+        } else if (operator === '*') {
+            overrides.project = { mode: 'all' };
+        }
+    }
+
+    // 4. Version Filter
+    const versionValues = parseVersionList(params);
+    if (versionValues !== undefined) {
+        overrides.version = versionValues.length > 0
+            ? { mode: 'subset', values: versionValues }
+            : { mode: 'all' };
+    } else if (hasSetFilter && filters.fixed_version_id) {
+        const { operator, values } = filters.fixed_version_id;
+        if (operator === '=') {
+            const parsed = parseStringTokens(values).flatMap((value) => {
+                if (value === 'none' || value === '_none') return ['_none'];
+                return /^-?\d+$/.test(value) ? [value] : [];
+            });
+            overrides.version = { mode: 'subset', values: parsed };
+        } else if (operator === '*') {
+            overrides.version = { mode: 'all' };
+        }
+    }
+
+    return {
+        baseQueryId,
+        overrides
+    };
+};
+
+export const buildQueryParamsFromQueryContext = (context: QueryContext): URLSearchParams => {
+    const params = new URLSearchParams();
+    if (context.baseQueryId) {
+        params.set('query_id', String(context.baseQueryId));
+    }
+
+    const { project, status, assignee, version } = context.overrides;
+
+    // 1. Project
+    if (project) {
+        if (project.mode === 'none') {
+            params.append('project_ids[]', 'none');
+        } else if (project.mode === 'subset') {
+            project.values.forEach(id => params.append('project_ids[]', id));
+        } else if (project.mode === 'all') {
+            if (context.baseQueryId) {
+                params.set('set_filter', '1');
+                params.append('f[]', 'project_id');
+                params.set('op[project_id]', '*');
+            }
+        }
+    }
+
+    // 2. Status
+    if (status) {
+        if (status.mode === 'subset') {
+            status.values.forEach(id => params.append('status_ids[]', String(id)));
+        } else if (status.mode === 'all') {
+            if (context.baseQueryId) {
+                params.set('set_filter', '1');
+                params.append('f[]', 'status_id');
+                params.set('op[status_id]', '*');
+            }
+        }
+    }
+
+    // 3. Assignee
+    if (assignee) {
+        if (assignee.mode === 'subset') {
+            assignee.values.forEach(id => params.append('assigned_to_ids[]', id === null ? 'none' : String(id)));
+        } else if (assignee.mode === 'all') {
+            if (context.baseQueryId) {
+                params.set('set_filter', '1');
+                params.append('f[]', 'assigned_to_id');
+                params.set('op[assigned_to_id]', '*');
+            }
+        }
+    }
+
+    // 4. Version
+    if (version) {
+        if (version.mode === 'subset') {
+            version.values.forEach(id => params.append('fixed_version_ids[]', id === '_none' ? 'none' : id));
+        } else if (version.mode === 'all') {
+            if (context.baseQueryId) {
+                params.set('set_filter', '1');
+                params.append('f[]', 'fixed_version_id');
+                params.set('op[fixed_version_id]', '*');
+            }
+        }
+    }
+
+    return params;
+};
+
+export const serializeQueryContext = (context: QueryContext): unknown => {
+    return {
+        baseQueryId: context.baseQueryId,
+        overrides: context.overrides
+    };
+};
+
+export const deserializeQueryContext = (value: unknown): QueryContext => {
+    return normalizeQueryContext(value);
+};

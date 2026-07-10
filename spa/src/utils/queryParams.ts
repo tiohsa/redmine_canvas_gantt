@@ -565,7 +565,6 @@ export const sharedViewStateFromResolvedQueryState = (
 
     if (state?.groupBy !== undefined) viewState.groupBy = state.groupBy;
     if (state?.sortConfig?.key) viewState.sortConfig = { ...state.sortConfig };
-    if (state?.showSubprojects === false) viewState.showSubprojects = false;
     if (state?.visibleColumns) viewState.visibleColumns = [...state.visibleColumns];
 
     return viewState;
@@ -576,7 +575,6 @@ export const resolvedQueryStateFromSharedViewState = (
 ): ResolvedQueryState => ({
     ...(viewState?.groupBy !== undefined ? { groupBy: viewState.groupBy } : {}),
     ...(viewState?.sortConfig?.key ? { sortConfig: { ...viewState.sortConfig } } : {}),
-    ...(viewState?.showSubprojects === false ? { showSubprojects: false } : {}),
     ...(viewState?.visibleColumns ? { visibleColumns: [...viewState.visibleColumns] } : {})
 });
 

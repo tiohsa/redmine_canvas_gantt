@@ -27,13 +27,16 @@ describe('shared query state storage', () => {
         });
     });
 
-    it('writes the V2 query context and shared view envelope', () => {
+    it('writes the V3 query context and scope state envelope', () => {
         saveLastUsedSharedQueryState({ queryId: 12, selectedProjectIds: [], groupBy: 'assignee', showSubprojects: false }, 1);
 
         expect(JSON.parse(window.localStorage.getItem('canvasGantt:lastSharedQueryState') || '{}')).toEqual({
-            version: 2,
+            version: 3,
             projects: {
                 'project:1': {
+                    scopeState: {
+                        showSubprojects: false
+                    },
                     queryContext: {
                         baseQueryId: 12,
                         overrides: {
@@ -41,15 +44,14 @@ describe('shared query state storage', () => {
                         }
                     },
                     sharedViewState: {
-                        groupBy: 'assignee',
-                        showSubprojects: false
+                        groupBy: 'assignee'
                     }
                 }
             }
         });
     });
 
-    it('migrates V1 storage and drops member-project scope', () => {
+    it('migrates V1 storage to V3 and drops member-project scope', () => {
         window.localStorage.setItem('canvasGantt:lastSharedQueryState', JSON.stringify({
             version: 1,
             projects: {
@@ -67,7 +69,65 @@ describe('shared query state storage', () => {
             selectedStatusIds: [1],
             groupBy: 'assignee'
         });
-        expect(JSON.parse(window.localStorage.getItem('canvasGantt:lastSharedQueryState') || '{}').version).toBe(2);
+        expect(JSON.parse(window.localStorage.getItem('canvasGantt:lastSharedQueryState') || '{}').version).toBe(3);
+    });
+
+    it('migrates V2 storage to V3', () => {
+        window.localStorage.setItem('canvasGantt:lastSharedQueryState', JSON.stringify({
+            version: 2,
+            projects: {
+                'project:1': {
+                    queryContext: {
+                        baseQueryId: 12,
+                        overrides: {}
+                    },
+                    sharedViewState: {
+                        groupBy: 'assignee',
+                        showSubprojects: false
+                    }
+                }
+            }
+        }));
+
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            queryId: 12,
+            groupBy: 'assignee',
+            showSubprojects: false
+        });
+        expect(JSON.parse(window.localStorage.getItem('canvasGantt:lastSharedQueryState') || '{}').version).toBe(3);
+    });
+
+    it('recovers from storage failure in a single project by isolating it', () => {
+        window.localStorage.setItem('canvasGantt:lastSharedQueryState', JSON.stringify({
+            version: 3,
+            projects: {
+                'project:1': {
+                    scopeState: {
+                        showSubprojects: true
+                    },
+                    queryContext: {
+                        baseQueryId: 12,
+                        overrides: {}
+                    },
+                    sharedViewState: {
+                        groupBy: 'assignee'
+                    }
+                },
+                'project:2': 'corrupted_state_string_instead_of_object'
+            }
+        }));
+
+        // project:1 should successfully load
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            queryId: 12,
+            groupBy: 'assignee'
+        });
+
+        // project:2 should default/fallback
+        expect(loadLastUsedSharedQueryState(2)).toBeUndefined();
+
+        // The stored envelope should have pruned the corrupted project entry
+        expect(JSON.parse(window.localStorage.getItem('canvasGantt:lastSharedQueryState') || '{}').projects['project:2']).toBeUndefined();
     });
 
     it('stores and restores an explicit empty project selection', () => {

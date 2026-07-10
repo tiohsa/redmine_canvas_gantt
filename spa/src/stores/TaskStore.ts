@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { FilterOptions, Task, Relation, DraftRelation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus, SavedQuery } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
-import { loadPreferences } from '../utils/preferences';
+import { loadPreferences, saveDisplayPreferences } from '../utils/preferences';
 import { getMaxFiniteDueDate } from '../utils/taskRange';
 import { i18n } from '../utils/i18n';
 import { useUIStore } from './UIStore';
@@ -415,7 +415,8 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
     const relations = data.relations ?? [];
     const tasks = data.tasks ?? [];
     const nextResolved: ResolvedQueryState = {
-        ...(data.initialState ?? toResolvedQueryStateFromStore(state))
+        ...(data.initialState ?? toResolvedQueryStateFromStore(state)),
+        memberProjectsOnly: state.memberProjectsOnly
     };
 
     const queryState = toBusinessQueryState(nextResolved);
@@ -655,7 +656,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     selectedAssigneeIds: [],
     selectedProjectIds: [],
     selectedVersionIds: [],
-    memberProjectsOnly: initialUrlState.memberProjectsOnly ?? false,
+    memberProjectsOnly: preferences.memberProjectsOnly ?? false,
     sortConfig: { key: 'startDate', direction: 'asc' },
     customScales: preferences.customScales ?? {},
     currentProjectId: window.RedmineCanvasGantt?.projectId?.toString() || null,
@@ -1178,9 +1179,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     setCurrentProjectId: (id) => set((state) => {
         if (state.currentProjectId === id) return state;
+        const newPrefs = loadPreferences(id);
         const layout = buildLayoutFromState(state, { currentProjectId: id });
         return {
             currentProjectId: id,
+            memberProjectsOnly: newPrefs.memberProjectsOnly ?? false,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -1342,6 +1345,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         if (current.memberProjectsOnly === enabled) return;
 
         set({ memberProjectsOnly: enabled });
+        saveDisplayPreferences({ memberProjectsOnly: enabled }, current.currentProjectId);
         syncSharedQueryState({ ...get(), memberProjectsOnly: enabled });
         await get().refreshData();
     },

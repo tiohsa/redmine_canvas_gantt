@@ -219,13 +219,13 @@ RSpec.describe CanvasGanttsController, type: :controller do
   end
 
   describe '#filter_option_projects' do
-    let(:visible_scope) { instance_double(ActiveRecord::Relation) }
-    let(:member_active_scope) { instance_double(ActiveRecord::Relation) }
-    let(:tree_project_scope) { instance_double(ActiveRecord::Relation) }
-    let(:tree_member_joined_scope) { instance_double(ActiveRecord::Relation) }
-    let(:tree_member_filtered_scope) { instance_double(ActiveRecord::Relation) }
-    let(:member_joined_scope) { instance_double(ActiveRecord::Relation) }
-    let(:member_filtered_scope) { instance_double(ActiveRecord::Relation) }
+    let(:visible_scope) { double('ActiveRecord::Relation') }
+    let(:member_active_scope) { double('ActiveRecord::Relation') }
+    let(:tree_project_scope) { double('ActiveRecord::Relation') }
+    let(:tree_member_joined_scope) { double('ActiveRecord::Relation') }
+    let(:tree_member_filtered_scope) { double('ActiveRecord::Relation') }
+    let(:member_joined_scope) { double('ActiveRecord::Relation') }
+    let(:member_filtered_scope) { double('ActiveRecord::Relation') }
     let(:member_tree_project) { double('ProjectOption', id: 1) }
     let(:descendant_project) { double('ProjectOption', id: 2) }
     let(:member_project) { double('ProjectOption', id: 3) }
@@ -238,37 +238,42 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(member_active_scope).to receive(:joins).with(:members).and_return(member_joined_scope)
     end
 
-    it 'returns visible member projects in the current project tree' do
-      user = instance_double(User, id: 7, group_ids: [11, 12])
-
+    it 'returns all active visible projects in base scope when member_projects_only is false' do
+      user = double('User', id: 7, group_ids: [11, 12], logged?: true, login: 'alice')
       allow(User).to receive(:current).and_return(user)
-      allow(tree_member_joined_scope).to receive(:where).with(
-        members: { user_id: [7, 11, 12] }
-      ).and_return(tree_member_filtered_scope)
-      allow(tree_member_filtered_scope).to receive(:distinct).and_return(tree_member_filtered_scope)
-      allow(tree_member_filtered_scope).to receive(:to_a).and_return([member_tree_project, descendant_project])
+      allow(tree_project_scope).to receive(:to_a).and_return([member_tree_project, descendant_project])
 
-      result = controller.send(:filter_option_projects, [1, 2])
+      result = controller.send(:filter_option_projects, [1, 2], member_projects_only: false)
 
       expect(result).to eq([member_tree_project, descendant_project])
     end
 
-    it 'returns only visible member projects when memberProjectsOnly is enabled' do
-      user = instance_double(User, id: 7, group_ids: [11, 12])
-
+    it 'returns only projects where current user is a member when memberProjectsOnly is enabled' do
+      user = double('User', id: 7, group_ids: [11, 12], logged?: true, login: 'alice', admin?: false)
       allow(User).to receive(:current).and_return(user)
-      expect(member_joined_scope).to receive(:where).with(
+
+      allow(member_joined_scope).to receive(:where).with(
         members: { user_id: [7, 11, 12] }
       ).and_return(member_filtered_scope)
       allow(member_filtered_scope).to receive(:distinct).and_return(member_filtered_scope)
-      allow(member_filtered_scope).to receive(:to_a).and_return([member_project])
+      allow(member_filtered_scope).to receive(:to_a).and_return([member_tree_project, member_project])
 
       result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
 
-      expect(result).to eq([member_project])
+      expect(result).to eq([member_tree_project, member_project])
     end
 
-    it 'returns no member projects when current user is unavailable' do
+    it 'returns all active visible projects when current user is admin even if memberProjectsOnly is enabled' do
+      user = double('User', id: 7, logged?: true, login: 'admin', admin?: true)
+      allow(User).to receive(:current).and_return(user)
+      allow(member_active_scope).to receive(:to_a).and_return([member_tree_project, descendant_project, member_project])
+
+      result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
+
+      expect(result).to eq([member_tree_project, descendant_project, member_project])
+    end
+
+    it 'returns no projects when memberProjectsOnly is enabled and current user is unavailable' do
       allow(User).to receive(:current).and_return(nil)
 
       result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)

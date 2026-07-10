@@ -680,23 +680,21 @@ class CanvasGanttsController < ApplicationController
   end
 
   def filter_option_projects(project_ids, member_projects_only: false)
-    return visible_member_projects if member_projects_only
+    if member_projects_only
+      if User.current&.admin?
+        Project.visible.active.to_a
+      else
+        return [] if member_candidate_ids.empty?
 
-    visible_member_projects(project_ids)
-  end
-
-  def visible_member_projects(project_ids = nil)
-    return [] if member_candidate_ids.empty?
-
-    scope = Project.visible.active
-    scope = scope.where(id: candidate_project_ids(project_ids)) if project_ids.present?
-
-    scope
-      .joins(:members)
-      # Redmine stores users and groups in users; members.user_id references users.id.
-      .where(members: { user_id: member_candidate_ids })
-      .distinct
-      .to_a
+        Project.visible.active
+          .joins(:members)
+          .where(members: { user_id: member_candidate_ids })
+          .distinct
+          .to_a
+      end
+    else
+      Project.visible.active.where(id: candidate_project_ids(project_ids)).to_a
+    end
   end
 
   def filter_option_issues(project_ids)

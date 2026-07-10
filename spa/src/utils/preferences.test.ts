@@ -98,6 +98,13 @@ describe('Preferences storage', () => {
         expect(loadPreferences(2).showBaseline).toBeUndefined();
     });
 
+    it('saves and loads memberProjectsOnly preference', () => {
+        saveDisplayPreferences({ memberProjectsOnly: true }, 1);
+
+        expect(loadPreferences(1).memberProjectsOnly).toBe(true);
+        expect(loadPreferences(2).memberProjectsOnly).toBeUndefined();
+    });
+
     it('saves and loads task title visibility preference', () => {
         saveDisplayPreferences({ showTaskTitles: false }, 1);
 

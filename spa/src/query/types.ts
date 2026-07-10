@@ -38,9 +38,13 @@ export interface QueryContext {
     overrides: QueryOverrides;
 }
 
+export interface ScopeState {
+    rootProjectId: string;
+    showSubprojects: boolean;
+}
+
 export interface SharedViewState {
     groupBy: 'project' | 'assignee' | null;
     sortConfig: { key: string; direction: 'asc' | 'desc' } | null;
-    showSubprojects?: boolean;
     visibleColumns?: string[];
 }

@@ -33,6 +33,7 @@ export interface StoredPreferences {
     includeClosedIssues?: boolean;
     todayOnwardOnly?: boolean;
     sidebarFontSize?: number;
+    memberProjectsOnly?: boolean;
 }
 
 export type DisplayPreferencesSource = 'project' | 'global' | 'default';
@@ -55,6 +56,7 @@ export interface StoredDisplayPreferences {
     customScales?: Record<number, number>;
     rowHeight?: number;
     sidebarFontSize?: number;
+    memberProjectsOnly?: boolean;
 }
 
 export interface StoredGeneralPreferences {
@@ -94,6 +96,7 @@ export type DisplayPreferencesSnapshot = Pick<
     | 'customScales'
     | 'rowHeight'
     | 'sidebarFontSize'
+    | 'memberProjectsOnly'
 >;
 
 export type GeneralPreferencesSnapshot = Pick<
@@ -136,7 +139,8 @@ const sanitizePreferences = (prefs: StoredPreferences): StoredPreferences => Obj
         includeClosedIssues: prefs.includeClosedIssues,
         todayOnwardOnly: prefs.todayOnwardOnly,
         organizeByDependency: prefs.organizeByDependency,
-        sidebarFontSize: prefs.sidebarFontSize
+        sidebarFontSize: prefs.sidebarFontSize,
+        memberProjectsOnly: prefs.memberProjectsOnly
     }).filter(([, value]) => value !== undefined)
 ) as StoredPreferences;
 
@@ -158,7 +162,8 @@ const sanitizeDisplayPreferences = (prefs: StoredPreferences): StoredDisplayPref
         sidebarWidth: prefs.sidebarWidth,
         customScales: prefs.customScales,
         rowHeight: prefs.rowHeight,
-        sidebarFontSize: prefs.sidebarFontSize
+        sidebarFontSize: prefs.sidebarFontSize,
+        memberProjectsOnly: prefs.memberProjectsOnly
     }).filter(([, value]) => value !== undefined)
 ) as StoredDisplayPreferences;
 
