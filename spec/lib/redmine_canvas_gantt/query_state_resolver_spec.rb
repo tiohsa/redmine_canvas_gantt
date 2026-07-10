@@ -322,7 +322,10 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
 
     allow(IssueQuery).to receive(:find_by).with(id: '101').and_return(query)
     allow(query).to receive(:dup).and_return(working_query)
-    allow(working_query).to receive(:filters=)
+    expect(working_query).to receive(:filters=).with({
+      'project_id' => { operator: '=', values: ['2'] },
+      'subproject_id' => { operator: '!*', values: [] }
+    })
     allow(working_query).to receive(:column_names).and_return([])
 
     expect(issue_scope).to receive(:where).with(project_id: [1, 2, 3]).and_return(issue_scope)

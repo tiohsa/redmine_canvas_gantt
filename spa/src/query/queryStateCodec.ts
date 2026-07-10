@@ -260,9 +260,10 @@ export const projectStateFromResolvedQueryState = (
     const sharedViewState = sharedViewStateFromResolvedQueryState(normalized);
     const hasQueryState = queryContext.baseQueryId !== null || Object.keys(queryContext.overrides).length > 0;
     const hasViewState = Object.keys(sharedViewState).length > 0;
+    const hasCanvasProjectScope = Array.isArray(state.canvasProjectIds);
     const showSubprojects = state.showSubprojects ?? true;
 
-    if (!hasQueryState && !hasViewState && showSubprojects === true) return undefined;
+    if (!hasQueryState && !hasViewState && !hasCanvasProjectScope && showSubprojects === true) return undefined;
 
     return {
         scopeState: {

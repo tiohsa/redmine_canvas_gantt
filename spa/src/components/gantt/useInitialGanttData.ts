@@ -36,6 +36,7 @@ export const useInitialGanttData = ({
             }
 
             useTaskStore.getState().restoreActiveQueryId(initialSharedQueryState.state.queryId ?? null);
+            useTaskStore.getState().restoreCanvasScope(initialSharedQueryState.state);
             const groupByWasExplicit = initialSharedQueryState.source === 'storage'
                 ? initialSharedQueryState.state.groupBy !== undefined
                 : initialSharedQueryState.source === 'url' && new URLSearchParams(window.location.search).has('group_by');

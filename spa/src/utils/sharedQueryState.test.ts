@@ -15,7 +15,7 @@ describe('shared query state storage', () => {
 
     it('stores shared query state per project without member-project scope', () => {
         saveLastUsedSharedQueryState({ queryId: 12, selectedStatusIds: [1], groupBy: 'assignee', memberProjectsOnly: true }, 1);
-        saveLastUsedSharedQueryState({ selectedProjectIds: ['3'] }, 2);
+        saveLastUsedSharedQueryState({ canvasProjectIds: ['3'] }, 2);
 
         expect(loadLastUsedSharedQueryState(1)).toEqual({
             queryId: 12,
@@ -23,25 +23,24 @@ describe('shared query state storage', () => {
             groupBy: 'assignee'
         });
         expect(loadLastUsedSharedQueryState(2)).toEqual({
-            selectedProjectIds: ['3']
+            canvasProjectIds: ['3']
         });
     });
 
     it('writes the V3 query context and scope state envelope', () => {
-        saveLastUsedSharedQueryState({ queryId: 12, selectedProjectIds: [], groupBy: 'assignee', showSubprojects: false }, 1);
+        saveLastUsedSharedQueryState({ queryId: 12, canvasProjectIds: [], groupBy: 'assignee', showSubprojects: false }, 1);
 
         expect(JSON.parse(window.localStorage.getItem('canvasGantt:lastSharedQueryState') || '{}')).toEqual({
             version: 3,
             projects: {
                 'project:1': {
                     scopeState: {
-                        showSubprojects: false
+                        showSubprojects: false,
+                        canvasProjectIds: []
                     },
                     queryContext: {
                         baseQueryId: 12,
-                        overrides: {
-                            project: { mode: 'none' }
-                        }
+                        overrides: {}
                     },
                     sharedViewState: {
                         groupBy: 'assignee'
@@ -131,10 +130,10 @@ describe('shared query state storage', () => {
     });
 
     it('stores and restores an explicit empty project selection', () => {
-        saveLastUsedSharedQueryState({ selectedProjectIds: [] }, 1);
+        saveLastUsedSharedQueryState({ canvasProjectIds: [] }, 1);
 
         expect(loadLastUsedSharedQueryState(1)).toEqual({
-            selectedProjectIds: []
+            canvasProjectIds: []
         });
     });
 

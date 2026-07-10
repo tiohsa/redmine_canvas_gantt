@@ -60,7 +60,7 @@ describe('useInitialGanttData persistence', () => {
         saveLastUsedSharedQueryState({
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [null, 7],
-            selectedProjectIds: ['p1'],
+            canvasProjectIds: ['p1'],
             selectedVersionIds: ['_none', 'v2'],
             groupBy: 'assignee',
             showSubprojects: false
@@ -74,7 +74,7 @@ describe('useInitialGanttData persistence', () => {
                 query: {
                     selectedStatusIds: [1, 2],
                     selectedAssigneeIds: [null, 7],
-                    selectedProjectIds: ['p1'],
+                    canvasProjectIds: ['p1'],
                     selectedVersionIds: ['_none', 'v2'],
                     groupBy: 'assignee',
                     showSubprojects: false
@@ -95,7 +95,7 @@ describe('useInitialGanttData persistence', () => {
         const url = new URL(window.location.href);
         expect(url.searchParams.getAll('status_ids[]')).toEqual(['1', '2']);
         expect(url.searchParams.getAll('assigned_to_ids[]')).toEqual(['none', '7']);
-        expect(url.searchParams.getAll('project_ids[]')).toEqual(['p1']);
+        expect(url.searchParams.getAll('canvas_project_ids[]')).toEqual(['p1']);
         expect(url.searchParams.getAll('fixed_version_ids[]')).toEqual(['none', 'v2']);
         expect(url.searchParams.get('group_by')).toBe('assigned_to');
         expect(url.searchParams.get('show_subprojects')).toBe('0');
@@ -103,7 +103,7 @@ describe('useInitialGanttData persistence', () => {
 
     it('restores an explicit empty project selection from storage on a bare canvas gantt URL', async () => {
         saveLastUsedSharedQueryState({
-            selectedProjectIds: []
+            canvasProjectIds: []
         });
 
         render(<Harness />);
@@ -112,7 +112,7 @@ describe('useInitialGanttData persistence', () => {
             expect(fetchDataMock).toHaveBeenCalledWith({
                 rawSearch: undefined,
                 query: {
-                    selectedProjectIds: []
+                    canvasProjectIds: []
                 }
             });
         });
@@ -122,7 +122,7 @@ describe('useInitialGanttData persistence', () => {
         });
 
         const url = new URL(window.location.href);
-        expect(url.searchParams.getAll('project_ids[]')).toEqual(['none']);
+        expect(url.searchParams.getAll('canvas_project_ids[]')).toEqual(['none']);
     });
 
     it('restores a stored saved query id before initial data resolves and checks its radio', async () => {
@@ -184,7 +184,8 @@ describe('useInitialGanttData persistence', () => {
 
         expect(fetchDataMock).toHaveBeenCalledWith({
             query: {
-                queryId: 18
+                queryId: 18,
+                canvasProjectIds: []
             }
         });
     });
@@ -210,7 +211,8 @@ describe('useInitialGanttData persistence', () => {
 
         expect(fetchDataMock).toHaveBeenCalledWith({
             query: {
-                queryId: 18
+                queryId: 18,
+                canvasProjectIds: []
             }
         });
     });

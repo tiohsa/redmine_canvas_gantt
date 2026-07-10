@@ -127,6 +127,7 @@ interface TaskState {
     setCustomFields: (fields: CustomFieldMeta[]) => void;
     setPermissions: (permissions: { editable: boolean; viewable: boolean; baselineEditable: boolean }) => void;
     restoreActiveQueryId: (queryId: number | null) => void;
+    restoreCanvasScope: (state?: ResolvedQueryState) => void;
     restoreExplicitGroupByOverride: (groupBy: ResolvedQueryState['groupBy'] | undefined) => void;
     applyResolvedQueryState: (state?: ResolvedQueryState) => void;
     applyApiData: (data: ApiData) => void;
@@ -708,6 +709,24 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const queryContext = { ...get().queryContext, baseQueryId: queryId };
         set({ activeQueryId: queryId, ...queryContextPatch(queryContext) });
     },
+    restoreCanvasScope: (resolved) => set((state) => {
+        const showSubprojects = resolved?.showSubprojects ?? state.showSubprojects;
+        const selectedProjectIds = resolved?.canvasProjectIds
+            ?? resolved?.selectedProjectIds
+            ?? state.selectedProjectIds;
+        const layout = buildLayoutFromState(state, {
+            showSubprojects,
+            selectedProjectIds
+        });
+
+        return {
+            showSubprojects,
+            selectedProjectIds,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
     restoreExplicitGroupByOverride: (groupBy) => set({ explicitGroupByOverride: groupBy }),
     applyResolvedQueryState: (resolved) => set((state) => {
         const queryState = toBusinessQueryState(resolved);
@@ -1493,7 +1512,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const state = get();
         const query: ResolvedQueryState = {
             queryId,
-            canvasProjectIds: state.selectedProjectIds
+            canvasProjectIds: state.selectedProjectIds,
+            ...(state.memberProjectsOnly ? { memberProjectsOnly: true } : {})
         };
         set({
             activeQueryId: queryId,

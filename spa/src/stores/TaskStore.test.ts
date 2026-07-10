@@ -281,6 +281,38 @@ describe('TaskStore shared query persistence', () => {
         });
     });
 
+    it('applySavedQuery preserves member project candidates when the filter is enabled', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: {
+                projects: [{ id: 'member-project', name: 'Member project' }],
+                assignees: []
+            },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: { queryId: 12 }
+        });
+        useTaskStore.setState({ memberProjectsOnly: true });
+
+        await useTaskStore.getState().applySavedQuery(12);
+
+        expect(apiClient.fetchData).toHaveBeenCalledWith({
+            query: {
+                queryId: 12,
+                canvasProjectIds: [],
+                memberProjectsOnly: true
+            }
+        });
+        expect(useTaskStore.getState().filterOptions.projects).toEqual([
+            { id: 'member-project', name: 'Member project' }
+        ]);
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(true);
+    });
+
     it('setGroupByProject preserves showSubprojects when enabling project grouping', () => {
         useTaskStore.setState({ showSubprojects: false });
 
