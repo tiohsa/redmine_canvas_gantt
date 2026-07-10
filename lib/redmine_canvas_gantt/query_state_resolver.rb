@@ -222,7 +222,10 @@ module RedmineCanvasGantt
 
     def build_working_query(query)
       working_query = query.dup
-      working_query.filters = filtered_query_filters(query.filters || {})
+      filters = filtered_query_filters(query.filters || {})
+      subproject_filter = standard_subproject_filter_override
+      filters['subproject_id'] = subproject_filter if subproject_filter
+      working_query.filters = filters
       working_query
     end
 
@@ -247,9 +250,18 @@ module RedmineCanvasGantt
 
     def query_filter_keys_to_exclude
       keys = URL_OVERRIDE_FILTERS.select { |name| url_filter_values(name).present? }
-      keys.concat(supported_standard_filter_fields)
-      keys << 'subproject_id' if @params.key?(:show_subprojects)
+      keys.concat(supported_standard_filter_fields - ['subproject_id'])
       keys.uniq
+    end
+
+    def standard_subproject_filter_override
+      return unless standard_filtering_enabled?
+      return unless standard_filter_fields.include?('subproject_id')
+
+      operator = standard_filter_operator('subproject_id')
+      return unless STANDARD_FILTER_OPERATORS.fetch('subproject_id', []).include?(operator)
+
+      { operator: operator, values: standard_filter_values('subproject_id') }
     end
 
     def state_from_query(query)
@@ -428,8 +440,6 @@ module RedmineCanvasGantt
           @redmine_project_ids = operator == '=' ? parse_string_list(values) : nil
         when 'fixed_version_id'
           state[:selected_version_ids] = (operator == '*' ? [] : parse_version_list(values))
-        when 'subproject_id'
-          state[:show_subprojects] = (operator == '*')
         end
       end
 

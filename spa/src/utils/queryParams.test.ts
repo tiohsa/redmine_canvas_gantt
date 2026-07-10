@@ -104,6 +104,34 @@ describe('readIssueQueryParamsFromUrl', () => {
             memberProjectsOnly: undefined,
             sortConfig: { key: 'startDate', direction: 'desc' },
             groupBy: 'assignee',
+            showSubprojects: undefined
+        });
+    });
+
+    it('does not convert subproject_id=* into Canvas state', () => {
+        expect(readIssueQueryParamsFromUrl('?set_filter=1&f[]=subproject_id&op[subproject_id]=*')).toEqual({
+            queryId: undefined,
+            selectedStatusIds: undefined,
+            selectedAssigneeIds: undefined,
+            canvasProjectIds: undefined,
+            selectedVersionIds: undefined,
+            memberProjectsOnly: undefined,
+            sortConfig: undefined,
+            groupBy: null,
+            showSubprojects: undefined
+        });
+    });
+
+    it('keeps an explicit Canvas show_subprojects value independent from subproject_id', () => {
+        expect(readIssueQueryParamsFromUrl('?set_filter=1&f[]=subproject_id&op[subproject_id]=*&show_subprojects=0')).toEqual({
+            queryId: undefined,
+            selectedStatusIds: undefined,
+            selectedAssigneeIds: undefined,
+            canvasProjectIds: undefined,
+            selectedVersionIds: undefined,
+            memberProjectsOnly: undefined,
+            sortConfig: undefined,
+            groupBy: null,
             showSubprojects: false
         });
     });

@@ -172,10 +172,6 @@ const parseStandardQueryState = (params: URLSearchParams): Partial<ResolvedQuery
                     standardState.selectedVersionIds = [];
                 }
                 break;
-            case 'subproject_id':
-                if (operator === '!*') standardState.showSubprojects = false;
-                if (operator === '*') standardState.showSubprojects = true;
-                break;
             default:
                 break;
         }
@@ -344,7 +340,7 @@ export const readIssueQueryParamsFromUrl = (search: string = window.location.sea
         memberProjectsOnly: undefined,
         sortConfig: parseSortConfig(params.get('sort')),
         groupBy: groupBy === 'assigned_to' || groupBy === 'assignee' ? 'assignee' : (groupBy === 'project' ? 'project' : null),
-        showSubprojects: params.get('show_subprojects') === null ? standardState.showSubprojects : params.get('show_subprojects') !== '0',
+        showSubprojects: params.get('show_subprojects') === null ? undefined : params.get('show_subprojects') !== '0',
         visibleColumns: parseVisibleColumns(params)
     };
 };

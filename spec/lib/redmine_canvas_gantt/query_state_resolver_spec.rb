@@ -163,7 +163,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       selected_project_ids: ['1', '2'],
       selected_version_ids: ['11'],
       member_projects_only: false,
-      show_subprojects: false,
+      show_subprojects: true,
       sort_config: { key: 'startDate', direction: 'desc' },
       group_by_project: true,
       group_by_assignee: false
@@ -178,6 +178,53 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       }
     )
     expect(result[:warnings]).to include('Ignored unsupported field tracker_id')
+  end
+
+  it 'keeps standard subproject filters in the Redmine query without changing Canvas state' do
+    query = instance_double(
+      IssueQuery,
+      id: 102,
+      visible?: true,
+      filters: {
+        'subproject_id' => { operator: '*', values: [] }
+      },
+      sort_criteria: nil,
+      group_by: nil
+    )
+    working_query = instance_double(
+      IssueQuery,
+      filters: {},
+      sort_criteria: nil,
+      group_by: nil,
+      issue_ids: [23]
+    )
+
+    allow(IssueQuery).to receive(:find_by).with(id: '102').and_return(query)
+    allow(query).to receive(:dup).and_return(working_query)
+    expect(working_query).to receive(:filters=).with({
+      'subproject_id' => { operator: '!*', values: [] }
+    })
+    allow(working_query).to receive(:column_names).and_return([])
+    expect(issue_scope).to receive(:where).with(project_id: [1]).and_return(issue_scope)
+    expect(issue_scope).to receive(:where).with(id: [23]).and_return(issue_scope)
+
+    resolver = described_class.new(
+      project: project,
+      params: ActionController::Parameters.new(
+        query_id: '102',
+        set_filter: '1',
+        f: ['subproject_id'],
+        op: { 'subproject_id' => '!*' },
+        show_subprojects: '0'
+      ),
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    )
+
+    result = resolver.resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state][:show_subprojects]).to be(false)
   end
 
   it 'splits comma and pipe separated Canvas project ids from url params' do
