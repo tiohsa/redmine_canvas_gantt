@@ -44,7 +44,8 @@ module RedmineCanvasGantt
 
     def scope_project_ids
       base_ids = descendant_project_ids
-      explicit_ids = parse_project_id_list(@params[:project_ids])
+      explicit_ids = parse_project_id_list(@params[:canvas_project_ids])
+      explicit_ids = parse_project_id_list(@params[:project_ids]) if explicit_ids.nil?
       return base_ids if explicit_ids.nil?
 
       explicit_ids & base_ids

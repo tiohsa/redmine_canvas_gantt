@@ -23,7 +23,6 @@ import {
     isQueryModified as getIsQueryModified,
     selectSavedQuery,
     setAssigneeOverride,
-    setProjectOverride,
     setStatusOverride,
     setVersionOverride
 } from '../query/queryState';
@@ -217,11 +216,6 @@ const queryContextFromResolvedState = (state?: ResolvedQueryState): QueryContext
             ? { mode: 'subset', values: [...state.selectedAssigneeIds] }
             : { mode: 'all' };
     }
-    if (Array.isArray(state?.selectedProjectIds)) {
-        overrides.project = state.selectedProjectIds.length > 0
-            ? { mode: 'subset', values: [...state.selectedProjectIds] }
-            : { mode: 'none' };
-    }
     if (Array.isArray(state?.selectedVersionIds)) {
         overrides.version = state.selectedVersionIds.length > 0
             ? { mode: 'subset', values: [...state.selectedVersionIds] }
@@ -241,11 +235,6 @@ const standaloneOverridesFromState = (state: TaskState): QueryOverrides => ({
     assignee: state.selectedAssigneeIds.length > 0
         ? { mode: 'subset', values: [...state.selectedAssigneeIds] }
         : { mode: 'all' },
-    project: state.queryContext.overrides.project?.mode === 'none'
-        ? { mode: 'none' }
-        : (state.selectedProjectIds.length > 0
-            ? { mode: 'subset', values: [...state.selectedProjectIds] }
-            : { mode: 'all' }),
     version: state.selectedVersionIds.length > 0
         ? { mode: 'subset', values: [...state.selectedVersionIds] }
         : { mode: 'all' }
@@ -416,6 +405,9 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
     const tasks = data.tasks ?? [];
     const nextResolved: ResolvedQueryState = {
         ...(data.initialState ?? toResolvedQueryStateFromStore(state)),
+        // A Saved Query can define Redmine's project_id filter, but it must not
+        // replace the independent Canvas project scope.
+        canvasProjectIds: data.initialState?.canvasProjectIds ?? data.initialState?.selectedProjectIds ?? state.selectedProjectIds,
         memberProjectsOnly: state.memberProjectsOnly
     };
 
@@ -1310,11 +1302,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     setSelectedProjectIds: (ids) => set((state) => {
         const layout = buildLayoutFromState(state, { selectedProjectIds: ids });
-        const queryContext = setProjectOverride(state.queryContext, ids.length > 0
-            ? { mode: 'subset', values: ids }
-            : { mode: 'none' });
         const nextState = {
-            ...queryContextPatch(queryContext),
             selectedProjectIds: ids,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -1500,8 +1488,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     applySavedQuery: async (queryId) => {
         const { apiClient } = await import('../api/client');
+        const state = get();
+        const preservedGroupBy = state.groupByProject
+            ? 'project'
+            : (state.groupByAssignee ? 'assignee' : null);
         const query: ResolvedQueryState = {
-            queryId
+            queryId,
+            canvasProjectIds: state.selectedProjectIds
         };
         set({
             activeQueryId: queryId,
@@ -1512,6 +1505,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         saveLastUsedSharedQueryState(query);
         const data = await apiClient.fetchData({ query });
         get().applyApiData(data);
+        // Saved Query の group_by で現在の表示グループを意図せず変更しない。
+        if (preservedGroupBy === 'project') {
+            get().setGroupByProject(true);
+        } else if (preservedGroupBy === 'assignee') {
+            get().setGroupByAssignee(true);
+        } else {
+            get().setGroupByProject(false);
+        }
     },
 
     clearSavedQuery: async () => {

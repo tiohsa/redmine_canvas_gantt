@@ -23,7 +23,8 @@ export const syncSharedQueryState = (state: SharedQuerySyncState) => {
     replaceIssueQueryParamsInUrl(resolvedState);
     saveLastUsedSharedQueryProjectState({
         scopeState: {
-            showSubprojects: state.showSubprojects
+            showSubprojects: state.showSubprojects,
+            ...(state.selectedProjectIds.length > 0 ? { canvasProjectIds: [...state.selectedProjectIds] } : {})
         },
         queryContext: {
             ...state.queryContext,

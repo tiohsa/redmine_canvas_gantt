@@ -29,7 +29,7 @@ describe('parseResolvedQueryState', () => {
             queryId: 42,
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
-            selectedProjectIds: ['1'],
+            canvasProjectIds: ['1'],
             visibleColumns: ['subject', 'assignee', 'cf:101'],
             memberProjectsOnly: undefined,
             sortConfig: { key: 'subject', direction: 'desc' },
@@ -61,7 +61,7 @@ describe('parseResolvedQueryState', () => {
             queryId: undefined,
             selectedStatusIds: undefined,
             selectedAssigneeIds: [null, 7],
-            selectedProjectIds: undefined,
+            canvasProjectIds: undefined,
             selectedVersionIds: ['_none'],
             memberProjectsOnly: undefined,
             sortConfig: undefined,
@@ -77,7 +77,7 @@ describe('readIssueQueryParamsFromUrl', () => {
             queryId: undefined,
             selectedStatusIds: [1],
             selectedAssigneeIds: undefined,
-            selectedProjectIds: undefined,
+            canvasProjectIds: undefined,
             selectedVersionIds: undefined,
             memberProjectsOnly: undefined,
             sortConfig: undefined,
@@ -99,7 +99,7 @@ describe('readIssueQueryParamsFromUrl', () => {
             queryId: 7,
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
-            selectedProjectIds: ['3'],
+            canvasProjectIds: undefined,
             selectedVersionIds: ['4'],
             memberProjectsOnly: undefined,
             sortConfig: { key: 'startDate', direction: 'desc' },
@@ -144,13 +144,13 @@ describe('normalizeResolvedQueryState', () => {
             queryId: null,
             selectedStatusIds: [],
             selectedAssigneeIds: [],
-            selectedProjectIds: [],
+            canvasProjectIds: [],
             selectedVersionIds: [],
             sortConfig: { key: 'startDate', direction: 'asc' },
             groupBy: 'project',
             showSubprojects: true
         })).toEqual({
-            selectedProjectIds: []
+            canvasProjectIds: []
         });
     });
 
@@ -169,9 +169,9 @@ describe('normalizeResolvedQueryState', () => {
 
     it('keeps an explicit empty project selection', () => {
         expect(normalizeResolvedQueryState({
-            selectedProjectIds: []
+            canvasProjectIds: []
         })).toEqual({
-            selectedProjectIds: []
+            canvasProjectIds: []
         });
     });
 
@@ -256,10 +256,10 @@ describe('resolveInitialSharedQueryState', () => {
 
     it('uses an explicit empty project selection from storage for a bare Canvas Gantt URL', () => {
         expect(resolveInitialSharedQueryState('', {
-            selectedProjectIds: []
+            canvasProjectIds: []
         })).toEqual({
             state: {
-                selectedProjectIds: []
+                canvasProjectIds: []
             },
             source: 'storage'
         });
@@ -317,7 +317,7 @@ describe('toResolvedQueryStateFromStore', () => {
             queryId: 9,
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
-            selectedProjectIds: ['3'],
+            canvasProjectIds: ['3'],
             selectedVersionIds: ['4'],
             memberProjectsOnly: true,
             sortConfig: { key: 'subject', direction: 'asc' },
@@ -370,7 +370,7 @@ describe('replaceIssueQueryParamsInUrl', () => {
         expect(url.searchParams.get('query_id')).toBe('42');
         expect(url.searchParams.getAll('status_ids[]')).toEqual(['1', '2']);
         expect(url.searchParams.getAll('assigned_to_ids[]')).toEqual(['7']);
-        expect(url.searchParams.getAll('project_ids[]')).toEqual(['3']);
+        expect(url.searchParams.getAll('canvas_project_ids[]')).toEqual(['3']);
         expect(url.searchParams.getAll('fixed_version_ids[]')).toEqual(['4']);
         expect(url.searchParams.get('group_by')).toBe('project');
         expect(url.searchParams.get('sort')).toBe('subject:asc');
@@ -416,13 +416,13 @@ describe('replaceIssueQueryParamsInUrl', () => {
 
         replaceIssueQueryParamsInUrl({
             memberProjectsOnly: true,
-            selectedProjectIds: ['3']
+            canvasProjectIds: ['3']
         });
 
         const url = new URL(window.location.href);
         expect(url.searchParams.get('foo')).toBe('bar');
         expect(url.searchParams.get('member_projects_only')).toBeNull();
-        expect(url.searchParams.getAll('project_ids[]')).toEqual(['3']);
+        expect(url.searchParams.getAll('canvas_project_ids[]')).toEqual(['3']);
     });
 });
 
@@ -486,16 +486,16 @@ describe('query parameter round-trips for special selections', () => {
 
     it('preserves an explicitly empty project selection through URL round-trips', () => {
         const params = buildIssueQueryParams({
-            selectedProjectIds: []
+            canvasProjectIds: []
         });
 
-        expect(params.toString()).toContain('project_ids%5B%5D=none');
+        expect(params.toString()).toContain('canvas_project_ids%5B%5D=none');
 
         expect(readIssueQueryParamsFromUrl(`?${params.toString()}`)).toEqual({
             queryId: undefined,
             selectedStatusIds: undefined,
             selectedAssigneeIds: undefined,
-            selectedProjectIds: [],
+            canvasProjectIds: [],
             selectedVersionIds: undefined,
             memberProjectsOnly: undefined,
             sortConfig: undefined,

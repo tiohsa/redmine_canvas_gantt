@@ -156,14 +156,6 @@ module RedmineCanvasGantt
       if url_filter_values('assigned_to_id').present?
         overrides[:assignee] = subset_override(parse_integer_or_none_list(url_filter_values('assigned_to_id')))
       end
-      if explicit_project_ids_param?
-        project_ids = parse_project_id_list(@params[:project_ids])
-        overrides[:project] = if project_ids&.empty?
-                                { mode: 'none' }
-                              elsif project_ids
-                                subset_override(project_ids.map(&:to_s))
-                              end
-      end
       if url_filter_values('fixed_version_id').present?
         overrides[:version] = subset_override(parse_version_list(url_filter_values('fixed_version_id')))
       end
@@ -256,7 +248,6 @@ module RedmineCanvasGantt
     def query_filter_keys_to_exclude
       keys = URL_OVERRIDE_FILTERS.select { |name| url_filter_values(name).present? }
       keys.concat(supported_standard_filter_fields)
-      keys << 'project_id' if explicit_project_ids_param?
       keys << 'subproject_id' if @params.key?(:show_subprojects)
       keys.uniq
     end
@@ -267,7 +258,6 @@ module RedmineCanvasGantt
       query_state = {
         selected_status_ids: extract_filter_ids(filters['status_id']),
         selected_assignee_ids: extract_filter_ids(filters['assigned_to_id'], allow_none: true),
-        selected_project_ids: extract_filter_ids(filters['project_id']).map(&:to_s),
         selected_version_ids: extract_filter_ids(filters['fixed_version_id'], allow_none: true).map { |id| id.nil? ? '_none' : id.to_s },
         sort_config: extract_sort_config(query) || DEFAULT_STATE[:sort_config].deep_dup,
         group_by_project: query.group_by.to_s == 'project',
@@ -391,7 +381,7 @@ module RedmineCanvasGantt
     end
 
     def apply_project_override!(state)
-      return unless explicit_project_ids_param?
+      return unless explicit_canvas_project_ids_param?
 
       project_ids = resolve_selected_project_ids(nil)
       state[:selected_project_ids] = project_ids.map(&:to_s)
@@ -444,7 +434,7 @@ module RedmineCanvasGantt
         when 'assigned_to_id'
           apply_standard_assignee_filter!(state, operator, values)
         when 'project_id'
-          state[:selected_project_ids] = (operator == '*' ? [] : parse_string_list(values))
+          @redmine_project_ids = operator == '=' ? parse_string_list(values) : nil
         when 'fixed_version_id'
           state[:selected_version_ids] = (operator == '*' ? [] : parse_version_list(values))
         when 'subproject_id'
@@ -500,6 +490,7 @@ module RedmineCanvasGantt
 
     def issues_scope_for(base_issue_ids:, project_ids:, selected_project_ids:, state:)
       scope = @issue_scope.where(project_id: project_scope_ids(project_ids, selected_project_ids))
+      scope = scope.where(project_id: @redmine_project_ids) if @redmine_project_ids.present?
       scope = scope.where(id: base_issue_ids) if base_issue_ids
       scope = scope.where(status_id: state[:selected_status_ids]) if state[:selected_status_ids].present?
       scope = apply_version_filter(scope, state[:selected_version_ids]) if state[:selected_version_ids].present?
@@ -508,7 +499,7 @@ module RedmineCanvasGantt
     end
 
     def project_scope_ids(project_ids, selected_project_ids)
-      return selected_project_ids if explicit_project_ids_param?
+      return selected_project_ids if explicit_canvas_project_ids_param?
 
       selected_project_ids.presence || project_ids
     end
@@ -571,7 +562,8 @@ module RedmineCanvasGantt
     end
 
     def resolve_selected_project_ids(fallback_project_ids)
-      project_ids = parse_project_id_list(@params[:project_ids])
+      project_ids = parse_project_id_list(@params[:canvas_project_ids])
+      project_ids = parse_project_id_list(@params[:project_ids]) if project_ids.nil?
       return project_ids unless project_ids.nil?
 
       show_subprojects = resolve_show_subprojects
@@ -691,8 +683,9 @@ module RedmineCanvasGantt
       Array(@params[name] || @params[plural] || @params["#{plural}[]"])
     end
 
-    def explicit_project_ids_param?
-      @params[:project_ids].present?
+    def explicit_canvas_project_ids_param?
+      @params.key?(:canvas_project_ids) || @params.key?('canvas_project_ids') ||
+        @params.key?(:project_ids) || @params.key?('project_ids')
     end
 
     def split_list_values(values)

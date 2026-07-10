@@ -32,7 +32,11 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     instance_double(
       IssueQuery,
       id: nil,
-      filters: { 'status_id' => { operator: '=', values: %w[1 2] }, 'assigned_to_id' => { operator: '=', values: ['7'] } },
+      filters: {
+        'status_id' => { operator: '=', values: %w[1 2] },
+        'assigned_to_id' => { operator: '=', values: ['7'] },
+        'project_id' => { operator: '=', values: ['1'] }
+      },
       sort_criteria: [['subject', 'desc']],
       group_by: 'assigned_to',
       issue_ids: [12, 10]
@@ -73,9 +77,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     )
     expect(result[:query_context]).to eq(
       query_id: 42,
-      explicit_overrides: {
-        project: { mode: 'subset', values: ['9'] }
-      }
+      explicit_overrides: {}
     )
   end
 
@@ -114,9 +116,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     expect(result[:initial_state][:query_id]).to be_nil
     expect(result[:query_context]).to eq(
       query_id: nil,
-      explicit_overrides: {
-        project: { mode: 'subset', values: ['9'] }
-      }
+      explicit_overrides: {}
     )
   end
 
@@ -160,7 +160,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     expect(result[:initial_state]).to include(
       selected_status_ids: [1, 2],
       selected_assignee_ids: [7, nil],
-      selected_project_ids: ['9'],
+      selected_project_ids: ['1', '2'],
       selected_version_ids: ['11'],
       member_projects_only: false,
       show_subprojects: false,
@@ -180,8 +180,8 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     expect(result[:warnings]).to include('Ignored unsupported field tracker_id')
   end
 
-  it 'splits comma and pipe separated project ids from url params' do
-    params = ActionController::Parameters.new(project_ids: ['9|10', '11,12', '12'])
+  it 'splits comma and pipe separated Canvas project ids from url params' do
+    params = ActionController::Parameters.new(canvas_project_ids: ['9|10', '11,12', '12'])
 
     resolver = described_class.new(
       project: project,
@@ -196,8 +196,8 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     expect(result[:initial_state][:selected_project_ids]).to eq(%w[9 10 11 12])
   end
 
-  it 'treats project none as an explicit empty project selection without falling back to project scope' do
-    params = ActionController::Parameters.new(project_ids: ['none'])
+  it 'treats Canvas project none as an explicit empty project selection without falling back to project scope' do
+    params = ActionController::Parameters.new(canvas_project_ids: ['none'])
     expect(issue_scope).to receive(:where).with(project_id: []).and_return(issue_scope)
 
     resolver = described_class.new(
@@ -211,9 +211,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     result = resolver.resolve(project_ids: [1, 2])
 
     expect(result[:initial_state][:selected_project_ids]).to eq([])
-    expect(result[:query_context][:explicit_overrides]).to include(
-      project: { mode: 'none' }
-    )
+    expect(result[:query_context][:explicit_overrides]).to be_empty
   end
 
   it 'preserves unassigned assignee selections from saved queries' do

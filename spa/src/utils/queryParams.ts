@@ -5,6 +5,7 @@ import { i18n } from './i18n';
 
 export interface ResolvedQueryState {
     queryId?: number | null;
+    canvasProjectIds?: string[];
     selectedStatusIds?: number[];
     selectedAssigneeIds?: (number | null)[];
     selectedProjectIds?: string[];
@@ -160,13 +161,6 @@ const parseStandardQueryState = (params: URLSearchParams): Partial<ResolvedQuery
                     standardState.selectedAssigneeIds = [null];
                 }
                 break;
-            case 'project_id':
-                if (operator === '=') {
-                    standardState.selectedProjectIds = parseStringTokens(values);
-                } else if (operator === '*') {
-                    standardState.selectedProjectIds = [];
-                }
-                break;
             case 'fixed_version_id':
                 if (operator === '=') {
                     standardState.selectedVersionIds = parseStringTokens(values).flatMap((value) => {
@@ -200,7 +194,7 @@ const parseAssigneeList = (params: URLSearchParams): (number | null)[] | undefin
 };
 
 const parseProjectList = (params: URLSearchParams): string[] | undefined => {
-    const values = parseStringList(params, ['project_ids[]', 'project_ids']);
+    const values = parseStringList(params, ['canvas_project_ids[]', 'canvas_project_ids', 'project_ids[]', 'project_ids']);
     if (!values) return undefined;
     if (values.every((value) => value === 'none' || value === '_none')) return [];
     return values.filter((value) => value !== 'none' && value !== '_none');
@@ -231,6 +225,8 @@ const CONTROLLED_KEYS = [
     'assigned_to_id',
     'project_ids[]',
     'project_ids',
+    'canvas_project_ids[]',
+    'canvas_project_ids',
     'fixed_version_ids[]',
     'fixed_version_ids',
     'fixed_version_id[]',
@@ -266,7 +262,7 @@ export const toBusinessQueryState = (state: Partial<ResolvedQueryState> = {}): B
     queryId: state.queryId ?? null,
     selectedStatusIds: state.selectedStatusIds ?? [],
     selectedAssigneeIds: state.selectedAssigneeIds ?? [],
-    selectedProjectIds: state.selectedProjectIds ?? [],
+    selectedProjectIds: state.canvasProjectIds ?? state.selectedProjectIds ?? [],
     selectedVersionIds: state.selectedVersionIds ?? [],
     memberProjectsOnly: state.memberProjectsOnly ?? false,
     sortConfig: state.sortConfig ?? null,
@@ -287,7 +283,7 @@ export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>)
         normalized.selectedStatusIds = [...state.selectedStatusIds];
     }
     if (state.selectedAssigneeIds?.length) normalized.selectedAssigneeIds = [...state.selectedAssigneeIds];
-    if (Array.isArray(state.selectedProjectIds)) normalized.selectedProjectIds = [...state.selectedProjectIds];
+    if (Array.isArray(state.canvasProjectIds)) normalized.canvasProjectIds = [...state.canvasProjectIds];
     if (state.selectedVersionIds?.length) normalized.selectedVersionIds = [...state.selectedVersionIds];
     if (state.sortConfig?.key && !(state.sortConfig.key === DEFAULT_SORT_KEY && state.sortConfig.direction === DEFAULT_SORT_DIRECTION)) {
         normalized.sortConfig = { ...state.sortConfig };
@@ -310,7 +306,7 @@ export const hasSharedQueryStateInUrl = (search: string = window.location.search
     if (params.has('group_by') || params.has('sort') || params.has('show_subprojects')) return true;
     if (hasValueForAnyParam(params, ['status_ids[]', 'status_ids', 'status_id[]', 'status_id'])) return true;
     if (hasValueForAnyParam(params, ['assigned_to_ids[]', 'assigned_to_ids', 'assigned_to_id[]', 'assigned_to_id'])) return true;
-    if (hasValueForAnyParam(params, ['project_ids[]', 'project_ids'])) return true;
+    if (hasValueForAnyParam(params, ['canvas_project_ids[]', 'canvas_project_ids', 'project_ids[]', 'project_ids'])) return true;
     if (hasValueForAnyParam(params, ['fixed_version_ids[]', 'fixed_version_ids', 'fixed_version_id[]', 'fixed_version_id'])) return true;
     if (hasValueForAnyParam(params, ['c[]', 'c'])) return true;
 
@@ -322,7 +318,7 @@ export const toResolvedQueryStateFromStore = (state: QueryUrlStateSource): Resol
     queryId: state.activeQueryId ?? undefined,
     selectedStatusIds: state.selectedStatusIds,
     selectedAssigneeIds: state.selectedAssigneeIds,
-    selectedProjectIds: state.selectedProjectIds,
+    canvasProjectIds: state.selectedProjectIds,
     selectedVersionIds: state.selectedVersionIds,
     memberProjectsOnly: state.memberProjectsOnly,
     sortConfig: state.sortConfig ?? undefined,
@@ -342,7 +338,7 @@ export const readIssueQueryParamsFromUrl = (search: string = window.location.sea
         queryId: isPersistedQueryId(parsedQueryId) ? parsedQueryId : undefined,
         selectedStatusIds: standardState.selectedStatusIds ?? parseIntegerList(params, ['status_ids[]', 'status_ids', 'status_id[]', 'status_id']),
         selectedAssigneeIds: standardState.selectedAssigneeIds ?? parseAssigneeList(params),
-        selectedProjectIds: standardState.selectedProjectIds ?? parseProjectList(params),
+        canvasProjectIds: parseProjectList(params),
         selectedVersionIds: standardState.selectedVersionIds ?? parseVersionList(params),
         memberProjectsOnly: undefined,
         sortConfig: parseSortConfig(params.get('sort')),
@@ -392,10 +388,10 @@ export const buildIssueQueryParams = (
         appendStandardFilter(params, 'status_id', '*');
     }
     businessState.selectedAssigneeIds.forEach((id) => params.append('assigned_to_ids[]', id === null ? 'none' : String(id)));
-    if (state.selectedProjectIds !== undefined && businessState.selectedProjectIds.length === 0) {
-        params.append('project_ids[]', 'none');
+    if (state.canvasProjectIds !== undefined && businessState.selectedProjectIds.length === 0) {
+        params.append('canvas_project_ids[]', 'none');
     } else {
-        businessState.selectedProjectIds.forEach((id) => params.append('project_ids[]', id));
+        businessState.selectedProjectIds.forEach((id) => params.append('canvas_project_ids[]', id));
     }
     businessState.selectedVersionIds.forEach((id) => params.append('fixed_version_ids[]', id === '_none' ? 'none' : id));
     if (includeMemberProjectsOnly && state.memberProjectsOnly === true) params.set('member_projects_only', '1');
@@ -516,11 +512,6 @@ export const queryContextFromResolvedQueryState = (state?: Partial<ResolvedQuery
             ? { mode: 'subset', values: [...state.selectedAssigneeIds] }
             : { mode: 'all' };
     }
-    if (Array.isArray(state?.selectedProjectIds)) {
-        overrides.project = state.selectedProjectIds.length > 0
-            ? { mode: 'subset', values: [...state.selectedProjectIds] }
-            : { mode: 'none' };
-    }
     if (Array.isArray(state?.selectedVersionIds)) {
         overrides.version = state.selectedVersionIds.length > 0
             ? { mode: 'subset', values: [...state.selectedVersionIds] }
@@ -545,11 +536,6 @@ export const resolvedQueryStateFromQueryContext = (queryContext?: QueryContext):
     }
     if (overrides.assignee) {
         state.selectedAssigneeIds = overrides.assignee.mode === 'subset' ? [...overrides.assignee.values] : [];
-    }
-    if (overrides.project) {
-        state.selectedProjectIds = overrides.project.mode === 'subset'
-            ? [...overrides.project.values]
-            : (overrides.project.mode === 'none' ? [] : undefined);
     }
     if (overrides.version) {
         state.selectedVersionIds = overrides.version.mode === 'subset' ? [...overrides.version.values] : [];
@@ -603,7 +589,7 @@ export const parseResolvedQueryState = (value: unknown): ResolvedQueryState | un
                 return Number.isFinite(parsed) ? [parsed] : [];
             })))
             : undefined,
-        selectedProjectIds: Array.isArray(record.selected_project_ids)
+        canvasProjectIds: Array.isArray(record.selected_project_ids)
             ? record.selected_project_ids.map((entry) => String(entry))
             : undefined,
         selectedVersionIds: Array.isArray(record.selected_version_ids)

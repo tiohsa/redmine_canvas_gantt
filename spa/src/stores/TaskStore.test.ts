@@ -233,7 +233,7 @@ describe('TaskStore shared query persistence', () => {
         });
     });
 
-    it('applySavedQuery clears previous manual overrides when selecting a saved query', async () => {
+    it('applySavedQuery replaces Redmine query overrides while preserving Canvas project scope', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [],
             relations: [],
@@ -245,7 +245,7 @@ describe('TaskStore shared query persistence', () => {
             permissions: { editable: true, viewable: true, baselineEditable: true },
             initialState: {
                 queryId: 12,
-                groupBy: 'project'
+                groupBy: null
             }
         });
 
@@ -263,7 +263,8 @@ describe('TaskStore shared query persistence', () => {
 
         expect(apiClient.fetchData).toHaveBeenCalledWith({
             query: {
-                queryId: 12
+                queryId: 12,
+                canvasProjectIds: []
             }
         });
         expect(useTaskStore.getState().activeQueryId).toBe(12);
@@ -311,7 +312,7 @@ describe('TaskStore shared query persistence', () => {
         });
     });
 
-    it('applySavedQuery sends only the saved query id when grouping was not explicitly overridden', async () => {
+    it('applySavedQuery sends the saved query with the independent Canvas project scope', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [],
             relations: [],
@@ -337,7 +338,8 @@ describe('TaskStore shared query persistence', () => {
 
         expect(apiClient.fetchData).toHaveBeenCalledWith({
             query: {
-                queryId: 12
+                queryId: 12,
+                canvasProjectIds: ['p1']
             }
         });
         expect(useTaskStore.getState().activeQueryId).toBe(12);
@@ -345,7 +347,8 @@ describe('TaskStore shared query persistence', () => {
         expect(loadLastUsedSharedQueryState(1)).toEqual({
             queryId: 12,
             selectedStatusIds: [3],
-            groupBy: null
+            groupBy: 'project',
+            canvasProjectIds: ['p1']
         });
     });
 
@@ -364,7 +367,7 @@ describe('TaskStore shared query persistence', () => {
             permissions: { editable: true, viewable: true, baselineEditable: true },
             initialState: {
                 memberProjectsOnly: true,
-                selectedProjectIds: ['p1', 'p2']
+                canvasProjectIds: ['p1', 'p2']
             }
         });
 
@@ -374,7 +377,7 @@ describe('TaskStore shared query persistence', () => {
         expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
         expect(loadLastUsedSharedQueryState(1)).toEqual({
             groupBy: null,
-            selectedProjectIds: ['p1', 'p2']
+            canvasProjectIds: ['p1', 'p2']
         });
     });
 });

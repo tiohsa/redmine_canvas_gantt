@@ -14,6 +14,7 @@ export type PersistedSharedViewState = Partial<SharedViewState>;
 export interface SharedQueryProjectStateV3 {
     scopeState: {
         showSubprojects: boolean;
+        canvasProjectIds?: string[];
     };
     queryContext: QueryContext;
     sharedViewState: PersistedSharedViewState;
@@ -161,11 +162,6 @@ export const queryContextFromResolvedQueryState = (state?: Partial<ResolvedQuery
             ? { mode: 'subset', values: [...state.selectedAssigneeIds] }
             : { mode: 'all' };
     }
-    if (Array.isArray(state?.selectedProjectIds)) {
-        overrides.project = state.selectedProjectIds.length > 0
-            ? { mode: 'subset', values: [...state.selectedProjectIds] }
-            : { mode: 'none' };
-    }
     if (Array.isArray(state?.selectedVersionIds)) {
         overrides.version = state.selectedVersionIds.length > 0
             ? { mode: 'subset', values: [...state.selectedVersionIds] }
@@ -214,12 +210,10 @@ export const resolvedQueryStateFromProjectState = (
 
     const selectedStatusIds = applyOverrideToResolved(context.overrides.status);
     const selectedAssigneeIds = applyOverrideToResolved(context.overrides.assignee);
-    const selectedProjectIds = applyOverrideToResolved(context.overrides.project);
     const selectedVersionIds = applyOverrideToResolved(context.overrides.version);
 
     if (selectedStatusIds !== undefined) state.selectedStatusIds = selectedStatusIds;
     if (selectedAssigneeIds !== undefined) state.selectedAssigneeIds = selectedAssigneeIds;
-    if (selectedProjectIds !== undefined) state.selectedProjectIds = selectedProjectIds;
     if (selectedVersionIds !== undefined) state.selectedVersionIds = selectedVersionIds;
     if (viewState.sortConfig) state.sortConfig = viewState.sortConfig;
     if (viewState.groupBy !== undefined) state.groupBy = viewState.groupBy;
@@ -227,6 +221,9 @@ export const resolvedQueryStateFromProjectState = (
 
     if (projectState.scopeState?.showSubprojects === false) {
         state.showSubprojects = false;
+    }
+    if (Array.isArray(projectState.scopeState?.canvasProjectIds)) {
+        state.canvasProjectIds = [...projectState.scopeState.canvasProjectIds];
     }
 
     return state;
@@ -241,7 +238,7 @@ const normalizeForSharedProjectState = (state: Partial<ResolvedQueryState>): Par
         normalized.selectedStatusIds = [...state.selectedStatusIds];
     }
     if (state.selectedAssigneeIds?.length) normalized.selectedAssigneeIds = [...state.selectedAssigneeIds];
-    if (Array.isArray(state.selectedProjectIds)) normalized.selectedProjectIds = [...state.selectedProjectIds];
+    if (Array.isArray(state.canvasProjectIds)) normalized.canvasProjectIds = [...state.canvasProjectIds];
     if (state.selectedVersionIds?.length) normalized.selectedVersionIds = [...state.selectedVersionIds];
     if (state.groupBy === 'project' && hasPersistedQueryId) normalized.groupBy = 'project';
     if (state.groupBy === 'assignee') normalized.groupBy = 'assignee';
@@ -269,7 +266,8 @@ export const projectStateFromResolvedQueryState = (
 
     return {
         scopeState: {
-            showSubprojects
+            showSubprojects,
+            ...(Array.isArray(state.canvasProjectIds) ? { canvasProjectIds: [...state.canvasProjectIds] } : {})
         },
         queryContext,
         sharedViewState
@@ -278,7 +276,8 @@ export const projectStateFromResolvedQueryState = (
 
 export const cloneProjectState = (state: SharedQueryProjectStateV3): SharedQueryProjectStateV3 => ({
     scopeState: {
-        showSubprojects: state.scopeState.showSubprojects
+        showSubprojects: state.scopeState.showSubprojects,
+        ...(state.scopeState.canvasProjectIds ? { canvasProjectIds: [...state.scopeState.canvasProjectIds] } : {})
     },
     queryContext: {
         baseQueryId: state.queryContext.baseQueryId,
