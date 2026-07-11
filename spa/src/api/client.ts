@@ -451,7 +451,7 @@ export const apiClient = {
         return queries.map(parseSavedQuery).filter((entry): entry is SavedQuery => entry !== null);
     },
 
-    fetchData: async (params?: { query?: ResolvedQueryState; rawSearch?: string }): Promise<ApiData> => {
+    fetchData: async (params?: { query?: ResolvedQueryState; queryContext?: QueryContext; rawSearch?: string }): Promise<ApiData> => {
         const config = getConfig();
 
         const parseDate = (value: string | null | undefined): number | null => {
@@ -462,7 +462,7 @@ export const apiClient = {
 
         const qs = params?.rawSearch
             ? params.rawSearch.replace(/^\?/, '')
-            : buildIssueQueryParams(params?.query ?? {}).toString();
+            : buildIssueQueryParams(params?.query ?? {}, { queryContext: params?.queryContext }).toString();
         const url = new URL(`${config.apiBase}/data.json` + (qs ? `?${qs}` : ''), window.location.origin).toString();
 
         const response = await fetch(url, {

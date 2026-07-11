@@ -48,7 +48,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
         applySavedQuery: applySavedQueryFromStore,
         clearSavedQuery: clearSavedQueryFromStore,
-        savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries
+        savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries, queryContext
     } = useTaskStore();
     const {
         showProgressLine,
@@ -305,7 +305,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             showSubprojects,
             visibleColumns
         });
-        const { params, notices } = buildRedmineIssueQueryParams(queryState);
+        const queryContextForPath = {
+            ...queryContext,
+            baseQueryId: includeActiveQueryId ? queryContext.baseQueryId : null
+        };
+        const { params, notices } = buildRedmineIssueQueryParams(queryState, { queryContext: queryContextForPath });
         notices.forEach((notice) => useUIStore.getState().addNotification(notice, 'warning'));
         const query = params.toString();
         return `${issueListPath ?? `/projects/${projectId}/issues`}${query ? `?${query}` : ''}`;

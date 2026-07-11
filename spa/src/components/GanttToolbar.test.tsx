@@ -648,6 +648,14 @@ describe('GanttToolbar shortcuts', () => {
             selectedProjectIds: ['3'],
             projectSelectionExplicit: true,
             selectedVersionIds: ['4'],
+            queryContext: {
+                baseQueryId: 12,
+                overrides: {
+                    status: { mode: 'subset', values: [1, 2] },
+                    assignee: { mode: 'subset', values: [7] },
+                    version: { mode: 'subset', values: ['4'] }
+                }
+            },
             sortConfig: { key: 'startDate', direction: 'desc' },
             groupByProject: false,
             groupByAssignee: true,
@@ -679,6 +687,14 @@ describe('GanttToolbar shortcuts', () => {
             selectedProjectIds: ['3'],
             projectSelectionExplicit: true,
             selectedVersionIds: ['4'],
+            queryContext: {
+                baseQueryId: 12,
+                overrides: {
+                    status: { mode: 'subset', values: [1, 2] },
+                    assignee: { mode: 'subset', values: [7] },
+                    version: { mode: 'subset', values: ['4'] }
+                }
+            },
             sortConfig: { key: 'startDate', direction: 'desc' },
             groupByProject: false,
             groupByAssignee: true,

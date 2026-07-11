@@ -38,7 +38,6 @@ import {
     toResolvedQueryStateFromStore,
     type ResolvedQueryState
 } from '../utils/queryParams';
-import { saveLastUsedSharedQueryState } from '../utils/sharedQueryState';
 
 type DerivedSchedulingSummary = {
     schedulingStates: Record<string, SchedulingStateInfo>;
@@ -1471,7 +1470,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const { apiClient } = await import('../api/client');
         const state = get();
         const data = await apiClient.fetchData({
-            query: toResolvedQueryStateFromStore(state)
+            query: toResolvedQueryStateFromStore(state),
+            queryContext: state.queryContext
         });
         if (!data) return;
         get().applyApiData(data);
@@ -1501,6 +1501,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     applySavedQuery: async (queryId) => {
         const { apiClient } = await import('../api/client');
         const state = get();
+        const queryContext = selectSavedQuery(queryId);
         const query: ResolvedQueryState = {
             queryId,
             ...(state.projectSelectionExplicit ? { canvasProjectIds: state.selectedProjectIds } : {}),
@@ -1509,11 +1510,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         set({
             activeQueryId: queryId,
             explicitGroupByOverride: undefined,
-            ...queryContextPatch(selectSavedQuery(queryId))
+            ...queryContextPatch(queryContext)
         });
-        replaceIssueQueryParamsInUrl(query);
-        saveLastUsedSharedQueryState(query);
-        const data = await apiClient.fetchData({ query });
+        replaceIssueQueryParamsInUrl(query, queryContext);
+        syncSharedQueryState({ ...get(), activeQueryId: queryId });
+        const data = await apiClient.fetchData({ query, queryContext });
         get().applyApiData(data);
     },
 

@@ -78,6 +78,14 @@ describe('useInitialGanttData persistence', () => {
                     selectedVersionIds: ['_none', 'v2'],
                     groupBy: 'assignee',
                     showSubprojects: false
+                },
+                queryContext: {
+                    baseQueryId: null,
+                    overrides: {
+                        status: { mode: 'subset', values: [1, 2] },
+                        assignee: { mode: 'subset', values: [null, 7] },
+                        version: { mode: 'subset', values: ['_none', 'v2'] }
+                    }
                 }
             });
         });
@@ -113,7 +121,8 @@ describe('useInitialGanttData persistence', () => {
                 rawSearch: undefined,
                 query: {
                     canvasProjectIds: []
-                }
+                },
+                queryContext: { baseQueryId: null, overrides: {} }
             });
         });
 
@@ -165,7 +174,8 @@ describe('useInitialGanttData persistence', () => {
                 query: {
                     queryId: 12,
                     groupBy: 'project'
-                }
+                },
+                queryContext: { baseQueryId: 12, overrides: {} }
             });
         });
 
@@ -185,7 +195,8 @@ describe('useInitialGanttData persistence', () => {
         expect(fetchDataMock).toHaveBeenCalledWith({
             query: {
                 queryId: 18
-            }
+            },
+            queryContext: { baseQueryId: 18, overrides: {} }
         });
     });
 
@@ -201,7 +212,8 @@ describe('useInitialGanttData persistence', () => {
                 rawSearch: undefined,
                 query: {
                     queryId: 12
-                }
+                },
+                queryContext: { baseQueryId: 12, overrides: {} }
             });
         });
 
@@ -211,7 +223,8 @@ describe('useInitialGanttData persistence', () => {
         expect(fetchDataMock).toHaveBeenCalledWith({
             query: {
                 queryId: 18
-            }
+            },
+            queryContext: { baseQueryId: 18, overrides: {} }
         });
     });
 
@@ -227,7 +240,8 @@ describe('useInitialGanttData persistence', () => {
                 rawSearch: undefined,
                 query: {
                     groupBy: null
-                }
+                },
+                queryContext: { baseQueryId: null, overrides: {} }
             });
         });
 

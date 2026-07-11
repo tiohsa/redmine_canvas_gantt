@@ -1,5 +1,6 @@
 import type { BusinessQueryState } from '../types';
 import type { QueryContext, QueryOverrides, SharedViewState } from '../query/types';
+import { buildQueryParamsFromQueryContext } from '../query/queryStateCodec';
 import { toCanvasColumnKey, toRedmineColumnName } from '../components/sidebar/sidebarColumnCatalog';
 import { i18n } from './i18n';
 
@@ -371,6 +372,7 @@ export const resolveInitialSharedQueryState = (
 
 type BuildIssueQueryParamsOptions = {
     includeMemberProjectsOnly?: boolean;
+    queryContext?: QueryContext;
 };
 
 export const buildIssueQueryParams = (
@@ -383,20 +385,24 @@ export const buildIssueQueryParams = (
     const hasExplicitStatusSelection = Array.isArray(state.selectedStatusIds);
     const includeMemberProjectsOnly = options.includeMemberProjectsOnly ?? true;
 
-    if (hasPersistedQueryId) params.set('query_id', String(businessState.queryId));
-    if (businessState.selectedStatusIds.length > 0) {
-        businessState.selectedStatusIds.forEach((id) => params.append('status_ids[]', String(id)));
-    } else if (hasPersistedQueryId && hasExplicitStatusSelection) {
-        params.set('set_filter', '1');
-        appendStandardFilter(params, 'status_id', '*');
+    if (options.queryContext) {
+        buildQueryParamsFromQueryContext(options.queryContext).forEach((value, key) => params.append(key, value));
+    } else {
+        if (hasPersistedQueryId) params.set('query_id', String(businessState.queryId));
+        if (businessState.selectedStatusIds.length > 0) {
+            businessState.selectedStatusIds.forEach((id) => params.append('status_ids[]', String(id)));
+        } else if (hasPersistedQueryId && hasExplicitStatusSelection) {
+            params.set('set_filter', '1');
+            appendStandardFilter(params, 'status_id', '*');
+        }
+        businessState.selectedAssigneeIds.forEach((id) => params.append('assigned_to_ids[]', id === null ? 'none' : String(id)));
+        businessState.selectedVersionIds.forEach((id) => params.append('fixed_version_ids[]', id === '_none' ? 'none' : id));
     }
-    businessState.selectedAssigneeIds.forEach((id) => params.append('assigned_to_ids[]', id === null ? 'none' : String(id)));
     if (state.canvasProjectIds !== undefined && businessState.selectedProjectIds.length === 0) {
         params.append('canvas_project_ids[]', 'none');
     } else {
         businessState.selectedProjectIds.forEach((id) => params.append('canvas_project_ids[]', id));
     }
-    businessState.selectedVersionIds.forEach((id) => params.append('fixed_version_ids[]', id === '_none' ? 'none' : id));
     if (includeMemberProjectsOnly && state.memberProjectsOnly === true) params.set('member_projects_only', '1');
     if (state.groupBy === 'project') params.set('group_by', 'project');
     if (state.groupBy === 'assignee') params.set('group_by', 'assigned_to');
@@ -412,23 +418,46 @@ export const buildIssueQueryParams = (
 };
 
 export const buildRedmineIssueQueryParams = (
-    state: Partial<ResolvedQueryState>
+    state: Partial<ResolvedQueryState>,
+    options: { queryContext?: QueryContext } = {}
 ): { params: URLSearchParams; notices: string[] } => {
     const params = new URLSearchParams();
     const businessState = toBusinessQueryState(state);
+    const queryContextFilterState = options.queryContext
+        ? {
+            selectedStatusIds: options.queryContext.overrides.status?.mode === 'subset'
+                ? options.queryContext.overrides.status.values
+                : [],
+            selectedAssigneeIds: options.queryContext.overrides.assignee?.mode === 'subset'
+                ? options.queryContext.overrides.assignee.values
+                : [],
+            selectedVersionIds: options.queryContext.overrides.version?.mode === 'subset'
+                ? options.queryContext.overrides.version.values
+                : []
+        }
+        : businessState;
     const notices: string[] = [];
     let hasStandardFilters = false;
 
-    if (isPersistedQueryId(businessState.queryId)) params.set('query_id', String(businessState.queryId));
+    if (options.queryContext) {
+        const contextParams = buildQueryParamsFromQueryContext(options.queryContext);
+        contextParams.forEach((value, key) => {
+            if (!['status_ids[]', 'assigned_to_ids[]', 'fixed_version_ids[]'].includes(key)) {
+                params.append(key, value);
+            }
+        });
+    } else if (isPersistedQueryId(businessState.queryId)) {
+        params.set('query_id', String(businessState.queryId));
+    }
 
-    if (businessState.selectedStatusIds.length > 0) {
-        appendStandardFilter(params, 'status_id', '=', businessState.selectedStatusIds.map(String));
+    if (queryContextFilterState.selectedStatusIds.length > 0) {
+        appendStandardFilter(params, 'status_id', '=', queryContextFilterState.selectedStatusIds.map(String));
         hasStandardFilters = true;
     }
 
-    if (businessState.selectedAssigneeIds.length > 0) {
-        const numericIds = businessState.selectedAssigneeIds.filter((id): id is number => id !== null).map(String);
-        const includesNone = businessState.selectedAssigneeIds.includes(null);
+    if (queryContextFilterState.selectedAssigneeIds.length > 0) {
+        const numericIds = queryContextFilterState.selectedAssigneeIds.filter((id): id is number => id !== null).map(String);
+        const includesNone = queryContextFilterState.selectedAssigneeIds.includes(null);
 
         if (includesNone && numericIds.length > 0) {
             notices.push(i18n.t('notice_unassigned_filter_omitted_in_redmine_url') || 'Unassigned assignee filter was omitted because Redmine URL export cannot combine it with specific assignees.');
@@ -448,10 +477,10 @@ export const buildRedmineIssueQueryParams = (
         hasStandardFilters = true;
     }
 
-    if (businessState.selectedVersionIds.length > 0) {
-        const numericVersionIds = businessState.selectedVersionIds.filter((id) => id !== '_none');
+    if (queryContextFilterState.selectedVersionIds.length > 0) {
+        const numericVersionIds = queryContextFilterState.selectedVersionIds.filter((id) => id !== '_none');
 
-        if (numericVersionIds.length !== businessState.selectedVersionIds.length) {
+        if (numericVersionIds.length !== queryContextFilterState.selectedVersionIds.length) {
             notices.push(i18n.t('notice_no_version_filter_omitted_in_redmine_url') || 'No-version filter was omitted because Redmine URL export only supports explicit version IDs.');
         }
 
@@ -488,14 +517,14 @@ export const buildRedmineIssueQueryParams = (
     return { params, notices };
 };
 
-export const replaceIssueQueryParamsInUrl = (state: ResolvedQueryState): void => {
+export const replaceIssueQueryParamsInUrl = (state: ResolvedQueryState, queryContext?: QueryContext): void => {
     const params = new URLSearchParams(window.location.search);
     Array.from(params.keys()).forEach((key) => {
         if (CONTROLLED_KEYS.includes(key as typeof CONTROLLED_KEYS[number]) || isControlledDynamicKey(key)) {
             params.delete(key);
         }
     });
-    const nextParams = buildIssueQueryParams(state, { includeMemberProjectsOnly: false });
+    const nextParams = buildIssueQueryParams(state, { includeMemberProjectsOnly: false, queryContext });
     nextParams.forEach((value, key) => params.append(key, value));
     const nextSearch = params.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;

@@ -11,6 +11,7 @@ import {
     toBusinessQueryState,
     toResolvedQueryStateFromStore
 } from './queryParams';
+import type { QueryContext } from '../query/types';
 
 describe('parseResolvedQueryState', () => {
     it('accepts backend boolean grouping payload', () => {
@@ -457,6 +458,52 @@ describe('replaceIssueQueryParamsInUrl', () => {
 });
 
 describe('query parameter round-trips for special selections', () => {
+    it('uses QueryContext overrides for all three saved-query filter clears', () => {
+        const queryContext: QueryContext = {
+            baseQueryId: 12,
+            overrides: {
+                status: { mode: 'all' },
+                assignee: { mode: 'all' },
+                version: { mode: 'all' }
+            }
+        };
+        const params = buildIssueQueryParams({ queryId: 12 }, { queryContext });
+
+        expect(params.get('query_id')).toBe('12');
+        expect(params.get('set_filter')).toBe('1');
+        expect(params.getAll('f[]')).toEqual(['status_id', 'assigned_to_id', 'fixed_version_id']);
+        expect(params.get('op[status_id]')).toBe('*');
+        expect(params.get('op[assigned_to_id]')).toBe('*');
+        expect(params.get('op[fixed_version_id]')).toBe('*');
+    });
+
+    it('does not emit all operators without a saved query', () => {
+        const params = buildIssueQueryParams({}, {
+            queryContext: {
+                baseQueryId: null,
+                overrides: {
+                    status: { mode: 'all' },
+                    assignee: { mode: 'all' },
+                    version: { mode: 'all' }
+                }
+            }
+        });
+
+        expect(params.get('set_filter')).toBeNull();
+        expect(params.getAll('f[]')).toEqual([]);
+    });
+
+    it('uses QueryContext subsets instead of ResolvedQueryState filter arrays', () => {
+        const params = buildIssueQueryParams({ selectedAssigneeIds: [] }, {
+            queryContext: {
+                baseQueryId: 12,
+                overrides: { assignee: { mode: 'subset', values: [7] } }
+            }
+        });
+
+        expect(params.getAll('assigned_to_ids[]')).toEqual(['7']);
+        expect(params.get('op[assigned_to_id]')).toBeNull();
+    });
     it('encodes an explicit empty status selection as a saved-query status clear override', () => {
         const params = buildIssueQueryParams({
             queryId: 42,
@@ -561,6 +608,24 @@ describe('query parameter round-trips for special selections', () => {
 });
 
 describe('buildRedmineIssueQueryParams', () => {
+    it('exports QueryContext all overrides to the Redmine Query Editor', () => {
+        const { params, notices } = buildRedmineIssueQueryParams({ queryId: 12 }, {
+            queryContext: {
+                baseQueryId: 12,
+                overrides: {
+                    assignee: { mode: 'all' },
+                    version: { mode: 'all' }
+                }
+            }
+        });
+
+        expect(notices).toEqual([]);
+        expect(params.get('query_id')).toBe('12');
+        expect(params.get('set_filter')).toBe('1');
+        expect(params.getAll('f[]')).toEqual(['assigned_to_id', 'fixed_version_id']);
+        expect(params.get('op[assigned_to_id]')).toBe('*');
+        expect(params.get('op[fixed_version_id]')).toBe('*');
+    });
     it('builds Redmine standard issue query params from shared state', () => {
         const { params, notices } = buildRedmineIssueQueryParams({
             queryId: 12,

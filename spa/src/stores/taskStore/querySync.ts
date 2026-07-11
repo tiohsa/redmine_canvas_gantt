@@ -21,7 +21,7 @@ export type SharedQuerySyncState = {
 
 export const syncSharedQueryState = (state: SharedQuerySyncState) => {
     const resolvedState = toResolvedQueryStateFromStore(state);
-    replaceIssueQueryParamsInUrl(resolvedState);
+    replaceIssueQueryParamsInUrl(resolvedState, state.queryContext);
     saveLastUsedSharedQueryProjectState({
         scopeState: {
             showSubprojects: state.showSubprojects,

@@ -4,7 +4,8 @@ import { useUIStore } from '../../stores/UIStore';
 import { getMinFiniteStartDate } from '../../utils/taskRange';
 import type { Viewport } from '../../types';
 import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState } from '../../utils/queryParams';
-import { loadLastUsedSharedQueryState } from '../../utils/sharedQueryState';
+import { loadLastUsedSharedQueryProjectState } from '../../utils/sharedQueryState';
+import { resolvedQueryStateFromProjectState } from '../../query/queryStateCodec';
 
 type Params = {
     viewportFromStorage: boolean;
@@ -22,13 +23,17 @@ export const useInitialGanttData = ({
         hasFetched.current = true;
 
         import('../../api/client').then(({ apiClient }) => {
+            const storedProjectState = loadLastUsedSharedQueryProjectState();
             const initialSharedQueryState = resolveInitialSharedQueryState(
                 window.location.search,
-                loadLastUsedSharedQueryState()
+                storedProjectState ? resolvedQueryStateFromProjectState(storedProjectState) : undefined
             );
+            const initialQueryContext = initialSharedQueryState.source === 'storage'
+                ? storedProjectState?.queryContext
+                : undefined;
 
             if (initialSharedQueryState.source === 'storage') {
-                replaceIssueQueryParamsInUrl(initialSharedQueryState.state);
+                replaceIssueQueryParamsInUrl(initialSharedQueryState.state, initialQueryContext);
             }
 
             if (initialSharedQueryState.state.visibleColumns?.length) {
@@ -46,7 +51,8 @@ export const useInitialGanttData = ({
 
             apiClient.fetchData({
                 rawSearch: initialSharedQueryState.source === 'url' ? window.location.search : undefined,
-                query: initialSharedQueryState.state
+                query: initialSharedQueryState.state,
+                queryContext: initialQueryContext
             }).then(data => {
                 useTaskStore.getState().applyApiData(data);
                 void useTaskStore.getState().loadSavedQueries();

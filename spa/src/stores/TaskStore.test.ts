@@ -279,9 +279,8 @@ describe('TaskStore shared query persistence', () => {
         await useTaskStore.getState().applySavedQuery(12);
 
         expect(apiClient.fetchData).toHaveBeenCalledWith({
-            query: {
-                queryId: 12
-            }
+            query: { queryId: 12 },
+            queryContext: { baseQueryId: 12, overrides: {} }
         });
         expect(useTaskStore.getState().activeQueryId).toBe(12);
         expect(useTaskStore.getState().queryContext).toEqual({
@@ -320,7 +319,8 @@ describe('TaskStore shared query persistence', () => {
             query: {
                 queryId: 12,
                 memberProjectsOnly: true
-            }
+            },
+            queryContext: { baseQueryId: 12, overrides: {} }
         });
         expect(useTaskStore.getState().filterOptions.projects).toEqual([
             { id: 'member-project', name: 'Member project' }
@@ -388,7 +388,8 @@ describe('TaskStore shared query persistence', () => {
             query: {
                 queryId: 12,
                 canvasProjectIds: ['p1']
-            }
+            },
+            queryContext: { baseQueryId: 12, overrides: {} }
         });
         expect(useTaskStore.getState().activeQueryId).toBe(12);
         expect(useTaskStore.getState().selectedStatusIds).toEqual([3]);

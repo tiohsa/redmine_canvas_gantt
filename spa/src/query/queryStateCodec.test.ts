@@ -9,6 +9,20 @@ import {
 import type { QueryContext } from './types';
 
 describe('QueryContext URL and storage codecs', () => {
+    it('round-trips all overrides through standard Redmine URL parameters', () => {
+        const context: QueryContext = {
+            baseQueryId: 12,
+            overrides: {
+                status: { mode: 'all' },
+                assignee: { mode: 'all' },
+                version: { mode: 'all' }
+            }
+        };
+        const params = buildQueryParamsFromQueryContext(context);
+
+        expect(parseQueryContextFromUrl('?' + params.toString())).toEqual(context);
+    });
+
     it('round-trips status, assignee none, and version none overrides', () => {
         const context: QueryContext = {
             baseQueryId: 42,
