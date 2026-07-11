@@ -646,7 +646,16 @@ describe('GanttToolbar shortcuts', () => {
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7],
             selectedProjectIds: ['3'],
+            projectSelectionExplicit: true,
             selectedVersionIds: ['4'],
+            queryContext: {
+                baseQueryId: 12,
+                overrides: {
+                    status: { mode: 'subset', values: [1, 2] },
+                    assignee: { mode: 'subset', values: [7] },
+                    version: { mode: 'subset', values: ['4'] }
+                }
+            },
             sortConfig: { key: 'startDate', direction: 'desc' },
             groupByProject: false,
             groupByAssignee: true,
@@ -676,7 +685,16 @@ describe('GanttToolbar shortcuts', () => {
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7],
             selectedProjectIds: ['3'],
+            projectSelectionExplicit: true,
             selectedVersionIds: ['4'],
+            queryContext: {
+                baseQueryId: 12,
+                overrides: {
+                    status: { mode: 'subset', values: [1, 2] },
+                    assignee: { mode: 'subset', values: [7] },
+                    version: { mode: 'subset', values: ['4'] }
+                }
+            },
             sortConfig: { key: 'startDate', direction: 'desc' },
             groupByProject: false,
             groupByAssignee: true,
@@ -1668,7 +1686,7 @@ describe('GanttToolbar shortcuts', () => {
             expect(useTaskStore.getState().memberProjectsOnly).toBe(true);
         });
         await waitFor(() => {
-            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
         });
         expect(screen.queryByText('Beta')).not.toBeInTheDocument();
     });

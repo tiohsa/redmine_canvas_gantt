@@ -98,6 +98,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(resolver).to receive(:resolve).and_return({
         issues: [issue],
         initial_state: { query_id: 7 },
+        query_context: { query_id: 7, explicit_overrides: {} },
         warnings: ['Invalid query_id ignored']
       })
       allow(baseline_repository).to receive(:load).and_return(
@@ -115,6 +116,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         filter_option_projects: [filter_option_project],
         filter_option_issues: [filter_option_issue],
         initial_state: { query_id: 7 },
+        query_context: { query_id: 7, explicit_overrides: {} },
         warnings: ['Invalid query_id ignored', 'Baseline warning'],
         baseline: baseline_snapshot
       )).and_return({
@@ -130,6 +132,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         project: { id: 1, name: 'Demo' },
         permissions: { editable: true, viewable: true, baseline_editable: true },
         initial_state: { query_id: 7 },
+        query_context: { query_id: 7, explicit_overrides: {} },
         baseline: baseline_snapshot.to_payload_hash,
         warnings: ['Invalid query_id ignored', 'Baseline warning']
       })
@@ -138,7 +141,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
-      expect(body.keys).to contain_exactly('tasks', 'custom_fields', 'relations', 'versions', 'filter_options', 'statuses', 'project', 'permissions', 'initial_state', 'baseline', 'warnings')
+      expect(body.keys).to contain_exactly('tasks', 'custom_fields', 'relations', 'versions', 'filter_options', 'statuses', 'project', 'permissions', 'initial_state', 'query_context', 'baseline', 'warnings')
       expect(body['permissions']).to eq('editable' => true, 'viewable' => true, 'baseline_editable' => true)
       expect(body['filter_options']).to eq(
         'projects' => [{ 'id' => 1, 'name' => 'Demo' }],
@@ -167,6 +170,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(resolver).to receive(:resolve).and_return({
         issues: [issue],
         initial_state: { query_id: 7, member_projects_only: true },
+        query_context: { query_id: 7, explicit_overrides: {} },
         warnings: []
       })
       allow(baseline_repository).to receive(:load).and_return(
@@ -183,7 +187,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
           statuses: [],
           project: { id: 1, name: 'Demo' },
           permissions: { editable: true, viewable: true, baseline_editable: true },
-          initial_state: { query_id: 7, member_projects_only: true }
+          initial_state: { query_id: 7, member_projects_only: true },
+          query_context: { query_id: 7, explicit_overrides: {} }
         }
       )
 
@@ -193,14 +198,34 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe '#current_view_scope' do
+    it 'builds operation scope without member-project narrowing' do
+      user = instance_double(User)
+      view_scope_resolver = instance_double(RedmineCanvasGantt::ViewScopeResolver)
+      resolved_scope = { issue_ids: Set[], scope_project_ids: [1, 2], visible_project_ids: [] }
+
+      allow(User).to receive(:current).and_return(user)
+      controller.instance_variable_set(:@project, project)
+      expect(RedmineCanvasGantt::ViewScopeResolver).to receive(:new).with(
+        project: project,
+        params: controller.params,
+        current_user: user,
+        issue_includes: CanvasGanttsController::ISSUE_INCLUDES
+      ).and_return(view_scope_resolver)
+      allow(view_scope_resolver).to receive(:resolve).and_return(resolved_scope)
+
+      expect(controller.send(:current_view_scope)).to eq(resolved_scope)
+    end
+  end
+
   describe '#filter_option_projects' do
-    let(:visible_scope) { instance_double(ActiveRecord::Relation) }
-    let(:member_active_scope) { instance_double(ActiveRecord::Relation) }
-    let(:tree_project_scope) { instance_double(ActiveRecord::Relation) }
-    let(:tree_member_joined_scope) { instance_double(ActiveRecord::Relation) }
-    let(:tree_member_filtered_scope) { instance_double(ActiveRecord::Relation) }
-    let(:member_joined_scope) { instance_double(ActiveRecord::Relation) }
-    let(:member_filtered_scope) { instance_double(ActiveRecord::Relation) }
+    let(:visible_scope) { double('ActiveRecord::Relation') }
+    let(:member_active_scope) { double('ActiveRecord::Relation') }
+    let(:tree_project_scope) { double('ActiveRecord::Relation') }
+    let(:tree_member_joined_scope) { double('ActiveRecord::Relation') }
+    let(:tree_member_filtered_scope) { double('ActiveRecord::Relation') }
+    let(:member_joined_scope) { double('ActiveRecord::Relation') }
+    let(:member_filtered_scope) { double('ActiveRecord::Relation') }
     let(:member_tree_project) { double('ProjectOption', id: 1) }
     let(:descendant_project) { double('ProjectOption', id: 2) }
     let(:member_project) { double('ProjectOption', id: 3) }
@@ -213,37 +238,42 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(member_active_scope).to receive(:joins).with(:members).and_return(member_joined_scope)
     end
 
-    it 'returns visible member projects in the current project tree' do
-      user = instance_double(User, id: 7, group_ids: [11, 12])
-
+    it 'returns all active visible projects in base scope when member_projects_only is false' do
+      user = double('User', id: 7, group_ids: [11, 12], logged?: true, login: 'alice')
       allow(User).to receive(:current).and_return(user)
-      allow(tree_member_joined_scope).to receive(:where).with(
-        members: { user_id: [7, 11, 12] }
-      ).and_return(tree_member_filtered_scope)
-      allow(tree_member_filtered_scope).to receive(:distinct).and_return(tree_member_filtered_scope)
-      allow(tree_member_filtered_scope).to receive(:to_a).and_return([member_tree_project, descendant_project])
+      allow(tree_project_scope).to receive(:to_a).and_return([member_tree_project, descendant_project])
 
-      result = controller.send(:filter_option_projects, [1, 2])
+      result = controller.send(:filter_option_projects, [1, 2], member_projects_only: false)
 
       expect(result).to eq([member_tree_project, descendant_project])
     end
 
-    it 'returns only visible member projects when memberProjectsOnly is enabled' do
-      user = instance_double(User, id: 7, group_ids: [11, 12])
-
+    it 'returns only projects where current user is a member when memberProjectsOnly is enabled' do
+      user = double('User', id: 7, group_ids: [11, 12], logged?: true, login: 'alice', admin?: false)
       allow(User).to receive(:current).and_return(user)
-      expect(member_joined_scope).to receive(:where).with(
+
+      allow(member_joined_scope).to receive(:where).with(
         members: { user_id: [7, 11, 12] }
       ).and_return(member_filtered_scope)
       allow(member_filtered_scope).to receive(:distinct).and_return(member_filtered_scope)
-      allow(member_filtered_scope).to receive(:to_a).and_return([member_project])
+      allow(member_filtered_scope).to receive(:to_a).and_return([member_tree_project, member_project])
 
       result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
 
-      expect(result).to eq([member_project])
+      expect(result).to eq([member_tree_project, member_project])
     end
 
-    it 'returns no member projects when current user is unavailable' do
+    it 'returns all active visible projects when current user is admin even if memberProjectsOnly is enabled' do
+      user = double('User', id: 7, logged?: true, login: 'admin', admin?: true)
+      allow(User).to receive(:current).and_return(user)
+      allow(member_active_scope).to receive(:to_a).and_return([member_tree_project, descendant_project, member_project])
+
+      result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
+
+      expect(result).to eq([member_tree_project, descendant_project, member_project])
+    end
+
+    it 'returns no projects when memberProjectsOnly is enabled and current user is unavailable' do
       allow(User).to receive(:current).and_return(nil)
 
       result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
@@ -601,7 +631,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       )
     end
 
-    it 'allows edit_meta for a non-descendant issue when member-project mode view scope includes it' do
+    it 'allows edit_meta for an issue when the current view scope includes it' do
       get :edit_meta, params: { project_id: 'demo', id: '42', member_projects_only: '1' }, format: :json
 
       expect(response).to have_http_status(:ok)

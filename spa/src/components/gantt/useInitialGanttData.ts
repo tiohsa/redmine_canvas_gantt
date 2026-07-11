@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useTaskStore } from '../../stores/TaskStore';
+import { useUIStore } from '../../stores/UIStore';
 import { getMinFiniteStartDate } from '../../utils/taskRange';
 import type { Viewport } from '../../types';
 import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState } from '../../utils/queryParams';
-import { loadLastUsedSharedQueryState } from '../../utils/sharedQueryState';
+import { loadLastUsedSharedQueryProjectState } from '../../utils/sharedQueryState';
+import { resolvedQueryStateFromProjectState } from '../../query/queryStateCodec';
 
 type Params = {
     viewportFromStorage: boolean;
@@ -21,16 +23,25 @@ export const useInitialGanttData = ({
         hasFetched.current = true;
 
         import('../../api/client').then(({ apiClient }) => {
+            const storedProjectState = loadLastUsedSharedQueryProjectState();
             const initialSharedQueryState = resolveInitialSharedQueryState(
                 window.location.search,
-                loadLastUsedSharedQueryState()
+                storedProjectState ? resolvedQueryStateFromProjectState(storedProjectState) : undefined
             );
+            const initialQueryContext = initialSharedQueryState.source === 'storage'
+                ? storedProjectState?.queryContext
+                : undefined;
 
             if (initialSharedQueryState.source === 'storage') {
-                replaceIssueQueryParamsInUrl(initialSharedQueryState.state);
+                replaceIssueQueryParamsInUrl(initialSharedQueryState.state, initialQueryContext);
+            }
+
+            if (initialSharedQueryState.state.visibleColumns?.length) {
+                useUIStore.getState().applyQueryVisibleColumns(initialSharedQueryState.state.visibleColumns);
             }
 
             useTaskStore.getState().restoreActiveQueryId(initialSharedQueryState.state.queryId ?? null);
+            useTaskStore.getState().restoreCanvasScope(initialSharedQueryState.state);
             const groupByWasExplicit = initialSharedQueryState.source === 'storage'
                 ? initialSharedQueryState.state.groupBy !== undefined
                 : initialSharedQueryState.source === 'url' && new URLSearchParams(window.location.search).has('group_by');
@@ -38,9 +49,25 @@ export const useInitialGanttData = ({
                 useTaskStore.getState().restoreExplicitGroupByOverride(initialSharedQueryState.state.groupBy);
             }
 
+            const memberProjectsOnly = useTaskStore.getState().memberProjectsOnly;
+            const initialApiQuery = memberProjectsOnly
+                ? { ...initialSharedQueryState.state, memberProjectsOnly: true }
+                : initialSharedQueryState.state;
+            const initialRawSearch = initialSharedQueryState.source === 'url'
+                ? window.location.search
+                : undefined;
+            const apiRawSearch = initialRawSearch && memberProjectsOnly
+                ? (() => {
+                    const params = new URLSearchParams(initialRawSearch);
+                    params.set('member_projects_only', '1');
+                    return `?${params.toString()}`;
+                })()
+                : initialRawSearch;
+
             apiClient.fetchData({
-                rawSearch: initialSharedQueryState.source === 'url' ? window.location.search : undefined,
-                query: initialSharedQueryState.state
+                rawSearch: apiRawSearch,
+                query: initialApiQuery,
+                queryContext: initialQueryContext
             }).then(data => {
                 useTaskStore.getState().applyApiData(data);
                 void useTaskStore.getState().loadSavedQueries();

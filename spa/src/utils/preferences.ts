@@ -33,6 +33,7 @@ export interface StoredPreferences {
     includeClosedIssues?: boolean;
     todayOnwardOnly?: boolean;
     sidebarFontSize?: number;
+    memberProjectsOnly?: boolean;
 }
 
 export type DisplayPreferencesSource = 'project' | 'global' | 'default';
@@ -55,6 +56,7 @@ export interface StoredDisplayPreferences {
     customScales?: Record<number, number>;
     rowHeight?: number;
     sidebarFontSize?: number;
+    memberProjectsOnly?: boolean;
 }
 
 export interface StoredGeneralPreferences {
@@ -94,6 +96,7 @@ export type DisplayPreferencesSnapshot = Pick<
     | 'customScales'
     | 'rowHeight'
     | 'sidebarFontSize'
+    | 'memberProjectsOnly'
 >;
 
 export type GeneralPreferencesSnapshot = Pick<
@@ -136,7 +139,8 @@ const sanitizePreferences = (prefs: StoredPreferences): StoredPreferences => Obj
         includeClosedIssues: prefs.includeClosedIssues,
         todayOnwardOnly: prefs.todayOnwardOnly,
         organizeByDependency: prefs.organizeByDependency,
-        sidebarFontSize: prefs.sidebarFontSize
+        sidebarFontSize: prefs.sidebarFontSize,
+        memberProjectsOnly: prefs.memberProjectsOnly
     }).filter(([, value]) => value !== undefined)
 ) as StoredPreferences;
 
@@ -158,7 +162,8 @@ const sanitizeDisplayPreferences = (prefs: StoredPreferences): StoredDisplayPref
         sidebarWidth: prefs.sidebarWidth,
         customScales: prefs.customScales,
         rowHeight: prefs.rowHeight,
-        sidebarFontSize: prefs.sidebarFontSize
+        sidebarFontSize: prefs.sidebarFontSize,
+        memberProjectsOnly: prefs.memberProjectsOnly
     }).filter(([, value]) => value !== undefined)
 ) as StoredDisplayPreferences;
 
@@ -175,6 +180,13 @@ const sanitizeGeneralPreferences = (prefs: StoredPreferences): StoredGeneralPref
         todayOnwardOnly: prefs.todayOnwardOnly
     }).filter(([, value]) => value !== undefined)
 ) as StoredGeneralPreferences;
+
+const normalizeDisplayPreferenceExclusivity = (prefs: StoredDisplayPreferences): StoredDisplayPreferences => {
+    if (prefs.showVersions && prefs.organizeByDependency) {
+        return { ...prefs, showVersions: false };
+    }
+    return prefs;
+};
 
 export const buildStoredDisplayPreferences = (
     prefs: DisplayPreferencesSnapshot
@@ -340,8 +352,19 @@ export const loadDisplayPreferencesWithSource = (
 
     const envelope = readEnvelope(projectId);
     const projectKey = resolveProjectKey(projectId);
-    const projectPreferences = sanitizeDisplayPreferences(envelope.display.projects[projectKey] ?? {});
-    const globalPreferences = sanitizeDisplayPreferences(envelope.display.global.preferences);
+    const rawProjectPreferences = sanitizeDisplayPreferences(envelope.display.projects[projectKey] ?? {});
+    const rawGlobalPreferences = sanitizeDisplayPreferences(envelope.display.global.preferences);
+    const projectPreferences = normalizeDisplayPreferenceExclusivity(rawProjectPreferences);
+    const globalPreferences = normalizeDisplayPreferenceExclusivity(rawGlobalPreferences);
+
+    if (projectPreferences.showVersions !== rawProjectPreferences.showVersions) {
+        envelope.display.projects[projectKey] = projectPreferences;
+        persistEnvelope(envelope);
+    }
+    if (globalPreferences.showVersions !== rawGlobalPreferences.showVersions) {
+        envelope.display.global.preferences = globalPreferences;
+        persistEnvelope(envelope);
+    }
 
     if (envelope.display.global.enabled) {
         return {

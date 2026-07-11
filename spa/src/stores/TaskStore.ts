@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { FilterOptions, Task, Relation, DraftRelation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus, SavedQuery } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
-import { loadPreferences } from '../utils/preferences';
+import { loadPreferences, saveDisplayPreferences } from '../utils/preferences';
 import { getMaxFiniteDueDate } from '../utils/taskRange';
 import { i18n } from '../utils/i18n';
 import { useUIStore } from './UIStore';
@@ -18,17 +18,26 @@ import { buildMoveTaskResult, saveModifiedTasks } from './taskStore/taskPersiste
 import { runParentMove } from './taskStore/parentMove';
 import { buildUniformExpansionMaps, initializeExpansionMaps } from './taskStore/expansion';
 import { syncSharedQueryState, type SharedQuerySyncState } from './taskStore/querySync';
+import {
+    clearSavedQueryToStandalone,
+    isQueryModified as getIsQueryModified,
+    selectSavedQuery,
+    setAssigneeOverride,
+    setStatusOverride,
+    setVersionOverride
+} from '../query/queryState';
+import type { QueryContext, QueryOverrides } from '../query/types';
+import { resolvedStateToQueryContext } from '../query/queryStateCodec';
+import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
-    toBusinessQueryState,
     toResolvedQueryStateFromStore,
     type ResolvedQueryState
 } from '../utils/queryParams';
-import { saveLastUsedSharedQueryState } from '../utils/sharedQueryState';
 
 type DerivedSchedulingSummary = {
     schedulingStates: Record<string, SchedulingStateInfo>;
@@ -67,6 +76,8 @@ interface TaskState {
     taskStatuses: TaskStatus[];
     customFields: CustomFieldMeta[];
     activeQueryId: number | null;
+    queryContext: QueryContext;
+    isQueryModified: boolean;
     savedQueries: SavedQuery[];
     savedQueriesStatus: 'idle' | 'loading' | 'ready' | 'error';
     savedQueriesError: string | null;
@@ -93,6 +104,7 @@ interface TaskState {
     filterText: string;
     selectedAssigneeIds: (number | null)[];
     selectedProjectIds: string[];
+    projectSelectionExplicit: boolean;
     selectedVersionIds: string[];
     memberProjectsOnly: boolean;
 
@@ -105,6 +117,7 @@ interface TaskState {
     isSortingSuspended: boolean;
     modifiedTaskIds: Set<string>;
     autoSave: boolean;
+    initialDataLoaded: boolean;
 
     // Actions
     setAutoSave: (enabled: boolean) => void;
@@ -116,6 +129,7 @@ interface TaskState {
     setCustomFields: (fields: CustomFieldMeta[]) => void;
     setPermissions: (permissions: { editable: boolean; viewable: boolean; baselineEditable: boolean }) => void;
     restoreActiveQueryId: (queryId: number | null) => void;
+    restoreCanvasScope: (state?: ResolvedQueryState) => void;
     restoreExplicitGroupByOverride: (groupBy: ResolvedQueryState['groupBy'] | undefined) => void;
     applyResolvedQueryState: (state?: ResolvedQueryState) => void;
     applyApiData: (data: ApiData) => void;
@@ -191,6 +205,25 @@ const EMPTY_FILTER_OPTIONS: FilterOptions = {
     projects: [],
     assignees: []
 };
+
+const standaloneOverridesFromState = (state: TaskState): QueryOverrides => ({
+    status: state.selectedStatusIds.length > 0
+        ? { mode: 'subset', values: [...state.selectedStatusIds] }
+        : { mode: 'all' },
+    assignee: state.selectedAssigneeIds.length > 0
+        ? { mode: 'subset', values: [...state.selectedAssigneeIds] }
+        : { mode: 'all' },
+    version: state.selectedVersionIds.length > 0
+        ? { mode: 'subset', values: [...state.selectedVersionIds] }
+        : { mode: 'all' }
+});
+
+const queryContextPatch = (queryContext: QueryContext) => ({
+    queryContext,
+    isQueryModified: getIsQueryModified(queryContext)
+});
+
+const initialQueryContext = resolvedStateToQueryContext(initialUrlState);
 
 const resolveLayoutState = (state: LayoutState, overrides: Partial<LayoutState> = {}): LayoutState => ({
     allTasks: overrides.allTasks ?? state.allTasks,
@@ -349,14 +382,21 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
     const relations = data.relations ?? [];
     const tasks = data.tasks ?? [];
     const nextResolved: ResolvedQueryState = {
-        ...(data.initialState ?? toResolvedQueryStateFromStore(state))
+        ...(data.initialState ?? toResolvedQueryStateFromStore(state)),
+        // A Saved Query can define Redmine's project_id filter, but it must not
+        // replace the independent Canvas project scope.
+        ...(state.projectSelectionExplicit
+            ? { canvasProjectIds: state.selectedProjectIds }
+            : (data.initialState?.canvasProjectIds !== undefined
+                ? { canvasProjectIds: data.initialState.canvasProjectIds }
+                : {})),
+        memberProjectsOnly: state.memberProjectsOnly,
+        // showSubprojects is Canvas scope state, not a Redmine Query filter.
+        showSubprojects: state.showSubprojects
     };
 
-    const candidateProjectIds = new Set(filterOptions.projects.map((project) => project.id));
-    nextResolved.selectedProjectIds = (nextResolved.selectedProjectIds ?? [])
-        .filter((projectId) => candidateProjectIds.has(projectId));
-
     const queryState = toBusinessQueryState(nextResolved);
+    const queryContext = data.queryContext ?? (data.initialState ? resolvedStateToQueryContext(nextResolved) : state.queryContext);
     const sortConfig = queryState.sortConfig ?? { key: 'startDate', direction: 'asc' };
     const { projectExpansion, taskExpansion, versionExpansion } = initializeExpansionMaps(tasks, {
         projectExpansion: state.projectExpansion,
@@ -382,21 +422,27 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
     });
     const querySyncState = {
         activeQueryId: queryState.queryId,
+        queryContext,
         selectedStatusIds: queryState.selectedStatusIds,
         selectedAssigneeIds: queryState.selectedAssigneeIds,
         selectedProjectIds: queryState.selectedProjectIds,
+        projectSelectionExplicit: state.projectSelectionExplicit || nextResolved.canvasProjectIds !== undefined,
         selectedVersionIds: queryState.selectedVersionIds,
         memberProjectsOnly: queryState.memberProjectsOnly,
         sortConfig,
         groupByProject: queryState.groupByProject,
         groupByAssignee: queryState.groupByAssignee,
-        showSubprojects: queryState.showSubprojects
+        showSubprojects: queryState.showSubprojects,
+        visibleColumns: useUIStore.getState().columnsExplicitInQuery ? useUIStore.getState().visibleColumns : undefined,
+        columnsExplicitInQuery: useUIStore.getState().columnsExplicitInQuery
     };
 
     return {
         querySyncState,
         patch: {
             ...querySyncState,
+            ...queryContextPatch(queryContext),
+            initialDataLoaded: true,
             allTasks: tasks,
             relations,
             versions,
@@ -561,6 +607,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     customFields: [],
     permissions: { editable: false, viewable: false, baselineEditable: false },
     activeQueryId: initialUrlState.queryId ?? null,
+    queryContext: initialQueryContext,
+    isQueryModified: getIsQueryModified(initialQueryContext),
     savedQueries: [],
     savedQueriesStatus: 'idle',
     savedQueriesError: null,
@@ -587,8 +635,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     filterText: '',
     selectedAssigneeIds: [],
     selectedProjectIds: [],
+    projectSelectionExplicit: false,
     selectedVersionIds: [],
-    memberProjectsOnly: initialUrlState.memberProjectsOnly ?? false,
+    memberProjectsOnly: preferences.memberProjectsOnly ?? false,
     sortConfig: { key: 'startDate', direction: 'asc' },
     customScales: preferences.customScales ?? {},
     currentProjectId: window.RedmineCanvasGantt?.projectId?.toString() || null,
@@ -596,6 +645,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     isSortingSuspended: false,
     modifiedTaskIds: new Set(),
     autoSave: preferences.autoSave ?? false,
+    initialDataLoaded: false,
 
     setAutoSave: (enabled) => set({ autoSave: enabled }),
 
@@ -642,10 +692,36 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     setFilterOptions: (filterOptions) => set(() => ({ filterOptions })),
     setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
     setPermissions: (permissions) => set(() => ({ permissions })),
-    restoreActiveQueryId: (queryId) => set({ activeQueryId: queryId }),
+    restoreActiveQueryId: (queryId) => {
+        const queryContext = { ...get().queryContext, baseQueryId: queryId };
+        set({ activeQueryId: queryId, ...queryContextPatch(queryContext) });
+    },
+    restoreCanvasScope: (resolved) => set((state) => {
+        const showSubprojects = resolved?.showSubprojects ?? state.showSubprojects;
+        const selectedProjectIds = resolved?.canvasProjectIds
+            ?? resolved?.selectedProjectIds
+            ?? state.selectedProjectIds;
+        const projectSelectionExplicit = resolved?.canvasProjectIds !== undefined
+            || resolved?.selectedProjectIds !== undefined
+            || state.projectSelectionExplicit;
+        const layout = buildLayoutFromState(state, {
+            showSubprojects,
+            selectedProjectIds
+        });
+
+        return {
+            showSubprojects,
+            selectedProjectIds,
+            projectSelectionExplicit,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+    }),
     restoreExplicitGroupByOverride: (groupBy) => set({ explicitGroupByOverride: groupBy }),
     applyResolvedQueryState: (resolved) => set((state) => {
         const queryState = toBusinessQueryState(resolved);
+        const queryContext = resolvedStateToQueryContext(resolved);
         const groupByProject = queryState.groupByProject;
         const groupByAssignee = queryState.groupByAssignee;
         const showSubprojects = queryState.showSubprojects;
@@ -668,9 +744,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
         const nextState = {
             activeQueryId,
+            ...queryContextPatch(queryContext),
             selectedStatusIds,
             selectedAssigneeIds,
             selectedProjectIds,
+            projectSelectionExplicit: resolved?.canvasProjectIds !== undefined
+                || resolved?.selectedProjectIds !== undefined
+                || state.projectSelectionExplicit,
             selectedVersionIds,
             groupByProject,
             groupByAssignee,
@@ -691,8 +771,19 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             querySyncState = result.querySyncState;
             return result.patch;
         });
-        if (querySyncState) {
-            syncSharedQueryState(querySyncState);
+        if (data.initialState?.visibleColumns?.length) {
+            useUIStore.getState().applyQueryVisibleColumns(data.initialState.visibleColumns);
+        } else if (useUIStore.getState().columnStateSource === 'query') {
+            useUIStore.getState().restorePreferenceColumns();
+        }
+        const nextQuerySyncState = querySyncState as SharedQuerySyncState | null;
+        if (nextQuerySyncState) {
+            const uiState = useUIStore.getState();
+            syncSharedQueryState({
+                ...nextQuerySyncState,
+                visibleColumns: uiState.columnsExplicitInQuery ? uiState.visibleColumns : undefined,
+                columnsExplicitInQuery: uiState.columnsExplicitInQuery
+            });
         }
         useBaselineStore.getState().setSnapshot(data.baseline ?? null, data.warnings ?? []);
         (data.warnings ?? []).forEach((warning) => {
@@ -707,14 +798,19 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         };
     }),
     setSelectedStatusFromServer: (ids) => {
-        set({ selectedStatusIds: ids });
+        const queryContext = setStatusOverride(get().queryContext, ids.length > 0
+            ? { mode: 'subset', values: ids }
+            : { mode: 'all' });
+        set({ selectedStatusIds: ids, ...queryContextPatch(queryContext) });
         syncSharedQueryState(get());
         void get().refreshData().catch((error) => console.error('Failed to refresh data', error));
     },
     setShowVersions: (show) => set((state) => {
-        const layout = buildLayoutFromState(state, { showVersions: show });
+        const organizeByDependency = show ? false : state.organizeByDependency;
+        const layout = buildLayoutFromState(state, { showVersions: show, organizeByDependency });
         return {
             showVersions: show,
+            organizeByDependency,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -1051,18 +1147,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }),
 
     setGroupByProject: (grouped) => set((state) => {
-        const nextShowSubprojects = grouped;
         const nextGroupByAssignee = grouped ? false : state.groupByAssignee;
         const layout = buildLayoutFromState(state, {
             groupByProject: grouped,
-            groupByAssignee: nextGroupByAssignee,
-            showSubprojects: nextShowSubprojects
+            groupByAssignee: nextGroupByAssignee
         });
         const nextState = {
             groupByProject: grouped,
             groupByAssignee: nextGroupByAssignee,
             explicitGroupByOverride: grouped ? 'project' as const : (nextGroupByAssignee ? 'assignee' as const : null),
-            showSubprojects: nextShowSubprojects,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -1091,9 +1184,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return nextState;
     }),
     setOrganizeByDependency: (enabled) => set((state) => {
-        const layout = buildLayoutFromState(state, { organizeByDependency: enabled });
+        const showVersions = enabled ? false : state.showVersions;
+        const layout = buildLayoutFromState(state, { organizeByDependency: enabled, showVersions });
         return {
             organizeByDependency: enabled,
+            showVersions,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -1103,9 +1198,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     setCurrentProjectId: (id) => set((state) => {
         if (state.currentProjectId === id) return state;
+        const newPrefs = loadPreferences(id);
         const layout = buildLayoutFromState(state, { currentProjectId: id });
         return {
             currentProjectId: id,
+            memberProjectsOnly: newPrefs.memberProjectsOnly ?? false,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -1215,7 +1312,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     setSelectedAssigneeIds: (ids) => set((state) => {
         const layout = buildLayoutFromState(state, { selectedAssigneeIds: ids });
+        const queryContext = setAssigneeOverride(state.queryContext, ids.length > 0
+            ? { mode: 'subset', values: ids }
+            : { mode: 'all' });
         const nextState = {
+            ...queryContextPatch(queryContext),
             selectedAssigneeIds: ids,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -1230,6 +1331,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const layout = buildLayoutFromState(state, { selectedProjectIds: ids });
         const nextState = {
             selectedProjectIds: ids,
+            projectSelectionExplicit: true,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -1240,7 +1342,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }),
     setSelectedVersionIds: (ids) => set((state) => {
         const layout = buildLayoutFromState(state, { selectedVersionIds: ids });
+        const queryContext = setVersionOverride(state.queryContext, ids.length > 0
+            ? { mode: 'subset', values: ids }
+            : { mode: 'all' });
         const nextState = {
+            ...queryContextPatch(queryContext),
             selectedVersionIds: ids,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
@@ -1255,6 +1361,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         if (current.memberProjectsOnly === enabled) return;
 
         set({ memberProjectsOnly: enabled });
+        saveDisplayPreferences({ memberProjectsOnly: enabled }, current.currentProjectId);
         syncSharedQueryState({ ...get(), memberProjectsOnly: enabled });
         await get().refreshData();
     },
@@ -1380,7 +1487,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const { apiClient } = await import('../api/client');
         const state = get();
         const data = await apiClient.fetchData({
-            query: toResolvedQueryStateFromStore(state)
+            query: toResolvedQueryStateFromStore(state),
+            queryContext: state.queryContext
         });
         if (!data) return;
         get().applyApiData(data);
@@ -1410,21 +1518,28 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     applySavedQuery: async (queryId) => {
         const { apiClient } = await import('../api/client');
         const state = get();
+        const queryContext = selectSavedQuery(queryId);
         const query: ResolvedQueryState = {
             queryId,
-            ...(state.explicitGroupByOverride !== undefined ? { groupBy: state.explicitGroupByOverride } : {})
+            ...(state.projectSelectionExplicit ? { canvasProjectIds: state.selectedProjectIds } : {}),
+            ...(state.memberProjectsOnly ? { memberProjectsOnly: true } : {})
         };
-        set({ activeQueryId: queryId });
-        replaceIssueQueryParamsInUrl(query);
-        saveLastUsedSharedQueryState(query);
-        const data = await apiClient.fetchData({ query });
+        set({
+            activeQueryId: queryId,
+            explicitGroupByOverride: undefined,
+            ...queryContextPatch(queryContext)
+        });
+        replaceIssueQueryParamsInUrl(query, queryContext);
+        syncSharedQueryState({ ...get(), activeQueryId: queryId });
+        const data = await apiClient.fetchData({ query, queryContext });
         get().applyApiData(data);
     },
 
     clearSavedQuery: async () => {
         const state = get();
-        set({ activeQueryId: null });
-        syncSharedQueryState({ ...state, activeQueryId: null });
+        const queryContext = clearSavedQueryToStandalone(standaloneOverridesFromState(state));
+        set({ activeQueryId: null, ...queryContextPatch(queryContext) });
+        syncSharedQueryState({ ...get(), activeQueryId: null });
         await get().refreshData();
     },
 

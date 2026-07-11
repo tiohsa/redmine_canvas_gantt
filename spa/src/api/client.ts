@@ -12,7 +12,9 @@ import type {
 import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption } from '../types/editMeta';
 import type { BaselineSaveScope, BaselineSnapshot, BaselineTaskState } from '../types/baseline';
 import { buildIssueQueryParams, parseResolvedQueryState, type ResolvedQueryState } from '../utils/queryParams';
+import { normalizeQueryContext } from '../query/queryStateCodec';
 import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/baseline';
+import type { QueryContext } from '../query/types';
 
 type ApiTask = Record<string, unknown>;
 type ApiRelation = Record<string, unknown>;
@@ -57,6 +59,7 @@ interface ApiData {
     permissions: { editable: boolean; viewable: boolean; baselineEditable: boolean };
     baseline?: BaselineSnapshot | null;
     initialState?: ResolvedQueryState;
+    queryContext?: QueryContext;
     warnings?: string[];
 }
 
@@ -448,7 +451,7 @@ export const apiClient = {
         return queries.map(parseSavedQuery).filter((entry): entry is SavedQuery => entry !== null);
     },
 
-    fetchData: async (params?: { query?: ResolvedQueryState; rawSearch?: string }): Promise<ApiData> => {
+    fetchData: async (params?: { query?: ResolvedQueryState; queryContext?: QueryContext; rawSearch?: string }): Promise<ApiData> => {
         const config = getConfig();
 
         const parseDate = (value: string | null | undefined): number | null => {
@@ -459,7 +462,7 @@ export const apiClient = {
 
         const qs = params?.rawSearch
             ? params.rawSearch.replace(/^\?/, '')
-            : buildIssueQueryParams(params?.query ?? {}).toString();
+            : buildIssueQueryParams(params?.query ?? {}, { queryContext: params?.queryContext }).toString();
         const url = new URL(`${config.apiBase}/data.json` + (qs ? `?${qs}` : ''), window.location.origin).toString();
 
         const response = await fetch(url, {
@@ -598,6 +601,7 @@ export const apiClient = {
             permissions,
             baseline,
             initialState: parseResolvedQueryState(data.initial_state),
+            queryContext: data.query_context === undefined ? undefined : normalizeQueryContext(data.query_context),
             warnings: mergedWarnings
         };
     },

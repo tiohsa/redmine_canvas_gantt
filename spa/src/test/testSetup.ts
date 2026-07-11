@@ -23,6 +23,7 @@ export const resetCanvasGanttTestState = () => {
     };
 
     useTaskStore.setState(useTaskStore.getInitialState(), true);
+    useTaskStore.setState({ initialDataLoaded: true });
     useUIStore.setState(useUIStore.getInitialState(), true);
     useBaselineStore.setState(useBaselineStore.getInitialState(), true);
 };

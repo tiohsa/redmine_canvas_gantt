@@ -52,6 +52,8 @@ interface UIState {
     sidebarFontSize: number;
     displayPreferencesSource: DisplayPreferencesSource;
     displayPreferencesGlobalEnabled: boolean;
+    columnStateSource: ColumnStateSource;
+    columnsExplicitInQuery: boolean;
     addNotification: (message: string, type?: NotificationType) => void;
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
@@ -64,6 +66,9 @@ interface UIState {
     toggleRightPane: () => void;
     showPointsOrphans: boolean;
     setVisibleColumns: (cols: string[]) => void;
+    applyQueryVisibleColumns: (cols: string[]) => void;
+    restorePreferenceColumns: () => void;
+    setColumnSettings: (settings: ColumnConfig[]) => void;
     toggleColumnVisibility: (key: string) => void;
     moveColumnUp: (key: string) => void;
     moveColumnDown: (key: string) => void;
@@ -88,6 +93,8 @@ interface UIState {
     setDisplayPreferencesGlobalEnabled: (enabled: boolean) => void;
     resetRelationPreferences: () => void;
 }
+
+export type ColumnStateSource = 'preference' | 'query' | 'user';
 
 const DEFAULT_RELATION_TYPE = RelationType.Precedes;
 const defaultColumnSettings = buildColumnSettingsFromVisibleKeys(COLUMN_DEFINITIONS, getDefaultVisibleColumnKeys());
@@ -120,6 +127,24 @@ const loadedDisplayPreferences = loadDisplayPreferencesWithSource();
 const displayPreferences = loadedDisplayPreferences.preferences;
 const displayPreferencesSource: DisplayPreferencesSource = loadedDisplayPreferences.source;
 const initialDisplayColumns = normalizeDisplayColumns(displayPreferences);
+
+const normalizeQueryColumns = (columns: string[], currentSettings: ColumnConfig[]): ColumnConfig[] => {
+    const knownKeys = new Set([
+        ...COLUMN_DEFINITIONS.map((definition) => definition.key),
+        ...currentSettings.map((entry) => entry.key)
+    ]);
+    const isKnownKey = (key: string) => knownKeys.has(key) || /^cf:\d+$/.test(key);
+    const normalizedKeys = Array.from(new Set(columns.filter(isKnownKey)));
+    const visibleKeys = new Set(normalizedKeys);
+    const hiddenKeys = currentSettings
+        .map((entry) => entry.key)
+        .filter((key) => !visibleKeys.has(key));
+
+    return [
+        ...normalizedKeys.map((key) => ({ key, visible: true })),
+        ...hiddenKeys.map((key) => ({ key, visible: false }))
+    ];
+};
 
 export const useUIStore = create<UIState>((set, get) => ({
     notifications: [],
@@ -157,6 +182,8 @@ export const useUIStore = create<UIState>((set, get) => ({
     sidebarFontSize: displayPreferences.sidebarFontSize ?? 13,
     displayPreferencesSource,
     displayPreferencesGlobalEnabled: loadedDisplayPreferences.globalEnabled,
+    columnStateSource: 'preference',
+    columnsExplicitInQuery: false,
     addNotification: (message, type = 'info') => {
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
@@ -198,24 +225,57 @@ export const useUIStore = create<UIState>((set, get) => ({
         return { leftPaneVisible: true, rightPaneVisible: false };
     }),
     setVisibleColumns: (cols) => {
-        const next = buildColumnSettingsFromVisibleKeys(COLUMN_DEFINITIONS, cols);
-        set(() => ({ visibleColumns: cols, columnSettings: next }));
+        const next = normalizeQueryColumns(cols, get().columnSettings);
+        set(() => ({
+            visibleColumns: toVisibleColumns(next),
+            columnSettings: next,
+            columnStateSource: 'user',
+            columnsExplicitInQuery: true
+        }));
+    },
+    applyQueryVisibleColumns: (cols) => {
+        const next = normalizeQueryColumns(cols, get().columnSettings);
+        set(() => ({
+            visibleColumns: toVisibleColumns(next),
+            columnSettings: next,
+            columnStateSource: 'query',
+            columnsExplicitInQuery: true
+        }));
+    },
+    restorePreferenceColumns: () => {
+        const preferences = loadDisplayPreferencesWithSource().preferences;
+        const columns = normalizeDisplayColumns(preferences);
+        set(() => ({
+            visibleColumns: columns.visibleColumns,
+            columnSettings: columns.columnSettings,
+            columnStateSource: 'preference',
+            columnsExplicitInQuery: false
+        }));
+    },
+    setColumnSettings: (settings) => {
+        const next = settings.map((entry) => ({ ...entry }));
+        set(() => ({
+            visibleColumns: toVisibleColumns(next),
+            columnSettings: next,
+            columnStateSource: 'user',
+            columnsExplicitInQuery: true
+        }));
     },
     toggleColumnVisibility: (key) => {
         const next = toggleColumnSetting(get().columnSettings, key);
-        set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next }));
+        set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next, columnStateSource: 'user', columnsExplicitInQuery: true }));
     },
     moveColumnUp: (key) => {
         const next = moveColumnSetting(get().columnSettings, key, 'up');
-        set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next }));
+        set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next, columnStateSource: 'user', columnsExplicitInQuery: true }));
     },
     moveColumnDown: (key) => {
         const next = moveColumnSetting(get().columnSettings, key, 'down');
-        set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next }));
+        set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next, columnStateSource: 'user', columnsExplicitInQuery: true }));
     },
     resetColumns: () => {
         const next = resetColumnSettings(COLUMN_DEFINITIONS);
-        set(() => ({ visibleColumns: DEFAULT_COLUMNS, columnSettings: next }));
+        set(() => ({ visibleColumns: DEFAULT_COLUMNS, columnSettings: next, columnStateSource: 'user', columnsExplicitInQuery: true }));
     },
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),
     setSidebarWidth: (width) => set(() => ({ sidebarWidth: width })),

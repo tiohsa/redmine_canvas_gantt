@@ -60,7 +60,7 @@ describe('useInitialGanttData persistence', () => {
         saveLastUsedSharedQueryState({
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [null, 7],
-            selectedProjectIds: ['p1'],
+            canvasProjectIds: ['p1'],
             selectedVersionIds: ['_none', 'v2'],
             groupBy: 'assignee',
             showSubprojects: false
@@ -74,10 +74,18 @@ describe('useInitialGanttData persistence', () => {
                 query: {
                     selectedStatusIds: [1, 2],
                     selectedAssigneeIds: [null, 7],
-                    selectedProjectIds: ['p1'],
+                    canvasProjectIds: ['p1'],
                     selectedVersionIds: ['_none', 'v2'],
                     groupBy: 'assignee',
                     showSubprojects: false
+                },
+                queryContext: {
+                    baseQueryId: null,
+                    overrides: {
+                        status: { mode: 'subset', values: [1, 2] },
+                        assignee: { mode: 'subset', values: [null, 7] },
+                        version: { mode: 'subset', values: ['_none', 'v2'] }
+                    }
                 }
             });
         });
@@ -95,7 +103,7 @@ describe('useInitialGanttData persistence', () => {
         const url = new URL(window.location.href);
         expect(url.searchParams.getAll('status_ids[]')).toEqual(['1', '2']);
         expect(url.searchParams.getAll('assigned_to_ids[]')).toEqual(['none', '7']);
-        expect(url.searchParams.getAll('project_ids[]')).toEqual(['p1']);
+        expect(url.searchParams.getAll('canvas_project_ids[]')).toEqual(['p1']);
         expect(url.searchParams.getAll('fixed_version_ids[]')).toEqual(['none', 'v2']);
         expect(url.searchParams.get('group_by')).toBe('assigned_to');
         expect(url.searchParams.get('show_subprojects')).toBe('0');
@@ -103,7 +111,7 @@ describe('useInitialGanttData persistence', () => {
 
     it('restores an explicit empty project selection from storage on a bare canvas gantt URL', async () => {
         saveLastUsedSharedQueryState({
-            selectedProjectIds: []
+            canvasProjectIds: []
         });
 
         render(<Harness />);
@@ -112,8 +120,9 @@ describe('useInitialGanttData persistence', () => {
             expect(fetchDataMock).toHaveBeenCalledWith({
                 rawSearch: undefined,
                 query: {
-                    selectedProjectIds: []
-                }
+                    canvasProjectIds: []
+                },
+                queryContext: { baseQueryId: null, overrides: {} }
             });
         });
 
@@ -122,7 +131,7 @@ describe('useInitialGanttData persistence', () => {
         });
 
         const url = new URL(window.location.href);
-        expect(url.searchParams.getAll('project_ids[]')).toEqual(['none']);
+        expect(url.searchParams.getAll('canvas_project_ids[]')).toEqual(['none']);
     });
 
     it('restores a stored saved query id before initial data resolves and checks its radio', async () => {
@@ -165,7 +174,8 @@ describe('useInitialGanttData persistence', () => {
                 query: {
                     queryId: 12,
                     groupBy: 'project'
-                }
+                },
+                queryContext: { baseQueryId: 12, overrides: {} }
             });
         });
 
@@ -184,9 +194,9 @@ describe('useInitialGanttData persistence', () => {
 
         expect(fetchDataMock).toHaveBeenCalledWith({
             query: {
-                queryId: 18,
-                groupBy: 'project'
-            }
+                queryId: 18
+            },
+            queryContext: { baseQueryId: 18, overrides: {} }
         });
     });
 
@@ -202,7 +212,8 @@ describe('useInitialGanttData persistence', () => {
                 rawSearch: undefined,
                 query: {
                     queryId: 12
-                }
+                },
+                queryContext: { baseQueryId: 12, overrides: {} }
             });
         });
 
@@ -212,7 +223,8 @@ describe('useInitialGanttData persistence', () => {
         expect(fetchDataMock).toHaveBeenCalledWith({
             query: {
                 queryId: 18
-            }
+            },
+            queryContext: { baseQueryId: 18, overrides: {} }
         });
     });
 
@@ -228,7 +240,8 @@ describe('useInitialGanttData persistence', () => {
                 rawSearch: undefined,
                 query: {
                     groupBy: null
-                }
+                },
+                queryContext: { baseQueryId: null, overrides: {} }
             });
         });
 
@@ -252,6 +265,7 @@ describe('useInitialGanttData persistence', () => {
             selectedStatusIds: [1],
             selectedAssigneeIds: [7],
             selectedProjectIds: ['p1'],
+            projectSelectionExplicit: true,
             selectedVersionIds: ['v2']
         });
         fetchDataMock.mockImplementationOnce(async () => ({
@@ -279,7 +293,7 @@ describe('useInitialGanttData persistence', () => {
         });
     });
 
-    it('restores memberProjectsOnly from shared state', async () => {
+    it('does not restore memberProjectsOnly from shared query state', async () => {
         saveLastUsedSharedQueryState({
             memberProjectsOnly: true
         });
@@ -289,17 +303,61 @@ describe('useInitialGanttData persistence', () => {
         await waitFor(() => {
             expect(fetchDataMock).toHaveBeenCalledWith({
                 rawSearch: undefined,
-                query: {
-                    memberProjectsOnly: true
-                }
+                query: {}
             });
         });
 
         await waitFor(() => {
-            expect(useTaskStore.getState().memberProjectsOnly).toBe(true);
+            expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
         });
 
         const url = new URL(window.location.href);
-        expect(url.searchParams.get('member_projects_only')).toBe('1');
+        expect(url.searchParams.get('member_projects_only')).toBeNull();
+    });
+
+    it('passes the restored member project preference to the initial API request without sharing it', async () => {
+        useTaskStore.setState({ memberProjectsOnly: true });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalledWith({
+                rawSearch: undefined,
+                query: { memberProjectsOnly: true }
+            });
+        });
+
+        expect(new URL(window.location.href).searchParams.get('member_projects_only')).toBeNull();
+    });
+
+    it('adds the restored member project preference to a shared-query API request only', async () => {
+        window.history.replaceState({}, '', '/projects/ecookbook/canvas_gantt?query_id=12&group_by=project');
+        useTaskStore.setState({ memberProjectsOnly: true });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalledWith({
+                rawSearch: '?query_id=12&group_by=project&member_projects_only=1',
+                query: {
+                    queryId: 12,
+                    selectedStatusIds: undefined,
+                    selectedAssigneeIds: undefined,
+                    canvasProjectIds: undefined,
+                    selectedVersionIds: undefined,
+                    memberProjectsOnly: true,
+                    sortConfig: undefined,
+                    groupBy: 'project',
+                    showSubprojects: undefined,
+                    visibleColumns: undefined
+                },
+                queryContext: undefined
+            });
+        });
+
+        const url = new URL(window.location.href);
+        expect(url.searchParams.get('query_id')).toBe('12');
+        expect(url.searchParams.get('group_by')).toBe('project');
+        expect(url.searchParams.get('member_projects_only')).toBeNull();
     });
 });

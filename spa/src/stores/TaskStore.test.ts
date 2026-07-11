@@ -217,6 +217,23 @@ describe('TaskStore shared query persistence', () => {
         vi.mocked(apiClient.fetchData).mockReset();
     });
 
+    it('does not persist an unspecified Canvas Project scope', () => {
+        useTaskStore.getState().applyResolvedQueryState({});
+
+        expect(loadLastUsedSharedQueryState(1)).toEqual({ groupBy: null });
+        expect(new URL(window.location.href).searchParams.has('canvas_project_ids[]')).toBe(false);
+    });
+
+    it('persists an explicitly empty Canvas Project scope', () => {
+        useTaskStore.getState().setSelectedProjectIds([]);
+
+        expect(useTaskStore.getState().projectSelectionExplicit).toBe(true);
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            canvasProjectIds: []
+        });
+        expect(new URL(window.location.href).searchParams.get('canvas_project_ids[]')).toBe('none');
+    });
+
     it('applyResolvedQueryState は query_id と shared state を保存する', () => {
         useTaskStore.getState().applyResolvedQueryState({
             queryId: 12,
@@ -233,7 +250,7 @@ describe('TaskStore shared query persistence', () => {
         });
     });
 
-    it('applySavedQuery preserves an explicit project grouping override', async () => {
+    it('applySavedQuery replaces Redmine query overrides while preserving Canvas project scope', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [],
             relations: [],
@@ -245,29 +262,104 @@ describe('TaskStore shared query persistence', () => {
             permissions: { editable: true, viewable: true, baselineEditable: true },
             initialState: {
                 queryId: 12,
-                groupBy: 'project'
+                groupBy: 'assignee'
             }
         });
 
         useTaskStore.getState().setGroupByProject(true);
+        useTaskStore.setState({
+            queryContext: {
+                baseQueryId: 7,
+                overrides: {
+                    assignee: { mode: 'subset', values: [7] }
+                }
+            },
+            isQueryModified: true
+        });
+        await useTaskStore.getState().applySavedQuery(12);
+
+        expect(apiClient.fetchData).toHaveBeenCalledWith({
+            query: { queryId: 12 },
+            queryContext: { baseQueryId: 12, overrides: {} }
+        });
+        expect(useTaskStore.getState().activeQueryId).toBe(12);
+        expect(useTaskStore.getState().queryContext).toEqual({
+            baseQueryId: 12,
+            overrides: {}
+        });
+        expect(useTaskStore.getState().isQueryModified).toBe(false);
+        expect(useTaskStore.getState().groupByProject).toBe(false);
+        expect(useTaskStore.getState().groupByAssignee).toBe(true);
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            queryId: 12,
+            groupBy: 'assignee'
+        });
+    });
+
+    it('applySavedQuery preserves member project candidates when the filter is enabled', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: {
+                projects: [{ id: 'member-project', name: 'Member project' }],
+                assignees: []
+            },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: { queryId: 12 }
+        });
+        useTaskStore.setState({ memberProjectsOnly: true });
+
         await useTaskStore.getState().applySavedQuery(12);
 
         expect(apiClient.fetchData).toHaveBeenCalledWith({
             query: {
                 queryId: 12,
-                groupBy: 'project'
-            }
+                memberProjectsOnly: true
+            },
+            queryContext: { baseQueryId: 12, overrides: {} }
         });
-        expect(useTaskStore.getState().activeQueryId).toBe(12);
+        expect(useTaskStore.getState().filterOptions.projects).toEqual([
+            { id: 'member-project', name: 'Member project' }
+        ]);
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(true);
+    });
+
+    it('setGroupByProject preserves showSubprojects when enabling project grouping', () => {
+        useTaskStore.setState({ showSubprojects: false });
+
+        useTaskStore.getState().setGroupByProject(true);
+
         expect(useTaskStore.getState().groupByProject).toBe(true);
         expect(useTaskStore.getState().groupByAssignee).toBe(false);
+        expect(useTaskStore.getState().explicitGroupByOverride).toBe('project');
+        expect(useTaskStore.getState().showSubprojects).toBe(false);
         expect(loadLastUsedSharedQueryState(1)).toEqual({
-            queryId: 12,
-            groupBy: 'project'
+            showSubprojects: false
         });
     });
 
-    it('applySavedQuery sends only the saved query id when grouping was not explicitly overridden', async () => {
+    it('setGroupByProject preserves showSubprojects when disabling project grouping', () => {
+        useTaskStore.setState({
+            groupByProject: true,
+            groupByAssignee: false,
+            showSubprojects: true
+        });
+
+        useTaskStore.getState().setGroupByProject(false);
+
+        expect(useTaskStore.getState().groupByProject).toBe(false);
+        expect(useTaskStore.getState().groupByAssignee).toBe(false);
+        expect(useTaskStore.getState().showSubprojects).toBe(true);
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            groupBy: null
+        });
+    });
+
+    it('applySavedQuery sends the saved query with the independent Canvas project scope', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [],
             relations: [],
@@ -286,6 +378,7 @@ describe('TaskStore shared query persistence', () => {
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7],
             selectedProjectIds: ['p1'],
+            projectSelectionExplicit: true,
             selectedVersionIds: ['v1']
         });
 
@@ -293,19 +386,62 @@ describe('TaskStore shared query persistence', () => {
 
         expect(apiClient.fetchData).toHaveBeenCalledWith({
             query: {
-                queryId: 12
-            }
+                queryId: 12,
+                canvasProjectIds: ['p1']
+            },
+            queryContext: { baseQueryId: 12, overrides: {} }
         });
         expect(useTaskStore.getState().activeQueryId).toBe(12);
         expect(useTaskStore.getState().selectedStatusIds).toEqual([3]);
         expect(loadLastUsedSharedQueryState(1)).toEqual({
             queryId: 12,
             selectedStatusIds: [3],
-            groupBy: null
+            groupBy: null,
+            canvasProjectIds: ['p1']
         });
     });
 
-    it('setMemberProjectsOnly updates shared query state and refreshes data', async () => {
+    it('does not restore the previous Canvas grouping when a saved query has no group_by', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [] },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: { queryId: 12, groupBy: null }
+        });
+        useTaskStore.setState({ groupByProject: true, groupByAssignee: false });
+
+        await useTaskStore.getState().applySavedQuery(12);
+
+        expect(useTaskStore.getState().groupByProject).toBe(false);
+        expect(useTaskStore.getState().groupByAssignee).toBe(false);
+    });
+
+    it('preserves Canvas showSubprojects when a saved query is applied', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [] },
+            statuses: [],
+            customFields: [],
+            project: { id: '1', name: 'Demo' },
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            initialState: { queryId: 12, groupBy: 'project' }
+        });
+        useTaskStore.setState({ showSubprojects: false, selectedProjectIds: ['p1', 'p2'], projectSelectionExplicit: true });
+
+        await useTaskStore.getState().applySavedQuery(12);
+
+        expect(useTaskStore.getState().showSubprojects).toBe(false);
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
+    });
+
+    it('setMemberProjectsOnly refreshes data without pruning hidden selected projects or sharing the UI flag', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [],
             relations: [],
@@ -320,19 +456,42 @@ describe('TaskStore shared query persistence', () => {
             permissions: { editable: true, viewable: true, baselineEditable: true },
             initialState: {
                 memberProjectsOnly: true,
-                selectedProjectIds: ['p1', 'p2']
+                canvasProjectIds: ['p1', 'p2']
             }
         });
 
         await useTaskStore.getState().setMemberProjectsOnly(true);
 
         expect(apiClient.fetchData).toHaveBeenCalled();
-        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
         expect(loadLastUsedSharedQueryState(1)).toEqual({
             groupBy: null,
-            memberProjectsOnly: true,
-            selectedProjectIds: ['p1']
+            canvasProjectIds: ['p1', 'p2']
         });
+    });
+});
+
+describe('TaskStore version layout exclusivity', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('turning on version headers disables dependency organization', () => {
+        useTaskStore.setState({ organizeByDependency: true, showVersions: false });
+
+        useTaskStore.getState().setShowVersions(true);
+
+        expect(useTaskStore.getState().showVersions).toBe(true);
+        expect(useTaskStore.getState().organizeByDependency).toBe(false);
+    });
+
+    it('turning on dependency organization disables version headers', () => {
+        useTaskStore.setState({ organizeByDependency: false, showVersions: true });
+
+        useTaskStore.getState().setOrganizeByDependency(true);
+
+        expect(useTaskStore.getState().organizeByDependency).toBe(true);
+        expect(useTaskStore.getState().showVersions).toBe(false);
     });
 });
 
@@ -394,7 +553,7 @@ describe('TaskStore API data application', () => {
             initialState
         });
 
-        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'missing']);
         expect(initialState.selectedProjectIds).toEqual(['p1', 'missing']);
     });
 

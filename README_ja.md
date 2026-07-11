@@ -150,7 +150,9 @@ iframe ダイアログが使いにくい環境向けに、**新しいタブで�
 | `query_id` | 既存の Redmine 保存済みチケットクエリを基底条件として使用 |
 | `status_ids[]` | チケットのステータス ID で絞り込み |
 | `assigned_to_ids[]` | 担当者 ID で絞り込み。未割当は `none` を指定 |
-| `project_ids[]` | 現在の project / subproject スコープ内で表示する project を絞り込み |
+| `canvas_project_ids[]` | 現在の project / subproject スコープ内で表示する project を絞り込み。`none` は明示的な 0 件 |
+| `project_id` | Redmine 標準クエリの入力。初回 URL 解析時に Canvas Project scope へ正規化 |
+| `project_ids[]` | 後方互換入力。Canvas Gantt からは生成しない |
 | `fixed_version_ids[]` | 対象バージョン ID で絞り込み。バージョンなしは `none` を指定 |
 | `group_by` | グループ化条件。`project` または `assigned_to` |
 | `sort` | フロントエンドのソートキーと方向。例: `subject:asc`, `startDate:desc` |
@@ -195,7 +197,7 @@ iframe ダイアログが使いにくい環境向けに、**新しいタブで�
 ブラウザ保存状態に依存せず、特定プロジェクト・特定バージョンの共有ビューを開く:
 
 ```text
-/projects/demo/canvas_gantt?project_ids[]=3&fixed_version_ids[]=7&group_by=project&sort=startDate:asc
+/projects/demo/canvas_gantt?canvas_project_ids[]=3&fixed_version_ids[]=7&group_by=project&sort=startDate:asc
 ```
 
 サブプロジェクトを隠し、未割当チケットだけを表示する:

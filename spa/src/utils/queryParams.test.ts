@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildIssueQueryParams,
-    buildRedmineIssueQueryParams,
     hasSharedQueryStateInUrl,
+    mergeControlledQueryParams,
     normalizeResolvedQueryState,
     parseResolvedQueryState,
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
     resolveInitialSharedQueryState,
-    toBusinessQueryState,
     toResolvedQueryStateFromStore
 } from './queryParams';
+import type { QueryContext } from '../query/types';
+import { serializeRedmineIssueQueryParams } from '../query/redmineQueryUrlCodec';
+import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 
 describe('parseResolvedQueryState', () => {
     it('accepts backend boolean grouping payload', () => {
@@ -19,6 +21,7 @@ describe('parseResolvedQueryState', () => {
             selected_status_ids: [1, 2],
             selected_assignee_ids: [7, null],
             selected_project_ids: ['1'],
+            visible_columns: ['subject', 'assigned_to', 'cf_101', 'notification'],
             sort_config: { key: 'subject', direction: 'desc' },
             group_by_assignee: true,
             show_subprojects: false
@@ -28,7 +31,8 @@ describe('parseResolvedQueryState', () => {
             queryId: 42,
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
-            selectedProjectIds: ['1'],
+            canvasProjectIds: ['1'],
+            visibleColumns: ['subject', 'assignee', 'cf:101'],
             memberProjectsOnly: undefined,
             sortConfig: { key: 'subject', direction: 'desc' },
             groupBy: 'assignee',
@@ -59,7 +63,7 @@ describe('parseResolvedQueryState', () => {
             queryId: undefined,
             selectedStatusIds: undefined,
             selectedAssigneeIds: [null, 7],
-            selectedProjectIds: undefined,
+            canvasProjectIds: undefined,
             selectedVersionIds: ['_none'],
             memberProjectsOnly: undefined,
             sortConfig: undefined,
@@ -75,7 +79,7 @@ describe('readIssueQueryParamsFromUrl', () => {
             queryId: undefined,
             selectedStatusIds: [1],
             selectedAssigneeIds: undefined,
-            selectedProjectIds: undefined,
+            canvasProjectIds: undefined,
             selectedVersionIds: undefined,
             memberProjectsOnly: undefined,
             sortConfig: undefined,
@@ -97,11 +101,40 @@ describe('readIssueQueryParamsFromUrl', () => {
             queryId: 7,
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
-            selectedProjectIds: ['3'],
+            canvasProjectIds: ['3'],
             selectedVersionIds: ['4'],
             memberProjectsOnly: undefined,
             sortConfig: { key: 'startDate', direction: 'desc' },
             groupBy: 'assignee',
+            showSubprojects: undefined,
+            visibleColumns: undefined
+        });
+    });
+
+    it('does not convert subproject_id=* into Canvas state', () => {
+        expect(readIssueQueryParamsFromUrl('?set_filter=1&f[]=subproject_id&op[subproject_id]=*')).toEqual({
+            queryId: undefined,
+            selectedStatusIds: undefined,
+            selectedAssigneeIds: undefined,
+            canvasProjectIds: undefined,
+            selectedVersionIds: undefined,
+            memberProjectsOnly: undefined,
+            sortConfig: undefined,
+            groupBy: null,
+            showSubprojects: undefined
+        });
+    });
+
+    it('keeps an explicit Canvas show_subprojects value independent from subproject_id', () => {
+        expect(readIssueQueryParamsFromUrl('?set_filter=1&f[]=subproject_id&op[subproject_id]=*&show_subprojects=0')).toEqual({
+            queryId: undefined,
+            selectedStatusIds: undefined,
+            selectedAssigneeIds: undefined,
+            canvasProjectIds: undefined,
+            selectedVersionIds: undefined,
+            memberProjectsOnly: undefined,
+            sortConfig: undefined,
+            groupBy: null,
             showSubprojects: false
         });
     });
@@ -119,6 +152,42 @@ describe('readIssueQueryParamsFromUrl', () => {
             showSubprojects: undefined
         });
     });
+
+    it('reads visible columns from Redmine c params', () => {
+        expect(readIssueQueryParamsFromUrl('?c[]=subject&c[]=assigned_to&c[]=cf_101&c[]=notification')).toEqual({
+            queryId: undefined,
+            selectedStatusIds: undefined,
+            selectedAssigneeIds: undefined,
+            selectedProjectIds: undefined,
+            selectedVersionIds: undefined,
+            memberProjectsOnly: undefined,
+            sortConfig: undefined,
+            groupBy: null,
+            showSubprojects: undefined,
+            visibleColumns: ['subject', 'assignee', 'cf:101']
+        });
+    });
+});
+
+describe('explicit query columns', () => {
+    it('only emits c[] for explicitly query-owned columns', () => {
+        const state = toResolvedQueryStateFromStore({
+            activeQueryId: null,
+            selectedStatusIds: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            memberProjectsOnly: false,
+            sortConfig: null,
+            groupByProject: false,
+            groupByAssignee: false,
+            showSubprojects: true,
+            visibleColumns: ['subject', 'status'],
+            columnsExplicitInQuery: false
+        });
+
+        expect(state.visibleColumns).toBeUndefined();
+    });
 });
 
 describe('normalizeResolvedQueryState', () => {
@@ -127,13 +196,13 @@ describe('normalizeResolvedQueryState', () => {
             queryId: null,
             selectedStatusIds: [],
             selectedAssigneeIds: [],
-            selectedProjectIds: [],
+            canvasProjectIds: [],
             selectedVersionIds: [],
             sortConfig: { key: 'startDate', direction: 'asc' },
             groupBy: 'project',
             showSubprojects: true
         })).toEqual({
-            selectedProjectIds: []
+            canvasProjectIds: []
         });
     });
 
@@ -143,6 +212,7 @@ describe('normalizeResolvedQueryState', () => {
             selectedStatusIds: [],
             selectedAssigneeIds: [],
             selectedVersionIds: [],
+            memberProjectsOnly: true,
             sortConfig: { key: 'startDate', direction: 'asc' },
             groupBy: 'project',
             showSubprojects: true
@@ -151,9 +221,9 @@ describe('normalizeResolvedQueryState', () => {
 
     it('keeps an explicit empty project selection', () => {
         expect(normalizeResolvedQueryState({
-            selectedProjectIds: []
+            canvasProjectIds: []
         })).toEqual({
-            selectedProjectIds: []
+            canvasProjectIds: []
         });
     });
 
@@ -188,6 +258,14 @@ describe('normalizeResolvedQueryState', () => {
             groupBy: null
         });
     });
+
+    it('keeps visible columns from stored shared state', () => {
+        expect(normalizeResolvedQueryState({
+            visibleColumns: ['subject', 'assignee']
+        })).toEqual({
+            visibleColumns: ['subject', 'assignee']
+        });
+    });
 });
 
 describe('hasSharedQueryStateInUrl', () => {
@@ -203,8 +281,12 @@ describe('hasSharedQueryStateInUrl', () => {
         expect(hasSharedQueryStateInUrl('?query_id=7')).toBe(true);
     });
 
-    it('returns true when member_projects_only is present', () => {
-        expect(hasSharedQueryStateInUrl('?member_projects_only=0')).toBe(true);
+    it('does not treat member_projects_only as shared URL state', () => {
+        expect(hasSharedQueryStateInUrl('?member_projects_only=0')).toBe(false);
+    });
+
+    it('returns true when visible column params are present', () => {
+        expect(hasSharedQueryStateInUrl('?c[]=subject')).toBe(true);
     });
 });
 
@@ -226,10 +308,10 @@ describe('resolveInitialSharedQueryState', () => {
 
     it('uses an explicit empty project selection from storage for a bare Canvas Gantt URL', () => {
         expect(resolveInitialSharedQueryState('', {
-            selectedProjectIds: []
+            canvasProjectIds: []
         })).toEqual({
             state: {
-                selectedProjectIds: []
+                canvasProjectIds: []
             },
             source: 'storage'
         });
@@ -276,22 +358,25 @@ describe('toResolvedQueryStateFromStore', () => {
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
             selectedProjectIds: ['3'],
+            projectSelectionExplicit: true,
             selectedVersionIds: ['4'],
             memberProjectsOnly: true,
             sortConfig: { key: 'subject', direction: 'asc' },
             groupByProject: false,
             groupByAssignee: true,
-            showSubprojects: false
+            showSubprojects: false,
+            visibleColumns: ['subject', 'assignee']
         })).toEqual({
             queryId: 9,
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
-            selectedProjectIds: ['3'],
+            canvasProjectIds: ['3'],
             selectedVersionIds: ['4'],
             memberProjectsOnly: true,
             sortConfig: { key: 'subject', direction: 'asc' },
             groupBy: 'assignee',
-            showSubprojects: false
+            showSubprojects: false,
+            visibleColumns: ['subject', 'assignee']
         });
     });
 });
@@ -318,8 +403,17 @@ describe('toBusinessQueryState', () => {
 });
 
 describe('replaceIssueQueryParamsInUrl', () => {
+    it('merges controlled params without reading or mutating browser state', () => {
+        const merged = mergeControlledQueryParams(
+            '?query_id=9&op[status_id]==&foo=bar',
+            new URLSearchParams('query_id=42&status_ids[]=1')
+        );
+
+        expect(merged.toString()).toBe('foo=bar&query_id=42&status_ids%5B%5D=1');
+    });
+
     it('rewrites only known shared query params', () => {
-        window.history.replaceState({}, '', '/projects/demo/canvas_gantt?query_id=9&foo=bar');
+        window.history.replaceState({}, '', '/projects/demo/canvas_gantt?query_id=9&c[]=status&foo=bar');
 
         replaceIssueQueryParamsInUrl({
             queryId: 42,
@@ -329,7 +423,8 @@ describe('replaceIssueQueryParamsInUrl', () => {
             selectedVersionIds: ['4'],
             sortConfig: { key: 'subject', direction: 'asc' },
             groupBy: 'project',
-            showSubprojects: false
+            showSubprojects: false,
+            visibleColumns: ['subject', 'assignee', 'notification']
         });
 
         const url = new URL(window.location.href);
@@ -337,11 +432,12 @@ describe('replaceIssueQueryParamsInUrl', () => {
         expect(url.searchParams.get('query_id')).toBe('42');
         expect(url.searchParams.getAll('status_ids[]')).toEqual(['1', '2']);
         expect(url.searchParams.getAll('assigned_to_ids[]')).toEqual(['7']);
-        expect(url.searchParams.getAll('project_ids[]')).toEqual(['3']);
+        expect(url.searchParams.getAll('canvas_project_ids[]')).toEqual(['3']);
         expect(url.searchParams.getAll('fixed_version_ids[]')).toEqual(['4']);
         expect(url.searchParams.get('group_by')).toBe('project');
         expect(url.searchParams.get('sort')).toBe('subject:asc');
         expect(url.searchParams.get('show_subprojects')).toBe('0');
+        expect(url.searchParams.getAll('c[]')).toEqual(['subject', 'assigned_to']);
     });
 
     it('removes query_id when it is not a persisted query id', () => {
@@ -376,9 +472,69 @@ describe('replaceIssueQueryParamsInUrl', () => {
         expect(url.searchParams.getAll('v[status_id][]')).toEqual([]);
         expect(url.searchParams.getAll('status_ids[]')).toEqual(['2']);
     });
+
+    it('removes member_projects_only from the shared browser URL', () => {
+        window.history.replaceState({}, '', '/projects/demo/canvas_gantt?member_projects_only=1&foo=bar');
+
+        replaceIssueQueryParamsInUrl({
+            memberProjectsOnly: true,
+            canvasProjectIds: ['3']
+        });
+
+        const url = new URL(window.location.href);
+        expect(url.searchParams.get('foo')).toBe('bar');
+        expect(url.searchParams.get('member_projects_only')).toBeNull();
+        expect(url.searchParams.getAll('canvas_project_ids[]')).toEqual(['3']);
+    });
 });
 
 describe('query parameter round-trips for special selections', () => {
+    it('uses QueryContext overrides for all three saved-query filter clears', () => {
+        const queryContext: QueryContext = {
+            baseQueryId: 12,
+            overrides: {
+                status: { mode: 'all' },
+                assignee: { mode: 'all' },
+                version: { mode: 'all' }
+            }
+        };
+        const params = buildIssueQueryParams({ queryId: 12 }, { queryContext });
+
+        expect(params.get('query_id')).toBe('12');
+        expect(params.get('set_filter')).toBe('1');
+        expect(params.getAll('f[]')).toEqual(['status_id', 'assigned_to_id', 'fixed_version_id']);
+        expect(params.get('op[status_id]')).toBe('*');
+        expect(params.get('op[assigned_to_id]')).toBe('*');
+        expect(params.get('op[fixed_version_id]')).toBe('*');
+    });
+
+    it('does not emit all operators without a saved query', () => {
+        const params = buildIssueQueryParams({}, {
+            queryContext: {
+                baseQueryId: null,
+                overrides: {
+                    status: { mode: 'all' },
+                    assignee: { mode: 'all' },
+                    version: { mode: 'all' }
+                }
+            }
+        });
+
+        expect(params.get('set_filter')).toBeNull();
+        expect(params.getAll('f[]')).toEqual([]);
+    });
+
+    it('uses QueryContext subsets instead of ResolvedQueryState filter arrays', () => {
+        const params = buildIssueQueryParams({ selectedAssigneeIds: [] }, {
+            queryContext: {
+                baseQueryId: 12,
+                overrides: { assignee: { mode: 'subset', values: [7] } }
+            }
+        });
+
+        expect(params.getAll('assigned_to_ids[]')).toEqual(['7']);
+        expect(params.get('op[assigned_to_id]')).toBeNull();
+    });
     it('encodes an explicit empty status selection as a saved-query status clear override', () => {
         const params = buildIssueQueryParams({
             queryId: 42,
@@ -438,16 +594,16 @@ describe('query parameter round-trips for special selections', () => {
 
     it('preserves an explicitly empty project selection through URL round-trips', () => {
         const params = buildIssueQueryParams({
-            selectedProjectIds: []
+            canvasProjectIds: []
         });
 
-        expect(params.toString()).toContain('project_ids%5B%5D=none');
+        expect(params.toString()).toContain('canvas_project_ids%5B%5D=none');
 
         expect(readIssueQueryParamsFromUrl(`?${params.toString()}`)).toEqual({
             queryId: undefined,
             selectedStatusIds: undefined,
             selectedAssigneeIds: undefined,
-            selectedProjectIds: [],
+            canvasProjectIds: [],
             selectedVersionIds: undefined,
             memberProjectsOnly: undefined,
             sortConfig: undefined,
@@ -463,7 +619,7 @@ describe('query parameter round-trips for special selections', () => {
         expect(readIssueQueryParamsFromUrl(`?${params.toString()}`).groupBy).toBeNull();
     });
 
-    it('round-trips member_projects_only from URL params', () => {
+    it('ignores member_projects_only from shared URL params while preserving API encoding support', () => {
         const parsed = readIssueQueryParamsFromUrl('?member_projects_only=1');
         expect(parsed).toEqual({
             queryId: undefined,
@@ -471,7 +627,7 @@ describe('query parameter round-trips for special selections', () => {
             selectedAssigneeIds: undefined,
             selectedProjectIds: undefined,
             selectedVersionIds: undefined,
-            memberProjectsOnly: true,
+            memberProjectsOnly: undefined,
             sortConfig: undefined,
             groupBy: null,
             showSubprojects: undefined
@@ -482,9 +638,27 @@ describe('query parameter round-trips for special selections', () => {
     });
 });
 
-describe('buildRedmineIssueQueryParams', () => {
+describe('serializeRedmineIssueQueryParams', () => {
+    it('exports QueryContext all overrides to the Redmine Query Editor', () => {
+        const { params, notices } = serializeRedmineIssueQueryParams({ queryId: 12 }, {
+            queryContext: {
+                baseQueryId: 12,
+                overrides: {
+                    assignee: { mode: 'all' },
+                    version: { mode: 'all' }
+                }
+            }
+        });
+
+        expect(notices).toEqual([]);
+        expect(params.get('query_id')).toBe('12');
+        expect(params.get('set_filter')).toBe('1');
+        expect(params.getAll('f[]')).toEqual(['assigned_to_id', 'fixed_version_id']);
+        expect(params.get('op[assigned_to_id]')).toBe('*');
+        expect(params.get('op[fixed_version_id]')).toBe('*');
+    });
     it('builds Redmine standard issue query params from shared state', () => {
-        const { params, notices } = buildRedmineIssueQueryParams({
+        const { params, notices } = serializeRedmineIssueQueryParams({
             queryId: 12,
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
@@ -510,7 +684,7 @@ describe('buildRedmineIssueQueryParams', () => {
     });
 
     it('exports unassigned-only assignee filter using the Redmine none operator', () => {
-        const { params, notices } = buildRedmineIssueQueryParams({
+        const { params, notices } = serializeRedmineIssueQueryParams({
             selectedAssigneeIds: [null]
         });
 
@@ -522,7 +696,7 @@ describe('buildRedmineIssueQueryParams', () => {
     });
 
     it('appends visible columns as c[] parameters from shared state', () => {
-        const { params } = buildRedmineIssueQueryParams({
+        const { params } = serializeRedmineIssueQueryParams({
             visibleColumns: ['status', 'subject', 'startDate', 'notification']
         });
 
@@ -534,7 +708,7 @@ describe('buildRedmineIssueQueryParams', () => {
     });
 
     it('appends sort configuration as sort parameter from shared state', () => {
-        const { params } = buildRedmineIssueQueryParams({
+        const { params } = serializeRedmineIssueQueryParams({
             sortConfig: { key: 'dueDate', direction: 'desc' }
         });
 
@@ -542,7 +716,7 @@ describe('buildRedmineIssueQueryParams', () => {
     });
 
     it('does not export the Canvas no-grouping sentinel to Redmine issue-list URLs', () => {
-        const { params } = buildRedmineIssueQueryParams({
+        const { params } = serializeRedmineIssueQueryParams({
             groupBy: null
         });
 

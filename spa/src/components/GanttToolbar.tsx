@@ -12,7 +12,8 @@ import { getRelationTypeLabel } from '../utils/relationEditing';
 import { savePreferences } from '../utils/preferences';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import { navigateToRedminePath } from '../utils/navigation';
-import { buildRedmineIssueQueryParams, toResolvedQueryStateFromStore } from '../utils/queryParams';
+import { toResolvedQueryStateFromStore } from '../utils/queryParams';
+import { serializeRedmineIssueQueryParams } from '../query/redmineQueryUrlCodec';
 import { useToolbarMenuState } from './gantt/useToolbarMenuState';
 import { useWorkloadStore } from '../stores/WorkloadStore';
 import type { GanttExportHandle } from '../export/types';
@@ -32,6 +33,7 @@ import { useColumnMenuDrag } from './sidebar/useColumnMenuDrag';
 import { useSavedQueriesLoader } from './gantt/useSavedQueriesLoader';
 import { useToolbarShortcuts } from './gantt/useToolbarShortcuts';
 import { fontFamilies, designTokens } from '../styles/designTokens';
+import './GanttToolbar.css';
 
 interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
@@ -43,12 +45,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, groupByAssignee, setGroupByAssignee, organizeByDependency, setOrganizeByDependency,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
-        selectedProjectIds, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
+        selectedProjectIds, projectSelectionExplicit, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
         setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
-        modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields, activeQueryId, sortConfig, showSubprojects, permissions, filterOptions,
+        modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
         applySavedQuery: applySavedQueryFromStore,
         clearSavedQuery: clearSavedQueryFromStore,
-        savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries
+        savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries, queryContext
     } = useTaskStore();
     const {
         showProgressLine,
@@ -296,6 +298,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             selectedStatusIds,
             selectedAssigneeIds,
             selectedProjectIds,
+            projectSelectionExplicit,
             selectedVersionIds,
             memberProjectsOnly,
             sortConfig,
@@ -304,7 +307,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             showSubprojects,
             visibleColumns
         });
-        const { params, notices } = buildRedmineIssueQueryParams(queryState);
+        const queryContextForPath = {
+            ...queryContext,
+            baseQueryId: includeActiveQueryId ? queryContext.baseQueryId : null
+        };
+        const { params, notices } = serializeRedmineIssueQueryParams(queryState, { queryContext: queryContextForPath });
         notices.forEach((notice) => useUIStore.getState().addNotification(notice, 'warning'));
         const query = params.toString();
         return `${issueListPath ?? `/projects/${projectId}/issues`}${query ? `?${query}` : ''}`;
@@ -606,7 +613,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             lineHeight: 1.5
         }}>
             {/* Left: Filter & Options */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
+            <div className="gantt-toolbar-left" style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
                 <button
                     data-testid="maximize-left-pane-button"
                     onClick={toggleRightPane}
@@ -835,6 +842,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                         }}
                                     />
                                     <span style={{ flex: 1 }}>{query.name}</span>
+                                    {query.id === displayedActiveQueryId && isQueryModified && (
+                                        <span style={{ fontSize: '11px', color: designTokens.textMuted }}>
+                                            {i18n.t('label_modified') || 'Modified'}
+                                        </span>
+                                    )}
                                 </label>
                             ))}
                             </div>

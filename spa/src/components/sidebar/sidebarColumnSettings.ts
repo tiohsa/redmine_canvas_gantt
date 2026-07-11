@@ -76,11 +76,15 @@ export const normalizeColumnSettings = (
         }));
     }
 
-    const visibleKeys = new Set((settings as string[]).filter((key) => knownKeys.includes(key)));
-    return knownKeys.map((key) => ({
-        key,
-        visible: visibleKeys.size === 0 ? defaultVisibleKeys.has(key) : visibleKeys.has(key)
-    }));
+    const visibleKeys = Array.from(new Set((settings as string[]).filter((key) => knownKeys.includes(key))));
+    if (visibleKeys.length === 0) return defaultSettings;
+
+    return [
+        ...visibleKeys.map((key) => ({ key, visible: true })),
+        ...knownKeys
+            .filter((key) => !visibleKeys.includes(key))
+            .map((key) => ({ key, visible: false }))
+    ];
 };
 
 export const resolveVisibleColumnKeys = (settings: ColumnConfig[], pinnedKeys: string[] = []) => {

@@ -1,29 +1,23 @@
 import type { ResolvedQueryState } from './queryParams';
-import { normalizeResolvedQueryState } from './queryParams';
-
-type SharedQueryEnvelopeV1 = {
-    version: 1;
-    projects: Record<string, ResolvedQueryState>;
-};
+import {
+    cloneProjectState,
+    projectStateFromResolvedQueryState,
+    resolvedQueryStateFromProjectState,
+    type SharedQueryProjectStateV3
+} from '../query/queryStateCodec';
+import {
+    decodeSharedQueryEnvelope,
+    encodeSharedQueryEnvelope,
+    isSharedQueryProjectState,
+    STORAGE_VERSION,
+    type SharedQueryEnvelopeV3
+} from '../query/persistedQueryStateCodec';
 
 const STORAGE_KEY = 'canvasGantt:lastSharedQueryState';
-const STORAGE_VERSION = 1;
 const GLOBAL_PROJECT_KEY = 'project:global';
 
 const isBrowser = typeof window !== 'undefined';
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    typeof value === 'object' && value !== null;
-
-const isResolvedQueryStateRecord = (value: unknown): value is ResolvedQueryState =>
-    isRecord(value);
-
-const isEnvelope = (value: unknown): value is SharedQueryEnvelopeV1 => {
-    if (!isRecord(value)) return false;
-    if (value.version !== STORAGE_VERSION) return false;
-    if (!isRecord(value.projects)) return false;
-    return Object.values(value.projects).every((entry) => isResolvedQueryStateRecord(entry));
-};
 
 const resolveProjectKey = (projectId?: string | number | null): string => {
     const id = projectId ?? window.RedmineCanvasGantt?.projectId;
@@ -31,67 +25,101 @@ const resolveProjectKey = (projectId?: string | number | null): string => {
     return `project:${String(id)}`;
 };
 
-const persistEnvelope = (envelope: SharedQueryEnvelopeV1) => {
+const persistEnvelope = (envelope: SharedQueryEnvelopeV3) => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(envelope));
 };
 
-const loadEnvelope = (): SharedQueryEnvelopeV1 | null => {
+const loadEnvelope = (): SharedQueryEnvelopeV3 | null => {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
 
     try {
         const parsed = JSON.parse(raw) as unknown;
-        return isEnvelope(parsed) ? parsed : null;
+        const decoded = decodeSharedQueryEnvelope(parsed);
+        if (!decoded) return null;
+        const isCurrentVersion = typeof parsed === 'object'
+            && parsed !== null
+            && 'version' in parsed
+            && parsed.version === STORAGE_VERSION;
+        if (!isCurrentVersion) persistEnvelope(decoded);
+        return decoded;
     } catch (error) {
         console.warn('Failed to parse stored shared query state', error);
         return null;
     }
 };
 
-export const loadLastUsedSharedQueryState = (projectId?: string | number | null): ResolvedQueryState | undefined => {
+export const loadLastUsedSharedQueryProjectState = (
+    projectId?: string | number | null
+): SharedQueryProjectStateV3 | undefined => {
     if (!isBrowser) return undefined;
 
     const envelope = loadEnvelope();
     if (!envelope) return undefined;
 
-    return normalizeResolvedQueryState(envelope.projects[resolveProjectKey(projectId)]);
+    const projectKey = resolveProjectKey(projectId);
+    const cleanProjects: Record<string, SharedQueryProjectStateV3> = {};
+    let modified = false;
+
+    Object.entries(envelope.projects).forEach(([key, state]) => {
+        if (isSharedQueryProjectState(state)) {
+            cleanProjects[key] = state;
+        } else {
+            console.warn(`Failed to parse stored shared query state for project ${key}. Defaulting.`);
+            modified = true;
+        }
+    });
+
+    if (modified) {
+        persistEnvelope({ version: STORAGE_VERSION, projects: cleanProjects });
+    }
+
+    const projectState = cleanProjects[projectKey];
+    return projectState ? cloneProjectState(projectState) : undefined;
+};
+
+export const saveLastUsedSharedQueryProjectState = (
+    projectState: SharedQueryProjectStateV3 | undefined,
+    projectId?: string | number | null
+) => {
+    if (!isBrowser) return;
+
+    const projectKey = resolveProjectKey(projectId);
+    const envelope = loadEnvelope() ?? { version: STORAGE_VERSION, projects: {} };
+
+    // Filter to isolate failure
+    const cleanProjects: Record<string, SharedQueryProjectStateV3> = {};
+    Object.entries(envelope.projects).forEach(([key, state]) => {
+        if (isSharedQueryProjectState(state)) {
+            cleanProjects[key] = state;
+        }
+    });
+
+    if (!projectState) {
+        if (!cleanProjects[projectKey]) return;
+        delete cleanProjects[projectKey];
+        persistEnvelope({ version: STORAGE_VERSION, projects: cleanProjects });
+        return;
+    }
+
+    persistEnvelope(encodeSharedQueryEnvelope({
+        ...cleanProjects,
+        [projectKey]: cloneProjectState(projectState)
+    }));
+};
+
+export const loadLastUsedSharedQueryState = (projectId?: string | number | null): ResolvedQueryState | undefined => {
+    const projectState = loadLastUsedSharedQueryProjectState(projectId);
+    return projectState ? resolvedQueryStateFromProjectState(projectState) : undefined;
 };
 
 export const saveLastUsedSharedQueryState = (
     state: Partial<ResolvedQueryState>,
     projectId?: string | number | null
 ) => {
-    if (!isBrowser) return;
-
-    const projectKey = resolveProjectKey(projectId);
-    const normalized = normalizeResolvedQueryState(state);
-    const envelope = loadEnvelope() ?? { version: STORAGE_VERSION, projects: {} };
-
-    if (!normalized) {
-        if (!envelope.projects[projectKey]) return;
-        const rest = { ...envelope.projects };
-        delete rest[projectKey];
-        persistEnvelope({ version: STORAGE_VERSION, projects: rest });
-        return;
-    }
-
-    persistEnvelope({
-        version: STORAGE_VERSION,
-        projects: {
-            ...envelope.projects,
-            [projectKey]: normalized
-        }
-    });
+    saveLastUsedSharedQueryProjectState(projectStateFromResolvedQueryState(state), projectId);
 };
 
 export const clearLastUsedSharedQueryState = (projectId?: string | number | null) => {
-    if (!isBrowser) return;
-
-    const projectKey = resolveProjectKey(projectId);
-    const envelope = loadEnvelope();
-    if (!envelope?.projects[projectKey]) return;
-
-    const rest = { ...envelope.projects };
-    delete rest[projectKey];
-    persistEnvelope({ version: STORAGE_VERSION, projects: rest });
+    saveLastUsedSharedQueryProjectState(undefined, projectId);
 };
