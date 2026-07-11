@@ -105,6 +105,16 @@ describe('Preferences storage', () => {
         expect(loadPreferences(2).memberProjectsOnly).toBeUndefined();
     });
 
+    it('normalizes legacy mutually enabled version layout preferences', () => {
+        saveDisplayPreferences({ showVersions: true, organizeByDependency: true }, 1);
+
+        expect(loadPreferences(1).showVersions).toBe(false);
+        expect(loadPreferences(1).organizeByDependency).toBe(true);
+
+        const raw = JSON.parse(window.localStorage.getItem('canvasGantt:preferences') || '{}');
+        expect(raw.display.projects['project:1'].showVersions).toBe(false);
+    });
+
     it('saves and loads task title visibility preference', () => {
         saveDisplayPreferences({ showTaskTitles: false }, 1);
 

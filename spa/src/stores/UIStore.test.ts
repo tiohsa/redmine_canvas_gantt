@@ -139,6 +139,19 @@ describe('UIStore', () => {
         expect(useUIStore.getState().visibleColumns.sort()).toEqual(['id', 'status', 'subject'].sort());
     });
 
+    it('keeps query column order and separates it from preference state', () => {
+        useUIStore.getState().applyQueryVisibleColumns(['status', 'subject', 'status', 'unknown']);
+
+        expect(useUIStore.getState().visibleColumns).toEqual(['status', 'subject']);
+        expect(useUIStore.getState().columnSettings.filter((entry) => entry.visible).map((entry) => entry.key)).toEqual(['status', 'subject']);
+        expect(useUIStore.getState().columnStateSource).toBe('query');
+        expect(useUIStore.getState().columnsExplicitInQuery).toBe(true);
+
+        useUIStore.getState().restorePreferenceColumns();
+        expect(useUIStore.getState().columnStateSource).toBe('preference');
+        expect(useUIStore.getState().columnsExplicitInQuery).toBe(false);
+    });
+
     it('resets relation preferences including auto schedule move mode', () => {
         useUIStore.getState().setAutoScheduleMoveMode('off');
         expect(useUIStore.getState().autoScheduleMoveMode).toBe('off');

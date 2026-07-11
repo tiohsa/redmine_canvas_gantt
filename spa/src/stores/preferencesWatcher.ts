@@ -1,17 +1,21 @@
 import {
     buildStoredDisplayPreferences,
     buildStoredGeneralPreferences,
+    loadDisplayPreferencesWithSource,
     saveDisplayPreferences,
     saveGlobalDisplayPreferences,
     savePreferences
 } from '../utils/preferences';
 import { useTaskStore } from './TaskStore';
 import { useUIStore } from './UIStore';
+import { syncSharedQueryState } from './taskStore/querySync';
 
 const persistSelections = () => {
     const taskState = useTaskStore.getState();
     const uiState = useUIStore.getState();
 
+    const personalDisplayPreferences = loadDisplayPreferencesWithSource().preferences;
+    const queryColumnsActive = uiState.columnStateSource === 'query';
     const displaySnapshot = buildStoredDisplayPreferences({
         zoomLevel: taskState.zoomLevel,
         viewMode: taskState.viewMode,
@@ -27,8 +31,8 @@ const persistSelections = () => {
         showBaseline: uiState.showBaseline,
         showPointsOrphans: uiState.showPointsOrphans,
         showVersions: taskState.showVersions,
-        visibleColumns: uiState.visibleColumns,
-        columnSettings: uiState.columnSettings,
+        visibleColumns: queryColumnsActive ? personalDisplayPreferences.visibleColumns : uiState.visibleColumns,
+        columnSettings: queryColumnsActive ? personalDisplayPreferences.columnSettings : uiState.columnSettings,
         organizeByDependency: taskState.organizeByDependency,
         columnWidths: uiState.columnWidths,
         sidebarWidth: uiState.sidebarWidth,
@@ -50,6 +54,12 @@ const persistSelections = () => {
         autoApplyDefaultRelation: uiState.autoApplyDefaultRelation,
         autoScheduleMoveMode: uiState.autoScheduleMoveMode
     }));
+
+    syncSharedQueryState({
+        ...taskState,
+        visibleColumns: uiState.columnsExplicitInQuery ? uiState.visibleColumns : undefined,
+        columnsExplicitInQuery: uiState.columnsExplicitInQuery
+    });
 };
 
 useTaskStore.subscribe(persistSelections);

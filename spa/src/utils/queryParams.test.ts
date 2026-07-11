@@ -168,6 +168,27 @@ describe('readIssueQueryParamsFromUrl', () => {
     });
 });
 
+describe('explicit query columns', () => {
+    it('only emits c[] for explicitly query-owned columns', () => {
+        const state = toResolvedQueryStateFromStore({
+            activeQueryId: null,
+            selectedStatusIds: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: [],
+            selectedVersionIds: [],
+            memberProjectsOnly: false,
+            sortConfig: null,
+            groupByProject: false,
+            groupByAssignee: false,
+            showSubprojects: true,
+            visibleColumns: ['subject', 'status'],
+            columnsExplicitInQuery: false
+        });
+
+        expect(state.visibleColumns).toBeUndefined();
+    });
+});
+
 describe('normalizeResolvedQueryState', () => {
     it('drops default-equivalent values except explicit empty project selections', () => {
         expect(normalizeResolvedQueryState({

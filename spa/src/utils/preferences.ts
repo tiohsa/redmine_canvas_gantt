@@ -181,6 +181,13 @@ const sanitizeGeneralPreferences = (prefs: StoredPreferences): StoredGeneralPref
     }).filter(([, value]) => value !== undefined)
 ) as StoredGeneralPreferences;
 
+const normalizeDisplayPreferenceExclusivity = (prefs: StoredDisplayPreferences): StoredDisplayPreferences => {
+    if (prefs.showVersions && prefs.organizeByDependency) {
+        return { ...prefs, showVersions: false };
+    }
+    return prefs;
+};
+
 export const buildStoredDisplayPreferences = (
     prefs: DisplayPreferencesSnapshot
 ): StoredDisplayPreferences => sanitizeDisplayPreferences(prefs);
@@ -345,8 +352,19 @@ export const loadDisplayPreferencesWithSource = (
 
     const envelope = readEnvelope(projectId);
     const projectKey = resolveProjectKey(projectId);
-    const projectPreferences = sanitizeDisplayPreferences(envelope.display.projects[projectKey] ?? {});
-    const globalPreferences = sanitizeDisplayPreferences(envelope.display.global.preferences);
+    const rawProjectPreferences = sanitizeDisplayPreferences(envelope.display.projects[projectKey] ?? {});
+    const rawGlobalPreferences = sanitizeDisplayPreferences(envelope.display.global.preferences);
+    const projectPreferences = normalizeDisplayPreferenceExclusivity(rawProjectPreferences);
+    const globalPreferences = normalizeDisplayPreferenceExclusivity(rawGlobalPreferences);
+
+    if (projectPreferences.showVersions !== rawProjectPreferences.showVersions) {
+        envelope.display.projects[projectKey] = projectPreferences;
+        persistEnvelope(envelope);
+    }
+    if (globalPreferences.showVersions !== rawGlobalPreferences.showVersions) {
+        envelope.display.global.preferences = globalPreferences;
+        persistEnvelope(envelope);
+    }
 
     if (envelope.display.global.enabled) {
         return {

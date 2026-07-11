@@ -471,6 +471,30 @@ describe('TaskStore shared query persistence', () => {
     });
 });
 
+describe('TaskStore version layout exclusivity', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('turning on version headers disables dependency organization', () => {
+        useTaskStore.setState({ organizeByDependency: true, showVersions: false });
+
+        useTaskStore.getState().setShowVersions(true);
+
+        expect(useTaskStore.getState().showVersions).toBe(true);
+        expect(useTaskStore.getState().organizeByDependency).toBe(false);
+    });
+
+    it('turning on dependency organization disables version headers', () => {
+        useTaskStore.setState({ organizeByDependency: false, showVersions: true });
+
+        useTaskStore.getState().setOrganizeByDependency(true);
+
+        expect(useTaskStore.getState().organizeByDependency).toBe(true);
+        expect(useTaskStore.getState().showVersions).toBe(false);
+    });
+});
+
 describe('TaskStore API data application', () => {
     beforeEach(() => {
         window.localStorage.clear();

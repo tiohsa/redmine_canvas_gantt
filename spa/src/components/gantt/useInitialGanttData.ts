@@ -37,7 +37,7 @@ export const useInitialGanttData = ({
             }
 
             if (initialSharedQueryState.state.visibleColumns?.length) {
-                useUIStore.getState().setVisibleColumns(initialSharedQueryState.state.visibleColumns);
+                useUIStore.getState().applyQueryVisibleColumns(initialSharedQueryState.state.visibleColumns);
             }
 
             useTaskStore.getState().restoreActiveQueryId(initialSharedQueryState.state.queryId ?? null);

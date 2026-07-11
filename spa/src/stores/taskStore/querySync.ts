@@ -3,6 +3,7 @@ import type { QueryContext } from '../../query/types';
 import { sharedViewStateFromResolvedQueryState } from '../../query/queryStateCodec';
 import { replaceIssueQueryParamsInUrl, toResolvedQueryStateFromStore } from '../../utils/queryParams';
 import { saveLastUsedSharedQueryProjectState } from '../../utils/sharedQueryState';
+import { useUIStore } from '../UIStore';
 
 export type SharedQuerySyncState = {
     activeQueryId: number | null;
@@ -17,11 +18,21 @@ export type SharedQuerySyncState = {
     groupByProject: boolean;
     groupByAssignee: boolean;
     showSubprojects: boolean;
+    visibleColumns?: string[];
+    columnsExplicitInQuery?: boolean;
 };
 
 export const syncSharedQueryState = (state: SharedQuerySyncState) => {
-    const resolvedState = toResolvedQueryStateFromStore(state);
-    replaceIssueQueryParamsInUrl(resolvedState, state.queryContext);
+    const uiState = useUIStore.getState();
+    const effectiveState: SharedQuerySyncState = state.columnsExplicitInQuery === undefined
+        ? {
+            ...state,
+            visibleColumns: uiState.columnsExplicitInQuery ? uiState.visibleColumns : undefined,
+            columnsExplicitInQuery: uiState.columnsExplicitInQuery
+        }
+        : state;
+    const resolvedState = toResolvedQueryStateFromStore(effectiveState);
+    replaceIssueQueryParamsInUrl(resolvedState, effectiveState.queryContext);
     saveLastUsedSharedQueryProjectState({
         scopeState: {
             showSubprojects: state.showSubprojects,
@@ -29,7 +40,7 @@ export const syncSharedQueryState = (state: SharedQuerySyncState) => {
         },
         queryContext: {
             ...state.queryContext,
-            baseQueryId: state.activeQueryId
+            baseQueryId: effectiveState.activeQueryId
         },
         sharedViewState: sharedViewStateFromResolvedQueryState(resolvedState)
     });

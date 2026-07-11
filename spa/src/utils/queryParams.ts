@@ -32,6 +32,7 @@ export interface QueryUrlStateSource {
     groupByAssignee: boolean;
     showSubprojects: boolean;
     visibleColumns?: string[];
+    columnsExplicitInQuery?: boolean;
 }
 
 type ResolveInitialSharedQueryStateResult = {
@@ -328,7 +329,7 @@ export const toResolvedQueryStateFromStore = (state: QueryUrlStateSource): Resol
     sortConfig: state.sortConfig ?? undefined,
     groupBy: state.groupByProject ? 'project' : (state.groupByAssignee ? 'assignee' : null),
     showSubprojects: state.showSubprojects,
-    visibleColumns: state.visibleColumns
+    ...(state.columnsExplicitInQuery !== false ? { visibleColumns: state.visibleColumns } : {})
 });
 
 export const readIssueQueryParamsFromUrl = (search: string = window.location.search): ResolvedQueryState => {

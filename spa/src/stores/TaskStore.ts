@@ -431,7 +431,9 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
         sortConfig,
         groupByProject: queryState.groupByProject,
         groupByAssignee: queryState.groupByAssignee,
-        showSubprojects: queryState.showSubprojects
+        showSubprojects: queryState.showSubprojects,
+        visibleColumns: useUIStore.getState().columnsExplicitInQuery ? useUIStore.getState().visibleColumns : undefined,
+        columnsExplicitInQuery: useUIStore.getState().columnsExplicitInQuery
     };
 
     return {
@@ -767,10 +769,18 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             return result.patch;
         });
         if (data.initialState?.visibleColumns?.length) {
-            useUIStore.getState().setVisibleColumns(data.initialState.visibleColumns);
+            useUIStore.getState().applyQueryVisibleColumns(data.initialState.visibleColumns);
+        } else if (useUIStore.getState().columnStateSource === 'query') {
+            useUIStore.getState().restorePreferenceColumns();
         }
-        if (querySyncState) {
-            syncSharedQueryState(querySyncState);
+        const nextQuerySyncState = querySyncState as SharedQuerySyncState | null;
+        if (nextQuerySyncState) {
+            const uiState = useUIStore.getState();
+            syncSharedQueryState({
+                ...nextQuerySyncState,
+                visibleColumns: uiState.columnsExplicitInQuery ? uiState.visibleColumns : undefined,
+                columnsExplicitInQuery: uiState.columnsExplicitInQuery
+            });
         }
         useBaselineStore.getState().setSnapshot(data.baseline ?? null, data.warnings ?? []);
         (data.warnings ?? []).forEach((warning) => {
@@ -793,9 +803,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         void get().refreshData().catch((error) => console.error('Failed to refresh data', error));
     },
     setShowVersions: (show) => set((state) => {
-        const layout = buildLayoutFromState(state, { showVersions: show });
+        const organizeByDependency = show ? false : state.organizeByDependency;
+        const layout = buildLayoutFromState(state, { showVersions: show, organizeByDependency });
         return {
             showVersions: show,
+            organizeByDependency,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -1169,9 +1181,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return nextState;
     }),
     setOrganizeByDependency: (enabled) => set((state) => {
-        const layout = buildLayoutFromState(state, { organizeByDependency: enabled });
+        const showVersions = enabled ? false : state.showVersions;
+        const layout = buildLayoutFromState(state, { organizeByDependency: enabled, showVersions });
         return {
             organizeByDependency: enabled,
+            showVersions,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount

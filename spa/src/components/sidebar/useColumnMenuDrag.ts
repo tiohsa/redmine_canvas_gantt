@@ -71,10 +71,7 @@ export const useColumnMenuDrag = ({
         const nextSettings = createNextColumnSettings(effectiveColumnSettings, sourceKey, targetKey);
         if (nextSettings === effectiveColumnSettings) return;
 
-        useUIStore.setState({
-            columnSettings: nextSettings,
-            visibleColumns: nextSettings.filter((entry) => entry.visible).map((entry) => entry.key)
-        });
+        useUIStore.getState().setColumnSettings(nextSettings);
     }, [effectiveColumnSettings]);
 
     const handleColumnDragStart = React.useCallback((key: string, event: React.DragEvent<HTMLElement>) => {
