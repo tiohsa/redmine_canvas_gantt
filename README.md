@@ -162,9 +162,7 @@ When the project menu opens a bare `Canvas Gantt` URL with no shared query input
 
 ### Internal Query State Contract
 
-Canvas Gantt is being migrated toward an explicit query state contract where a saved Redmine query is treated as the base condition and Canvas-side filter changes are tracked as overrides. The PR-1 contract defines `QueryContext`, `QueryOverrides`, and filter override modes in `spa/src/query/` without changing the current runtime behavior.
-
-Project filter state distinguishes `inherit`, `all`, `subset`, and `none` so an empty project selection is not inferred from an empty array. Status, assignee, and version overrides currently use `inherit`, `all`, and `subset`; broader runtime integration, URL/storage migration, and project candidate pruning changes are planned for later PRs.
+Canvas Gantt treats a saved Redmine query as the base condition and Canvas-side status, assignee, and version changes as explicit overrides. The Canvas Project menu is an independent display scope, represented by `canvas_project_ids[]`; its empty value means that no projects are displayed. A missing parameter means that the default project scope is used.
 
 ### Supported Shared Parameters
 
@@ -173,7 +171,9 @@ Project filter state distinguishes `inherit`, `all`, `subset`, and `none` so an 
 | `query_id` | Use an existing Redmine saved issue query as the base condition |
 | `status_ids[]` | Filter by issue status IDs |
 | `assigned_to_ids[]` | Filter by assignee IDs. Use `none` for unassigned issues |
-| `project_ids[]` | Narrow the visible projects inside the current project/subproject scope |
+| `canvas_project_ids[]` | Narrow the visible projects inside the current project/subproject scope; `none` explicitly displays zero projects |
+| `project_id` | Redmine standard query input; normalized to the Canvas Project scope on initial URL resolution |
+| `project_ids[]` | Backward-compatible Canvas Project scope input; Canvas Gantt does not generate it |
 | `fixed_version_ids[]` | Filter by target version IDs. Use `none` for issues without a version |
 | `group_by` | Grouping criteria. `project` or `assigned_to` |
 | `sort` | Frontend sort key plus direction. e.g., `subject:asc`, `startDate:desc` |
@@ -218,7 +218,7 @@ Open Canvas Gantt directly from a supported Redmine-standard issue-list URL:
 Open a shared project/version view without relying on browser storage:
 
 ```text
-/projects/demo/canvas_gantt?project_ids[]=3&fixed_version_ids[]=7&group_by=project&sort=startDate:asc
+/projects/demo/canvas_gantt?canvas_project_ids[]=3&fixed_version_ids[]=7&group_by=project&sort=startDate:asc
 ```
 
 Hide subprojects and show only unassigned issues:
