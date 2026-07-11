@@ -69,6 +69,7 @@ describe('DisplaySettingsControls', () => {
         useUIStore.setState({
             showProgressLine: true,
             showTaskTitles: false,
+            showTaskBarDates: true,
             showHierarchyLines: false,
             showPointsOrphans: false,
             showBaseline: true,
@@ -104,6 +105,7 @@ describe('DisplaySettingsControls', () => {
                 viewMode: 'Month',
                 showProgressLine: true,
                 showTaskTitles: false,
+                showTaskBarDates: true,
                 showHierarchyLines: false,
                 showPointsOrphans: false,
                 showVersions: false,
@@ -122,6 +124,7 @@ describe('DisplaySettingsControls', () => {
                 viewMode: 'Month',
                 showProgressLine: true,
                 showTaskTitles: false,
+                showTaskBarDates: true,
                 showHierarchyLines: false,
                 showPointsOrphans: false,
                 showVersions: false,

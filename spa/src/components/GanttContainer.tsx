@@ -64,6 +64,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         rightPaneVisible,
         showProgressLine,
         showTaskTitles,
+        showTaskBarDates,
         showPointsOrphans,
         isSidebarResizing,
         setSidebarResizing
@@ -257,7 +258,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
             });
         }
         if (engines.current.task) {
-            engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows, showTaskTitles, showPointsOrphans, baselineSnapshot, showBaseline);
+            engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows, showTaskTitles, showTaskBarDates, showPointsOrphans, baselineSnapshot, showBaseline);
         }
         if (engines.current.overlay) {
             engines.current.overlay.render(overlayRenderState);
@@ -266,6 +267,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         layoutRows,
         selectedTaskId,
         showTaskTitles,
+        showTaskBarDates,
         showPointsOrphans,
         tasks,
         viewport,

@@ -61,7 +61,7 @@ describe('TaskRenderer', () => {
             getContext: vi.fn().mockReturnValue(ctx)
         } as unknown as HTMLCanvasElement;
 
-        new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], true, true, null, false);
+        new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], true, false, true, null, false);
 
         expect(ctx.fillText).toHaveBeenCalledWith('Task 1', expect.any(Number), expect.any(Number));
     });
@@ -74,9 +74,38 @@ describe('TaskRenderer', () => {
             getContext: vi.fn().mockReturnValue(ctx)
         } as unknown as HTMLCanvasElement;
 
-        new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], false, true, null, false);
+        new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], false, false, true, null, false);
 
         expect(ctx.fillText).not.toHaveBeenCalled();
         expect(ctx.fill).toHaveBeenCalled();
+    });
+
+    it('draws start and due dates outside task bars when enabled', () => {
+        const ctx = buildContext();
+        const canvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(ctx)
+        } as unknown as HTMLCanvasElement;
+
+        new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], true, true, true, null, false);
+
+        expect(ctx.fillText).toHaveBeenCalledWith('01/01', -7, expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('01/02', expect.any(Number), expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('Task 1', -56, expect.any(Number));
+    });
+
+    it('does not draw task bar dates when disabled', () => {
+        const ctx = buildContext();
+        const canvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(ctx)
+        } as unknown as HTMLCanvasElement;
+
+        new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], false, false, true, null, false);
+
+        expect(ctx.fillText).not.toHaveBeenCalledWith('01/01', expect.any(Number), expect.any(Number));
+        expect(ctx.fillText).not.toHaveBeenCalledWith('01/02', expect.any(Number), expect.any(Number));
     });
 });

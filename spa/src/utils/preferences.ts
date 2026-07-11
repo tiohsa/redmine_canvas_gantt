@@ -10,6 +10,7 @@ export interface StoredPreferences {
     viewport?: Partial<StoredViewport>;
     showProgressLine?: boolean;
     showTaskTitles?: boolean;
+    showTaskBarDates?: boolean;
     showHierarchyLines?: boolean;
     showPointsOrphans?: boolean;
     showVersions?: boolean;
@@ -44,6 +45,7 @@ export interface StoredDisplayPreferences {
     viewport?: Partial<StoredViewport>;
     showProgressLine?: boolean;
     showTaskTitles?: boolean;
+    showTaskBarDates?: boolean;
     showHierarchyLines?: boolean;
     showPointsOrphans?: boolean;
     showVersions?: boolean;
@@ -84,6 +86,7 @@ export type DisplayPreferencesSnapshot = Pick<
     | 'viewport'
     | 'showProgressLine'
     | 'showTaskTitles'
+    | 'showTaskBarDates'
     | 'showHierarchyLines'
     | 'showPointsOrphans'
     | 'showVersions'
@@ -119,6 +122,7 @@ const sanitizePreferences = (prefs: StoredPreferences): StoredPreferences => Obj
         viewport: prefs.viewport,
         showProgressLine: prefs.showProgressLine,
         showTaskTitles: prefs.showTaskTitles,
+        showTaskBarDates: prefs.showTaskBarDates,
         showHierarchyLines: prefs.showHierarchyLines,
         showPointsOrphans: prefs.showPointsOrphans,
         showVersions: prefs.showVersions,
@@ -151,6 +155,7 @@ const sanitizeDisplayPreferences = (prefs: StoredPreferences): StoredDisplayPref
         viewport: prefs.viewport,
         showProgressLine: prefs.showProgressLine,
         showTaskTitles: prefs.showTaskTitles,
+        showTaskBarDates: prefs.showTaskBarDates,
         showHierarchyLines: prefs.showHierarchyLines,
         showPointsOrphans: prefs.showPointsOrphans,
         showVersions: prefs.showVersions,

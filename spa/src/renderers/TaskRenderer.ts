@@ -9,6 +9,10 @@ import { getCanvasLogicalSize, snapTextPosition } from '../utils/canvasDpr';
 export class TaskRenderer {
     private canvas: HTMLCanvasElement;
 
+    private static readonly TASK_TITLE_OFFSET = 30;
+    private static readonly TASK_TITLE_OFFSET_WITH_DATES = 56;
+    private static readonly TASK_BAR_DATE_GAP = 6;
+
     // MiniMax standard-like bar colors
     private static readonly DONE_GREEN = designTokens.taskDone;
     private static readonly DELAY_RED = designTokens.taskDelayed;
@@ -31,6 +35,7 @@ export class TaskRenderer {
         relations: Relation[],
         layoutRows: LayoutRow[] = [],
         showTaskTitles: boolean = true,
+        showTaskBarDates: boolean = false,
         showPointsOrphans: boolean = true,
         baselineSnapshot: BaselineSnapshot | null = null,
         showBaseline: boolean = false
@@ -107,7 +112,18 @@ export class TaskRenderer {
                 }
 
                 if (showTaskTitles) {
-                    this.drawSubjectBeforeBar(ctx, task, bounds.x, bounds.y, bounds.width, bounds.height);
+                    this.drawSubjectBeforeBar(
+                        ctx,
+                        task,
+                        bounds.x,
+                        bounds.y,
+                        bounds.width,
+                        bounds.height,
+                        showTaskBarDates ? TaskRenderer.TASK_TITLE_OFFSET_WITH_DATES : TaskRenderer.TASK_TITLE_OFFSET
+                    );
+                }
+                if (showTaskBarDates) {
+                    this.drawTaskBarDates(ctx, task, barBounds);
                 }
                 if (showBaseline) {
                     this.drawBaselineMarker(ctx, task, bounds, baselineSnapshot);
@@ -235,7 +251,7 @@ export class TaskRenderer {
         if (stroke) ctx.stroke();
     }
 
-    private drawSubjectBeforeBar(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number) {
+    private drawSubjectBeforeBar(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number, offset = 30) {
         // We aren't clipping to width currently, but keeping the signature compatible.
         void width;
 
@@ -243,7 +259,7 @@ export class TaskRenderer {
         ctx.font = canvasFonts.body;
         ctx.fillStyle = designTokens.textPrimary;
 
-        const textX = x - 30; // Increased offset to 30px to avoid dependency lines
+        const textX = x - offset; // Keep space clear for dependency indicators and date labels.
         const textY = y + height / 2;
 
         ctx.textAlign = 'right';
@@ -251,6 +267,39 @@ export class TaskRenderer {
 
         ctx.fillText(task.subject, snapTextPosition(textX), snapTextPosition(textY));
 
+        ctx.restore();
+    }
+
+    private drawTaskBarDates(
+        ctx: CanvasRenderingContext2D,
+        task: Task,
+        bar: { x: number; y: number; width: number; height: number }
+    ) {
+        if (task.startDate === undefined || task.dueDate === undefined) return;
+
+        const formatDate = (timestamp: number) => {
+            const date = new Date(timestamp);
+            return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+        };
+
+        const textY = bar.y + bar.height / 2;
+        ctx.save();
+        ctx.font = canvasFonts.body;
+        ctx.fillStyle = designTokens.textMuted;
+        ctx.textBaseline = 'middle';
+
+        ctx.textAlign = 'right';
+        ctx.fillText(
+            formatDate(task.startDate),
+            snapTextPosition(bar.x - TaskRenderer.TASK_BAR_DATE_GAP),
+            snapTextPosition(textY)
+        );
+        ctx.textAlign = 'left';
+        ctx.fillText(
+            formatDate(task.dueDate),
+            snapTextPosition(bar.x + bar.width + TaskRenderer.TASK_BAR_DATE_GAP),
+            snapTextPosition(textY)
+        );
         ctx.restore();
     }
 

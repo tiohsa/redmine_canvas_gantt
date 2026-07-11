@@ -30,6 +30,7 @@ interface UIState {
     notifications: Notification[];
     showProgressLine: boolean;
     showTaskTitles: boolean;
+    showTaskBarDates: boolean;
     showHierarchyLines: boolean;
     showBaseline: boolean;
     visibleColumns: string[];
@@ -58,6 +59,7 @@ interface UIState {
     removeNotification: (id: string) => void;
     toggleProgressLine: () => void;
     toggleTaskTitles: () => void;
+    toggleTaskBarDates: () => void;
     toggleHierarchyLines: () => void;
     toggleBaseline: () => void;
     setShowBaseline: (value: boolean) => void;
@@ -150,6 +152,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     notifications: [],
     showProgressLine: displayPreferences.showProgressLine ?? false,
     showTaskTitles: displayPreferences.showTaskTitles ?? true,
+    showTaskBarDates: displayPreferences.showTaskBarDates ?? false,
     showHierarchyLines: displayPreferences.showHierarchyLines ?? true,
     showBaseline: displayPreferences.showBaseline ?? false,
     showPointsOrphans: displayPreferences.showPointsOrphans ?? true,
@@ -202,6 +205,7 @@ export const useUIStore = create<UIState>((set, get) => ({
         })),
     toggleProgressLine: () => set((state) => ({ showProgressLine: !state.showProgressLine })),
     toggleTaskTitles: () => set((state) => ({ showTaskTitles: !state.showTaskTitles })),
+    toggleTaskBarDates: () => set((state) => ({ showTaskBarDates: !state.showTaskBarDates })),
     toggleHierarchyLines: () => set((state) => ({ showHierarchyLines: !state.showHierarchyLines })),
     toggleBaseline: () => set((state) => ({ showBaseline: !state.showBaseline })),
     setShowBaseline: (value) => set(() => ({ showBaseline: value })),

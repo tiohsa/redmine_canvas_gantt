@@ -154,6 +154,7 @@ class CanvasGanttsController < ApplicationController
     label_display_settings_source_project: :label_display_settings_source_project,
     label_display_settings_source_global: :label_display_settings_source_global,
     label_display_settings_source_default: :label_display_settings_source_default,
+    label_toggle_task_bar_dates: :label_toggle_task_bar_dates,
     label_row_height_xs: :label_row_height_xs,
     label_row_height_s: :label_row_height_s,
     label_row_height_m: :label_row_height_m,

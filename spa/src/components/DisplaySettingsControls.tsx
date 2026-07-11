@@ -46,6 +46,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
     const {
         showProgressLine,
         showTaskTitles,
+        showTaskBarDates,
         showHierarchyLines,
         showPointsOrphans,
         showBaseline,
@@ -77,6 +78,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
             },
             showProgressLine,
             showTaskTitles,
+            showTaskBarDates,
             showHierarchyLines,
             showPointsOrphans,
             showVersions,

@@ -29,6 +29,7 @@ const persistSelections = () => {
         },
         showProgressLine: uiState.showProgressLine,
         showTaskTitles: uiState.showTaskTitles,
+        showTaskBarDates: uiState.showTaskBarDates,
         showHierarchyLines: uiState.showHierarchyLines,
         showBaseline: uiState.showBaseline,
         showPointsOrphans: uiState.showPointsOrphans,
