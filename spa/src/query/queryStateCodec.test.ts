@@ -4,7 +4,8 @@ import {
     buildQueryParamsFromQueryContext,
     serializeQueryContext,
     deserializeQueryContext,
-    queryContextFromResolvedQueryState
+    resolvedStateToQueryContext,
+    queryContextToResolvedState
 } from './queryStateCodec';
 import type { QueryContext } from './types';
 
@@ -45,12 +46,31 @@ describe('QueryContext URL and storage codecs', () => {
     });
 
     it('round-trips normalized QueryContext storage without a project override', () => {
-        const context = queryContextFromResolvedQueryState({
+        const context = resolvedStateToQueryContext({
             queryId: 100,
             selectedStatusIds: [],
             selectedAssigneeIds: [null],
             selectedVersionIds: ['_none']
         });
         expect(deserializeQueryContext(serializeQueryContext(context))).toEqual(context);
+    });
+
+    it('converts explicit all and subset modes without collapsing null sentinels', () => {
+        const context: QueryContext = {
+            baseQueryId: 100,
+            overrides: {
+                status: { mode: 'all' },
+                assignee: { mode: 'subset', values: [null, 7] },
+                version: { mode: 'subset', values: ['_none', '4'] }
+            }
+        };
+
+        expect(queryContextToResolvedState(context)).toEqual({
+            queryId: 100,
+            selectedStatusIds: [],
+            selectedAssigneeIds: [null, 7],
+            selectedVersionIds: ['_none', '4']
+        });
+        expect(queryContextToResolvedState()).toEqual({});
     });
 });

@@ -12,7 +12,8 @@ import { getRelationTypeLabel } from '../utils/relationEditing';
 import { savePreferences } from '../utils/preferences';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import { navigateToRedminePath } from '../utils/navigation';
-import { buildRedmineIssueQueryParams, toResolvedQueryStateFromStore } from '../utils/queryParams';
+import { toResolvedQueryStateFromStore } from '../utils/queryParams';
+import { serializeRedmineIssueQueryParams } from '../query/redmineQueryUrlCodec';
 import { useToolbarMenuState } from './gantt/useToolbarMenuState';
 import { useWorkloadStore } from '../stores/WorkloadStore';
 import type { GanttExportHandle } from '../export/types';
@@ -310,7 +311,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             ...queryContext,
             baseQueryId: includeActiveQueryId ? queryContext.baseQueryId : null
         };
-        const { params, notices } = buildRedmineIssueQueryParams(queryState, { queryContext: queryContextForPath });
+        const { params, notices } = serializeRedmineIssueQueryParams(queryState, { queryContext: queryContextForPath });
         notices.forEach((notice) => useUIStore.getState().addNotification(notice, 'warning'));
         const query = params.toString();
         return `${issueListPath ?? `/projects/${projectId}/issues`}${query ? `?${query}` : ''}`;

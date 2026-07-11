@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildIssueQueryParams,
-    buildRedmineIssueQueryParams,
     hasSharedQueryStateInUrl,
+    mergeControlledQueryParams,
     normalizeResolvedQueryState,
     parseResolvedQueryState,
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
     resolveInitialSharedQueryState,
-    toBusinessQueryState,
     toResolvedQueryStateFromStore
 } from './queryParams';
 import type { QueryContext } from '../query/types';
+import { serializeRedmineIssueQueryParams } from '../query/redmineQueryUrlCodec';
+import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 
 describe('parseResolvedQueryState', () => {
     it('accepts backend boolean grouping payload', () => {
@@ -402,6 +403,15 @@ describe('toBusinessQueryState', () => {
 });
 
 describe('replaceIssueQueryParamsInUrl', () => {
+    it('merges controlled params without reading or mutating browser state', () => {
+        const merged = mergeControlledQueryParams(
+            '?query_id=9&op[status_id]==&foo=bar',
+            new URLSearchParams('query_id=42&status_ids[]=1')
+        );
+
+        expect(merged.toString()).toBe('foo=bar&query_id=42&status_ids%5B%5D=1');
+    });
+
     it('rewrites only known shared query params', () => {
         window.history.replaceState({}, '', '/projects/demo/canvas_gantt?query_id=9&c[]=status&foo=bar');
 
@@ -628,9 +638,9 @@ describe('query parameter round-trips for special selections', () => {
     });
 });
 
-describe('buildRedmineIssueQueryParams', () => {
+describe('serializeRedmineIssueQueryParams', () => {
     it('exports QueryContext all overrides to the Redmine Query Editor', () => {
-        const { params, notices } = buildRedmineIssueQueryParams({ queryId: 12 }, {
+        const { params, notices } = serializeRedmineIssueQueryParams({ queryId: 12 }, {
             queryContext: {
                 baseQueryId: 12,
                 overrides: {
@@ -648,7 +658,7 @@ describe('buildRedmineIssueQueryParams', () => {
         expect(params.get('op[fixed_version_id]')).toBe('*');
     });
     it('builds Redmine standard issue query params from shared state', () => {
-        const { params, notices } = buildRedmineIssueQueryParams({
+        const { params, notices } = serializeRedmineIssueQueryParams({
             queryId: 12,
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
@@ -674,7 +684,7 @@ describe('buildRedmineIssueQueryParams', () => {
     });
 
     it('exports unassigned-only assignee filter using the Redmine none operator', () => {
-        const { params, notices } = buildRedmineIssueQueryParams({
+        const { params, notices } = serializeRedmineIssueQueryParams({
             selectedAssigneeIds: [null]
         });
 
@@ -686,7 +696,7 @@ describe('buildRedmineIssueQueryParams', () => {
     });
 
     it('appends visible columns as c[] parameters from shared state', () => {
-        const { params } = buildRedmineIssueQueryParams({
+        const { params } = serializeRedmineIssueQueryParams({
             visibleColumns: ['status', 'subject', 'startDate', 'notification']
         });
 
@@ -698,7 +708,7 @@ describe('buildRedmineIssueQueryParams', () => {
     });
 
     it('appends sort configuration as sort parameter from shared state', () => {
-        const { params } = buildRedmineIssueQueryParams({
+        const { params } = serializeRedmineIssueQueryParams({
             sortConfig: { key: 'dueDate', direction: 'desc' }
         });
 
@@ -706,7 +716,7 @@ describe('buildRedmineIssueQueryParams', () => {
     });
 
     it('does not export the Canvas no-grouping sentinel to Redmine issue-list URLs', () => {
-        const { params } = buildRedmineIssueQueryParams({
+        const { params } = serializeRedmineIssueQueryParams({
             groupBy: null
         });
 

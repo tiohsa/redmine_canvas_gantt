@@ -1,6 +1,6 @@
 import type { SortConfig } from './types';
 import type { QueryContext } from '../../query/types';
-import { sharedViewStateFromResolvedQueryState } from '../../query/queryStateCodec';
+import { resolvedStateToSharedViewState } from '../../query/queryStateCodec';
 import { replaceIssueQueryParamsInUrl, toResolvedQueryStateFromStore } from '../../utils/queryParams';
 import { saveLastUsedSharedQueryProjectState } from '../../utils/sharedQueryState';
 import { useUIStore } from '../UIStore';
@@ -42,6 +42,6 @@ export const syncSharedQueryState = (state: SharedQuerySyncState) => {
             ...state.queryContext,
             baseQueryId: effectiveState.activeQueryId
         },
-        sharedViewState: sharedViewStateFromResolvedQueryState(resolvedState)
+        sharedViewState: resolvedStateToSharedViewState(resolvedState)
     });
 };

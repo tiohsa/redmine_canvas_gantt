@@ -1,8 +1,10 @@
 import type { BusinessQueryState } from '../types';
-import type { QueryContext, QueryOverrides, SharedViewState } from '../query/types';
-import { buildQueryParamsFromQueryContext } from '../query/queryStateCodec';
-import { toCanvasColumnKey, toRedmineColumnName } from '../components/sidebar/sidebarColumnCatalog';
-import { i18n } from './i18n';
+import type { QueryContext } from '../query/types';
+import { parseCanvasQueryState, serializeCanvasQueryParams } from '../query/canvasQueryUrlCodec';
+import { parseRedmineQueryState } from '../query/redmineQueryUrlParser';
+import { isDefaultSort } from '../query/querySortCodec';
+import { isPersistedQueryId } from '../query/queryIdCodec';
+import { toCanvasColumnKey } from '../components/sidebar/sidebarColumnCatalog';
 
 export interface ResolvedQueryState {
     queryId?: number | null;
@@ -40,79 +42,6 @@ type ResolveInitialSharedQueryStateResult = {
     source: 'url' | 'storage' | 'default';
 };
 
-const SORT_FIELD_TO_REDMINE: Record<string, string> = {
-    id: 'id',
-    subject: 'subject',
-    projectName: 'project',
-    trackerName: 'tracker',
-    statusId: 'status',
-    priorityId: 'priority',
-    assignedToName: 'assigned_to',
-    authorName: 'author',
-    startDate: 'start_date',
-    dueDate: 'due_date',
-    estimatedHours: 'estimated_hours',
-    ratioDone: 'done_ratio',
-    fixedVersionName: 'fixed_version',
-    categoryName: 'category',
-    createdOn: 'created_on',
-    updatedOn: 'updated_on',
-    spentHours: 'spent_hours'
-};
-
-const REDMINE_SORT_TO_FIELD = Object.fromEntries(
-    Object.entries(SORT_FIELD_TO_REDMINE).map(([field, redmine]) => [redmine, field])
-) as Record<string, string>;
-
-const isPersistedQueryId = (value: unknown): value is number =>
-    typeof value === 'number' && Number.isInteger(value) && value > 0;
-
-const parseIntegerList = (params: URLSearchParams, keys: string[]): number[] | undefined => {
-    const values = keys.flatMap((key) => params.getAll(key));
-    if (values.length === 0) return undefined;
-
-    return values
-        .flatMap((value) => value.split(/[|,]/))
-        .map((value) => value.trim())
-        .filter((value) => /^-?\d+$/.test(value))
-        .map(Number);
-};
-
-const parseIntegerTokens = (values: string[]): number[] =>
-    values
-        .flatMap((value) => value.split(/[|,]/))
-        .map((value) => value.trim())
-        .filter((value) => /^-?\d+$/.test(value))
-        .map(Number);
-
-const parseStringTokens = (values: string[]): string[] =>
-    values
-        .flatMap((value) => value.split(/[|,]/))
-        .map((value) => value.trim())
-        .filter(Boolean);
-
-const parseStringList = (params: URLSearchParams, keys: string[]): string[] | undefined => {
-    const values = keys.flatMap((key) => params.getAll(key));
-    if (values.length === 0) return undefined;
-
-    return values
-        .flatMap((value) => value.split(/[|,]/))
-        .map((value) => value.trim())
-        .filter(Boolean);
-};
-
-const parseVisibleColumns = (params: URLSearchParams): string[] | undefined => {
-    const values = parseStringList(params, ['c[]', 'c']);
-    if (!values) return undefined;
-
-    const columns = values.flatMap((value) => {
-        const key = toCanvasColumnKey(value);
-        return key ? [key] : [];
-    });
-    const uniqueColumns = Array.from(new Set(columns));
-    return uniqueColumns.length > 0 ? uniqueColumns : undefined;
-};
-
 const normalizeVisibleColumns = (value: unknown): string[] | undefined => {
     if (!Array.isArray(value)) return undefined;
 
@@ -122,97 +51,6 @@ const normalizeVisibleColumns = (value: unknown): string[] | undefined => {
     });
     const uniqueColumns = Array.from(new Set(columns));
     return uniqueColumns.length > 0 ? uniqueColumns : undefined;
-};
-
-const appendStandardFilter = (params: URLSearchParams, field: string, operator: string, values: string[] = []): void => {
-    params.append('f[]', field);
-    params.set(`op[${field}]`, operator);
-    values.forEach((value) => params.append(`v[${field}][]`, value));
-};
-
-const readStandardFilterValues = (params: URLSearchParams, field: string): string[] =>
-    params.getAll(`v[${field}][]`).concat(params.getAll(`v[${field}]`));
-
-const parseStandardQueryState = (params: URLSearchParams): Partial<ResolvedQueryState> => {
-    if (params.get('set_filter') !== '1') return {};
-
-    const fields = params.getAll('f[]').concat(params.getAll('f'));
-    if (fields.length === 0) return {};
-
-    const standardState: Partial<ResolvedQueryState> = {};
-
-    fields.forEach((field) => {
-        const operator = params.get(`op[${field}]`) ?? '';
-        const values = readStandardFilterValues(params, field);
-
-        switch (field) {
-            case 'status_id':
-                if (operator === '=') {
-                    standardState.selectedStatusIds = parseIntegerTokens(values);
-                } else if (operator === '*') {
-                    standardState.selectedStatusIds = [];
-                }
-                break;
-            case 'assigned_to_id':
-                if (operator === '=') {
-                    standardState.selectedAssigneeIds = parseStringTokens(values).flatMap((value) => {
-                        if (value === 'none' || value === '_none') return [null];
-                        return /^-?\d+$/.test(value) ? [Number(value)] : [];
-                    });
-                } else if (operator === '*') {
-                    standardState.selectedAssigneeIds = [];
-                } else if (operator === '!*') {
-                    standardState.selectedAssigneeIds = [null];
-                }
-                break;
-            case 'fixed_version_id':
-                if (operator === '=') {
-                    standardState.selectedVersionIds = parseStringTokens(values).flatMap((value) => {
-                        if (value === 'none' || value === '_none') return ['_none'];
-                        return /^-?\d+$/.test(value) ? [value] : [];
-                    });
-                } else if (operator === '*') {
-                    standardState.selectedVersionIds = [];
-                }
-                break;
-            case 'project_id':
-                if (operator === '=') {
-                    standardState.canvasProjectIds = parseStringTokens(values);
-                }
-                break;
-            default:
-                break;
-        }
-    });
-
-    return standardState;
-};
-
-const parseAssigneeList = (params: URLSearchParams): (number | null)[] | undefined => {
-    const values = parseStringList(params, ['assigned_to_ids[]', 'assigned_to_ids', 'assigned_to_id[]', 'assigned_to_id']);
-    if (!values) return undefined;
-
-    return values.flatMap((value) => {
-        if (value === '_none' || value === 'none' || value === '!' || value === '!*') return [null];
-        return /^-?\d+$/.test(value) ? [Number(value)] : [];
-    });
-};
-
-const parseProjectList = (params: URLSearchParams): string[] | undefined => {
-    const values = parseStringList(params, ['canvas_project_ids[]', 'canvas_project_ids', 'project_ids[]', 'project_ids']);
-    if (!values) return undefined;
-    if (values.every((value) => value === 'none' || value === '_none')) return [];
-    return values.filter((value) => value !== 'none' && value !== '_none');
-};
-
-const parseVersionList = (params: URLSearchParams): string[] | undefined => {
-    const values = parseStringList(params, ['fixed_version_ids[]', 'fixed_version_ids', 'fixed_version_id[]', 'fixed_version_id']);
-    if (!values) return undefined;
-
-    return values.flatMap((value) => {
-        if (value === '_none' || value === 'none' || value === '!' || value === '!*') return ['_none'];
-        return /^-?\d+$/.test(value) ? [value] : [];
-    });
 };
 
 const CONTROLLED_KEYS = [
@@ -247,34 +85,9 @@ const CONTROLLED_KEYS = [
 const isControlledDynamicKey = (key: string): boolean =>
     /^op\[[^\]]+\]$/.test(key) || /^v\[[^\]]+\](?:\[\])?$/.test(key);
 
-const parseSortConfig = (rawSort: string | null): BusinessQueryState['sortConfig'] | undefined => {
-    const [rawField, rawDirection] = (rawSort || '').split(':', 2);
-    if (!rawField) return undefined;
-
-    const direction = rawDirection === 'desc' ? 'desc' : 'asc';
-    const key = REDMINE_SORT_TO_FIELD[rawField] ?? rawField;
-
-    return { key, direction };
-};
-
-const toRedmineSortField = (key: string): string | null => SORT_FIELD_TO_REDMINE[key] ?? null;
-const DEFAULT_SORT_KEY = 'startDate';
-const DEFAULT_SORT_DIRECTION = 'asc';
 const hasValueForAnyParam = (params: URLSearchParams, keys: string[]): boolean =>
     keys.some((key) => params.getAll(key).length > 0);
 
-export const toBusinessQueryState = (state: Partial<ResolvedQueryState> = {}): BusinessQueryState => ({
-    queryId: state.queryId ?? null,
-    selectedStatusIds: state.selectedStatusIds ?? [],
-    selectedAssigneeIds: state.selectedAssigneeIds ?? [],
-    selectedProjectIds: state.canvasProjectIds ?? state.selectedProjectIds ?? [],
-    selectedVersionIds: state.selectedVersionIds ?? [],
-    memberProjectsOnly: state.memberProjectsOnly ?? false,
-    sortConfig: state.sortConfig ?? null,
-    groupByProject: state.groupBy === 'project',
-    groupByAssignee: state.groupBy === 'assignee',
-    showSubprojects: state.showSubprojects ?? true
-});
 
 export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>): ResolvedQueryState | undefined => {
     if (!state) return undefined;
@@ -290,7 +103,7 @@ export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>)
     if (state.selectedAssigneeIds?.length) normalized.selectedAssigneeIds = [...state.selectedAssigneeIds];
     if (Array.isArray(state.canvasProjectIds)) normalized.canvasProjectIds = [...state.canvasProjectIds];
     if (state.selectedVersionIds?.length) normalized.selectedVersionIds = [...state.selectedVersionIds];
-    if (state.sortConfig?.key && !(state.sortConfig.key === DEFAULT_SORT_KEY && state.sortConfig.direction === DEFAULT_SORT_DIRECTION)) {
+    if (state.sortConfig?.key && !isDefaultSort(state.sortConfig)) {
         normalized.sortConfig = { ...state.sortConfig };
     }
     if (state.groupBy === 'project' && hasPersistedQueryId) normalized.groupBy = 'project';
@@ -334,22 +147,23 @@ export const toResolvedQueryStateFromStore = (state: QueryUrlStateSource): Resol
 
 export const readIssueQueryParamsFromUrl = (search: string = window.location.search): ResolvedQueryState => {
     const params = new URLSearchParams(search);
-    const standardState = parseStandardQueryState(params);
+    const standardState = parseRedmineQueryState(params);
+    const canvasState = parseCanvasQueryState(params);
     const groupBy = params.get('group_by');
     const queryIdRaw = params.get('query_id');
     const parsedQueryId = queryIdRaw && /^-?\d+$/.test(queryIdRaw) ? Number(queryIdRaw) : undefined;
 
     return {
         queryId: isPersistedQueryId(parsedQueryId) ? parsedQueryId : undefined,
-        selectedStatusIds: standardState.selectedStatusIds ?? parseIntegerList(params, ['status_ids[]', 'status_ids', 'status_id[]', 'status_id']),
-        selectedAssigneeIds: standardState.selectedAssigneeIds ?? parseAssigneeList(params),
-        canvasProjectIds: standardState.canvasProjectIds ?? parseProjectList(params),
-        selectedVersionIds: standardState.selectedVersionIds ?? parseVersionList(params),
+        selectedStatusIds: standardState.selectedStatusIds ?? canvasState.selectedStatusIds,
+        selectedAssigneeIds: standardState.selectedAssigneeIds ?? canvasState.selectedAssigneeIds,
+        canvasProjectIds: standardState.canvasProjectIds ?? canvasState.canvasProjectIds,
+        selectedVersionIds: standardState.selectedVersionIds ?? canvasState.selectedVersionIds,
         memberProjectsOnly: undefined,
-        sortConfig: parseSortConfig(params.get('sort')),
+        sortConfig: canvasState.sortConfig,
         groupBy: groupBy === 'assigned_to' || groupBy === 'assignee' ? 'assignee' : (groupBy === 'project' ? 'project' : null),
-        showSubprojects: params.get('show_subprojects') === null ? undefined : params.get('show_subprojects') !== '0',
-        visibleColumns: parseVisibleColumns(params)
+        showSubprojects: canvasState.showSubprojects,
+        visibleColumns: canvasState.visibleColumns
     };
 };
 
@@ -380,222 +194,38 @@ export const buildIssueQueryParams = (
     state: Partial<ResolvedQueryState>,
     options: BuildIssueQueryParamsOptions = {}
 ): URLSearchParams => {
-    const params = new URLSearchParams();
-    const businessState = toBusinessQueryState(state);
-    const hasPersistedQueryId = isPersistedQueryId(businessState.queryId);
-    const hasExplicitStatusSelection = Array.isArray(state.selectedStatusIds);
-    const includeMemberProjectsOnly = options.includeMemberProjectsOnly ?? true;
-
-    if (options.queryContext) {
-        buildQueryParamsFromQueryContext(options.queryContext).forEach((value, key) => params.append(key, value));
-    } else {
-        if (hasPersistedQueryId) params.set('query_id', String(businessState.queryId));
-        if (businessState.selectedStatusIds.length > 0) {
-            businessState.selectedStatusIds.forEach((id) => params.append('status_ids[]', String(id)));
-        } else if (hasPersistedQueryId && hasExplicitStatusSelection) {
-            params.set('set_filter', '1');
-            appendStandardFilter(params, 'status_id', '*');
-        }
-        businessState.selectedAssigneeIds.forEach((id) => params.append('assigned_to_ids[]', id === null ? 'none' : String(id)));
-        businessState.selectedVersionIds.forEach((id) => params.append('fixed_version_ids[]', id === '_none' ? 'none' : id));
-    }
-    if (state.canvasProjectIds !== undefined && businessState.selectedProjectIds.length === 0) {
-        params.append('canvas_project_ids[]', 'none');
-    } else {
-        businessState.selectedProjectIds.forEach((id) => params.append('canvas_project_ids[]', id));
-    }
-    if (includeMemberProjectsOnly && state.memberProjectsOnly === true) params.set('member_projects_only', '1');
-    if (state.groupBy === 'project') params.set('group_by', 'project');
-    if (state.groupBy === 'assignee') params.set('group_by', 'assigned_to');
-    if (state.groupBy === null) params.set('group_by', 'none');
-    if (businessState.sortConfig?.key) params.set('sort', `${businessState.sortConfig.key}:${businessState.sortConfig.direction}`);
-    if (state.showSubprojects === false) params.set('show_subprojects', '0');
-    state.visibleColumns?.forEach((key) => {
-        const redmineCol = toRedmineColumnName(key);
-        if (redmineCol) params.append('c[]', redmineCol);
+    return serializeCanvasQueryParams(state, {
+        includeMemberProjectsOnly: options.includeMemberProjectsOnly,
+        queryContext: options.queryContext
     });
-
-    return params;
 };
 
-export const buildRedmineIssueQueryParams = (
-    state: Partial<ResolvedQueryState>,
-    options: { queryContext?: QueryContext } = {}
-): { params: URLSearchParams; notices: string[] } => {
-    const params = new URLSearchParams();
-    const businessState = toBusinessQueryState(state);
-    const queryContextFilterState = options.queryContext
-        ? {
-            selectedStatusIds: options.queryContext.overrides.status?.mode === 'subset'
-                ? options.queryContext.overrides.status.values
-                : [],
-            selectedAssigneeIds: options.queryContext.overrides.assignee?.mode === 'subset'
-                ? options.queryContext.overrides.assignee.values
-                : [],
-            selectedVersionIds: options.queryContext.overrides.version?.mode === 'subset'
-                ? options.queryContext.overrides.version.values
-                : []
-        }
-        : businessState;
-    const notices: string[] = [];
-    let hasStandardFilters = false;
 
-    if (options.queryContext) {
-        const contextParams = buildQueryParamsFromQueryContext(options.queryContext);
-        contextParams.forEach((value, key) => {
-            if (!['status_ids[]', 'assigned_to_ids[]', 'fixed_version_ids[]'].includes(key)) {
-                params.append(key, value);
-            }
-        });
-    } else if (isPersistedQueryId(businessState.queryId)) {
-        params.set('query_id', String(businessState.queryId));
-    }
-
-    if (queryContextFilterState.selectedStatusIds.length > 0) {
-        appendStandardFilter(params, 'status_id', '=', queryContextFilterState.selectedStatusIds.map(String));
-        hasStandardFilters = true;
-    }
-
-    if (queryContextFilterState.selectedAssigneeIds.length > 0) {
-        const numericIds = queryContextFilterState.selectedAssigneeIds.filter((id): id is number => id !== null).map(String);
-        const includesNone = queryContextFilterState.selectedAssigneeIds.includes(null);
-
-        if (includesNone && numericIds.length > 0) {
-            notices.push(i18n.t('notice_unassigned_filter_omitted_in_redmine_url') || 'Unassigned assignee filter was omitted because Redmine URL export cannot combine it with specific assignees.');
-        }
-
-        if (numericIds.length > 0) {
-            appendStandardFilter(params, 'assigned_to_id', '=', numericIds);
-            hasStandardFilters = true;
-        } else if (includesNone) {
-            appendStandardFilter(params, 'assigned_to_id', '!*');
-            hasStandardFilters = true;
-        }
-    }
-
-    if (businessState.selectedProjectIds.length > 0) {
-        appendStandardFilter(params, 'project_id', '=', businessState.selectedProjectIds);
-        hasStandardFilters = true;
-    }
-
-    if (queryContextFilterState.selectedVersionIds.length > 0) {
-        const numericVersionIds = queryContextFilterState.selectedVersionIds.filter((id) => id !== '_none');
-
-        if (numericVersionIds.length !== queryContextFilterState.selectedVersionIds.length) {
-            notices.push(i18n.t('notice_no_version_filter_omitted_in_redmine_url') || 'No-version filter was omitted because Redmine URL export only supports explicit version IDs.');
-        }
-
-        if (numericVersionIds.length > 0) {
-            appendStandardFilter(params, 'fixed_version_id', '=', numericVersionIds);
-            hasStandardFilters = true;
-        }
-    }
-
-    if (state.showSubprojects === false) {
-        appendStandardFilter(params, 'subproject_id', '!*');
-        hasStandardFilters = true;
-    }
-
-    if (hasStandardFilters) params.set('set_filter', '1');
-    if (state.groupBy === 'project' && hasStandardFilters) params.set('group_by', 'project');
-    if (state.groupBy === 'assignee') params.set('group_by', 'assigned_to');
-
-    if (businessState.sortConfig?.key) {
-        const sortField = toRedmineSortField(businessState.sortConfig.key);
-        const isDefaultSort = businessState.sortConfig.key === DEFAULT_SORT_KEY && businessState.sortConfig.direction === DEFAULT_SORT_DIRECTION;
-        if (sortField && !isDefaultSort) params.set('sort', `${sortField}:${businessState.sortConfig.direction}`);
-    }
-
-    if (state.visibleColumns && state.visibleColumns.length > 0) {
-        state.visibleColumns.forEach((key) => {
-            const redmineCol = toRedmineColumnName(key);
-            if (redmineCol) {
-                params.append('c[]', redmineCol);
-            }
-        });
-    }
-
-    return { params, notices };
-};
-
-export const replaceIssueQueryParamsInUrl = (state: ResolvedQueryState, queryContext?: QueryContext): void => {
-    const params = new URLSearchParams(window.location.search);
+export const mergeControlledQueryParams = (
+    currentSearch: string,
+    nextParams: URLSearchParams
+): URLSearchParams => {
+    const params = new URLSearchParams(currentSearch);
     Array.from(params.keys()).forEach((key) => {
         if (CONTROLLED_KEYS.includes(key as typeof CONTROLLED_KEYS[number]) || isControlledDynamicKey(key)) {
             params.delete(key);
         }
     });
-    const nextParams = buildIssueQueryParams(state, { includeMemberProjectsOnly: false, queryContext });
     nextParams.forEach((value, key) => params.append(key, value));
-    const nextSearch = params.toString();
+    return params;
+};
+
+export const replaceBrowserUrl = (url: string): void => {
+    window.history.replaceState(window.history.state, '', url);
+};
+
+export const replaceIssueQueryParamsInUrl = (state: ResolvedQueryState, queryContext?: QueryContext): void => {
+    const nextParams = buildIssueQueryParams(state, { includeMemberProjectsOnly: false, queryContext });
+    const mergedParams = mergeControlledQueryParams(window.location.search, nextParams);
+    const nextSearch = mergedParams.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
-    window.history.replaceState(window.history.state, '', nextUrl);
+    replaceBrowserUrl(nextUrl);
 };
-
-export const queryContextFromResolvedQueryState = (state?: Partial<ResolvedQueryState>): QueryContext => {
-    const overrides: QueryOverrides = {};
-
-    if (Array.isArray(state?.selectedStatusIds)) {
-        overrides.status = state.selectedStatusIds.length > 0
-            ? { mode: 'subset', values: [...state.selectedStatusIds] }
-            : { mode: 'all' };
-    }
-    if (Array.isArray(state?.selectedAssigneeIds)) {
-        overrides.assignee = state.selectedAssigneeIds.length > 0
-            ? { mode: 'subset', values: [...state.selectedAssigneeIds] }
-            : { mode: 'all' };
-    }
-    if (Array.isArray(state?.selectedVersionIds)) {
-        overrides.version = state.selectedVersionIds.length > 0
-            ? { mode: 'subset', values: [...state.selectedVersionIds] }
-            : { mode: 'all' };
-    }
-
-    return {
-        baseQueryId: state?.queryId ?? null,
-        overrides
-    };
-};
-
-export const resolvedQueryStateFromQueryContext = (queryContext?: QueryContext): ResolvedQueryState => {
-    const state: ResolvedQueryState = {};
-    if (!queryContext) return state;
-
-    if (queryContext.baseQueryId !== null) state.queryId = queryContext.baseQueryId;
-
-    const { overrides } = queryContext;
-    if (overrides.status) {
-        state.selectedStatusIds = overrides.status.mode === 'subset' ? [...overrides.status.values] : [];
-    }
-    if (overrides.assignee) {
-        state.selectedAssigneeIds = overrides.assignee.mode === 'subset' ? [...overrides.assignee.values] : [];
-    }
-    if (overrides.version) {
-        state.selectedVersionIds = overrides.version.mode === 'subset' ? [...overrides.version.values] : [];
-    }
-
-    return state;
-};
-
-export const sharedViewStateFromResolvedQueryState = (
-    state?: Partial<ResolvedQueryState>
-): Partial<SharedViewState> => {
-    const viewState: Partial<SharedViewState> = {};
-
-    if (state?.groupBy !== undefined) viewState.groupBy = state.groupBy;
-    if (state?.sortConfig?.key) viewState.sortConfig = { ...state.sortConfig };
-    if (state?.visibleColumns) viewState.visibleColumns = [...state.visibleColumns];
-
-    return viewState;
-};
-
-export const resolvedQueryStateFromSharedViewState = (
-    viewState?: Partial<SharedViewState>
-): ResolvedQueryState => ({
-    ...(viewState?.groupBy !== undefined ? { groupBy: viewState.groupBy } : {}),
-    ...(viewState?.sortConfig?.key ? { sortConfig: { ...viewState.sortConfig } } : {}),
-    ...(viewState?.visibleColumns ? { visibleColumns: [...viewState.visibleColumns] } : {})
-});
 
 export const parseResolvedQueryState = (value: unknown): ResolvedQueryState | undefined => {
     if (!value || typeof value !== 'object') return undefined;

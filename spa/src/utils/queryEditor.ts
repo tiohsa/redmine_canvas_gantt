@@ -1,4 +1,5 @@
-import { buildRedmineIssueQueryParams, type ResolvedQueryState } from './queryParams';
+import type { ResolvedQueryState } from './queryParams';
+import { serializeRedmineIssueQueryParams } from '../query/redmineQueryUrlCodec';
 
 export const buildQueryEditorUrl = (
     state: Partial<ResolvedQueryState>,
@@ -16,7 +17,7 @@ export const buildQueryEditorUrl = (
         return { url: null, notices: [] };
     }
 
-    const { params, notices } = buildRedmineIssueQueryParams(state);
+    const { params, notices } = serializeRedmineIssueQueryParams(state);
     const query = params.toString();
     return {
         url: `${basePath}${query ? `?${query}` : ''}`,

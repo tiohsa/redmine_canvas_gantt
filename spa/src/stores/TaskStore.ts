@@ -27,14 +27,14 @@ import {
     setVersionOverride
 } from '../query/queryState';
 import type { QueryContext, QueryOverrides } from '../query/types';
-import { queryContextFromResolvedQueryState } from '../query/queryStateCodec';
+import { resolvedStateToQueryContext } from '../query/queryStateCodec';
+import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
-    toBusinessQueryState,
     toResolvedQueryStateFromStore,
     type ResolvedQueryState
 } from '../utils/queryParams';
@@ -222,7 +222,7 @@ const queryContextPatch = (queryContext: QueryContext) => ({
     isQueryModified: getIsQueryModified(queryContext)
 });
 
-const initialQueryContext = queryContextFromResolvedQueryState(initialUrlState);
+const initialQueryContext = resolvedStateToQueryContext(initialUrlState);
 
 const resolveLayoutState = (state: LayoutState, overrides: Partial<LayoutState> = {}): LayoutState => ({
     allTasks: overrides.allTasks ?? state.allTasks,
@@ -395,7 +395,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
     };
 
     const queryState = toBusinessQueryState(nextResolved);
-    const queryContext = data.queryContext ?? (data.initialState ? queryContextFromResolvedQueryState(nextResolved) : state.queryContext);
+    const queryContext = data.queryContext ?? (data.initialState ? resolvedStateToQueryContext(nextResolved) : state.queryContext);
     const sortConfig = queryState.sortConfig ?? { key: 'startDate', direction: 'asc' };
     const { projectExpansion, taskExpansion, versionExpansion } = initializeExpansionMaps(tasks, {
         projectExpansion: state.projectExpansion,
@@ -718,7 +718,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     restoreExplicitGroupByOverride: (groupBy) => set({ explicitGroupByOverride: groupBy }),
     applyResolvedQueryState: (resolved) => set((state) => {
         const queryState = toBusinessQueryState(resolved);
-        const queryContext = queryContextFromResolvedQueryState(resolved);
+        const queryContext = resolvedStateToQueryContext(resolved);
         const groupByProject = queryState.groupByProject;
         const groupByAssignee = queryState.groupByAssignee;
         const showSubprojects = queryState.showSubprojects;

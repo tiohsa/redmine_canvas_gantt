@@ -7,6 +7,7 @@ import type {
     StatusFilterOverride,
     VersionFilterOverride
 } from './types';
+import { isPersistedQueryId } from './queryIdCodec';
 
 export type PersistedSharedViewState = Partial<SharedViewState>;
 
@@ -24,9 +25,6 @@ const DEFAULT_SORT_DIRECTION = 'asc';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null;
-
-const isPersistedQueryId = (value: unknown): value is number =>
-    typeof value === 'number' && Number.isInteger(value) && value > 0;
 
 const parseNumberArray = (value: unknown): number[] | null => {
     if (!Array.isArray(value)) return null;
@@ -135,7 +133,7 @@ export const normalizeSharedViewState = (value: unknown): PersistedSharedViewSta
     };
 };
 
-export const queryContextFromResolvedQueryState = (state?: Partial<ResolvedQueryState>): QueryContext => {
+export const resolvedStateToQueryContext = (state?: Partial<ResolvedQueryState>): QueryContext => {
     const overrides: QueryOverrides = {};
 
     if (Array.isArray(state?.selectedStatusIds)) {
@@ -160,7 +158,27 @@ export const queryContextFromResolvedQueryState = (state?: Partial<ResolvedQuery
     };
 };
 
-export const sharedViewStateFromResolvedQueryState = (
+export const queryContextToResolvedState = (queryContext?: QueryContext): ResolvedQueryState => {
+    const state: ResolvedQueryState = {};
+    if (!queryContext) return state;
+
+    if (queryContext.baseQueryId !== null) state.queryId = queryContext.baseQueryId;
+
+    const { overrides } = queryContext;
+    if (overrides.status) {
+        state.selectedStatusIds = overrides.status.mode === 'subset' ? [...overrides.status.values] : [];
+    }
+    if (overrides.assignee) {
+        state.selectedAssigneeIds = overrides.assignee.mode === 'subset' ? [...overrides.assignee.values] : [];
+    }
+    if (overrides.version) {
+        state.selectedVersionIds = overrides.version.mode === 'subset' ? [...overrides.version.values] : [];
+    }
+
+    return state;
+};
+
+export const resolvedStateToSharedViewState = (
     state?: Partial<ResolvedQueryState>
 ): PersistedSharedViewState => {
     const hasPersistedQueryId = isPersistedQueryId(state?.queryId);
@@ -177,30 +195,13 @@ export const sharedViewStateFromResolvedQueryState = (
     };
 };
 
-const applyOverrideToResolved = <T>(
-    override: { mode: 'inherit' | 'all' } | { mode: 'none' } | { mode: 'subset'; values: T[] } | undefined
-): T[] | undefined => {
-    if (!override || override.mode === 'inherit') return undefined;
-    if (override.mode === 'subset') return [...override.values];
-    return [];
-};
-
 export const resolvedQueryStateFromProjectState = (
     projectState: SharedQueryProjectStateV3
 ): ResolvedQueryState => {
     const context = normalizeQueryContext(projectState.queryContext);
     const viewState = normalizeSharedViewState(projectState.sharedViewState);
-    const state: ResolvedQueryState = {};
+    const state: ResolvedQueryState = queryContextToResolvedState(context);
 
-    if (context.baseQueryId) state.queryId = context.baseQueryId;
-
-    const selectedStatusIds = applyOverrideToResolved(context.overrides.status);
-    const selectedAssigneeIds = applyOverrideToResolved(context.overrides.assignee);
-    const selectedVersionIds = applyOverrideToResolved(context.overrides.version);
-
-    if (selectedStatusIds !== undefined) state.selectedStatusIds = selectedStatusIds;
-    if (selectedAssigneeIds !== undefined) state.selectedAssigneeIds = selectedAssigneeIds;
-    if (selectedVersionIds !== undefined) state.selectedVersionIds = selectedVersionIds;
     if (viewState.sortConfig) state.sortConfig = viewState.sortConfig;
     if (viewState.groupBy !== undefined) state.groupBy = viewState.groupBy;
     if (viewState.visibleColumns) state.visibleColumns = viewState.visibleColumns;
@@ -242,8 +243,8 @@ export const projectStateFromResolvedQueryState = (
     state: Partial<ResolvedQueryState>
 ): SharedQueryProjectStateV3 | undefined => {
     const normalized = normalizeForSharedProjectState(state);
-    const queryContext = queryContextFromResolvedQueryState(normalized);
-    const sharedViewState = sharedViewStateFromResolvedQueryState(normalized);
+    const queryContext = resolvedStateToQueryContext(normalized);
+    const sharedViewState = resolvedStateToSharedViewState(normalized);
     const hasQueryState = queryContext.baseQueryId !== null || Object.keys(queryContext.overrides).length > 0;
     const hasViewState = Object.keys(sharedViewState).length > 0;
     const hasCanvasProjectScope = Array.isArray(state.canvasProjectIds);
