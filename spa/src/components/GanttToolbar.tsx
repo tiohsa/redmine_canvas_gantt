@@ -32,6 +32,7 @@ import { useColumnMenuDrag } from './sidebar/useColumnMenuDrag';
 import { useSavedQueriesLoader } from './gantt/useSavedQueriesLoader';
 import { useToolbarShortcuts } from './gantt/useToolbarShortcuts';
 import { fontFamilies, designTokens } from '../styles/designTokens';
+import './GanttToolbar.css';
 
 interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
@@ -611,7 +612,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
             lineHeight: 1.5
         }}>
             {/* Left: Filter & Options */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
+            <div className="gantt-toolbar-left" style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
                 <button
                     data-testid="maximize-left-pane-button"
                     onClick={toggleRightPane}
