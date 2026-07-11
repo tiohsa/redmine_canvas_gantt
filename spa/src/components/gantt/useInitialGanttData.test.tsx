@@ -314,4 +314,50 @@ describe('useInitialGanttData persistence', () => {
         const url = new URL(window.location.href);
         expect(url.searchParams.get('member_projects_only')).toBeNull();
     });
+
+    it('passes the restored member project preference to the initial API request without sharing it', async () => {
+        useTaskStore.setState({ memberProjectsOnly: true });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalledWith({
+                rawSearch: undefined,
+                query: { memberProjectsOnly: true }
+            });
+        });
+
+        expect(new URL(window.location.href).searchParams.get('member_projects_only')).toBeNull();
+    });
+
+    it('adds the restored member project preference to a shared-query API request only', async () => {
+        window.history.replaceState({}, '', '/projects/ecookbook/canvas_gantt?query_id=12&group_by=project');
+        useTaskStore.setState({ memberProjectsOnly: true });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalledWith({
+                rawSearch: '?query_id=12&group_by=project&member_projects_only=1',
+                query: {
+                    queryId: 12,
+                    selectedStatusIds: undefined,
+                    selectedAssigneeIds: undefined,
+                    canvasProjectIds: undefined,
+                    selectedVersionIds: undefined,
+                    memberProjectsOnly: true,
+                    sortConfig: undefined,
+                    groupBy: 'project',
+                    showSubprojects: undefined,
+                    visibleColumns: undefined
+                },
+                queryContext: undefined
+            });
+        });
+
+        const url = new URL(window.location.href);
+        expect(url.searchParams.get('query_id')).toBe('12');
+        expect(url.searchParams.get('group_by')).toBe('project');
+        expect(url.searchParams.get('member_projects_only')).toBeNull();
+    });
 });

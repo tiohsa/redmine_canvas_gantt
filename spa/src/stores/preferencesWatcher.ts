@@ -12,6 +12,8 @@ import { syncSharedQueryState } from './taskStore/querySync';
 
 const persistSelections = () => {
     const taskState = useTaskStore.getState();
+    if (!taskState.initialDataLoaded) return;
+
     const uiState = useUIStore.getState();
 
     const personalDisplayPreferences = loadDisplayPreferencesWithSource().preferences;

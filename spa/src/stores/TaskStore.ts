@@ -117,6 +117,7 @@ interface TaskState {
     isSortingSuspended: boolean;
     modifiedTaskIds: Set<string>;
     autoSave: boolean;
+    initialDataLoaded: boolean;
 
     // Actions
     setAutoSave: (enabled: boolean) => void;
@@ -441,6 +442,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
         patch: {
             ...querySyncState,
             ...queryContextPatch(queryContext),
+            initialDataLoaded: true,
             allTasks: tasks,
             relations,
             versions,
@@ -643,6 +645,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     isSortingSuspended: false,
     modifiedTaskIds: new Set(),
     autoSave: preferences.autoSave ?? false,
+    initialDataLoaded: false,
 
     setAutoSave: (enabled) => set({ autoSave: enabled }),
 

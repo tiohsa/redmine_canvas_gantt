@@ -49,9 +49,24 @@ export const useInitialGanttData = ({
                 useTaskStore.getState().restoreExplicitGroupByOverride(initialSharedQueryState.state.groupBy);
             }
 
+            const memberProjectsOnly = useTaskStore.getState().memberProjectsOnly;
+            const initialApiQuery = memberProjectsOnly
+                ? { ...initialSharedQueryState.state, memberProjectsOnly: true }
+                : initialSharedQueryState.state;
+            const initialRawSearch = initialSharedQueryState.source === 'url'
+                ? window.location.search
+                : undefined;
+            const apiRawSearch = initialRawSearch && memberProjectsOnly
+                ? (() => {
+                    const params = new URLSearchParams(initialRawSearch);
+                    params.set('member_projects_only', '1');
+                    return `?${params.toString()}`;
+                })()
+                : initialRawSearch;
+
             apiClient.fetchData({
-                rawSearch: initialSharedQueryState.source === 'url' ? window.location.search : undefined,
-                query: initialSharedQueryState.state,
+                rawSearch: apiRawSearch,
+                query: initialApiQuery,
                 queryContext: initialQueryContext
             }).then(data => {
                 useTaskStore.getState().applyApiData(data);
