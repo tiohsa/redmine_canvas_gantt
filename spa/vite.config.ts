@@ -10,7 +10,7 @@ export default defineConfig({
     manifest: true,
     outDir: '../assets/build',
     emptyOutDir: true,
-    rollupOptions: {
+    rolldownOptions: {
       input: 'src/main.tsx',
     },
   },
