@@ -1,7 +1,6 @@
 import type { ResolvedQueryState } from '../utils/queryParams';
 import type {
     AssigneeFilterOverride,
-    ProjectFilterOverride,
     QueryContext,
     QueryOverrides,
     SharedViewState,
@@ -65,17 +64,6 @@ const cloneOverride = <T extends QueryOverrides[keyof QueryOverrides]>(
     return { ...override } as NonNullable<T>;
 };
 
-const normalizeProjectOverride = (override: unknown): ProjectFilterOverride | undefined => {
-    const record = isRecord(override) ? override : null;
-    if (!record) return undefined;
-    if (record.mode === 'inherit') return { mode: 'inherit' };
-    if (record.mode === 'all') return { mode: 'all' };
-    if (record.mode === 'none') return { mode: 'none' };
-    if (record.mode !== 'subset') return undefined;
-    const values = parseStringArray(record.values);
-    return values ? { mode: 'subset', values } : undefined;
-};
-
 const normalizeStatusOverride = (override: unknown): StatusFilterOverride | undefined => {
     const record = isRecord(override) ? override : null;
     if (!record) return undefined;
@@ -115,7 +103,6 @@ export const normalizeQueryContext = (value: unknown): QueryContext => {
     const overridesRecord = isRecord(record.overrides)
         ? record.overrides
         : (isRecord(record.explicit_overrides) ? record.explicit_overrides : {});
-    const project = normalizeProjectOverride(overridesRecord.project);
     const status = normalizeStatusOverride(overridesRecord.status);
     const assignee = normalizeAssigneeOverride(overridesRecord.assignee);
     const version = normalizeVersionOverride(overridesRecord.version);
@@ -123,7 +110,6 @@ export const normalizeQueryContext = (value: unknown): QueryContext => {
     return {
         baseQueryId: isPersistedQueryId(queryId) ? queryId : null,
         overrides: {
-            ...(project && project.mode !== 'inherit' ? { project } : {}),
             ...(status && status.mode !== 'inherit' ? { status } : {}),
             ...(assignee && assignee.mode !== 'inherit' ? { assignee } : {}),
             ...(version && version.mode !== 'inherit' ? { version } : {})
@@ -283,7 +269,6 @@ export const cloneProjectState = (state: SharedQueryProjectStateV3): SharedQuery
     queryContext: {
         baseQueryId: state.queryContext.baseQueryId,
         overrides: {
-            ...(state.queryContext.overrides.project ? { project: cloneOverride(state.queryContext.overrides.project) } : {}),
             ...(state.queryContext.overrides.status ? { status: cloneOverride(state.queryContext.overrides.status) } : {}),
             ...(state.queryContext.overrides.assignee ? { assignee: cloneOverride(state.queryContext.overrides.assignee) } : {}),
             ...(state.queryContext.overrides.version ? { version: cloneOverride(state.queryContext.overrides.version) } : {})
@@ -403,28 +388,7 @@ export const parseQueryContextFromUrl = (search: string = window.location.search
         }
     }
 
-    // 3. Project Filter
-    const projectIds = params.getAll('project_ids[]');
-    const projectIdsNoBrackets = params.getAll('project_ids');
-    const projectIdsCombined = [...projectIds, ...projectIdsNoBrackets];
-    
-    if (projectIdsCombined.length > 0) {
-        const cleanValues = projectIdsCombined.flatMap(v => v.split(/[|,]/)).map(v => v.trim()).filter(Boolean);
-        if (cleanValues.every(v => v === 'none' || v === '_none')) {
-            overrides.project = { mode: 'none' };
-        } else {
-            overrides.project = { mode: 'subset', values: cleanValues.filter(v => v !== 'none' && v !== '_none') };
-        }
-    } else if (hasSetFilter && filters.project_id) {
-        const { operator, values } = filters.project_id;
-        if (operator === '=') {
-            overrides.project = { mode: 'subset', values: parseStringTokens(values) };
-        } else if (operator === '*') {
-            overrides.project = { mode: 'all' };
-        }
-    }
-
-    // 4. Version Filter
+    // 3. Version Filter
     const versionValues = parseVersionList(params);
     if (versionValues !== undefined) {
         overrides.version = versionValues.length > 0
@@ -455,24 +419,9 @@ export const buildQueryParamsFromQueryContext = (context: QueryContext): URLSear
         params.set('query_id', String(context.baseQueryId));
     }
 
-    const { project, status, assignee, version } = context.overrides;
+    const { status, assignee, version } = context.overrides;
 
-    // 1. Project
-    if (project) {
-        if (project.mode === 'none') {
-            params.append('project_ids[]', 'none');
-        } else if (project.mode === 'subset') {
-            project.values.forEach(id => params.append('project_ids[]', id));
-        } else if (project.mode === 'all') {
-            if (context.baseQueryId) {
-                params.set('set_filter', '1');
-                params.append('f[]', 'project_id');
-                params.set('op[project_id]', '*');
-            }
-        }
-    }
-
-    // 2. Status
+    // 1. Status
     if (status) {
         if (status.mode === 'subset') {
             status.values.forEach(id => params.append('status_ids[]', String(id)));
@@ -485,7 +434,7 @@ export const buildQueryParamsFromQueryContext = (context: QueryContext): URLSear
         }
     }
 
-    // 3. Assignee
+    // 2. Assignee
     if (assignee) {
         if (assignee.mode === 'subset') {
             assignee.values.forEach(id => params.append('assigned_to_ids[]', id === null ? 'none' : String(id)));
@@ -498,7 +447,7 @@ export const buildQueryParamsFromQueryContext = (context: QueryContext): URLSear
         }
     }
 
-    // 4. Version
+    // 3. Version
     if (version) {
         if (version.mode === 'subset') {
             version.values.forEach(id => params.append('fixed_version_ids[]', id === '_none' ? 'none' : id));

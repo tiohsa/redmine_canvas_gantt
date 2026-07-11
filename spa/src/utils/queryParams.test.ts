@@ -99,12 +99,13 @@ describe('readIssueQueryParamsFromUrl', () => {
             queryId: 7,
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
-            canvasProjectIds: undefined,
+            canvasProjectIds: ['3'],
             selectedVersionIds: ['4'],
             memberProjectsOnly: undefined,
             sortConfig: { key: 'startDate', direction: 'desc' },
             groupBy: 'assignee',
-            showSubprojects: undefined
+            showSubprojects: undefined,
+            visibleColumns: undefined
         });
     });
 
@@ -334,6 +335,7 @@ describe('toResolvedQueryStateFromStore', () => {
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7, null],
             selectedProjectIds: ['3'],
+            projectSelectionExplicit: true,
             selectedVersionIds: ['4'],
             memberProjectsOnly: true,
             sortConfig: { key: 'subject', direction: 'asc' },

@@ -23,6 +23,7 @@ export interface QueryUrlStateSource {
     selectedStatusIds: number[];
     selectedAssigneeIds: (number | null)[];
     selectedProjectIds: string[];
+    projectSelectionExplicit?: boolean;
     selectedVersionIds: string[];
     memberProjectsOnly: boolean;
     sortConfig: BusinessQueryState['sortConfig'];
@@ -172,6 +173,11 @@ const parseStandardQueryState = (params: URLSearchParams): Partial<ResolvedQuery
                     standardState.selectedVersionIds = [];
                 }
                 break;
+            case 'project_id':
+                if (operator === '=') {
+                    standardState.canvasProjectIds = parseStringTokens(values);
+                }
+                break;
             default:
                 break;
         }
@@ -315,7 +321,7 @@ export const toResolvedQueryStateFromStore = (state: QueryUrlStateSource): Resol
     queryId: state.activeQueryId ?? undefined,
     selectedStatusIds: state.selectedStatusIds,
     selectedAssigneeIds: state.selectedAssigneeIds,
-    canvasProjectIds: state.selectedProjectIds,
+    ...(state.projectSelectionExplicit === true ? { canvasProjectIds: state.selectedProjectIds } : {}),
     selectedVersionIds: state.selectedVersionIds,
     memberProjectsOnly: state.memberProjectsOnly,
     sortConfig: state.sortConfig ?? undefined,
@@ -335,7 +341,7 @@ export const readIssueQueryParamsFromUrl = (search: string = window.location.sea
         queryId: isPersistedQueryId(parsedQueryId) ? parsedQueryId : undefined,
         selectedStatusIds: standardState.selectedStatusIds ?? parseIntegerList(params, ['status_ids[]', 'status_ids', 'status_id[]', 'status_id']),
         selectedAssigneeIds: standardState.selectedAssigneeIds ?? parseAssigneeList(params),
-        canvasProjectIds: parseProjectList(params),
+        canvasProjectIds: standardState.canvasProjectIds ?? parseProjectList(params),
         selectedVersionIds: standardState.selectedVersionIds ?? parseVersionList(params),
         memberProjectsOnly: undefined,
         sortConfig: parseSortConfig(params.get('sort')),

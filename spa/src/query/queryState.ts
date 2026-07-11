@@ -1,6 +1,5 @@
 import type {
     AssigneeFilterOverride,
-    ProjectFilterOverride,
     QueryContext,
     QueryOverrides,
     StatusFilterOverride,
@@ -24,11 +23,6 @@ export const clearSavedQueryToStandalone = (effectiveOverrides: QueryOverrides):
     overrides: cloneOverrides(effectiveOverrides)
 });
 
-export const setProjectOverride = (
-    queryContext: QueryContext,
-    override: ProjectFilterOverride
-): QueryContext => setOverride(queryContext, 'project', override);
-
 export const setStatusOverride = (
     queryContext: QueryContext,
     override: StatusFilterOverride
@@ -43,17 +37,6 @@ export const setVersionOverride = (
     queryContext: QueryContext,
     override: VersionFilterOverride
 ): QueryContext => setOverride(queryContext, 'version', override);
-
-export const selectAllCandidateProjects = (
-    queryContext: QueryContext,
-    candidateProjectIds: string[]
-): QueryContext => setProjectOverride(queryContext, {
-    mode: 'subset',
-    values: [...candidateProjectIds]
-});
-
-export const clearProjectFilter = (queryContext: QueryContext): QueryContext =>
-    setProjectOverride(queryContext, { mode: 'none' });
 
 export const isQueryModified = (queryContext: QueryContext): boolean =>
     Object.keys(queryContext.overrides).length > 0;
@@ -78,7 +61,6 @@ const setOverride = <K extends OverrideKey>(
 };
 
 const cloneOverrides = (overrides: QueryOverrides): QueryOverrides => ({
-    ...(overrides.project ? { project: cloneOverride(overrides.project) } : {}),
     ...(overrides.status ? { status: cloneOverride(overrides.status) } : {}),
     ...(overrides.assignee ? { assignee: cloneOverride(overrides.assignee) } : {}),
     ...(overrides.version ? { version: cloneOverride(overrides.version) } : {})

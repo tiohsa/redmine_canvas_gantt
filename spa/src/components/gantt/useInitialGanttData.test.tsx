@@ -184,8 +184,7 @@ describe('useInitialGanttData persistence', () => {
 
         expect(fetchDataMock).toHaveBeenCalledWith({
             query: {
-                queryId: 18,
-                canvasProjectIds: []
+                queryId: 18
             }
         });
     });
@@ -211,8 +210,7 @@ describe('useInitialGanttData persistence', () => {
 
         expect(fetchDataMock).toHaveBeenCalledWith({
             query: {
-                queryId: 18,
-                canvasProjectIds: []
+                queryId: 18
             }
         });
     });
@@ -253,6 +251,7 @@ describe('useInitialGanttData persistence', () => {
             selectedStatusIds: [1],
             selectedAssigneeIds: [7],
             selectedProjectIds: ['p1'],
+            projectSelectionExplicit: true,
             selectedVersionIds: ['v2']
         });
         fetchDataMock.mockImplementationOnce(async () => ({

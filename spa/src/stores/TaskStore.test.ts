@@ -217,6 +217,23 @@ describe('TaskStore shared query persistence', () => {
         vi.mocked(apiClient.fetchData).mockReset();
     });
 
+    it('does not persist an unspecified Canvas Project scope', () => {
+        useTaskStore.getState().applyResolvedQueryState({});
+
+        expect(loadLastUsedSharedQueryState(1)).toEqual({ groupBy: null });
+        expect(new URL(window.location.href).searchParams.has('canvas_project_ids[]')).toBe(false);
+    });
+
+    it('persists an explicitly empty Canvas Project scope', () => {
+        useTaskStore.getState().setSelectedProjectIds([]);
+
+        expect(useTaskStore.getState().projectSelectionExplicit).toBe(true);
+        expect(loadLastUsedSharedQueryState(1)).toEqual({
+            canvasProjectIds: []
+        });
+        expect(new URL(window.location.href).searchParams.get('canvas_project_ids[]')).toBe('none');
+    });
+
     it('applyResolvedQueryState は query_id と shared state を保存する', () => {
         useTaskStore.getState().applyResolvedQueryState({
             queryId: 12,
@@ -263,8 +280,7 @@ describe('TaskStore shared query persistence', () => {
 
         expect(apiClient.fetchData).toHaveBeenCalledWith({
             query: {
-                queryId: 12,
-                canvasProjectIds: []
+                queryId: 12
             }
         });
         expect(useTaskStore.getState().activeQueryId).toBe(12);
@@ -303,7 +319,6 @@ describe('TaskStore shared query persistence', () => {
         expect(apiClient.fetchData).toHaveBeenCalledWith({
             query: {
                 queryId: 12,
-                canvasProjectIds: [],
                 memberProjectsOnly: true
             }
         });
@@ -363,6 +378,7 @@ describe('TaskStore shared query persistence', () => {
             selectedStatusIds: [1, 2],
             selectedAssigneeIds: [7],
             selectedProjectIds: ['p1'],
+            projectSelectionExplicit: true,
             selectedVersionIds: ['v1']
         });
 
@@ -416,7 +432,7 @@ describe('TaskStore shared query persistence', () => {
             permissions: { editable: true, viewable: true, baselineEditable: true },
             initialState: { queryId: 12, groupBy: 'project' }
         });
-        useTaskStore.setState({ showSubprojects: false, selectedProjectIds: ['p1', 'p2'] });
+        useTaskStore.setState({ showSubprojects: false, selectedProjectIds: ['p1', 'p2'], projectSelectionExplicit: true });
 
         await useTaskStore.getState().applySavedQuery(12);
 

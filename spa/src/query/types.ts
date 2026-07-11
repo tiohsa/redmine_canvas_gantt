@@ -2,14 +2,7 @@ export type FilterMode = 'inherit' | 'all' | 'subset' | 'none';
 
 type InheritFilterOverride = { mode: 'inherit' };
 type AllFilterOverride = { mode: 'all' };
-type NoneFilterOverride = { mode: 'none' };
 type SubsetFilterOverride<T> = { mode: 'subset'; values: T[] };
-
-export type ProjectFilterOverride =
-    | InheritFilterOverride
-    | AllFilterOverride
-    | SubsetFilterOverride<string>
-    | NoneFilterOverride;
 
 export type StatusFilterOverride =
     | InheritFilterOverride
@@ -27,7 +20,6 @@ export type VersionFilterOverride =
     | SubsetFilterOverride<string>;
 
 export interface QueryOverrides {
-    project?: ProjectFilterOverride;
     status?: StatusFilterOverride;
     assignee?: AssigneeFilterOverride;
     version?: VersionFilterOverride;

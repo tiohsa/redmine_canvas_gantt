@@ -12,8 +12,9 @@ import type {
 import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption } from '../types/editMeta';
 import type { BaselineSaveScope, BaselineSnapshot, BaselineTaskState } from '../types/baseline';
 import { buildIssueQueryParams, parseResolvedQueryState, type ResolvedQueryState } from '../utils/queryParams';
+import { normalizeQueryContext } from '../query/queryStateCodec';
 import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/baseline';
-import type { QueryContext, QueryOverrides } from '../query/types';
+import type { QueryContext } from '../query/types';
 
 type ApiTask = Record<string, unknown>;
 type ApiRelation = Record<string, unknown>;
@@ -235,76 +236,6 @@ const parseSavedQuery = (value: unknown): SavedQuery | null => {
         name,
         isPublic,
         projectId: projectId ?? null
-    };
-};
-
-const parseStringArray = (value: unknown): string[] | null =>
-    Array.isArray(value) && value.every((entry) => typeof entry === 'string')
-        ? [...value]
-        : null;
-
-const parseNumberArray = (value: unknown): number[] | null => {
-    if (!Array.isArray(value)) return null;
-    const parsed = value.flatMap((entry) => {
-        if (typeof entry === 'number' && Number.isFinite(entry)) return [entry];
-        if (typeof entry === 'string' && /^-?\d+$/.test(entry)) return [Number(entry)];
-        return [];
-    });
-    return parsed.length === value.length ? parsed : null;
-};
-
-const parseNumberOrNullArray = (value: unknown): (number | null)[] | null => {
-    if (!Array.isArray(value)) return null;
-    const parsed = value.flatMap((entry) => {
-        if (entry === null) return [null];
-        if (typeof entry === 'number' && Number.isFinite(entry)) return [entry];
-        if (typeof entry === 'string' && /^-?\d+$/.test(entry)) return [Number(entry)];
-        return [];
-    });
-    return parsed.length === value.length ? parsed : null;
-};
-
-const parseFilterOverride = (
-    value: unknown,
-    parseValues: (value: unknown) => unknown[] | null,
-    allowNone: boolean
-) => {
-    const record = asRecord(value);
-    if (!record) return undefined;
-    if (record.mode === 'inherit') return { mode: 'inherit' as const };
-    if (record.mode === 'all') return { mode: 'all' as const };
-    if (allowNone && record.mode === 'none') return { mode: 'none' as const };
-    if (record.mode !== 'subset') return undefined;
-    const values = parseValues(record.values);
-    return values ? { mode: 'subset' as const, values } : undefined;
-};
-
-const parseQueryOverrides = (value: unknown): QueryOverrides => {
-    const record = asRecord(value) ?? {};
-    const project = parseFilterOverride(record.project, parseStringArray, true);
-    const status = parseFilterOverride(record.status, parseNumberArray, false);
-    const assignee = parseFilterOverride(record.assignee, parseNumberOrNullArray, false);
-    const version = parseFilterOverride(record.version, parseStringArray, false);
-
-    return {
-        ...(project ? { project: project as QueryOverrides['project'] } : {}),
-        ...(status ? { status: status as QueryOverrides['status'] } : {}),
-        ...(assignee ? { assignee: assignee as QueryOverrides['assignee'] } : {}),
-        ...(version ? { version: version as QueryOverrides['version'] } : {})
-    };
-};
-
-const parseQueryContext = (value: unknown): QueryContext | undefined => {
-    const record = asRecord(value);
-    if (!record) return undefined;
-    const rawQueryId = record.query_id ?? record.baseQueryId;
-    const queryId = typeof rawQueryId === 'number'
-        ? rawQueryId
-        : (typeof rawQueryId === 'string' && /^-?\d+$/.test(rawQueryId) ? Number(rawQueryId) : null);
-
-    return {
-        baseQueryId: Number.isInteger(queryId) && Number(queryId) > 0 ? Number(queryId) : null,
-        overrides: parseQueryOverrides(record.explicit_overrides ?? record.overrides)
     };
 };
 
@@ -670,7 +601,7 @@ export const apiClient = {
             permissions,
             baseline,
             initialState: parseResolvedQueryState(data.initial_state),
-            queryContext: parseQueryContext(data.query_context),
+            queryContext: data.query_context === undefined ? undefined : normalizeQueryContext(data.query_context),
             warnings: mergedWarnings
         };
     },

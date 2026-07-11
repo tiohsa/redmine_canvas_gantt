@@ -3,106 +3,40 @@ import {
     parseQueryContextFromUrl,
     buildQueryParamsFromQueryContext,
     serializeQueryContext,
-    deserializeQueryContext
+    deserializeQueryContext,
+    queryContextFromResolvedQueryState
 } from './queryStateCodec';
 import type { QueryContext } from './types';
 
-describe('QueryContext URL Codec Round-trip', () => {
-    it('handles inherit -> URL -> inherit', () => {
-        const context: QueryContext = {
-            baseQueryId: null,
-            overrides: {}
-        };
-        const params = buildQueryParamsFromQueryContext(context);
-        expect(params.toString()).toBe('');
-
-        const parsed = parseQueryContextFromUrl('?' + params.toString());
-        expect(parsed.baseQueryId).toBeNull();
-        expect(parsed.overrides.project).toBeUndefined();
-    });
-
-    it('handles all -> URL -> all', () => {
+describe('QueryContext URL and storage codecs', () => {
+    it('round-trips status, assignee none, and version none overrides', () => {
         const context: QueryContext = {
             baseQueryId: 42,
             overrides: {
-                project: { mode: 'all' }
+                status: { mode: 'subset', values: [1, 2] },
+                assignee: { mode: 'subset', values: [7, null] },
+                version: { mode: 'subset', values: ['4', '_none'] }
             }
         };
         const params = buildQueryParamsFromQueryContext(context);
-        expect(params.get('query_id')).toBe('42');
-        expect(params.get('set_filter')).toBe('1');
-        expect(params.get('op[project_id]')).toBe('*');
-
         const parsed = parseQueryContextFromUrl('?' + params.toString());
-        expect(parsed.baseQueryId).toBe(42);
-        expect(parsed.overrides.project).toEqual({ mode: 'all' });
+
+        expect(parsed).toEqual(context);
+        expect(parsed.overrides).not.toHaveProperty('project');
     });
 
-    it('handles subset -> URL -> subset', () => {
-        const context: QueryContext = {
-            baseQueryId: null,
-            overrides: {
-                project: { mode: 'subset', values: ['p1', 'p2'] }
-            }
-        };
-        const params = buildQueryParamsFromQueryContext(context);
-        expect(params.getAll('project_ids[]')).toEqual(['p1', 'p2']);
-
-        const parsed = parseQueryContextFromUrl('?' + params.toString());
-        expect(parsed.baseQueryId).toBeNull();
-        expect(parsed.overrides.project).toEqual({ mode: 'subset', values: ['p1', 'p2'] });
+    it('does not convert project URL input into a Query override', () => {
+        const parsed = parseQueryContextFromUrl('?project_ids[]=p1&project_ids[]=p2');
+        expect(parsed).toEqual({ baseQueryId: null, overrides: {} });
     });
 
-    it('handles none -> URL -> none', () => {
-        const context: QueryContext = {
-            baseQueryId: null,
-            overrides: {
-                project: { mode: 'none' }
-            }
-        };
-        const params = buildQueryParamsFromQueryContext(context);
-        expect(params.getAll('project_ids[]')).toEqual(['none']);
-
-        const parsed = parseQueryContextFromUrl('?' + params.toString());
-        expect(parsed.baseQueryId).toBeNull();
-        expect(parsed.overrides.project).toEqual({ mode: 'none' });
-    });
-});
-
-describe('QueryContext Storage Codec Round-trip', () => {
-    it('handles all -> Storage -> all', () => {
-        const context: QueryContext = {
-            baseQueryId: 100,
-            overrides: {
-                project: { mode: 'all' }
-            }
-        };
-        const serialized = serializeQueryContext(context);
-        const deserialized = deserializeQueryContext(serialized);
-        expect(deserialized).toEqual(context);
-    });
-
-    it('handles none -> Storage -> none', () => {
-        const context: QueryContext = {
-            baseQueryId: null,
-            overrides: {
-                project: { mode: 'none' }
-            }
-        };
-        const serialized = serializeQueryContext(context);
-        const deserialized = deserializeQueryContext(serialized);
-        expect(deserialized).toEqual(context);
-    });
-
-    it('handles subset -> Storage -> subset', () => {
-        const context: QueryContext = {
-            baseQueryId: null,
-            overrides: {
-                project: { mode: 'subset', values: ['p3'] }
-            }
-        };
-        const serialized = serializeQueryContext(context);
-        const deserialized = deserializeQueryContext(serialized);
-        expect(deserialized).toEqual(context);
+    it('round-trips normalized QueryContext storage without a project override', () => {
+        const context = queryContextFromResolvedQueryState({
+            queryId: 100,
+            selectedStatusIds: [],
+            selectedAssigneeIds: [null],
+            selectedVersionIds: ['_none']
+        });
+        expect(deserializeQueryContext(serializeQueryContext(context))).toEqual(context);
     });
 });
