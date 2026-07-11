@@ -4,7 +4,7 @@ Redmine::Plugin.register :redmine_canvas_gantt do
   name 'Redmine Canvas Gantt plugin'
   author 'tiohsa'
   description 'A high-performance Canvas-based Gantt chart plugin'
-  version '0.10.4'
+  version '0.10.5'
   url 'https://github.com/tiohsa/redmine_canvas_gantt'
   author_url 'https://github.com/tiohsa/redmine_canvas_gantt'
 
