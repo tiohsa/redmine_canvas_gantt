@@ -3,9 +3,10 @@ import { TaskRenderer } from './TaskRenderer';
 import type { Task, Viewport } from '../types';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
+const TEST_START_DATE = new Date(2026, 0, 1).getTime();
 
 const viewport: Viewport = {
-    startDate: 0,
+    startDate: TEST_START_DATE,
     scrollX: 0,
     scrollY: 0,
     scale: 1 / ONE_DAY,
@@ -20,8 +21,8 @@ const buildTask = (): Task => ({
     projectId: 'p1',
     projectName: 'Project',
     displayOrder: 0,
-    startDate: 0,
-    dueDate: ONE_DAY,
+    startDate: TEST_START_DATE,
+    dueDate: TEST_START_DATE + ONE_DAY,
     ratioDone: 0,
     statusId: 1,
     lockVersion: 0,
@@ -90,7 +91,7 @@ describe('TaskRenderer', () => {
 
         new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], true, true, true, null, false);
 
-        expect(ctx.fillText).toHaveBeenCalledWith('01/01', -7, expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('01/01', -6, expect.any(Number));
         expect(ctx.fillText).toHaveBeenCalledWith('01/02', expect.any(Number), expect.any(Number));
         expect(ctx.fillText).toHaveBeenCalledWith('Task 1', -56, expect.any(Number));
     });
