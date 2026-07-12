@@ -279,7 +279,7 @@ export class TaskRenderer {
 
         const formatDate = (timestamp: number) => {
             const date = new Date(timestamp);
-            return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+            return `${date.getMonth() + 1}/${date.getDate()}`;
         };
 
         const textY = bar.y + bar.height / 2;

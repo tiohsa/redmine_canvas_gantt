@@ -91,8 +91,8 @@ describe('TaskRenderer', () => {
 
         new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], true, true, true, null, false);
 
-        expect(ctx.fillText).toHaveBeenCalledWith('01/01', -6, expect.any(Number));
-        expect(ctx.fillText).toHaveBeenCalledWith('01/02', expect.any(Number), expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('1/1', -6, expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
         expect(ctx.fillText).toHaveBeenCalledWith('Task 1', -56, expect.any(Number));
     });
 
@@ -106,7 +106,7 @@ describe('TaskRenderer', () => {
 
         new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], false, false, true, null, false);
 
-        expect(ctx.fillText).not.toHaveBeenCalledWith('01/01', expect.any(Number), expect.any(Number));
-        expect(ctx.fillText).not.toHaveBeenCalledWith('01/02', expect.any(Number), expect.any(Number));
+        expect(ctx.fillText).not.toHaveBeenCalledWith('1/1', expect.any(Number), expect.any(Number));
+        expect(ctx.fillText).not.toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
     });
 });

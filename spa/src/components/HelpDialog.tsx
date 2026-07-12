@@ -100,14 +100,47 @@ const queryIcon = (
     </svg>
 );
 
+const plusIcon = (
+    <svg data-testid="help-icon-plus" width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+);
+
 const filterIcon = (
     <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
         <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
     </svg>
 );
 
+const assigneeIcon = (
+    <svg data-testid="help-icon-assignee" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
+    </svg>
+);
+
+const projectIcon = (
+    <svg data-testid="help-icon-project" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
+        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+    </svg>
+);
+
+const versionIcon = (
+    <svg data-testid="help-icon-version" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
+        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+        <line x1="4" y1="22" x2="4" y2="15" />
+    </svg>
+);
+
+const statusIcon = (
+    <svg data-testid="help-icon-status" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+);
+
 const columnsIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+    <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
         <line x1="9" y1="3" x2="9" y2="21" />
         <line x1="15" y1="3" x2="15" y2="21" />
@@ -115,7 +148,7 @@ const columnsIcon = (
 );
 
 const sliderIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+    <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
         <circle cx="6" cy="6" r="2" />
         <circle cx="18" cy="6" r="2" />
         <circle cx="12" cy="18" r="2" />
@@ -126,14 +159,14 @@ const sliderIcon = (
 );
 
 const eyeIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+    <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
         <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" />
         <circle cx="12" cy="12" r="3" />
     </svg>
 );
 
 const workloadIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+    <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
         <line x1="18" y1="20" x2="18" y2="10" />
         <line x1="12" y1="20" x2="12" y2="4" />
         <line x1="6" y1="20" x2="6" y2="14" />
@@ -147,7 +180,7 @@ const lineChartIcon = (
 );
 
 const hierarchyIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+    <svg data-testid="help-icon-hierarchy" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
         <path d="M7 5v14" />
         <path d="M7 5h6" />
         <path d="M7 12h6" />
@@ -157,12 +190,58 @@ const hierarchyIcon = (
     </svg>
 );
 
-const calendarIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+const monthNavigationIcon = (
+    <svg data-testid="help-icon-month-navigation" width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+        <polyline points="15 18 9 12 15 6" />
+        <polyline points="9 18 15 12 9 6" />
+    </svg>
+);
+
+const todayCalendarIcon = (
+    <svg data-testid="help-icon-today-calendar" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
         <line x1="16" y1="2" x2="16" y2="6" />
         <line x1="8" y1="2" x2="8" y2="6" />
         <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+);
+
+const starIcon = (
+    <svg data-testid="help-icon-star" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
+        <path d="M12 2l3 5h6l-5 4 2 6-6-4-6 4 2-6-5-4h6z" />
+    </svg>
+);
+
+const taskTitlesIcon = (
+    <svg data-testid="help-icon-task-titles" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
+        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
+        <circle cx="12" cy="12" r="2.5" />
+        <line x1="4" y1="20" x2="14" y2="20" />
+    </svg>
+);
+
+const organizeDependencyIcon = (
+    <svg data-testid="help-icon-organize-dependency" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
+        <path d="M5 6h6v6H5z" />
+        <path d="M13 12h6v6h-6z" />
+        <path d="M11 9l2 2" />
+        <path d="M7 12l6-6" />
+    </svg>
+);
+
+const relationIcon = (
+    <svg data-testid="help-icon-relation" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
+        <path d="M4 12h6" />
+        <path d="M14 12h6" />
+        <circle cx="10" cy="12" r="2" />
+        <circle cx="14" cy="12" r="2" />
+    </svg>
+);
+
+const calendarIcon = (
+    <svg data-testid="help-icon-calendar" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M7 3v4M17 3v4M3 10h18" />
     </svg>
 );
 
@@ -171,7 +250,7 @@ const zoomIcon = (
 );
 
 const rowHeightIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <line x1="12" y1="5" x2="12" y2="19" />
         <polyline points="8 9 12 5 16 9" />
         <polyline points="8 15 12 19 16 15" />
@@ -179,7 +258,7 @@ const rowHeightIcon = (
 );
 
 const exportIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+    <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
         <polyline points="7 10 12 15 17 10" />
         <line x1="12" y1="15" x2="12" y2="3" />
@@ -196,7 +275,7 @@ const fullscreenIcon = (
 );
 
 const topIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+    <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
         <line x1="12" y1="19" x2="12" y2="5" />
         <polyline points="5 12 12 5 19 12" />
         <line x1="5" y1="5" x2="19" y2="5" />
@@ -208,15 +287,6 @@ const dragIcon = (
         <line x1="3" y1="12" x2="21" y2="12" />
         <polyline points="8 7 3 12 8 17" />
         <polyline points="16 7 21 12 16 17" />
-    </svg>
-);
-
-const dependencyIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
-        <path d="M4 12h6" />
-        <path d="M14 12h6" />
-        <circle cx="10" cy="12" r="2" />
-        <circle cx="14" cy="12" r="2" />
     </svg>
 );
 
@@ -236,10 +306,16 @@ const dotsIcon = (
 );
 
 const saveIcon = (
-    <svg width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+    <svg data-testid="help-icon-save" width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
         <path d="M5 3h11l3 3v15H5z" />
         <path d="M9 3v6h6" />
         <path d="M9 17h6" />
+    </svg>
+);
+
+const autoSaveIcon = (
+    <svg data-testid="help-icon-auto-save" width="18" height="18" viewBox="0 0 24 24" {...iconStroke}>
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
     </svg>
 );
 
@@ -298,9 +374,14 @@ export const HelpDialog: React.FC = () => {
                     description: t('help_desc_maximize_right', 'Expands the Gantt chart to fill the screen, hiding the task list. Click again to restore the split view.')
                 },
                 {
+                    icon: plusIcon,
+                    title: t('label_issue_new', 'New issue'),
+                    description: t('help_desc_issue_new', 'Opens a dialog to create a new issue.')
+                },
+                {
                     icon: queryIcon,
                     title: t('label_saved_queries', 'Saved Queries'),
-                    description: 'Switch between saved query presets, clear the active query, or open the current query in Redmine.'
+                    description: t('help_desc_saved_queries', 'Switch between saved query presets, clear the active query, or open the current query in Redmine.')
                 },
                 {
                     icon: filterIcon,
@@ -318,14 +399,34 @@ export const HelpDialog: React.FC = () => {
                     description: t('help_desc_columns', 'Select which columns are visible in the left task list.')
                 },
                 {
+                    icon: assigneeIcon,
+                    title: t('label_assigned_to_filter', 'Filter by assignee'),
+                    description: t('help_desc_assignee_filter', 'Filter tasks by specific assignees, or group tasks by their assignee.')
+                },
+                {
+                    icon: projectIcon,
+                    title: t('label_project_filter', 'Filter by project'),
+                    description: t('help_desc_project_filter', 'Filter tasks by project, or group tasks by their parent project.')
+                },
+                {
+                    icon: versionIcon,
+                    title: t('label_version_filter', 'Filter by version'),
+                    description: t('help_desc_version_filter', 'Filter tasks by target version, or toggle the visibility of version group headers.')
+                },
+                {
+                    icon: statusIcon,
+                    title: t('label_status_filter', 'Filter by status'),
+                    description: t('help_desc_status_filter', 'Filter tasks by their current issue status (e.g., New, In Progress, Closed).')
+                },
+                {
                     icon: sliderIcon,
                     title: t('label_display_settings', 'Display Settings'),
-                    description: 'Save display preferences and optionally share them across all projects.'
+                    description: t('help_desc_display_settings', 'Save display preferences and optionally share them across all projects.')
                 },
                 {
                     icon: eyeIcon,
                     title: t('label_show_baseline', 'Baseline'),
-                    description: 'Save a baseline snapshot and compare it with the current plan.'
+                    description: t('help_desc_baseline', 'Save a baseline snapshot and compare it with the current plan.')
                 },
                 {
                     icon: workloadIcon,
@@ -338,12 +439,12 @@ export const HelpDialog: React.FC = () => {
             title: t('help_label_timeline_view', '2. Timeline and View Controls'),
             items: [
                 {
-                    icon: calendarIcon,
+                    icon: monthNavigationIcon,
                     title: `${t('label_prev_month', 'Previous month')} / ${t('label_next_month', 'Next month')}`,
                     description: t('help_desc_prev_next_month', 'Use the previous and next month buttons to jump the visible timeline window by whole months.')
                 },
                 {
-                    icon: calendarIcon,
+                    icon: todayCalendarIcon,
                     title: t('label_today', 'Today'),
                     description: t('help_desc_today', 'Scrolls the timeline view to center on the current day.')
                 },
@@ -365,25 +466,30 @@ export const HelpDialog: React.FC = () => {
                 {
                     icon: hierarchyIcon,
                     title: t('label_toggle_hierarchy_lines', 'Toggle Hierarchy Lines'),
-                    description: 'Show or hide the structural lines in the task list.'
+                    description: t('help_desc_hierarchy_lines', 'Show or hide the structural lines in the task list.')
                 },
                 {
-                    icon: eyeIcon,
+                    icon: starIcon,
                     title: t('label_toggle_points_orphans', 'Toggle Orphan Date Points'),
                     description: t('help_desc_points_orphans', 'Show or hide milestone indicators for tasks that only have a start date or a due date.')
                 },
                 {
-                    icon: eyeIcon,
+                    icon: taskTitlesIcon,
                     title: t('label_toggle_task_titles', 'Toggle Task Titles'),
                     description: t('help_desc_task_titles', 'Show or hide the task titles rendered on the chart next to task bars and milestone points.')
                 },
                 {
-                    icon: dependencyIcon,
-                    title: t('label_organize_by_dependency', 'Organize by Dependency'),
-                    description: 'Sort tasks so predecessors appear before successors.'
+                    icon: calendarIcon,
+                    title: t('label_toggle_task_bar_dates', 'Toggle Task Bar Dates'),
+                    description: t('help_desc_task_bar_dates', 'Show or hide the start and due dates rendered on task bars.')
                 },
                 {
-                    icon: sliderIcon,
+                    icon: organizeDependencyIcon,
+                    title: t('label_organize_by_dependency', 'Organize by Dependency'),
+                    description: t('help_desc_organize_by_dependency', 'Sort tasks so predecessors appear before successors.')
+                },
+                {
+                    icon: relationIcon,
                     title: t('label_relation_title', 'Dependency Settings'),
                     description: t('help_desc_dependency_settings', 'Configure default dependency behavior, including relation type, auto-calculated delay, auto-applying the default dependency, and how tasks move during auto scheduling.')
                 },
@@ -400,7 +506,7 @@ export const HelpDialog: React.FC = () => {
                 {
                     icon: topIcon,
                     title: t('button_top', 'Top'),
-                    description: 'Scroll the task list back to the top.'
+                    description: t('help_desc_top', 'Scroll the task list back to the top.')
                 }
             ]
         },
@@ -410,43 +516,43 @@ export const HelpDialog: React.FC = () => {
                 {
                     icon: dragIcon,
                     title: t('help_op_drag_drop', 'Drag & Drop'),
-                    description: t('help_op_drag_drop_desc', 'Drag a task bar in the chart to change its start and due dates. Drag the edges of a bar to change its duration.')
+                    description: t('help_op_drag_drop_desc', 'Drag an editable task bar in the chart to change its start and due dates. Drag the edges of a dated leaf task bar to change its duration.')
                 },
                 {
-                    icon: dependencyIcon,
+                    icon: organizeDependencyIcon,
                     title: t('help_op_dependency', 'Draw Dependencies'),
-                    description: t('help_op_dependency_desc', 'Hover over a task bar to see connection points. Click and drag from a point to another task to create a dependency relation.')
+                    description: t('help_op_dependency_desc', 'Hover over a task bar to show connection handles, then drag from a handle to another task. Depending on the dependency settings, the relation is created immediately or opens draft settings.')
                 },
                 {
                     icon: editIcon,
                     title: t('help_op_inline_edit', 'Inline Editing'),
-                    description: t('help_op_inline_edit_desc', 'Double-click or press Enter on a cell in the left task list to quickly edit its value without opening the full issue page.')
+                    description: t('help_op_inline_edit_desc', 'Double-click an editable cell in the left task list to edit it inline. Press Enter in the editor to save or Escape to cancel. Edit the subject from its edit badge, which opens the issue editor.')
                 },
                 {
                     icon: dotsIcon,
                     title: t('help_op_context_menu', 'Context Menu'),
-                    description: t('help_op_context_menu_desc', 'Right-click on a task row or task bar to access a context menu for editing, assigning, updating status, or opening the issue.')
+                    description: t('help_op_context_menu_desc', 'Right-click a task row or task bar to open actions such as editing, adding or removing parent links, creating a child task, deleting the task, or removing dependencies.')
                 },
                 {
                     icon: calendarIcon,
                     title: t('help_op_unscheduled', 'Schedule Tasks'),
-                    description: t('help_op_unscheduled_desc', 'For tasks without dates, edit the start date or due date directly in the left task list. Once dates are set, the task will also appear on the chart.')
+                    description: t('help_op_unscheduled_desc', 'For tasks without dates, double-click an editable start-date or due-date cell in the left task list. Once a date is set, the task can appear on the chart.')
                 },
                 {
-                    icon: saveIcon,
+                    icon: autoSaveIcon,
                     title: t('help_label_autosave', 'Auto Save'),
-                    description: t('help_desc_autosave', 'When enabled, changes such as dragging tasks or inline edits are saved immediately. When disabled, changes stay pending until you save them manually.'),
+                    description: t('help_desc_autosave', 'When enabled, changes such as dragging tasks or inline edits are saved immediately. When disabled, changes stay pending; Save and Cancel appear when there are pending changes.'),
                     active: true
                 },
                 {
                     icon: saveIcon,
                     title: t('button_save', 'Save'),
-                    description: t('help_desc_save', 'Shown when auto save is off and there are pending edits. Save all pending changes at once.')
+                    description: t('help_desc_save', 'Shown only when auto save is off and there are pending changes. Saves all pending changes and refreshes the chart.')
                 },
                 {
                     icon: cancelIcon,
                     title: t('button_cancel', 'Cancel'),
-                    description: t('help_desc_cancel', 'Shown when auto save is off and there are pending edits. Discard the unsaved changes currently pending in the toolbar.')
+                    description: t('help_desc_cancel', 'Shown only when auto save is off and there are pending changes. Refreshes the data and discards the pending changes.')
                 }
             ]
         }

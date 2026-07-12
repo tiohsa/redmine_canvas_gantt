@@ -2169,6 +2169,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 transition: 'background 0.2s'
                             }}
                         >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M5 3h11l3 3v15H5z" />
+                                <path d="M9 3v6h6" />
+                                <path d="M9 17h6" />
+                            </svg>
                             {i18n.t('button_save') || "Save"}
                         </button>
                         <button
