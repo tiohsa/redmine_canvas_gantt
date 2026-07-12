@@ -40,6 +40,8 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 
 Redmine Canvas Gantt renders the timeline on HTML5 Canvas while keeping the left task list editable. It is designed for projects where the default Redmine Gantt view becomes hard to read or slow to operate.
 
+Baseline snapshots are stored in Redmine's plugin settings (`Setting.plugin_redmine_canvas_gantt`), not in browser storage and not in a separate table. Each project has one snapshot; saving a new snapshot replaces the previous one.
+
 ## Highlights
 
 - Fast Canvas rendering with smooth scrolling and zooming
@@ -50,9 +52,10 @@ Redmine Canvas Gantt renders the timeline on HTML5 Canvas while keeping the left
 - Bulk child task creation from multiple subject lines
 - Baseline snapshots for visual comparison, saved for either the current filtered view or the whole project
 - Saved queries, Redmine query editing, and round-tripping back to the issue list with supported filters
-- Filters and grouping by project, assignee, status, version, and subject text
+- Filters by subject text, project, assignee, status, and target version
+- Grouping by project or assignee; target-version headers are a display toggle, not a grouping mode
 - Workload pane, export to PNG or CSV, full screen mode, and toolbar controls for zoom, row height, and font size
-- Display settings that can be stored per project or shared across all projects
+- Display settings stored per project or shared across all projects in the same browser profile (not across Redmine users)
 - Version headers, progress line, hierarchy lines, orphan date points, task titles, and dependency-based organization
 
 ## Demo
@@ -63,14 +66,18 @@ Redmine Canvas Gantt renders the timeline on HTML5 Canvas while keeping the left
 
 - Redmine 6.x
 - Ruby 3.x
-- Node.js 20+ for SPA build and frontend development
+- Node.js 20+ only for building the SPA or running frontend development tools; Node.js is not required for normal Redmine operation when prebuilt assets are used
 - REST API enabled in Redmine
+
+### Supported browsers
+
+Use a current desktop version of Chrome, Edge, Firefox, or Safari with HTML5 Canvas, ES modules, and `localStorage` enabled. Internet Explorer is not supported. Mobile browsers and embedded webviews are not part of the supported test matrix.
 
 ### Security and impact
 
 - Database migration: none
 - Added permissions: `view_canvas_gantt`, `edit_canvas_gantt`
-- Uninstall: remove the plugin directory and restart Redmine
+- Uninstall: remove the plugin directory and restart Redmine. Redmine plugin settings, including stored baselines, and each user's browser `localStorage` are not automatically deleted; remove them separately if data removal is required.
 
 ## Installation
 
@@ -84,6 +91,15 @@ Redmine Canvas Gantt renders the timeline on HTML5 Canvas while keeping the left
 2. Restart Redmine.
 
    Restart your application server after placing the plugin.
+
+### Upgrade
+
+1. Back up the Redmine database and the plugin directory.
+2. Replace the plugin directory with the desired release (for example, update the Git checkout or extract the release over it).
+3. If you build the SPA from source, run `cd spa && npm ci && npm run build` with Node.js 20+.
+4. Restart Redmine and verify the plugin module and permissions.
+
+This plugin does not provide database migrations. Existing baselines in Redmine settings and browser display preferences are retained unless you remove them explicitly.
 
 ## Usage
 
@@ -119,117 +135,27 @@ Redmine Canvas Gantt renders the timeline on HTML5 Canvas while keeping the left
 - The toolbar lets you save either the current filtered view or the whole project as the baseline scope.
 - Baseline bars and diff popovers only render for tasks currently visible in the chart, even when the saved scope was the whole project.
 - Viewing baseline comparison requires `view_canvas_gantt`. Saving a baseline requires `edit_canvas_gantt`.
+- Baselines are stored in `Setting.plugin_redmine_canvas_gantt` in Redmine's settings area. They are not shared through the browser URL, and they are not removed automatically when the plugin directory is deleted.
 
 ### Workload, display settings, and export
 
 - The workload pane can show daily capacity, peak and total workload, and filters for leaf issues, closed issues, and today-onward focus.
-- Display settings can be stored per project or shared across all projects. Shared display settings cover zoom level, view mode, chart position, progress line, task titles, hierarchy lines, orphan date points, version headers, baseline visibility, visible columns, column order, dependency-based organization, column widths, sidebar width, custom zoom scales, row height, and font size.
+- Display settings are stored in the browser's `localStorage`, not on a Redmine user record. Project mode applies to that project; global mode applies across projects in that same browser profile. It does not change settings in other browser profiles, but anyone using the same browser profile will see them. Settings cover zoom level, view mode, chart position, progress line, task titles, hierarchy lines, orphan date points, version headers, baseline visibility, visible columns, column order, dependency-based organization, column widths, sidebar width, custom zoom scales, row height, and font size.
 - The configuration screen also supports tracker icon mapping with a JSON object that maps tracker IDs to icon kinds.
 - Auto save determines whether edits are committed immediately or kept pending until you save them manually.
 - The help dialog documents the current toolbar actions and editing flows if you need a quick refresher in the UI.
 
-## Shared Views and Query Parameters
+## Shared views, filters, and query parameters
 
-Canvas Gantt separates shared business conditions from personal UI preferences.
+URL parameters and saved Redmine queries are the shareable contract for business conditions: status, assignee, project, target version, subproject visibility, grouping, sorting, and visible columns. The subject-text filter and workload focus filters are personal browser state and are not shared. The last resolved query is kept in `localStorage` only as a per-user fallback when a bare Canvas Gantt URL is opened.
 
-- Shared business conditions are resolved from the URL and optional `query_id` parameter
-- Personal UI state such as zoom, viewport, and sidebar width stays in `localStorage`
-- Display columns and sorting are treated as shared state that synchronizes with Redmine's standard queries
-- Project-specific query and filter state, such as project selection, status, assignee, version, or custom field conditions, is not shared
-- When the Canvas Gantt tab opens a bare `/canvas_gantt` URL, shared query conditions fall back to the last-used state stored in `localStorage` for that project
-- When the same shared condition is provided by multiple sources, the precedence is:
-  URL parameters -> saved query (`query_id`) -> project-scoped last-used shared state -> defaults
+Display settings are also browser-profile preferences, not Redmine user settings. “Shared across all projects” means all projects in the same browser profile, not all Redmine users. See [URL and query parameters](QUERY_PARAMETERS.md) for the complete parameter list, Redmine compatibility rules, precedence, and examples.
 
-### Query editing flow
-
-Canvas Gantt does not reimplement Redmine's query editor. Query creation, editing, and saving are done in the standard Redmine issue list, and Canvas Gantt consumes both saved queries and the supported subset of Redmine issue-list URL parameters.
-
-- Use the **Saved Queries** menu in the Canvas Gantt toolbar to browse saved Redmine queries that are visible in the current project
-- Select a saved query to apply its `query_id` and reload Canvas Gantt from Redmine's saved query definition
-- Use **Clear saved query** to remove `query_id` while keeping the currently resolved shared filters in the URL
-- Use **Save custom query** to open the standard Redmine issue list inside an iframe dialog and save the current filter set without leaving Canvas Gantt
-- Use **Edit Query in Redmine** from the same menu to open the standard issue list in the current tab
-- Adjust filters in the Redmine issue list and save the query with Redmine's built-in **Save** action
-- Use **Open in Canvas Gantt** in the issue list to return to Canvas Gantt with the current issue-list URL state
-- When the issue list is showing a saved query, the return link includes `query_id`
-- When the issue list is showing an unsaved standard filter, the return link carries the supported Redmine-standard filter parameters directly
-
-The saved-query editor dialog also exposes **Open in new tab** as a fallback when the embedded Redmine page is not convenient to use.
-
-`query_id` alone is enough only when the current view exactly matches the saved query. Display columns and sorting are also restored based on the saved query definition. If Canvas Gantt adds extra shared filters, visible columns, or sorting on top of that saved query, the toolbar sends `query_id` plus standard Redmine parameters so the issue list can reproduce the same view as closely as possible.
-
-When the project menu opens a bare `Canvas Gantt` URL with no shared query input, Canvas Gantt restores the last-used shared filter state for that project and rewrites the browser URL to the canonical shared query params.
-
-### Internal Query State Contract
-
-Canvas Gantt treats a saved Redmine query as the base condition and Canvas-side status, assignee, and version changes as explicit overrides. The Canvas Project menu is an independent display scope, represented by `canvas_project_ids[]`; its empty value means that no projects are displayed. A missing parameter means that the default project scope is used.
-
-### Supported Shared Parameters
-
-| Parameter | Description |
-| :--- | :--- |
-| `query_id` | Use an existing Redmine saved issue query as the base condition |
-| `status_ids[]` | Filter by issue status IDs |
-| `assigned_to_ids[]` | Filter by assignee IDs. Use `none` for unassigned issues |
-| `canvas_project_ids[]` | Narrow the visible projects inside the current project/subproject scope; `none` explicitly displays zero projects |
-| `project_id` | Redmine standard query input; normalized to the Canvas Project scope on initial URL resolution |
-| `project_ids[]` | Backward-compatible Canvas Project scope input; Canvas Gantt does not generate it |
-| `fixed_version_ids[]` | Filter by target version IDs. Use `none` for issues without a version |
-| `group_by` | Grouping criteria. `project` or `assigned_to` |
-| `sort` | Frontend sort key plus direction. e.g., `subject:asc`, `startDate:desc` |
-| `c[]` | Specify visible columns (compatible with Redmine's `c[]`). e.g., `c[]=subject&c[]=status` |
-| `show_subprojects` | Subproject visibility. `0` to hide, omit or `1` to include |
-
-### Compatibility with Redmine Issue List
-
-| Category | Supported Items |
-| :--- | :--- |
-| **Parameters** | `set_filter=1`, `f[]`, `op[field]`, `v[field][]`, `c[]`, `group_by`, `sort` |
-| **Fields** | `status_id`, `assigned_to_id`, `project_id`, `fixed_version_id`, `subproject_id` |
-| **Operators** | `=` (equal), `*` (all), `!*` (none), `o` (open), `c` (closed) |
-
-Current compatibility limits:
-
-- Unsupported Redmine fields or operators are ignored and shown as warnings
-- `assigned_to_id` with both specific assignees and unassigned issues cannot be represented exactly when exporting back to the Redmine issue list, so the unassigned part is omitted with a warning
-- Issues without a target version are supported in Canvas-specific URLs via `fixed_version_ids[]=none`, but that case is omitted when exporting a Redmine-standard issue-list URL
-- Default sort (`startDate:asc`) may be omitted when exporting a Redmine issue-list URL
-
-### Example URLs
-
-Use a saved Redmine query as the base view:
-
-```text
-/projects/demo/canvas_gantt?query_id=12
-```
-
-Override a saved query with explicit status and assignee filters:
-
-```text
-/projects/demo/canvas_gantt?query_id=12&status_ids[]=1&status_ids[]=2&assigned_to_ids[]=5
-```
-
-Open Canvas Gantt directly from a supported Redmine-standard issue-list URL:
-
-```text
-/projects/demo/canvas_gantt?query_id=12&set_filter=1&f[]=status_id&op[status_id]==&v[status_id][]=1&group_by=assigned_to&sort=start_date:desc
-```
-
-Open a shared project/version view without relying on browser storage:
-
-```text
-/projects/demo/canvas_gantt?canvas_project_ids[]=3&fixed_version_ids[]=7&group_by=project&sort=startDate:asc
-```
-
-Hide subprojects and show only unassigned issues:
-
-```text
-/projects/demo/canvas_gantt?assigned_to_ids[]=none&show_subprojects=0
-```
+Canvas Gantt uses Redmine's standard issue list for creating and editing saved queries. The toolbar can open the current query in an iframe or a new tab, and **Open in Canvas Gantt** returns with supported URL state.
 
 ## Configuration
 
-Canvas Gantt does not expose a plugin configuration screen. UI defaults are fixed in code, and baseline snapshots are stored internally in `Setting.plugin_redmine_canvas_gantt` without requiring a database migration.
+Canvas Gantt does not expose a plugin configuration screen. UI defaults are fixed in code, and baseline snapshots are stored internally in `Setting.plugin_redmine_canvas_gantt` without requiring a database migration. The setting is Redmine-wide storage; baseline access is still limited by the project permissions described above.
 
 To use the Vite dev server during development, set `CANVAS_GANTT_USE_VITE_DEV_SERVER=1`.
 
