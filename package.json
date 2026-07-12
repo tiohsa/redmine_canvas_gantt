@@ -1,0 +1,7 @@
+{
+  "name": "redmine-canvas-gantt",
+  "private": true,
+  "scripts": {
+    "test": "cd spa && npm run test --"
+  }
+}

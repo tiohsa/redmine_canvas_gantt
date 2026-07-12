@@ -1,0 +1,37 @@
+.codex
+docs/
+.specify/
+specs/
+# Ruby
+.bundle/
+log/
+tmp/
+*.gem
+vendor/bundle/
+.ruby-version
+# Node / SPA
+node_modules/
+spa/node_modules/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env*
+
+# Test / coverage
+coverage/
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+.codex/
+.venv/
+.playwright-mcp/
+.vite/
+docs/
+assets/

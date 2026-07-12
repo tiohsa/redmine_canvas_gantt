@@ -57,6 +57,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         toggleProgressLine,
         showTaskTitles,
         toggleTaskTitles,
+        showTaskBarDates,
+        toggleTaskBarDates,
         showHierarchyLines,
         toggleHierarchyLines,
         showBaseline,
@@ -1714,6 +1716,35 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <line x1="4" y1="20" x2="14" y2="20" />
                     </svg>
                     {showTaskTitles && (
+                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
+                    )}
+                </button>
+
+                <button
+                    data-testid="task-bar-dates-toggle-button"
+                    onClick={toggleTaskBarDates}
+                    title={i18n.t('label_toggle_task_bar_dates') || 'Toggle Task Bar Dates'}
+                    aria-label={i18n.t('label_toggle_task_bar_dates') || 'Toggle Task Bar Dates'}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0',
+                        borderRadius: '6px',
+                        border: `1px solid ${designTokens.controlBorder}`,
+                        backgroundColor: showTaskBarDates ? designTokens.controlActiveBg : designTokens.controlBg,
+                        color: showTaskBarDates ? designTokens.controlActiveFg : designTokens.controlFg,
+                        cursor: 'pointer',
+                        height: '32px',
+                        width: '32px',
+                        position: 'relative'
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="3" y="5" width="18" height="16" rx="2" />
+                        <path d="M7 3v4M17 3v4M3 10h18" />
+                    </svg>
+                    {showTaskBarDates && (
                         <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                     )}
                 </button>

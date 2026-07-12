@@ -160,6 +160,7 @@ describe('GanttToolbar shortcuts', () => {
             ...useUIStore.getState(),
             showProgressLine: true,
             showTaskTitles: false,
+            showTaskBarDates: true,
             showHierarchyLines: false,
             showBaseline: true,
             showPointsOrphans: false,
@@ -197,6 +198,7 @@ describe('GanttToolbar shortcuts', () => {
         saveDisplayPreferences({
             showTaskTitles: false,
             showProgressLine: true,
+            showTaskBarDates: true,
             visibleColumns: ['id', 'subject']
         }, 1);
 
@@ -220,6 +222,7 @@ describe('GanttToolbar shortcuts', () => {
                 projects?: Record<string, {
                     showProgressLine?: boolean;
                     showTaskTitles?: boolean;
+                    showTaskBarDates?: boolean;
                     visibleColumns?: string[];
                     sidebarWidth?: number;
                 }>;
@@ -228,6 +231,7 @@ describe('GanttToolbar shortcuts', () => {
                     preferences?: {
                         showProgressLine?: boolean;
                         showTaskTitles?: boolean;
+                        showTaskBarDates?: boolean;
                         visibleColumns?: string[];
                         sidebarWidth?: number;
                     };
@@ -238,10 +242,12 @@ describe('GanttToolbar shortcuts', () => {
         expect(storedPreferences.display?.global?.enabled).toBe(true);
         expect(storedPreferences.display?.global?.preferences?.showProgressLine).toBe(true);
         expect(storedPreferences.display?.global?.preferences?.showTaskTitles).toBe(false);
+        expect(storedPreferences.display?.global?.preferences?.showTaskBarDates).toBe(true);
         expect(storedPreferences.display?.global?.preferences?.visibleColumns).toEqual(['id', 'subject']);
         expect(storedPreferences.display?.global?.preferences?.sidebarWidth).toBe(420);
         expect(storedPreferences.display?.projects?.['project:1']?.showProgressLine).toBe(true);
         expect(storedPreferences.display?.projects?.['project:1']?.showTaskTitles).toBe(false);
+        expect(storedPreferences.display?.projects?.['project:1']?.showTaskBarDates).toBe(true);
         expect(storedPreferences.display?.projects?.['project:1']?.visibleColumns).toEqual(['id', 'subject']);
         expect(screen.queryByTestId('display-settings-menu')).not.toBeInTheDocument();
     });
@@ -271,6 +277,26 @@ describe('GanttToolbar shortcuts', () => {
 
         fireEvent.click(button);
         expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
+    });
+
+    it('renders and toggles the task bar date visibility button', () => {
+        const config = getCanvasGanttConfig();
+        window.RedmineCanvasGantt = {
+            ...config,
+            i18n: {
+                ...(config.i18n ?? {}),
+                label_toggle_task_bar_dates: 'バー日付表示切替'
+            }
+        };
+
+        useUIStore.setState({ ...useUIStore.getState(), showTaskBarDates: false } as never);
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        const button = screen.getByTitle('バー日付表示切替');
+        expect(button).toHaveAttribute('aria-label', 'バー日付表示切替');
+
+        fireEvent.click(button);
+        expect(useUIStore.getState().showTaskBarDates).toBe(true);
     });
 
     it('renders and toggles the hierarchy line visibility button', () => {
@@ -988,8 +1014,10 @@ describe('GanttToolbar shortcuts', () => {
 
         const orphanToggle = screen.getByTitle('Toggle Orphan Date Points');
         const titleToggle = screen.getByTitle('Toggle Task Titles');
+        const barDateToggle = screen.getByTitle('Toggle Task Bar Dates');
 
         expect(orphanToggle.compareDocumentPosition(titleToggle) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+        expect(titleToggle.compareDocumentPosition(barDateToggle) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
         expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
 
         fireEvent.click(titleToggle);

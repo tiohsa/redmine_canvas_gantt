@@ -49,6 +49,16 @@ describe('Preferences storage', () => {
         expect(loaded.showProgressLine).toBe(true);
     });
 
+    it('saves task bar date visibility for project and shared display settings', () => {
+        saveDisplayPreferences({ showTaskBarDates: true }, 1);
+        saveGlobalDisplayPreferences({ showTaskBarDates: false }, true);
+
+        expect(loadDisplayPreferencesWithSource(1).preferences.showTaskBarDates).toBe(false);
+
+        saveGlobalDisplayPreferences({ showTaskBarDates: true }, false);
+        expect(loadDisplayPreferencesWithSource(1).preferences.showTaskBarDates).toBe(true);
+    });
+
     it('saves and loads autoSave', () => {
         savePreferences({ autoSave: true }, 1);
         expect(loadPreferences(1).autoSave).toBe(true);

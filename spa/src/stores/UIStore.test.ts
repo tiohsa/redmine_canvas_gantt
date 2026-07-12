@@ -56,6 +56,15 @@ describe('UIStore', () => {
         expect((useUIStore.getState() as UIStoreState).showTaskTitles).toBe(true);
     });
 
+    it('toggles task bar date visibility', () => {
+        const uiStore = useUIStore.getState();
+
+        expect(uiStore.showTaskBarDates).toBe(false);
+
+        uiStore.toggleTaskBarDates();
+        expect(useUIStore.getState().showTaskBarDates).toBe(true);
+    });
+
     it('toggles hierarchy line visibility', () => {
         type UIStoreState = ReturnType<typeof useUIStore.getState> & {
             showHierarchyLines: boolean;

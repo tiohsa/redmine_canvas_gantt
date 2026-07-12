@@ -1,65 +1,73 @@
 .gantt-toolbar-left > :nth-child(1) {
-    order: 1;
-}
-
-.gantt-toolbar-left > :nth-child(2) {
     order: 2;
 }
 
-.gantt-toolbar-left > :nth-child(3) {
+.gantt-toolbar-left > :nth-child(2) {
     order: 3;
 }
 
-.gantt-toolbar-left > :nth-child(4) {
+.gantt-toolbar-left > :nth-child(3) {
     order: 4;
 }
 
-.gantt-toolbar-left > :nth-child(5) {
+.gantt-toolbar-left > :nth-child(4) {
     order: 5;
 }
 
-.gantt-toolbar-left > :nth-child(6) {
+.gantt-toolbar-left > :nth-child(5) {
     order: 6;
+}
+
+.gantt-toolbar-left > :nth-child(6) {
+    order: 7;
 }
 
 /* Keep the project filter before the assignee filter. */
 .gantt-toolbar-left > :nth-child(7) {
-    order: 17;
+    order: 20;
 }
 
 .gantt-toolbar-left > :nth-child(8) {
-    order: 9;
-}
-
-.gantt-toolbar-left > :nth-child(9) {
-    order: 8;
-}
-
-.gantt-toolbar-left > :nth-child(10) {
     order: 10;
 }
 
-.gantt-toolbar-left > :nth-child(11) {
+.gantt-toolbar-left > :nth-child(9) {
+    order: 9;
+}
+
+.gantt-toolbar-left > :nth-child(10) {
     order: 11;
 }
 
-.gantt-toolbar-left > :nth-child(12) {
+.gantt-toolbar-left > :nth-child(11) {
     order: 12;
 }
 
-.gantt-toolbar-left > :nth-child(13) {
+.gantt-toolbar-left > :nth-child(12) {
     order: 13;
 }
 
-.gantt-toolbar-left > :nth-child(14) {
+.gantt-toolbar-left > :nth-child(13) {
     order: 14;
 }
 
-.gantt-toolbar-left > :nth-child(15) {
+.gantt-toolbar-left > :nth-child(14) {
     order: 15;
+}
+
+.gantt-toolbar-left > :nth-child(15) {
+    order: 16;
 }
 
 /* Workload follows Toggle Hierarchy Lines. */
 .gantt-toolbar-left > :nth-child(16) {
-    order: 16;
+    order: 17;
+}
+
+.gantt-toolbar-left > :nth-child(17) {
+    order: 18;
+}
+
+.gantt-toolbar-left > :nth-child(18) {
+    order: 1;
 }
