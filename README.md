@@ -77,7 +77,7 @@ Use a current desktop version of Chrome, Edge, Firefox, or Safari with HTML5 Can
 
 - Database migration: none
 - Added permissions: `view_canvas_gantt`, `edit_canvas_gantt`
-- Uninstall: run `bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production` before removing the plugin directory. The task deletes the complete Redmine plugin settings row, including stored baselines. Browser `localStorage` remains local to each user and is not removed by the server-side task.
+- Uninstall: run the cleanup task from the Redmine application environment before removing the plugin directory. For Docker Compose, run it inside the `redmine` service container. The task deletes the complete Redmine plugin settings row, including stored baselines. Browser `localStorage` remains local to each user and is not removed by the server-side task.
 
 ## Installation
 
@@ -106,11 +106,30 @@ This plugin does not provide database migrations. Existing baselines in Redmine 
 1. Back up the Redmine database if stored baselines or plugin settings may be needed later.
 2. Run the idempotent cleanup task while the plugin directory is still present.
 
+   **Standard installation** — run from the Redmine application directory that contains `Gemfile`:
+
    ```bash
+   cd /path/to/redmine
    bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production
    ```
 
-3. Remove the `plugins/redmine_canvas_gantt` directory.
+   **Docker Compose** — run inside the Redmine service container:
+
+   ```bash
+   docker compose exec -T redmine \
+     bundle exec rake redmine_canvas_gantt:uninstall
+   ```
+
+   `RAILS_ENV=production` is already configured in this repository's Compose service. To set it explicitly:
+
+   ```bash
+   docker compose exec -T -e RAILS_ENV=production redmine \
+     bundle exec rake redmine_canvas_gantt:uninstall
+   ```
+
+   Do not run `bundle exec` from the host plugin directory when Redmine itself runs only in Docker. The host directory does not contain Redmine's `Gemfile`, so Bundler reports `Could not locate Gemfile or .bundle/ directory`.
+
+3. Remove the `plugins/redmine_canvas_gantt` directory, or remove the corresponding plugin volume or bind mount from the container configuration.
 4. Restart Redmine.
 
 The cleanup task deletes the `plugin_redmine_canvas_gantt` row from Redmine's `settings` table, including all baseline snapshots and plugin defaults stored there. It does not clear browser `localStorage`.
