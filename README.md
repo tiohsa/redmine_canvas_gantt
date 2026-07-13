@@ -77,7 +77,7 @@ Use a current desktop version of Chrome, Edge, Firefox, or Safari with HTML5 Can
 
 - Database migration: none
 - Added permissions: `view_canvas_gantt`, `edit_canvas_gantt`
-- Uninstall: remove the plugin directory and restart Redmine. Redmine plugin settings, including stored baselines, and each user's browser `localStorage` are not automatically deleted; remove them separately if data removal is required.
+- Uninstall: run `bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production` before removing the plugin directory. The task deletes the complete Redmine plugin settings row, including stored baselines. Browser `localStorage` remains local to each user and is not removed by the server-side task.
 
 ## Installation
 
@@ -99,7 +99,21 @@ Use a current desktop version of Chrome, Edge, Firefox, or Safari with HTML5 Can
 3. If you build the SPA from source, run `cd spa && npm ci && npm run build` with Node.js 20+.
 4. Restart Redmine and verify the plugin module and permissions.
 
-This plugin does not provide database migrations. Existing baselines in Redmine settings and browser display preferences are retained unless you remove them explicitly.
+This plugin does not provide database migrations. Existing baselines in Redmine settings and browser display preferences are retained during upgrades.
+
+### Uninstall
+
+1. Back up the Redmine database if stored baselines or plugin settings may be needed later.
+2. Run the idempotent cleanup task while the plugin directory is still present.
+
+   ```bash
+   bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production
+   ```
+
+3. Remove the `plugins/redmine_canvas_gantt` directory.
+4. Restart Redmine.
+
+The cleanup task deletes the `plugin_redmine_canvas_gantt` row from Redmine's `settings` table, including all baseline snapshots and plugin defaults stored there. It does not clear browser `localStorage`.
 
 ## Usage
 
@@ -135,7 +149,7 @@ This plugin does not provide database migrations. Existing baselines in Redmine 
 - The toolbar lets you save either the current filtered view or the whole project as the baseline scope.
 - Baseline bars and diff popovers only render for tasks currently visible in the chart, even when the saved scope was the whole project.
 - Viewing baseline comparison requires `view_canvas_gantt`. Saving a baseline requires `edit_canvas_gantt`.
-- Baselines are stored in `Setting.plugin_redmine_canvas_gantt` in Redmine's settings area. They are not shared through the browser URL, and they are not removed automatically when the plugin directory is deleted.
+- Baselines are stored in `Setting.plugin_redmine_canvas_gantt` in Redmine's settings area. Removing the plugin directory alone does not delete them; run the uninstall cleanup task first.
 
 ### Workload, display settings, and export
 
