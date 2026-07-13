@@ -65,7 +65,7 @@ Edge、Firefox、Safari を使用してください。Internet Explorer は対�
 
 - データベースマイグレーション: なし
 - 追加パーミッション: `view_canvas_gantt`, `edit_canvas_gantt`
-- アンインストール: プラグインディレクトリを削除する前に `bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production` を実行します。このタスクは保存済みベースラインを含む Redmine のプラグイン設定行全体を削除します。各ユーザーのブラウザ `localStorage` はサーバー側タスクでは削除されません。
+- アンインストール: プラグインディレクトリを削除する前に、Redmine の実行環境からクリーンアップタスクを実行します。Docker Compose の場合は `redmine` サービスのコンテナ内で実行します。このタスクは保存済みベースラインを含む Redmine のプラグイン設定行全体を削除します。各ユーザーのブラウザ `localStorage` はサーバー側タスクでは削除されません。
 
 ## インストール
 
@@ -95,11 +95,30 @@ Edge、Firefox、Safari を使用してください。Internet Explorer は対�
 1. 保存済みベースラインやプラグイン設定を後で利用する可能性がある場合は、Redmine データベースをバックアップします。
 2. プラグインディレクトリが存在する状態で、冪等なクリーンアップタスクを実行します。
 
+   **通常インストール** — `Gemfile` が存在する Redmine 本体ディレクトリで実行します。
+
    ```bash
+   cd /path/to/redmine
    bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production
    ```
 
-3. `plugins/redmine_canvas_gantt` ディレクトリを削除します。
+   **Docker Compose** — Redmine サービスのコンテナ内で実行します。
+
+   ```bash
+   docker compose exec -T redmine \
+     bundle exec rake redmine_canvas_gantt:uninstall
+   ```
+
+   このリポジトリの Compose 設定では `RAILS_ENV=production` が設定済みです。明示する場合は次のように実行します。
+
+   ```bash
+   docker compose exec -T -e RAILS_ENV=production redmine \
+     bundle exec rake redmine_canvas_gantt:uninstall
+   ```
+
+   Redmine 本体が Docker 内だけで動作している場合、ホスト側のプラグインディレクトリでは `bundle exec` を実行しないでください。ホスト側には Redmine の `Gemfile` がないため、Bundler が `Could not locate Gemfile or .bundle/ directory` を出力します。
+
+3. `plugins/redmine_canvas_gantt` ディレクトリを削除します。Docker の場合は、対応するプラグインの volume または bind mount もコンテナ設定から削除します。
 4. Redmine を再起動します。
 
 クリーンアップタスクは Redmine の `settings` テーブルから `plugin_redmine_canvas_gantt` 行を削除し、保存済みベースラインと同じ行に保存されたプラグイン設定をすべて削除します。ブラウザの `localStorage` は削除しません。
