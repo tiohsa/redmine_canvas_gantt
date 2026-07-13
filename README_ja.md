@@ -65,7 +65,7 @@ Edge、Firefox、Safari を使用してください。Internet Explorer は対�
 
 - データベースマイグレーション: なし
 - 追加パーミッション: `view_canvas_gantt`, `edit_canvas_gantt`
-- アンインストール: プラグインディレクトリを削除して Redmine を再起動します。Redmine のプラグイン設定（保存済みベースラインを含む）と各ユーザーのブラウザ `localStorage` は自動削除されないため、完全に削除する場合は別途対応してください。
+- アンインストール: プラグインディレクトリを削除する前に `bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production` を実行します。このタスクは保存済みベースラインを含む Redmine のプラグイン設定行全体を削除します。各ユーザーのブラウザ `localStorage` はサーバー側タスクでは削除されません。
 
 ## インストール
 
@@ -88,7 +88,21 @@ Edge、Firefox、Safari を使用してください。Internet Explorer は対�
 4. Redmine を再起動し、プラグインのモジュールと権限を確認します。
 
 データベースマイグレーションはありません。Redmine 設定内のベースラインとブラウザの
-表示設定は、明示的に削除しない限り保持されます。
+表示設定は、アップグレード時には保持されます。
+
+### アンインストール
+
+1. 保存済みベースラインやプラグイン設定を後で利用する可能性がある場合は、Redmine データベースをバックアップします。
+2. プラグインディレクトリが存在する状態で、冪等なクリーンアップタスクを実行します。
+
+   ```bash
+   bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production
+   ```
+
+3. `plugins/redmine_canvas_gantt` ディレクトリを削除します。
+4. Redmine を再起動します。
+
+クリーンアップタスクは Redmine の `settings` テーブルから `plugin_redmine_canvas_gantt` 行を削除し、保存済みベースラインと同じ行に保存されたプラグイン設定をすべて削除します。ブラウザの `localStorage` は削除しません。
 
 ## 使い方
 
@@ -124,7 +138,7 @@ Edge、Firefox、Safari を使用してください。Internet Explorer は対�
 - ツールバーから `現在のフィルタ結果` または `プロジェクト全体` のどちらを保存するかを選べます。
 - 保存範囲が `プロジェクト全体` でも、ゴーストバーと差分 popover は現在表示中のタスクに対してのみ表示されます。
 - ベースラインの閲覧には `view_canvas_gantt`、保存には `edit_canvas_gantt` が必要です。
-- ベースラインは Redmine の設定領域 `Setting.plugin_redmine_canvas_gantt` に保存されます。ブラウザ URL を通じて共有されず、プラグインディレクトリを削除しても自動削除されません。
+- ベースラインは Redmine の設定領域 `Setting.plugin_redmine_canvas_gantt` に保存されます。プラグインディレクトリを削除するだけでは残るため、先にアンインストール用クリーンアップタスクを実行してください。
 
 ### ワークロード、表示設定、出力
 
