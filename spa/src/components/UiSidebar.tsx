@@ -707,6 +707,8 @@ export const UiSidebar: React.FC = () => {
             {/* Header */}
             <div style={{
                 height: sidebarHeaderHeight,
+                boxSizing: 'border-box',
+                flexShrink: 0,
                 borderBottom: sidebarRowBorder,
                 display: 'flex',
                 fontWeight: 500,
