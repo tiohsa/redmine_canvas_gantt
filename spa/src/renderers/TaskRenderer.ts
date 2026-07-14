@@ -10,8 +10,9 @@ export class TaskRenderer {
     private canvas: HTMLCanvasElement;
 
     private static readonly TASK_TITLE_OFFSET = 30;
-    private static readonly TASK_TITLE_OFFSET_WITH_DATES = 56;
-    private static readonly TASK_BAR_DATE_GAP = 6;
+    private static readonly TASK_TITLE_OFFSET_WITH_DATES = 42;
+    private static readonly TASK_BAR_DATE_GAP = 10;
+    private static readonly TASK_START_POINT_DATE_GAP = 14;
 
     // MiniMax standard-like bar colors
     private static readonly DONE_GREEN = designTokens.taskDone;
@@ -135,8 +136,24 @@ export class TaskRenderer {
                 const startX = LayoutEngine.dateToX(startDate, viewport) - viewport.scrollX;
                 this.drawTaskAsPoint(ctx, task, startX, rowY, viewport.rowHeight, 'triangle_right');
 
+                if (showTaskBarDates) {
+                    this.drawTaskBarDates(ctx, task, {
+                        x: startX,
+                        y: rowY + (viewport.rowHeight - 12) / 2,
+                        width: 0,
+                        height: 12
+                    }, TaskRenderer.TASK_START_POINT_DATE_GAP);
+                }
                 if (showTaskTitles) {
-                    this.drawSubjectBeforeBar(ctx, task, startX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
+                    this.drawSubjectBeforeBar(
+                        ctx,
+                        task,
+                        startX,
+                        rowY + (viewport.rowHeight - 12) / 2,
+                        12,
+                        12,
+                        showTaskBarDates ? TaskRenderer.TASK_TITLE_OFFSET_WITH_DATES : TaskRenderer.TASK_TITLE_OFFSET
+                    );
                 }
                 if (showBaseline) {
                     const pointBounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
@@ -149,8 +166,24 @@ export class TaskRenderer {
                 const dueX = LayoutEngine.dateToX(dueDate, viewport) - viewport.scrollX;
                 this.drawTaskAsPoint(ctx, task, dueX, rowY, viewport.rowHeight, 'diamond');
 
+                if (showTaskBarDates) {
+                    this.drawTaskBarDates(ctx, task, {
+                        x: dueX,
+                        y: rowY + (viewport.rowHeight - 12) / 2,
+                        width: 0,
+                        height: 12
+                    });
+                }
                 if (showTaskTitles) {
-                    this.drawSubjectBeforeBar(ctx, task, dueX, rowY + (viewport.rowHeight - 12) / 2, 12, 12);
+                    this.drawSubjectBeforeBar(
+                        ctx,
+                        task,
+                        dueX,
+                        rowY + (viewport.rowHeight - 12) / 2,
+                        12,
+                        12,
+                        showTaskBarDates ? TaskRenderer.TASK_TITLE_OFFSET_WITH_DATES : TaskRenderer.TASK_TITLE_OFFSET
+                    );
                 }
                 if (showBaseline) {
                     const pointBounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
@@ -273,10 +306,9 @@ export class TaskRenderer {
     private drawTaskBarDates(
         ctx: CanvasRenderingContext2D,
         task: Task,
-        bar: { x: number; y: number; width: number; height: number }
+        bar: { x: number; y: number; width: number; height: number },
+        dateGap = TaskRenderer.TASK_BAR_DATE_GAP
     ) {
-        if (task.startDate === undefined || task.dueDate === undefined) return;
-
         const formatDate = (timestamp: number) => {
             const date = new Date(timestamp);
             return `${date.getMonth() + 1}/${date.getDate()}`;
@@ -288,18 +320,24 @@ export class TaskRenderer {
         ctx.fillStyle = designTokens.textMuted;
         ctx.textBaseline = 'middle';
 
-        ctx.textAlign = 'right';
-        ctx.fillText(
-            formatDate(task.startDate),
-            snapTextPosition(bar.x - TaskRenderer.TASK_BAR_DATE_GAP),
-            snapTextPosition(textY)
-        );
-        ctx.textAlign = 'left';
-        ctx.fillText(
-            formatDate(task.dueDate),
-            snapTextPosition(bar.x + bar.width + TaskRenderer.TASK_BAR_DATE_GAP),
-            snapTextPosition(textY)
-        );
+        const startDate = task.startDate;
+        if (startDate !== undefined && Number.isFinite(startDate)) {
+            ctx.textAlign = 'right';
+            ctx.fillText(
+                formatDate(startDate),
+                snapTextPosition(bar.x - dateGap),
+                snapTextPosition(textY)
+            );
+        }
+        const dueDate = task.dueDate;
+        if (dueDate !== undefined && Number.isFinite(dueDate)) {
+            ctx.textAlign = 'left';
+            ctx.fillText(
+                formatDate(dueDate),
+                snapTextPosition(bar.x + bar.width + dateGap),
+                snapTextPosition(textY)
+            );
+        }
         ctx.restore();
     }
 

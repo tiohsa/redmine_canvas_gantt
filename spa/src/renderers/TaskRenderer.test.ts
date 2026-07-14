@@ -40,6 +40,7 @@ const buildContext = () => ({
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
+    closePath: vi.fn(),
     fill: vi.fn(),
     stroke: vi.fn(),
     clip: vi.fn(),
@@ -91,9 +92,9 @@ describe('TaskRenderer', () => {
 
         new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], true, true, true, null, false);
 
-        expect(ctx.fillText).toHaveBeenCalledWith('1/1', -6, expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('1/1', -10, expect.any(Number));
         expect(ctx.fillText).toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
-        expect(ctx.fillText).toHaveBeenCalledWith('Task 1', -56, expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('Task 1', -42, expect.any(Number));
     });
 
     it('does not draw task bar dates when disabled', () => {
@@ -105,6 +106,55 @@ describe('TaskRenderer', () => {
         } as unknown as HTMLCanvasElement;
 
         new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], false, false, true, null, false);
+
+        expect(ctx.fillText).not.toHaveBeenCalledWith('1/1', expect.any(Number), expect.any(Number));
+        expect(ctx.fillText).not.toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
+    });
+
+    it('draws only the start date beside a start-only task point', () => {
+        const ctx = buildContext();
+        const canvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(ctx)
+        } as unknown as HTMLCanvasElement;
+        const task = { ...buildTask(), dueDate: undefined, ratioDone: 100 };
+
+        new TaskRenderer(canvas).render(viewport, [task], 1, 2, [], [], true, true, true, null, false);
+
+        expect(ctx.fillText).toHaveBeenCalledWith('1/1', -13, expect.any(Number));
+        expect(ctx.fillText).not.toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('Task 1', -41, expect.any(Number));
+    });
+
+    it('draws only the due date beside a due-only task point', () => {
+        const ctx = buildContext();
+        const canvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(ctx)
+        } as unknown as HTMLCanvasElement;
+        const task = { ...buildTask(), startDate: undefined, ratioDone: 100 };
+
+        new TaskRenderer(canvas).render(viewport, [task], 1, 2, [], [], false, true, true, null, false);
+
+        expect(ctx.fillText).toHaveBeenCalledWith('1/2', 12, expect.any(Number));
+        expect(ctx.fillText).not.toHaveBeenCalledWith('1/1', expect.any(Number), expect.any(Number));
+    });
+
+    it('does not draw one-sided task dates when date display is disabled', () => {
+        const ctx = buildContext();
+        const canvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(ctx)
+        } as unknown as HTMLCanvasElement;
+        const tasks = [
+            { ...buildTask(), dueDate: undefined, ratioDone: 100 },
+            { ...buildTask(), id: '2', startDate: undefined, ratioDone: 100 }
+        ];
+
+        new TaskRenderer(canvas).render(viewport, tasks, 2, 2, [], [], false, false, true, null, false);
 
         expect(ctx.fillText).not.toHaveBeenCalledWith('1/1', expect.any(Number), expect.any(Number));
         expect(ctx.fillText).not.toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
