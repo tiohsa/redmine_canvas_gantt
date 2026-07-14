@@ -172,6 +172,7 @@ class CanvasGanttsController < ApplicationController
     label_member_projects_only: :label_member_projects_only,
     label_selected_projects_outside_candidates: :label_selected_projects_outside_candidates,
     label_relation_add_failed: :label_relation_add_failed,
+    error_canvas_gantt_business_calendar_invalid: :error_canvas_gantt_business_calendar_invalid,
     label_dependency_edit_mode: :label_dependency_edit_mode,
     label_relation_type_precedes_info: :label_relation_type_precedes_info,
     label_relation_type_relates_info: :label_relation_type_relates_info,
@@ -376,7 +377,8 @@ class CanvasGanttsController < ApplicationController
         initial_state: resolved_query[:initial_state],
         query_context: resolved_query[:query_context],
         warnings: resolved_query[:warnings] + baseline_load.warnings,
-        baseline: baseline_load.snapshot
+        baseline: baseline_load.snapshot,
+        business_calendar: business_calendar_resolver.payload(projects: business_calendar_projects(project_ids))
       )
     rescue => e
       render json: { error: e.message }, status: :internal_server_error
@@ -531,7 +533,8 @@ class CanvasGanttsController < ApplicationController
       relation: relation,
       issue_from: issue_from,
       issue_to: issue_to,
-      relation_id: '__pending__'
+      relation_id: '__pending__',
+      creating: true
     )
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
@@ -862,9 +865,10 @@ class CanvasGanttsController < ApplicationController
     )
   end
 
-  def save_relation_change(relation:, issue_from:, issue_to:, relation_id:, replacing_relation_id: nil)
+  def save_relation_change(relation:, issue_from:, issue_to:, relation_id:, replacing_relation_id: nil, creating: false)
     relation_type = relation_params[:relation_type].to_s
     return unless ensure_editable_relation_type!(relation_type)
+    return unless ensure_business_calendar_available! if creating || DELAY_RELATION_TYPES.include?(relation_type)
 
     delay = normalized_relation_delay(relation_type)
     return if performed?
@@ -973,8 +977,26 @@ class CanvasGanttsController < ApplicationController
 
   def relation_change_validator
     @relation_change_validator ||= RedmineCanvasGantt::RelationChangeValidator.new(
-      non_working_week_days: relation_non_working_week_days
+      non_working_week_days: relation_non_working_week_days,
+      calendar_service: business_calendar_resolver
     )
+  end
+
+  def business_calendar_resolver
+    @business_calendar_resolver ||= RedmineCanvasGantt::ProjectCalendarResolver.new(
+      fallback_non_working_week_days: Setting.non_working_week_days
+    )
+  end
+
+  def business_calendar_projects(project_ids)
+    Project.where(id: project_ids).to_a
+  end
+
+  def ensure_business_calendar_available!
+    return true unless business_calendar_resolver.configuration_error?
+
+    render json: { errors: [canvas_gantt_l(:error_canvas_gantt_business_calendar_invalid)] }, status: :unprocessable_entity
+    false
   end
 
   def bulk_subtask_creator

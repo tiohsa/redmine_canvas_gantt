@@ -32,7 +32,8 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
         project_ids: [1, 2],
         issues: [],
         filter_option_projects: [child_project, root_project],
-        filter_option_issues: [issue_a, issue_b, issue_c]
+        filter_option_issues: [issue_a, issue_b, issue_c],
+        business_calendar: { status: 'ok', revision: 'revision' }
       )
 
       expect(payload[:filter_options]).to eq(
@@ -46,6 +47,7 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
           { id: 8, name: 'Bob', project_ids: ['2'] }
         ]
       )
+      expect(payload[:businessCalendar]).to eq(status: 'ok', revision: 'revision')
     end
   end
 

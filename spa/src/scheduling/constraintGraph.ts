@@ -1,7 +1,13 @@
 import type { Relation, Task } from '../types';
 import { RelationType } from '../types/constraints';
 import { i18n } from '../utils/i18n';
-import { getNonWorkingWeekDays } from '../utils/nonWorkingWeekDays';
+import {
+    addWorkingDays,
+    diffWorkingDays,
+    shiftByWorkingDays
+} from '../utils/businessCalendar';
+
+export { addWorkingDays, diffWorkingDays, shiftByWorkingDays };
 
 export type SchedulingState = 'normal' | 'unscheduled' | 'invalid' | 'conflicted' | 'cyclic';
 
@@ -24,67 +30,6 @@ const severityByState: Record<SchedulingState, number> = {
     conflicted: 2,
     cyclic: 3,
     invalid: 4
-};
-
-const toUtcDayStart = (timestamp: number): Date => {
-    const date = new Date(timestamp);
-    date.setUTCHours(0, 0, 0, 0);
-    return date;
-};
-
-export const addWorkingDays = (timestamp: number, days: number, nonWorkingWeekDays: Set<number> = getNonWorkingWeekDays()): number => {
-    const date = toUtcDayStart(timestamp);
-    let remaining = Math.max(0, Math.floor(days));
-
-    while (remaining > 0) {
-        date.setUTCDate(date.getUTCDate() + 1);
-        if (!nonWorkingWeekDays.has(date.getUTCDay())) {
-            remaining -= 1;
-        }
-    }
-
-    return date.getTime();
-};
-
-export const shiftByWorkingDays = (timestamp: number, days: number, nonWorkingWeekDays: Set<number> = getNonWorkingWeekDays()): number => {
-    const normalizedDays = Math.trunc(days);
-    if (normalizedDays === 0) return toUtcDayStart(timestamp).getTime();
-    if (normalizedDays > 0) return addWorkingDays(timestamp, normalizedDays, nonWorkingWeekDays);
-
-    const date = toUtcDayStart(timestamp);
-    let remaining = Math.abs(normalizedDays);
-
-    while (remaining > 0) {
-        date.setUTCDate(date.getUTCDate() - 1);
-        if (!nonWorkingWeekDays.has(date.getUTCDay())) {
-            remaining -= 1;
-        }
-    }
-
-    return date.getTime();
-};
-
-export const diffWorkingDays = (fromTimestamp: number, toTimestamp: number, nonWorkingWeekDays: Set<number> = getNonWorkingWeekDays()): number => {
-    const from = toUtcDayStart(fromTimestamp);
-    const to = toUtcDayStart(toTimestamp);
-    const fromTime = from.getTime();
-    const toTime = to.getTime();
-
-    if (fromTime === toTime) return 0;
-
-    const step = fromTime < toTime ? 1 : -1;
-    let current = from;
-    let delta = 0;
-
-    while (current.getTime() !== toTime) {
-        current = new Date(current.getTime());
-        current.setUTCDate(current.getUTCDate() + step);
-        if (!nonWorkingWeekDays.has(current.getUTCDay())) {
-            delta += step;
-        }
-    }
-
-    return delta;
 };
 
 const hasFiniteDate = (value: number | undefined): value is number => Number.isFinite(value);
@@ -237,7 +182,6 @@ export const deriveSchedulingStates = (tasks: Task[], relations: Relation[]): Re
         );
     });
 
-    const nonWorkingWeekDays = getNonWorkingWeekDays();
     edges.forEach((edge) => {
         const predecessor = taskById.get(edge.predecessorId);
         const successor = taskById.get(edge.successorId);
@@ -247,7 +191,7 @@ export const deriveSchedulingStates = (tasks: Task[], relations: Relation[]): Re
 
         const predecessorDueDate = predecessor.dueDate!;
         const successorStartDate = successor.startDate!;
-        const minimumSuccessorStart = addWorkingDays(predecessorDueDate, edge.gapDays, nonWorkingWeekDays);
+        const minimumSuccessorStart = addWorkingDays(predecessorDueDate, edge.gapDays, successor.projectId);
         if (successorStartDate < minimumSuccessorStart) {
             const message = i18n.t('label_scheduling_state_conflicted') || 'This task violates a scheduling dependency.';
             applyState(states, predecessor.id, 'conflicted', message);
@@ -265,7 +209,6 @@ export const recalculateDownstreamTasks = (
 ): Map<string, Partial<Task>> => {
     const taskById = new Map(tasks.map((task) => [task.id, { ...task }]));
     const outgoing = new Map<string, SchedulingEdge[]>();
-    const nonWorkingWeekDays = getNonWorkingWeekDays();
     const updates = new Map<string, Partial<Task>>();
 
     buildSchedulingEdges(relations).forEach((edge) => {
@@ -291,7 +234,7 @@ export const recalculateDownstreamTasks = (
             if (!successor || !hasValidDateRange(successor)) return;
             const successorStartDate = successor.startDate!;
             const successorDueDate = successor.dueDate!;
-            const minimumSuccessorStart = addWorkingDays(predecessorDueDate, edge.gapDays, nonWorkingWeekDays);
+            const minimumSuccessorStart = addWorkingDays(predecessorDueDate, edge.gapDays, successor.projectId);
             if (successorStartDate >= minimumSuccessorStart) return;
 
             const duration = Math.max(0, successorDueDate - successorStartDate);
@@ -326,10 +269,10 @@ export const calculateLinkedDownstreamUpdates = (
         return { updates: new Map() };
     }
 
-    const nonWorkingWeekDays = getNonWorkingWeekDays();
-    const previousDownstreamAnchor = addWorkingDays(previousDueDate, 1, nonWorkingWeekDays);
-    const nextDownstreamAnchor = addWorkingDays(nextDueDate, 1, nonWorkingWeekDays);
-    const workingDayDelta = diffWorkingDays(previousDownstreamAnchor, nextDownstreamAnchor, nonWorkingWeekDays);
+    const originProjectId = tasks.find((task) => task.id === originTaskId)?.projectId;
+    const previousDownstreamAnchor = addWorkingDays(previousDueDate, 1, originProjectId);
+    const nextDownstreamAnchor = addWorkingDays(nextDueDate, 1, originProjectId);
+    const workingDayDelta = diffWorkingDays(previousDownstreamAnchor, nextDownstreamAnchor, originProjectId);
     if (workingDayDelta === 0) {
         return { updates: new Map() };
     }
@@ -366,8 +309,8 @@ export const calculateLinkedDownstreamUpdates = (
         if (!task || !hasValidDateRange(task)) return;
 
         updates.set(taskId, {
-            startDate: shiftByWorkingDays(task.startDate!, workingDayDelta, nonWorkingWeekDays),
-            dueDate: shiftByWorkingDays(task.dueDate!, workingDayDelta, nonWorkingWeekDays)
+            startDate: shiftByWorkingDays(task.startDate!, workingDayDelta, task.projectId),
+            dueDate: shiftByWorkingDays(task.dueDate!, workingDayDelta, task.projectId)
         });
     });
 
@@ -389,7 +332,7 @@ export const calculateLinkedDownstreamUpdates = (
             };
         }
 
-        const minimumSuccessorStart = addWorkingDays(predecessor.dueDate!, edge.gapDays, nonWorkingWeekDays);
+        const minimumSuccessorStart = addWorkingDays(predecessor.dueDate!, edge.gapDays, successor.projectId);
         if (shiftedStartDate < minimumSuccessorStart) {
             return {
                 updates: new Map(),

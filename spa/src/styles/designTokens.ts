@@ -67,6 +67,7 @@ export const designTokens = {
     parentCap: '#64748b',
     selectedRow: '#e8f0ff',
     weekendBg: '#f8fafc',
+    holidayBg: '#fff7ed',
     rowHover: '#f8fafc',
     threshold: '#f4b8b0',
     focus: '#f59e0b',

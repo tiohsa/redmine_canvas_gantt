@@ -32,6 +32,7 @@ import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
+import { configureBusinessCalendar } from '../utils/businessCalendar';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
@@ -765,6 +766,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return nextState;
     }),
     applyApiData: (data) => {
+        configureBusinessCalendar(data.businessCalendar);
         let querySyncState: SharedQuerySyncState | null = null;
         set((state) => {
             const result = buildApiDataPatch(data, state);

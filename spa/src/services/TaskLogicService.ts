@@ -2,6 +2,8 @@ import type { Task, Relation } from '../types';
 import { calculateLinkedDownstreamUpdates, deriveSchedulingStates, recalculateDownstreamTasks, type SchedulingStateInfo } from '../scheduling/constraintGraph';
 import { calculateCriticalPath, type CriticalPathResult } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode, type AutoScheduleMoveMode as AutoScheduleMoveModeValue } from '../types/constraints';
+import { isBusinessCalendarReady } from '../utils/businessCalendar';
+import { i18n } from '../utils/i18n';
 
 export interface DependencyCheckResult {
     updates: Map<string, Partial<Task>>;
@@ -130,6 +132,13 @@ export class TaskLogicService {
 
         if (moveMode === AutoScheduleMoveMode.Off) {
             return { updates: new Map() };
+        }
+
+        if (!isBusinessCalendarReady()) {
+            return {
+                updates: new Map(),
+                error: i18n.t('error_canvas_gantt_business_calendar_invalid') || 'Business calendar configuration is invalid.'
+            };
         }
 
         if (moveMode === AutoScheduleMoveMode.LinkedDownstreamShift) {

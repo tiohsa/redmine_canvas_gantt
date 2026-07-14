@@ -7,7 +7,8 @@ RSpec.describe RedmineCanvasGantt::RelationChangeValidator do
   describe '#validate!' do
     it 'skips Sunday when validating relation delay with internal non-working weekdays' do
       issue_from = instance_double(Issue, due_date: Date.new(2026, 1, 2), start_date: nil)
-      issue_to = instance_double(Issue, due_date: nil, start_date: Date.new(2026, 1, 5))
+      project = instance_double(Project)
+      issue_to = instance_double(Issue, due_date: nil, start_date: Date.new(2026, 1, 5), project: project)
       validator = described_class.new(non_working_week_days: [0, 6])
 
       result = validator.validate!(
@@ -25,7 +26,8 @@ RSpec.describe RedmineCanvasGantt::RelationChangeValidator do
 
     it 'rejects relation delays that do not match the current dates' do
       issue_from = instance_double(Issue, due_date: Date.new(2026, 1, 2), start_date: nil)
-      issue_to = instance_double(Issue, due_date: nil, start_date: Date.new(2026, 1, 4))
+      project = instance_double(Project)
+      issue_to = instance_double(Issue, due_date: nil, start_date: Date.new(2026, 1, 4), project: project)
       validator = described_class.new(non_working_week_days: [0, 6])
 
       result = validator.validate!(
@@ -62,6 +64,35 @@ RSpec.describe RedmineCanvasGantt::RelationChangeValidator do
 
       expect(result).to be(false)
       expect(error_renderer).to have_received(:call).with(:error_canvas_gantt_relation_cycle_detected)
+    end
+
+    it 'uses the successor project calendar for relation delay validation' do
+      predecessor_project = instance_double(Project)
+      successor_project = instance_double(Project)
+      issue_from = instance_double(Issue, due_date: Date.new(2027, 1, 1), start_date: nil, project: predecessor_project)
+      issue_to = instance_double(Issue, due_date: nil, start_date: Date.new(2027, 1, 5), project: successor_project)
+      calendar_service = instance_double(
+        RedmineCanvasGantt::ProjectCalendarResolver,
+        add_working_days: Date.new(2027, 1, 5)
+      )
+      validator = described_class.new(calendar_service: calendar_service)
+
+      result = validator.validate!(
+        issue_from: issue_from,
+        issue_to: issue_to,
+        relation_type: 'precedes',
+        delay: 0,
+        existing_relations: [],
+        candidate_relation: { id: 1, from: 10, to: 11, type: 'precedes', delay: 0 },
+        error_renderer: error_renderer
+      )
+
+      expect(result).to be(true)
+      expect(calendar_service).to have_received(:add_working_days).with(
+        Date.new(2027, 1, 1),
+        1,
+        project: successor_project
+      )
     end
   end
 end

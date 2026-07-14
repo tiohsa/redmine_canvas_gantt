@@ -15,6 +15,8 @@ import { buildIssueQueryParams, parseResolvedQueryState, type ResolvedQueryState
 import { normalizeQueryContext } from '../query/queryStateCodec';
 import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/baseline';
 import type { QueryContext } from '../query/types';
+import type { BusinessCalendarPayload } from '../types/businessCalendar';
+import { normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
 
 type ApiTask = Record<string, unknown>;
 type ApiRelation = Record<string, unknown>;
@@ -61,6 +63,7 @@ interface ApiData {
     initialState?: ResolvedQueryState;
     queryContext?: QueryContext;
     warnings?: string[];
+    businessCalendar?: BusinessCalendarPayload;
 }
 
 interface BaselineSaveResult {
@@ -589,6 +592,7 @@ export const apiClient = {
         const baselinePayload = parseBaselineSnapshot(data.baseline);
         const baseline = baselinePayload.snapshot;
         const mergedWarnings = [...warnings, ...baselinePayload.warnings];
+        const businessCalendar = normalizeBusinessCalendarPayload(data.businessCalendar ?? data.business_calendar);
 
         return {
             tasks,
@@ -602,7 +606,8 @@ export const apiClient = {
             baseline,
             initialState: parseResolvedQueryState(data.initial_state),
             queryContext: data.query_context === undefined ? undefined : normalizeQueryContext(data.query_context),
-            warnings: mergedWarnings
+            warnings: mergedWarnings,
+            businessCalendar
         };
     },
 

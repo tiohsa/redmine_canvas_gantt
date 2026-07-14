@@ -7,7 +7,7 @@ module RedmineCanvasGantt
       @current_user = current_user
     end
 
-    def build(project:, permissions:, project_ids:, issues:, filter_option_projects:, filter_option_issues:, initial_state: nil, query_context: nil, warnings: [], baseline: nil)
+    def build(project:, permissions:, project_ids:, issues:, filter_option_projects:, filter_option_issues:, initial_state: nil, query_context: nil, warnings: [], baseline: nil, business_calendar: nil)
       {
         tasks: build_tasks(issues),
         custom_fields: @custom_field_extractor.build_project_custom_fields(project_ids, issues),
@@ -20,6 +20,7 @@ module RedmineCanvasGantt
         initial_state: initial_state,
         query_context: query_context,
         baseline: build_baseline_payload(baseline),
+        businessCalendar: business_calendar,
         warnings: warnings.presence
       }.compact
     end

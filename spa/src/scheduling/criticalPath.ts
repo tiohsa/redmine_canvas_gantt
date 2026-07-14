@@ -29,6 +29,7 @@ export interface CriticalPathResult {
 
 interface IncludedTask {
     id: string;
+    projectId?: string;
     startDate: number;
     dueDate: number;
     inputOrder: number;
@@ -98,6 +99,7 @@ export const calculateCriticalPath = (tasks: Task[], relations: Relation[]): Cri
 
         includedTasks.set(task.id, {
             id: task.id,
+            projectId: task.projectId,
             startDate: task.startDate,
             dueDate: task.dueDate,
             inputOrder: index
@@ -146,14 +148,14 @@ export const calculateCriticalPath = (tasks: Task[], relations: Relation[]): Cri
         const task = includedTasks.get(taskId);
         if (!task) return;
 
-        const durationDays = diffWorkingDays(task.startDate, task.dueDate);
+        const durationDays = diffWorkingDays(task.startDate, task.dueDate, task.projectId);
         const minimumStart = (incoming.get(taskId) ?? []).reduce((latestStart, edge) => {
             const predecessor = metricsByTaskId.get(edge.predecessorId);
             if (!predecessor) return latestStart;
-            return Math.max(latestStart, addWorkingDays(predecessor.ef, edge.gapDays));
+            return Math.max(latestStart, addWorkingDays(predecessor.ef, edge.gapDays, task.projectId));
         }, task.startDate);
         const es = minimumStart;
-        const ef = shiftByWorkingDays(es, durationDays);
+        const ef = shiftByWorkingDays(es, durationDays, task.projectId);
 
         metricsByTaskId.set(taskId, {
             taskId,
@@ -181,12 +183,14 @@ export const calculateCriticalPath = (tasks: Task[], relations: Relation[]): Cri
             ? projectFinish
             : successorEdges.reduce((earliestFinish, edge) => {
                 const successor = metricsByTaskId.get(edge.successorId);
+                const successorTask = includedTasks.get(edge.successorId);
                 if (!successor) return earliestFinish;
-                const latestFinish = shiftByWorkingDays(successor.ls, -edge.gapDays);
+                const latestFinish = shiftByWorkingDays(successor.ls, -edge.gapDays, successorTask?.projectId);
                 return Math.min(earliestFinish, latestFinish);
             }, projectFinish);
-        const ls = shiftByWorkingDays(lf, -metrics.durationDays);
-        const totalSlackDays = diffWorkingDays(metrics.ef, lf);
+        const task = includedTasks.get(taskId);
+        const ls = shiftByWorkingDays(lf, -metrics.durationDays, task?.projectId);
+        const totalSlackDays = diffWorkingDays(metrics.ef, lf, task?.projectId);
 
         metricsByTaskId.set(taskId, {
             ...metrics,

@@ -2,6 +2,8 @@ import type { Task, Viewport, ZoomLevel } from '../types';
 import { getGridScales } from '../utils/grid';
 import { designTokens } from '../styles/designTokens';
 import { getCanvasLogicalSize } from '../utils/canvasDpr';
+import { getDayInfo } from '../utils/businessCalendar';
+import type { BusinessDayInfo } from '../types/businessCalendar';
 
 export class BackgroundRenderer {
     private canvas: HTMLCanvasElement;
@@ -23,25 +25,38 @@ export class BackgroundRenderer {
 
         const scales = getGridScales(viewport, zoomLevel);
 
-        // Weekend background
-        // Use scales to align perfectly with the header and grid lines (Local time support)
+        // Business calendar background. Ticks use the same local-date semantics as the grid.
         if (zoomLevel === 2) {
             const ticks = scales.bottom;
             ticks.forEach((tick, i) => {
-                const d = new Date(tick.time);
-                const dow = d.getDay();
-                if (dow === 0 || dow === 6) {
-                    // Calculate width to next tick or default to one day width
-                    const w = (i < ticks.length - 1)
-                        ? ticks[i + 1].x - tick.x
-                        : (24 * 60 * 60 * 1000) * viewport.scale;
+                const w = (i < ticks.length - 1)
+                    ? ticks[i + 1].x - tick.x
+                    : (24 * 60 * 60 * 1000) * viewport.scale;
+                if (tick.x + w <= 0 || tick.x >= width) return;
 
-                    // Only draw if within canvas
-                    if (tick.x + w > 0 && tick.x < width) {
-                        ctx.fillStyle = designTokens.weekendBg;
-                        ctx.fillRect(Math.floor(tick.x), 0, Math.ceil(w), height);
-                    }
+                const colorFor = (info: BusinessDayInfo): string | null => {
+                    if (info.type === 'working') return null;
+                    return designTokens.weekendBg;
+                };
+                const x = Math.floor(tick.x);
+                const fillWidth = Math.ceil(w);
+                const rootProjectId = window.RedmineCanvasGantt?.projectId;
+                const rootColor = colorFor(getDayInfo(tick.time, rootProjectId));
+
+                if (rootColor) {
+                    ctx.fillStyle = rootColor;
+                    ctx.fillRect(x, 0, fillWidth, height);
                 }
+
+                tasks.forEach((task) => {
+                    const taskColor = colorFor(getDayInfo(tick.time, task.projectId));
+                    if (taskColor === rootColor) return;
+
+                    const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
+                    if (y + viewport.rowHeight <= 0 || y >= height) return;
+                    ctx.fillStyle = taskColor ?? designTokens.appBg;
+                    ctx.fillRect(x, y, fillWidth, viewport.rowHeight);
+                });
             });
         }
 
