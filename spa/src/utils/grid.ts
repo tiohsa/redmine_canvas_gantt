@@ -33,6 +33,7 @@ export interface GridTick {
     time: number;
     x: number;
     label: string;
+    secondaryLabel?: string;
 }
 
 export interface GridScales {
@@ -211,12 +212,14 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
             (t) => t + ONE_DAY,
             (t) => {
                 const d = new Date(t);
-                // Omit rule: handled by caller or simple check
-                // "1 2 3..."
-                return `${d.getDate()}`;
+                return formatExplicit(d, 'd');
             },
             scales.bottom
         );
+
+        scales.bottom.forEach((tick) => {
+            tick.secondaryLabel = formatExplicit(new Date(tick.time), 'EEE');
+        });
     }
 
 

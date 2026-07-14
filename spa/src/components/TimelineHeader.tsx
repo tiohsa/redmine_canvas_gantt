@@ -3,6 +3,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { getGridScales } from '../utils/grid';
 import { canvasFonts, designTokens } from '../styles/designTokens';
 import { resizeCanvasForDpr, snapTextPosition, snapLinePosition } from '../utils/canvasDpr';
+import { GANTT_HEADER_HEIGHT } from '../constants';
 
 export interface TimelineHeaderHandle {
     getCanvas: () => HTMLCanvasElement | null;
@@ -20,7 +21,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
         if (!ctx) return;
 
         const cssWidth = Math.max(0, Math.floor(viewport.width));
-        const cssHeight = 48;
+        const cssHeight = GANTT_HEADER_HEIGHT;
 
         // Clear
         ctx.clearRect(0, 0, cssWidth, cssHeight);
@@ -144,7 +145,6 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
 
             // Draw Ticks/Text
             ctx.fillStyle = designTokens.textPrimary;
-            ctx.font = canvasFonts.header;
             ctx.textAlign = 'center'; // Always center bottom (Days)
 
             scales.bottom.forEach((tick, i) => {
@@ -161,9 +161,16 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
                 const width = nextX - tick.x;
 
                 const textX = tick.x + width / 2;
-                const textY = y + h / 2 + 4;
+                const textY = tick.secondaryLabel ? y + 8 : y + h / 2 + 4;
 
+                ctx.font = canvasFonts.header;
                 ctx.fillText(tick.label, snapTextPosition(textX), snapTextPosition(textY));
+                if (tick.secondaryLabel) {
+                    ctx.font = canvasFonts.header.replace('11px', '10px');
+                    ctx.fillStyle = designTokens.textSecondary;
+                    ctx.fillText(tick.secondaryLabel, snapTextPosition(textX), snapTextPosition(y + h - 1));
+                    ctx.fillStyle = designTokens.textPrimary;
+                }
             });
 
             currentY += h;
@@ -176,7 +183,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
         if (!canvasRef.current) return;
         const width = Math.max(0, Math.floor(viewport.width));
         const ctx = canvasRef.current.getContext('2d');
-        resizeCanvasForDpr(canvasRef.current, ctx, width, 48);
+        resizeCanvasForDpr(canvasRef.current, ctx, width, GANTT_HEADER_HEIGHT);
         renderHeader();
     }, [renderHeader, viewport.width]);
 
@@ -185,8 +192,8 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
     }), []);
 
     return (
-        <div style={{ height: 48, backgroundColor: designTokens.surfaceSubtle, borderBottom: `1px solid ${designTokens.borderSubtle}`, overflow: 'hidden' }}>
-            <canvas ref={canvasRef} height={48} style={{ display: 'block' }} />
+        <div style={{ height: GANTT_HEADER_HEIGHT, backgroundColor: designTokens.surfaceSubtle, borderBottom: `1px solid ${designTokens.borderSubtle}`, overflow: 'hidden' }}>
+            <canvas ref={canvasRef} height={GANTT_HEADER_HEIGHT} style={{ display: 'block' }} />
         </div>
     );
 });
