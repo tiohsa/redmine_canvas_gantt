@@ -3,6 +3,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { getGridScales } from '../utils/grid';
 import { canvasFonts, designTokens } from '../styles/designTokens';
 import { resizeCanvasForDpr, snapTextPosition, snapLinePosition } from '../utils/canvasDpr';
+import { getDayInfo } from '../utils/businessCalendar';
 import { GANTT_HEADER_HEIGHT } from '../constants';
 
 export interface TimelineHeaderHandle {
@@ -129,11 +130,11 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
             ctx.fillStyle = designTokens.appBg;
             ctx.fillRect(0, y, cssWidth, h);
 
-            // Weekends
+            // Non-working days, including project-specific holidays
             if (zoomLevel === 2) { // Day View mainly
                 scales.bottom.forEach((tick, i) => {
-                    const d = new Date(tick.time);
-                    if (d.getDay() === 0 || d.getDay() === 6) {
+                    const dayInfo = getDayInfo(tick.time, window.RedmineCanvasGantt?.projectId);
+                    if (dayInfo.type === 'non_working') {
                         let w = 50; // default
                         if (i < scales.bottom.length - 1) w = scales.bottom[i + 1].x - tick.x;
                         else w = (24 * 3600 * 1000 * viewport.scale);
