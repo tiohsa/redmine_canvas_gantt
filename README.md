@@ -203,17 +203,17 @@ business_calendars/
 ├── settings.yml
 ├── generated/JP.yml
 ├── generated/US.yml
-└── custom/company-japan.yml
+└── custom/company-us.yml
 ```
 
 `settings.yml` selects the Redmine-wide default and assigns calendars by project identifier. A child project inherits the nearest parent assignment.
 
 ```yaml
 schema_version: 1
-default_calendar: company-japan
+default_calendar: company-us
 project_calendars:
-  japan-project: company-japan
-  us-project: US
+  us-project: company-us
+  japan-project: JP
 ```
 
 A custom calendar can inherit a generated country calendar. `non_working` adds a company holiday; `working` overrides a country holiday or weekly non-working day.
@@ -221,9 +221,9 @@ A custom calendar can inherit a generated country calendar. `non_working` adds a
 ```yaml
 schema_version: 1
 calendar:
-  id: company-japan
-  name: Japan Company Calendar
-  base: JP
+  id: company-us
+  name: US Company Calendar
+  base: US
   managed: false
 days:
   - date: 2027-08-12
@@ -239,9 +239,9 @@ Country files can be generated without adding the `holidays` gem to Redmine's pr
 ```bash
 cd tools/holiday_generator
 bundle install
-bundle exec ruby generate.rb --region jp --calendar-id JP --name Japan \
+bundle exec ruby generate.rb --region us --calendar-id US --name United States \
   --from 2026 --to 2030 \
-  --output /path/to/business_calendars/generated/JP.yml
+  --output /path/to/business_calendars/generated/US.yml
 ```
 
 Keep company changes in `custom/`; `--force` replaces only files marked `calendar.managed: true`. The runtime checks relative path, modification time, and size every 60 seconds and atomically swaps in a fully validated snapshot after a change. Set `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` to another non-negative number of seconds. Symlinks that resolve outside the configured calendar root are rejected; symlinked directories are not traversed. A missing directory or `settings.yml` falls back to Redmine's standard non-working weekdays. An invalid initial configuration disables calendar-dependent relation and auto-schedule changes; a failed reload logs a warning and retains the last valid snapshot.
