@@ -1393,6 +1393,85 @@ describe('TaskStore scheduling state and relation-driven recalculation', () => {
         expect(state.modifiedTaskIds.has('B')).toBe(true);
     });
 
+    it('recalculates a parent dependency after a child extends the parent', () => {
+        const { setTasks, setRelations, updateTask } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'parent', startDate: MONDAY, dueDate: MONDAY }),
+            buildTask({ id: 'child', parentId: 'parent', startDate: MONDAY, dueDate: MONDAY }),
+            buildTask({ id: 'successor', startDate: TUESDAY, dueDate: TUESDAY })
+        ]);
+        setRelations([
+            { id: 'r1', from: 'parent', to: 'successor', type: 'precedes' }
+        ]);
+
+        updateTask('child', { dueDate: TUESDAY });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find((task) => task.id === 'parent')?.dueDate).toBe(TUESDAY);
+        expect(state.allTasks.find((task) => task.id === 'successor')?.startDate).toBe(WEDNESDAY);
+    });
+
+    it('recalculates ancestors when adding a relation pushes a child', () => {
+        const { setTasks, addRelation } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'grand', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'parent', parentId: 'grand', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'source', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'child', parentId: 'parent', startDate: MONDAY, dueDate: TUESDAY })
+        ]);
+
+        addRelation({ id: 'r1', from: 'source', to: 'child', type: 'precedes' });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find((task) => task.id === 'child')?.startDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find((task) => task.id === 'parent')?.startDate).toBe(WEDNESDAY);
+        expect(state.allTasks.find((task) => task.id === 'grand')?.startDate).toBe(WEDNESDAY);
+        expect(state.modifiedTaskIds.has('child')).toBe(true);
+        expect(state.modifiedTaskIds.has('parent')).toBe(true);
+        expect(state.modifiedTaskIds.has('grand')).toBe(true);
+    });
+
+    it('uses all updated branches when recalculating a shared ancestor', () => {
+        const { setTasks, setRelations, updateTask } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'grand', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'left-parent', parentId: 'grand', startDate: MONDAY, dueDate: MONDAY }),
+            buildTask({ id: 'right-parent', parentId: 'grand', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'left', parentId: 'left-parent', startDate: MONDAY, dueDate: MONDAY }),
+            buildTask({ id: 'right', parentId: 'right-parent', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'source', startDate: MONDAY, dueDate: TUESDAY })
+        ]);
+        setRelations([
+            { id: 'r1', from: 'source', to: 'left', type: 'precedes' },
+            { id: 'r2', from: 'source', to: 'right', type: 'precedes', delay: 1 }
+        ]);
+
+        updateTask('source', { dueDate: WEDNESDAY });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find((task) => task.id === 'left-parent')?.startDate).toBe(THURSDAY);
+        expect(state.allTasks.find((task) => task.id === 'right-parent')?.startDate).toBe(FRIDAY);
+        expect(state.allTasks.find((task) => task.id === 'grand')?.startDate).toBe(THURSDAY);
+        expect(state.allTasks.find((task) => task.id === 'grand')?.dueDate).toBe(FRIDAY + DAY);
+    });
+
+    it('aborts an automatic move when a downstream task is not editable', () => {
+        const { setTasks, setRelations, updateTask } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: MONDAY, editable: true }),
+            buildTask({ id: 'B', startDate: TUESDAY, dueDate: TUESDAY, editable: false })
+        ]);
+        setRelations([
+            { id: 'r1', from: 'A', to: 'B', type: 'precedes' }
+        ]);
+
+        updateTask('A', { dueDate: TUESDAY });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find((task) => task.id === 'A')?.dueDate).toBe(MONDAY);
+        expect(state.allTasks.find((task) => task.id === 'B')?.startDate).toBe(TUESDAY);
+    });
+
     it('setRelations derives cyclic scheduling state from loaded data', () => {
         const { setTasks, setRelations } = useTaskStore.getState();
         setTasks([

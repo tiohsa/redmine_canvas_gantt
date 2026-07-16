@@ -188,6 +188,8 @@ class CanvasGanttsController < ApplicationController
     label_auto_schedule_move_mode_off: :label_auto_schedule_move_mode_off,
     label_auto_schedule_move_mode_constraint_push: :label_auto_schedule_move_mode_constraint_push,
     label_auto_schedule_move_mode_linked_shift: :label_auto_schedule_move_mode_linked_shift,
+    label_auto_schedule_external_conflict: :label_auto_schedule_external_conflict,
+    label_auto_schedule_permission_denied: :label_auto_schedule_permission_denied,
     label_relation_delay_auto_calc_unavailable: :label_relation_delay_auto_calc_unavailable,
     label_relation_delay_invalid: :label_relation_delay_invalid,
     label_relation_delay_required: :label_relation_delay_required,

@@ -230,6 +230,7 @@ ja:
     label_auto_schedule_move_mode_constraint_push: "制約押し出し"
     label_auto_schedule_move_mode_linked_shift: "連動タスク一括移動"
     label_auto_schedule_external_conflict: "連動タスクの移動が外部依存関係の制約に違反します"
+    label_auto_schedule_permission_denied: "編集権限のない連動タスクが含まれるため移動できません"
     label_relation_delay_auto_calc_unavailable: "日付不足のため自動計算なし"
     label_relation_delay_invalid: "delay は 0 以上で入力してください"
     label_relation_delay_required: "この依存関係種別では delay の入力が必要です"

@@ -188,6 +188,10 @@ export const useUIStore = create<UIState>((set, get) => ({
     columnStateSource: 'preference',
     columnsExplicitInQuery: false,
     addNotification: (message, type = 'info') => {
+        if (get().notifications.some((notification) => (
+            notification.message === message && notification.type === type
+        ))) return;
+
         const id = Math.random().toString(36).substring(7);
         set((state) => ({
             notifications: [...state.notifications, { id, message, type }]

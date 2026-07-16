@@ -163,14 +163,13 @@ export const saveModifiedTasks = async (
                     continue;
                 }
 
-                mutableTaskById.set(taskId, { ...localTask, lockVersion: latestTask.lockVersion });
-
                 if (hasSamePersistedFields(localTask, latestTask)) {
                     failures.delete(taskId);
                     progress = true;
                     continue;
                 }
 
+                if (conflictTaskIds.includes(taskId)) continue;
                 refreshedPending.push(taskId);
             }
 

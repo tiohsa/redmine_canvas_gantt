@@ -237,9 +237,17 @@ export const recalculateDownstreamTasks = (
             const minimumSuccessorStart = addWorkingDays(predecessorDueDate, edge.gapDays, successor.projectId);
             if (successorStartDate >= minimumSuccessorStart) return;
 
-            const duration = Math.max(0, successorDueDate - successorStartDate);
+            const duration = diffWorkingDays(
+                successorStartDate,
+                successorDueDate,
+                successor.projectId
+            );
             const nextStartDate = minimumSuccessorStart;
-            const nextDueDate = nextStartDate + duration;
+            const nextDueDate = shiftByWorkingDays(
+                nextStartDate,
+                duration,
+                successor.projectId
+            );
             const nextSuccessor = {
                 ...successor,
                 startDate: nextStartDate,
@@ -315,9 +323,12 @@ export const calculateLinkedDownstreamUpdates = (
     });
 
     for (const edge of edges) {
-        if (!clusterTaskIds.has(edge.successorId) || clusterTaskIds.has(edge.predecessorId)) continue;
+        if (!clusterTaskIds.has(edge.successorId)) continue;
 
-        const predecessor = taskById.get(edge.predecessorId);
+        const predecessorTask = taskById.get(edge.predecessorId);
+        const predecessor = predecessorTask && updates.has(edge.predecessorId)
+            ? { ...predecessorTask, ...updates.get(edge.predecessorId) }
+            : predecessorTask;
         const successor = taskById.get(edge.successorId);
         const shiftedSuccessor = updates.get(edge.successorId);
         if (!predecessor || !successor || !shiftedSuccessor) continue;

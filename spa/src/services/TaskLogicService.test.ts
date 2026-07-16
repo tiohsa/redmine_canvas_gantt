@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { TaskLogicService } from './TaskLogicService';
 import type { Task, Relation } from '../types';
 import { AutoScheduleMoveMode } from '../types/constraints';
+import { configureBusinessCalendar } from '../utils/businessCalendar';
 
 const buildTask = (overrides: Partial<Task>): Task => ({
     id: 'task',
@@ -275,6 +276,7 @@ describe('TaskLogicService.checkDependencies', () => {
 
         afterEach(() => {
             window.RedmineCanvasGantt = originalConfig;
+            configureBusinessCalendar(undefined);
         });
 
         it('keeps a Monday successor fixed when moving the predecessor due date from Saturday to Friday', () => {
@@ -443,6 +445,59 @@ describe('TaskLogicService.checkDependencies', () => {
             } finally {
                 window.RedmineCanvasGantt = originalConfig;
             }
+        });
+
+        it('rejects a linked shift when project calendars break an internal dependency', () => {
+            configureBusinessCalendar({
+                status: 'ok',
+                revision: 'mixed-calendars',
+                defaultCalendarId: 'default',
+                projectCalendarIds: { A: 'default', B: 'late', C: 'default' },
+                calendars: {
+                    default: {
+                        id: 'default',
+                        name: 'Default',
+                        nonWorkingWeekDays: [0, 6],
+                        days: {}
+                    },
+                    late: {
+                        id: 'late',
+                        name: 'Late',
+                        nonWorkingWeekDays: [0, 6],
+                        days: {
+                            '2026-01-12': { name: 'B holiday', type: 'non_working' }
+                        }
+                    }
+                },
+                warnings: []
+            });
+            const tasks = [
+                buildTask({ id: 'A', projectId: 'A', startDate: THURSDAY, dueDate: THURSDAY }),
+                buildTask({ id: 'B', projectId: 'B', startDate: FRIDAY, dueDate: FRIDAY }),
+                buildTask({
+                    id: 'C',
+                    projectId: 'C',
+                    startDate: Date.UTC(2026, 0, 12),
+                    dueDate: Date.UTC(2026, 0, 12)
+                })
+            ];
+            const relations: Relation[] = [
+                { id: 'r1', from: 'A', to: 'B', type: 'precedes' },
+                { id: 'r2', from: 'B', to: 'C', type: 'precedes' }
+            ];
+
+            const result = TaskLogicService.checkDependencies(
+                tasks,
+                relations,
+                'A',
+                FRIDAY,
+                FRIDAY,
+                AutoScheduleMoveMode.LinkedDownstreamShift
+            );
+
+            expect(result.updates.size).toBe(0);
+            expect(result.error).toContain('external dependency');
+            configureBusinessCalendar(undefined);
         });
     });
 });

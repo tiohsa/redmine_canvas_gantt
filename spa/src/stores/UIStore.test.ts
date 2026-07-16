@@ -40,6 +40,27 @@ describe('UIStore', () => {
         expect(useUIStore.getState().notifications).toHaveLength(0);
     });
 
+    it('keeps only one active notification with the same message and type', () => {
+        vi.useFakeTimers();
+
+        useUIStore.getState().addNotification('Dependency conflict', 'error');
+        useUIStore.getState().addNotification('Dependency conflict', 'error');
+        useUIStore.getState().addNotification('Dependency conflict', 'error');
+
+        expect(useUIStore.getState().notifications).toHaveLength(1);
+
+        vi.advanceTimersByTime(3000);
+        useUIStore.getState().addNotification('Dependency conflict', 'error');
+        expect(useUIStore.getState().notifications).toHaveLength(1);
+    });
+
+    it('allows the same message with a different notification type', () => {
+        useUIStore.getState().addNotification('Saved', 'success');
+        useUIStore.getState().addNotification('Saved', 'warning');
+
+        expect(useUIStore.getState().notifications).toHaveLength(2);
+    });
+
     it('toggles task title visibility', () => {
         type UIStoreState = ReturnType<typeof useUIStore.getState> & {
             showTaskTitles: boolean;
