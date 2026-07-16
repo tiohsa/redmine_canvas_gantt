@@ -26,17 +26,19 @@ Redmine::Plugin.register :redmine_canvas_gantt do
   }
 end
 
-# Keep compatibility fixes isolated from the main controller and apply them on
-# every Rails code reload. Asset delivery is handled by CanvasGanttsController#asset,
-# so plugin initialization no longer mutates public/plugin_assets at runtime.
-Rails.application.config.to_prepare do
-  require_dependency 'canvas_gantts_controller'
-  require_dependency Rails.root.join(
-    'plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt',
-    'canvas_gantts_controller_patch'
-  ).to_s
+# Redmine::PluginLoader already executes init.rb inside a to_prepare callback,
+# so apply the patch directly here on boot and on every code reload. Asset
+# delivery is handled by CanvasGanttsController#asset, and initialization does
+# not mutate public/plugin_assets at runtime.
+require_dependency Rails.root.join(
+  'plugins', 'redmine_canvas_gantt', 'app', 'controllers',
+  'canvas_gantts_controller'
+).to_s
+require_dependency Rails.root.join(
+  'plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt',
+  'canvas_gantts_controller_patch'
+).to_s
 
-  unless CanvasGanttsController < RedmineCanvasGantt::CanvasGanttsControllerPatch
-    CanvasGanttsController.prepend(RedmineCanvasGantt::CanvasGanttsControllerPatch)
-  end
+unless CanvasGanttsController < RedmineCanvasGantt::CanvasGanttsControllerPatch
+  CanvasGanttsController.prepend(RedmineCanvasGantt::CanvasGanttsControllerPatch)
 end

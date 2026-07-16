@@ -2,6 +2,11 @@ require_relative '../../spec_helper'
 require_relative '../../../lib/redmine_canvas_gantt/canvas_gantts_controller_patch'
 
 RSpec.describe RedmineCanvasGantt::CanvasGanttsControllerPatch do
+  it 'is applied to the controller during plugin initialization' do
+    expect(CanvasGanttsController).to be < described_class
+    expect(CanvasGanttsController.instance_method(:business_calendar_projects).owner).to eq(described_class)
+  end
+
   let(:base_controller_class) do
     Class.new do
       attr_accessor :relation_type, :validation_calls
