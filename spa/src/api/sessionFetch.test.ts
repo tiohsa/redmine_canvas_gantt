@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+type SessionFetchWindow = Window & {
+    __redmineCanvasGanttSessionFetchInstalled?: boolean;
+};
+
 describe('installSameOriginSessionFetch', () => {
     beforeEach(() => {
         vi.resetModules();
+        delete (window as SessionFetchWindow).__redmineCanvasGanttSessionFetchInstalled;
     });
 
     it('removes the Redmine API key and uses same-origin credentials', async () => {
