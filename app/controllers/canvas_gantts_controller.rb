@@ -535,8 +535,7 @@ class CanvasGanttsController < ApplicationController
       relation: relation,
       issue_from: issue_from,
       issue_to: issue_to,
-      relation_id: '__pending__',
-      creating: true
+      relation_id: '__pending__'
     )
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
@@ -884,11 +883,9 @@ class CanvasGanttsController < ApplicationController
     )
   end
 
-  def save_relation_change(relation:, issue_from:, issue_to:, relation_id:, replacing_relation_id: nil, creating: false)
+  def save_relation_change(relation:, issue_from:, issue_to:, relation_id:, replacing_relation_id: nil)
     relation_type = relation_params[:relation_type].to_s
     return unless ensure_editable_relation_type!(relation_type)
-    return unless ensure_business_calendar_available! if creating || DELAY_RELATION_TYPES.include?(relation_type)
-
     delay = normalized_relation_delay(relation_type)
     return if performed?
     return unless ensure_relation_change_valid!(
@@ -1009,13 +1006,6 @@ class CanvasGanttsController < ApplicationController
 
   def business_calendar_projects(project_ids)
     Project.where(id: project_ids).to_a
-  end
-
-  def ensure_business_calendar_available!
-    return true unless business_calendar_resolver.configuration_error?
-
-    render json: { errors: [canvas_gantt_l(:error_canvas_gantt_business_calendar_invalid)] }, status: :unprocessable_entity
-    false
   end
 
   def bulk_subtask_creator

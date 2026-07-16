@@ -116,7 +116,7 @@ describe('businessCalendar', () => {
         expect(isWorkingDay(timestamp('2027-01-04'), '1')).toBe(true);
     });
 
-    it('marks invalid configuration as unavailable for auto scheduling', () => {
+    it('falls back to weekly settings for auto scheduling when configuration is invalid', () => {
         configureBusinessCalendar({ status: 'error', revision: 'broken' });
 
         expect(isBusinessCalendarReady()).toBe(false);
@@ -127,10 +127,7 @@ describe('businessCalendar', () => {
             timestamp('2027-01-02'),
             timestamp('2027-01-02'),
             AutoScheduleMoveMode.ConstraintPush
-        )).toEqual({
-            updates: new Map(),
-            error: 'Business calendar configuration is invalid.'
-        });
+        )).toEqual({ updates: new Map() });
     });
 
     it('keeps a Redmine date key stable in UTC and Asia/Tokyo test runs', () => {

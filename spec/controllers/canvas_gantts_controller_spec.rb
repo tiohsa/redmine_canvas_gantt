@@ -1149,52 +1149,20 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
-  describe '#save_relation_change business calendar guard' do
+  describe '#save_relation_change business calendar fallback' do
     let(:relation) { instance_double(IssueRelation) }
     let(:issue_from) { instance_double(Issue) }
     let(:issue_to) { instance_double(Issue) }
 
-    before do
+    it 'continues saving a delay relation when calendar configuration is invalid' do
       allow(controller).to receive(:ensure_editable_relation_type!).and_return(true)
-      allow(controller).to receive(:ensure_business_calendar_available!).and_return(false)
-    end
-
-    it 'guards every new relation before validation or persistence' do
-      allow(controller).to receive(:relation_params).and_return({ relation_type: 'blocks' })
-      expect(controller).not_to receive(:ensure_relation_change_valid!)
-
-      controller.send(
-        :save_relation_change,
-        relation: relation,
-        issue_from: issue_from,
-        issue_to: issue_to,
-        relation_id: '__pending__',
-        creating: true
-      )
-
-      expect(controller).to have_received(:ensure_business_calendar_available!)
-    end
-
-    it 'guards delay-capable relation updates before validation or persistence' do
       allow(controller).to receive(:relation_params).and_return({ relation_type: 'precedes' })
-      expect(controller).not_to receive(:ensure_relation_change_valid!)
-
-      controller.send(
-        :save_relation_change,
-        relation: relation,
-        issue_from: issue_from,
-        issue_to: issue_to,
-        relation_id: '77'
-      )
-
-      expect(controller).to have_received(:ensure_business_calendar_available!)
-    end
-
-    it 'does not guard an existing non-delay relation update' do
-      allow(controller).to receive(:relation_params).and_return({ relation_type: 'blocks' })
-      allow(controller).to receive(:normalized_relation_delay).and_return(nil)
+      allow(controller).to receive(:normalized_relation_delay).and_return(0)
       allow(controller).to receive(:performed?).and_return(false)
       allow(controller).to receive(:ensure_relation_change_valid!).and_return(true)
+      allow(controller).to receive(:business_calendar_resolver).and_return(
+        instance_double(RedmineCanvasGantt::ProjectCalendarResolver, configuration_error?: true)
+      )
       allow(controller).to receive(:render_relation_save_result)
       allow(relation).to receive(:relation_type=)
       allow(relation).to receive(:delay=)
@@ -1207,7 +1175,6 @@ RSpec.describe CanvasGanttsController, type: :controller do
         relation_id: '77'
       )
 
-      expect(controller).not_to have_received(:ensure_business_calendar_available!)
       expect(controller).to have_received(:render_relation_save_result).with(relation)
     end
   end

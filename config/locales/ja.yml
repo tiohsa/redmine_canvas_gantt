@@ -254,7 +254,7 @@ ja:
     error_canvas_gantt_relation_delay_not_allowed: "この依存関係種別では delay を指定できません"
     error_canvas_gantt_relation_delay_mismatch: "delay が現在のタスク日付と整合しません"
     error_canvas_gantt_relation_cycle_detected: "この依存関係を保存するとスケジューリング上の循環が発生します"
-    error_canvas_gantt_business_calendar_invalid: "業務カレンダー設定が不正です。カレンダーYAMLを修正してからスケジュール依存関係を変更してください"
+    error_canvas_gantt_business_calendar_invalid: "業務カレンダー設定が不正です。Redmine標準の非稼働曜日へフォールバックしています"
     error_canvas_gantt_issue_not_found_in_project: "このプロジェクトではチケットが見つかりません"
     error_canvas_gantt_subjects_non_empty_array: "subjects は空でない配列である必要があります"
     error_canvas_gantt_parent_linkage_failed: "親子リンクの設定に失敗しました"

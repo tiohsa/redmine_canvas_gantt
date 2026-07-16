@@ -853,7 +853,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return nextState;
     }),
     applyApiData: (data) => {
-        configureBusinessCalendar(data.businessCalendar);
+        const businessCalendar = configureBusinessCalendar(data.businessCalendar);
         let querySyncState: SharedQuerySyncState | null = null;
         set((state) => {
             const result = buildApiDataPatch(data, state);
@@ -878,6 +878,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         (data.warnings ?? []).forEach((warning) => {
             useUIStore.getState().addNotification(warning, 'warning');
         });
+        if (businessCalendar.status === 'error') {
+            useUIStore.getState().addNotification(
+                i18n.t('error_canvas_gantt_business_calendar_invalid') ||
+                    "Business calendar configuration is invalid. Redmine's non-working weekdays are being used as a fallback.",
+                'warning'
+            );
+        }
     },
     setCustomFields: (customFields) => set((state) => {
         const derived = buildDerivedTaskState(state, { customFields });
