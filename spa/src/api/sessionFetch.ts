@@ -1,11 +1,14 @@
-let installed = false;
+type SessionFetchWindow = Window & {
+    __redmineCanvasGanttSessionFetchInstalled?: boolean;
+};
 
 /**
  * Canvas Gantt runs in the authenticated Redmine page. Use the same-origin
  * session and strip personal REST API keys from every browser request.
  */
 export const installSameOriginSessionFetch = (): void => {
-    if (installed) return;
+    const sessionWindow = window as SessionFetchWindow;
+    if (sessionWindow.__redmineCanvasGanttSessionFetchInstalled) return;
 
     const nativeFetch = window.fetch.bind(window);
     window.fetch = (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
@@ -19,5 +22,5 @@ export const installSameOriginSessionFetch = (): void => {
         });
     };
 
-    installed = true;
+    sessionWindow.__redmineCanvasGanttSessionFetchInstalled = true;
 };
