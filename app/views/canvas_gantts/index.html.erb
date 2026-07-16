@@ -21,12 +21,15 @@
     // Canvas Gantt is a same-origin browser application. Always use the
     // authenticated Redmine session and never send a personal REST API key.
     (() => {
+      if (window.__redmineCanvasGanttSessionFetchInstalled) return;
+
       const nativeFetch = window.fetch.bind(window);
       window.fetch = (input, init = {}) => {
         const headers = new Headers(init.headers || {});
         headers.delete('X-Redmine-API-Key');
         return nativeFetch(input, { ...init, headers, credentials: 'same-origin' });
       };
+      window.__redmineCanvasGanttSessionFetchInstalled = true;
     })();
   <% end %>
   <!-- In development with Vite dev server enabled, we use the Vite dev server. Otherwise, we use the manifest. -->
