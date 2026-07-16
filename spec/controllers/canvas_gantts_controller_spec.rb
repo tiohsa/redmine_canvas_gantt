@@ -23,6 +23,41 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe '#api_request?' do
+    before do
+      controller.params[:format] = 'json'
+      session[:user_id] = 7
+    end
+
+    it 'uses the Redmine session for JSON requests without explicit API credentials' do
+      expect(controller.send(:api_request?)).to be(false)
+    end
+
+    it 'preserves Redmine API authentication when an API key header is present' do
+      request.headers['X-Redmine-API-Key'] = 'api-key'
+
+      expect(controller.send(:api_request?)).to be(true)
+    end
+
+    it 'preserves Redmine API authentication when an API key parameter is present' do
+      controller.params[:key] = 'api-key'
+
+      expect(controller.send(:api_request?)).to be(true)
+    end
+
+    it 'preserves Redmine API authentication when an authorization header is present' do
+      request.headers['Authorization'] = 'Basic credentials'
+
+      expect(controller.send(:api_request?)).to be(true)
+    end
+
+    it 'preserves Redmine API authentication when no session user is present' do
+      session.delete(:user_id)
+
+      expect(controller.send(:api_request?)).to be(true)
+    end
+  end
+
   describe '#safe_build_asset_path' do
     around do |example|
       Dir.mktmpdir do |dir|

@@ -34,6 +34,19 @@ test('renders canvas gantt page in Redmine', async ({ page, baseURL }) => {
   const loadingText = page.getByText('Loading Canvas Gantt...');
   await expect(loadingText).toHaveCount(0);
 
+  const memberProjectsResponse = await page.evaluate(async () => {
+    const url = new URL('/projects/ecookbook/canvas_gantt/data.json', window.location.origin);
+    url.searchParams.set('member_projects_only', '1');
+    const response = await window.fetch(url);
+
+    return {
+      status: response.status,
+      payload: await response.json()
+    };
+  });
+
+  expect(memberProjectsResponse.status).toBe(200);
+  expect(memberProjectsResponse.payload).toHaveProperty('filter_options.projects');
   expect(failedScriptResponses).toEqual([]);
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);

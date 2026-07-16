@@ -575,6 +575,23 @@ class CanvasGanttsController < ApplicationController
 
   private
 
+  # Redmine deliberately ignores its session for JSON/XML API requests. Canvas
+  # Gantt is a same-origin browser UI, so its JSON requests must retain the
+  # authenticated page session unless the caller supplied explicit API auth.
+  def api_request?
+    return false if canvas_gantt_session_json_request?
+
+    super
+  end
+
+  def canvas_gantt_session_json_request?
+    params[:format].to_s == 'json' &&
+      session[:user_id].present? &&
+      params[:key].blank? &&
+      request.headers['X-Redmine-API-Key'].blank? &&
+      request.authorization.blank?
+  end
+
   def canvas_gantt_l(key, **options)
     l(:"canvas_gantt.#{key}", **options)
   end
