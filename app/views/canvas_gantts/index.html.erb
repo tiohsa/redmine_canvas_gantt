@@ -9,7 +9,6 @@
       apiBase: '<%= project_path(@project) %>/canvas_gantt',
       redmineBase: '<%= Redmine::Utils.relative_url_root %>',
       authToken: '<%= form_authenticity_token %>',
-      apiKey: '',
       i18n: <%= @i18n.to_json.html_safe %>,
       settings: <%= (@settings || {}).to_json.html_safe %>,
       nonWorkingWeekDays: <%= (@non_working_week_days || [0, 6]).to_json.html_safe %>,
@@ -18,19 +17,6 @@
       yearMonthFormat: '<%= @year_month_format %>'
     };
 
-    // Canvas Gantt is a same-origin browser application. Always use the
-    // authenticated Redmine session and never send a personal REST API key.
-    (() => {
-      if (window.__redmineCanvasGanttSessionFetchInstalled) return;
-
-      const nativeFetch = window.fetch.bind(window);
-      window.fetch = (input, init = {}) => {
-        const headers = new Headers(init.headers || {});
-        headers.delete('X-Redmine-API-Key');
-        return nativeFetch(input, { ...init, headers, credentials: 'same-origin' });
-      };
-      window.__redmineCanvasGanttSessionFetchInstalled = true;
-    })();
   <% end %>
   <!-- In development with Vite dev server enabled, we use the Vite dev server. Otherwise, we use the manifest. -->
   <% use_vite_dev = Rails.env.development? && ENV['CANVAS_GANTT_USE_VITE_DEV_SERVER'] == '1' %>

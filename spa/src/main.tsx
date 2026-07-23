@@ -16,12 +16,9 @@ import '@fontsource/roboto/700.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
-import { installSameOriginSessionFetch } from './api/sessionFetch'
 import { SvgSpriteDefs } from './icons/SvgSpriteDefs'
 import './index.css'
 import './stores/preferencesWatcher'
-
-installSameOriginSessionFetch()
 
 const rootElement = document.getElementById('redmine-canvas-gantt-root') || document.getElementById('root');
 createRoot(rootElement!).render(

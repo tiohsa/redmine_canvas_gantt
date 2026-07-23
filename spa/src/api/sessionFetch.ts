@@ -1,26 +1,15 @@
-type SessionFetchWindow = Window & {
-    __redmineCanvasGanttSessionFetchInstalled?: boolean;
-};
-
 /**
- * Canvas Gantt runs in the authenticated Redmine page. Use the same-origin
- * session and strip personal REST API keys from every browser request.
+ * Build a request for Canvas Gantt's authenticated same-origin API without
+ * changing the browser's global fetch implementation.
  */
-export const installSameOriginSessionFetch = (): void => {
-    const sessionWindow = window as SessionFetchWindow;
-    if (sessionWindow.__redmineCanvasGanttSessionFetchInstalled) return;
+export const sessionFetch = (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
+    const nativeFetch = globalThis.fetch.bind(globalThis);
+    const headers = new Headers(init.headers || {});
+    headers.delete('X-Redmine-API-Key');
 
-    const nativeFetch = window.fetch.bind(window);
-    window.fetch = (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
-        const headers = new Headers(init.headers || {});
-        headers.delete('X-Redmine-API-Key');
-
-        return nativeFetch(input, {
-            ...init,
-            headers,
-            credentials: 'same-origin'
-        });
-    };
-
-    sessionWindow.__redmineCanvasGanttSessionFetchInstalled = true;
+    return nativeFetch(input, {
+        ...init,
+        headers,
+        credentials: 'same-origin'
+    });
 };

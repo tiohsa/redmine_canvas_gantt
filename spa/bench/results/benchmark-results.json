@@ -10,215 +10,45 @@
       "kind": "flat",
       "taskCount": 1000,
       "payloadBytes": 297128,
-      "samples": [
-        {
-          "sample": 1,
-          "renderMs": 870.7,
-          "domNodes": 1815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        },
-        {
-          "sample": 2,
-          "renderMs": 866.9,
-          "domNodes": 1815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        },
-        {
-          "sample": 3,
-          "renderMs": 871.2,
-          "domNodes": 1815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        }
-      ],
-      "metrics": {
-        "renderMs": {
-          "min": 866.9,
-          "median": 870.7,
-          "mean": 869.6,
-          "max": 871.2
-        }
-      },
-      "budget": {
-        "baselineMs": 5000,
-        "thresholdMs": 6000,
-        "allowedRegressionPercent": 20
-      },
-      "status": "pass"
+      "samples": [{"sample": 1, "renderMs": 870.7, "domNodes": 1815, "visibleRows": 16, "canvasCount": 4}, {"sample": 2, "renderMs": 866.9, "domNodes": 1815, "visibleRows": 16, "canvasCount": 4}, {"sample": 3, "renderMs": 871.2, "domNodes": 1815, "visibleRows": 16, "canvasCount": 4}],
+      "metrics": {"renderMs": {"min": 866.9, "median": 870.7, "mean": 869.6, "max": 871.2}},
+      "budget": {"baselineMs": 5000, "thresholdMs": 6000, "allowedRegressionPercent": 20}, "status": "pass"
     },
     {
       "name": "flat-5000",
       "kind": "flat",
       "taskCount": 5000,
       "payloadBytes": 1497397,
-      "samples": [
-        {
-          "sample": 1,
-          "renderMs": 1868.4,
-          "domNodes": 5815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        },
-        {
-          "sample": 2,
-          "renderMs": 1529.5,
-          "domNodes": 5815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        },
-        {
-          "sample": 3,
-          "renderMs": 1524.7,
-          "domNodes": 5815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        }
-      ],
-      "metrics": {
-        "renderMs": {
-          "min": 1524.7,
-          "median": 1529.5,
-          "mean": 1640.87,
-          "max": 1868.4
-        }
-      },
-      "budget": {
-        "baselineMs": 15000,
-        "thresholdMs": 18000,
-        "allowedRegressionPercent": 20
-      },
-      "status": "pass"
+      "samples": [{"sample": 1, "renderMs": 1868.4, "domNodes": 5815, "visibleRows": 16, "canvasCount": 4}, {"sample": 2, "renderMs": 1529.5, "domNodes": 5815, "visibleRows": 16, "canvasCount": 4}, {"sample": 3, "renderMs": 1524.7, "domNodes": 5815, "visibleRows": 16, "canvasCount": 4}],
+      "metrics": {"renderMs": {"min": 1524.7, "median": 1529.5, "mean": 1640.87, "max": 1868.4}},
+      "budget": {"baselineMs": 15000, "thresholdMs": 18000, "allowedRegressionPercent": 20}, "status": "pass"
     },
     {
       "name": "flat-10000",
       "kind": "flat",
       "taskCount": 10000,
       "payloadBytes": 2997730,
-      "samples": [
-        {
-          "sample": 1,
-          "renderMs": 2836.6,
-          "domNodes": 10815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        },
-        {
-          "sample": 2,
-          "renderMs": 2727.6,
-          "domNodes": 10815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        },
-        {
-          "sample": 3,
-          "renderMs": 2725.6,
-          "domNodes": 10815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        }
-      ],
-      "metrics": {
-        "renderMs": {
-          "min": 2725.6,
-          "median": 2727.6,
-          "mean": 2763.27,
-          "max": 2836.6
-        }
-      },
-      "budget": {
-        "baselineMs": 30000,
-        "thresholdMs": 36000,
-        "allowedRegressionPercent": 20
-      },
-      "status": "pass"
+      "samples": [{"sample": 1, "renderMs": 2836.6, "domNodes": 10815, "visibleRows": 16, "canvasCount": 4}, {"sample": 2, "renderMs": 2727.6, "domNodes": 10815, "visibleRows": 16, "canvasCount": 4}, {"sample": 3, "renderMs": 2725.6, "domNodes": 10815, "visibleRows": 16, "canvasCount": 4}],
+      "metrics": {"renderMs": {"min": 2725.6, "median": 2727.6, "mean": 2763.27, "max": 2836.6}},
+      "budget": {"baselineMs": 30000, "thresholdMs": 36000, "allowedRegressionPercent": 20}, "status": "pass"
     },
     {
       "name": "hierarchy-1000",
       "kind": "hierarchy",
       "taskCount": 1000,
       "payloadBytes": 332932,
-      "samples": [
-        {
-          "sample": 1,
-          "renderMs": 878,
-          "domNodes": 1815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        },
-        {
-          "sample": 2,
-          "renderMs": 858.3,
-          "domNodes": 1815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        },
-        {
-          "sample": 3,
-          "renderMs": 760.7,
-          "domNodes": 1815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        }
-      ],
-      "metrics": {
-        "renderMs": {
-          "min": 760.7,
-          "median": 858.3,
-          "mean": 832.33,
-          "max": 878
-        }
-      },
-      "budget": {
-        "baselineMs": 6000,
-        "thresholdMs": 7200,
-        "allowedRegressionPercent": 20
-      },
-      "status": "pass"
+      "samples": [{"sample": 1, "renderMs": 878, "domNodes": 1815, "visibleRows": 16, "canvasCount": 4}, {"sample": 2, "renderMs": 858.3, "domNodes": 1815, "visibleRows": 16, "canvasCount": 4}, {"sample": 3, "renderMs": 760.7, "domNodes": 1815, "visibleRows": 16, "canvasCount": 4}],
+      "metrics": {"renderMs": {"min": 760.7, "median": 858.3, "mean": 832.33, "max": 878}},
+      "budget": {"baselineMs": 6000, "thresholdMs": 7200, "allowedRegressionPercent": 20}, "status": "pass"
     },
     {
       "name": "dependency-1000",
       "kind": "dependency",
       "taskCount": 1000,
       "payloadBytes": 372730,
-      "samples": [
-        {
-          "sample": 1,
-          "renderMs": 760,
-          "domNodes": 1815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        },
-        {
-          "sample": 2,
-          "renderMs": 777.7,
-          "domNodes": 1815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        },
-        {
-          "sample": 3,
-          "renderMs": 959.9,
-          "domNodes": 1815,
-          "visibleRows": 16,
-          "canvasCount": 4
-        }
-      ],
-      "metrics": {
-        "renderMs": {
-          "min": 760,
-          "median": 777.7,
-          "mean": 832.53,
-          "max": 959.9
-        }
-      },
-      "budget": {
-        "baselineMs": 7000,
-        "thresholdMs": 8400,
-        "allowedRegressionPercent": 20
-      },
-      "status": "pass"
+      "samples": [{"sample": 1, "renderMs": 760, "domNodes": 1815, "visibleRows": 16, "canvasCount": 4}, {"sample": 2, "renderMs": 777.7, "domNodes": 1815, "visibleRows": 16, "canvasCount": 4}, {"sample": 3, "renderMs": 959.9, "domNodes": 1815, "visibleRows": 16, "canvasCount": 4}],
+      "metrics": {"renderMs": {"min": 760, "median": 777.7, "mean": 832.53, "max": 959.9}},
+      "budget": {"baselineMs": 7000, "thresholdMs": 8400, "allowedRegressionPercent": 20}, "status": "pass"
     }
   ]
 }

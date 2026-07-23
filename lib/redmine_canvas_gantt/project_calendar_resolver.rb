@@ -62,13 +62,14 @@ module RedmineCanvasGantt
         calendar_id = calendar_id_for(project, snapshot: snapshot)
         result[project.id.to_s] = calendar_id if calendar_id
       end
+      calendar_ids = project_calendar_ids.values.push(snapshot.default_calendar_id).compact.uniq
 
       {
         status: snapshot.status,
         revision: snapshot.revision,
         defaultCalendarId: snapshot.default_calendar_id,
         projectCalendarIds: project_calendar_ids,
-        calendars: snapshot.calendars.transform_values(&:to_payload),
+        calendars: snapshot.calendars.slice(*calendar_ids).transform_values(&:to_payload),
         warnings: snapshot.warnings
       }.tap do |result|
         result[:error] = snapshot.error if snapshot.error

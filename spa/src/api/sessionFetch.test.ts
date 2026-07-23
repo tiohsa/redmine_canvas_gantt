@@ -1,24 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-type SessionFetchWindow = Window & {
-    __redmineCanvasGanttSessionFetchInstalled?: boolean;
-};
-
-describe('installSameOriginSessionFetch', () => {
-    beforeEach(() => {
-        vi.resetModules();
-        delete (window as SessionFetchWindow).__redmineCanvasGanttSessionFetchInstalled;
-    });
+describe('sessionFetch', () => {
 
     it('removes the Redmine API key and uses same-origin credentials', async () => {
         const response = new Response('{}', { status: 200 });
         const nativeFetch = vi.fn().mockResolvedValue(response);
         window.fetch = nativeFetch;
 
-        const { installSameOriginSessionFetch } = await import('./sessionFetch');
-        installSameOriginSessionFetch();
+        const { sessionFetch } = await import('./sessionFetch');
 
-        await window.fetch('/projects/demo/canvas_gantt/data.json', {
+        await sessionFetch('/projects/demo/canvas_gantt/data.json', {
             headers: {
                 'Content-Type': 'application/json',
                 'X-Redmine-API-Key': 'secret'
@@ -33,15 +24,13 @@ describe('installSameOriginSessionFetch', () => {
         expect(init.credentials).toBe('same-origin');
     });
 
-    it('is installed only once', async () => {
+    it('does not replace the global fetch', async () => {
         const nativeFetch = vi.fn().mockResolvedValue(new Response('{}'));
         window.fetch = nativeFetch;
 
-        const { installSameOriginSessionFetch } = await import('./sessionFetch');
-        installSameOriginSessionFetch();
-        const installedFetch = window.fetch;
-        installSameOriginSessionFetch();
+        const { sessionFetch } = await import('./sessionFetch');
+        await sessionFetch('/projects/demo/canvas_gantt/data.json');
 
-        expect(window.fetch).toBe(installedFetch);
+        expect(window.fetch).toBe(nativeFetch);
     });
 });

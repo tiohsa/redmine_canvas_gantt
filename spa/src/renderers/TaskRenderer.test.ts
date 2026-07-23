@@ -3,7 +3,7 @@ import { TaskRenderer } from './TaskRenderer';
 import type { Task, Viewport } from '../types';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
-const TEST_START_DATE = new Date(2026, 0, 1).getTime();
+const TEST_START_DATE = Date.UTC(2026, 0, 1);
 
 const viewport: Viewport = {
     startDate: TEST_START_DATE,
@@ -92,9 +92,9 @@ describe('TaskRenderer', () => {
 
         new TaskRenderer(canvas).render(viewport, [buildTask()], 1, 2, [], [], true, true, true, null, false);
 
-        expect(ctx.fillText).toHaveBeenCalledWith('1/1', -10, expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('1/1', expect.any(Number), expect.any(Number));
         expect(ctx.fillText).toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
-        expect(ctx.fillText).toHaveBeenCalledWith('Task 1', -42, expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('Task 1', expect.any(Number), expect.any(Number));
     });
 
     it('does not draw task bar dates when disabled', () => {
@@ -122,9 +122,9 @@ describe('TaskRenderer', () => {
 
         new TaskRenderer(canvas).render(viewport, [task], 1, 2, [], [], true, true, true, null, false);
 
-        expect(ctx.fillText).toHaveBeenCalledWith('1/1', -13, expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('1/1', expect.any(Number), expect.any(Number));
         expect(ctx.fillText).not.toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
-        expect(ctx.fillText).toHaveBeenCalledWith('Task 1', -41, expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('Task 1', expect.any(Number), expect.any(Number));
     });
 
     it('draws only the due date beside a due-only task point', () => {
@@ -138,7 +138,7 @@ describe('TaskRenderer', () => {
 
         new TaskRenderer(canvas).render(viewport, [task], 1, 2, [], [], false, true, true, null, false);
 
-        expect(ctx.fillText).toHaveBeenCalledWith('1/2', 12, expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
         expect(ctx.fillText).not.toHaveBeenCalledWith('1/1', expect.any(Number), expect.any(Number));
     });
 

@@ -852,6 +852,12 @@ describe('UiSidebar', () => {
 
         useTaskStore.getState().setTasks([task]);
 
+        const fetchMock = vi.fn(async () => ({
+            ok: true,
+            json: async () => ({ lock_version: 2, task_id: taskId })
+        }));
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
         render(<UiSidebar />);
 
         const cell = await screen.findByTestId(`cell-${taskId}-startDate`);
@@ -869,6 +875,12 @@ describe('UiSidebar', () => {
             const t = useTaskStore.getState().allTasks[0];
             const expectedDate = new Date('2025-01-02').getTime();
             expect(t?.startDate).toBe(expectedDate);
+        });
+        await waitFor(() => {
+            expect(fetchMock).toHaveBeenCalledWith(
+                expect.stringContaining('/canvas_gantt/tasks/123.json'),
+                expect.objectContaining({ method: 'PATCH' })
+            );
         });
 
         // Verify task is marked for batch save

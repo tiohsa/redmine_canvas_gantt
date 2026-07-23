@@ -86,4 +86,45 @@ RSpec.describe RedmineCanvasGantt::ProjectCalendarResolver do
     expect(payload[:projectCalendarIds]).to eq('9' => 'custom')
     expect(payload.dig(:calendars, 'custom', :nonWorkingWeekDays)).to eq([0, 6])
   end
+
+  it 'does not expose calendars unrelated to visible projects' do
+    visible = calendar('visible')
+    hidden = calendar('hidden')
+    repository = instance_double(
+      RedmineCanvasGantt::BusinessCalendarRepository,
+      snapshot: snapshot(
+        default: 'visible',
+        assignments: { 'visible-project' => 'visible', 'hidden-project' => 'hidden' },
+        calendars: { 'visible' => visible, 'hidden' => hidden }
+      )
+    )
+    resolver = described_class.new(repository: repository, fallback_non_working_week_days: [6, 7])
+    project = instance_double(Project, id: 1, identifier: 'visible-project', ancestors: [])
+
+    payload = resolver.payload(projects: [project])
+
+    expect(payload[:calendars].keys).to eq(['visible'])
+    expect(payload[:calendars]).not_to have_key('hidden')
+  end
+
+  it 'includes the default and inherited calendars required by visible projects' do
+    parent = calendar('parent')
+    default = calendar('default')
+    repository = instance_double(
+      RedmineCanvasGantt::BusinessCalendarRepository,
+      snapshot: snapshot(
+        default: 'default',
+        assignments: { 'parent' => 'parent' },
+        calendars: { 'parent' => parent, 'default' => default }
+      )
+    )
+    resolver = described_class.new(repository: repository, fallback_non_working_week_days: [6, 7])
+    ancestor = instance_double(Project, id: 2, identifier: 'parent')
+    project = instance_double(Project, id: 3, identifier: 'child', ancestors: [ancestor])
+
+    payload = resolver.payload(projects: [project])
+
+    expect(payload[:calendars].keys).to contain_exactly('parent', 'default')
+    expect(payload[:projectCalendarIds]).to eq('3' => 'parent')
+  end
 end

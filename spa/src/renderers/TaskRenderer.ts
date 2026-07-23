@@ -311,7 +311,7 @@ export class TaskRenderer {
     ) {
         const formatDate = (timestamp: number) => {
             const date = new Date(timestamp);
-            return `${date.getMonth() + 1}/${date.getDate()}`;
+            return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
         };
 
         const textY = bar.y + bar.height / 2;

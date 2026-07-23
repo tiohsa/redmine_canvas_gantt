@@ -17,6 +17,7 @@ import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/bas
 import type { QueryContext } from '../query/types';
 import type { BusinessCalendarPayload } from '../types/businessCalendar';
 import { normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
+import { sessionFetch } from './sessionFetch';
 
 type ApiTask = Record<string, unknown>;
 type ApiRelation = Record<string, unknown>;
@@ -105,7 +106,7 @@ declare global {
             apiBase: string;
             redmineBase: string;
             authToken: string;
-            apiKey: string;
+            apiKey?: string;
             nonWorkingWeekDays?: number[];
             settings?: InlineEditSettings & { row_height?: string; tracker_icon_map?: string };
             i18n?: Record<string, string>;
@@ -133,7 +134,6 @@ const buildViewContextQuery = (config: RedmineCanvasGanttConfig): string => {
 };
 
 const buildJsonHeaders = (config: RedmineCanvasGanttConfig, includeCsrf: boolean = false): HeadersInit => ({
-    'X-Redmine-API-Key': config.apiKey,
     'Content-Type': 'application/json',
     ...(includeCsrf ? { 'X-CSRF-Token': config.authToken } : {})
 });
@@ -440,7 +440,7 @@ const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | n
 export const apiClient = {
     fetchQueries: async (): Promise<SavedQuery[]> => {
         const config = getConfig();
-        const response = await fetch(new URL(`${config.apiBase}/queries.json`, window.location.origin).toString(), {
+        const response = await sessionFetch(new URL(`${config.apiBase}/queries.json`, window.location.origin).toString(), {
             headers: buildJsonHeaders(config)
         });
 
@@ -468,7 +468,7 @@ export const apiClient = {
             : buildIssueQueryParams(params?.query ?? {}, { queryContext: params?.queryContext }).toString();
         const url = new URL(`${config.apiBase}/data.json` + (qs ? `?${qs}` : ''), window.location.origin).toString();
 
-        const response = await fetch(url, {
+        const response = await sessionFetch(url, {
             headers: buildJsonHeaders(config)
         });
 
@@ -622,7 +622,7 @@ export const apiClient = {
             : '';
         const url = new URL(`${config.apiBase}/baseline.json` + (qs ? `?${qs}` : ''), window.location.origin).toString();
 
-        const response = await fetch(url, {
+        const response = await sessionFetch(url, {
             method: 'POST',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({ scope })
@@ -653,7 +653,7 @@ export const apiClient = {
         const config = getConfig();
         const query = new URLSearchParams(buildViewContextQuery(config));
         if (targetProjectId !== undefined) query.set('target_project_id', String(targetProjectId));
-        const response = await fetch(`${getGlobalApiBase(config)}/tasks/${taskId}/edit_meta.json?${query}`, {
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${taskId}/edit_meta.json?${query}`, {
             headers: buildJsonHeaders(config)
         });
 
@@ -785,7 +785,7 @@ export const apiClient = {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
-        const response = await fetch(`${getGlobalApiBase(config)}/tasks/${task.id}.json?${query}`, {
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${task.id}.json?${query}`, {
             method: 'PATCH',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
@@ -820,7 +820,7 @@ export const apiClient = {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
-        const response = await fetch(`${getGlobalApiBase(config)}/tasks/${taskId}.json?${query}`, {
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${taskId}.json?${query}`, {
             method: 'PATCH',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({ task: fields })
@@ -848,7 +848,7 @@ export const apiClient = {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
-        const response = await fetch(`${getGlobalApiBase(config)}/relations.json?${query}`, {
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/relations.json?${query}`, {
             method: 'POST',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
@@ -881,7 +881,7 @@ export const apiClient = {
     updateRelation: async (relationId: string, type: string, delay?: number): Promise<Relation> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
-        const response = await fetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
             method: 'PATCH',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
@@ -904,7 +904,7 @@ export const apiClient = {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
-        const response = await fetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
             method: 'DELETE',
             headers: buildJsonHeaders(config, true)
         });
@@ -918,7 +918,7 @@ export const apiClient = {
     bulkCreateSubtasks: async (payload: { parentId: string; subjects: string[]; operationIssueIds?: string[] }): Promise<BulkCreateSubtasksResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
-        const response = await fetch(`${getGlobalApiBase(config)}/subtasks/bulk.json?${query}`, {
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/subtasks/bulk.json?${query}`, {
             method: 'POST',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
@@ -961,7 +961,7 @@ export const apiClient = {
 
         const redmineBase = config.redmineBase || '';
         // Redmine API DELETE /issues/:id.json
-        const response = await fetch(`${redmineBase}/issues/${taskId}.json`, {
+        const response = await sessionFetch(`${redmineBase}/issues/${taskId}.json`, {
             method: 'DELETE',
             headers: buildJsonHeaders(config, true)
         });
