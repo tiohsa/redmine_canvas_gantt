@@ -6,7 +6,7 @@ RSpec.describe RedmineCanvasGantt::ParentIssueResolver do
   let(:not_found_renderer) { instance_double(Proc, call: true) }
   let(:issue_scope_checker) { instance_double(Proc, call: true) }
   let(:parent_issue) { instance_double(Issue, id: 11, project_id: 1) }
-  let(:issue_finder) { instance_double(Object) }
+  let(:issue_finder) { double('IssueFinder') }
 
   describe '#call' do
     it 'rejects self-parenting' do

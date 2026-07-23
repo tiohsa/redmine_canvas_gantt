@@ -10,8 +10,8 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tiohsa/redmine_canvas_gantt)](https://github.com/tiohsa/redmine_canvas_gantt/releases)
-[![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#requirements)
-[![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#requirements)
+[![Redmine](https://img.shields.io/badge/Redmine-6.1%20%7C%207.0-red)](#requirements)
+[![Ruby](https://img.shields.io/badge/Ruby-Redmine公式要件に準拠-cc342d)](#requirements)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#requirements)
 
 [English README](README.md) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
@@ -50,8 +50,8 @@ Redmine Canvas Gantt は、タイムラインを HTML5 Canvas で描画しつつ
 
 ## 必要環境
 
-- Redmine 6.x
-- Ruby 3.x
+- Redmine 6.1 または 7.0
+- 利用する Redmine バージョンが公式にサポートする Ruby
 - Node.js 20+ は SPA のビルドまたはフロントエンド開発時のみ必要です。ビルド済みアセットを使う通常の Redmine 利用時には Node.js は必要ありません
 - Redmine で REST API が有効化されていること
 
@@ -243,7 +243,7 @@ bundle exec ruby generate.rb --region jp --calendar-id JP --name Japan \
   --output /path/to/business_calendars/generated/JP.yml
 ```
 
-会社固有の変更は `custom/` に分離してください。`--force` で上書きできるのは `calendar.managed: true` のファイルだけです。ランタイムは相対パス・更新時刻・サイズを既定で60秒ごとに確認し、変更後の全ファイルが検証に成功してからスナップショットを原子的に差し替えます。間隔は `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` に0以上の秒数で指定できます。設定ルート外へ解決される symlink は拒否し、symlink のディレクトリは再帰探索しません。ディレクトリまたは `settings.yml` がなければ Redmine 標準の非稼働曜日へフォールバックします。初回設定が不正な場合はカレンダー依存の関係変更と自動スケジュールを無効化し、再読み込みが失敗した場合は警告を記録して直前の正常スナップショットを維持します。
+会社固有の変更は `custom/` に分離してください。`--force` で上書きできるのは `calendar.managed: true` のファイルだけです。ランタイムは相対パス・更新時刻・サイズを既定で60秒ごとに確認し、変更後の全ファイルが検証に成功してからスナップショットを原子的に差し替えます。間隔は `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` に0以上の秒数で指定できます。設定ルート外へ解決される symlink は拒否し、symlink のディレクトリは再帰探索しません。ディレクトリまたは `settings.yml` がなければ Redmine 標準の非稼働曜日へフォールバックします。不正な設定の場合も警告を記録し、同じ曜日設定へフォールバックしてカレンダー依存の関係変更と自動スケジュールを継続します。再読み込みが失敗した場合は警告を記録して直前の正常スナップショットを維持します。
 
 Docker ではパスを明示してカレンダーディレクトリをマウントします。Redmine 公式イメージは
 起動時に設定ディレクトリの所有者を変更するため、公式イメージを使う Compose では
@@ -269,7 +269,9 @@ Kubernetes では同じパスへ ConfigMap などを read-only でマウント�
 
 ## Docker クイックスタート
 
-このリポジトリには、Redmine 6.x と MariaDB をローカルで起動するための `docker-compose.yml` が含まれています。
+このリポジトリには、Redmine 7.0.0 と MariaDB 11.4 をローカルで起動するための `docker-compose.yml` が含まれています。対応する互換バージョンを使う場合は `REDMINE_IMAGE=redmine:6.1.2` を指定します。
+
+Redmine 7.0.0 はビルド済みのローカル `redmine:7.0.0` image と MariaDB 11.4 の Compose DB で検証済みです。GitHub Actions では Redmine 6.1 の backend spec と互換スモークテストを実行します。GitHub-hosted runner から取得できる version または digest 固定の Redmine 7 image が用意できた時点で、Redmine 7 CI を再有効化します。
 
 独自休日カレンダーを使用する場合は、`redmine` サービスに次の設定を追加します。`business_calendars/`
 には `settings.yml` と、`generated/` および `custom/` 配下のカレンダー YAML を配置してください。
@@ -290,6 +292,12 @@ services:
 
 ```bash
 docker compose up -d --wait
+```
+
+Redmine 6.1.2 を起動する場合:
+
+```bash
+REDMINE_IMAGE=redmine:6.1.2 docker compose up -d --wait
 ```
 
 [http://localhost:3000](http://localhost:3000) で Redmine を開けます。

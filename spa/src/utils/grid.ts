@@ -45,12 +45,19 @@ export interface GridScales {
 
 
 function getWeekNumber(d: Date) {
-    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
     d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
     const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
     return `W${weekNo}`;
 }
+
+// Grid ticks are Redmine date-only values. Build a local Date from UTC
+// components only for formatting, so date-fns cannot shift the displayed day.
+const dateForGridDisplay = (timestamp: number): Date => {
+    const date = new Date(timestamp);
+    return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+};
 
 /**
  * Calculates grid ticks based on ZoomLevel.
@@ -106,19 +113,16 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
         iterate(
             (t) => {
                 const d = new Date(t);
-                d.setDate(1);
-                d.setHours(0, 0, 0, 0);
+                d.setUTCDate(1);
+                d.setUTCHours(0, 0, 0, 0);
                 return d.getTime();
             },
             (t) => {
                 const d = new Date(t);
-                d.setMonth(d.getMonth() + 1);
+                d.setUTCMonth(d.getUTCMonth() + 1);
                 return d.getTime();
             },
-            (t) => {
-                const d = new Date(t);
-                return formatExplicit(d, getYearMonthFormat());
-            },
+            (t) => formatExplicit(dateForGridDisplay(t), getYearMonthFormat()),
             scales.middle
         );
     }
@@ -132,19 +136,16 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
         iterate(
             (t) => {
                 const d = new Date(t);
-                d.setDate(1);
-                d.setHours(0, 0, 0, 0);
+                d.setUTCDate(1);
+                d.setUTCHours(0, 0, 0, 0);
                 return d.getTime();
             },
             (t) => {
                 const d = new Date(t);
-                d.setMonth(d.getMonth() + 1);
+                d.setUTCMonth(d.getUTCMonth() + 1);
                 return d.getTime();
             },
-            (t) => {
-                const d = new Date(t);
-                return formatExplicit(d, getYearMonthFormat());
-            },
+            (t) => formatExplicit(dateForGridDisplay(t), getYearMonthFormat()),
             scales.top
         );
 
@@ -153,10 +154,10 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
         iterate(
             (t) => {
                 const d = new Date(t);
-                const day = d.getDay(); // 0-6
-                const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-                d.setDate(diff);
-                d.setHours(0, 0, 0, 0);
+                const day = d.getUTCDay(); // 0-6
+                const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+                d.setUTCDate(diff);
+                d.setUTCHours(0, 0, 0, 0);
                 return d.getTime();
             },
             (t) => t + ONE_WEEK,
@@ -171,19 +172,16 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
         iterate(
             (t) => {
                 const d = new Date(t);
-                d.setDate(1);
-                d.setHours(0, 0, 0, 0);
+                d.setUTCDate(1);
+                d.setUTCHours(0, 0, 0, 0);
                 return d.getTime();
             },
             (t) => {
                 const d = new Date(t);
-                d.setMonth(d.getMonth() + 1);
+                d.setUTCMonth(d.getUTCMonth() + 1);
                 return d.getTime();
             },
-            (t) => {
-                const d = new Date(t);
-                return formatExplicit(d, getYearMonthFormat());
-            },
+            (t) => formatExplicit(dateForGridDisplay(t), getYearMonthFormat()),
             scales.top
         );
 
@@ -191,10 +189,10 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
         iterate(
             (t) => {
                 const d = new Date(t);
-                const day = d.getDay();
-                const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-                d.setDate(diff);
-                d.setHours(0, 0, 0, 0);
+                const day = d.getUTCDay();
+                const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+                d.setUTCDate(diff);
+                d.setUTCHours(0, 0, 0, 0);
                 return d.getTime();
             },
             (t) => t + ONE_WEEK,
@@ -206,19 +204,16 @@ export function getGridScales(viewport: Viewport, zoomLevel: ZoomLevel): GridSca
         iterate(
             (t) => {
                 const d = new Date(t);
-                d.setHours(0, 0, 0, 0);
+                d.setUTCHours(0, 0, 0, 0);
                 return d.getTime();
             },
             (t) => t + ONE_DAY,
-            (t) => {
-                const d = new Date(t);
-                return formatExplicit(d, 'd');
-            },
+            (t) => formatExplicit(dateForGridDisplay(t), 'd'),
             scales.bottom
         );
 
         scales.bottom.forEach((tick) => {
-            tick.secondaryLabel = formatExplicit(new Date(tick.time), 'EEE');
+            tick.secondaryLabel = formatExplicit(dateForGridDisplay(tick.time), 'EEE');
         });
     }
 

@@ -119,14 +119,14 @@ const padDatePart = (value: number): string => String(value).padStart(2, '0');
 
 export const timestampToBusinessDateKey = (timestamp: number): string => {
     const date = new Date(timestamp);
-    return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
+    return `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(date.getUTCDate())}`;
 };
 
 const legacyDayInfo = (timestamp: number, weekDays?: Set<number>): BusinessDayInfo => {
     const nonWorkingWeekDays = weekDays ?? getNonWorkingWeekDays();
     return {
         name: null,
-        type: nonWorkingWeekDays.has(new Date(timestamp).getDay()) ? 'non_working' : 'working',
+        type: nonWorkingWeekDays.has(new Date(timestamp).getUTCDay()) ? 'non_working' : 'working',
         source: 'weekly'
     };
 };
@@ -145,7 +145,7 @@ export const getDayInfo = (timestamp: number, projectId?: ProjectCalendarArgumen
 
     return {
         name: null,
-        type: calendar.nonWorkingWeekDays.includes(new Date(timestamp).getDay()) ? 'non_working' : 'working',
+        type: calendar.nonWorkingWeekDays.includes(new Date(timestamp).getUTCDay()) ? 'non_working' : 'working',
         source: 'weekly'
     };
 };

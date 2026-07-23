@@ -1,6 +1,6 @@
 services:
   redmine:
-    image: redmine:6.1.2
+    image: ${REDMINE_IMAGE:-redmine:7.0.0}
     container_name: redmine-canvas-gantt
     ports:
       - "3000:3000"
@@ -23,7 +23,7 @@ services:
       start_period: 60s
 
   db:
-    image: mariadb:10.11
+    image: mariadb:11.4
     container_name: redmine-canvas-gantt-db
     environment:
       MYSQL_ROOT_PASSWORD: password

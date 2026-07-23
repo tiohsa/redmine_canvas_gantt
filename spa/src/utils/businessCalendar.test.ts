@@ -130,8 +130,19 @@ describe('businessCalendar', () => {
         )).toEqual({ updates: new Map() });
     });
 
-    it('keeps a Redmine date key stable in UTC and Asia/Tokyo test runs', () => {
-        expect(timestampToBusinessDateKey(timestamp('2027-08-12'))).toBe('2027-08-12');
+    it('keeps date-only calendar semantics independent of the browser timezone', () => {
+        const redmineDate = Date.UTC(2027, 0, 3, 23, 30);
+
+        expect(timestampToBusinessDateKey(redmineDate)).toBe('2027-01-03');
+        expect(getDayInfo(redmineDate, '1')).toEqual({
+            name: 'Substitute workday',
+            type: 'working',
+            source: 'override'
+        });
+        expect(isWorkingDay(redmineDate, '1')).toBe(true);
+        expect(addWorkingDays(redmineDate, 1, '1')).toBe(timestamp('2027-01-05'));
+        expect(shiftByWorkingDays(timestamp('2027-01-04'), -1, '1')).toBe(timestamp('2027-01-03'));
+        expect(diffWorkingDays(redmineDate, timestamp('2027-01-05'), '1')).toBe(1);
     });
 
     it('uses the successor calendar for relation delay and downstream auto scheduling', () => {

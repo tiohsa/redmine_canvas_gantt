@@ -10,7 +10,7 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
       status = instance_double(IssueStatus, id: 2, name: 'In Progress', position: 2)
       current_status = instance_double(IssueStatus, id: 1, name: 'Open', position: 1)
       assignable_user = instance_double(User, id: 7, name: 'Alice')
-      priority = instance_double(IssuePriority, id: 3, name: 'High')
+      priority = instance_double(IssuePriority, id: 3, name: 'High', position: 3)
       visible_project = instance_double(Project, id: 20, name: 'Visible Project')
       category = instance_double(IssueCategory, id: 4, name: 'Backend')
       tracker = instance_double(Tracker, id: 5, name: 'Bug')

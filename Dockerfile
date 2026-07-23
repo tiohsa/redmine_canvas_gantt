@@ -1,4 +1,5 @@
-FROM redmine:6.1.2
+ARG REDMINE_IMAGE=redmine:7.0.0
+FROM ${REDMINE_IMAGE}
 
 RUN printf '%s\n' \
     'require_relative "config/environment"' \

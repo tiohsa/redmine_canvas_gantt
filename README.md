@@ -2,14 +2,14 @@
 
 # Redmine Canvas Gantt
 
-A fast, low-risk, Canvas-based Gantt chart plugin for Redmine 6.x.
+A fast, low-risk, Canvas-based Gantt chart plugin for Redmine 6.1 and 7.0.
 
 ## Why this plugin?
 
 - Your Redmine Gantt becomes slow with many issues
 - You want drag-and-drop scheduling inside Redmine
 - You want to try a Gantt plugin without database migration
-- You are using Redmine 6.x and need a modern maintained plugin
+- You are using Redmine 6.1 or 7.0 and need a modern maintained plugin
 
 ## Key benefits
 
@@ -18,7 +18,7 @@ A fast, low-risk, Canvas-based Gantt chart plugin for Redmine 6.x.
 - Inline issue editing
 - No database migration
 - Easy uninstall
-- Redmine 6.x support
+- Redmine 6.1 and 7.0 support
 
 Listed on Redmine Plugins Directory:
 https://www.redmine.org/plugins/redmine_canvas_gantt
@@ -26,8 +26,8 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tiohsa/redmine_canvas_gantt)](https://github.com/tiohsa/redmine_canvas_gantt/releases)
-[![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#requirements)
-[![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#requirements)
+[![Redmine](https://img.shields.io/badge/Redmine-6.1%20%7C%207.0-red)](#requirements)
+[![Ruby](https://img.shields.io/badge/Ruby-See%20Redmine%20requirements-cc342d)](#requirements)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#requirements)
 
 [日本語 README](README_ja.md) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
@@ -64,8 +64,8 @@ Baseline snapshots are stored in Redmine's plugin settings (`Setting.plugin_redm
 
 ## Requirements
 
-- Redmine 6.x
-- Ruby 3.x
+- Redmine 6.1 or 7.0
+- A Ruby version supported by the selected Redmine version
 - Node.js 20+ only for building the SPA or running frontend development tools; Node.js is not required for normal Redmine operation when prebuilt assets are used
 - REST API enabled in Redmine
 
@@ -244,7 +244,7 @@ bundle exec ruby generate.rb --region us --calendar-id US --name United States \
   --output /path/to/business_calendars/generated/US.yml
 ```
 
-Keep company changes in `custom/`; `--force` replaces only files marked `calendar.managed: true`. The runtime checks relative path, modification time, and size every 60 seconds and atomically swaps in a fully validated snapshot after a change. Set `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` to another non-negative number of seconds. Symlinks that resolve outside the configured calendar root are rejected; symlinked directories are not traversed. A missing directory or `settings.yml` falls back to Redmine's standard non-working weekdays. An invalid initial configuration disables calendar-dependent relation and auto-schedule changes; a failed reload logs a warning and retains the last valid snapshot.
+Keep company changes in `custom/`; `--force` replaces only files marked `calendar.managed: true`. The runtime checks relative path, modification time, and size every 60 seconds and atomically swaps in a fully validated snapshot after a change. Set `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` to another non-negative number of seconds. Symlinks that resolve outside the configured calendar root are rejected; symlinked directories are not traversed. A missing directory or `settings.yml` falls back to Redmine's standard non-working weekdays. An invalid configuration logs a warning and continues calendar-dependent relation and auto-schedule operations with that same weekday fallback; a failed reload logs a warning and retains the last valid snapshot.
 
 For Docker, set the directory explicitly and mount the calendar directory. The official Redmine image
 changes ownership of the configuration directory during startup, so omit `:ro` when using that image.
@@ -269,7 +269,9 @@ If `redmica_ui_extension` applies Select2 behavior that interferes with Canvas G
 
 ## Docker Quick Start
 
-This repository includes `docker-compose.yml` for running a local Redmine 6.x + MariaDB environment.
+This repository includes `docker-compose.yml` for running a local Redmine 7.0.0 + MariaDB 11.4 environment. Set `REDMINE_IMAGE=redmine:6.1.2` to run the supported compatibility version instead.
+
+Redmine 7.0.0 is validated locally with the built `redmine:7.0.0` image and the MariaDB 11.4 Compose database. GitHub Actions runs the Redmine 6.1 backend specs and compatibility smoke test; Redmine 7 CI will be re-enabled once GitHub-hosted runners can pull a version- or digest-pinned Redmine 7 image.
 
 To use a custom holiday calendar, add the following settings to the `redmine` service. Place
 `settings.yml` and the calendar YAML files under `business_calendars/`, including the `generated/`
@@ -292,6 +294,12 @@ the image does not include it by default.
 
 ```bash
 docker compose up -d --wait
+```
+
+To start Redmine 6.1.2 instead:
+
+```bash
+REDMINE_IMAGE=redmine:6.1.2 docker compose up -d --wait
 ```
 
 Open Redmine at [http://localhost:3000](http://localhost:3000).

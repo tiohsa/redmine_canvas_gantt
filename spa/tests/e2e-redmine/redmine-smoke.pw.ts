@@ -35,9 +35,10 @@ test('renders canvas gantt page in Redmine', async ({ page, baseURL }) => {
   await expect(loadingText).toHaveCount(0);
 
   const memberProjectsResponse = await page.evaluate(async () => {
-    const url = new URL('/projects/ecookbook/canvas_gantt/data.json', window.location.origin);
-    url.searchParams.set('member_projects_only', '1');
-    const response = await window.fetch(url);
+    const config = (window as Window & {
+      RedmineCanvasGantt: { apiBase: string };
+    }).RedmineCanvasGantt;
+    const response = await window.fetch(`${config.apiBase}/data.json?member_projects_only=1`);
 
     return {
       status: response.status,
@@ -47,6 +48,18 @@ test('renders canvas gantt page in Redmine', async ({ page, baseURL }) => {
 
   expect(memberProjectsResponse.status).toBe(200);
   expect(memberProjectsResponse.payload).toHaveProperty('filter_options.projects');
+
+  const buildAssetUrls = await page.locator('script[src], link[href]').evaluateAll((elements) =>
+    elements
+      .map((element) => element.getAttribute('src') ?? element.getAttribute('href'))
+      .filter((url): url is string => Boolean(url?.includes('/plugin_assets/redmine_canvas_gantt/build/')))
+  );
+
+  const relativeRoot = new URL(redmineBase).pathname.replace(/\/$/, '');
+  const expectedAssetPrefix = `${relativeRoot}/plugin_assets/redmine_canvas_gantt/build/`;
+
+  expect(buildAssetUrls.length).toBeGreaterThan(0);
+  expect(buildAssetUrls.every((url) => url.startsWith(expectedAssetPrefix))).toBe(true);
   expect(failedScriptResponses).toEqual([]);
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);

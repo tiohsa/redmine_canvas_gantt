@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getGridScales, ZOOM_SCALES } from './grid';
 
-const day = (year: number, month: number, date: number) => new Date(year, month - 1, date).getTime();
+const day = (year: number, month: number, date: number) => Date.UTC(year, month - 1, date);
 
 const viewportFor = (startDate: number) => ({
     startDate,

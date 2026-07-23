@@ -28,6 +28,10 @@ export class BackgroundRenderer {
         // Business calendar background. Ticks use the same local-date semantics as the grid.
         if (zoomLevel === 2) {
             const ticks = scales.bottom;
+            const visibleTasks = tasks.filter((task) => {
+                const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
+                return y + viewport.rowHeight > 0 && y < height;
+            });
             ticks.forEach((tick, i) => {
                 const w = (i < ticks.length - 1)
                     ? ticks[i + 1].x - tick.x
@@ -41,19 +45,27 @@ export class BackgroundRenderer {
                 const x = Math.floor(tick.x);
                 const fillWidth = Math.ceil(w);
                 const rootProjectId = window.RedmineCanvasGantt?.projectId;
-                const rootColor = colorFor(getDayInfo(tick.time, rootProjectId));
+                const dayInfoByProject = new Map<string, BusinessDayInfo>();
+                const infoForProject = (projectId?: string | number): BusinessDayInfo => {
+                    const key = projectId == null ? '' : String(projectId);
+                    const cached = dayInfoByProject.get(key);
+                    if (cached) return cached;
+                    const info = getDayInfo(tick.time, projectId);
+                    dayInfoByProject.set(key, info);
+                    return info;
+                };
+                const rootColor = colorFor(infoForProject(rootProjectId));
 
                 if (rootColor) {
                     ctx.fillStyle = rootColor;
                     ctx.fillRect(x, 0, fillWidth, height);
                 }
 
-                tasks.forEach((task) => {
-                    const taskColor = colorFor(getDayInfo(tick.time, task.projectId));
+                visibleTasks.forEach((task) => {
+                    const taskColor = colorFor(infoForProject(task.projectId));
                     if (taskColor === rootColor) return;
 
                     const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
-                    if (y + viewport.rowHeight <= 0 || y >= height) return;
                     ctx.fillStyle = taskColor ?? designTokens.appBg;
                     ctx.fillRect(x, y, fillWidth, viewport.rowHeight);
                 });

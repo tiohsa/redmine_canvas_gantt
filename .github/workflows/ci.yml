@@ -150,8 +150,8 @@ jobs:
           path: spa/bench/results/benchmark-results.json
           if-no-files-found: ignore
 
-  e2e-redmine-61:
-    name: Redmine 6.1 Full E2E
+  e2e-redmine-61-compat:
+    name: Redmine 6.1 Compatibility
     needs:
       - build
       - lint
@@ -159,7 +159,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      REDMINE_IMAGE: redmine:6.1
+      REDMINE_IMAGE: redmine:6.1.2
     defaults:
       run:
         working-directory: spa
@@ -189,6 +189,21 @@ jobs:
           docker compose up -d --wait --wait-timeout 600
           docker compose ps
 
+      - name: Verify Redmine version
+        working-directory: .
+        run: |
+          docker compose exec -T redmine bundle exec rails runner \
+            "expected = [6, 1, 2]; actual = [Redmine::VERSION::MAJOR, Redmine::VERSION::MINOR, Redmine::VERSION::TINY]; abort \"Expected Redmine 6.1.2, got #{Redmine::VERSION}\" unless actual == expected"
+
+      - name: Install backend test dependencies
+        working-directory: .
+        run: |
+          docker compose exec -T -u root redmine apt-get update
+          docker compose exec -T -u root redmine apt-get install -y --no-install-recommends build-essential
+          docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle config unset without
+          docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle add rspec-rails --version '~> 7.1' --group test --skip-install
+          docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle install --jobs 4 --retry 3
+
       - name: Load Redmine default data
         working-directory: .
         run: docker compose exec -T -e REDMINE_LANG=en redmine bundle exec rake redmine:load_default_data
@@ -197,92 +212,9 @@ jobs:
         working-directory: .
         run: docker compose exec -T redmine bundle exec rake db:fixtures:load
 
-      - name: Enable Canvas Gantt in test project
+      - name: Run backend specs
         working-directory: .
-        run: |
-          docker compose exec -T redmine bundle exec rails runner "
-            project = Project.find_by!(identifier: 'ecookbook')
-            project.enabled_module_names = (project.enabled_module_names + ['canvas_gantt']).uniq
-            project.save!
-
-            role = Role.find_by(name: 'Manager') || Role.first
-            role.permissions = (role.permissions + [:view_canvas_gantt, :edit_canvas_gantt]).uniq
-            role.save!
-
-            member = Member.find_or_initialize_by(project: project, user_id: 1)
-            member.role_ids = [role.id]
-            member.save!
-
-            Setting.rest_api_enabled = '1'
-          "
-
-      - name: Run Redmine E2E tests
-        run: npx playwright test -c playwright.redmine.config.ts
-
-      - name: Upload Playwright report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report-redmine
-          path: spa/playwright-report
-          if-no-files-found: ignore
-
-      - name: Print container logs on failure
-        if: failure()
-        working-directory: .
-        run: docker compose logs --no-color
-
-      - name: Stop Redmine stack
-        if: always()
-        working-directory: .
-        run: docker compose down -v
-
-  e2e-redmine-60-compat:
-    name: Redmine 6.0 Compatibility Smoke
-    needs:
-      - build
-      - lint
-      - test
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      REDMINE_IMAGE: redmine:6.0
-    defaults:
-      run:
-        working-directory: spa
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.19.0'
-          cache: npm
-          cache-dependency-path: spa/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build SPA assets for Redmine
-        run: npm run build
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-
-      - name: Start Redmine stack and wait for health
-        working-directory: .
-        run: |
-          docker compose up -d --wait --wait-timeout 600
-          docker compose ps
-
-      - name: Load Redmine default data
-        working-directory: .
-        run: docker compose exec -T -e REDMINE_LANG=en redmine bundle exec rake redmine:load_default_data
-
-      - name: Load Redmine fixtures
-        working-directory: .
-        run: docker compose exec -T redmine bundle exec rake db:fixtures:load
+        run: docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle exec rspec plugins/redmine_canvas_gantt/spec
 
       - name: Enable Canvas Gantt in test project
         working-directory: .
@@ -310,7 +242,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-redmine-60
+          name: playwright-report-redmine-61-compat
           path: spa/playwright-report
           if-no-files-found: ignore
 
