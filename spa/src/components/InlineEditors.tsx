@@ -376,7 +376,9 @@ export const DueDateEditor: React.FC<{
 
     const parseValue = (val: string) => {
         if (!val) return null;
-        const d = new Date(val);
+        const [year, month, day] = val.split('-').map(Number);
+        if (![year, month, day].every(Number.isInteger)) return null;
+        const d = new Date(year, month - 1, day);
         return isNaN(d.getTime()) ? null : d;
     };
 

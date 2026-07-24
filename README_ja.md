@@ -10,7 +10,7 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tiohsa/redmine_canvas_gantt)](https://github.com/tiohsa/redmine_canvas_gantt/releases)
-[![Redmine](https://img.shields.io/badge/Redmine-6.1%20%7C%207.0-red)](#requirements)
+[![Redmine](https://img.shields.io/badge/Redmine-6.0%20%7C%206.1%20%7C%207.0-red)](#requirements)
 [![Ruby](https://img.shields.io/badge/Ruby-Redmine公式要件に準拠-cc342d)](#requirements)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#requirements)
 
@@ -50,7 +50,7 @@ Redmine Canvas Gantt は、タイムラインを HTML5 Canvas で描画しつつ
 
 ## 必要環境
 
-- Redmine 6.1 または 7.0
+- Redmine 6.0（互換対応）、6.1、または 7.0
 - 利用する Redmine バージョンが公式にサポートする Ruby
 - Node.js 20+ は SPA のビルドまたはフロントエンド開発時のみ必要です。ビルド済みアセットを使う通常の Redmine 利用時には Node.js は必要ありません
 - Redmine で REST API が有効化されていること
@@ -269,9 +269,9 @@ Kubernetes では同じパスへ ConfigMap などを read-only でマウント�
 
 ## Docker クイックスタート
 
-このリポジトリには、Redmine 7.0.0 と MariaDB 11.4 をローカルで起動するための `docker-compose.yml` が含まれています。対応する互換バージョンを使う場合は `REDMINE_IMAGE=redmine:6.1.2` を指定します。
+このリポジトリには、Redmine 7.0.0 と MariaDB 11.4 をローカルで起動するための `docker-compose.yml` が含まれています。互換バージョンを使う場合は `REDMINE_IMAGE=redmine:6.0.6` または `redmine:6.1.2` を指定します。
 
-Redmine 7.0.0 はビルド済みのローカル `redmine:7.0.0` image と MariaDB 11.4 の Compose DB で検証済みです。GitHub Actions では Redmine 6.1 の backend spec と互換スモークテストを実行します。GitHub-hosted runner から取得できる version または digest 固定の Redmine 7 image が用意できた時点で、Redmine 7 CI を再有効化します。
+GitHub Actions では Redmine 6.0.6、6.1.2、7.0.0 の backend spec、互換スモークテスト、YAML業務カレンダーのpayload経路を継続検証します。Redmine 7.0.0 は MariaDB 11.4 の Compose DBを使ったローカル検証も行います。
 
 独自休日カレンダーを使用する場合は、`redmine` サービスに次の設定を追加します。`business_calendars/`
 には `settings.yml` と、`generated/` および `custom/` 配下のカレンダー YAML を配置してください。
@@ -299,6 +299,8 @@ Redmine 6.1.2 を起動する場合:
 ```bash
 REDMINE_IMAGE=redmine:6.1.2 docker compose up -d --wait
 ```
+
+Redmine 6.0.6 の場合は `REDMINE_IMAGE=redmine:6.0.6` を指定します。
 
 [http://localhost:3000](http://localhost:3000) で Redmine を開けます。
 

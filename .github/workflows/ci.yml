@@ -112,6 +112,39 @@ jobs:
       - name: Unit tests
         run: npm run test -- --run
 
+  timezone-test:
+    name: Unit tests (${{ matrix.timezone }})
+    needs: init
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        timezone:
+          - UTC
+          - Asia/Tokyo
+          - America/Los_Angeles
+    env:
+      TZ: ${{ matrix.timezone }}
+    defaults:
+      run:
+        working-directory: spa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+          cache-dependency-path: spa/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test -- --run
+
   spa-benchmark:
     name: SPA Benchmark
     needs:
@@ -150,16 +183,33 @@ jobs:
           path: spa/bench/results/benchmark-results.json
           if-no-files-found: ignore
 
-  e2e-redmine-61-compat:
-    name: Redmine 6.1 Compatibility
+  e2e-redmine-compat:
+    name: Redmine ${{ matrix.label }} compatibility
     needs:
       - build
       - lint
       - test
+      - timezone-test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: 6.0
+            image: redmine:6.0.6
+            version: 6.0.6
+            rspec: '~> 7.1'
+          - label: 6.1
+            image: redmine:6.1.2
+            version: 6.1.2
+            rspec: '~> 7.1'
+          - label: 7.0
+            image: redmine:7.0.0
+            version: 7.0.0
+            rspec: '~> 8.0'
     env:
-      REDMINE_IMAGE: redmine:6.1.2
+      REDMINE_IMAGE: ${{ matrix.image }}
     defaults:
       run:
         working-directory: spa
@@ -193,7 +243,7 @@ jobs:
         working-directory: .
         run: |
           docker compose exec -T redmine bundle exec rails runner \
-            "expected = [6, 1, 2]; actual = [Redmine::VERSION::MAJOR, Redmine::VERSION::MINOR, Redmine::VERSION::TINY]; abort \"Expected Redmine 6.1.2, got #{Redmine::VERSION}\" unless actual == expected"
+            "expected = '${{ matrix.version }}'.split('.').map(&:to_i); actual = [Redmine::VERSION::MAJOR, Redmine::VERSION::MINOR, Redmine::VERSION::TINY]; abort \"Expected Redmine ${{ matrix.version }}, got #{Redmine::VERSION}\" unless actual == expected"
 
       - name: Install backend test dependencies
         working-directory: .
@@ -201,7 +251,7 @@ jobs:
           docker compose exec -T -u root redmine apt-get update
           docker compose exec -T -u root redmine apt-get install -y --no-install-recommends build-essential
           docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle config unset without
-          docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle add rspec-rails --version '~> 7.1' --group test --skip-install
+          docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle add rspec-rails --version '${{ matrix.rspec }}' --group test --skip-install
           docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle install --jobs 4 --retry 3
 
       - name: Load Redmine default data
@@ -211,6 +261,12 @@ jobs:
       - name: Load Redmine fixtures
         working-directory: .
         run: docker compose exec -T redmine bundle exec rake db:fixtures:load
+
+      - name: Install business calendar fixture
+        working-directory: .
+        run: |
+          docker compose exec -T redmine mkdir -p /usr/src/redmine/config/redmine_canvas_gantt/business_calendars
+          docker compose cp examples/business_calendars/. redmine:/usr/src/redmine/config/redmine_canvas_gantt/business_calendars/
 
       - name: Run backend specs
         working-directory: .
@@ -238,11 +294,14 @@ jobs:
       - name: Run Redmine compatibility smoke test
         run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts
 
+      - name: Run business calendar E2E
+        run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/business-calendar.pw.ts
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-redmine-61-compat
+          name: playwright-report-redmine-${{ matrix.label }}-compat
           path: spa/playwright-report
           if-no-files-found: ignore
 
