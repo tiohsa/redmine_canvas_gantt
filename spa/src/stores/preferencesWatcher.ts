@@ -33,6 +33,8 @@ const persistSelections = () => {
         showHierarchyLines: uiState.showHierarchyLines,
         showBaseline: uiState.showBaseline,
         showPointsOrphans: uiState.showPointsOrphans,
+        showStartDateOnly: uiState.showStartDateOnly,
+        showDueDateOnly: uiState.showDueDateOnly,
         showVersions: taskState.showVersions,
         visibleColumns: queryColumnsActive ? personalDisplayPreferences.visibleColumns : uiState.visibleColumns,
         columnSettings: queryColumnsActive ? personalDisplayPreferences.columnSettings : uiState.columnSettings,

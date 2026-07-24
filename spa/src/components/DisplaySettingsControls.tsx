@@ -13,24 +13,15 @@ import { fontFamilies, designTokens } from '../styles/designTokens';
 
 interface DisplaySettingsControlsProps {
     displaySettingsMenuRef: React.RefObject<HTMLDivElement | null>;
+    className?: string;
     showDisplaySettingsMenu: boolean;
     onToggleDisplaySettingsMenu: () => void;
     onCloseDisplaySettingsMenu: () => void;
 }
 
-const resolveSourceLabel = (source: 'project' | 'global' | 'default') => {
-    switch (source) {
-        case 'project':
-            return i18n.t('label_display_settings_source_project') || "This project's settings";
-        case 'global':
-            return i18n.t('label_display_settings_source_global') || 'Shared settings across projects';
-        default:
-            return i18n.t('label_display_settings_source_default') || 'Default settings';
-    }
-};
-
 export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = ({
     displaySettingsMenuRef,
+    className,
     showDisplaySettingsMenu,
     onToggleDisplaySettingsMenu,
     onCloseDisplaySettingsMenu
@@ -41,6 +32,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         viewport,
         showVersions,
         organizeByDependency,
+        setOrganizeByDependency,
+        setRowHeight,
         customScales
     } = useTaskStore();
     const {
@@ -48,24 +41,37 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         showTaskTitles,
         showTaskBarDates,
         showHierarchyLines,
+        toggleHierarchyLines,
         showPointsOrphans,
+        showStartDateOnly,
+        showDueDateOnly,
+        toggleProgressLine,
+        toggleStartDateOnly,
+        toggleDueDateOnly,
+        toggleTaskTitles,
+        toggleTaskBarDates,
         showBaseline,
         visibleColumns,
         columnSettings,
         columnWidths,
         sidebarWidth,
         sidebarFontSize,
-        setDisplayPreferencesGlobalEnabled
+        setSidebarFontSize
     } = useUIStore();
     const projectId = window.RedmineCanvasGantt?.projectId;
     const displayPreferences = loadDisplayPreferencesWithSource(projectId);
-    const [draftShareAcrossProjects, setDraftShareAcrossProjects] = React.useState(displayPreferences.globalEnabled);
-
-    React.useEffect(() => {
-        if (!showDisplaySettingsMenu) return;
-        setDraftShareAcrossProjects(loadDisplayPreferencesWithSource(projectId).globalEnabled);
-    }, [projectId, showDisplaySettingsMenu]);
-
+    const rowHeightOptions = [
+        { value: 20, label: i18n.t('label_row_height_xs') || 'XS' },
+        { value: 28, label: i18n.t('label_row_height_s') || 'S' },
+        { value: 36, label: i18n.t('label_row_height_m') || 'M' },
+        { value: 44, label: i18n.t('label_row_height_l') || 'L' },
+        { value: 52, label: i18n.t('label_row_height_xl') || 'XL' }
+    ];
+    const fontSizeOptions = [
+        { value: 11, label: i18n.t('label_font_size_small') || 'Small' },
+        { value: 13, label: i18n.t('label_font_size_medium') || 'Medium' },
+        { value: 15, label: i18n.t('label_font_size_large') || 'Large' }
+    ];
     const handleSave = () => {
         const snapshot = buildStoredDisplayPreferences({
             zoomLevel,
@@ -81,6 +87,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
             showTaskBarDates,
             showHierarchyLines,
             showPointsOrphans,
+            showStartDateOnly,
+            showDueDateOnly,
             showVersions,
             showBaseline,
             visibleColumns,
@@ -93,25 +101,21 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
             sidebarFontSize
         });
 
-        if (draftShareAcrossProjects) {
+        if (displayPreferences.globalEnabled) {
             saveGlobalDisplayPreferences(snapshot, true);
-            setDisplayPreferencesGlobalEnabled(true);
         } else {
             saveDisplayPreferences(snapshot, projectId);
-            saveGlobalDisplayPreferences(snapshot, false);
-            setDisplayPreferencesGlobalEnabled(false);
         }
         onCloseDisplaySettingsMenu();
     };
 
-    const menuIsActive = displayPreferences.source !== 'default';
-
     return (
-        <div ref={displaySettingsMenuRef} style={{ display: 'flex', alignItems: 'center', marginLeft: '8px', position: 'relative' }}>
+        <div ref={displaySettingsMenuRef} className={className} style={{ display: 'flex', alignItems: 'center', marginLeft: '8px', position: 'relative' }}>
             <button
                 type="button"
                 onClick={onToggleDisplaySettingsMenu}
-                title={i18n.t('label_display_settings') || 'Display settings'}
+                title={i18n.t('label_display_settings_visibility') || 'Chart display'}
+                aria-label={i18n.t('label_display_settings_visibility') || 'Chart display'}
                 data-testid="display-settings-menu-button"
                 style={{
                     display: 'flex',
@@ -120,8 +124,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     padding: '0',
                     borderRadius: '6px',
                     border: `1px solid ${designTokens.controlBorder}`,
-                    backgroundColor: menuIsActive ? designTokens.controlActiveBg : designTokens.controlBg,
-                    color: menuIsActive ? designTokens.controlActiveFg : designTokens.controlFg,
+                    backgroundColor: designTokens.controlBg,
+                    color: designTokens.controlFg,
                     cursor: 'pointer',
                     height: '32px',
                     width: '32px',
@@ -129,16 +133,13 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                 }}
             >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="6" cy="6" r="2" />
-                    <circle cx="18" cy="6" r="2" />
-                    <circle cx="12" cy="18" r="2" />
-                    <path d="M8 6h8" />
-                    <path d="m7 8 3 8" />
-                    <path d="m17 8-3 8" />
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                    <circle cx="9" cy="6" r="2" fill={designTokens.controlBg} />
+                    <circle cx="15" cy="12" r="2" fill={designTokens.controlBg} />
+                    <circle cx="8" cy="18" r="2" fill={designTokens.controlBg} />
                 </svg>
-                {menuIsActive && (
-                    <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.iconActiveDot, borderRadius: '50%' }} />
-                )}
             </button>
 
             {showDisplaySettingsMenu && (
@@ -164,25 +165,66 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                         lineHeight: 1.5
                     }}
                 >
-                    <div>
-                        <div style={{ fontFamily: fontFamilies.mid, fontWeight: 600, marginBottom: 8 }}>
-                            {i18n.t('label_display_settings') || 'Display settings'}
+                    <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, paddingTop: 8 }}>
+                        <div style={{ fontFamily: fontFamilies.mid, fontWeight: 600, marginBottom: 4 }}>
+                            {i18n.t('label_display_settings_visibility') || 'Chart display'}
                         </div>
-                        <div style={{ fontSize: 13, color: designTokens.textMuted, lineHeight: 1.5 }}>
-                            <span>{i18n.t('label_display_settings_source') || 'Currently using'}</span>
-                            <span>{': '}</span>
-                            <span>{resolveSourceLabel(displayPreferences.source)}</span>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={showProgressLine} onChange={toggleProgressLine} />
+                            <span>{i18n.t('label_progress_line') || 'Progress line'}</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={organizeByDependency} onChange={() => setOrganizeByDependency(!organizeByDependency)} />
+                            <span>{i18n.t('label_organize_by_dependency') || 'Organize by dependency'}</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={showStartDateOnly} onChange={toggleStartDateOnly} />
+                            <span>{i18n.t('label_show_start_date_only') || 'Show start-date-only tasks'}</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={showDueDateOnly} onChange={toggleDueDateOnly} />
+                            <span>{i18n.t('label_show_due_date_only') || 'Show due-date-only tasks'}</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={showTaskTitles} onChange={toggleTaskTitles} />
+                            <span>{i18n.t('label_toggle_task_titles') || 'Show tickets'}</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={showTaskBarDates} onChange={toggleTaskBarDates} />
+                            <span>{i18n.t('label_toggle_task_bar_dates') || 'Show task-bar dates'}</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={showHierarchyLines} onChange={toggleHierarchyLines} />
+                            <span>{i18n.t('label_toggle_hierarchy_lines') || 'Show hierarchy lines'}</span>
+                        </label>
+
+                        <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: 8, paddingTop: 8, display: 'grid', gap: 8 }}>
+                            <label style={{ display: 'grid', gap: 4 }}>
+                                <span>{i18n.t('label_row_height') || 'Row height'}</span>
+                                <select
+                                    data-testid="display-settings-row-height-select"
+                                    aria-label={i18n.t('label_row_height') || 'Row height'}
+                                    value={viewport.rowHeight}
+                                    onChange={(event) => setRowHeight(Number(event.target.value))}
+                                    style={{ height: 30, borderRadius: 6, border: `1px solid ${designTokens.controlBorderStrong}`, background: designTokens.controlBg, padding: '0 8px' }}
+                                >
+                                    {rowHeightOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </select>
+                            </label>
+                            <label style={{ display: 'grid', gap: 4 }}>
+                                <span>{i18n.t('label_font_size') || 'Font size'}</span>
+                                <select
+                                    data-testid="display-settings-font-size-select"
+                                    aria-label={i18n.t('label_font_size') || 'Font size'}
+                                    value={sidebarFontSize}
+                                    onChange={(event) => setSidebarFontSize(Number(event.target.value))}
+                                    style={{ height: 30, borderRadius: 6, border: `1px solid ${designTokens.controlBorderStrong}`, background: designTokens.controlBg, padding: '0 8px' }}
+                                >
+                                    {fontSizeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </select>
+                            </label>
                         </div>
                     </div>
-
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                        <input
-                            type="checkbox"
-                            checked={draftShareAcrossProjects}
-                            onChange={(event) => setDraftShareAcrossProjects(event.target.checked)}
-                        />
-                        <span>{i18n.t('label_share_display_settings_across_projects') || 'Share settings across all projects'}</span>
-                    </label>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                         <button

@@ -39,7 +39,9 @@ export class TaskRenderer {
         showTaskBarDates: boolean = false,
         showPointsOrphans: boolean = true,
         baselineSnapshot: BaselineSnapshot | null = null,
-        showBaseline: boolean = false
+        showBaseline: boolean = false,
+        showStartDateOnly: boolean = showPointsOrphans,
+        showDueDateOnly: boolean = showPointsOrphans
     ) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
@@ -129,7 +131,7 @@ export class TaskRenderer {
                 if (showBaseline) {
                     this.drawBaselineMarker(ctx, task, bounds, baselineSnapshot);
                 }
-            } else if (showPointsOrphans && Number.isFinite(task.startDate)) {
+            } else if (showStartDateOnly && Number.isFinite(task.startDate)) {
                 // Only Start Date -> Draw as a point (triangle_right)
                 // Position orphan points at the center of the day cell.
                 const startDate = LayoutEngine.snapDate(task.startDate, zoomLevel) + ONE_DAY / 2;
@@ -159,7 +161,7 @@ export class TaskRenderer {
                     const pointBounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
                     this.drawBaselineMarker(ctx, task, pointBounds, baselineSnapshot);
                 }
-            } else if (showPointsOrphans && Number.isFinite(task.dueDate)) {
+            } else if (showDueDateOnly && Number.isFinite(task.dueDate)) {
                 // Only Due Date -> Draw as a point (diamond)
                 // Position orphan points at the center of the day cell.
                 const dueDate = LayoutEngine.snapDate(task.dueDate, zoomLevel) + ONE_DAY / 2;

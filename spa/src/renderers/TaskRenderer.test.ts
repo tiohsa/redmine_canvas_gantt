@@ -159,4 +159,30 @@ describe('TaskRenderer', () => {
         expect(ctx.fillText).not.toHaveBeenCalledWith('1/1', expect.any(Number), expect.any(Number));
         expect(ctx.fillText).not.toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
     });
+
+    it('toggles start-only and due-only task points independently', () => {
+        const startContext = buildContext();
+        const startCanvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(startContext)
+        } as unknown as HTMLCanvasElement;
+        const startOnlyTask = { ...buildTask(), dueDate: undefined };
+
+        new TaskRenderer(startCanvas).render(viewport, [startOnlyTask], 1, 2, [], [], false, false, true, null, false, false, true);
+
+        expect(startContext.fill).not.toHaveBeenCalled();
+
+        const dueContext = buildContext();
+        const dueCanvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(dueContext)
+        } as unknown as HTMLCanvasElement;
+        const dueOnlyTask = { ...buildTask(), startDate: undefined };
+
+        new TaskRenderer(dueCanvas).render(viewport, [dueOnlyTask], 1, 2, [], [], false, false, true, null, false, true, false);
+
+        expect(dueContext.fill).not.toHaveBeenCalled();
+    });
 });

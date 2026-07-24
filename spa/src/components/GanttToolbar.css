@@ -59,13 +59,28 @@
     order: 16;
 }
 
-/* Workload follows Toggle Hierarchy Lines. */
-.gantt-toolbar-left > :nth-child(16) {
+/* Keep workload and display settings together after the filter controls. */
+.gantt-toolbar-left > .gantt-toolbar-workload,
+.gantt-toolbar-left > .gantt-toolbar-display-settings,
+.gantt-toolbar-left > .gantt-toolbar-display-settings-scope {
     order: 17;
 }
 
-.gantt-toolbar-left > :nth-child(17) {
+.gantt-toolbar-left > .gantt-toolbar-display-settings {
+    /* Place chart display immediately after the status filter. */
+    order: 14;
+}
+
+.gantt-toolbar-left > .gantt-toolbar-display-settings-scope {
+    order: 19;
+}
+
+.gantt-toolbar-left > :nth-child(16) {
     order: 18;
+}
+
+.gantt-toolbar-left > :nth-child(17) {
+    order: 19;
 }
 
 .gantt-toolbar-left > :nth-child(18) {
