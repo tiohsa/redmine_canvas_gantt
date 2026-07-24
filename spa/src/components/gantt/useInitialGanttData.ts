@@ -5,7 +5,7 @@ import { getMinFiniteStartDate } from '../../utils/taskRange';
 import type { Viewport } from '../../types';
 import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState } from '../../utils/queryParams';
 import { loadLastUsedSharedQueryProjectState } from '../../utils/sharedQueryState';
-import { resolvedQueryStateFromProjectState } from '../../query/queryStateCodec';
+import { resolvedQueryStateFromProjectState, resolvedStateToQueryContext } from '../../query/queryStateCodec';
 
 type Params = {
     viewportFromStorage: boolean;
@@ -69,7 +69,19 @@ export const useInitialGanttData = ({
                 query: initialApiQuery,
                 queryContext: initialQueryContext
             }).then(data => {
-                useTaskStore.getState().applyApiData(data);
+                const hasExplicitInitialState = initialSharedQueryState.source !== 'default';
+                const initialState = hasExplicitInitialState
+                    ? { ...data.initialState, ...initialSharedQueryState.state }
+                    : data.initialState;
+                const queryContext = hasExplicitInitialState
+                    ? (initialQueryContext ?? resolvedStateToQueryContext(initialSharedQueryState.state))
+                    : data.queryContext;
+
+                useTaskStore.getState().applyApiData({
+                    ...data,
+                    initialState,
+                    queryContext
+                });
                 void useTaskStore.getState().loadSavedQueries();
 
                 if (!viewportFromStorage) {

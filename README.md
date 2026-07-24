@@ -2,14 +2,14 @@
 
 # Redmine Canvas Gantt
 
-A fast, low-risk, Canvas-based Gantt chart plugin for Redmine 6.x.
+A fast, low-risk, Canvas-based Gantt chart plugin for Redmine 6.0, 6.1, and 7.0.
 
 ## Why this plugin?
 
 - Your Redmine Gantt becomes slow with many issues
 - You want drag-and-drop scheduling inside Redmine
 - You want to try a Gantt plugin without database migration
-- You are using Redmine 6.x and need a modern maintained plugin
+- You are using Redmine 6.0, 6.1, or 7.0 and need a modern maintained plugin
 
 ## Key benefits
 
@@ -18,7 +18,7 @@ A fast, low-risk, Canvas-based Gantt chart plugin for Redmine 6.x.
 - Inline issue editing
 - No database migration
 - Easy uninstall
-- Redmine 6.x support
+- Redmine 6.0 compatibility; Redmine 6.1 and 7.0 full support
 
 Listed on Redmine Plugins Directory:
 https://www.redmine.org/plugins/redmine_canvas_gantt
@@ -26,8 +26,8 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tiohsa/redmine_canvas_gantt)](https://github.com/tiohsa/redmine_canvas_gantt/releases)
-[![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#requirements)
-[![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#requirements)
+[![Redmine](https://img.shields.io/badge/Redmine-6.0%20%7C%206.1%20%7C%207.0-red)](#requirements)
+[![Ruby](https://img.shields.io/badge/Ruby-See%20Redmine%20requirements-cc342d)](#requirements)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#requirements)
 
 [日本語 README](README_ja.md) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
@@ -64,8 +64,8 @@ Baseline snapshots are stored in Redmine's plugin settings (`Setting.plugin_redm
 
 ## Requirements
 
-- Redmine 6.x
-- Ruby 3.x
+- Redmine 6.0 (compatibility), 6.1, or 7.0
+- A Ruby version supported by the selected Redmine version
 - Node.js 20+ only for building the SPA or running frontend development tools; Node.js is not required for normal Redmine operation when prebuilt assets are used
 - REST API enabled in Redmine
 
@@ -192,19 +192,117 @@ Canvas Gantt does not expose a plugin configuration screen. UI defaults are fixe
 
 To use the Vite dev server during development, set `CANVAS_GANTT_USE_VITE_DEV_SERVER=1`.
 
+### Business calendars
+
+Canvas Gantt can use named business calendars for weekly non-working days, country holidays, company shutdowns, and substitute working days. The same resolved calendar drives dependency validation, automatic scheduling, critical-path calculations, and Canvas background shading. This feature requires no database migration. Holiday data is read-only runtime configuration stored in external YAML files; it is never stored in `Setting.plugin_redmine_canvas_gantt`.
+
+The default directory is `<Rails.root>/config/redmine_canvas_gantt/business_calendars`. Set `REDMINE_CANVAS_GANTT_CALENDAR_DIR` to use another directory. Copy [the bundled examples](examples/business_calendars/) as a starting point:
+
+```text
+business_calendars/
+├── settings.yml
+├── generated/JP.yml
+├── generated/US.yml
+└── custom/company-us.yml
+```
+
+`settings.yml` selects the Redmine-wide default and assigns calendars by project identifier. A child project inherits the nearest parent assignment.
+
+```yaml
+schema_version: 1
+default_calendar: company-us
+project_calendars:
+  us-project: company-us
+  japan-project: JP
+```
+
+A custom calendar can inherit a generated country calendar. `non_working` adds a company holiday; `working` overrides a country holiday or weekly non-working day.
+
+```yaml
+schema_version: 1
+calendar:
+  id: company-us
+  name: US Company Calendar
+  base: US
+  managed: false
+days:
+  - date: 2027-08-12
+    name: Company summer holiday
+    type: non_working
+  - date: 2027-09-18
+    name: Substitute workday
+    type: working
+```
+
+Country files can be generated without adding the `holidays` gem to Redmine's production bundle:
+
+```bash
+cd tools/holiday_generator
+bundle install
+bundle exec ruby generate.rb --region us --calendar-id US --name United States \
+  --from 2026 --to 2030 \
+  --output /path/to/business_calendars/generated/US.yml
+```
+
+Keep company changes in `custom/`; `--force` replaces only files marked `calendar.managed: true`. The runtime checks relative path, modification time, and size every 60 seconds and atomically swaps in a fully validated snapshot after a change. Set `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` to another non-negative number of seconds. Symlinks that resolve outside the configured calendar root are rejected; symlinked directories are not traversed. A missing directory or `settings.yml` falls back to Redmine's standard non-working weekdays. An invalid configuration logs a warning and continues calendar-dependent relation and auto-schedule operations with that same weekday fallback; a failed reload logs a warning and retains the last valid snapshot.
+
+For Docker, set the directory explicitly and mount the calendar directory. The official Redmine image
+changes ownership of the configuration directory during startup, so omit `:ro` when using that image.
+The plugin treats holiday data as read-only after startup.
+
+```yaml
+services:
+  redmine:
+    environment:
+      REDMINE_CANVAS_GANTT_CALENDAR_DIR: /etc/redmine/business_calendars
+    volumes:
+      - ./business_calendars:/etc/redmine/business_calendars
+```
+
+For Kubernetes, mount one read-only ConfigMap (or another read-only volume) at the same path and set the same environment variable. Every Puma worker keeps an independent in-memory snapshot, and every Pod must see identical files. ConfigMap updates are detected on the next reload check; there is no real-time push.
+
+Uninstalling the plugin does not delete this external directory or ConfigMap. Remove it separately only when its holiday data is no longer needed. This preserves the existing **No database migration** and easy-uninstall behavior.
+
 ### Compatibility note
 
 If `redmica_ui_extension` applies Select2 behavior that interferes with Canvas Gantt controls, open **Administration** -> **Plugins** -> **Redmica UI Extension** -> **Configure** and disable searchable select boxes.
 
 ## Docker Quick Start
 
-This repository includes `docker-compose.yml` for running a local Redmine 6.0 + MariaDB environment.
+This repository includes `docker-compose.yml` for running a local Redmine 7.0.0 + MariaDB 11.4 environment. Set `REDMINE_IMAGE` to `redmine:6.0.6` or `redmine:6.1.2` to run a compatibility version instead.
+
+GitHub Actions continuously verifies Redmine 6.0.6, 6.1.2, and 7.0.0 with backend specs, compatibility smoke tests, and the YAML business-calendar payload path. Redmine 7.0.0 is also validated locally with the MariaDB 11.4 Compose database.
+
+To use a custom holiday calendar, add the following settings to the `redmine` service. Place
+`settings.yml` and the calendar YAML files under `business_calendars/`, including the `generated/`
+and `custom/` directories.
+
+```yaml
+services:
+  redmine:
+    environment:
+      RAILS_ENV: production
+      REDMINE_CANVAS_GANTT_CALENDAR_DIR: /usr/src/redmine/config/redmine_canvas_gantt/business_calendars
+    volumes:
+      - ./business_calendars:/usr/src/redmine/config/redmine_canvas_gantt/business_calendars
+```
+
+Do not use `RAILS_ENV: development` with the official image unless the `listen` gem is added separately;
+the image does not include it by default.
 
 ### Start the stack
 
 ```bash
 docker compose up -d --wait
 ```
+
+To start Redmine 6.1.2 instead:
+
+```bash
+REDMINE_IMAGE=redmine:6.1.2 docker compose up -d --wait
+```
+
+For Redmine 6.0.6, use `REDMINE_IMAGE=redmine:6.0.6`.
 
 Open Redmine at [http://localhost:3000](http://localhost:3000).
 

@@ -172,6 +172,7 @@ class CanvasGanttsController < ApplicationController
     label_member_projects_only: :label_member_projects_only,
     label_selected_projects_outside_candidates: :label_selected_projects_outside_candidates,
     label_relation_add_failed: :label_relation_add_failed,
+    error_canvas_gantt_business_calendar_invalid: :error_canvas_gantt_business_calendar_invalid,
     label_dependency_edit_mode: :label_dependency_edit_mode,
     label_relation_type_precedes_info: :label_relation_type_precedes_info,
     label_relation_type_relates_info: :label_relation_type_relates_info,
@@ -187,6 +188,8 @@ class CanvasGanttsController < ApplicationController
     label_auto_schedule_move_mode_off: :label_auto_schedule_move_mode_off,
     label_auto_schedule_move_mode_constraint_push: :label_auto_schedule_move_mode_constraint_push,
     label_auto_schedule_move_mode_linked_shift: :label_auto_schedule_move_mode_linked_shift,
+    label_auto_schedule_external_conflict: :label_auto_schedule_external_conflict,
+    label_auto_schedule_permission_denied: :label_auto_schedule_permission_denied,
     label_relation_delay_auto_calc_unavailable: :label_relation_delay_auto_calc_unavailable,
     label_relation_delay_invalid: :label_relation_delay_invalid,
     label_relation_delay_required: :label_relation_delay_required,
@@ -376,7 +379,8 @@ class CanvasGanttsController < ApplicationController
         initial_state: resolved_query[:initial_state],
         query_context: resolved_query[:query_context],
         warnings: resolved_query[:warnings] + baseline_load.warnings,
-        baseline: baseline_load.snapshot
+        baseline: baseline_load.snapshot,
+        business_calendar: business_calendar_resolver.payload(projects: business_calendar_projects(project_ids))
       )
     rescue => e
       render json: { error: e.message }, status: :internal_server_error
@@ -571,6 +575,23 @@ class CanvasGanttsController < ApplicationController
   end
 
   private
+
+  # Redmine deliberately ignores its session for JSON/XML API requests. Canvas
+  # Gantt is a same-origin browser UI, so its JSON requests must retain the
+  # authenticated page session unless the caller supplied explicit API auth.
+  def api_request?
+    return false if canvas_gantt_session_json_request?
+
+    super
+  end
+
+  def canvas_gantt_session_json_request?
+    params[:format].to_s == 'json' &&
+      session[:user_id].present? &&
+      params[:key].blank? &&
+      request.headers['X-Redmine-API-Key'].blank? &&
+      request.authorization.blank?
+  end
 
   def canvas_gantt_l(key, **options)
     l(:"canvas_gantt.#{key}", **options)
@@ -865,7 +886,6 @@ class CanvasGanttsController < ApplicationController
   def save_relation_change(relation:, issue_from:, issue_to:, relation_id:, replacing_relation_id: nil)
     relation_type = relation_params[:relation_type].to_s
     return unless ensure_editable_relation_type!(relation_type)
-
     delay = normalized_relation_delay(relation_type)
     return if performed?
     return unless ensure_relation_change_valid!(
@@ -973,8 +993,19 @@ class CanvasGanttsController < ApplicationController
 
   def relation_change_validator
     @relation_change_validator ||= RedmineCanvasGantt::RelationChangeValidator.new(
-      non_working_week_days: relation_non_working_week_days
+      non_working_week_days: relation_non_working_week_days,
+      calendar_service: business_calendar_resolver
     )
+  end
+
+  def business_calendar_resolver
+    @business_calendar_resolver ||= RedmineCanvasGantt::ProjectCalendarResolver.new(
+      fallback_non_working_week_days: Setting.non_working_week_days
+    )
+  end
+
+  def business_calendar_projects(project_ids)
+    Project.where(id: project_ids).to_a
   end
 
   def bulk_subtask_creator

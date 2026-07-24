@@ -1,0 +1,7 @@
+.git
+.agents
+.codex
+.tokensave
+generated/
+custom/
+*.log

@@ -1,7 +1,7 @@
 import type { DraftRelation, Relation, Task } from '../types';
 import { RelationType, type DefaultRelationType } from '../types/constraints';
 import { i18n } from './i18n';
-import { getNonWorkingWeekDays } from './nonWorkingWeekDays';
+import { addWorkingDays, diffWorkingDays } from './businessCalendar';
 
 const DELAY_ENABLED_RELATIONS: ReadonlySet<string> = new Set([RelationType.Precedes, RelationType.Follows]);
 
@@ -15,7 +15,7 @@ export type EditableRelationView = {
     delay?: number;
 };
 
-type DelayTask = Pick<Task, 'startDate' | 'dueDate'>;
+type DelayTask = Pick<Task, 'startDate' | 'dueDate' | 'projectId'>;
 type DelayConsistencyResult = { valid: true } | { valid: false; message: string };
 type DelayEndpoints = {
     predecessor?: DelayTask;
@@ -75,35 +75,6 @@ const toUtcDayStart = (timestamp: number): Date => {
     const date = new Date(timestamp);
     date.setUTCHours(0, 0, 0, 0);
     return date;
-};
-
-const addWorkingDays = (timestamp: number, days: number, nonWorkingWeekDays: Set<number>): number => {
-    const date = toUtcDayStart(timestamp);
-    let remaining = Math.max(0, Math.floor(days));
-
-    while (remaining > 0) {
-        date.setUTCDate(date.getUTCDate() + 1);
-        if (!nonWorkingWeekDays.has(date.getUTCDay())) {
-            remaining -= 1;
-        }
-    }
-
-    return date.getTime();
-};
-
-const countWorkingDaysBetween = (startTimestamp: number, endTimestamp: number, nonWorkingWeekDays: Set<number>): number => {
-    const cursor = toUtcDayStart(startTimestamp);
-    const end = toUtcDayStart(endTimestamp).getTime();
-    let count = 0;
-
-    while (cursor.getTime() < end) {
-        cursor.setUTCDate(cursor.getUTCDate() + 1);
-        if (!nonWorkingWeekDays.has(cursor.getUTCDay())) {
-            count += 1;
-        }
-    }
-
-    return count;
 };
 
 export const supportsDelayForUiType = (relationType: DefaultRelationType): boolean =>
@@ -181,18 +152,18 @@ export const calculateDelay = (
         };
     }
 
-    const nonWorkingWeekDays = getNonWorkingWeekDays();
-    const minimumSuccessorStart = addWorkingDays(endpoints.predecessor.dueDate, 1, nonWorkingWeekDays);
+    const successorProjectId = endpoints.successor.projectId;
+    const minimumSuccessorStart = addWorkingDays(endpoints.predecessor.dueDate, 1, successorProjectId);
     if (toUtcDayStart(endpoints.successor.startDate).getTime() < minimumSuccessorStart) {
         return {
             message: getAutoCalculationUnavailableMessage()
         };
     }
 
-    const delay = countWorkingDaysBetween(
+    const delay = diffWorkingDays(
         endpoints.predecessor.dueDate,
         endpoints.successor.startDate,
-        nonWorkingWeekDays
+        successorProjectId
     ) - 1;
     return { delay };
 };
@@ -212,8 +183,11 @@ export const validateRelationDelayConsistency = (
         return { valid: true };
     }
 
-    const nonWorkingWeekDays = getNonWorkingWeekDays();
-    const minimumSuccessorStart = addWorkingDays(endpoints.predecessor.dueDate, 1 + delay, nonWorkingWeekDays);
+    const minimumSuccessorStart = addWorkingDays(
+        endpoints.predecessor.dueDate,
+        1 + delay,
+        endpoints.successor.projectId
+    );
     if (toUtcDayStart(endpoints.successor.startDate).getTime() >= minimumSuccessorStart) {
         return { valid: true };
     }

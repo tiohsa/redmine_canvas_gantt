@@ -4,7 +4,7 @@ Redmine::Plugin.register :redmine_canvas_gantt do
   name 'Redmine Canvas Gantt plugin'
   author 'tiohsa'
   description 'A high-performance Canvas-based Gantt chart plugin'
-  version '0.10.6'
+  version '0.11.0'
   url 'https://github.com/tiohsa/redmine_canvas_gantt'
   author_url 'https://github.com/tiohsa/redmine_canvas_gantt'
 
@@ -24,41 +24,21 @@ Redmine::Plugin.register :redmine_canvas_gantt do
     'inline_edit_custom_fields' => '1',
     'row_height' => '36'
   }
-
 end
 
-# Ensure built frontend assets are available under public/plugin_assets/.
-# In production Redmine serves /plugin_assets from public/, so we symlink the
-# Vite build output there if it is missing.
-# Falls back to copying files if symlink fails (e.g., in Docker with volume mounts).
-begin
-  require 'fileutils'
-  plugin_build_dir = Rails.root.join('plugins', 'redmine_canvas_gantt', 'assets', 'build')
-  public_build_dir = Rails.root.join('public', 'plugin_assets', 'redmine_canvas_gantt', 'build')
+# Redmine::PluginLoader already executes init.rb inside a to_prepare callback,
+# so apply the patch directly here on boot and on every code reload. Asset
+# delivery is handled by CanvasGanttsController#asset, and initialization does
+# not mutate public/plugin_assets at runtime.
+require_dependency Rails.root.join(
+  'plugins', 'redmine_canvas_gantt', 'app', 'controllers',
+  'canvas_gantts_controller'
+).to_s
+require_dependency Rails.root.join(
+  'plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt',
+  'canvas_gantts_controller_patch'
+).to_s
 
-  if File.directory?(plugin_build_dir)
-    FileUtils.mkdir_p(public_build_dir.parent)
-
-    if File.symlink?(public_build_dir)
-      # Refresh an outdated symlink target.
-      link_target = File.realpath(public_build_dir) rescue nil
-      unless link_target == plugin_build_dir.to_s
-        FileUtils.rm_f(public_build_dir)
-        FileUtils.ln_s(plugin_build_dir, public_build_dir)
-      end
-    elsif File.exist?(public_build_dir)
-      # Keep copied assets in sync when symlink is unavailable.
-      FileUtils.rm_rf(public_build_dir)
-      FileUtils.cp_r(plugin_build_dir, public_build_dir)
-    else
-      begin
-        FileUtils.ln_s(plugin_build_dir, public_build_dir)
-      rescue Errno::EPERM, Errno::EACCES
-        # Symlink failed (e.g., Docker volume), fall back to copying.
-        FileUtils.cp_r(plugin_build_dir, public_build_dir)
-      end
-    end
-  end
-rescue => e
-  Rails.logger.warn("redmine_canvas_gantt: failed to link plugin assets: #{e.message}") if defined?(Rails)
+unless CanvasGanttsController < RedmineCanvasGantt::CanvasGanttsControllerPatch
+  CanvasGanttsController.prepend(RedmineCanvasGantt::CanvasGanttsControllerPatch)
 end

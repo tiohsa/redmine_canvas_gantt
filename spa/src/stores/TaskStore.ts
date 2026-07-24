@@ -32,6 +32,7 @@ import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
+import { configureBusinessCalendar } from '../utils/businessCalendar';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
@@ -505,6 +506,79 @@ const buildParentMoveFailure = (error?: string) => buildMoveTaskResult('error', 
     error: error || (i18n.t('label_parent_drop_failed') || 'Failed to update parent')
 });
 
+const resolveCascadingScheduleUpdates = (
+    tasks: Task[],
+    relations: Relation[],
+    seedTaskIds: Iterable<string>,
+    propagateDependencies = true
+): { tasks: Task[]; updates: Map<string, Partial<Task>>; error?: string } => {
+    let workingTasks = tasks;
+    const updates = new Map<string, Partial<Task>>();
+    const affectedTaskIds = new Set(seedTaskIds);
+    let frontier = new Set(affectedTaskIds);
+    const maxPasses = Math.max(1, tasks.length * 2);
+
+    const applyUpdates = (nextUpdates: Map<string, Partial<Task>>): Set<string> => {
+        const changedIds = new Set<string>();
+        nextUpdates.forEach((patch, taskId) => {
+            const task = workingTasks.find((candidate) => candidate.id === taskId);
+            if (!task) return;
+            const nextTask = { ...task, ...patch };
+            if (nextTask.startDate === task.startDate && nextTask.dueDate === task.dueDate) return;
+            workingTasks = workingTasks.map((candidate) => candidate.id === taskId ? nextTask : candidate);
+            updates.set(taskId, { ...updates.get(taskId), ...patch });
+            affectedTaskIds.add(taskId);
+            changedIds.add(taskId);
+        });
+        return changedIds;
+    };
+
+    for (let pass = 0; pass < maxPasses && frontier.size > 0; pass += 1) {
+        const changedIds = new Set<string>();
+
+        for (const taskId of frontier) {
+            const task = workingTasks.find((candidate) => candidate.id === taskId);
+            if (!task?.parentId) continue;
+            applyUpdates(TaskLogicService.recalculateParentDates(workingTasks, task.parentId))
+                .forEach((changedId) => changedIds.add(changedId));
+        }
+
+        const dependencySeeds = propagateDependencies
+            ? new Set([...frontier, ...changedIds])
+            : new Set<string>();
+        for (const taskId of dependencySeeds) {
+            const task = workingTasks.find((candidate) => candidate.id === taskId);
+            if (!task || !Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) continue;
+            const result = TaskLogicService.checkDependencies(
+                workingTasks,
+                relations,
+                taskId,
+                task.startDate!,
+                task.dueDate!,
+                AutoScheduleMoveMode.ConstraintPush
+            );
+            if (result.error) return { tasks, updates: new Map(), error: result.error };
+            applyUpdates(result.updates).forEach((changedId) => changedIds.add(changedId));
+        }
+
+        frontier = changedIds;
+    }
+
+    const nonEditableTask = [...affectedTaskIds]
+        .map((taskId) => workingTasks.find((task) => task.id === taskId))
+        .find((task) => task && !TaskLogicService.canEditTask(task));
+    if (nonEditableTask) {
+        return {
+            tasks,
+            updates: new Map(),
+            error: i18n.t('label_auto_schedule_permission_denied') ||
+                'A linked task cannot be moved because you do not have permission to edit it.'
+        };
+    }
+
+    return { tasks: workingTasks, updates };
+};
+
 const buildRelationChange = (state: TaskState, relation: Relation, nextRelations: Relation[]) => {
     let nextTasks = state.allTasks;
     const originTaskId = relation.type === 'follows' ? relation.to : relation.from;
@@ -520,6 +594,20 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
 
     if (dependentUpdates.updates.size > 0) {
         nextTasks = nextTasks.map((task) => dependentUpdates.updates.has(task.id) ? { ...task, ...dependentUpdates.updates.get(task.id) } : task);
+    }
+
+    const cascadingUpdates = resolveCascadingScheduleUpdates(
+        nextTasks,
+        nextRelations,
+        [originTaskId, ...dependentUpdates.updates.keys()]
+    );
+    if (cascadingUpdates.error) {
+        useUIStore.getState().addNotification(cascadingUpdates.error, 'error');
+        nextTasks = state.allTasks;
+        dependentUpdates.updates.clear();
+    } else {
+        nextTasks = cascadingUpdates.tasks;
+        cascadingUpdates.updates.forEach((patch, taskId) => dependentUpdates.updates.set(taskId, patch));
     }
 
     const modifiedTaskIds = new Set(state.modifiedTaskIds);
@@ -765,6 +853,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return nextState;
     }),
     applyApiData: (data) => {
+        const businessCalendar = configureBusinessCalendar(data.businessCalendar);
         let querySyncState: SharedQuerySyncState | null = null;
         set((state) => {
             const result = buildApiDataPatch(data, state);
@@ -789,6 +878,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         (data.warnings ?? []).forEach((warning) => {
             useUIStore.getState().addNotification(warning, 'warning');
         });
+        if (businessCalendar.status === 'error') {
+            useUIStore.getState().addNotification(
+                i18n.t('error_canvas_gantt_business_calendar_invalid') ||
+                    "Business calendar configuration is invalid. Redmine's non-working weekdays are being used as a fallback.",
+                'warning'
+            );
+        }
     },
     setCustomFields: (customFields) => set((state) => {
         const derived = buildDerivedTaskState(state, { customFields });
@@ -1010,19 +1106,20 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             });
         }
 
-        const tasksToCheckParents = [id, ...pendingUpdates.keys()];
-        const processedParents = new Set<string>();
-
-        tasksToCheckParents.forEach(taskId => {
-            const t = currentTasks.find(ct => ct.id === taskId);
-            if (t && t.parentId && !processedParents.has(t.parentId)) {
-                processedParents.add(t.parentId);
-                const parentUpdates = TaskLogicService.recalculateParentDates(currentTasks, t.parentId);
-                parentUpdates.forEach((v, k) => pendingUpdates.set(k, v));
+            const cascadingUpdates = resolveCascadingScheduleUpdates(
+                currentTasks,
+                state.relations,
+                [id, ...pendingUpdates.keys()],
+                useUIStore.getState().autoScheduleMoveMode !== AutoScheduleMoveMode.Off
+            );
+            if (cascadingUpdates.error) {
+                useUIStore.getState().addNotification(cascadingUpdates.error, 'error');
+                return state;
             }
-        });
+            currentTasks = cascadingUpdates.tasks;
+            cascadingUpdates.updates.forEach((patch, taskId) => pendingUpdates.set(taskId, patch));
 
-        const finalTasks = state.allTasks.map(t => {
+            const finalTasks = state.allTasks.map(t => {
             if (t.id === id) return updatedTask;
             if (pendingUpdates.has(t.id)) return { ...t, ...pendingUpdates.get(t.id) };
             return t;

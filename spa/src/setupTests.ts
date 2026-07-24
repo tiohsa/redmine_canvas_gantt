@@ -85,6 +85,8 @@ window.RedmineCanvasGantt = {
         label_auto_schedule_move_mode_off: 'Off',
         label_auto_schedule_move_mode_constraint_push: 'Constraint push',
         label_auto_schedule_move_mode_linked_shift: 'Linked downstream shift',
+        label_auto_schedule_external_conflict: 'Moving linked tasks would violate an external dependency.',
+        label_auto_schedule_permission_denied: 'A linked task cannot be moved because you do not have permission to edit it.',
         label_export: 'Export',
         label_export_png: 'Export PNG',
         label_export_csv: 'Export CSV',

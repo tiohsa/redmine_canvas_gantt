@@ -4,7 +4,7 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 import type { Task } from '../types';
 import { getStatusColor, getPriorityColor } from '../utils/styles';
 import { useUIStore } from '../stores/UIStore';
-import { SIDEBAR_RESIZE_CURSOR } from '../constants';
+import { GANTT_HEADER_HEIGHT, SIDEBAR_RESIZE_CURSOR } from '../constants';
 
 import { CustomFieldEditor, DoneRatioEditor, DueDateEditor, EstimatedHoursEditor, SelectEditor, SubjectEditor } from './InlineEditors';
 import { useEditMetaStore } from '../stores/EditMetaStore';
@@ -156,7 +156,7 @@ export const UiSidebar: React.FC = () => {
     const trackerIconSize = 14;
     const sidebarControlSize = 20;
     const sidebarButtonSize = 24;
-    const sidebarHeaderHeight = 48;
+    const sidebarHeaderHeight = GANTT_HEADER_HEIGHT;
     const sidebarRowPaddingX = 12;
     const sidebarRowIndentX = 32;
     const sidebarHeaderBg = designTokens.surfaceHover;
@@ -707,6 +707,8 @@ export const UiSidebar: React.FC = () => {
             {/* Header */}
             <div style={{
                 height: sidebarHeaderHeight,
+                boxSizing: 'border-box',
+                flexShrink: 0,
                 borderBottom: sidebarRowBorder,
                 display: 'flex',
                 fontWeight: 500,

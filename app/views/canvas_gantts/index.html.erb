@@ -9,7 +9,6 @@
       apiBase: '<%= project_path(@project) %>/canvas_gantt',
       redmineBase: '<%= Redmine::Utils.relative_url_root %>',
       authToken: '<%= form_authenticity_token %>',
-      apiKey: '<%= User.current.api_key %>',
       i18n: <%= @i18n.to_json.html_safe %>,
       settings: <%= (@settings || {}).to_json.html_safe %>,
       nonWorkingWeekDays: <%= (@non_working_week_days || [0, 6]).to_json.html_safe %>,
@@ -17,6 +16,7 @@
       dateFormat: '<%= @date_format %>',
       yearMonthFormat: '<%= @year_month_format %>'
     };
+
   <% end %>
   <!-- In development with Vite dev server enabled, we use the Vite dev server. Otherwise, we use the manifest. -->
   <% use_vite_dev = Rails.env.development? && ENV['CANVAS_GANTT_USE_VITE_DEV_SERVER'] == '1' %>
@@ -33,7 +33,35 @@
   <% end %>
 <% end %>
 
-<div id="redmine-canvas-gantt-root" style="width: 100%; height: calc(100vh - 120px); min-height: 400px; border: 1px solid #ddd;">
+<div id="redmine-canvas-gantt-root" style="width: 100%; min-height: 400px; height: 70vh; border: 1px solid #ddd;">
   <!-- React App Mount Point -->
   Loading Canvas Gantt...
 </div>
+
+<%= javascript_tag do %>
+  (() => {
+    const root = document.getElementById('redmine-canvas-gantt-root');
+    if (!root) return;
+
+    const updateHeight = () => {
+      const viewportHeight = window.visualViewport?.height || window.innerHeight;
+      const top = root.getBoundingClientRect().top;
+      const footer = document.getElementById('footer');
+      const footerHeight = footer?.offsetHeight || 0;
+      const available = Math.max(400, Math.floor(viewportHeight - top - footerHeight - 16));
+      root.style.height = `${available}px`;
+    };
+
+    updateHeight();
+    window.addEventListener('resize', updateHeight, { passive: true });
+    window.visualViewport?.addEventListener('resize', updateHeight, { passive: true });
+
+    if (window.ResizeObserver) {
+      const observer = new ResizeObserver(updateHeight);
+      const header = document.getElementById('header');
+      const mainMenu = document.getElementById('main-menu');
+      if (header) observer.observe(header);
+      if (mainMenu) observer.observe(mainMenu);
+    }
+  })();
+<% end %>

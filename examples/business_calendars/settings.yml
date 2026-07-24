@@ -1,0 +1,7 @@
+schema_version: 1
+
+default_calendar: company-us
+
+project_calendars:
+  japan-project: company-us
+  us-project: US

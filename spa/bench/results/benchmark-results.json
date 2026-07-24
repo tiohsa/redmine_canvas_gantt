@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-11T17:05:37.652Z",
+  "generatedAt": "2026-07-24T16:09:27.086Z",
   "baseUrl": "http://127.0.0.1:4173",
   "sampleCount": 3,
   "regressionThreshold": 1.2,
@@ -13,32 +13,32 @@
       "samples": [
         {
           "sample": 1,
-          "renderMs": 930,
-          "domNodes": 1811,
+          "renderMs": 770.7,
+          "domNodes": 1815,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 2,
-          "renderMs": 750.8,
-          "domNodes": 1811,
+          "renderMs": 757.2,
+          "domNodes": 1815,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 3,
-          "renderMs": 728.4,
-          "domNodes": 1811,
+          "renderMs": 740.3,
+          "domNodes": 1815,
           "visibleRows": 16,
           "canvasCount": 4
         }
       ],
       "metrics": {
         "renderMs": {
-          "min": 728.4,
-          "median": 750.8,
-          "mean": 803.07,
-          "max": 930
+          "min": 740.3,
+          "median": 757.2,
+          "mean": 756.07,
+          "max": 770.7
         }
       },
       "budget": {
@@ -56,32 +56,32 @@
       "samples": [
         {
           "sample": 1,
-          "renderMs": 2143,
-          "domNodes": 5811,
+          "renderMs": 1557.5,
+          "domNodes": 5815,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 2,
-          "renderMs": 2917.2,
-          "domNodes": 5811,
+          "renderMs": 1893.8,
+          "domNodes": 5815,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 3,
-          "renderMs": 1536.9,
-          "domNodes": 5811,
+          "renderMs": 1479.5,
+          "domNodes": 5815,
           "visibleRows": 16,
           "canvasCount": 4
         }
       ],
       "metrics": {
         "renderMs": {
-          "min": 1536.9,
-          "median": 2143,
-          "mean": 2199.03,
-          "max": 2917.2
+          "min": 1479.5,
+          "median": 1557.5,
+          "mean": 1643.6,
+          "max": 1893.8
         }
       },
       "budget": {
@@ -99,32 +99,32 @@
       "samples": [
         {
           "sample": 1,
-          "renderMs": 2720.5,
-          "domNodes": 10811,
+          "renderMs": 2704.9,
+          "domNodes": 10815,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 2,
-          "renderMs": 2778.3,
-          "domNodes": 10811,
+          "renderMs": 3695.9,
+          "domNodes": 10815,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 3,
-          "renderMs": 2740.1,
-          "domNodes": 10811,
+          "renderMs": 2708.6,
+          "domNodes": 10815,
           "visibleRows": 16,
           "canvasCount": 4
         }
       ],
       "metrics": {
         "renderMs": {
-          "min": 2720.5,
-          "median": 2740.1,
-          "mean": 2746.3,
-          "max": 2778.3
+          "min": 2704.9,
+          "median": 2708.6,
+          "mean": 3036.47,
+          "max": 3695.9
         }
       },
       "budget": {
@@ -142,32 +142,32 @@
       "samples": [
         {
           "sample": 1,
-          "renderMs": 741.1,
-          "domNodes": 1811,
+          "renderMs": 843.9,
+          "domNodes": 1815,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 2,
-          "renderMs": 729.9,
-          "domNodes": 1811,
+          "renderMs": 730.1,
+          "domNodes": 1815,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 3,
-          "renderMs": 729.8,
-          "domNodes": 1811,
+          "renderMs": 758.9,
+          "domNodes": 1815,
           "visibleRows": 16,
           "canvasCount": 4
         }
       ],
       "metrics": {
         "renderMs": {
-          "min": 729.8,
-          "median": 729.9,
-          "mean": 733.6,
-          "max": 741.1
+          "min": 730.1,
+          "median": 758.9,
+          "mean": 777.63,
+          "max": 843.9
         }
       },
       "budget": {
@@ -185,32 +185,32 @@
       "samples": [
         {
           "sample": 1,
-          "renderMs": 829.7,
-          "domNodes": 1811,
+          "renderMs": 742.7,
+          "domNodes": 1815,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 2,
-          "renderMs": 763.1,
-          "domNodes": 1811,
+          "renderMs": 862.4,
+          "domNodes": 1815,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 3,
-          "renderMs": 896.1,
-          "domNodes": 1811,
+          "renderMs": 795.7,
+          "domNodes": 1815,
           "visibleRows": 16,
           "canvasCount": 4
         }
       ],
       "metrics": {
         "renderMs": {
-          "min": 763.1,
-          "median": 829.7,
-          "mean": 829.63,
-          "max": 896.1
+          "min": 742.7,
+          "median": 795.7,
+          "mean": 800.27,
+          "max": 862.4
         }
       },
       "budget": {

@@ -10,8 +10,8 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tiohsa/redmine_canvas_gantt)](https://github.com/tiohsa/redmine_canvas_gantt/releases)
-[![Redmine](https://img.shields.io/badge/Redmine-6.x-red)](#requirements)
-[![Ruby](https://img.shields.io/badge/Ruby-3.x-cc342d)](#requirements)
+[![Redmine](https://img.shields.io/badge/Redmine-6.0%20%7C%206.1%20%7C%207.0-red)](#requirements)
+[![Ruby](https://img.shields.io/badge/Ruby-Redmine公式要件に準拠-cc342d)](#requirements)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#requirements)
 
 [English README](README.md) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
@@ -50,8 +50,8 @@ Redmine Canvas Gantt は、タイムラインを HTML5 Canvas で描画しつつ
 
 ## 必要環境
 
-- Redmine 6.x
-- Ruby 3.x
+- Redmine 6.0（互換対応）、6.1、または 7.0
+- 利用する Redmine バージョンが公式にサポートする Ruby
 - Node.js 20+ は SPA のビルドまたはフロントエンド開発時のみ必要です。ビルド済みアセットを使う通常の Redmine 利用時には Node.js は必要ありません
 - Redmine で REST API が有効化されていること
 
@@ -191,19 +191,116 @@ Canvas Gantt にはプラグイン設定画面はありません。UI の既定�
 
 開発時に Vite dev server を使うには `CANVAS_GANTT_USE_VITE_DEV_SERVER=1` を設定します。
 
+### 業務カレンダー
+
+Canvas Gantt は、週次非稼働日、国別祝日、会社休業日、振替稼働日を名前付き業務カレンダーで扱えます。解決済みの同じカレンダーを、依存関係検証、自動スケジュール、クリティカルパス計算、Canvas 背景描画に使用します。DB マイグレーションは不要です。休日データは外部 YAML を read-only の実行時設定として読み込み、`Setting.plugin_redmine_canvas_gantt` には保存しません。
+
+既定ディレクトリは `<Rails.root>/config/redmine_canvas_gantt/business_calendars` です。別の場所を使う場合は `REDMINE_CANVAS_GANTT_CALENDAR_DIR` を設定します。[同梱サンプル](examples/business_calendars/)を初期ファイルとして利用できます。
+
+```text
+business_calendars/
+├── settings.yml
+├── generated/JP.yml
+├── generated/US.yml
+└── custom/company-japan.yml
+```
+
+`settings.yml` では Redmine 全体の既定カレンダーと、project identifier ごとの割当を指定します。子 project は最も近い親 project の割当を継承します。
+
+```yaml
+schema_version: 1
+default_calendar: company-japan
+project_calendars:
+  japan-project: company-japan
+  us-project: US
+```
+
+カスタムカレンダーは生成済み国別カレンダーを継承できます。`non_working` で会社休日を追加し、`working` で国別祝日や週次非稼働日を稼働日に上書きします。
+
+```yaml
+schema_version: 1
+calendar:
+  id: company-japan
+  name: Japan Company Calendar
+  base: JP
+  managed: false
+days:
+  - date: 2027-08-12
+    name: 会社夏季休業
+    type: non_working
+  - date: 2027-09-18
+    name: 振替出勤日
+    type: working
+```
+
+国別ファイルは、Redmine 本番 Bundle に `holidays` gem を追加せず生成できます。
+
+```bash
+cd tools/holiday_generator
+bundle install
+bundle exec ruby generate.rb --region jp --calendar-id JP --name Japan \
+  --from 2026 --to 2030 \
+  --output /path/to/business_calendars/generated/JP.yml
+```
+
+会社固有の変更は `custom/` に分離してください。`--force` で上書きできるのは `calendar.managed: true` のファイルだけです。ランタイムは相対パス・更新時刻・サイズを既定で60秒ごとに確認し、変更後の全ファイルが検証に成功してからスナップショットを原子的に差し替えます。間隔は `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` に0以上の秒数で指定できます。設定ルート外へ解決される symlink は拒否し、symlink のディレクトリは再帰探索しません。ディレクトリまたは `settings.yml` がなければ Redmine 標準の非稼働曜日へフォールバックします。不正な設定の場合も警告を記録し、同じ曜日設定へフォールバックしてカレンダー依存の関係変更と自動スケジュールを継続します。再読み込みが失敗した場合は警告を記録して直前の正常スナップショットを維持します。
+
+Docker ではパスを明示してカレンダーディレクトリをマウントします。Redmine 公式イメージは
+起動時に設定ディレクトリの所有者を変更するため、公式イメージを使う Compose では
+`business_calendars` のマウントに `:ro` を付けないでください。アプリケーション起動後は
+プラグインが休日データを読み取り専用で扱います。
+
+```yaml
+services:
+  redmine:
+    environment:
+      REDMINE_CANVAS_GANTT_CALENDAR_DIR: /etc/redmine/business_calendars
+    volumes:
+      - ./business_calendars:/etc/redmine/business_calendars
+```
+
+Kubernetes では同じパスへ ConfigMap などを read-only でマウントし、同じ環境変数を設定します。各 Puma worker / Pod は独立したメモリスナップショットを持つため、すべての Pod が同一ファイルを参照する必要があります。ConfigMap の変更は次回確認時に検知され、リアルタイム Push は行いません。
+
+プラグインをアンインストールしても、外部ディレクトリや ConfigMap は削除されません。休日データが不要になった場合だけ別途削除してください。既存の「DB マイグレーション不要」と簡単なアンインストール方針は維持されます。
+
 ### 互換性メモ
 
 `redmica_ui_extension` による Select2 の挙動が Canvas Gantt の操作に干渉する場合は、**管理** -> **プラグイン** -> **Redmica UI Extension** -> **設定** で検索可能セレクトボックスを無効化してください。
 
 ## Docker クイックスタート
 
-このリポジトリには、Redmine 6.0 と MariaDB をローカルで起動するための `docker-compose.yml` が含まれています。
+このリポジトリには、Redmine 7.0.0 と MariaDB 11.4 をローカルで起動するための `docker-compose.yml` が含まれています。互換バージョンを使う場合は `REDMINE_IMAGE=redmine:6.0.6` または `redmine:6.1.2` を指定します。
+
+GitHub Actions では Redmine 6.0.6、6.1.2、7.0.0 の backend spec、互換スモークテスト、YAML業務カレンダーのpayload経路を継続検証します。Redmine 7.0.0 は MariaDB 11.4 の Compose DBを使ったローカル検証も行います。
+
+独自休日カレンダーを使用する場合は、`redmine` サービスに次の設定を追加します。`business_calendars/`
+には `settings.yml` と、`generated/` および `custom/` 配下のカレンダー YAML を配置してください。
+
+```yaml
+services:
+  redmine:
+    environment:
+      RAILS_ENV: production
+      REDMINE_CANVAS_GANTT_CALENDAR_DIR: /usr/src/redmine/config/redmine_canvas_gantt/business_calendars
+    volumes:
+      - ./business_calendars:/usr/src/redmine/config/redmine_canvas_gantt/business_calendars
+```
+
+`RAILS_ENV: development` は、公式イメージに `listen` gem が含まれないため使用しないでください。
 
 ### スタックを起動
 
 ```bash
 docker compose up -d --wait
 ```
+
+Redmine 6.1.2 を起動する場合:
+
+```bash
+REDMINE_IMAGE=redmine:6.1.2 docker compose up -d --wait
+```
+
+Redmine 6.0.6 の場合は `REDMINE_IMAGE=redmine:6.0.6` を指定します。
 
 [http://localhost:3000](http://localhost:3000) で Redmine を開けます。
 

@@ -123,4 +123,26 @@ describe('constraintGraph', () => {
         expect(updates.get('C')).toEqual({ startDate: THURSDAY, dueDate: FRIDAY });
         expect(updates.has('A')).toBe(false);
     });
+
+    it('preserves the successor working-day duration when pushing across a weekend', () => {
+        const originalConfig = window.RedmineCanvasGantt;
+        window.RedmineCanvasGantt = {
+            ...(originalConfig || {}),
+            nonWorkingWeekDays: [0, 6]
+        } as Window['RedmineCanvasGantt'];
+        const monday = Date.UTC(2026, 0, 12);
+        const tuesday = Date.UTC(2026, 0, 13);
+        const tasks = [
+            buildTask({ id: 'A', startDate: THURSDAY, dueDate: FRIDAY }),
+            buildTask({ id: 'B', startDate: FRIDAY, dueDate: monday })
+        ];
+        const relations: Relation[] = [
+            { id: 'r1', from: 'A', to: 'B', type: RelationType.Precedes }
+        ];
+
+        const updates = recalculateDownstreamTasks(tasks, relations, 'A');
+
+        expect(updates.get('B')).toEqual({ startDate: monday, dueDate: tuesday });
+        window.RedmineCanvasGantt = originalConfig;
+    });
 });

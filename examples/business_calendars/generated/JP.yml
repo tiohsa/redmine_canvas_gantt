@@ -1,0 +1,24 @@
+schema_version: 1
+
+calendar:
+  id: JP
+  name: Japan
+  non_working_week_days: [6, 7]
+  managed: true
+
+source:
+  provider: holidays/holidays
+  package_version: example
+  generated_at: example
+  region: jp
+  years:
+    from: 2027
+    to: 2027
+
+days:
+  - date: 2027-01-01
+    name: New Year's Day
+    type: non_working
+  - date: 2027-02-11
+    name: National Foundation Day
+    type: non_working

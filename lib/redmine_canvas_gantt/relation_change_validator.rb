@@ -1,7 +1,8 @@
 module RedmineCanvasGantt
   class RelationChangeValidator
-    def initialize(non_working_week_days:, constraint_graph_class: RedmineCanvasGantt::ConstraintGraph)
+    def initialize(non_working_week_days: [], calendar_service: nil, constraint_graph_class: RedmineCanvasGantt::ConstraintGraph)
       @non_working_week_days = non_working_week_days
+      @calendar_service = calendar_service
       @constraint_graph_class = constraint_graph_class
     end
 
@@ -37,14 +38,22 @@ module RedmineCanvasGantt
       successor_start = successor&.start_date
       return true if predecessor_due.blank? || successor_start.blank?
 
-      minimum_successor_start = add_working_days_to_date(predecessor_due.to_date, 1 + delay)
+      minimum_successor_start = add_working_days_to_date(
+        predecessor_due.to_date,
+        1 + delay,
+        project: successor.project
+      )
       return true if successor_start.to_date >= minimum_successor_start
 
       error_renderer.call(:error_canvas_gantt_relation_delay_mismatch)
       false
     end
 
-    def add_working_days_to_date(date, days)
+    def add_working_days_to_date(date, days, project:)
+      if @calendar_service
+        return @calendar_service.add_working_days(date, days, project: project)
+      end
+
       current = date.to_date
       remaining = [days.to_i, 0].max
 

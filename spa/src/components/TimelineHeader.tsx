@@ -3,6 +3,8 @@ import { useTaskStore } from '../stores/TaskStore';
 import { getGridScales } from '../utils/grid';
 import { canvasFonts, designTokens } from '../styles/designTokens';
 import { resizeCanvasForDpr, snapTextPosition, snapLinePosition } from '../utils/canvasDpr';
+import { getDayInfo } from '../utils/businessCalendar';
+import { GANTT_HEADER_HEIGHT } from '../constants';
 
 export interface TimelineHeaderHandle {
     getCanvas: () => HTMLCanvasElement | null;
@@ -20,7 +22,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
         if (!ctx) return;
 
         const cssWidth = Math.max(0, Math.floor(viewport.width));
-        const cssHeight = 48;
+        const cssHeight = GANTT_HEADER_HEIGHT;
 
         // Clear
         ctx.clearRect(0, 0, cssWidth, cssHeight);
@@ -41,14 +43,15 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
 
         const activeRows = [hasTop, hasMiddle, hasBottom].filter(Boolean).length;
         const rowHeight = activeRows > 0 ? cssHeight / activeRows : cssHeight;
+        const dayHeaderExtraHeight = hasMiddle && hasBottom ? 2 : 0;
 
         let currentY = 0;
 
-        const drawRow = (ticks: typeof scales.top, bgColor: string, txtColor: string, align: 'left' | 'center' = 'left') => {
+        const drawRow = (ticks: typeof scales.top, bgColor: string, txtColor: string, align: 'left' | 'center' = 'left', height = rowHeight) => {
             if (ticks.length === 0) return;
 
             const y = currentY;
-            const h = rowHeight;
+            const h = height;
 
             // Background
             ctx.fillStyle = bgColor;
@@ -117,21 +120,21 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
         const middleAlign: 'left' | 'center' = 'left';
         const middleBg = zoomLevel === 0 ? designTokens.surfaceMuted : designTokens.appBg;
         const middleTxt = zoomLevel === 0 ? designTokens.textSecondary : designTokens.textPrimary;
-        if (hasMiddle) drawRow(scales.middle, middleBg, middleTxt, middleAlign);
+        if (hasMiddle) drawRow(scales.middle, middleBg, middleTxt, middleAlign, rowHeight - dayHeaderExtraHeight);
 
         if (hasBottom) {
             const y = currentY;
-            const h = rowHeight;
+            const h = rowHeight + dayHeaderExtraHeight;
 
             // Background (base)
             ctx.fillStyle = designTokens.appBg;
             ctx.fillRect(0, y, cssWidth, h);
 
-            // Weekends
+            // Non-working days, including project-specific holidays
             if (zoomLevel === 2) { // Day View mainly
                 scales.bottom.forEach((tick, i) => {
-                    const d = new Date(tick.time);
-                    if (d.getDay() === 0 || d.getDay() === 6) {
+                    const dayInfo = getDayInfo(tick.time, window.RedmineCanvasGantt?.projectId);
+                    if (dayInfo.type === 'non_working') {
                         let w = 50; // default
                         if (i < scales.bottom.length - 1) w = scales.bottom[i + 1].x - tick.x;
                         else w = (24 * 3600 * 1000 * viewport.scale);
@@ -144,7 +147,6 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
 
             // Draw Ticks/Text
             ctx.fillStyle = designTokens.textPrimary;
-            ctx.font = canvasFonts.header;
             ctx.textAlign = 'center'; // Always center bottom (Days)
 
             scales.bottom.forEach((tick, i) => {
@@ -161,9 +163,16 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
                 const width = nextX - tick.x;
 
                 const textX = tick.x + width / 2;
-                const textY = y + h / 2 + 4;
+                const textY = tick.secondaryLabel ? y + 10 : y + h / 2 + 4;
 
+                ctx.font = canvasFonts.header;
                 ctx.fillText(tick.label, snapTextPosition(textX), snapTextPosition(textY));
+                if (tick.secondaryLabel) {
+                    ctx.font = canvasFonts.header.replace('11px', '10px');
+                    ctx.fillStyle = designTokens.textSecondary;
+                    ctx.fillText(tick.secondaryLabel, snapTextPosition(textX), snapTextPosition(y + h - 3));
+                    ctx.fillStyle = designTokens.textPrimary;
+                }
             });
 
             currentY += h;
@@ -176,7 +185,7 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
         if (!canvasRef.current) return;
         const width = Math.max(0, Math.floor(viewport.width));
         const ctx = canvasRef.current.getContext('2d');
-        resizeCanvasForDpr(canvasRef.current, ctx, width, 48);
+        resizeCanvasForDpr(canvasRef.current, ctx, width, GANTT_HEADER_HEIGHT);
         renderHeader();
     }, [renderHeader, viewport.width]);
 
@@ -185,8 +194,8 @@ export const TimelineHeader = React.forwardRef<TimelineHeaderHandle>((_, ref) =>
     }), []);
 
     return (
-        <div style={{ height: 48, backgroundColor: designTokens.surfaceSubtle, borderBottom: `1px solid ${designTokens.borderSubtle}`, overflow: 'hidden' }}>
-            <canvas ref={canvasRef} height={48} style={{ display: 'block' }} />
+        <div style={{ height: GANTT_HEADER_HEIGHT, boxSizing: 'border-box', flexShrink: 0, backgroundColor: designTokens.surfaceSubtle, borderBottom: `1px solid ${designTokens.borderSubtle}`, overflow: 'hidden' }}>
+            <canvas ref={canvasRef} height={GANTT_HEADER_HEIGHT} style={{ display: 'block' }} />
         </div>
     );
 });

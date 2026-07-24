@@ -1,0 +1,19 @@
+schema_version: 1
+
+calendar:
+  id: company-japan
+  name: Japan Company Calendar
+  base: JP
+  managed: false
+
+source:
+  provider: custom
+  based_on: JP
+
+days:
+  - date: 2027-08-12
+    name: Company summer holiday
+    type: non_working
+  - date: 2027-09-18
+    name: Substitute workday
+    type: working

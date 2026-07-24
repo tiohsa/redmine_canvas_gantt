@@ -96,7 +96,7 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
 
     it 'rejects snapshots for a different project' do
       settings_hash['baseline_snapshots'] = {
-        '2' => {
+        '1' => {
           'snapshot_id' => 'baseline-2',
           'project_id' => 2,
           'captured_at' => '2026-04-01T12:00:00Z',

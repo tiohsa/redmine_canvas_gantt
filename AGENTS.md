@@ -5,7 +5,7 @@
 Redmine Canvas Gantt は、Ruby on Rails バックエンドと `spa/` ディレクトリ内の React SPA（シングルページアプリケーション）で構成された Redmine プラグインです。
 
 - **使用言語**: バックエンドは Ruby、フロントエンドは TypeScript
-- **フレームワーク/ライブラリ**: Redmine 6.x, React 19, Vite 7
+- **フレームワーク/ライブラリ**: Redmine 6.1 / 7.0, React 19, Vite 7
 - **アーキテクチャ**: Redmine プラグインバックエンド ＋ SPA フロントエンド
 
 ## 信頼できる情報源 (Source of Truth)
@@ -68,7 +68,7 @@ Redmine Canvas Gantt は、Ruby on Rails バックエンドと `spa/` ディレ�
 - スタンドアロン E2E テスト: `cd spa && npm run test:e2e`
 - 有効なヘッド（ブラウザ表示あり）での E2E テスト: `cd spa && npm run test:e2e:headed`
 - Redmine 連携 Playwright テスト: `cd spa && npx playwright test -c playwright.redmine.config.ts`
-- Redmine 6.0 スモークテスト:
+- Redmine 6.1 互換スモークテスト:
   ```bash
   cd spa && npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts
   ```
@@ -94,7 +94,7 @@ Redmine Canvas Gantt は、Ruby on Rails バックエンドと `spa/` ディレ�
 ## CI/CD
 
 - **CI ワークフロー**: `.github/workflows/ci.yml`
-  - フロントエンドのビルド、静的解析 (Lint)、単体テスト、ベンチマークチェック、Redmine 6.1 完全 E2E テスト、および Redmine 6.0 互換性スモークテストを実行します。
+- フロントエンドのビルド、静的解析 (Lint)、単体テスト、ベンチマークチェック、Redmine 6.1 の backend spec と互換スモークテストを実行します。Redmine 7.0 はローカル image と MySQL 8.4 で検証済みですが、GitHub-hosted runner から取得可能な固定 image がないため自動 CI には含めません。
 - **リリースワークフロー**: `.github/workflows/release.yml`
   - `v*` 形式のタグがプッシュされたときにのみ実行されます。
   - 生成された変更ログを含めて GitHub リリースを作成します。
@@ -163,7 +163,7 @@ redmine_canvas_gantt/
 - 動作を変更した際は、作業を完了する前に必ず関連するテストまたは検証コマンドを実行してください。
 - バグを修正したり、繰り返されるパターンを変更した場合は、該当するタスクの一環として `tasks/lessons.md` に教訓を記録してください。
 - フロントエンドの変更を行う際は、可能な限り CI と同じ検証順序に従ってください: `npm run build` -> `npm run lint` -> `npm run test -- --run` を実行し、パフォーマンスや Redmine 統合に影響する場合はベンチマークや Playwright のテストも行います。
-- 互換性に影響する変更を行う場合は、ローカルの Redmine 6.0 Docker 環境および CI でカバーされている Redmine 6.1 完全 E2E ＋ Redmine 6.0 互換スモークテストの仕様を考慮してください。
+- 互換性に影響する変更を行う場合は、ローカルで検証済みの Redmine 7.0 full E2E と、CI でカバーされている Redmine 6.1 backend spec・互換スモークテストの仕様を考慮してください。GitHub-hosted runner から取得できる version または digest 固定の Redmine 7 image が用意できたら、Redmine 7 CI を再有効化します。
 
 
 <!-- headroom:rtk-instructions -->
