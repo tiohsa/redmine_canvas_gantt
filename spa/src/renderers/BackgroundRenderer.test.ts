@@ -55,6 +55,7 @@ describe('BackgroundRenderer business calendar shading', () => {
         height: 100,
         clientWidth: 100,
         clientHeight: 100,
+        setAttribute: vi.fn(),
         getContext: vi.fn(() => context)
     } as unknown as HTMLCanvasElement;
 
@@ -100,6 +101,10 @@ describe('BackgroundRenderer business calendar shading', () => {
             color: designTokens.weekendBg,
             args: [0, 0, 10, 100]
         });
+        expect(canvas.setAttribute).toHaveBeenCalledWith(
+            'data-business-calendar-non-working-days',
+            '2027-01-04'
+        );
     });
 
     it('draws a weekly non-working day with the weekend color for the full root area', () => {

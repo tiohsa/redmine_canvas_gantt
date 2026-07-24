@@ -2,7 +2,7 @@ import type { Task, Viewport, ZoomLevel } from '../types';
 import { getGridScales } from '../utils/grid';
 import { designTokens } from '../styles/designTokens';
 import { getCanvasLogicalSize } from '../utils/canvasDpr';
-import { getDayInfo } from '../utils/businessCalendar';
+import { getDayInfo, timestampToBusinessDateKey } from '../utils/businessCalendar';
 import type { BusinessDayInfo } from '../types/businessCalendar';
 
 export class BackgroundRenderer {
@@ -24,6 +24,7 @@ export class BackgroundRenderer {
         ctx.fillRect(0, 0, width, height);
 
         const scales = getGridScales(viewport, zoomLevel);
+        const renderedNonWorkingDays = new Set<string>();
 
         // Business calendar background. Ticks use the same local-date semantics as the grid.
         if (zoomLevel === 2) {
@@ -57,12 +58,14 @@ export class BackgroundRenderer {
                 const rootColor = colorFor(infoForProject(rootProjectId));
 
                 if (rootColor) {
+                    renderedNonWorkingDays.add(timestampToBusinessDateKey(tick.time));
                     ctx.fillStyle = rootColor;
                     ctx.fillRect(x, 0, fillWidth, height);
                 }
 
                 visibleTasks.forEach((task) => {
                     const taskColor = colorFor(infoForProject(task.projectId));
+                    if (taskColor) renderedNonWorkingDays.add(timestampToBusinessDateKey(tick.time));
                     if (taskColor === rootColor) return;
 
                     const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
@@ -71,6 +74,11 @@ export class BackgroundRenderer {
                 });
             });
         }
+
+        this.canvas.setAttribute(
+            'data-business-calendar-non-working-days',
+            [...renderedNonWorkingDays].sort().join(',')
+        );
 
         // Highlight selected row
         if (selectedTaskId) {

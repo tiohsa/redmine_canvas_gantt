@@ -200,14 +200,17 @@ jobs:
             image: redmine:6.0.6
             version: 6.0.6
             rspec: '~> 7.1'
+            full_e2e: false
           - label: 6.1
             image: redmine:6.1.2
             version: 6.1.2
             rspec: '~> 7.1'
+            full_e2e: true
           - label: 7.0
             image: redmine:7.0.0
             version: 7.0.0
             rspec: '~> 8.0'
+            full_e2e: true
     env:
       REDMINE_IMAGE: ${{ matrix.image }}
     defaults:
@@ -292,10 +295,16 @@ jobs:
           "
 
       - name: Run Redmine compatibility smoke test
+        if: ${{ !matrix.full_e2e }}
         run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts
 
       - name: Run business calendar E2E
+        if: ${{ !matrix.full_e2e }}
         run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/business-calendar.pw.ts
+
+      - name: Run full Redmine E2E suite
+        if: ${{ matrix.full_e2e }}
+        run: npx playwright test -c playwright.redmine.config.ts
 
       - name: Upload Playwright report
         if: always()

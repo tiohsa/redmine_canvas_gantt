@@ -431,7 +431,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
                                             overflow: 'hidden'
                                         }}
                                     >
-                                        <canvas ref={bgCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
+                                        <canvas ref={bgCanvasRef} data-testid="gantt-background-canvas" style={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }} />
                                         <canvas ref={baselineCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 2 }} />
                                         <canvas ref={taskCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 3 }} />
                                         <canvas ref={overlayCanvasRef} style={{ position: 'absolute', top: 0, left: 0, zIndex: 4 }} />
