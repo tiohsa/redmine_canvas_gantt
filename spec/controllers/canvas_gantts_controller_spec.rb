@@ -791,6 +791,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
     before do
       allow(User).to receive(:current).and_return(current_user)
+      allow(current_user).to receive(:allowed_to?).and_return(false)
       allow(controller).to receive(:set_permissions) do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
       end
