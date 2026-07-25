@@ -168,7 +168,7 @@ export const RelationEditorPopover: React.FC<{
         >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ fontFamily: fontFamilies.display, fontSize: 13, fontWeight: 700, color: '#0f172a', letterSpacing: '0.02em', margin: 0 }}>
+                    <div style={{ fontFamily: fontFamilies.ui, fontSize: 13, fontWeight: 700, color: '#0f172a', letterSpacing: '0.02em', margin: 0 }}>
                         {i18n.t('label_relation_title') || 'Dependency'}
                     </div>
                     <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.4, margin: 0 }}>
@@ -179,7 +179,7 @@ export const RelationEditorPopover: React.FC<{
                 </div>
 
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#334155', margin: 0 }}>
-                    <span style={{ fontFamily: fontFamilies.mid, fontWeight: 600 }}>{i18n.t('label_relation_type') || 'Relation type'}</span>
+                    <span style={{ fontFamily: fontFamilies.ui, fontWeight: 600 }}>{i18n.t('label_relation_type') || 'Relation type'}</span>
                     <select
                         data-testid="relation-type-select"
                         value={relationType}
@@ -205,7 +205,7 @@ export const RelationEditorPopover: React.FC<{
 
                 {supportsDelay && (
                     <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#334155', margin: 0 }}>
-                        <span style={{ fontFamily: fontFamilies.mid, fontWeight: 600 }}>{i18n.t('label_delay') || 'Delay'}</span>
+                        <span style={{ fontFamily: fontFamilies.ui, fontWeight: 600 }}>{i18n.t('label_delay') || 'Delay'}</span>
                         <input
                             data-testid="relation-delay-input"
                             type="text"

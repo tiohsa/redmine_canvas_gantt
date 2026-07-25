@@ -89,7 +89,7 @@ export const BaselineDiffPopover: React.FC<{
             }}
         >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ fontFamily: fontFamilies.display, fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                <div style={{ fontFamily: fontFamilies.ui, fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
                     {i18n.t('label_baseline_comparison') || 'Baseline comparison'}
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.45 }}>

@@ -151,7 +151,7 @@ export const DisplaySettingsScopeControls: React.FC<DisplaySettingsScopeControls
             {showDisplaySettingsScopeMenu && (
                 <div data-testid="display-settings-scope-menu" style={{ position: 'absolute', top: '100%', right: 0, marginTop: 8, background: designTokens.controlBg, border: `1px solid ${designTokens.controlBorder}`, borderRadius: 8, boxShadow: designTokens.menuShadow, padding: 12, minWidth: 280, zIndex: 20, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: fontFamilies.ui, fontSize: '13px', lineHeight: 1.5 }}>
                     <div>
-                        <div style={{ fontFamily: fontFamilies.mid, fontWeight: 600, marginBottom: 8 }}>
+                        <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginBottom: 8 }}>
                             {i18n.t('label_display_settings') || 'Display settings'}
                         </div>
                         <div style={{ fontSize: 13, color: designTokens.textMuted, lineHeight: 1.5 }}>

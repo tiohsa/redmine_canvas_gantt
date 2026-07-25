@@ -164,7 +164,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     }}
                 >
                     <div>
-                        <div style={{ fontFamily: fontFamilies.mid, fontWeight: 600, marginBottom: 4 }}>
+                        <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginBottom: 4 }}>
                             {i18n.t('label_display_settings_heading') || 'Chart display'}
                         </div>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>

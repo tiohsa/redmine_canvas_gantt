@@ -13,6 +13,11 @@ const getRenderedTaskOrder = async (page: Parameters<typeof test>[0]['page']) =>
   )
 );
 
+const enableDependencyOrganization = async (page: Parameters<typeof test>[0]['page']) => {
+  await page.getByTestId('display-settings-menu-button').click();
+  await page.getByLabel('Organize by dependency').check();
+};
+
 test('organize by dependency overrides flat sort order', async ({ page }) => {
   await setupMockApp(page, {
     preferences: {
@@ -76,7 +81,7 @@ test('organize by dependency overrides flat sort order', async ({ page }) => {
   await waitForInitialRender(page);
   await expect(await getRenderedTaskOrder(page)).toEqual(['101', '102', '103']);
 
-  await page.getByTitle('Organize by dependency').click();
+  await enableDependencyOrganization(page);
 
   await expect.poll(() => getRenderedTaskOrder(page)).toEqual(['101', '103', '102']);
 });
@@ -151,7 +156,7 @@ test('organize by dependency keeps cross-version dependency tasks adjacent', asy
   await expect(page.getByText('v1')).toBeVisible();
   await expect(page.getByText('v2')).toBeVisible();
 
-  await page.getByTitle('Organize by dependency').click();
+  await enableDependencyOrganization(page);
 
   await expect.poll(() => getRenderedTaskOrder(page)).toEqual(['101', '103', '102']);
   await expect(page.getByText('v1')).toHaveCount(0);

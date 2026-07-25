@@ -116,7 +116,7 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
                     margin: 6px 0;
                 }
                 .menu-section-title {
-                    font-family: ${fontFamilies.mid};
+                    font-family: ${fontFamilies.ui};
                     font-size: 11px;
                     font-weight: 700;
                     color: #888;

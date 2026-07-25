@@ -1,8 +1,5 @@
 :root {
-  --font-ui: "DM Sans", "Noto Sans JP", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-display: "Outfit", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mid: "Poppins", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-data: "Roboto", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-ui: "DM Sans", "Noto Sans JP Variable", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   line-height: 1.5;
   font-weight: 400;
@@ -235,7 +232,7 @@ iframe.issue-iframe-loading {
 }
 
 .minimax-datepicker .react-datepicker__current-month {
-  font-family: var(--font-display) !important;
+  font-family: var(--font-ui) !important;
   font-weight: 600 !important;
   color: var(--col-text00) !important;
   font-size: 0.76rem !important;
@@ -403,18 +400,6 @@ iframe.issue-iframe-loading {
 
 .font-ui {
   font-family: var(--font-ui);
-}
-
-.font-display {
-  font-family: var(--font-display);
-}
-
-.font-mid {
-  font-family: var(--font-mid);
-}
-
-.font-data {
-  font-family: var(--font-data);
 }
 
 /* Hover emphasis for sidebar rows */

@@ -109,6 +109,7 @@ test('keeps saved query scope while applying an additional status filter', async
     const url = new URL(route.request().url());
     dataRequests.push(url.search);
     const selectedStatuses = url.searchParams.getAll('status_ids[]').map(Number);
+    const queryId = url.searchParams.get('query_id');
     const tasks = selectedStatuses.length > 0
       ? defaultMockData.tasks.filter((task) => selectedStatuses.includes(task.status_id))
       : defaultMockData.tasks;
@@ -120,8 +121,14 @@ test('keeps saved query scope while applying an additional status filter', async
         ...defaultMockData,
         tasks,
         initial_state: {
-          queryId: url.searchParams.get('query_id') ? Number(url.searchParams.get('query_id')) : undefined,
+          queryId: queryId ? Number(queryId) : undefined,
           selectedStatusIds: selectedStatuses.length > 0 ? selectedStatuses : undefined,
+        },
+        query_context: {
+          query_id: queryId,
+          explicit_overrides: selectedStatuses.length > 0
+            ? { status: { mode: 'subset', values: selectedStatuses } }
+            : (url.searchParams.get('op[status_id]') === '*' ? { status: { mode: 'all' } } : {}),
         },
       }),
     });
