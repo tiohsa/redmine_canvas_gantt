@@ -350,7 +350,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(todayButton.textContent?.trim()).toBe('');
     });
 
-    it('toggles left and right pane maximization buttons', () => {
+    it('does not render pane maximization buttons directly in the toolbar', () => {
         useTaskStore.setState({
             filterText: '',
             allTasks: [],
@@ -366,20 +366,8 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        const leftMaxButton = screen.getByTestId('maximize-left-pane-button');
-        const rightMaxButton = screen.getByTestId('maximize-right-pane-button');
-
-        fireEvent.click(leftMaxButton);
-        expect(useUIStore.getState().leftPaneVisible).toBe(true);
-        expect(useUIStore.getState().rightPaneVisible).toBe(false);
-
-        fireEvent.click(rightMaxButton);
-        expect(useUIStore.getState().leftPaneVisible).toBe(false);
-        expect(useUIStore.getState().rightPaneVisible).toBe(true);
-
-        fireEvent.click(rightMaxButton);
-        expect(useUIStore.getState().leftPaneVisible).toBe(true);
-        expect(useUIStore.getState().rightPaneVisible).toBe(true);
+        expect(screen.queryByTestId('maximize-left-pane-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('maximize-right-pane-button')).not.toBeInTheDocument();
     });
 
 
@@ -433,15 +421,14 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        const saveBaselineButton = screen.getByRole('button', { name: 'Save Baseline' });
-        const showBaselineButton = screen.getByRole('button', { name: 'Show Baseline' });
+        const baselineButton = screen.getByRole('button', { name: 'Save Baseline' });
 
-        expect(saveBaselineButton).toBeInTheDocument();
-        expect(showBaselineButton).toBeInTheDocument();
-        expect(showBaselineButton).toBeDisabled();
+        expect(baselineButton).toBeInTheDocument();
+        expect(screen.getAllByTestId('baseline-save-menu-button')).toHaveLength(1);
 
-        fireEvent.click(saveBaselineButton);
+        fireEvent.click(baselineButton);
         const baselineSaveMenu = await screen.findByTestId('baseline-save-menu');
+        expect(within(baselineSaveMenu).getByRole('checkbox', { name: 'Show baseline comparison' })).toBeDisabled();
 
         await act(async () => {
             fireEvent.click(within(baselineSaveMenu).getByRole('button', { name: 'Save whole project as baseline' }));
@@ -450,10 +437,41 @@ describe('GanttToolbar shortcuts', () => {
 
         expect(saveBaselineMock).toHaveBeenCalledWith(expect.objectContaining({ scope: 'project' }));
         expect(useBaselineStore.getState().hasBaseline).toBe(true);
-        expect(screen.getByRole('button', { name: 'Show Baseline' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Save Baseline' })).toHaveAttribute('aria-pressed', 'true');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Show Baseline' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save Baseline' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Show baseline comparison' }));
         expect(useUIStore.getState().showBaseline).toBe(true);
+    });
+
+    it('keeps only the baseline visibility action for view-only users', () => {
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            permissions: { editable: false, viewable: true, baselineEditable: false }
+        });
+        useBaselineStore.setState({ hasBaseline: true });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        const menu = screen.getByTestId('baseline-save-menu');
+
+        expect(within(menu).getByRole('checkbox', { name: 'Show baseline comparison' })).toBeInTheDocument();
+        expect(within(menu).queryByTestId('baseline-save-filtered-button')).not.toBeInTheDocument();
+        expect(within(menu).queryByTestId('baseline-save-project-button')).not.toBeInTheDocument();
+    });
+
+    it('shows a disabled visibility action when no baseline exists', () => {
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            permissions: { editable: false, viewable: true, baselineEditable: false }
+        });
+        useBaselineStore.setState({ hasBaseline: false });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        expect(screen.getByRole('checkbox', { name: 'Show baseline comparison' })).toBeDisabled();
     });
 
     it('opens new issue dialog with redmineBase prefix', () => {
@@ -810,7 +828,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(fontSizeSelect).toHaveValue('15');
     });
 
-    it('places display settings immediately after the workload control', () => {
+    it('keeps project and display scope controls in their toolbar order', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
             ...config,
@@ -841,8 +859,15 @@ describe('GanttToolbar shortcuts', () => {
 
         const displaySettingsButton = screen.getByTestId('display-settings-menu-button');
         const workloadButton = screen.getByTitle('Workload');
+        const projectButton = screen.getByTitle('Filter by project');
+        const assigneeButton = screen.getByTitle('Assignee Filter');
+        const scopeButton = screen.getByTestId('display-settings-scope-menu-button');
 
         expect(workloadButton.compareDocumentPosition(displaySettingsButton) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+        expect(projectButton.parentElement).toHaveClass('gantt-toolbar-project-filter');
+        expect(assigneeButton.parentElement).toHaveClass('gantt-toolbar-assignee-filter');
+        expect(displaySettingsButton.parentElement).toHaveClass('gantt-toolbar-display-settings');
+        expect(scopeButton.parentElement).toHaveClass('gantt-toolbar-display-settings-scope');
 
         fireEvent.click(displaySettingsButton);
 

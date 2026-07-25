@@ -60,9 +60,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         columnSettings,
         toggleColumnVisibility,
         resetColumns,
-        toggleLeftPane,
-        toggleRightPane,
-        leftPaneVisible,
         rightPaneVisible,
         isFullScreen,
         toggleFullScreen,
@@ -81,8 +78,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     } = useUIStore();
     const baselineSaveStatus = useBaselineStore(state => state.saveStatus);
     const hasBaseline = useBaselineStore(state => state.hasBaseline);
-    const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
-    const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
     const {
         queryMenuRef,
         columnMenuRef,
@@ -590,42 +585,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
             {/* Left: Filter & Options */}
             <div className="gantt-toolbar-left" style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
                 <button
-                    data-testid="maximize-left-pane-button"
-                    onClick={toggleRightPane}
-                    title={isLeftPaneMaximized
-                        ? (i18n.t('label_restore_split_view') || "Restore Split View")
-                        : (i18n.t('label_maximize_left_pane') || "Maximize List")}
-                    className={`minimax-pill-nav ${isLeftPaneMaximized ? 'active' : ''}`}
-                    style={{ width: '32px', height: '32px', position: 'relative' }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                        <line x1="15" y1="3" x2="15" y2="21" />
-                    </svg>
-                    {isLeftPaneMaximized && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
-
-                <button
-                    data-testid="maximize-right-pane-button"
-                    onClick={toggleLeftPane}
-                    title={isRightPaneMaximized
-                        ? (i18n.t('label_restore_split_view') || "Restore Split View")
-                        : (i18n.t('label_maximize_right_pane') || "Maximize Chart")}
-                    className={`minimax-pill-nav ${isRightPaneMaximized ? 'active' : ''}`}
-                    style={{ width: '32px', height: '32px', position: 'relative' }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                        <line x1="9" y1="3" x2="9" y2="21" />
-                    </svg>
-                    {isRightPaneMaximized && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
-
-                <button
                     onClick={() => {
                         const newIssuePath = window.RedmineCanvasGantt?.newIssuePath;
                         const projectId = window.RedmineCanvasGantt?.projectId;
@@ -743,7 +702,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
-
+                    
                     {showQueryMenu && (
                         <div
                             data-testid="query-menu"
@@ -908,7 +867,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
-
+                    
                     {showColumnMenu && (
                         <div
                             style={{
@@ -997,7 +956,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
-
+                    
                     {showWorkloadMenu && (
                         <div
                             style={{
@@ -1079,7 +1038,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     onCloseDisplaySettingsScopeMenu={() => closeMenu('displaySettingsScope')}
                 />
 
-                <div ref={assigneeMenuRef} style={{ position: 'relative' }}>
+                <div ref={assigneeMenuRef} className="gantt-toolbar-assignee-filter" style={{ position: 'relative' }}>
                     <button
                         onClick={() => toggleMenu('assignee')}
                         title={i18n.t('field_assigned_to') || 'Assignee Filter'}
@@ -1106,7 +1065,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
-
+                    
                     {showAssigneeMenu && (
                         <div
                             style={{
@@ -1171,7 +1130,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     )}
                 </div>
 
-                <div ref={projectMenuRef} style={{ position: 'relative' }}>
+                <div ref={projectMenuRef} className="gantt-toolbar-project-filter" style={{ position: 'relative' }}>
                     <button
                         onClick={() => toggleMenu('project')}
                         title={i18n.t('label_project_plural') || 'Filter by project'}
@@ -1198,6 +1157,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
+                    
                     {showProjectMenu && (
                         <div
                             style={{
@@ -1313,6 +1273,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
+                    
                     {showVersionMenu && (
                         <div
                             style={{
@@ -1385,7 +1346,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     )}
                 </div>
 
-                <div ref={statusMenuRef} style={{ position: 'relative' }}>
+                <div ref={statusMenuRef} className="gantt-toolbar-status-filter" style={{ position: 'relative' }}>
                     <button
                         onClick={() => toggleMenu('status')}
                         title={i18n.t('field_status') || 'Filter by status'}
@@ -1411,6 +1372,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
+                    
                     {showStatusMenu && (
                         <div
                             style={{
@@ -1890,6 +1852,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     hasBaseline={hasBaseline}
                     showBaseline={showBaseline}
                     baselineEditable={permissions.baselineEditable}
+                    baselineViewable={permissions.viewable}
                     baselineSaveMenuRef={baselineSaveMenuRef}
                     showBaselineSaveMenu={showBaselineSaveMenu}
                     onToggleSaveMenu={() => toggleMenu('baselineSave')}

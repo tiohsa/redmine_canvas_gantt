@@ -47,7 +47,7 @@ describe('DisplaySettingsControls', () => {
         });
     });
 
-    it('shows the current source and saves the global display snapshot', () => {
+    it('keeps the shared-scope save button and saves the global display snapshot', () => {
         const taskState = useTaskStore.getState();
         const uiState = useUIStore.getState();
         const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
@@ -98,7 +98,7 @@ describe('DisplaySettingsControls', () => {
 
         fireEvent.click(shareCheckbox);
         expect(shareCheckbox).not.toBeChecked();
-        fireEvent.click(screen.getByTestId('display-settings-save-button'));
+        fireEvent.click(screen.getByTestId('display-settings-scope-save-button'));
 
         expect(vi.mocked(preferences.saveDisplayPreferences)).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -171,6 +171,11 @@ describe('DisplaySettingsControls', () => {
         expect(screen.getByLabelText('Show hierarchy lines')).toBeChecked();
         expect(screen.getByTestId('display-settings-row-height-select')).toHaveValue('36');
         expect(screen.getByTestId('display-settings-font-size-select')).toHaveValue('13');
+        expect(screen.getByTestId('display-settings-menu-button')).toHaveStyle({
+            backgroundColor: 'rgb(255, 255, 255)'
+        });
+        expect(screen.queryByTestId('display-settings-active-indicator')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('display-settings-save-button')).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByLabelText('Progress line'));
         fireEvent.click(screen.getByLabelText('Organize by dependency'));
@@ -186,5 +191,81 @@ describe('DisplaySettingsControls', () => {
         expect(useUIStore.getState().showHierarchyLines).toBe(false);
         expect(useTaskStore.getState().viewport.rowHeight).toBe(52);
         expect(useUIStore.getState().sidebarFontSize).toBe(15);
+    });
+
+    it('applies display setting changes immediately without a popup save button', () => {
+        const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
+        render(
+            <DisplaySettingsControls
+                displaySettingsMenuRef={displaySettingsMenuRef}
+                showDisplaySettingsMenu={true}
+                onToggleDisplaySettingsMenu={vi.fn()}
+                onCloseDisplaySettingsMenu={vi.fn()}
+            />
+        );
+
+        expect(screen.queryByTestId('display-settings-save-button')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByLabelText('Progress line'));
+
+        expect(useUIStore.getState().showProgressLine).toBe(true);
+    });
+
+    it('keeps pane maximization controls in the popup and leaves it open after toggling', () => {
+        const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
+
+        render(
+            <DisplaySettingsControls
+                displaySettingsMenuRef={displaySettingsMenuRef}
+                showDisplaySettingsMenu={true}
+                onToggleDisplaySettingsMenu={vi.fn()}
+                onCloseDisplaySettingsMenu={vi.fn()}
+            />
+        );
+
+        const leftPaneButton = screen.getByTestId('maximize-left-pane-button');
+        const rightPaneButton = screen.getByTestId('maximize-right-pane-button');
+
+        expect(leftPaneButton).toHaveAttribute('aria-pressed', 'false');
+        expect(rightPaneButton).toHaveAttribute('aria-pressed', 'false');
+
+        fireEvent.click(leftPaneButton);
+        expect(useUIStore.getState().leftPaneVisible).toBe(true);
+        expect(useUIStore.getState().rightPaneVisible).toBe(false);
+        expect(leftPaneButton).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByTestId('display-settings-menu')).toBeInTheDocument();
+
+        fireEvent.click(rightPaneButton);
+        expect(useUIStore.getState().leftPaneVisible).toBe(false);
+        expect(useUIStore.getState().rightPaneVisible).toBe(true);
+        expect(rightPaneButton).toHaveAttribute('aria-pressed', 'true');
+
+        fireEvent.click(rightPaneButton);
+        expect(useUIStore.getState().leftPaneVisible).toBe(true);
+        expect(useUIStore.getState().rightPaneVisible).toBe(true);
+        expect(leftPaneButton).toHaveAttribute('aria-pressed', 'false');
+        expect(rightPaneButton).toHaveAttribute('aria-pressed', 'false');
+        expect(screen.getByTestId('display-settings-menu')).toBeInTheDocument();
+    });
+
+    it('marks the display settings icon active when a non-default option is enabled', () => {
+        const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
+
+        render(
+            <DisplaySettingsControls
+                displaySettingsMenuRef={displaySettingsMenuRef}
+                showDisplaySettingsMenu={true}
+                onToggleDisplaySettingsMenu={vi.fn()}
+                onCloseDisplaySettingsMenu={vi.fn()}
+            />
+        );
+
+        const menuButton = screen.getByTestId('display-settings-menu-button');
+        expect(menuButton).toHaveStyle({ backgroundColor: 'rgb(255, 255, 255)' });
+        expect(screen.queryByTestId('display-settings-active-indicator')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByLabelText('Progress line'));
+
+        expect(menuButton).toHaveStyle({ backgroundColor: 'rgb(232, 240, 254)' });
+        expect(screen.getByTestId('display-settings-active-indicator')).toBeInTheDocument();
     });
 });

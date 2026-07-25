@@ -2,14 +2,18 @@ import React from 'react';
 
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
-import {
-    buildStoredDisplayPreferences,
-    loadDisplayPreferencesWithSource,
-    saveDisplayPreferences,
-    saveGlobalDisplayPreferences
-} from '../utils/preferences';
 import { i18n } from '../utils/i18n';
 import { fontFamilies, designTokens } from '../styles/designTokens';
+
+const DEFAULT_DISPLAY_SETTINGS = {
+    showProgressLine: false,
+    organizeByDependency: false,
+    showStartDateOnly: true,
+    showDueDateOnly: true,
+    showTaskTitles: true,
+    showTaskBarDates: false,
+    showHierarchyLines: true
+} as const;
 
 interface DisplaySettingsControlsProps {
     displaySettingsMenuRef: React.RefObject<HTMLDivElement | null>;
@@ -27,14 +31,10 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
     onCloseDisplaySettingsMenu
 }) => {
     const {
-        zoomLevel,
-        viewMode,
         viewport,
-        showVersions,
         organizeByDependency,
         setOrganizeByDependency,
-        setRowHeight,
-        customScales
+        setRowHeight
     } = useTaskStore();
     const {
         showProgressLine,
@@ -42,7 +42,6 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         showTaskBarDates,
         showHierarchyLines,
         toggleHierarchyLines,
-        showPointsOrphans,
         showStartDateOnly,
         showDueDateOnly,
         toggleProgressLine,
@@ -50,16 +49,13 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         toggleDueDateOnly,
         toggleTaskTitles,
         toggleTaskBarDates,
-        showBaseline,
-        visibleColumns,
-        columnSettings,
-        columnWidths,
-        sidebarWidth,
         sidebarFontSize,
-        setSidebarFontSize
+        setSidebarFontSize,
+        leftPaneVisible,
+        rightPaneVisible,
+        toggleLeftPane,
+        toggleRightPane
     } = useUIStore();
-    const projectId = window.RedmineCanvasGantt?.projectId;
-    const displayPreferences = loadDisplayPreferencesWithSource(projectId);
     const rowHeightOptions = [
         { value: 20, label: i18n.t('label_row_height_xs') || 'XS' },
         { value: 28, label: i18n.t('label_row_height_s') || 'S' },
@@ -72,45 +68,18 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         { value: 13, label: i18n.t('label_font_size_medium') || 'Medium' },
         { value: 15, label: i18n.t('label_font_size_large') || 'Large' }
     ];
-    const handleSave = () => {
-        const snapshot = buildStoredDisplayPreferences({
-            zoomLevel,
-            viewMode,
-            viewport: {
-                startDate: viewport.startDate,
-                scrollX: viewport.scrollX,
-                scrollY: viewport.scrollY,
-                scale: viewport.scale
-            },
-            showProgressLine,
-            showTaskTitles,
-            showTaskBarDates,
-            showHierarchyLines,
-            showPointsOrphans,
-            showStartDateOnly,
-            showDueDateOnly,
-            showVersions,
-            showBaseline,
-            visibleColumns,
-            columnSettings,
-            organizeByDependency,
-            columnWidths,
-            sidebarWidth,
-            customScales,
-            rowHeight: viewport.rowHeight,
-            sidebarFontSize
-        });
-
-        if (displayPreferences.globalEnabled) {
-            saveGlobalDisplayPreferences(snapshot, true);
-        } else {
-            saveDisplayPreferences(snapshot, projectId);
-        }
-        onCloseDisplaySettingsMenu();
-    };
+    const hasActiveDisplaySetting = showProgressLine !== DEFAULT_DISPLAY_SETTINGS.showProgressLine
+        || organizeByDependency !== DEFAULT_DISPLAY_SETTINGS.organizeByDependency
+        || showStartDateOnly !== DEFAULT_DISPLAY_SETTINGS.showStartDateOnly
+        || showDueDateOnly !== DEFAULT_DISPLAY_SETTINGS.showDueDateOnly
+        || showTaskTitles !== DEFAULT_DISPLAY_SETTINGS.showTaskTitles
+        || showTaskBarDates !== DEFAULT_DISPLAY_SETTINGS.showTaskBarDates
+        || showHierarchyLines !== DEFAULT_DISPLAY_SETTINGS.showHierarchyLines;
+    const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
+    const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
 
     return (
-        <div ref={displaySettingsMenuRef} className={className} style={{ display: 'flex', alignItems: 'center', marginLeft: '8px', position: 'relative' }}>
+        <div ref={displaySettingsMenuRef} className={className} style={{ display: 'flex', alignItems: 'center', marginLeft: '0', position: 'relative' }}>
             <button
                 type="button"
                 onClick={onToggleDisplaySettingsMenu}
@@ -124,8 +93,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     padding: '0',
                     borderRadius: '6px',
                     border: `1px solid ${designTokens.controlBorder}`,
-                    backgroundColor: designTokens.controlBg,
-                    color: designTokens.controlFg,
+                    backgroundColor: hasActiveDisplaySetting ? designTokens.controlActiveBg : designTokens.controlBg,
+                    color: hasActiveDisplaySetting ? designTokens.controlActiveFg : designTokens.controlFg,
                     cursor: 'pointer',
                     height: '32px',
                     width: '32px',
@@ -140,6 +109,12 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     <circle cx="15" cy="12" r="2" fill={designTokens.controlBg} />
                     <circle cx="8" cy="18" r="2" fill={designTokens.controlBg} />
                 </svg>
+                {hasActiveDisplaySetting && (
+                    <div
+                        data-testid="display-settings-active-indicator"
+                        style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }}
+                    />
+                )}
             </button>
 
             {showDisplaySettingsMenu && (
@@ -198,6 +173,51 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                             <span>{i18n.t('label_toggle_hierarchy_lines') || 'Show hierarchy lines'}</span>
                         </label>
 
+                        <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: 8, paddingTop: 8, display: 'grid', gap: 6 }}>
+                            <button
+                                type="button"
+                                data-testid="maximize-left-pane-button"
+                                aria-pressed={isLeftPaneMaximized}
+                                onClick={toggleRightPane}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    border: `1px solid ${designTokens.controlBorderStrong}`,
+                                    background: isLeftPaneMaximized ? designTokens.controlActiveBg : designTokens.controlBg,
+                                    color: isLeftPaneMaximized ? designTokens.controlActiveFg : designTokens.controlFg,
+                                    borderRadius: 6,
+                                    minHeight: 30,
+                                    padding: '0 8px',
+                                    cursor: 'pointer',
+                                    textAlign: 'left'
+                                }}
+                            >
+                                {i18n.t('label_maximize_left_pane') || 'Maximize List'}
+                            </button>
+                            <button
+                                type="button"
+                                data-testid="maximize-right-pane-button"
+                                aria-pressed={isRightPaneMaximized}
+                                onClick={toggleLeftPane}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    border: `1px solid ${designTokens.controlBorderStrong}`,
+                                    background: isRightPaneMaximized ? designTokens.controlActiveBg : designTokens.controlBg,
+                                    color: isRightPaneMaximized ? designTokens.controlActiveFg : designTokens.controlFg,
+                                    borderRadius: 6,
+                                    minHeight: 30,
+                                    padding: '0 8px',
+                                    cursor: 'pointer',
+                                    textAlign: 'left'
+                                }}
+                            >
+                                {i18n.t('label_maximize_right_pane') || 'Maximize Chart'}
+                            </button>
+                        </div>
+
                         <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: 8, paddingTop: 8, display: 'grid', gap: 8 }}>
                             <label style={{ display: 'grid', gap: 4 }}>
                                 <span>{i18n.t('label_row_height') || 'Row height'}</span>
@@ -240,22 +260,6 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                             }}
                         >
                             {i18n.t('button_cancel') || 'Cancel'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleSave}
-                            data-testid="display-settings-save-button"
-                            style={{
-                                border: `1px solid ${designTokens.brandPrimaryStrong}`,
-                                background: designTokens.brandPrimaryStrong,
-                                color: designTokens.controlBg,
-                                borderRadius: 6,
-                                height: 28,
-                                padding: '0 8px',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            {i18n.t('button_save') || 'Save'}
                         </button>
                     </div>
                 </div>

@@ -22,20 +22,20 @@
     order: 7;
 }
 
-/* Keep the project filter before the assignee filter. */
-.gantt-toolbar-left > :nth-child(7) {
-    order: 20;
+/* Keep the project filter immediately before the assignee filter. */
+.gantt-toolbar-left > .gantt-toolbar-project-filter {
+    order: 10;
 }
 
-.gantt-toolbar-left > :nth-child(8) {
-    order: 10;
+.gantt-toolbar-left > .gantt-toolbar-assignee-filter {
+    order: 11;
 }
 
 .gantt-toolbar-left > :nth-child(9) {
     order: 9;
 }
 
-.gantt-toolbar-left > :nth-child(10) {
+.gantt-toolbar-left > .gantt-toolbar-status-filter {
     order: 11;
 }
 
@@ -67,12 +67,12 @@
 }
 
 .gantt-toolbar-left > .gantt-toolbar-display-settings {
-    /* Place chart display immediately after the status filter. */
-    order: 14;
+    /* Keep chart display immediately before its scope control. */
+    order: 100;
 }
 
 .gantt-toolbar-left > .gantt-toolbar-display-settings-scope {
-    order: 19;
+    order: 101;
 }
 
 .gantt-toolbar-left > :nth-child(16) {
