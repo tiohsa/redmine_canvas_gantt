@@ -429,3 +429,32 @@ describe('apiClient.saveBaseline', () => {
         });
     });
 });
+
+describe('apiClient.deleteTask', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('deletes through the session-authenticated Canvas Gantt endpoint', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.deleteTask('42');
+
+        expect(fetchMock).toHaveBeenCalledWith('/canvas_gantt/tasks/42.json?canvas_project_id=1', expect.objectContaining({
+            method: 'DELETE',
+            credentials: 'same-origin',
+            headers: expect.any(Headers)
+        }));
+        const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
+        expect(new Headers(requestInit.headers).get('X-CSRF-Token')).toBe('token');
+    });
+});

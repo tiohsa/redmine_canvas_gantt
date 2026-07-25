@@ -345,7 +345,7 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'baseline_repository').to_s
 
   helper RedmineCanvasGantt::ViteAssetHelper
-  accept_api_auth :data, :queries, :edit_meta, :update, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation, :save_baseline
+  accept_api_auth :data, :queries, :edit_meta, :update, :destroy_task, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation, :save_baseline
 
   before_action :resolve_canvas_project
   before_action :set_permissions
@@ -505,6 +505,18 @@ class CanvasGanttsController < ApplicationController
     end
   rescue ActiveRecord::StaleObjectError
     render json: { error: canvas_gantt_l(:error_canvas_gantt_conflict_reload) }, status: :conflict
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
+  end
+
+  # DELETE /canvas_gantt/tasks/:id.json
+  def destroy_task
+    issue = Issue.visible.find(params[:id])
+    return unless ensure_issue_in_scope(issue)
+    return unless ensure_issue_deletable(issue)
+
+    issue.destroy
+    render json: { status: 'ok' }
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
   end
@@ -788,6 +800,13 @@ class CanvasGanttsController < ApplicationController
 
   def ensure_issue_editable(issue)
     return true if issue_editable?(issue)
+
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
+    false
+  end
+
+  def ensure_issue_deletable(issue)
+    return true if User.current.allowed_to?(:delete_issues, issue.project) && issue.deletable?
 
     render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
     false
