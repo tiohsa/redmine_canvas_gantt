@@ -1466,7 +1466,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     displaySettingsMenuRef={displaySettingsMenuRef}
                     showDisplaySettingsMenu={showDisplaySettingsMenu}
                     onToggleDisplaySettingsMenu={() => toggleMenu('displaySettings')}
-                    onCloseDisplaySettingsMenu={() => closeMenu('displaySettings')}
                 />
 
                 <div

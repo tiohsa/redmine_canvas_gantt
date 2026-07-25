@@ -35,7 +35,10 @@ describe('DisplaySettingsControls', () => {
                 nonWorkingWeekDays: [],
                 i18n: {}
             }),
-            i18n: {}
+            i18n: {
+                label_display_settings_visibility: 'Chart',
+                label_display_settings_heading: 'Chart display'
+            }
         };
         useTaskStore.setState(useTaskStore.getInitialState(), true);
         useUIStore.setState(useUIStore.getInitialState(), true);
@@ -158,11 +161,20 @@ describe('DisplaySettingsControls', () => {
                 displaySettingsMenuRef={displaySettingsMenuRef}
                 showDisplaySettingsMenu={true}
                 onToggleDisplaySettingsMenu={vi.fn()}
-                onCloseDisplaySettingsMenu={vi.fn()}
             />
         );
 
         expect(screen.getByLabelText('Progress line')).toBeInTheDocument();
+        expect(screen.getByText('Chart display')).toBeInTheDocument();
+        expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('title', 'Chart');
+        expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('aria-label', 'Chart');
+        expect(screen.getByTestId('display-settings-menu')).toHaveStyle({
+            maxHeight: '400px',
+            overflowY: 'auto'
+        });
+        expect(screen.getByLabelText('Row height').parentElement?.parentElement).toHaveStyle({
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))'
+        });
         expect(screen.getByLabelText('Organize by dependency')).toBeInTheDocument();
         expect(screen.getByLabelText('Show start-date-only tasks')).toBeChecked();
         expect(screen.getByLabelText('Show due-date-only tasks')).toBeChecked();
@@ -200,7 +212,6 @@ describe('DisplaySettingsControls', () => {
                 displaySettingsMenuRef={displaySettingsMenuRef}
                 showDisplaySettingsMenu={true}
                 onToggleDisplaySettingsMenu={vi.fn()}
-                onCloseDisplaySettingsMenu={vi.fn()}
             />
         );
 
@@ -218,32 +229,36 @@ describe('DisplaySettingsControls', () => {
                 displaySettingsMenuRef={displaySettingsMenuRef}
                 showDisplaySettingsMenu={true}
                 onToggleDisplaySettingsMenu={vi.fn()}
-                onCloseDisplaySettingsMenu={vi.fn()}
             />
         );
 
         const leftPaneButton = screen.getByTestId('maximize-left-pane-button');
+        const standardPaneButton = screen.getByTestId('standard-pane-button');
         const rightPaneButton = screen.getByTestId('maximize-right-pane-button');
 
         expect(leftPaneButton).toHaveAttribute('aria-pressed', 'false');
+        expect(standardPaneButton).toHaveAttribute('aria-pressed', 'true');
         expect(rightPaneButton).toHaveAttribute('aria-pressed', 'false');
 
         fireEvent.click(leftPaneButton);
         expect(useUIStore.getState().leftPaneVisible).toBe(true);
         expect(useUIStore.getState().rightPaneVisible).toBe(false);
         expect(leftPaneButton).toHaveAttribute('aria-pressed', 'true');
+        expect(standardPaneButton).toHaveAttribute('aria-pressed', 'false');
         expect(screen.getByTestId('display-settings-menu')).toBeInTheDocument();
 
         fireEvent.click(rightPaneButton);
         expect(useUIStore.getState().leftPaneVisible).toBe(false);
         expect(useUIStore.getState().rightPaneVisible).toBe(true);
         expect(rightPaneButton).toHaveAttribute('aria-pressed', 'true');
+        expect(standardPaneButton).toHaveAttribute('aria-pressed', 'false');
 
-        fireEvent.click(rightPaneButton);
+        fireEvent.click(standardPaneButton);
         expect(useUIStore.getState().leftPaneVisible).toBe(true);
         expect(useUIStore.getState().rightPaneVisible).toBe(true);
         expect(leftPaneButton).toHaveAttribute('aria-pressed', 'false');
         expect(rightPaneButton).toHaveAttribute('aria-pressed', 'false');
+        expect(standardPaneButton).toHaveAttribute('aria-pressed', 'true');
         expect(screen.getByTestId('display-settings-menu')).toBeInTheDocument();
     });
 
@@ -255,7 +270,6 @@ describe('DisplaySettingsControls', () => {
                 displaySettingsMenuRef={displaySettingsMenuRef}
                 showDisplaySettingsMenu={true}
                 onToggleDisplaySettingsMenu={vi.fn()}
-                onCloseDisplaySettingsMenu={vi.fn()}
             />
         );
 

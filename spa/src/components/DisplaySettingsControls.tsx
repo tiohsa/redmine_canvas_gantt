@@ -20,15 +20,13 @@ interface DisplaySettingsControlsProps {
     className?: string;
     showDisplaySettingsMenu: boolean;
     onToggleDisplaySettingsMenu: () => void;
-    onCloseDisplaySettingsMenu: () => void;
 }
 
 export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = ({
     displaySettingsMenuRef,
     className,
     showDisplaySettingsMenu,
-    onToggleDisplaySettingsMenu,
-    onCloseDisplaySettingsMenu
+    onToggleDisplaySettingsMenu
 }) => {
     const {
         viewport,
@@ -77,6 +75,27 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         || showHierarchyLines !== DEFAULT_DISPLAY_SETTINGS.showHierarchyLines;
     const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
     const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
+    const selectedPaneMode = isLeftPaneMaximized
+        ? 'list'
+        : isRightPaneMaximized
+            ? 'chart'
+            : 'standard';
+
+    const selectPaneMode = (mode: 'standard' | 'list' | 'chart') => {
+        if (mode === selectedPaneMode) return;
+
+        if (mode === 'standard') {
+            if (isLeftPaneMaximized) toggleRightPane();
+            if (isRightPaneMaximized) toggleLeftPane();
+            return;
+        }
+
+        if (mode === 'list') {
+            toggleRightPane();
+        } else {
+            toggleLeftPane();
+        }
+    };
 
     return (
         <div ref={displaySettingsMenuRef} className={className} style={{ display: 'flex', alignItems: 'center', marginLeft: '0', position: 'relative' }}>
@@ -126,13 +145,15 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                         position: 'absolute',
                         top: '100%',
                         right: 0,
-                        marginTop: 8,
+                        marginTop: 4,
                         background: designTokens.controlBg,
                         border: `1px solid ${designTokens.controlBorder}`,
                         borderRadius: 8,
                         boxShadow: designTokens.menuShadow,
                         padding: 12,
                         minWidth: 280,
+                        maxHeight: '400px',
+                        overflowY: 'auto',
                         zIndex: 20,
                         display: 'flex',
                         flexDirection: 'column',
@@ -142,9 +163,9 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                         lineHeight: 1.5
                     }}
                 >
-                    <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, paddingTop: 8 }}>
+                    <div>
                         <div style={{ fontFamily: fontFamilies.mid, fontWeight: 600, marginBottom: 4 }}>
-                            {i18n.t('label_display_settings_visibility') || 'Chart display'}
+                            {i18n.t('label_display_settings_heading') || 'Chart display'}
                         </div>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
                             <input type="checkbox" checked={showProgressLine} onChange={toggleProgressLine} />
@@ -175,52 +196,125 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                             <span>{i18n.t('label_toggle_hierarchy_lines') || 'Show hierarchy lines'}</span>
                         </label>
 
-                        <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: 8, paddingTop: 8, display: 'grid', gap: 6 }}>
+                        <div
+                            role="group"
+                            aria-label={i18n.t('label_pane_layout') || 'Pane layout'}
+                            data-testid="pane-layout-selector"
+                            style={{
+                                display: 'flex',
+                                alignItems: 'stretch',
+                                gap: 4,
+                                marginTop: 10,
+                                padding: 3,
+                                background: designTokens.controlBorder,
+                                borderRadius: 12
+                            }}
+                        >
                             <button
                                 type="button"
                                 data-testid="maximize-left-pane-button"
-                                aria-pressed={isLeftPaneMaximized}
-                                onClick={toggleRightPane}
+                                aria-pressed={selectedPaneMode === 'list'}
+                                onClick={() => selectPaneMode('list')}
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    border: `1px solid ${designTokens.controlBorderStrong}`,
-                                    background: isLeftPaneMaximized ? designTokens.controlActiveBg : designTokens.controlBg,
-                                    color: isLeftPaneMaximized ? designTokens.controlActiveFg : designTokens.controlFg,
-                                    borderRadius: 6,
+                                    justifyContent: 'center',
+                                    flex: 1,
+                                    gap: 6,
+                                    minWidth: 0,
                                     minHeight: 30,
                                     padding: '0 8px',
+                                    border: 0,
+                                    background: selectedPaneMode === 'list' ? designTokens.controlBg : 'transparent',
+                                    color: selectedPaneMode === 'list' ? designTokens.controlFg : designTokens.controlActiveFg,
+                                    borderRadius: 9,
+                                    boxShadow: selectedPaneMode === 'list' ? designTokens.controlActiveShadow : 'none',
                                     cursor: 'pointer',
-                                    textAlign: 'left'
+                                    textAlign: 'center',
+                                    fontFamily: fontFamilies.ui,
+                                    fontSize: 12,
+                                    fontWeight: selectedPaneMode === 'list' ? 600 : 500,
+                                    lineHeight: 1.2,
+                                    order: 2
                                 }}
                             >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M4 5h16M4 12h16M4 19h16" />
+                                    <path d="M4 5v14" />
+                                </svg>
                                 {i18n.t('label_maximize_left_pane') || 'Maximize List'}
                             </button>
                             <button
                                 type="button"
-                                data-testid="maximize-right-pane-button"
-                                aria-pressed={isRightPaneMaximized}
-                                onClick={toggleLeftPane}
+                                data-testid="standard-pane-button"
+                                aria-pressed={selectedPaneMode === 'standard'}
+                                onClick={() => selectPaneMode('standard')}
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    border: `1px solid ${designTokens.controlBorderStrong}`,
-                                    background: isRightPaneMaximized ? designTokens.controlActiveBg : designTokens.controlBg,
-                                    color: isRightPaneMaximized ? designTokens.controlActiveFg : designTokens.controlFg,
-                                    borderRadius: 6,
+                                    justifyContent: 'center',
+                                    flex: 1,
+                                    gap: 6,
+                                    minWidth: 0,
                                     minHeight: 30,
                                     padding: '0 8px',
+                                    border: 0,
+                                    background: selectedPaneMode === 'standard' ? designTokens.controlBg : 'transparent',
+                                    color: selectedPaneMode === 'standard' ? designTokens.controlFg : designTokens.controlActiveFg,
+                                    borderRadius: 9,
+                                    boxShadow: selectedPaneMode === 'standard' ? designTokens.controlActiveShadow : 'none',
                                     cursor: 'pointer',
-                                    textAlign: 'left'
+                                    textAlign: 'center',
+                                    fontFamily: fontFamilies.ui,
+                                    fontSize: 12,
+                                    fontWeight: selectedPaneMode === 'standard' ? 600 : 500,
+                                    lineHeight: 1.2,
+                                    order: 1
                                 }}
                             >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <rect x="3" y="4" width="18" height="16" rx="1" />
+                                    <path d="M9 4v16M3 9h18" />
+                                </svg>
+                                {i18n.t('label_standard_view') || 'Standard'}
+                            </button>
+                            <button
+                                type="button"
+                                data-testid="maximize-right-pane-button"
+                                aria-pressed={selectedPaneMode === 'chart'}
+                                onClick={() => selectPaneMode('chart')}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flex: 1,
+                                    gap: 6,
+                                    minWidth: 0,
+                                    minHeight: 30,
+                                    padding: '0 8px',
+                                    border: 0,
+                                    background: selectedPaneMode === 'chart' ? designTokens.controlBg : 'transparent',
+                                    color: selectedPaneMode === 'chart' ? designTokens.controlFg : designTokens.controlActiveFg,
+                                    borderRadius: 9,
+                                    boxShadow: selectedPaneMode === 'chart' ? designTokens.controlActiveShadow : 'none',
+                                    cursor: 'pointer',
+                                    textAlign: 'center',
+                                    fontFamily: fontFamilies.ui,
+                                    fontSize: 12,
+                                    fontWeight: selectedPaneMode === 'chart' ? 600 : 500,
+                                    lineHeight: 1.2,
+                                    order: 3
+                                }}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M4 20V5M4 20h16" />
+                                    <path d="m8 16 3-4 3 2 5-7" />
+                                </svg>
                                 {i18n.t('label_maximize_right_pane') || 'Maximize Chart'}
                             </button>
                         </div>
 
-                        <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: 8, paddingTop: 8, display: 'grid', gap: 8 }}>
+                        <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: 8, paddingTop: 8, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
                             <label style={{ display: 'grid', gap: 4 }}>
                                 <span>{i18n.t('label_row_height') || 'Row height'}</span>
                                 <select
@@ -248,22 +342,6 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                        <button
-                            type="button"
-                            onClick={onCloseDisplaySettingsMenu}
-                            style={{
-                                border: `1px solid ${designTokens.controlBorderStrong}`,
-                                background: designTokens.controlBg,
-                                borderRadius: 6,
-                                height: 28,
-                                padding: '0 8px',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            {i18n.t('button_cancel') || 'Cancel'}
-                        </button>
-                    </div>
                 </div>
             )}
         </div>
