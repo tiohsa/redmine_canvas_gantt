@@ -22,20 +22,20 @@
     order: 7;
 }
 
-/* Keep the project filter before the assignee filter. */
-.gantt-toolbar-left > :nth-child(7) {
-    order: 20;
+/* Keep the project filter immediately before the assignee filter. */
+.gantt-toolbar-left > .gantt-toolbar-project-filter {
+    order: 10;
 }
 
-.gantt-toolbar-left > :nth-child(8) {
-    order: 10;
+.gantt-toolbar-left > .gantt-toolbar-assignee-filter {
+    order: 11;
 }
 
 .gantt-toolbar-left > :nth-child(9) {
     order: 9;
 }
 
-.gantt-toolbar-left > :nth-child(10) {
+.gantt-toolbar-left > .gantt-toolbar-status-filter {
     order: 11;
 }
 
@@ -59,15 +59,45 @@
     order: 16;
 }
 
-/* Workload follows Toggle Hierarchy Lines. */
-.gantt-toolbar-left > :nth-child(16) {
+/* Keep workload and display settings together after the filter controls. */
+.gantt-toolbar-left > .gantt-toolbar-workload,
+.gantt-toolbar-left > .gantt-toolbar-display-settings,
+.gantt-toolbar-left > .gantt-toolbar-display-settings-scope {
     order: 17;
 }
 
-.gantt-toolbar-left > :nth-child(17) {
+.gantt-toolbar-left > .gantt-toolbar-display-settings {
+    /* Keep chart display immediately before its scope control. */
+    order: 100;
+}
+
+.gantt-toolbar-left > .gantt-toolbar-display-settings-scope {
+    order: 101;
+}
+
+.gantt-toolbar-left > :nth-child(16) {
     order: 18;
+}
+
+.gantt-toolbar-left > :nth-child(17) {
+    order: 19;
 }
 
 .gantt-toolbar-left > :nth-child(18) {
     order: 1;
+}
+
+.gantt-toolbar-labeled-button {
+    gap: 6px;
+    min-width: 32px;
+    padding: 0 10px !important;
+    white-space: nowrap;
+    width: auto !important;
+}
+
+.gantt-toolbar-button-label {
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
 }

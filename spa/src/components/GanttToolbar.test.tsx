@@ -114,6 +114,30 @@ describe('GanttToolbar shortcuts', () => {
         });
     });
 
+    it('shows names beside every header icon from saved queries through display settings', () => {
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        const labels = Array.from(document.querySelectorAll(
+            '.gantt-toolbar-left .gantt-toolbar-labeled-button .gantt-toolbar-button-label'
+        )).map((element) => element.textContent);
+
+        expect(labels).toEqual([
+            'Query',
+            'Cols',
+            'Workload',
+            'Display',
+            'Assignee',
+            'Proj.',
+            'Ver.',
+            'Status',
+            'Chart',
+            'Link'
+        ]);
+        expect(screen.getByRole('button', { name: 'Month' })).toHaveTextContent('M');
+        expect(screen.getByRole('button', { name: 'Week' })).toHaveTextContent('W');
+        expect(screen.getByRole('button', { name: 'Day' })).toHaveTextContent('D');
+    });
+
     it('renders workload menu labels from frontend i18n payload', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
@@ -121,6 +145,7 @@ describe('GanttToolbar shortcuts', () => {
             i18n: {
                 ...(config.i18n ?? {}),
                 label_workload: 'ワークロード',
+                label_workload_short: 'ワークロード',
                 label_show_workload: 'ワークロードパネルを表示',
                 label_capacity_threshold: '負荷しきい値 (時間/日)',
                 label_leaf_issues_only: '末端チケットのみ',
@@ -133,7 +158,7 @@ describe('GanttToolbar shortcuts', () => {
 
         fireEvent.click(screen.getByTitle('ワークロード'));
 
-        expect(screen.getByText('ワークロード')).toBeInTheDocument();
+        expect(within(screen.getByTitle('ワークロード').parentElement as HTMLElement).getAllByText('ワークロード')).toHaveLength(2);
         expect(screen.getByText('ワークロードパネルを表示')).toBeInTheDocument();
         expect(screen.getByText('負荷しきい値 (時間/日)')).toBeInTheDocument();
         expect(screen.getByText('末端チケットのみ')).toBeInTheDocument();
@@ -204,9 +229,9 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
+        fireEvent.click(screen.getByTestId('display-settings-scope-menu-button'));
 
-        const displayMenu = screen.getByTestId('display-settings-menu');
+        const displayMenu = screen.getByTestId('display-settings-scope-menu');
         expect(within(displayMenu).getByText('表示設定')).toBeInTheDocument();
         expect(within(displayMenu).getByText('現在使用中', { selector: 'span' })).toBeInTheDocument();
         expect(within(displayMenu).getByText('このプロジェクト専用設定を使用中', { selector: 'span' })).toBeInTheDocument();
@@ -215,7 +240,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(checkbox.checked).toBe(false);
 
         fireEvent.click(checkbox);
-        fireEvent.click(screen.getByTestId('display-settings-save-button'));
+        fireEvent.click(screen.getByTestId('display-settings-scope-save-button'));
 
         const storedPreferences = JSON.parse(window.localStorage.getItem('canvasGantt:preferences') ?? '{}') as {
             display?: {
@@ -249,10 +274,10 @@ describe('GanttToolbar shortcuts', () => {
         expect(storedPreferences.display?.projects?.['project:1']?.showTaskTitles).toBe(false);
         expect(storedPreferences.display?.projects?.['project:1']?.showTaskBarDates).toBe(true);
         expect(storedPreferences.display?.projects?.['project:1']?.visibleColumns).toEqual(['id', 'subject']);
-        expect(screen.queryByTestId('display-settings-menu')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('display-settings-scope-menu')).not.toBeInTheDocument();
     });
 
-    it('renders and toggles the task title visibility button', () => {
+    it('renders and toggles ticket visibility in the display settings popup', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
             ...config,
@@ -269,7 +294,8 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        const button = screen.getAllByTitle('タイトル表示切替')[0];
+        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
+        const button = screen.getByLabelText('タイトル表示切替');
         expect(button).toBeInTheDocument();
 
         fireEvent.click(button);
@@ -279,7 +305,7 @@ describe('GanttToolbar shortcuts', () => {
         expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
     });
 
-    it('renders and toggles the task bar date visibility button', () => {
+    it('renders and toggles task bar dates in the display settings popup', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
             ...config,
@@ -292,14 +318,14 @@ describe('GanttToolbar shortcuts', () => {
         useUIStore.setState({ ...useUIStore.getState(), showTaskBarDates: false } as never);
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        const button = screen.getByTitle('バー日付表示切替');
-        expect(button).toHaveAttribute('aria-label', 'バー日付表示切替');
+        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
+        const button = screen.getByLabelText('バー日付表示切替');
 
         fireEvent.click(button);
         expect(useUIStore.getState().showTaskBarDates).toBe(true);
     });
 
-    it('renders and toggles the hierarchy line visibility button', () => {
+    it('renders and toggles hierarchy lines in the display settings popup', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
             ...config,
@@ -316,7 +342,8 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        const button = screen.getByTitle('階層線の表示切替');
+        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
+        const button = screen.getByLabelText('階層線の表示切替');
         expect(button).toBeInTheDocument();
 
         fireEvent.click(button);
@@ -348,7 +375,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(todayButton.textContent?.trim()).toBe('');
     });
 
-    it('toggles left and right pane maximization buttons', () => {
+    it('does not render pane maximization buttons directly in the toolbar', () => {
         useTaskStore.setState({
             filterText: '',
             allTasks: [],
@@ -364,20 +391,8 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        const leftMaxButton = screen.getByTestId('maximize-left-pane-button');
-        const rightMaxButton = screen.getByTestId('maximize-right-pane-button');
-
-        fireEvent.click(leftMaxButton);
-        expect(useUIStore.getState().leftPaneVisible).toBe(true);
-        expect(useUIStore.getState().rightPaneVisible).toBe(false);
-
-        fireEvent.click(rightMaxButton);
-        expect(useUIStore.getState().leftPaneVisible).toBe(false);
-        expect(useUIStore.getState().rightPaneVisible).toBe(true);
-
-        fireEvent.click(rightMaxButton);
-        expect(useUIStore.getState().leftPaneVisible).toBe(true);
-        expect(useUIStore.getState().rightPaneVisible).toBe(true);
+        expect(screen.queryByTestId('maximize-left-pane-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('maximize-right-pane-button')).not.toBeInTheDocument();
     });
 
 
@@ -431,15 +446,14 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        const saveBaselineButton = screen.getByRole('button', { name: 'Save Baseline' });
-        const showBaselineButton = screen.getByRole('button', { name: 'Show Baseline' });
+        const baselineButton = screen.getByRole('button', { name: 'Save Baseline' });
 
-        expect(saveBaselineButton).toBeInTheDocument();
-        expect(showBaselineButton).toBeInTheDocument();
-        expect(showBaselineButton).toBeDisabled();
+        expect(baselineButton).toBeInTheDocument();
+        expect(screen.getAllByTestId('baseline-save-menu-button')).toHaveLength(1);
 
-        fireEvent.click(saveBaselineButton);
+        fireEvent.click(baselineButton);
         const baselineSaveMenu = await screen.findByTestId('baseline-save-menu');
+        expect(within(baselineSaveMenu).getByRole('checkbox', { name: 'Show baseline comparison' })).toBeDisabled();
 
         await act(async () => {
             fireEvent.click(within(baselineSaveMenu).getByRole('button', { name: 'Save whole project as baseline' }));
@@ -448,10 +462,41 @@ describe('GanttToolbar shortcuts', () => {
 
         expect(saveBaselineMock).toHaveBeenCalledWith(expect.objectContaining({ scope: 'project' }));
         expect(useBaselineStore.getState().hasBaseline).toBe(true);
-        expect(screen.getByRole('button', { name: 'Show Baseline' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Save Baseline' })).toHaveAttribute('aria-pressed', 'true');
 
-        fireEvent.click(screen.getByRole('button', { name: 'Show Baseline' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Save Baseline' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Show baseline comparison' }));
         expect(useUIStore.getState().showBaseline).toBe(true);
+    });
+
+    it('keeps only the baseline visibility action for view-only users', () => {
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            permissions: { editable: false, viewable: true, baselineEditable: false }
+        });
+        useBaselineStore.setState({ hasBaseline: true });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        const menu = screen.getByTestId('baseline-save-menu');
+
+        expect(within(menu).getByRole('checkbox', { name: 'Show baseline comparison' })).toBeInTheDocument();
+        expect(within(menu).queryByTestId('baseline-save-filtered-button')).not.toBeInTheDocument();
+        expect(within(menu).queryByTestId('baseline-save-project-button')).not.toBeInTheDocument();
+    });
+
+    it('shows a disabled visibility action when no baseline exists', () => {
+        useTaskStore.setState({
+            ...useTaskStore.getState(),
+            permissions: { editable: false, viewable: true, baselineEditable: false }
+        });
+        useBaselineStore.setState({ hasBaseline: false });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTestId('baseline-save-menu-button'));
+        expect(screen.getByRole('checkbox', { name: 'Show baseline comparison' })).toBeDisabled();
     });
 
     it('opens new issue dialog with redmineBase prefix', () => {
@@ -517,6 +562,8 @@ describe('GanttToolbar shortcuts', () => {
             i18n: {
                 ...(config.i18n ?? {}),
                 label_saved_queries: '保存済みクエリ',
+                label_query: 'クエリ',
+                label_query_short: 'クエリ',
                 label_loading_saved_queries: '保存済みクエリを読み込み中...',
                 label_no_saved_queries: '保存済みクエリはありません',
                 label_clear_saved_query: '保存済みクエリを解除',
@@ -531,7 +578,8 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
         fireEvent.click(screen.getByTestId('query-menu-button'));
 
-        expect(await screen.findByText('保存済みクエリ')).toBeInTheDocument();
+        expect(screen.getByTestId('query-menu-button')).toHaveTextContent('クエリ');
+        expect(await within(screen.getByTestId('query-menu')).findByText('保存済みクエリ')).toBeInTheDocument();
         expect(screen.getByText('保存済みクエリを読み込み中...')).toBeInTheDocument();
 
         await act(async () => {
@@ -769,7 +817,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.queryByText(/open in new tab/i)).not.toBeInTheDocument();
     });
 
-    it('updates row height via checkbox list menu and keeps it open', () => {
+    it('updates row height and font size via selects in the display settings popup', () => {
         useTaskStore.setState({
             filterText: '',
             allTasks: [],
@@ -789,40 +837,26 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        const rowHeightButton = screen.getByTestId('row-height-menu-button');
-        expect(rowHeightButton).toHaveAccessibleName('Row height: M');
-        expect(rowHeightButton).toHaveStyle({ width: '32px', height: '32px', padding: '0px' });
+        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
+        const rowHeightSelect = screen.getByTestId('display-settings-row-height-select');
+        const fontSizeSelect = screen.getByTestId('display-settings-font-size-select');
+        expect(rowHeightSelect).toHaveValue('36');
+        expect(fontSizeSelect).toHaveValue('13');
 
-        fireEvent.click(rowHeightButton);
-        expect(screen.getByTestId('row-height-menu')).toBeInTheDocument();
-        expect(screen.getByLabelText('M')).toBeChecked();
-
-        fireEvent.click(screen.getByLabelText('XL'));
+        fireEvent.change(rowHeightSelect, { target: { value: '52' } });
         expect(useTaskStore.getState().viewport.rowHeight).toBe(52);
-        expect(screen.getByTestId('row-height-menu')).toBeInTheDocument();
-        expect(screen.getByLabelText('XL')).toBeChecked();
-        expect(screen.getByTestId('row-height-menu-button')).toHaveAccessibleName('Row height: XL');
+        expect(rowHeightSelect).toHaveValue('52');
 
-        fireEvent.click(screen.getByLabelText('S'));
+        fireEvent.change(rowHeightSelect, { target: { value: '28' } });
         expect(useTaskStore.getState().viewport.rowHeight).toBe(28);
-        const rowHeightMenu = screen.getByTestId('row-height-menu');
-        expect(rowHeightMenu).toBeInTheDocument();
-        expect(screen.getByLabelText('S')).toBeChecked();
-        expect(screen.getByTestId('row-height-menu-button')).toHaveAccessibleName('Row height: S');
-        expect(within(rowHeightMenu).getByTestId('row-height-zoom-hint')).toHaveTextContent('Ctrl');
-        expect(rowHeightMenu.lastElementChild).toHaveAttribute('data-testid', 'row-height-zoom-hint');
+        expect(rowHeightSelect).toHaveValue('28');
 
-        fireEvent.click(rowHeightButton);
-        expect(screen.queryByTestId('row-height-menu')).not.toBeInTheDocument();
-
-        fireEvent.click(rowHeightButton);
-        expect(screen.getByTestId('row-height-menu')).toBeInTheDocument();
-
-        fireEvent.mouseDown(document.body);
-        expect(screen.queryByTestId('row-height-menu')).not.toBeInTheDocument();
+        fireEvent.change(fontSizeSelect, { target: { value: '15' } });
+        expect(useUIStore.getState().sidebarFontSize).toBe(15);
+        expect(fontSizeSelect).toHaveValue('15');
     });
 
-    it('opens the display settings menu before row height and shows the source label', () => {
+    it('keeps project and display scope controls in their toolbar order', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
             ...config,
@@ -852,16 +886,27 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
         const displaySettingsButton = screen.getByTestId('display-settings-menu-button');
-        const rowHeightButton = screen.getByTestId('row-height-menu-button');
+        const workloadButton = screen.getByTitle('Workload');
+        const projectButton = screen.getByTitle('Filter by project');
+        const assigneeButton = screen.getByTitle('Assignee Filter');
+        const scopeButton = screen.getByTestId('display-settings-scope-menu-button');
 
-        expect(displaySettingsButton.compareDocumentPosition(rowHeightButton) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+        expect(workloadButton.compareDocumentPosition(displaySettingsButton) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+        expect(projectButton.parentElement).toHaveClass('gantt-toolbar-project-filter');
+        expect(assigneeButton.parentElement).toHaveClass('gantt-toolbar-assignee-filter');
+        expect(displaySettingsButton.parentElement).toHaveClass('gantt-toolbar-display-settings');
+        expect(scopeButton.parentElement).toHaveClass('gantt-toolbar-display-settings-scope');
 
         fireEvent.click(displaySettingsButton);
 
         const displayMenu = screen.getByTestId('display-settings-menu');
         expect(displayMenu).toBeInTheDocument();
-        expect(within(displayMenu).getByText('現在使用中', { selector: 'span' })).toBeInTheDocument();
-        expect(screen.getByLabelText('表示設定を全プロジェクトで共通化')).toBeInTheDocument();
+        expect(within(displayMenu).queryByText('現在使用中', { selector: 'span' })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByTestId('display-settings-scope-menu-button'));
+        const scopeMenu = screen.getByTestId('display-settings-scope-menu');
+        expect(within(scopeMenu).getByText('現在使用中', { selector: 'span' })).toBeInTheDocument();
+        expect(within(scopeMenu).getByLabelText('表示設定を全プロジェクトで共通化')).toBeInTheDocument();
     });
 
     it('saves relation settings from toolbar menu', () => {
@@ -920,7 +965,7 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
         fireEvent.click(screen.getByTestId('relation-settings-menu-button'));
 
-        expect(screen.getByText('依存関係')).toBeInTheDocument();
+        expect(within(screen.getByTestId('relation-settings-menu')).getByText('依存関係')).toBeInTheDocument();
         expect(screen.getByText('依存関係種別')).toBeInTheDocument();
         expect(screen.getByRole('option', { name: '先行' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: '関連' })).toBeInTheDocument();
@@ -963,7 +1008,7 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
         fireEvent.click(screen.getByTestId('relation-settings-menu-button'));
 
-        expect(screen.getByText('Dependency Settings')).toBeInTheDocument();
+        expect(within(screen.getByTestId('relation-settings-menu')).getByText('Dependency Settings')).toBeInTheDocument();
         expect(screen.getByText('Dependency type')).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Finish to Start' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Reference only' })).toBeInTheDocument();
@@ -996,7 +1041,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByTitle('ヘルプ')).toBeInTheDocument();
     });
 
-    it('renders task title toggle to the right of orphan points toggle and switches the flag', () => {
+    it('groups task visibility toggles in the display settings popup', () => {
         useTaskStore.setState({
             filterText: '',
             allTasks: [],
@@ -1012,12 +1057,16 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        const orphanToggle = screen.getByTitle('Toggle Orphan Date Points');
-        const titleToggle = screen.getByTitle('Toggle Task Titles');
-        const barDateToggle = screen.getByTitle('Toggle Task Bar Dates');
+        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
+        const startToggle = screen.getByLabelText('Show start-date-only tasks');
+        const dueToggle = screen.getByLabelText('Show due-date-only tasks');
+        const titleToggle = screen.getByLabelText('Show tickets');
+        const barDateToggle = screen.getByLabelText('Show task-bar dates');
 
-        expect(orphanToggle.compareDocumentPosition(titleToggle) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-        expect(titleToggle.compareDocumentPosition(barDateToggle) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+        expect(startToggle).toBeInTheDocument();
+        expect(dueToggle).toBeInTheDocument();
+        expect(titleToggle).toBeInTheDocument();
+        expect(barDateToggle).toBeInTheDocument();
         expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
 
         fireEvent.click(titleToggle);

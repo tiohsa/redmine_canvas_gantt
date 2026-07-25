@@ -18,6 +18,7 @@ import { useToolbarMenuState } from './gantt/useToolbarMenuState';
 import { useWorkloadStore } from '../stores/WorkloadStore';
 import type { GanttExportHandle } from '../export/types';
 import { DisplaySettingsControls } from './DisplaySettingsControls';
+import { DisplaySettingsScopeControls } from './DisplaySettingsScopeControls';
 import { BaselineControls } from './BaselineControls';
 import {
     applyIndeterminateState,
@@ -43,36 +44,23 @@ interface GanttToolbarProps {
 
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange, exportRef }) => {
     const {
-        viewport, updateViewport, groupByProject, setGroupByProject, groupByAssignee, setGroupByAssignee, organizeByDependency, setOrganizeByDependency,
+        viewport, updateViewport, groupByProject, setGroupByProject, groupByAssignee, setGroupByAssignee,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, projectSelectionExplicit, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
-        setRowHeight, taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
+        taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
         modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
         applySavedQuery: applySavedQueryFromStore,
         clearSavedQuery: clearSavedQueryFromStore,
         savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries, queryContext
     } = useTaskStore();
     const {
-        showProgressLine,
-        toggleProgressLine,
-        showTaskTitles,
-        toggleTaskTitles,
-        showTaskBarDates,
-        toggleTaskBarDates,
-        showHierarchyLines,
-        toggleHierarchyLines,
         showBaseline,
         toggleBaseline,
         visibleColumns,
         columnSettings,
         toggleColumnVisibility,
         resetColumns,
-        toggleLeftPane,
-        toggleRightPane,
-        leftPaneVisible,
         rightPaneVisible,
-        showPointsOrphans,
-        togglePointsOrphans,
         isFullScreen,
         toggleFullScreen,
         openHelpDialog,
@@ -87,13 +75,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         resetRelationPreferences,
         openQueryDialog,
         savedQueriesReloadToken,
-        sidebarFontSize,
-        setSidebarFontSize
     } = useUIStore();
     const baselineSaveStatus = useBaselineStore(state => state.saveStatus);
     const hasBaseline = useBaselineStore(state => state.hasBaseline);
-    const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
-    const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
     const {
         queryMenuRef,
         columnMenuRef,
@@ -102,8 +86,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         projectMenuRef,
         versionMenuRef,
         statusMenuRef,
-        displaySettingsMenuRef,
-        rowHeightMenuRef,
+    displaySettingsMenuRef,
+        displaySettingsScopeMenuRef,
         relationSettingsMenuRef,
         exportMenuRef,
         workloadMenuRef,
@@ -145,8 +129,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const showProjectMenu = isMenuOpen('project');
     const showVersionMenu = isMenuOpen('version');
     const showStatusMenu = isMenuOpen('status');
-    const showDisplaySettingsMenu = isMenuOpen('displaySettings');
-    const showRowHeightMenu = isMenuOpen('rowHeight');
+const showDisplaySettingsMenu = isMenuOpen('displaySettings');
+    const showDisplaySettingsScopeMenu = isMenuOpen('displaySettingsScope');
     const showRelationSettingsMenu = isMenuOpen('relationSettings');
     const showExportMenu = isMenuOpen('export');
     const showWorkloadMenu = isMenuOpen('workload');
@@ -579,27 +563,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         setSelectedStatusFromServer(mergeStatusSelection(selectedStatusIds, openStatusIds, incompleteStatusesState !== 'checked'));
     };
 
-    const ZOOM_OPTIONS: { level: ZoomLevel; label: string }[] = [
-        { level: 0, label: i18n.t('label_month') || 'Month' },
-        { level: 1, label: i18n.t('label_week') || 'Week' },
-        { level: 2, label: i18n.t('label_day') || 'Day' }
+    const monthLabel = i18n.t('label_month') || 'Month';
+    const weekLabel = i18n.t('label_week') || 'Week';
+    const dayLabel = i18n.t('label_day') || 'Day';
+    const ZOOM_OPTIONS: { level: ZoomLevel; label: string; fullLabel: string }[] = [
+        { level: 0, label: monthLabel === 'Month' ? 'M' : monthLabel, fullLabel: monthLabel },
+        { level: 1, label: weekLabel === 'Week' ? 'W' : weekLabel, fullLabel: weekLabel },
+        { level: 2, label: dayLabel === 'Day' ? 'D' : dayLabel, fullLabel: dayLabel }
     ];
-    const ROW_HEIGHT_OPTIONS = [
-        { value: 20, label: i18n.t('label_row_height_xs') || 'XS' },
-        { value: 28, label: i18n.t('label_row_height_s') || 'S' },
-        { value: 36, label: i18n.t('label_row_height_m') || 'M' },
-        { value: 44, label: i18n.t('label_row_height_l') || 'L' },
-        { value: 52, label: i18n.t('label_row_height_xl') || 'XL' }
-    ];
-    const FONT_SIZE_OPTIONS = [
-        { value: 11, label: i18n.t('label_font_size_small') || 'Small' },
-        { value: 13, label: i18n.t('label_font_size_medium') || 'Medium' },
-        { value: 15, label: i18n.t('label_font_size_large') || 'Large' }
-    ];
-    const currentRowHeightOption = ROW_HEIGHT_OPTIONS.find(option => option.value === viewport.rowHeight) || ROW_HEIGHT_OPTIONS[2];
-    const rowHeightButtonLabel = `${i18n.t('label_row_height') || 'Row height'}: ${currentRowHeightOption.label}`;
-    const zoomWheelHint = i18n.t('help_desc_zoom_wheel') || 'Hold Ctrl and use the mouse wheel to change the date display width.';
-
     return (
         <div style={{
             display: 'flex',
@@ -616,42 +587,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         }}>
             {/* Left: Filter & Options */}
             <div className="gantt-toolbar-left" style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
-                <button
-                    data-testid="maximize-left-pane-button"
-                    onClick={toggleRightPane}
-                    title={isLeftPaneMaximized
-                        ? (i18n.t('label_restore_split_view') || "Restore Split View")
-                        : (i18n.t('label_maximize_left_pane') || "Maximize List")}
-                    className={`minimax-pill-nav ${isLeftPaneMaximized ? 'active' : ''}`}
-                    style={{ width: '32px', height: '32px', position: 'relative' }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                        <line x1="15" y1="3" x2="15" y2="21" />
-                    </svg>
-                    {isLeftPaneMaximized && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
-
-                <button
-                    data-testid="maximize-right-pane-button"
-                    onClick={toggleLeftPane}
-                    title={isRightPaneMaximized
-                        ? (i18n.t('label_restore_split_view') || "Restore Split View")
-                        : (i18n.t('label_maximize_right_pane') || "Maximize Chart")}
-                    className={`minimax-pill-nav ${isRightPaneMaximized ? 'active' : ''}`}
-                    style={{ width: '32px', height: '32px', position: 'relative' }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                        <line x1="9" y1="3" x2="9" y2="21" />
-                    </svg>
-                    {isRightPaneMaximized && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
-
                 <button
                     onClick={() => {
                         const newIssuePath = window.RedmineCanvasGantt?.newIssuePath;
@@ -746,6 +681,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         onClick={() => toggleMenu('query')}
                         title={i18n.t('label_saved_queries') || 'Saved queries'}
                         data-testid="query-menu-button"
+                        className="gantt-toolbar-labeled-button"
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -756,7 +692,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                                 backgroundColor: displayedActiveQueryId !== null ? designTokens.controlActiveBg : designTokens.controlBg,
                                 color: displayedActiveQueryId !== null ? designTokens.controlActiveFg : designTokens.controlFg,
                                 cursor: 'pointer',
-                                width: '32px',
                                 height: '32px',
                                 position: 'relative'
                             }}
@@ -766,11 +701,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <path d="M4 12h16" />
                             <path d="M4 18h10" />
                         </svg>
+                        <span className="gantt-toolbar-button-label">{i18n.t('label_query_short') || 'Query'}</span>
                         {displayedActiveQueryId !== null && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
-
+                    
                     {showQueryMenu && (
                         <div
                             data-testid="query-menu"
@@ -911,6 +847,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     <button
                         onClick={() => toggleMenu('column')}
                         title={i18n.t('label_column_plural') || 'Columns'}
+                        className="gantt-toolbar-labeled-button"
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -922,7 +859,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             color: effectiveVisibleColumns.join(',') !== DEFAULT_COLUMNS.join(',') ? designTokens.controlActiveFg : designTokens.controlFg,
                             cursor: 'pointer',
                             height: '32px',
-                            width: '32px',
                             position: 'relative'
                         }}
                     >
@@ -931,11 +867,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             <line x1="9" y1="3" x2="9" y2="21" />
                             <line x1="15" y1="3" x2="15" y2="21" />
                         </svg>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_column_short') || 'Cols'}</span>
                         {effectiveVisibleColumns.join(',') !== DEFAULT_COLUMNS.join(',') && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
-
+                    
                     {showColumnMenu && (
                         <div
                             style={{
@@ -996,10 +933,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <div ref={workloadMenuRef} style={{ position: 'relative' }}>
+                <div ref={workloadMenuRef} className="gantt-toolbar-workload" style={{ position: 'relative' }}>
                     <button
-                        onClick={() => toggleMenu('workload')}
-                        title={i18n.t('label_workload') || 'Workload'}
+                    onClick={() => toggleMenu('workload')}
+                    title={i18n.t('label_workload') || 'Workload'}
+                    className="gantt-toolbar-labeled-button"
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1016,15 +954,16 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             }}
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="20" x2="18" y2="10" />
-                            <line x1="12" y1="20" x2="12" y2="4" />
-                            <line x1="6" y1="20" x2="6" y2="14" />
-                        </svg>
+                        <line x1="18" y1="20" x2="18" y2="10" />
+                        <line x1="12" y1="20" x2="12" y2="4" />
+                        <line x1="6" y1="20" x2="6" y2="14" />
+                    </svg>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_workload_short') || 'Workload'}</span>
                         {workloadPaneVisible && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
-
+                    
                     {showWorkloadMenu && (
                         <div
                             style={{
@@ -1098,10 +1037,19 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <div ref={assigneeMenuRef} style={{ position: 'relative' }}>
+                <DisplaySettingsScopeControls
+                    className="gantt-toolbar-display-settings-scope"
+                    displaySettingsScopeMenuRef={displaySettingsScopeMenuRef}
+                    showDisplaySettingsScopeMenu={showDisplaySettingsScopeMenu}
+                    onToggleDisplaySettingsScopeMenu={() => toggleMenu('displaySettingsScope')}
+                    onCloseDisplaySettingsScopeMenu={() => closeMenu('displaySettingsScope')}
+                />
+
+                <div ref={assigneeMenuRef} className="gantt-toolbar-assignee-filter" style={{ position: 'relative' }}>
                     <button
-                        onClick={() => toggleMenu('assignee')}
-                        title={i18n.t('field_assigned_to') || 'Assignee Filter'}
+                    onClick={() => toggleMenu('assignee')}
+                    title={i18n.t('field_assigned_to') || 'Assignee Filter'}
+                    className="gantt-toolbar-labeled-button"
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1118,14 +1066,15 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             }}
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                            <circle cx="12" cy="7" r="4" />
-                        </svg>
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                        <circle cx="12" cy="7" r="4" />
+                    </svg>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_assigned_to_short') || 'Assignee'}</span>
                         {(selectedAssigneeIds.length > 0 || groupByAssignee) && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
-
+                    
                     {showAssigneeMenu && (
                         <div
                             style={{
@@ -1190,11 +1139,12 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <div ref={projectMenuRef} style={{ position: 'relative' }}>
+                <div ref={projectMenuRef} className="gantt-toolbar-project-filter" style={{ position: 'relative' }}>
                     <button
                         onClick={() => toggleMenu('project')}
                         title={i18n.t('label_project_plural') || 'Filter by project'}
                         data-testid="project-filter-menu-button"
+                        className="gantt-toolbar-labeled-button"
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1211,12 +1161,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         }}
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                        </svg>
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                    </svg>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_project_short') || 'Proj.'}</span>
                         {(selectedProjectIds.length > 0 || groupByProject) && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
+                    
                     {showProjectMenu && (
                         <div
                             style={{
@@ -1307,8 +1259,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
 
                 <div ref={versionMenuRef} style={{ position: 'relative' }}>
                     <button
-                        onClick={() => toggleMenu('version')}
-                        title={i18n.t('label_version_plural') || 'Filter by version'}
+                    onClick={() => toggleMenu('version')}
+                    title={i18n.t('label_version_plural') || 'Filter by version'}
+                    className="gantt-toolbar-labeled-button"
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1325,13 +1278,15 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         }}
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                            <line x1="4" y1="22" x2="4" y2="15" />
-                        </svg>
+                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                        <line x1="4" y1="22" x2="4" y2="15" />
+                    </svg>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_version_short') || 'Ver.'}</span>
                         {(selectedVersionIds.length > 0 || showVersions) && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
+                    
                     {showVersionMenu && (
                         <div
                             style={{
@@ -1404,10 +1359,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <div ref={statusMenuRef} style={{ position: 'relative' }}>
+                <div ref={statusMenuRef} className="gantt-toolbar-status-filter" style={{ position: 'relative' }}>
                     <button
-                        onClick={() => toggleMenu('status')}
-                        title={i18n.t('field_status') || 'Filter by status'}
+                    onClick={() => toggleMenu('status')}
+                    title={i18n.t('field_status') || 'Filter by status'}
+                    className="gantt-toolbar-labeled-button"
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -1424,12 +1380,14 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         }}
                     >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                        </svg>
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                    </svg>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_status_short') || 'Status'}</span>
                         {selectedStatusIds.length > 0 && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
+                    
                     {showStatusMenu && (
                         <div
                             style={{
@@ -1503,40 +1461,22 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <button
-                    onClick={toggleProgressLine}
-                    title={i18n.t('label_progress_line') || 'Progress Line'}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                padding: '0',
-                                borderRadius: '6px',
-                        border: `1px solid ${designTokens.controlBorder}`,
-                        backgroundColor: showProgressLine ? designTokens.controlActiveBg : designTokens.controlBg,
-                        color: showProgressLine ? designTokens.controlActiveFg : designTokens.controlFg,
-                        cursor: 'pointer',
-                        height: '32px',
-                        width: '32px',
-                        position: 'relative'
-                    }}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                    </svg>
-                    {showProgressLine && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
+                <DisplaySettingsControls
+                    className="gantt-toolbar-display-settings"
+                    displaySettingsMenuRef={displaySettingsMenuRef}
+                    showDisplaySettingsMenu={showDisplaySettingsMenu}
+                    onToggleDisplaySettingsMenu={() => toggleMenu('displaySettings')}
+                />
 
                 <div
                     ref={relationSettingsMenuRef}
                     style={{ display: 'flex', alignItems: 'center', position: 'relative' }}
                 >
                     <button
-                        onClick={() => toggleMenu('relationSettings')}
-                        title={i18n.t('label_relation_title') || 'Dependency'}
-                        data-testid="relation-settings-menu-button"
+                    onClick={() => toggleMenu('relationSettings')}
+                    title={i18n.t('label_relation_title') || 'Dependency'}
+                    data-testid="relation-settings-menu-button"
+                    className="gantt-toolbar-labeled-button"
                         style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -1555,9 +1495,10 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M4 12h6" />
                             <path d="M14 12h6" />
-                            <circle cx="10" cy="12" r="2" />
-                            <circle cx="14" cy="12" r="2" />
-                        </svg>
+                        <circle cx="10" cy="12" r="2" />
+                        <circle cx="14" cy="12" r="2" />
+                    </svg>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_dependencies_short') || 'Link'}</span>
                         <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: autoApplyDefaultRelation ? designTokens.controlActiveFg : designTokens.disabledFg, borderRadius: '50%' }} />
                     </button>
                     {showRelationSettingsMenu && (
@@ -1636,151 +1577,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     )}
                 </div>
 
-                <button
-                    onClick={() => setOrganizeByDependency(!organizeByDependency)}
-                    title={i18n.t('label_organize_by_dependency') || 'Organize by dependency'}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: '0',
-                            borderRadius: '6px',
-                        border: `1px solid ${designTokens.controlBorder}`,
-                        backgroundColor: organizeByDependency ? designTokens.controlActiveBg : designTokens.controlBg,
-                        color: organizeByDependency ? designTokens.controlActiveFg : designTokens.controlFg,
-                        cursor: 'pointer',
-                        height: '32px',
-                        width: '32px',
-                        position: 'relative'
-                    }}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M5 6h6v6H5z" />
-                        <path d="M13 12h6v6h-6z" />
-                        <path d="M11 9l2 2" />
-                        <path d="M7 12l6-6" />
-                    </svg>
-                    {organizeByDependency && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
-
-                <button
-                    onClick={togglePointsOrphans}
-                    title={i18n.t('label_toggle_points_orphans') || 'Toggle Orphan Date Points'}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: '0',
-                            borderRadius: '6px',
-                        border: `1px solid ${designTokens.controlBorder}`,
-                        backgroundColor: showPointsOrphans ? designTokens.controlActiveBg : designTokens.controlBg,
-                        color: showPointsOrphans ? designTokens.controlActiveFg : designTokens.controlFg,
-                        cursor: 'pointer',
-                        height: '32px',
-                        width: '32px',
-                        position: 'relative'
-                    }}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2l3 5h6l-5 4 2 6-6-4-6 4 2-6-5-4h6z" />
-                    </svg>
-                    {showPointsOrphans && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
-
-                <button
-                    data-testid="task-titles-toggle-button"
-                    onClick={toggleTaskTitles}
-                    title={i18n.t('label_toggle_task_titles') || 'Toggle Task Titles'}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: '0',
-                            borderRadius: '6px',
-                        border: `1px solid ${designTokens.controlBorder}`,
-                        backgroundColor: showTaskTitles ? designTokens.controlActiveBg : designTokens.controlBg,
-                        color: showTaskTitles ? designTokens.controlActiveFg : designTokens.controlFg,
-                        cursor: 'pointer',
-                        height: '32px',
-                        width: '32px',
-                        position: 'relative'
-                    }}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-                        <circle cx="12" cy="12" r="2.5" />
-                        <line x1="4" y1="20" x2="14" y2="20" />
-                    </svg>
-                    {showTaskTitles && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
-
-                <button
-                    data-testid="task-bar-dates-toggle-button"
-                    onClick={toggleTaskBarDates}
-                    title={i18n.t('label_toggle_task_bar_dates') || 'Toggle Task Bar Dates'}
-                    aria-label={i18n.t('label_toggle_task_bar_dates') || 'Toggle Task Bar Dates'}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: '0',
-                        borderRadius: '6px',
-                        border: `1px solid ${designTokens.controlBorder}`,
-                        backgroundColor: showTaskBarDates ? designTokens.controlActiveBg : designTokens.controlBg,
-                        color: showTaskBarDates ? designTokens.controlActiveFg : designTokens.controlFg,
-                        cursor: 'pointer',
-                        height: '32px',
-                        width: '32px',
-                        position: 'relative'
-                    }}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <rect x="3" y="5" width="18" height="16" rx="2" />
-                        <path d="M7 3v4M17 3v4M3 10h18" />
-                    </svg>
-                    {showTaskBarDates && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
-
-                <button
-                    data-testid="hierarchy-lines-toggle-button"
-                    onClick={toggleHierarchyLines}
-                    title={i18n.t('label_toggle_hierarchy_lines') || 'Toggle Hierarchy Lines'}
-                    aria-label={i18n.t('label_toggle_hierarchy_lines') || 'Toggle Hierarchy Lines'}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: '0',
-                            borderRadius: '6px',
-                        border: `1px solid ${designTokens.controlBorder}`,
-                        backgroundColor: showHierarchyLines ? designTokens.controlActiveBg : designTokens.controlBg,
-                        color: showHierarchyLines ? designTokens.controlActiveFg : designTokens.controlFg,
-                        cursor: 'pointer',
-                        height: '32px',
-                        width: '32px',
-                        position: 'relative'
-                    }}
-                >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M7 5v14" />
-                        <path d="M7 5h6" />
-                        <path d="M7 12h6" />
-                        <path d="M7 19h6" />
-                        <path d="M13 5v14" />
-                        <path d="M13 12h4" />
-                    </svg>
-                    {showHierarchyLines && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
             </div>
 
             {/* Right: Zoom Level & Today */}
@@ -1866,9 +1662,11 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     {ZOOM_OPTIONS.map((option) => {
                         const isActive = zoomLevel === option.level;
                         return (
-                            <button
-                                key={option.level}
-                                onClick={() => onZoomChange(option.level)}
+                                <button
+                                    key={option.level}
+                                    onClick={() => onZoomChange(option.level)}
+                                    title={option.fullLabel}
+                                    aria-label={option.fullLabel}
                                 style={{
                                     border: 'none',
                                     background: isActive ? designTokens.controlBg : 'transparent',
@@ -1891,139 +1689,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                             </button>
                         );
                     })}
-                </div>
-
-                <DisplaySettingsControls
-                    displaySettingsMenuRef={displaySettingsMenuRef}
-                    showDisplaySettingsMenu={showDisplaySettingsMenu}
-                    onToggleDisplaySettingsMenu={() => toggleMenu('displaySettings')}
-                    onCloseDisplaySettingsMenu={() => closeMenu('displaySettings')}
-                />
-
-                <div
-                    ref={rowHeightMenuRef}
-                    style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px', position: 'relative' }}
-                >
-                    <button
-                        type="button"
-                        onClick={() => toggleMenu('rowHeight')}
-                        title={rowHeightButtonLabel}
-                        aria-label={rowHeightButtonLabel}
-                        aria-haspopup="menu"
-                        aria-expanded={showRowHeightMenu}
-                        data-testid="row-height-menu-button"
-                            style={{
-                                padding: '0',
-                                borderRadius: '6px',
-                            border: `1px solid ${designTokens.controlBorder}`,
-                            backgroundColor: designTokens.controlBg,
-                            color: designTokens.controlFg,
-                            cursor: 'pointer',
-                            height: '32px',
-                            width: '32px',
-                            outline: 'none',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                        }}
-                    >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <line x1="12" y1="5" x2="12" y2="19" />
-                            <polyline points="8 9 12 5 16 9" />
-                            <polyline points="8 15 12 19 16 15" />
-                        </svg>
-                    </button>
-                    {showRowHeightMenu && (
-                        <div
-                            role="menu"
-                            data-testid="row-height-menu"
-                            style={{
-                                position: 'absolute',
-                                top: '100%',
-                                right: 0,
-                                marginTop: '4px',
-                                background: designTokens.controlBg,
-                                border: `1px solid ${designTokens.controlBorder}`,
-                                borderRadius: '8px',
-                                boxShadow: designTokens.menuShadow,
-                                padding: '12px',
-                                zIndex: 20,
-                                minWidth: '220px'
-                            }}
-                        >
-                            <div style={{ fontWeight: 600, marginBottom: '8px', color: designTokens.controlFg }}>
-                                {i18n.t('label_row_height') || 'Row height'}
-                            </div>
-                            {ROW_HEIGHT_OPTIONS.map(option => {
-                                const checked = viewport.rowHeight === option.value;
-
-                                return (
-                                    <label
-                                        key={option.value}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            padding: '4px 0',
-                                            color: checked ? designTokens.controlActiveFg : designTokens.textSecondary,
-                                            cursor: 'pointer',
-                                            fontWeight: checked ? 600 : 400
-                                        }}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={checked}
-                                            onChange={() => setRowHeight(option.value)}
-                                        />
-                                        {option.label}
-                                    </label>
-                                );
-                            })}
-
-                            <div style={{ fontWeight: 600, marginTop: '12px', marginBottom: '8px', color: designTokens.controlFg, borderTop: `1px solid ${designTokens.borderSubtle}`, paddingTop: '12px' }}>
-                                {i18n.t('label_font_size') || 'Font size'}
-                            </div>
-                            {FONT_SIZE_OPTIONS.map(option => {
-                                const checked = sidebarFontSize === option.value;
-
-                                return (
-                                    <label
-                                        key={option.value}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            padding: '4px 0',
-                                            color: checked ? designTokens.controlActiveFg : designTokens.textSecondary,
-                                            cursor: 'pointer',
-                                            fontWeight: checked ? 600 : 400
-                                        }}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={checked}
-                                            onChange={() => setSidebarFontSize(option.value)}
-                                        />
-                                        {option.label}
-                                    </label>
-                                );
-                            })}
-
-                            <div
-                                data-testid="row-height-zoom-hint"
-                                style={{
-                                    borderTop: `1px solid ${designTokens.borderSubtle}`,
-                                    marginTop: '12px',
-                                    paddingTop: '12px',
-                                    fontSize: '11px',
-                                    lineHeight: 1.5,
-                                    color: designTokens.controlLoadingFg
-                                }}
-                            >
-                                {zoomWheelHint}
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 <div ref={exportMenuRef} style={{ position: 'relative' }}>
@@ -2205,6 +1870,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
                     hasBaseline={hasBaseline}
                     showBaseline={showBaseline}
                     baselineEditable={permissions.baselineEditable}
+                    baselineViewable={permissions.viewable}
                     baselineSaveMenuRef={baselineSaveMenuRef}
                     showBaselineSaveMenu={showBaselineSaveMenu}
                     onToggleSaveMenu={() => toggleMenu('baselineSave')}

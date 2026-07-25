@@ -13,6 +13,8 @@ export interface StoredPreferences {
     showTaskBarDates?: boolean;
     showHierarchyLines?: boolean;
     showPointsOrphans?: boolean;
+    showStartDateOnly?: boolean;
+    showDueDateOnly?: boolean;
     showVersions?: boolean;
     showBaseline?: boolean;
     selectedStatusIds?: number[];
@@ -48,6 +50,8 @@ export interface StoredDisplayPreferences {
     showTaskBarDates?: boolean;
     showHierarchyLines?: boolean;
     showPointsOrphans?: boolean;
+    showStartDateOnly?: boolean;
+    showDueDateOnly?: boolean;
     showVersions?: boolean;
     showBaseline?: boolean;
     visibleColumns?: string[];
@@ -89,6 +93,8 @@ export type DisplayPreferencesSnapshot = Pick<
     | 'showTaskBarDates'
     | 'showHierarchyLines'
     | 'showPointsOrphans'
+    | 'showStartDateOnly'
+    | 'showDueDateOnly'
     | 'showVersions'
     | 'showBaseline'
     | 'visibleColumns'
@@ -125,6 +131,8 @@ const sanitizePreferences = (prefs: StoredPreferences): StoredPreferences => Obj
         showTaskBarDates: prefs.showTaskBarDates,
         showHierarchyLines: prefs.showHierarchyLines,
         showPointsOrphans: prefs.showPointsOrphans,
+        showStartDateOnly: prefs.showStartDateOnly,
+        showDueDateOnly: prefs.showDueDateOnly,
         showVersions: prefs.showVersions,
         showBaseline: prefs.showBaseline,
         visibleColumns: prefs.visibleColumns,
@@ -158,6 +166,8 @@ const sanitizeDisplayPreferences = (prefs: StoredPreferences): StoredDisplayPref
         showTaskBarDates: prefs.showTaskBarDates,
         showHierarchyLines: prefs.showHierarchyLines,
         showPointsOrphans: prefs.showPointsOrphans,
+        showStartDateOnly: prefs.showStartDateOnly,
+        showDueDateOnly: prefs.showDueDateOnly,
         showVersions: prefs.showVersions,
         showBaseline: prefs.showBaseline,
         visibleColumns: prefs.visibleColumns,

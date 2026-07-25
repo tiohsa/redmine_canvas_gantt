@@ -33,6 +33,8 @@ interface UIState {
     showTaskBarDates: boolean;
     showHierarchyLines: boolean;
     showBaseline: boolean;
+    showStartDateOnly: boolean;
+    showDueDateOnly: boolean;
     visibleColumns: string[];
     columnSettings: ColumnConfig[];
     columnWidths: Record<string, number>;
@@ -64,6 +66,8 @@ interface UIState {
     toggleBaseline: () => void;
     setShowBaseline: (value: boolean) => void;
     togglePointsOrphans: () => void;
+    toggleStartDateOnly: () => void;
+    toggleDueDateOnly: () => void;
     toggleLeftPane: () => void;
     toggleRightPane: () => void;
     showPointsOrphans: boolean;
@@ -156,6 +160,8 @@ export const useUIStore = create<UIState>((set, get) => ({
     showHierarchyLines: displayPreferences.showHierarchyLines ?? true,
     showBaseline: displayPreferences.showBaseline ?? false,
     showPointsOrphans: displayPreferences.showPointsOrphans ?? true,
+    showStartDateOnly: displayPreferences.showStartDateOnly ?? displayPreferences.showPointsOrphans ?? true,
+    showDueDateOnly: displayPreferences.showDueDateOnly ?? displayPreferences.showPointsOrphans ?? true,
     leftPaneVisible: true,
     rightPaneVisible: true,
     visibleColumns: initialDisplayColumns.visibleColumns,
@@ -213,7 +219,12 @@ export const useUIStore = create<UIState>((set, get) => ({
     toggleHierarchyLines: () => set((state) => ({ showHierarchyLines: !state.showHierarchyLines })),
     toggleBaseline: () => set((state) => ({ showBaseline: !state.showBaseline })),
     setShowBaseline: (value) => set(() => ({ showBaseline: value })),
-    togglePointsOrphans: () => set((state) => ({ showPointsOrphans: !state.showPointsOrphans })),
+    togglePointsOrphans: () => set((state) => {
+        const next = !state.showPointsOrphans;
+        return { showPointsOrphans: next, showStartDateOnly: next, showDueDateOnly: next };
+    }),
+    toggleStartDateOnly: () => set((state) => ({ showStartDateOnly: !state.showStartDateOnly })),
+    toggleDueDateOnly: () => set((state) => ({ showDueDateOnly: !state.showDueDateOnly })),
     toggleLeftPane: () => set((state) => {
         if (state.leftPaneVisible && state.rightPaneVisible) {
             return { leftPaneVisible: false, rightPaneVisible: true };
