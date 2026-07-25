@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalRoot } from '../utils/portalRoot';
 
 export const GlobalTooltip: React.FC = () => {
     const [tooltipData, setTooltipData] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -74,6 +75,6 @@ export const GlobalTooltip: React.FC = () => {
         >
             {tooltipData.text}
         </div>,
-        document.body
+        getPortalRoot()
     );
 };

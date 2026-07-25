@@ -1,12 +1,6 @@
 :root {
-  --font-ui: "DM Sans", "Noto Sans JP Variable", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light;
-  color: var(--col-text00);
-  background-color: var(--col-bg13);
+  --rcg-font-ui: "DM Sans Variable", "Noto Sans JP Variable", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --rcg-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
   /* MiniMax Colors */
   --brand-6: #1456f0;
@@ -32,16 +26,17 @@
   --shadow-ambient: rgba(0, 0, 0, 0.08) 0px 0px 22.576px;
   --shadow-brand-glow: rgba(44, 30, 116, 0.16) 0px 0px 15px;
 
+}
+
+.rcg-theme {
+  font-family: var(--rcg-font-ui);
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--col-text00);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Keep the plugin scoped fonts inside the Redmine mount points. */
-#redmine-canvas-gantt-root,
-#root {
-  font-family: var(--font-ui);
 }
 
 /* Remove global body overrides that break Redmine layout */
@@ -172,7 +167,7 @@ iframe.issue-iframe-loading {
 }
 
 .rcg-tooltip {
-  font-family: var(--font-ui);
+  font-family: inherit;
 }
 
 .react-datepicker-wrapper-w-full {
@@ -181,7 +176,7 @@ iframe.issue-iframe-loading {
 
 /* React Datepicker Custom Styling (MiniMax) */
 .minimax-datepicker {
-  font-family: var(--font-ui) !important;
+  font-family: var(--rcg-font-ui) !important;
   border: 1px solid var(--color-border-subtle) !important;
   border-radius: 16px !important;
   box-shadow: var(--shadow-standard) !important;
@@ -232,7 +227,7 @@ iframe.issue-iframe-loading {
 }
 
 .minimax-datepicker .react-datepicker__current-month {
-  font-family: var(--font-ui) !important;
+  font-family: var(--rcg-font-ui) !important;
   font-weight: 600 !important;
   color: var(--col-text00) !important;
   font-size: 0.76rem !important;
@@ -292,7 +287,7 @@ iframe.issue-iframe-loading {
   padding: 2px 4px !important;
   border-radius: 6px !important;
   border: 1px solid var(--color-border-strong) !important;
-  font-family: var(--font-ui) !important;
+  font-family: var(--rcg-font-ui) !important;
   font-size: 11px !important;
   background-color: #ffffff !important;
   color: var(--col-text00) !important;
@@ -352,7 +347,7 @@ iframe.issue-iframe-loading {
   padding: 2px 4px !important;
   border-radius: 6px !important;
   border: 1px solid var(--color-border-strong) !important;
-  font-family: var(--font-ui) !important;
+  font-family: var(--rcg-font-ui) !important;
   font-size: 11px !important;
   background-color: #ffffff !important;
   cursor: pointer !important;
@@ -380,7 +375,7 @@ iframe.issue-iframe-loading {
   font-weight: 500 !important;
   cursor: pointer !important;
   transition: all 0.2s ease !important;
-  font-family: var(--font-ui) !important;
+  font-family: var(--rcg-font-ui) !important;
 }
 
 .minimax-datepicker-btn:hover {
@@ -399,7 +394,7 @@ iframe.issue-iframe-loading {
 }
 
 .font-ui {
-  font-family: var(--font-ui);
+  font-family: var(--rcg-font-ui);
 }
 
 /* Hover emphasis for sidebar rows */

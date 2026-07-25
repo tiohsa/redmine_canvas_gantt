@@ -5,7 +5,7 @@ import type { Task } from '../types';
 import type { BaselineDiff } from '../utils/baseline';
 import { i18n } from '../utils/i18n';
 import { formatBaselineDate } from '../utils/baseline';
-import { fontFamilies } from '../styles/designTokens';
+import { getPortalRoot } from '../utils/portalRoot';
 
 const formatDeltaDays = (value: number | null) => {
     if (value === null || !Number.isFinite(value)) {
@@ -84,12 +84,11 @@ export const BaselineDiffPopover: React.FC<{
                 pointerEvents: 'none',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 10,
-                fontFamily: fontFamilies.ui
+                gap: 10
             }}
         >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ fontFamily: fontFamilies.ui, fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
                     {i18n.t('label_baseline_comparison') || 'Baseline comparison'}
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.45 }}>
@@ -130,6 +129,6 @@ export const BaselineDiffPopover: React.FC<{
                 </div>
             )}
         </div>,
-        document.body
+        getPortalRoot()
     );
 };

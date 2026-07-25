@@ -1,5 +1,5 @@
 export const fontFamilies = {
-    ui: '"DM Sans", "Noto Sans JP Variable", "Helvetica Neue", Helvetica, Arial, sans-serif',
+    ui: '"DM Sans Variable", "Noto Sans JP Variable", "Helvetica Neue", Helvetica, Arial, sans-serif',
     mono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
 } as const;
 

@@ -10,7 +10,7 @@ test('loads the unified UI and Japanese fallback fonts', async ({ page }) => {
 
   const fonts = await page.evaluate(() => {
     return {
-      dmSans: Array.from(document.fonts).some((font) => font.family === 'DM Sans'),
+      dmSans: Array.from(document.fonts).some((font) => font.family === 'DM Sans Variable'),
       notoSansJp: Array.from(document.fonts).some((font) => font.family === 'Noto Sans JP Variable'),
       fontFamily: getComputedStyle(document.querySelector('#root')!).fontFamily,
     };
@@ -19,6 +19,6 @@ test('loads the unified UI and Japanese fallback fonts', async ({ page }) => {
   expect(fonts).toEqual({
     dmSans: true,
     notoSansJp: true,
-    fontFamily: '"DM Sans", "Noto Sans JP Variable", "Helvetica Neue", Helvetica, Arial, sans-serif',
+    fontFamily: '"DM Sans Variable", "Noto Sans JP Variable", "Helvetica Neue", Helvetica, Arial, sans-serif',
   });
 });
