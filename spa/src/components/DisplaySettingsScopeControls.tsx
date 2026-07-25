@@ -143,7 +143,7 @@ export const DisplaySettingsScopeControls: React.FC<DisplaySettingsScopeControls
                     <path d="m17 8-3 8" />
                 </svg>
                 <span className="gantt-toolbar-button-label">
-                    {i18n.t('label_display_settings') || 'Display settings'}
+                    {i18n.t('label_display_short') || 'Display'}
                 </span>
                 {menuIsActive && <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.iconActiveDot, borderRadius: '50%' }} />}
             </button>

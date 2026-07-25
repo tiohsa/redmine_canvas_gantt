@@ -123,15 +123,15 @@ describe('GanttToolbar shortcuts', () => {
 
         expect(labels).toEqual([
             'Query',
-            'Columns',
+            'Cols',
             'Workload',
-            'Display settings',
+            'Display',
             'Assignee',
-            'Projects',
-            'Versions',
+            'Proj.',
+            'Ver.',
             'Status',
-            'Chart display',
-            'Dependency'
+            'Chart',
+            'Link'
         ]);
         expect(screen.getByRole('button', { name: 'Month' })).toHaveTextContent('M');
         expect(screen.getByRole('button', { name: 'Week' })).toHaveTextContent('W');
@@ -145,6 +145,7 @@ describe('GanttToolbar shortcuts', () => {
             i18n: {
                 ...(config.i18n ?? {}),
                 label_workload: 'ワークロード',
+                label_workload_short: 'ワークロード',
                 label_show_workload: 'ワークロードパネルを表示',
                 label_capacity_threshold: '負荷しきい値 (時間/日)',
                 label_leaf_issues_only: '末端チケットのみ',
@@ -562,6 +563,7 @@ describe('GanttToolbar shortcuts', () => {
                 ...(config.i18n ?? {}),
                 label_saved_queries: '保存済みクエリ',
                 label_query: 'クエリ',
+                label_query_short: 'クエリ',
                 label_loading_saved_queries: '保存済みクエリを読み込み中...',
                 label_no_saved_queries: '保存済みクエリはありません',
                 label_clear_saved_query: '保存済みクエリを解除',

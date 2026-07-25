@@ -103,8 +103,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                 type="button"
                 onClick={onToggleDisplaySettingsMenu}
                 className="gantt-toolbar-labeled-button"
-                title={i18n.t('label_display_settings_visibility') || 'Chart display'}
-                aria-label={i18n.t('label_display_settings_visibility') || 'Chart display'}
+                title={i18n.t('label_chart_short') || 'Chart'}
+                aria-label={i18n.t('label_chart_short') || 'Chart'}
                 data-testid="display-settings-menu-button"
                 style={{
                     display: 'flex',
@@ -128,7 +128,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     <circle cx="8" cy="18" r="2" fill={designTokens.controlBg} />
                 </svg>
                 <span className="gantt-toolbar-button-label">
-                    {i18n.t('label_display_settings_visibility') || 'Chart display'}
+                    {i18n.t('label_chart_short') || 'Chart'}
                 </span>
                 {hasActiveDisplaySetting && (
                     <div

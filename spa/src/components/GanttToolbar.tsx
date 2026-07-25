@@ -701,7 +701,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <path d="M4 12h16" />
                             <path d="M4 18h10" />
                         </svg>
-                        <span className="gantt-toolbar-button-label">{i18n.t('label_query') || 'Query'}</span>
+                        <span className="gantt-toolbar-button-label">{i18n.t('label_query_short') || 'Query'}</span>
                         {displayedActiveQueryId !== null && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
@@ -867,7 +867,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <line x1="9" y1="3" x2="9" y2="21" />
                             <line x1="15" y1="3" x2="15" y2="21" />
                         </svg>
-                        <span className="gantt-toolbar-button-label">{i18n.t('label_column_plural') || 'Columns'}</span>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_column_short') || 'Cols'}</span>
                         {effectiveVisibleColumns.join(',') !== DEFAULT_COLUMNS.join(',') && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
@@ -958,7 +958,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                         <line x1="12" y1="20" x2="12" y2="4" />
                         <line x1="6" y1="20" x2="6" y2="14" />
                     </svg>
-                    <span className="gantt-toolbar-button-label">{i18n.t('label_workload') || 'Workload'}</span>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_workload_short') || 'Workload'}</span>
                         {workloadPaneVisible && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
@@ -1069,7 +1069,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                         <circle cx="12" cy="7" r="4" />
                     </svg>
-                    <span className="gantt-toolbar-button-label">{i18n.t('field_assigned_to') || 'Assignee'}</span>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_assigned_to_short') || 'Assignee'}</span>
                         {(selectedAssigneeIds.length > 0 || groupByAssignee) && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
@@ -1163,7 +1163,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                     </svg>
-                    <span className="gantt-toolbar-button-label">{i18n.t('label_project_plural') || 'Projects'}</span>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_project_short') || 'Proj.'}</span>
                         {(selectedProjectIds.length > 0 || groupByProject) && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
@@ -1281,7 +1281,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                         <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
                         <line x1="4" y1="22" x2="4" y2="15" />
                     </svg>
-                    <span className="gantt-toolbar-button-label">{i18n.t('label_version_plural') || 'Versions'}</span>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_version_short') || 'Ver.'}</span>
                         {(selectedVersionIds.length > 0 || showVersions) && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
@@ -1382,7 +1382,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                     </svg>
-                    <span className="gantt-toolbar-button-label">{i18n.t('field_status') || 'Status'}</span>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_status_short') || 'Status'}</span>
                         {selectedStatusIds.length > 0 && (
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
@@ -1498,7 +1498,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                         <circle cx="10" cy="12" r="2" />
                         <circle cx="14" cy="12" r="2" />
                     </svg>
-                    <span className="gantt-toolbar-button-label">{i18n.t('label_relation_title') || 'Dependency'}</span>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_dependencies_short') || 'Link'}</span>
                         <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: autoApplyDefaultRelation ? designTokens.controlActiveFg : designTokens.disabledFg, borderRadius: '50%' }} />
                     </button>
                     {showRelationSettingsMenu && (
