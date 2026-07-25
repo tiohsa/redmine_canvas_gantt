@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 
 import type { Relation, Task } from '../types';
 import { i18n } from '../utils/i18n';
-import { fontFamilies } from '../styles/designTokens';
+import { getPortalRoot } from '../utils/portalRoot';
 
 type TaskLabel = {
     id: string;
@@ -81,8 +81,7 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
                     padding: '6px',
                     zIndex: 10000,
                     pointerEvents: 'auto',
-                    animation: 'fadeIn 0.1s ease-out',
-                    fontFamily: fontFamilies.ui
+                    animation: 'fadeIn 0.1s ease-out'
                 }}
             >
                 <style>{`
@@ -116,7 +115,6 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
                     margin: 6px 0;
                 }
                 .menu-section-title {
-                    font-family: ${fontFamilies.mid};
                     font-size: 11px;
                     font-weight: 700;
                     color: #888;
@@ -198,6 +196,6 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
                 )}
             </div>
         </>,
-        document.body
+        getPortalRoot()
     );
 };

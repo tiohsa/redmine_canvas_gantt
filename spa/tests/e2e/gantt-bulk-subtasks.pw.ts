@@ -95,6 +95,7 @@ test('bulk creates subtasks for a visible parent issue', async ({ page }) => {
   await expect.poll(() => bulkPayloads.length).toBe(1);
   expect(bulkPayloads[0]).toEqual({
     parent_issue_id: 501,
+    operation_issue_ids: [501, 502],
     subjects: ['Subtask A', 'Subtask B'],
   });
 });

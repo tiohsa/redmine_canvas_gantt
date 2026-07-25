@@ -783,6 +783,53 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe 'DELETE #destroy_task' do
+    let(:current_user) { instance_double(User, id: 7, logged?: true, login: 'tester', language: 'en') }
+    let(:issue_scope) { double('IssueScope') }
+    let(:issue_project) { instance_double(Project, id: 1) }
+    let(:issue) { instance_double(Issue, id: 10, project: issue_project, deletable?: true) }
+
+    before do
+      allow(User).to receive(:current).and_return(current_user)
+      allow(current_user).to receive(:allowed_to?).and_return(false)
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
+      end
+      allow(Issue).to receive(:visible).and_return(issue_scope)
+      allow(issue_scope).to receive(:find).with('10').and_return(issue)
+      allow(controller).to receive(:current_view_issue_ids).and_return(Set[10])
+    end
+
+    it 'deletes an issue and returns ok for an authorized session' do
+      allow(current_user).to receive(:allowed_to?).with(:delete_issues, issue_project).and_return(true)
+      allow(issue).to receive(:destroy)
+
+      delete :destroy_task, params: { project_id: 'demo', id: '10' }, format: :json
+
+      expect(issue).to have_received(:destroy)
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to eq('status' => 'ok')
+    end
+
+    it 'returns forbidden without delete permission' do
+      allow(current_user).to receive(:allowed_to?).with(:delete_issues, issue_project).and_return(false)
+
+      delete :destroy_task, params: { project_id: 'demo', id: '10' }, format: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(JSON.parse(response.body)).to eq('error' => 'Permission denied')
+    end
+
+    it 'returns not found when the issue is outside the current view scope' do
+      allow(controller).to receive(:current_view_issue_ids).and_return(Set[])
+
+      delete :destroy_task, params: { project_id: 'demo', id: '10' }, format: :json
+
+      expect(response).to have_http_status(:not_found)
+      expect(JSON.parse(response.body)).to eq('error' => 'Issue not found in this project')
+    end
+  end
+
   describe 'POST #bulk_create_subtasks' do
     let(:current_user) { instance_double(User, id: 7, logged?: true, login: 'tester', language: 'en') }
     let(:issue_scope) { double('IssueScope') }

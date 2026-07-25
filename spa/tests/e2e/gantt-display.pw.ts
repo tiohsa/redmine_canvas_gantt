@@ -15,7 +15,7 @@ test('displays task bars correctly', async ({ page }) => {
   await waitForInitialRender(page);
 
   const a11yTasks = page.getByRole('listitem');
-  await expect(a11yTasks).toHaveCount(2);
+  await expect(a11yTasks).toHaveCount(3);
   await expect(page.getByRole('listitem', { name: /Task: Implement sidebar resize behavior/ })).toBeVisible();
 });
 

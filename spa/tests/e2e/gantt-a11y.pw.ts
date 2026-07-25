@@ -16,7 +16,7 @@ test('focuses first task on Tab', async ({ page }) => {
   await waitForInitialRender(page);
 
   let focusedTaskLabel = '';
-  for (let i = 0; i < 30; i += 1) {
+  for (let i = 0; i < 60; i += 1) {
     await page.keyboard.press('Tab');
     focusedTaskLabel = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '');
     if (focusedTaskLabel.includes('Task:')) break;

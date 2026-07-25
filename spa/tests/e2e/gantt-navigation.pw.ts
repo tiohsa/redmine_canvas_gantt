@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { setupMockApp, waitForInitialRender } from './support/mockApp';
+import { defaultMockData, setupMockApp, waitForInitialRender } from './support/mockApp';
 
 test.beforeEach(async ({ page }) => {
   await setupMockApp(page);
@@ -35,6 +35,18 @@ test('scrolls horizontally', async ({ page }) => {
 });
 
 test('scrolls vertically', async ({ page }) => {
+  const additionalTasks = Array.from({ length: 30 }, (_, index) => ({
+    ...defaultMockData.tasks[0],
+    id: 1000 + index,
+    subject: `Vertical scroll task ${index + 1}`,
+    display_order: index + defaultMockData.tasks.length,
+  }));
+  await setupMockApp(page, {
+    mockData: {
+      ...defaultMockData,
+      tasks: [...defaultMockData.tasks, ...additionalTasks],
+    },
+  });
   await waitForInitialRender(page);
 
   const scrollPane = page.locator('.rcg-gantt-scroll-pane');

@@ -154,10 +154,11 @@ test('resizing left pane keeps the rightmost column aligned to the boundary', as
 test('left pane maximize keeps sidebar tasks visible', async ({ page }) => {
   await waitForInitialRender(page);
 
-  const leftPaneMaxButton = page.getByTestId('maximize-left-pane-button');
   const rightPane = page.getByTestId('right-pane');
   const taskRow = page.getByTestId('task-row-101');
 
+  await page.getByTestId('display-settings-menu-button').click();
+  const leftPaneMaxButton = page.getByTestId('maximize-left-pane-button');
   await leftPaneMaxButton.click();
 
   await expect(page.getByTestId('left-pane')).toBeVisible();

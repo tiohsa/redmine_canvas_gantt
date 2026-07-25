@@ -958,10 +958,9 @@ export const apiClient = {
 
     deleteTask: async (taskId: string): Promise<void> => {
         const config = getConfig();
+        const query = buildViewContextQuery(config);
 
-        const redmineBase = config.redmineBase || '';
-        // Redmine API DELETE /issues/:id.json
-        const response = await sessionFetch(`${redmineBase}/issues/${taskId}.json`, {
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${taskId}.json?${query}`, {
             method: 'DELETE',
             headers: buildJsonHeaders(config, true)
         });

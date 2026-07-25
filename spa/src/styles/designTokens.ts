@@ -1,15 +1,12 @@
 export const fontFamilies = {
-    ui: '"DM Sans", "Noto Sans JP", "Helvetica Neue", Helvetica, Arial, sans-serif',
-    display: '"Outfit", "Helvetica Neue", Helvetica, Arial, sans-serif',
-    mid: '"Poppins", "Helvetica Neue", Helvetica, Arial, sans-serif',
-    data: '"Roboto", "Helvetica Neue", Helvetica, Arial, sans-serif',
+    ui: '"DM Sans Variable", "Noto Sans JP Variable", "Helvetica Neue", Helvetica, Arial, sans-serif',
     mono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
 } as const;
 
 export const canvasFonts = {
     body: `500 12px ${fontFamilies.ui}`,
-    bodyStrong: `600 11px ${fontFamilies.data}`,
-    header: `600 11px ${fontFamilies.data}`
+    bodyStrong: `600 11px ${fontFamilies.ui}`,
+    header: `600 11px ${fontFamilies.ui}`
 } as const;
 
 export const designTokens = {

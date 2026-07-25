@@ -38,7 +38,7 @@ const HelpRow: React.FC<HelpItem> = ({ icon, title, description, active }) => (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', marginBottom: '20px' }}>
         <IconWrapper active={active}>{icon}</IconWrapper>
         <div>
-            <div style={{ fontFamily: fontFamilies.mid, fontWeight: 600, fontSize: '14px', color: designTokens.controlFg, marginBottom: '4px' }}>
+            <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, fontSize: '14px', color: designTokens.controlFg, marginBottom: '4px' }}>
                 {title}
             </div>
             <div style={{ fontSize: '13px', color: designTokens.textSecondary, lineHeight: 1.5 }}>
@@ -52,7 +52,7 @@ const HelpSectionCard: React.FC<HelpSection> = ({ title, items }) => (
     <section>
         <h3
             style={{
-                fontFamily: fontFamilies.display,
+                fontFamily: fontFamilies.ui,
                 fontSize: '16px',
                 fontWeight: 600,
                 color: designTokens.controlActiveFg,
@@ -608,7 +608,7 @@ export const HelpDialog: React.FC = () => {
                         backgroundColor: '#ffffff'
                     }}
                 >
-                    <h2 style={{ margin: 0, fontFamily: fontFamilies.display, fontSize: '18px', fontWeight: 600, color: '#222222', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h2 style={{ margin: 0, fontFamily: fontFamilies.ui, fontSize: '18px', fontWeight: 600, color: '#222222', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {questionIcon}
                         {i18n.t('label_help') || 'Help'}
                     </h2>
