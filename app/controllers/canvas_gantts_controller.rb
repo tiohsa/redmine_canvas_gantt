@@ -71,6 +71,7 @@ class CanvasGanttsController < ApplicationController
     label_include_closed_issues: :label_include_closed_issues,
     label_today_onward_only: :label_today_onward_only,
     label_saved_queries: :label_saved_queries,
+    label_query: :label_query,
     label_loading_saved_queries: :label_loading_saved_queries,
     label_saved_query_load_failed: :label_saved_query_load_failed,
     label_no_saved_queries: :label_no_saved_queries,

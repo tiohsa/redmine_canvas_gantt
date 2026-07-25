@@ -117,6 +117,7 @@ export const DisplaySettingsScopeControls: React.FC<DisplaySettingsScopeControls
             <button
                 type="button"
                 onClick={onToggleDisplaySettingsScopeMenu}
+                className="gantt-toolbar-labeled-button"
                 title={i18n.t('label_display_settings_scope') || 'Display settings scope'}
                 aria-label={i18n.t('label_display_settings_scope') || 'Display settings scope'}
                 data-testid="display-settings-scope-menu-button"
@@ -124,14 +125,12 @@ export const DisplaySettingsScopeControls: React.FC<DisplaySettingsScopeControls
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '0',
                     borderRadius: '6px',
                     border: `1px solid ${designTokens.controlBorder}`,
                     backgroundColor: menuIsActive ? designTokens.controlActiveBg : designTokens.controlBg,
                     color: menuIsActive ? designTokens.controlActiveFg : designTokens.controlFg,
                     cursor: 'pointer',
                     height: '32px',
-                    width: '32px',
                     position: 'relative'
                 }}
             >
@@ -143,6 +142,9 @@ export const DisplaySettingsScopeControls: React.FC<DisplaySettingsScopeControls
                     <path d="m7 8 3 8" />
                     <path d="m17 8-3 8" />
                 </svg>
+                <span className="gantt-toolbar-button-label">
+                    {i18n.t('label_display_settings') || 'Display settings'}
+                </span>
                 {menuIsActive && <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.iconActiveDot, borderRadius: '50%' }} />}
             </button>
 

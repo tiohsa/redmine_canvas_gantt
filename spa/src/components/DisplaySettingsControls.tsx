@@ -83,6 +83,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
             <button
                 type="button"
                 onClick={onToggleDisplaySettingsMenu}
+                className="gantt-toolbar-labeled-button"
                 title={i18n.t('label_display_settings_visibility') || 'Chart display'}
                 aria-label={i18n.t('label_display_settings_visibility') || 'Chart display'}
                 data-testid="display-settings-menu-button"
@@ -90,14 +91,12 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '0',
                     borderRadius: '6px',
                     border: `1px solid ${designTokens.controlBorder}`,
                     backgroundColor: hasActiveDisplaySetting ? designTokens.controlActiveBg : designTokens.controlBg,
                     color: hasActiveDisplaySetting ? designTokens.controlActiveFg : designTokens.controlFg,
                     cursor: 'pointer',
                     height: '32px',
-                    width: '32px',
                     position: 'relative'
                 }}
             >
@@ -109,6 +108,9 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     <circle cx="15" cy="12" r="2" fill={designTokens.controlBg} />
                     <circle cx="8" cy="18" r="2" fill={designTokens.controlBg} />
                 </svg>
+                <span className="gantt-toolbar-button-label">
+                    {i18n.t('label_display_settings_visibility') || 'Chart display'}
+                </span>
                 {hasActiveDisplaySetting && (
                     <div
                         data-testid="display-settings-active-indicator"

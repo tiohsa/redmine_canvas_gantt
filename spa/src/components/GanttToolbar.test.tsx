@@ -114,6 +114,30 @@ describe('GanttToolbar shortcuts', () => {
         });
     });
 
+    it('shows names beside every header icon from saved queries through display settings', () => {
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        const labels = Array.from(document.querySelectorAll(
+            '.gantt-toolbar-left .gantt-toolbar-labeled-button .gantt-toolbar-button-label'
+        )).map((element) => element.textContent);
+
+        expect(labels).toEqual([
+            'Query',
+            'Columns',
+            'Workload',
+            'Display settings',
+            'Assignee',
+            'Projects',
+            'Versions',
+            'Status',
+            'Chart display',
+            'Dependency'
+        ]);
+        expect(screen.getByRole('button', { name: 'Month' })).toHaveTextContent('M');
+        expect(screen.getByRole('button', { name: 'Week' })).toHaveTextContent('W');
+        expect(screen.getByRole('button', { name: 'Day' })).toHaveTextContent('D');
+    });
+
     it('renders workload menu labels from frontend i18n payload', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
@@ -133,7 +157,7 @@ describe('GanttToolbar shortcuts', () => {
 
         fireEvent.click(screen.getByTitle('ワークロード'));
 
-        expect(screen.getByText('ワークロード')).toBeInTheDocument();
+        expect(within(screen.getByTitle('ワークロード').parentElement as HTMLElement).getAllByText('ワークロード')).toHaveLength(2);
         expect(screen.getByText('ワークロードパネルを表示')).toBeInTheDocument();
         expect(screen.getByText('負荷しきい値 (時間/日)')).toBeInTheDocument();
         expect(screen.getByText('末端チケットのみ')).toBeInTheDocument();
@@ -537,6 +561,7 @@ describe('GanttToolbar shortcuts', () => {
             i18n: {
                 ...(config.i18n ?? {}),
                 label_saved_queries: '保存済みクエリ',
+                label_query: 'クエリ',
                 label_loading_saved_queries: '保存済みクエリを読み込み中...',
                 label_no_saved_queries: '保存済みクエリはありません',
                 label_clear_saved_query: '保存済みクエリを解除',
@@ -551,7 +576,8 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
         fireEvent.click(screen.getByTestId('query-menu-button'));
 
-        expect(await screen.findByText('保存済みクエリ')).toBeInTheDocument();
+        expect(screen.getByTestId('query-menu-button')).toHaveTextContent('クエリ');
+        expect(await within(screen.getByTestId('query-menu')).findByText('保存済みクエリ')).toBeInTheDocument();
         expect(screen.getByText('保存済みクエリを読み込み中...')).toBeInTheDocument();
 
         await act(async () => {
@@ -937,7 +963,7 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
         fireEvent.click(screen.getByTestId('relation-settings-menu-button'));
 
-        expect(screen.getByText('依存関係')).toBeInTheDocument();
+        expect(within(screen.getByTestId('relation-settings-menu')).getByText('依存関係')).toBeInTheDocument();
         expect(screen.getByText('依存関係種別')).toBeInTheDocument();
         expect(screen.getByRole('option', { name: '先行' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: '関連' })).toBeInTheDocument();
@@ -980,7 +1006,7 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
         fireEvent.click(screen.getByTestId('relation-settings-menu-button'));
 
-        expect(screen.getByText('Dependency Settings')).toBeInTheDocument();
+        expect(within(screen.getByTestId('relation-settings-menu')).getByText('Dependency Settings')).toBeInTheDocument();
         expect(screen.getByText('Dependency type')).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Finish to Start' })).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Reference only' })).toBeInTheDocument();

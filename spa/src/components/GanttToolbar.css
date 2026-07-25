@@ -86,3 +86,18 @@
 .gantt-toolbar-left > :nth-child(18) {
     order: 1;
 }
+
+.gantt-toolbar-labeled-button {
+    gap: 6px;
+    min-width: 32px;
+    padding: 0 10px !important;
+    white-space: nowrap;
+    width: auto !important;
+}
+
+.gantt-toolbar-button-label {
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+}

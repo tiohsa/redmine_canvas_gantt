@@ -61,6 +61,7 @@ ja:
     label_edit_query_in_redmine: "Redmineでクエリ編集"
     label_edit_query_in_redmine_tooltip: "Redmine標準画面でフィルタ条件を編集します"
     label_saved_queries: "保存済みクエリ"
+    label_query: "クエリ"
     label_loading_saved_queries: "保存済みクエリを読み込み中..."
     label_saved_query_load_failed: "保存済みクエリの読み込みに失敗しました"
     label_no_saved_queries: "保存済みクエリはありません"

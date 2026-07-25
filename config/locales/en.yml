@@ -61,6 +61,7 @@ en:
     label_edit_query_in_redmine: "Edit Query in Redmine"
     label_edit_query_in_redmine_tooltip: "Edit filter conditions in the standard Redmine issue list"
     label_saved_queries: "Saved Queries"
+    label_query: "Query"
     label_loading_saved_queries: "Loading saved queries..."
     label_saved_query_load_failed: "Failed to load saved queries"
     label_no_saved_queries: "No saved queries"
