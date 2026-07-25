@@ -263,6 +263,7 @@ class CanvasGanttsController < ApplicationController
     label_help_toolbar_icons: :label_help_toolbar_icons,
     help_desc_edit_query: :help_desc_edit_query,
     help_desc_saved_queries: :help_desc_saved_queries,
+    help_desc_chart_display: :help_desc_chart_display,
     help_desc_display_settings: :help_desc_display_settings,
     help_desc_baseline: :help_desc_baseline,
     help_desc_workload: :help_desc_workload,
