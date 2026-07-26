@@ -53,6 +53,7 @@ const ISSUE_DIALOG_ERROR_SELECTORS = [
     '.errorExplanation',
     '#flash_error',
     '.flash.error',
+    '.flash-error',
     '.conflict'
 ];
 

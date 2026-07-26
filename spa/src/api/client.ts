@@ -915,7 +915,20 @@ export const apiClient = {
         }
     },
 
-    bulkCreateSubtasks: async (payload: { parentId: string; subjects: string[]; operationIssueIds?: string[] }): Promise<BulkCreateSubtasksResult> => {
+    getSubtaskTrackers: async (parentId: string, operationIssueIds: string[] = []): Promise<Array<{ id: number; name: string }>> => {
+        const config = getConfig();
+        const query = new URLSearchParams(buildViewContextQuery(config));
+        query.set('parent_issue_id', parentId);
+        operationIssueIds.forEach(id => query.append('operation_issue_ids[]', id));
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/subtasks/trackers.json?${query.toString()}`, {
+            headers: buildJsonHeaders(config)
+        });
+        if (!response.ok) throw new Error(await parseErrorMessage(response));
+        const payload = await response.json() as { trackers?: Array<{ id: number; name: string }> };
+        return Array.isArray(payload.trackers) ? payload.trackers : [];
+    },
+
+    bulkCreateSubtasks: async (payload: { parentId: string; subjects?: string[]; subtasks?: Array<{ subject: string; tracker_id?: number }>; operationIssueIds?: string[] }): Promise<BulkCreateSubtasksResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
         const response = await sessionFetch(`${getGlobalApiBase(config)}/subtasks/bulk.json?${query}`, {
@@ -923,7 +936,7 @@ export const apiClient = {
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
                 parent_issue_id: Number(payload.parentId),
-                subjects: payload.subjects,
+                ...(payload.subtasks ? { subtasks: payload.subtasks } : { subjects: payload.subjects ?? [] }),
                 operation_issue_ids: (payload.operationIssueIds ?? []).map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0)
             })
         });

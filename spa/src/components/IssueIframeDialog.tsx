@@ -7,6 +7,7 @@ import { BulkSubtaskCreator } from './BulkSubtaskCreator';
 import type { BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
 import { fontFamilies, designTokens } from '../styles/designTokens';
 import { buildRedmineUrl } from '../utils/redmineUrl';
+import { apiClient } from '../api/client';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
@@ -58,7 +59,7 @@ const getIssueDialogContentHeight = (doc: Document): number => {
 };
 
 type IssueDialogMode = 'form' | 'saving' | 'issue-show' | 'error';
-type SaveTarget = 'issue' | 'new-issue' | 'journal' | 'query' | null;
+type SaveTarget = 'issue' | 'new-issue' | 'journal' | 'time_entry' | 'query' | null;
 
 const getIssueShowIdFromPath = (path: string): string | null => {
     const issueMatch = path.match(/\/issues\/(\d+)\/?$/);
@@ -79,6 +80,11 @@ const findJournalEditForm = (doc: Document): HTMLFormElement | null => {
 const getActiveSaveForm = (doc: Document, currentPath?: string): { form: HTMLFormElement; target: SaveTarget } | null => {
     const journalForm = findJournalEditForm(doc);
     if (journalForm) return { form: journalForm, target: 'journal' };
+
+    const timeEntryForm =
+        doc.querySelector<HTMLFormElement>('form[action*="/time_entries"]') ||
+        doc.querySelector<HTMLFormElement>('#new_time_entry');
+    if (timeEntryForm) return { form: timeEntryForm, target: 'time_entry' };
 
     const issueForm = doc.querySelector<HTMLFormElement>('#issue-form');
     if (issueForm) {
@@ -125,6 +131,7 @@ export const IssueIframeDialog: React.FC = () => {
     const iframeSizeObserverCleanupRef = React.useRef<(() => void) | null>(null);
     const dialogResizeCleanupRef = React.useRef<(() => void) | null>(null);
     const isSavingRef = React.useRef(false);
+    const pendingAutoSubmitRef = React.useRef(false);
     const saveTargetRef = React.useRef<SaveTarget>(null);
     const [iframeError, setIframeError] = React.useState<string | null>(null);
     const [dialogMode, setDialogMode] = React.useState<IssueDialogMode>('form');
@@ -135,6 +142,9 @@ export const IssueIframeDialog: React.FC = () => {
     const [isSaving, setIsSaving] = React.useState(false);
     const [dialogHeightPx, setDialogHeightPx] = React.useState<number | null>(null);
     const [isIframeLoaded, setIsIframeLoaded] = React.useState(false);
+    const [trackerOptions, setTrackerOptions] = React.useState<Array<{ id: number; name: string }>>([]);
+    const [defaultTrackerId, setDefaultTrackerId] = React.useState<number | undefined>(undefined);
+    const [hasBulkSubjects, setHasBulkSubjects] = React.useState(false);
     const activeDialogUrl = queryDialogUrl || issueDialogUrl;
     const isQueryDialog = Boolean(queryDialogUrl);
 
@@ -270,6 +280,15 @@ export const IssueIframeDialog: React.FC = () => {
 
             applyIssueDialogStyles(doc, isQueryDialog, isIssueShowPage);
             applyLinkTargetBlank(doc);
+            const trackerSelect = doc.querySelector<HTMLSelectElement>('select[name="issue[tracker_id]"]');
+            if (trackerSelect) {
+                const options = Array.from(trackerSelect.options)
+                    .map(option => ({ id: Number(option.value), name: option.textContent?.trim() || '' }))
+                    .filter(option => Number.isInteger(option.id) && option.id > 0 && option.name);
+                setTrackerOptions(options);
+                const selected = Number(trackerSelect.value);
+                setDefaultTrackerId(Number.isInteger(selected) && selected > 0 ? selected : undefined);
+            }
             if (isIssueShowPage && !isSavingRef.current) {
                 setDisplayedIssueId(getIssueShowIdFromPath(urlParsed.pathname));
                 setDialogMode('issue-show');
@@ -309,6 +328,17 @@ export const IssueIframeDialog: React.FC = () => {
 
             detectSaveTarget(doc, urlParsed.pathname);
 
+            if (pendingAutoSubmitRef.current) {
+                const issueForm = doc.querySelector<HTMLFormElement>('#issue-form');
+                if (issueForm && urlParsed.pathname.match(/\/issues\/\d+\/edit\/?$/)) {
+                    pendingAutoSubmitRef.current = false;
+                    saveTargetRef.current = 'issue';
+                    setSaveTarget('issue');
+                    submitForm(issueForm);
+                    return;
+                }
+            }
+
             // If we were saving, update dialog mode when Redmine redirects after submit.
             // Validation failures usually remain on /edit or /new and keep error blocks in DOM.
             if (isSavingRef.current) {
@@ -323,7 +353,10 @@ export const IssueIframeDialog: React.FC = () => {
                 );
 
                 if (!error && issueId && !isQueryDialog) {
-                    if (bulkRef.current?.hasSubjects()) {
+                    if (
+                        (saveTargetRef.current === 'issue' || saveTargetRef.current === 'new-issue') &&
+                        bulkRef.current?.hasSubjects()
+                    ) {
                         await bulkRef.current.createSubtasks(issueId);
                     }
 
@@ -343,6 +376,13 @@ export const IssueIframeDialog: React.FC = () => {
                     isSavingRef.current = false;
                     setIsSaving(false);
                     handleClose();
+                    return;
+                }
+
+                const reloadedIssueForm = doc.querySelector<HTMLFormElement>('#issue-form');
+                if (!error && saveTargetRef.current === 'issue' && reloadedIssueForm && path.match(/\/issues\/\d+\/edit\/?$/)) {
+                    setDialogMode('saving');
+                    setIsSaving(true);
                     return;
                 }
 
@@ -377,6 +417,34 @@ export const IssueIframeDialog: React.FC = () => {
         setIsSaving(true);
         submitForm(saveForm.form);
     }, []);
+
+    const handleIssueShowPrimaryAction = React.useCallback(() => {
+        if (!displayedIssueId || !iframeRef.current?.contentWindow) return;
+
+        if (!hasBulkSubjects) {
+            const editUrl = buildRedmineUrl(`/issues/${displayedIssueId}/edit`);
+            iframeRef.current.contentWindow.location.href = editUrl;
+            setCurrentIframeUrl(editUrl);
+            setDialogMode('form');
+            setDisplayedIssueId(null);
+            setSaveTarget('issue');
+            setIsJournalEditing(false);
+            setIframeError(null);
+            bulkRef.current?.resetCycle();
+            return;
+        }
+
+        const editUrl = buildRedmineUrl(`/issues/${displayedIssueId}/edit`);
+        pendingAutoSubmitRef.current = true;
+        saveTargetRef.current = 'issue';
+        isSavingRef.current = true;
+        setSaveTarget('issue');
+        setDialogMode('saving');
+        setIsSaving(true);
+        setIframeError(null);
+        iframeRef.current.contentWindow.location.href = editUrl;
+        setCurrentIframeUrl(editUrl);
+    }, [displayedIssueId, hasBulkSubjects]);
 
     const { issueLabel, issueSubject } = React.useMemo(() => {
         if (displayedIssueId && !isQueryDialog) {
@@ -434,14 +502,11 @@ export const IssueIframeDialog: React.FC = () => {
 
             let paId = params.get('issue[parent_issue_id]') || params.get('parent_issue_id') || undefined;
 
-            // Extract issue ID from /issues/123/edit to use as parentId for subtasks
+            // The issue itself is the parent for subtasks from both the edit and
+            // show dialogs. New issues have no stable parent until they are saved.
             const issueMatch = path.match(/\/issues\/(\d+)(?:\/edit)?/);
             if (issueMatch) {
-                const issueId = issueMatch[1];
-                // If it's an edit page, the issue itself is the parent for new subtasks
-                if (path.includes('/edit')) {
-                    paId = issueId;
-                }
+                paId = issueMatch[1];
             }
 
             return paId;
@@ -452,6 +517,25 @@ export const IssueIframeDialog: React.FC = () => {
     }, [activeDialogUrl, isQueryDialog]);
     const parentTask = useTaskStore(state => parentId ? state.tasks.find(task => task.id === parentId) : undefined);
     const canBulkCreateForParent = !parentTask?.isContextOnly;
+
+    React.useEffect(() => {
+        if (!parentId || isQueryDialog || !canBulkCreateForParent) return;
+
+        const operationIssueIds = useTaskStore.getState().tasks
+            .filter(task => !task.isContextOnly)
+            .map(task => task.id);
+        let cancelled = false;
+        void apiClient.getSubtaskTrackers(parentId, operationIssueIds)
+            .then(options => {
+                if (!cancelled && options.length > 0) setTrackerOptions(options);
+            })
+            .catch(error => {
+                console.debug('Failed to load subtask tracker options', error);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [canBulkCreateForParent, isQueryDialog, parentId]);
 
     React.useEffect(() => {
         iframeEscapeCleanupRef.current?.();
@@ -466,9 +550,13 @@ export const IssueIframeDialog: React.FC = () => {
         setIsJournalEditing(false);
         saveTargetRef.current = null;
         isSavingRef.current = false;
+        pendingAutoSubmitRef.current = false;
         setIsSaving(false);
         setDialogHeightPx(null);
         setIsIframeLoaded(false);
+        setTrackerOptions([]);
+        setDefaultTrackerId(undefined);
+        setHasBulkSubjects(false);
     }, [activeDialogUrl]);
 
     React.useEffect(() => {
@@ -533,19 +621,6 @@ export const IssueIframeDialog: React.FC = () => {
             dialogResizeCleanupRef.current = null;
         };
     }, [activeDialogUrl, iframeError, measureDialogHeight]);
-
-    const handleEditAgain = React.useCallback(() => {
-        if (!displayedIssueId || !iframeRef.current?.contentWindow) return;
-
-        const editUrl = buildRedmineUrl(`/issues/${displayedIssueId}/edit`);
-        iframeRef.current.contentWindow.location.href = editUrl;
-        setCurrentIframeUrl(editUrl);
-        setDialogMode('form');
-        setDisplayedIssueId(null);
-        setSaveTarget('issue');
-        setIsJournalEditing(false);
-        setIframeError(null);
-    }, [displayedIssueId]);
 
     if (!activeDialogUrl) return null;
 
@@ -730,6 +805,9 @@ export const IssueIframeDialog: React.FC = () => {
                             parentId={parentId}
                             hideStandaloneButton={true}
                             showTopBorder={false}
+                            trackerOptions={trackerOptions}
+                            defaultTrackerId={defaultTrackerId}
+                            onContentChange={setHasBulkSubjects}
                             onTasksCreated={() => {
                                 void refreshData();
                             }}
@@ -776,7 +854,8 @@ export const IssueIframeDialog: React.FC = () => {
                     </button>
                     {isIssueShowMode && !isJournalSaveMode ? (
                         <button
-                            onClick={handleEditAgain}
+                            onClick={handleIssueShowPrimaryAction}
+                            disabled={isSaving}
                             style={{
                                 height: `${compactActionButtonHeight}px`,
                                 padding: '0 16px',
@@ -789,13 +868,15 @@ export const IssueIframeDialog: React.FC = () => {
                                 borderRadius: 9999,
                                 fontSize: 13,
                                 fontWeight: 600,
-                                cursor: 'pointer',
+                                cursor: isSaving ? 'default' : 'pointer',
                                 minWidth: `${compactActionButtonMinWidth}px`,
                                 boxSizing: 'border-box',
                                 transition: 'background 0.2s'
                             }}
                         >
-                            {i18n.t('button_edit_issue') || 'Edit issue'}
+                            {hasBulkSubjects
+                                ? (i18n.t('button_save') || 'Save')
+                                : (i18n.t('button_edit_issue') || 'Edit issue')}
                         </button>
                     ) : shouldShowSave ? (
                         <button

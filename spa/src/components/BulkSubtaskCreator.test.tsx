@@ -117,4 +117,162 @@ describe('BulkSubtaskCreator', () => {
         expect(notify).toHaveBeenCalledWith('1 tasks created.', 'success');
         expect(notify).toHaveBeenCalledWith('1 tasks failed. (boom)', 'error');
     });
+
+    it('applies the selected tracker to every task created in text mode', async () => {
+        vi.mocked(apiClient.bulkCreateSubtasks).mockResolvedValue({
+            status: 'ok',
+            successCount: 2,
+            failCount: 0,
+            results: []
+        });
+
+        render(
+            <BulkSubtaskCreator
+                parentId="100"
+                trackerOptions={[{ id: 1, name: 'Bug' }, { id: 2, name: 'Feature' }]}
+                defaultTrackerId={1}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        expect(screen.getByRole('combobox', { name: 'Tracker' })).toHaveValue('1');
+        fireEvent.change(screen.getByRole('combobox', { name: 'Tracker' }), {
+            target: { value: '2' }
+        });
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'Task A\nTask B' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+        await waitFor(() => {
+            expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledWith({
+                parentId: '100',
+                subtasks: [
+                    { subject: 'Task A', tracker_id: 2 },
+                    { subject: 'Task B', tracker_id: 2 }
+                ],
+                operationIssueIds: []
+            });
+        });
+    });
+
+    it('supports table input with adding and removing rows', () => {
+        render(<BulkSubtaskCreator parentId="100" />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+
+        expect(screen.getByTestId('bulk-subtask-table')).toBeInTheDocument();
+        expect(screen.getAllByRole('textbox')).toHaveLength(3);
+
+        fireEvent.click(screen.getByRole('button', { name: '+ Add row' }));
+        expect(screen.getAllByRole('textbox')).toHaveLength(4);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Delete row 4' }));
+        expect(screen.getAllByRole('textbox')).toHaveLength(3);
+    });
+
+    it('copies each text line to the matching table row without trimming', () => {
+        render(<BulkSubtaskCreator parentId="100" />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: ' Task A \nTask B' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+
+        const tableSubjects = screen.getAllByRole('textbox');
+        expect(tableSubjects[0]).toHaveValue(' Task A ');
+        expect(tableSubjects[1]).toHaveValue('Task B');
+        expect(tableSubjects[2]).toHaveValue('');
+    });
+
+    it('copies table subjects to text in row order', () => {
+        render(<BulkSubtaskCreator parentId="100" />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+        const tableSubjects = screen.getAllByRole('textbox');
+        fireEvent.change(tableSubjects[0], {
+            target: { value: 'Task A' }
+        });
+        fireEvent.change(tableSubjects[1], {
+            target: { value: ' Task B ' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Text input' }));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toHaveValue('Task A\n Task B ');
+    });
+
+    it('preserves trackers by row across table to text to table switches', () => {
+        render(
+            <BulkSubtaskCreator
+                parentId="100"
+                trackerOptions={[{ id: 1, name: 'Bug' }, { id: 2, name: 'Feature' }]}
+                defaultTrackerId={1}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+        fireEvent.change(screen.getAllByRole('textbox')[0], {
+            target: { value: 'Task A' }
+        });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Tracker 1' }), {
+            target: { value: '2' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Text input' }));
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'Renamed task' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+
+        expect(screen.getAllByRole('textbox')[0]).toHaveValue('Renamed task');
+        expect(screen.getByRole('combobox', { name: 'Tracker 1' })).toHaveValue('2');
+    });
+
+    it('uses the default tracker for text lines added beyond existing table rows', () => {
+        render(
+            <BulkSubtaskCreator
+                parentId="100"
+                trackerOptions={[{ id: 1, name: 'Bug' }, { id: 2, name: 'Feature' }]}
+                defaultTrackerId={1}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'One\nTwo\nThree\nFour' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+
+        expect(screen.getByRole('combobox', { name: 'Tracker 4' })).toHaveValue('1');
+    });
+
+    it('keeps intermediate blank rows and omits trailing empty table rows from text', () => {
+        render(<BulkSubtaskCreator parentId="100" />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+        const tableSubjects = screen.getAllByRole('textbox');
+        fireEvent.change(tableSubjects[0], {
+            target: { value: 'Task A' }
+        });
+        fireEvent.change(tableSubjects[2], {
+            target: { value: 'Task C' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: '+ Add row' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Text input' }));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toHaveValue('Task A\n\nTask C');
+    });
+
+    it('shows at least three table rows when the text input is empty', () => {
+        render(<BulkSubtaskCreator parentId="100" />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+
+        expect(screen.getAllByRole('textbox')).toHaveLength(3);
+    });
 });

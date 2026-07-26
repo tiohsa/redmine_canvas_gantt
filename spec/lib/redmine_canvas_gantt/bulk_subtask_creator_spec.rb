@@ -4,7 +4,8 @@ require_relative '../../../lib/redmine_canvas_gantt/bulk_subtask_creator'
 RSpec.describe RedmineCanvasGantt::BulkSubtaskCreator do
   describe '#call' do
     it 'creates subtasks and reports empty subjects as errors' do
-      parent_project = instance_double(Project, id: 2)
+      tracker = instance_double(Tracker, id: 3)
+      parent_project = instance_double(Project, id: 2, trackers: [tracker])
       parent_issue = instance_double(
         Issue,
         id: 99,
@@ -23,13 +24,21 @@ RSpec.describe RedmineCanvasGantt::BulkSubtaskCreator do
       allow(created_issue).to receive(:parent_issue_id=)
       allow(created_issue).to receive(:save).and_return(true)
       allow(Issue).to receive(:new).and_return(created_issue)
+      allow(Issue).to receive(:transaction) do |&block|
+        begin
+          block.call
+        rescue ActiveRecord::Rollback
+          nil
+        end
+      end
 
       creator = described_class.new(current_user: User.current)
       result = creator.call(parent_issue: parent_issue, subjects: ['Task A', ''])
 
-      expect(result[:success_count]).to eq(1)
-      expect(result[:fail_count]).to eq(1)
-      expect(result[:results].map { |entry| entry[:status] }).to eq(%w[ok error])
+      expect(result[:success_count]).to eq(0)
+      expect(result[:fail_count]).to eq(2)
+      expect(result[:results].map { |entry| entry[:status] }).to eq(%w[error error])
+      expect(result[:results][0][:errors]).to eq([I18n.t(:"canvas_gantt.error_canvas_gantt_bulk_subtasks_rolled_back")])
       expect(result[:results][1][:errors]).to eq([I18n.t(:"canvas_gantt.error_canvas_gantt_subject_blank")])
     end
   end

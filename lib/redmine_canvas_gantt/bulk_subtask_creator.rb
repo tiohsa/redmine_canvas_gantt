@@ -10,9 +10,31 @@ module RedmineCanvasGantt
         @current_user.allowed_to?(:manage_subtasks, parent_issue.project)
     end
 
-    def call(parent_issue:, subjects:)
+    def call(parent_issue:, subjects: nil, subtasks: nil)
       inherited_attrs = build_inherited_subtask_attributes(parent_issue)
-      results = Array(subjects).map { |raw_subject| create_subtask_from_subject(raw_subject, parent_issue, inherited_attrs) }
+      rows = subtasks || Array(subjects).map { |subject| { subject: subject } }
+      results = []
+      rolled_back = false
+
+      @issue_class.transaction do
+        results = rows.map { |row| create_subtask_from_row(row, parent_issue, inherited_attrs) }
+        if results.any? { |result| result[:status] == 'error' }
+          rolled_back = true
+          raise ActiveRecord::Rollback
+        end
+      end
+
+      if rolled_back
+        results = results.map do |result|
+          next result if result[:status] == 'error'
+
+          result.merge(
+            status: 'error',
+            issue_id: nil,
+            errors: [I18n.t(:"canvas_gantt.error_canvas_gantt_bulk_subtasks_rolled_back")]
+          )
+        end
+      end
       success_count = results.count { |result| result[:status] == 'ok' }
 
       {
@@ -32,14 +54,23 @@ module RedmineCanvasGantt
         tracker_id: parent_issue.tracker_id,
         status_id: parent_issue.status_id,
         priority_id: parent_issue.priority_id,
-        assigned_to_id: parent_issue.assigned_to_id,
-        fixed_version_id: parent_issue.fixed_version_id,
-        category_id: parent_issue.category_id
+        assigned_to_id: parent_issue.assigned_to_id
       }
     end
 
-    def create_subtask_from_subject(raw_subject, parent_issue, inherited_attrs)
-      subject = raw_subject.to_s.strip
+    def create_subtask_from_row(row, parent_issue, inherited_attrs)
+      # Rails wraps JSON array entries in ActionController::Parameters;
+      # calling `to_h` on an unpermitted instance raises 500. Read only the
+      # two expected keys instead.
+      subject_value = if row.respond_to?(:key?)
+        row[:subject] || row['subject']
+      else
+        row
+      end
+      tracker_value = if row.respond_to?(:key?)
+        row[:tracker_id] || row['tracker_id']
+      end
+      subject = subject_value.to_s.strip
       if subject.blank?
         return {
           status: 'error',
@@ -50,7 +81,16 @@ module RedmineCanvasGantt
 
       issue = @issue_class.new
       issue.author = @current_user
-      issue.safe_attributes = inherited_attrs.merge(subject: subject)
+      tracker_id = tracker_value.presence || inherited_attrs[:tracker_id]
+      # Project#trackers is already the project's permitted tracker scope in
+      # Redmine. Avoid calling Tracker#visible? here: its signature and
+      # availability differ between supported Redmine versions.
+      available_tracker_ids = parent_issue.project.trackers.map(&:id)
+      unless available_tracker_ids.include?(tracker_id.to_i)
+        return { status: 'error', subject: subject,
+                 errors: [I18n.t(:'canvas_gantt.error_canvas_gantt_tracker_invalid')] }
+      end
+      issue.safe_attributes = inherited_attrs.merge(subject: subject, tracker_id: tracker_id)
       issue.parent_issue_id = parent_issue.id
 
       if issue.save

@@ -227,6 +227,13 @@ class CanvasGanttsController < ApplicationController
     label_issue: :label_issue,
     label_new: :label_new,
     label_bulk_subtask_creation: :label_bulk_subtask_creation,
+    label_bulk_subtask_mode: :label_bulk_subtask_mode,
+    label_bulk_subtask_table_mode: :label_bulk_subtask_table_mode,
+    label_bulk_subtask_text_mode: :label_bulk_subtask_text_mode,
+    label_bulk_subtask_subject: :label_bulk_subtask_subject,
+    label_bulk_subtask_add_row: :label_bulk_subtask_add_row,
+    label_bulk_subtask_delete_row: :label_bulk_subtask_delete_row,
+    label_default: :label_default,
     placeholder_bulk_subtask_creation: :placeholder_bulk_subtask_creation,
     label_bulk_subtask_creation_success: :label_bulk_subtask_creation_success,
     label_bulk_subtask_creation_partial_fail: :label_bulk_subtask_creation_partial_fail,
@@ -531,13 +538,27 @@ class CanvasGanttsController < ApplicationController
       return
     end
 
+    subtasks = params[:subtasks]
     subjects = Array(params[:subjects])
-    if subjects.empty?
+    if subtasks.blank? && subjects.empty?
       render json: { error: canvas_gantt_l(:error_canvas_gantt_subjects_non_empty_array) }, status: :unprocessable_entity
       return
     end
 
-    render json: bulk_subtask_creator.call(parent_issue: parent_issue, subjects: subjects)
+    render json: bulk_subtask_creator.call(parent_issue: parent_issue, subjects: subjects, subtasks: subtasks)
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_parent_task_not_found) }, status: :not_found
+  end
+
+  # GET /projects/:project_id/canvas_gantt/subtasks/trackers.json
+  def subtask_trackers
+    parent_issue = Issue.visible.find(params[:parent_issue_id])
+    return unless ensure_issue_in_scope(parent_issue)
+    return unless ensure_issue_in_operation_scope(parent_issue)
+
+    render json: {
+      trackers: parent_issue.project.trackers.map { |tracker| { id: tracker.id, name: tracker.name } }
+    }
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_parent_task_not_found) }, status: :not_found
   end
