@@ -63,6 +63,7 @@ export interface StoredDisplayPreferences {
     rowHeight?: number;
     sidebarFontSize?: number;
     memberProjectsOnly?: boolean;
+    autoSave?: boolean;
 }
 
 export interface StoredGeneralPreferences {
@@ -106,6 +107,7 @@ export type DisplayPreferencesSnapshot = Pick<
     | 'rowHeight'
     | 'sidebarFontSize'
     | 'memberProjectsOnly'
+    | 'autoSave'
 >;
 
 export type GeneralPreferencesSnapshot = Pick<
@@ -178,7 +180,8 @@ const sanitizeDisplayPreferences = (prefs: StoredPreferences): StoredDisplayPref
         customScales: prefs.customScales,
         rowHeight: prefs.rowHeight,
         sidebarFontSize: prefs.sidebarFontSize,
-        memberProjectsOnly: prefs.memberProjectsOnly
+        memberProjectsOnly: prefs.memberProjectsOnly,
+        autoSave: prefs.autoSave
     }).filter(([, value]) => value !== undefined)
 ) as StoredDisplayPreferences;
 
@@ -408,8 +411,8 @@ export const loadDisplayPreferences = (projectId?: string | number | null): Stor
     loadDisplayPreferencesWithSource(projectId).preferences;
 
 export const loadPreferences = (projectId?: string | number | null): StoredPreferences => sanitizePreferences({
-    ...loadDisplayPreferences(projectId),
-    ...loadGeneralPreferences(projectId)
+    ...loadGeneralPreferences(projectId),
+    ...loadDisplayPreferences(projectId)
 });
 
 export const savePreferences = (prefs: StoredPreferences, projectId?: string | number | null) => {

@@ -46,7 +46,7 @@ const DisplaySettingSwitch: React.FC<DisplaySettingSwitchProps> = ({ checked, la
         }}
     >
         <span>{label}</span>
-        <span style={{ position: 'relative', display: 'inline-flex', flex: '0 0 auto', width: 36, height: 20 }}>
+        <span style={{ position: 'relative', display: 'inline-flex', flex: '0 0 auto', width: 32, height: 18 }}>
             <input
                 type="checkbox"
                 role="switch"
@@ -77,12 +77,12 @@ const DisplaySettingSwitch: React.FC<DisplaySettingSwitchProps> = ({ checked, la
             >
                 <span
                     style={{
-                        width: 16,
-                        height: 16,
+                        width: 14,
+                        height: 14,
                         borderRadius: '50%',
                         background: designTokens.controlBg,
                         boxShadow: designTokens.controlActiveShadow,
-                        transform: checked ? 'translateX(16px)' : 'translateX(0)',
+                        transform: checked ? 'translateX(14px)' : 'translateX(0)',
                         transition: 'transform 150ms ease'
                     }}
                 />
@@ -105,7 +105,9 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         organizeByDependency,
         setOrganizeByDependency,
         setRowHeight,
-        customScales
+        customScales,
+        autoSave,
+        setAutoSave
     } = useTaskStore();
     const {
         showProgressLine,
@@ -205,7 +207,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
             sidebarWidth,
             customScales,
             rowHeight: viewport.rowHeight,
-            sidebarFontSize
+            sidebarFontSize,
+            autoSave
         });
 
         if (shareAcrossProjects) {
@@ -223,8 +226,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                 type="button"
                 onClick={onToggleDisplaySettingsMenu}
                 className="gantt-toolbar-labeled-button"
-                title={i18n.t('label_display_settings') || 'Display settings'}
-                aria-label={i18n.t('label_display_settings') || 'Display settings'}
+                title={i18n.t('label_settings') || 'Settings'}
+                aria-label={i18n.t('label_settings') || 'Settings'}
                 data-testid="display-settings-menu-button"
                 style={{
                     display: 'flex',
@@ -248,7 +251,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     <circle cx="8" cy="18" r="2" fill={designTokens.controlBg} />
                 </svg>
                 <span className="gantt-toolbar-button-label">
-                    {i18n.t('label_display_settings') || 'Display settings'}
+                    {i18n.t('label_settings') || 'Settings'}
                 </span>
                 {hasActiveDisplaySetting && (
                     <div
@@ -285,8 +288,13 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                 >
                     <div>
                         <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginBottom: 4 }}>
-                            {i18n.t('label_display_settings') || 'Display settings'}
+                            {i18n.t('label_settings') || 'Settings'}
                         </div>
+                        <DisplaySettingSwitch
+                            checked={autoSave}
+                            onChange={(event) => setAutoSave(event.target.checked)}
+                            label={i18n.t('help_label_autosave') || 'Auto Save'}
+                        />
                         <DisplaySettingSwitch checked={showProgressLine} onChange={toggleProgressLine} label={i18n.t('label_progress_line') || 'Progress line'} />
                         <DisplaySettingSwitch checked={organizeByDependency} onChange={() => setOrganizeByDependency(!organizeByDependency)} label={i18n.t('label_organize_by_dependency') || 'Organize by dependency'} />
                         <DisplaySettingSwitch checked={showStartDateOnly} onChange={toggleStartDateOnly} label={i18n.t('label_show_start_date_only') || 'Show start-date-only tasks'} />

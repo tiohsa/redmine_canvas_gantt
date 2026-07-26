@@ -151,6 +151,7 @@ class CanvasGanttsController < ApplicationController
     label_font_size_medium: :label_font_size_medium,
     label_font_size_large: :label_font_size_large,
     label_display_settings: :label_display_settings,
+    label_settings: :label_settings,
     label_display_short: :label_display_short,
     label_share_display_settings_across_projects: :label_share_display_settings_across_projects,
     label_toggle_task_bar_dates: :label_toggle_task_bar_dates,

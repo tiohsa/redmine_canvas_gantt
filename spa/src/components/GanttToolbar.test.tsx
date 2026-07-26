@@ -129,7 +129,7 @@ describe('GanttToolbar shortcuts', () => {
             'Proj.',
             'Ver.',
             'Status',
-            'Display settings',
+            'Settings',
             'Link'
         ]);
         expect(screen.getByRole('button', { name: 'Month' })).toHaveTextContent('M');
@@ -171,7 +171,7 @@ describe('GanttToolbar shortcuts', () => {
             ...config,
             i18n: {
                 ...(config.i18n ?? {}),
-                label_share_display_settings_across_projects: '表示設定を全プロジェクトで共通化',
+                label_share_display_settings_across_projects: '設定を全プロジェクトで共通化',
             }
         };
 
@@ -212,7 +212,8 @@ describe('GanttToolbar shortcuts', () => {
             },
             showVersions: false,
             organizeByDependency: true,
-            customScales: { 1: 1.5 }
+            customScales: { 1: 1.5 },
+            autoSave: true
         } as never);
         saveDisplayPreferences({
             showTaskTitles: false,
@@ -228,7 +229,7 @@ describe('GanttToolbar shortcuts', () => {
         const displayMenu = screen.getByTestId('display-settings-menu');
         expect(within(displayMenu).queryByText('現在使用中', { selector: 'span' })).not.toBeInTheDocument();
 
-        const checkbox = screen.getByLabelText('表示設定を全プロジェクトで共通化') as HTMLInputElement;
+        const checkbox = screen.getByLabelText('設定を全プロジェクトで共通化') as HTMLInputElement;
         expect(checkbox.checked).toBe(false);
 
         fireEvent.click(checkbox);
@@ -241,6 +242,7 @@ describe('GanttToolbar shortcuts', () => {
                     showTaskBarDates?: boolean;
                     visibleColumns?: string[];
                     sidebarWidth?: number;
+                    autoSave?: boolean;
                 }>;
                 global?: {
                     enabled?: boolean;
@@ -250,6 +252,7 @@ describe('GanttToolbar shortcuts', () => {
                         showTaskBarDates?: boolean;
                         visibleColumns?: string[];
                         sidebarWidth?: number;
+                        autoSave?: boolean;
                     };
                 };
             };
@@ -258,6 +261,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(storedPreferences.display?.global?.enabled).toBe(true);
         expect(storedPreferences.display?.global?.preferences?.showProgressLine).toBe(true);
         expect(storedPreferences.display?.global?.preferences?.showTaskTitles).toBe(false);
+        expect(storedPreferences.display?.global?.preferences?.autoSave).toBe(true);
         expect(storedPreferences.display?.global?.preferences?.showTaskBarDates).toBe(true);
         expect(storedPreferences.display?.global?.preferences?.visibleColumns).toEqual(['id', 'subject']);
         expect(storedPreferences.display?.global?.preferences?.sidebarWidth).toBe(420);
@@ -438,9 +442,12 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
         const baselineButton = screen.getByRole('button', { name: 'Save Baseline' });
+        const topButton = screen.getByTitle('Top');
 
         expect(baselineButton).toBeInTheDocument();
         expect(screen.getAllByTestId('baseline-save-menu-button')).toHaveLength(1);
+        expect(topButton.nextElementSibling).toContainElement(baselineButton);
+        expect(baselineButton.querySelectorAll('svg')).toHaveLength(1);
 
         fireEvent.click(baselineButton);
         const baselineSaveMenu = await screen.findByTestId('baseline-save-menu');
@@ -853,7 +860,7 @@ describe('GanttToolbar shortcuts', () => {
             ...config,
             i18n: {
                 ...(config.i18n ?? {}),
-                label_share_display_settings_across_projects: '表示設定を全プロジェクトで共通化'
+                label_share_display_settings_across_projects: '設定を全プロジェクトで共通化'
             }
         };
         window.localStorage.clear();
@@ -889,7 +896,7 @@ describe('GanttToolbar shortcuts', () => {
 
         const displayMenu = screen.getByTestId('display-settings-menu');
         expect(displayMenu).toBeInTheDocument();
-        expect(within(displayMenu).getByLabelText('表示設定を全プロジェクトで共通化')).toBeInTheDocument();
+        expect(within(displayMenu).getByLabelText('設定を全プロジェクトで共通化')).toBeInTheDocument();
         expect(screen.queryByTestId('display-settings-scope-menu-button')).not.toBeInTheDocument();
     });
 
@@ -1046,13 +1053,16 @@ describe('GanttToolbar shortcuts', () => {
         const dueToggle = screen.getByLabelText('Show due-date-only tasks');
         const titleToggle = screen.getByLabelText('Show tickets');
         const barDateToggle = screen.getByLabelText('Show task-bar dates');
+        const autoSaveToggle = screen.getByLabelText('Auto Save');
 
         expect(startToggle).toBeInTheDocument();
         expect(dueToggle).toBeInTheDocument();
         expect(titleToggle).toBeInTheDocument();
         expect(barDateToggle).toBeInTheDocument();
+        expect(autoSaveToggle).toBeInTheDocument();
         expect(startToggle).toHaveAttribute('role', 'switch');
         expect(titleToggle).toHaveAttribute('role', 'switch');
+        expect(autoSaveToggle).toHaveAttribute('role', 'switch');
         expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
 
         fireEvent.click(titleToggle);

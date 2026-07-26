@@ -35,7 +35,9 @@ describe('DisplaySettingsControls', () => {
                 i18n: {}
             }),
             i18n: {
-                label_display_settings: 'Display settings'
+                label_display_settings: 'Display settings',
+                label_settings: 'Settings',
+                help_label_autosave: 'Auto Save'
             }
         };
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -110,7 +112,8 @@ describe('DisplaySettingsControls', () => {
                 organizeByDependency: true,
                 rowHeight: 44,
                 sidebarWidth: 420,
-                sidebarFontSize: 15
+                sidebarFontSize: 15,
+                autoSave: false
             }),
             true
         );
@@ -145,9 +148,9 @@ describe('DisplaySettingsControls', () => {
         );
 
         expect(screen.getByLabelText('Progress line')).toBeInTheDocument();
-        expect(within(screen.getByTestId('display-settings-menu')).getByText('Display settings')).toBeInTheDocument();
-        expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('title', 'Display settings');
-        expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('aria-label', 'Display settings');
+        expect(within(screen.getByTestId('display-settings-menu')).getByText('Settings')).toBeInTheDocument();
+        expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('title', 'Settings');
+        expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('aria-label', 'Settings');
         expect(screen.getByTestId('display-settings-menu')).toHaveStyle({
             maxHeight: '400px',
             overflowY: 'auto'
@@ -162,6 +165,8 @@ describe('DisplaySettingsControls', () => {
         expect(screen.getByLabelText('Show task-bar dates')).not.toBeChecked();
         expect(screen.getByLabelText('Show hierarchy lines')).toBeChecked();
         expect(screen.getByLabelText('Share settings across all projects')).not.toBeChecked();
+        expect(screen.getByLabelText('Auto Save')).toHaveAttribute('role', 'switch');
+        expect(screen.getByLabelText('Auto Save').parentElement).toHaveStyle({ width: '32px', height: '18px' });
         expect(screen.getByTestId('display-settings-row-height-select')).toHaveValue('36');
         expect(screen.getByTestId('display-settings-font-size-select')).toHaveValue('13');
         expect(screen.getByTestId('display-settings-menu-button')).toHaveStyle({
@@ -185,6 +190,9 @@ describe('DisplaySettingsControls', () => {
         expect(useUIStore.getState().showHierarchyLines).toBe(false);
         expect(useTaskStore.getState().viewport.rowHeight).toBe(52);
         expect(useUIStore.getState().sidebarFontSize).toBe(15);
+
+        fireEvent.click(screen.getByLabelText('Auto Save'));
+        expect(useTaskStore.getState().autoSave).toBe(true);
     });
 
     it('applies display setting changes immediately without a popup save button', () => {

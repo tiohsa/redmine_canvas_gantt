@@ -66,6 +66,7 @@ window.RedmineCanvasGantt = {
         label_include_closed_issues: 'Include Closed Issues',
         label_today_onward_only: 'Today Onward Only',
         label_display_settings: 'Display settings',
+        label_settings: 'Settings',
         label_chart_short: 'Chart',
         label_display_short: 'Display',
         label_query_short: 'Query',

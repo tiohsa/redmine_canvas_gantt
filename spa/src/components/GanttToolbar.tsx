@@ -47,7 +47,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, projectSelectionExplicit, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
         taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
-        modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
+        modifiedTaskIds, saveChanges, discardChanges, autoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
         applySavedQuery: applySavedQueryFromStore,
         clearSavedQuery: clearSavedQueryFromStore,
         savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries, queryContext
@@ -1802,6 +1802,19 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     </svg>
                 </button>
 
+                <BaselineControls
+                    baselineSaveStatus={baselineSaveStatus}
+                    hasBaseline={hasBaseline}
+                    showBaseline={showBaseline}
+                    baselineEditable={permissions.baselineEditable}
+                    baselineViewable={permissions.viewable}
+                    baselineSaveMenuRef={baselineSaveMenuRef}
+                    showBaselineSaveMenu={showBaselineSaveMenu}
+                    onToggleSaveMenu={() => toggleMenu('baselineSave')}
+                    onSaveBaseline={(scope) => void handleSaveBaseline(scope)}
+                    onToggleBaseline={() => toggleBaseline()}
+                />
+
                 {modifiedTaskIds.size > 0 && !autoSave && (
                     <>
                         <button
@@ -1853,44 +1866,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                         </button>
                     </>
                 )}
-
-                <BaselineControls
-                    baselineSaveStatus={baselineSaveStatus}
-                    hasBaseline={hasBaseline}
-                    showBaseline={showBaseline}
-                    baselineEditable={permissions.baselineEditable}
-                    baselineViewable={permissions.viewable}
-                    baselineSaveMenuRef={baselineSaveMenuRef}
-                    showBaselineSaveMenu={showBaselineSaveMenu}
-                    onToggleSaveMenu={() => toggleMenu('baselineSave')}
-                    onSaveBaseline={(scope) => void handleSaveBaseline(scope)}
-                    onToggleBaseline={() => toggleBaseline()}
-                />
-
-                <button
-                    onClick={() => setAutoSave(!autoSave)}
-                    title={autoSave ? (i18n.t('tooltip_auto_save_on') || "Auto Save: ON (Changes saved immediately)") : (i18n.t('tooltip_auto_save_off') || "Auto Save: OFF (Use Save button)")}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '6px',
-                            border: `1px solid ${designTokens.controlBorder}`,
-                            backgroundColor: autoSave ? designTokens.controlActiveBg : designTokens.controlBg,
-                            color: autoSave ? designTokens.controlActiveFg : designTokens.controlFg,
-                            cursor: 'pointer',
-                            position: 'relative'
-                        }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                    </svg>
-                    {autoSave && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
 
                 <button
                     onClick={openHelpDialog}

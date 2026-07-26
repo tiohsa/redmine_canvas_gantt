@@ -43,7 +43,8 @@ const persistSelections = () => {
         sidebarWidth: uiState.sidebarWidth,
         customScales: taskState.customScales,
         rowHeight: taskState.viewport.rowHeight,
-        sidebarFontSize: uiState.sidebarFontSize
+        sidebarFontSize: uiState.sidebarFontSize,
+        autoSave: taskState.autoSave
     });
 
     if (uiState.displayPreferencesGlobalEnabled) {

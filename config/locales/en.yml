@@ -163,6 +163,7 @@ en:
     label_font_size_medium: "Medium"
     label_font_size_large: "Large"
     label_display_settings: "Display settings"
+    label_settings: "Settings"
     label_share_display_settings_across_projects: "Share display settings across all projects"
     label_show_versions: "Show version headers"
     label_none: "(No version)"
