@@ -114,7 +114,7 @@ describe('GanttToolbar shortcuts', () => {
         });
     });
 
-    it('shows names beside every header icon from saved queries through display settings', () => {
+    it('shows names beside header icons from saved queries through chart settings', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
         const labels = Array.from(document.querySelectorAll(
@@ -125,12 +125,11 @@ describe('GanttToolbar shortcuts', () => {
             'Query',
             'Cols',
             'Workload',
-            'Display',
             'Assignee',
             'Proj.',
             'Ver.',
             'Status',
-            'Chart',
+            'Display settings',
             'Link'
         ]);
         expect(screen.getByRole('button', { name: 'Month' })).toHaveTextContent('M');
@@ -166,18 +165,13 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByText('今日以降のみ')).toBeInTheDocument();
     });
 
-    it('shows display source and saves shared display settings explicitly', () => {
+    it('saves shared display settings from the chart popup', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
             ...config,
             i18n: {
                 ...(config.i18n ?? {}),
-                label_display_settings: '表示設定',
-                label_display_settings_source: '現在使用中',
-                label_display_settings_source_project: 'このプロジェクト専用設定を使用中',
                 label_share_display_settings_across_projects: '表示設定を全プロジェクトで共通化',
-                button_save: '保存',
-                button_cancel: 'キャンセル'
             }
         };
 
@@ -229,18 +223,15 @@ describe('GanttToolbar shortcuts', () => {
 
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
-        fireEvent.click(screen.getByTestId('display-settings-scope-menu-button'));
+        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
 
-        const displayMenu = screen.getByTestId('display-settings-scope-menu');
-        expect(within(displayMenu).getByText('表示設定')).toBeInTheDocument();
-        expect(within(displayMenu).getByText('現在使用中', { selector: 'span' })).toBeInTheDocument();
-        expect(within(displayMenu).getByText('このプロジェクト専用設定を使用中', { selector: 'span' })).toBeInTheDocument();
+        const displayMenu = screen.getByTestId('display-settings-menu');
+        expect(within(displayMenu).queryByText('現在使用中', { selector: 'span' })).not.toBeInTheDocument();
 
         const checkbox = screen.getByLabelText('表示設定を全プロジェクトで共通化') as HTMLInputElement;
         expect(checkbox.checked).toBe(false);
 
         fireEvent.click(checkbox);
-        fireEvent.click(screen.getByTestId('display-settings-scope-save-button'));
 
         const storedPreferences = JSON.parse(window.localStorage.getItem('canvasGantt:preferences') ?? '{}') as {
             display?: {
@@ -274,7 +265,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(storedPreferences.display?.projects?.['project:1']?.showTaskTitles).toBe(false);
         expect(storedPreferences.display?.projects?.['project:1']?.showTaskBarDates).toBe(true);
         expect(storedPreferences.display?.projects?.['project:1']?.visibleColumns).toEqual(['id', 'subject']);
-        expect(screen.queryByTestId('display-settings-scope-menu')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('display-settings-scope-menu-button')).not.toBeInTheDocument();
     });
 
     it('renders and toggles ticket visibility in the display settings popup', () => {
@@ -856,15 +847,12 @@ describe('GanttToolbar shortcuts', () => {
         expect(fontSizeSelect).toHaveValue('15');
     });
 
-    it('keeps project and display scope controls in their toolbar order', () => {
+    it('keeps the display sharing control in the chart popup', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
             ...config,
             i18n: {
                 ...(config.i18n ?? {}),
-                label_display_settings: '表示設定',
-                label_display_settings_source: '現在使用中',
-                label_display_settings_source_default: 'デフォルト設定を使用中',
                 label_share_display_settings_across_projects: '表示設定を全プロジェクトで共通化'
             }
         };
@@ -889,24 +877,20 @@ describe('GanttToolbar shortcuts', () => {
         const workloadButton = screen.getByTitle('Workload');
         const projectButton = screen.getByTitle('Filter by project');
         const assigneeButton = screen.getByTitle('Assignee Filter');
-        const scopeButton = screen.getByTestId('display-settings-scope-menu-button');
+        const versionButton = screen.getByTitle('Filter by version');
 
         expect(workloadButton.compareDocumentPosition(displaySettingsButton) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
         expect(projectButton.parentElement).toHaveClass('gantt-toolbar-project-filter');
         expect(assigneeButton.parentElement).toHaveClass('gantt-toolbar-assignee-filter');
+        expect(versionButton.parentElement).toHaveClass('gantt-toolbar-version-filter');
         expect(displaySettingsButton.parentElement).toHaveClass('gantt-toolbar-display-settings');
-        expect(scopeButton.parentElement).toHaveClass('gantt-toolbar-display-settings-scope');
 
         fireEvent.click(displaySettingsButton);
 
         const displayMenu = screen.getByTestId('display-settings-menu');
         expect(displayMenu).toBeInTheDocument();
-        expect(within(displayMenu).queryByText('現在使用中', { selector: 'span' })).not.toBeInTheDocument();
-
-        fireEvent.click(screen.getByTestId('display-settings-scope-menu-button'));
-        const scopeMenu = screen.getByTestId('display-settings-scope-menu');
-        expect(within(scopeMenu).getByText('現在使用中', { selector: 'span' })).toBeInTheDocument();
-        expect(within(scopeMenu).getByLabelText('表示設定を全プロジェクトで共通化')).toBeInTheDocument();
+        expect(within(displayMenu).getByLabelText('表示設定を全プロジェクトで共通化')).toBeInTheDocument();
+        expect(screen.queryByTestId('display-settings-scope-menu-button')).not.toBeInTheDocument();
     });
 
     it('saves relation settings from toolbar menu', () => {

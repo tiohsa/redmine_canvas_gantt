@@ -9,7 +9,6 @@ export type ToolbarMenuKey =
     | 'version'
     | 'status'
     | 'displaySettings'
-    | 'displaySettingsScope'
     | 'rowHeight'
     | 'relationSettings'
     | 'export'
@@ -29,7 +28,6 @@ export const useToolbarMenuState = () => {
     const versionRef = React.useRef<HTMLDivElement>(null);
     const statusRef = React.useRef<HTMLDivElement>(null);
     const displaySettingsRef = React.useRef<HTMLDivElement>(null);
-    const displaySettingsScopeRef = React.useRef<HTMLDivElement>(null);
     const rowHeightRef = React.useRef<HTMLDivElement>(null);
     const relationSettingsRef = React.useRef<HTMLDivElement>(null);
     const exportRef = React.useRef<HTMLDivElement>(null);
@@ -45,7 +43,6 @@ export const useToolbarMenuState = () => {
         version: versionRef,
         status: statusRef,
         displaySettings: displaySettingsRef,
-        displaySettingsScope: displaySettingsScopeRef,
         rowHeight: rowHeightRef,
         relationSettings: relationSettingsRef,
         export: exportRef,
@@ -96,7 +93,6 @@ export const useToolbarMenuState = () => {
         versionMenuRef: versionRef,
         statusMenuRef: statusRef,
         displaySettingsMenuRef: displaySettingsRef,
-        displaySettingsScopeMenuRef: displaySettingsScopeRef,
         rowHeightMenuRef: rowHeightRef,
         relationSettingsMenuRef: relationSettingsRef,
         exportMenuRef: exportRef,

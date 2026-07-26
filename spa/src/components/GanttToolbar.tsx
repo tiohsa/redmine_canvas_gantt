@@ -18,7 +18,6 @@ import { useToolbarMenuState } from './gantt/useToolbarMenuState';
 import { useWorkloadStore } from '../stores/WorkloadStore';
 import type { GanttExportHandle } from '../export/types';
 import { DisplaySettingsControls } from './DisplaySettingsControls';
-import { DisplaySettingsScopeControls } from './DisplaySettingsScopeControls';
 import { BaselineControls } from './BaselineControls';
 import {
     applyIndeterminateState,
@@ -87,7 +86,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         versionMenuRef,
         statusMenuRef,
     displaySettingsMenuRef,
-        displaySettingsScopeMenuRef,
         relationSettingsMenuRef,
         exportMenuRef,
         workloadMenuRef,
@@ -130,7 +128,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const showVersionMenu = isMenuOpen('version');
     const showStatusMenu = isMenuOpen('status');
 const showDisplaySettingsMenu = isMenuOpen('displaySettings');
-    const showDisplaySettingsScopeMenu = isMenuOpen('displaySettingsScope');
     const showRelationSettingsMenu = isMenuOpen('relationSettings');
     const showExportMenu = isMenuOpen('export');
     const showWorkloadMenu = isMenuOpen('workload');
@@ -576,7 +573,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '8px 24px',
+            padding: '8px 24px 8px 12px',
             backgroundColor: designTokens.controlBg,
             borderBottom: `1px solid ${designTokens.borderSubtle}`,
             height: '48px',
@@ -1037,14 +1034,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     )}
                 </div>
 
-                <DisplaySettingsScopeControls
-                    className="gantt-toolbar-display-settings-scope"
-                    displaySettingsScopeMenuRef={displaySettingsScopeMenuRef}
-                    showDisplaySettingsScopeMenu={showDisplaySettingsScopeMenu}
-                    onToggleDisplaySettingsScopeMenu={() => toggleMenu('displaySettingsScope')}
-                    onCloseDisplaySettingsScopeMenu={() => closeMenu('displaySettingsScope')}
-                />
-
                 <div ref={assigneeMenuRef} className="gantt-toolbar-assignee-filter" style={{ position: 'relative' }}>
                     <button
                     onClick={() => toggleMenu('assignee')}
@@ -1257,7 +1246,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     )}
                 </div>
 
-                <div ref={versionMenuRef} style={{ position: 'relative' }}>
+                <div ref={versionMenuRef} className="gantt-toolbar-version-filter" style={{ position: 'relative' }}>
                     <button
                     onClick={() => toggleMenu('version')}
                     title={i18n.t('label_version_plural') || 'Filter by version'}

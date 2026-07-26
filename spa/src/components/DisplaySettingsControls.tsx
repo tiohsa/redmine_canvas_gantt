@@ -3,6 +3,11 @@ import React from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
+import {
+    buildStoredDisplayPreferences,
+    saveDisplayPreferences,
+    saveGlobalDisplayPreferences
+} from '../utils/preferences';
 import { fontFamilies, designTokens } from '../styles/designTokens';
 
 const DEFAULT_DISPLAY_SETTINGS = {
@@ -29,16 +34,21 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
     onToggleDisplaySettingsMenu
 }) => {
     const {
+        zoomLevel,
+        viewMode,
         viewport,
+        showVersions,
         organizeByDependency,
         setOrganizeByDependency,
-        setRowHeight
+        setRowHeight,
+        customScales
     } = useTaskStore();
     const {
         showProgressLine,
         showTaskTitles,
         showTaskBarDates,
         showHierarchyLines,
+        showPointsOrphans,
         toggleHierarchyLines,
         showStartDateOnly,
         showDueDateOnly,
@@ -47,8 +57,15 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         toggleDueDateOnly,
         toggleTaskTitles,
         toggleTaskBarDates,
+        showBaseline,
+        visibleColumns,
+        columnSettings,
+        columnWidths,
+        sidebarWidth,
         sidebarFontSize,
         setSidebarFontSize,
+        displayPreferencesGlobalEnabled,
+        setDisplayPreferencesGlobalEnabled,
         leftPaneVisible,
         rightPaneVisible,
         toggleLeftPane,
@@ -97,14 +114,53 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         }
     };
 
+    const projectId = window.RedmineCanvasGantt?.projectId;
+    const setShareAcrossProjects = (shareAcrossProjects: boolean) => {
+        const snapshot = buildStoredDisplayPreferences({
+            zoomLevel,
+            viewMode,
+            viewport: {
+                startDate: viewport.startDate,
+                scrollX: viewport.scrollX,
+                scrollY: viewport.scrollY,
+                scale: viewport.scale
+            },
+            showProgressLine,
+            showTaskTitles,
+            showTaskBarDates,
+            showHierarchyLines,
+            showPointsOrphans,
+            showStartDateOnly,
+            showDueDateOnly,
+            showVersions,
+            showBaseline,
+            visibleColumns,
+            columnSettings,
+            organizeByDependency,
+            columnWidths,
+            sidebarWidth,
+            customScales,
+            rowHeight: viewport.rowHeight,
+            sidebarFontSize
+        });
+
+        if (shareAcrossProjects) {
+            saveGlobalDisplayPreferences(snapshot, true);
+        } else {
+            saveDisplayPreferences(snapshot, projectId);
+            saveGlobalDisplayPreferences(snapshot, false);
+        }
+        setDisplayPreferencesGlobalEnabled(shareAcrossProjects);
+    };
+
     return (
         <div ref={displaySettingsMenuRef} className={className} style={{ display: 'flex', alignItems: 'center', marginLeft: '0', position: 'relative' }}>
             <button
                 type="button"
                 onClick={onToggleDisplaySettingsMenu}
                 className="gantt-toolbar-labeled-button"
-                title={i18n.t('label_chart_short') || 'Chart'}
-                aria-label={i18n.t('label_chart_short') || 'Chart'}
+                title={i18n.t('label_display_settings') || 'Display settings'}
+                aria-label={i18n.t('label_display_settings') || 'Display settings'}
                 data-testid="display-settings-menu-button"
                 style={{
                     display: 'flex',
@@ -128,7 +184,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     <circle cx="8" cy="18" r="2" fill={designTokens.controlBg} />
                 </svg>
                 <span className="gantt-toolbar-button-label">
-                    {i18n.t('label_chart_short') || 'Chart'}
+                    {i18n.t('label_display_settings') || 'Display settings'}
                 </span>
                 {hasActiveDisplaySetting && (
                     <div
@@ -165,7 +221,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                 >
                     <div>
                         <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginBottom: 4 }}>
-                            {i18n.t('label_display_settings_heading') || 'Chart display'}
+                            {i18n.t('label_display_settings') || 'Display settings'}
                         </div>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
                             <input type="checkbox" checked={showProgressLine} onChange={toggleProgressLine} />
@@ -194,6 +250,14 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
                             <input type="checkbox" checked={showHierarchyLines} onChange={toggleHierarchyLines} />
                             <span>{i18n.t('label_toggle_hierarchy_lines') || 'Show hierarchy lines'}</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
+                            <input
+                                type="checkbox"
+                                checked={displayPreferencesGlobalEnabled}
+                                onChange={(event) => setShareAcrossProjects(event.target.checked)}
+                            />
+                            <span>{i18n.t('label_share_display_settings_across_projects') || 'Share settings across all projects'}</span>
                         </label>
 
                         <div

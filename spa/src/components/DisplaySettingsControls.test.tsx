@@ -1,9 +1,8 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 
 import { DisplaySettingsControls } from './DisplaySettingsControls';
-import { DisplaySettingsScopeControls } from './DisplaySettingsScopeControls';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import * as preferences from '../utils/preferences';
@@ -36,8 +35,7 @@ describe('DisplaySettingsControls', () => {
                 i18n: {}
             }),
             i18n: {
-                label_display_settings_visibility: 'Chart',
-                label_display_settings_heading: 'Chart display'
+                label_display_settings: 'Display settings'
             }
         };
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -50,7 +48,7 @@ describe('DisplaySettingsControls', () => {
         });
     });
 
-    it('keeps the shared-scope save button and saves the global display snapshot', () => {
+    it('saves the display snapshot when sharing is toggled from the chart popup', () => {
         const taskState = useTaskStore.getState();
         const uiState = useUIStore.getState();
         const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
@@ -81,46 +79,22 @@ describe('DisplaySettingsControls', () => {
             columnSettings: uiState.columnSettings,
             columnWidths: uiState.columnWidths,
             sidebarWidth: 420,
-            sidebarFontSize: 15
+            sidebarFontSize: 15,
+            displayPreferencesGlobalEnabled: false
         });
 
         render(
-            <DisplaySettingsScopeControls
-                displaySettingsScopeMenuRef={displaySettingsMenuRef}
-                showDisplaySettingsScopeMenu={true}
-                onToggleDisplaySettingsScopeMenu={vi.fn()}
-                onCloseDisplaySettingsScopeMenu={vi.fn()}
+            <DisplaySettingsControls
+                displaySettingsMenuRef={displaySettingsMenuRef}
+                showDisplaySettingsMenu={true}
+                onToggleDisplaySettingsMenu={vi.fn()}
             />
         );
 
-        expect(screen.getByText('Currently using')).toBeInTheDocument();
-        expect(screen.getByText("This project's settings")).toBeInTheDocument();
-
         const shareCheckbox = screen.getByLabelText('Share settings across all projects');
-        expect(shareCheckbox).toBeChecked();
+        expect(shareCheckbox).not.toBeChecked();
 
         fireEvent.click(shareCheckbox);
-        expect(shareCheckbox).not.toBeChecked();
-        fireEvent.click(screen.getByTestId('display-settings-scope-save-button'));
-
-        expect(vi.mocked(preferences.saveDisplayPreferences)).toHaveBeenCalledWith(
-            expect.objectContaining({
-                zoomLevel: 2,
-                viewMode: 'Month',
-                showProgressLine: true,
-                showTaskTitles: false,
-                showTaskBarDates: true,
-                showHierarchyLines: false,
-                showPointsOrphans: false,
-                showVersions: false,
-                showBaseline: true,
-                organizeByDependency: true,
-                rowHeight: 44,
-                sidebarWidth: 420,
-                sidebarFontSize: 15
-            }),
-            1
-        );
 
         expect(vi.mocked(preferences.saveGlobalDisplayPreferences)).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -138,8 +112,14 @@ describe('DisplaySettingsControls', () => {
                 sidebarWidth: 420,
                 sidebarFontSize: 15
             }),
-            false
+            true
         );
+        expect(useUIStore.getState().displayPreferencesGlobalEnabled).toBe(true);
+
+        fireEvent.click(shareCheckbox);
+        expect(vi.mocked(preferences.saveDisplayPreferences)).toHaveBeenCalledWith(expect.any(Object), 1);
+        expect(vi.mocked(preferences.saveGlobalDisplayPreferences)).toHaveBeenLastCalledWith(expect.any(Object), false);
+        expect(useUIStore.getState().displayPreferencesGlobalEnabled).toBe(false);
     });
 
     it('groups chart visibility and dependency ordering controls in the popup', () => {
@@ -165,9 +145,9 @@ describe('DisplaySettingsControls', () => {
         );
 
         expect(screen.getByLabelText('Progress line')).toBeInTheDocument();
-        expect(screen.getByText('Chart display')).toBeInTheDocument();
-        expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('title', 'Chart');
-        expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('aria-label', 'Chart');
+        expect(within(screen.getByTestId('display-settings-menu')).getByText('Display settings')).toBeInTheDocument();
+        expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('title', 'Display settings');
+        expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('aria-label', 'Display settings');
         expect(screen.getByTestId('display-settings-menu')).toHaveStyle({
             maxHeight: '400px',
             overflowY: 'auto'
@@ -181,6 +161,7 @@ describe('DisplaySettingsControls', () => {
         expect(screen.getByLabelText('Show tickets')).toBeChecked();
         expect(screen.getByLabelText('Show task-bar dates')).not.toBeChecked();
         expect(screen.getByLabelText('Show hierarchy lines')).toBeChecked();
+        expect(screen.getByLabelText('Share settings across all projects')).not.toBeChecked();
         expect(screen.getByTestId('display-settings-row-height-select')).toHaveValue('36');
         expect(screen.getByTestId('display-settings-font-size-select')).toHaveValue('13');
         expect(screen.getByTestId('display-settings-menu-button')).toHaveStyle({
@@ -188,6 +169,7 @@ describe('DisplaySettingsControls', () => {
         });
         expect(screen.queryByTestId('display-settings-active-indicator')).not.toBeInTheDocument();
         expect(screen.queryByTestId('display-settings-save-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('display-settings-scope-menu-button')).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByLabelText('Progress line'));
         fireEvent.click(screen.getByLabelText('Organize by dependency'));
