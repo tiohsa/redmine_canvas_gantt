@@ -18,7 +18,6 @@ import { useToolbarMenuState } from './gantt/useToolbarMenuState';
 import { useWorkloadStore } from '../stores/WorkloadStore';
 import type { GanttExportHandle } from '../export/types';
 import { DisplaySettingsControls } from './DisplaySettingsControls';
-import { DisplaySettingsScopeControls } from './DisplaySettingsScopeControls';
 import { BaselineControls } from './BaselineControls';
 import {
     applyIndeterminateState,
@@ -48,7 +47,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, projectSelectionExplicit, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
         taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
-        modifiedTaskIds, saveChanges, discardChanges, autoSave, setAutoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
+        modifiedTaskIds, saveChanges, discardChanges, autoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
         applySavedQuery: applySavedQueryFromStore,
         clearSavedQuery: clearSavedQueryFromStore,
         savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries, queryContext
@@ -87,7 +86,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         versionMenuRef,
         statusMenuRef,
     displaySettingsMenuRef,
-        displaySettingsScopeMenuRef,
         relationSettingsMenuRef,
         exportMenuRef,
         workloadMenuRef,
@@ -130,7 +128,6 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const showVersionMenu = isMenuOpen('version');
     const showStatusMenu = isMenuOpen('status');
 const showDisplaySettingsMenu = isMenuOpen('displaySettings');
-    const showDisplaySettingsScopeMenu = isMenuOpen('displaySettingsScope');
     const showRelationSettingsMenu = isMenuOpen('relationSettings');
     const showExportMenu = isMenuOpen('export');
     const showWorkloadMenu = isMenuOpen('workload');
@@ -576,7 +573,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '8px 24px',
+            padding: '8px 24px 8px 12px',
             backgroundColor: designTokens.controlBg,
             borderBottom: `1px solid ${designTokens.borderSubtle}`,
             height: '48px',
@@ -1037,14 +1034,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     )}
                 </div>
 
-                <DisplaySettingsScopeControls
-                    className="gantt-toolbar-display-settings-scope"
-                    displaySettingsScopeMenuRef={displaySettingsScopeMenuRef}
-                    showDisplaySettingsScopeMenu={showDisplaySettingsScopeMenu}
-                    onToggleDisplaySettingsScopeMenu={() => toggleMenu('displaySettingsScope')}
-                    onCloseDisplaySettingsScopeMenu={() => closeMenu('displaySettingsScope')}
-                />
-
                 <div ref={assigneeMenuRef} className="gantt-toolbar-assignee-filter" style={{ position: 'relative' }}>
                     <button
                     onClick={() => toggleMenu('assignee')}
@@ -1257,7 +1246,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     )}
                 </div>
 
-                <div ref={versionMenuRef} style={{ position: 'relative' }}>
+                <div ref={versionMenuRef} className="gantt-toolbar-version-filter" style={{ position: 'relative' }}>
                     <button
                     onClick={() => toggleMenu('version')}
                     title={i18n.t('label_version_plural') || 'Filter by version'}
@@ -1813,6 +1802,19 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     </svg>
                 </button>
 
+                <BaselineControls
+                    baselineSaveStatus={baselineSaveStatus}
+                    hasBaseline={hasBaseline}
+                    showBaseline={showBaseline}
+                    baselineEditable={permissions.baselineEditable}
+                    baselineViewable={permissions.viewable}
+                    baselineSaveMenuRef={baselineSaveMenuRef}
+                    showBaselineSaveMenu={showBaselineSaveMenu}
+                    onToggleSaveMenu={() => toggleMenu('baselineSave')}
+                    onSaveBaseline={(scope) => void handleSaveBaseline(scope)}
+                    onToggleBaseline={() => toggleBaseline()}
+                />
+
                 {modifiedTaskIds.size > 0 && !autoSave && (
                     <>
                         <button
@@ -1864,44 +1866,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                         </button>
                     </>
                 )}
-
-                <BaselineControls
-                    baselineSaveStatus={baselineSaveStatus}
-                    hasBaseline={hasBaseline}
-                    showBaseline={showBaseline}
-                    baselineEditable={permissions.baselineEditable}
-                    baselineViewable={permissions.viewable}
-                    baselineSaveMenuRef={baselineSaveMenuRef}
-                    showBaselineSaveMenu={showBaselineSaveMenu}
-                    onToggleSaveMenu={() => toggleMenu('baselineSave')}
-                    onSaveBaseline={(scope) => void handleSaveBaseline(scope)}
-                    onToggleBaseline={() => toggleBaseline()}
-                />
-
-                <button
-                    onClick={() => setAutoSave(!autoSave)}
-                    title={autoSave ? (i18n.t('tooltip_auto_save_on') || "Auto Save: ON (Changes saved immediately)") : (i18n.t('tooltip_auto_save_off') || "Auto Save: OFF (Use Save button)")}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '6px',
-                            border: `1px solid ${designTokens.controlBorder}`,
-                            backgroundColor: autoSave ? designTokens.controlActiveBg : designTokens.controlBg,
-                            color: autoSave ? designTokens.controlActiveFg : designTokens.controlFg,
-                            cursor: 'pointer',
-                            position: 'relative'
-                        }}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                    </svg>
-                    {autoSave && (
-                        <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                    )}
-                </button>
 
                 <button
                     onClick={openHelpDialog}

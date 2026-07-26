@@ -3,6 +3,11 @@ import React from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
+import {
+    buildStoredDisplayPreferences,
+    saveDisplayPreferences,
+    saveGlobalDisplayPreferences
+} from '../utils/preferences';
 import { fontFamilies, designTokens } from '../styles/designTokens';
 
 const DEFAULT_DISPLAY_SETTINGS = {
@@ -22,6 +27,70 @@ interface DisplaySettingsControlsProps {
     onToggleDisplaySettingsMenu: () => void;
 }
 
+interface DisplaySettingSwitchProps {
+    checked: boolean;
+    label: string;
+    onChange: React.ChangeEventHandler<HTMLInputElement>;
+}
+
+const DisplaySettingSwitch: React.FC<DisplaySettingSwitchProps> = ({ checked, label, onChange }) => (
+    <label
+        style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            minHeight: 32,
+            padding: '2px 0',
+            cursor: 'pointer'
+        }}
+    >
+        <span>{label}</span>
+        <span style={{ position: 'relative', display: 'inline-flex', flex: '0 0 auto', width: 32, height: 18 }}>
+            <input
+                type="checkbox"
+                role="switch"
+                checked={checked}
+                onChange={onChange}
+                style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    margin: 0,
+                    opacity: 0,
+                    cursor: 'pointer'
+                }}
+            />
+            <span
+                aria-hidden="true"
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    width: '100%',
+                    padding: 2,
+                    borderRadius: 9999,
+                    background: checked ? designTokens.brandPrimary : designTokens.controlBorder,
+                    boxShadow: designTokens.controlInsetShadow,
+                    transition: 'background-color 150ms ease'
+                }}
+            >
+                <span
+                    style={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: '50%',
+                        background: designTokens.controlBg,
+                        boxShadow: designTokens.controlActiveShadow,
+                        transform: checked ? 'translateX(14px)' : 'translateX(0)',
+                        transition: 'transform 150ms ease'
+                    }}
+                />
+            </span>
+        </span>
+    </label>
+);
+
 export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = ({
     displaySettingsMenuRef,
     className,
@@ -29,16 +98,23 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
     onToggleDisplaySettingsMenu
 }) => {
     const {
+        zoomLevel,
+        viewMode,
         viewport,
+        showVersions,
         organizeByDependency,
         setOrganizeByDependency,
-        setRowHeight
+        setRowHeight,
+        customScales,
+        autoSave,
+        setAutoSave
     } = useTaskStore();
     const {
         showProgressLine,
         showTaskTitles,
         showTaskBarDates,
         showHierarchyLines,
+        showPointsOrphans,
         toggleHierarchyLines,
         showStartDateOnly,
         showDueDateOnly,
@@ -47,8 +123,15 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         toggleDueDateOnly,
         toggleTaskTitles,
         toggleTaskBarDates,
+        showBaseline,
+        visibleColumns,
+        columnSettings,
+        columnWidths,
+        sidebarWidth,
         sidebarFontSize,
         setSidebarFontSize,
+        displayPreferencesGlobalEnabled,
+        setDisplayPreferencesGlobalEnabled,
         leftPaneVisible,
         rightPaneVisible,
         toggleLeftPane,
@@ -97,14 +180,54 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         }
     };
 
+    const projectId = window.RedmineCanvasGantt?.projectId;
+    const setShareAcrossProjects = (shareAcrossProjects: boolean) => {
+        const snapshot = buildStoredDisplayPreferences({
+            zoomLevel,
+            viewMode,
+            viewport: {
+                startDate: viewport.startDate,
+                scrollX: viewport.scrollX,
+                scrollY: viewport.scrollY,
+                scale: viewport.scale
+            },
+            showProgressLine,
+            showTaskTitles,
+            showTaskBarDates,
+            showHierarchyLines,
+            showPointsOrphans,
+            showStartDateOnly,
+            showDueDateOnly,
+            showVersions,
+            showBaseline,
+            visibleColumns,
+            columnSettings,
+            organizeByDependency,
+            columnWidths,
+            sidebarWidth,
+            customScales,
+            rowHeight: viewport.rowHeight,
+            sidebarFontSize,
+            autoSave
+        });
+
+        if (shareAcrossProjects) {
+            saveGlobalDisplayPreferences(snapshot, true);
+        } else {
+            saveDisplayPreferences(snapshot, projectId);
+            saveGlobalDisplayPreferences(snapshot, false);
+        }
+        setDisplayPreferencesGlobalEnabled(shareAcrossProjects);
+    };
+
     return (
         <div ref={displaySettingsMenuRef} className={className} style={{ display: 'flex', alignItems: 'center', marginLeft: '0', position: 'relative' }}>
             <button
                 type="button"
                 onClick={onToggleDisplaySettingsMenu}
                 className="gantt-toolbar-labeled-button"
-                title={i18n.t('label_chart_short') || 'Chart'}
-                aria-label={i18n.t('label_chart_short') || 'Chart'}
+                title={i18n.t('label_settings') || 'Settings'}
+                aria-label={i18n.t('label_settings') || 'Settings'}
                 data-testid="display-settings-menu-button"
                 style={{
                     display: 'flex',
@@ -128,7 +251,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                     <circle cx="8" cy="18" r="2" fill={designTokens.controlBg} />
                 </svg>
                 <span className="gantt-toolbar-button-label">
-                    {i18n.t('label_chart_short') || 'Chart'}
+                    {i18n.t('label_settings') || 'Settings'}
                 </span>
                 {hasActiveDisplaySetting && (
                     <div
@@ -165,36 +288,25 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                 >
                     <div>
                         <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginBottom: 4 }}>
-                            {i18n.t('label_display_settings_heading') || 'Chart display'}
+                            {i18n.t('label_settings') || 'Settings'}
                         </div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showProgressLine} onChange={toggleProgressLine} />
-                            <span>{i18n.t('label_progress_line') || 'Progress line'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={organizeByDependency} onChange={() => setOrganizeByDependency(!organizeByDependency)} />
-                            <span>{i18n.t('label_organize_by_dependency') || 'Organize by dependency'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showStartDateOnly} onChange={toggleStartDateOnly} />
-                            <span>{i18n.t('label_show_start_date_only') || 'Show start-date-only tasks'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showDueDateOnly} onChange={toggleDueDateOnly} />
-                            <span>{i18n.t('label_show_due_date_only') || 'Show due-date-only tasks'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showTaskTitles} onChange={toggleTaskTitles} />
-                            <span>{i18n.t('label_toggle_task_titles') || 'Show tickets'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showTaskBarDates} onChange={toggleTaskBarDates} />
-                            <span>{i18n.t('label_toggle_task_bar_dates') || 'Show task-bar dates'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showHierarchyLines} onChange={toggleHierarchyLines} />
-                            <span>{i18n.t('label_toggle_hierarchy_lines') || 'Show hierarchy lines'}</span>
-                        </label>
+                        <DisplaySettingSwitch
+                            checked={autoSave}
+                            onChange={(event) => setAutoSave(event.target.checked)}
+                            label={i18n.t('help_label_autosave') || 'Auto Save'}
+                        />
+                        <DisplaySettingSwitch checked={showProgressLine} onChange={toggleProgressLine} label={i18n.t('label_progress_line') || 'Progress line'} />
+                        <DisplaySettingSwitch checked={organizeByDependency} onChange={() => setOrganizeByDependency(!organizeByDependency)} label={i18n.t('label_organize_by_dependency') || 'Organize by dependency'} />
+                        <DisplaySettingSwitch checked={showStartDateOnly} onChange={toggleStartDateOnly} label={i18n.t('label_show_start_date_only') || 'Show start-date-only tasks'} />
+                        <DisplaySettingSwitch checked={showDueDateOnly} onChange={toggleDueDateOnly} label={i18n.t('label_show_due_date_only') || 'Show due-date-only tasks'} />
+                        <DisplaySettingSwitch checked={showTaskTitles} onChange={toggleTaskTitles} label={i18n.t('label_toggle_task_titles') || 'Show tickets'} />
+                        <DisplaySettingSwitch checked={showTaskBarDates} onChange={toggleTaskBarDates} label={i18n.t('label_toggle_task_bar_dates') || 'Show task-bar dates'} />
+                        <DisplaySettingSwitch checked={showHierarchyLines} onChange={toggleHierarchyLines} label={i18n.t('label_toggle_hierarchy_lines') || 'Show hierarchy lines'} />
+                        <DisplaySettingSwitch
+                            checked={displayPreferencesGlobalEnabled}
+                            onChange={(event) => setShareAcrossProjects(event.target.checked)}
+                            label={i18n.t('label_share_display_settings_across_projects') || 'Share settings across all projects'}
+                        />
 
                         <div
                             role="group"

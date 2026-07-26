@@ -158,6 +158,17 @@ const sliderIcon = (
     </svg>
 );
 
+const chartSettingsIcon = (
+    <svg data-testid="help-icon-chart-settings" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <line x1="3" y1="12" x2="21" y2="12" />
+        <line x1="3" y1="18" x2="21" y2="18" />
+        <circle cx="9" cy="6" r="2" fill={designTokens.controlBg} />
+        <circle cx="15" cy="12" r="2" fill={designTokens.controlBg} />
+        <circle cx="8" cy="18" r="2" fill={designTokens.controlBg} />
+    </svg>
+);
+
 const eyeIcon = (
     <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
         <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" />
@@ -419,9 +430,14 @@ export const HelpDialog: React.FC = () => {
                     description: t('help_desc_status_filter', 'Filter tasks by their current issue status (e.g., New, In Progress, Closed).')
                 },
                 {
+                    icon: chartSettingsIcon,
+                    title: t('label_chart_short', 'Chart'),
+                    description: t('help_desc_chart_display', 'Control chart display options, pane layout, row height, and font size.')
+                },
+                {
                     icon: sliderIcon,
-                    title: t('label_display_settings', 'Display Settings'),
-                    description: t('help_desc_display_settings', 'Save display preferences and optionally share them across all projects.')
+                    title: t('label_display_short', 'Display'),
+                    description: t('help_desc_display_settings', 'Save the current display preferences for this project or share them across all projects.')
                 },
                 {
                     icon: eyeIcon,

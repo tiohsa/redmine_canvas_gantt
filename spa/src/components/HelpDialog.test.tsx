@@ -12,7 +12,8 @@ const buildHelpTranslations = (language: 'ja' | 'en'): Record<string, string> =>
         help_label_timeline_view: `${prefix} Timeline and View Controls`,
         help_label_editing_saving: `${prefix} Editing and Saving`,
         label_saved_queries: `${prefix} Saved Queries`,
-        label_display_settings: `${prefix} Display Settings`,
+        label_chart_short: `${prefix} Chart`,
+        label_display_short: `${prefix} Display`,
         label_workload: `${prefix} Workload`,
         label_row_height: `${prefix} Row Height`,
         label_font_size: `${prefix} Font Size`,
@@ -43,6 +44,7 @@ const buildHelpTranslations = (language: 'ja' | 'en'): Record<string, string> =>
         help_desc_maximize_left: `${prefix} left pane description`,
         help_desc_maximize_right: `${prefix} right pane description`,
         help_desc_saved_queries: `${prefix} saved queries description`,
+        help_desc_chart_display: `${prefix} chart display description`,
         help_desc_display_settings: `${prefix} display settings description`,
         help_desc_baseline: `${prefix} baseline description`,
         help_desc_issue_new: `${prefix} new issue description`,
@@ -120,7 +122,9 @@ describe('HelpDialog', () => {
         expect(screen.getByText('日本語 Editing and Saving')).toBeInTheDocument();
         expect(screen.getByText('日本語 Saved Queries')).toBeInTheDocument();
         expect(screen.getByText('日本語 saved queries description')).toBeInTheDocument();
-        expect(screen.getByText('日本語 Display Settings')).toBeInTheDocument();
+        expect(screen.getByText('日本語 Chart')).toBeInTheDocument();
+        expect(screen.getByText('日本語 chart display description')).toBeInTheDocument();
+        expect(screen.getByText('日本語 Display')).toBeInTheDocument();
         expect(screen.getByText('日本語 display settings description')).toBeInTheDocument();
         expect(screen.getByText('日本語 baseline description')).toBeInTheDocument();
         expect(screen.getByText('日本語 Workload')).toBeInTheDocument();
@@ -168,7 +172,9 @@ describe('HelpDialog', () => {
         expect(screen.getByText('English Editing and Saving')).toBeInTheDocument();
         expect(screen.getByText('English Saved Queries')).toBeInTheDocument();
         expect(screen.getByText('English saved queries description')).toBeInTheDocument();
-        expect(screen.getByText('English Display Settings')).toBeInTheDocument();
+        expect(screen.getByText('English Chart')).toBeInTheDocument();
+        expect(screen.getByText('English chart display description')).toBeInTheDocument();
+        expect(screen.getByText('English Display')).toBeInTheDocument();
         expect(screen.getByText('English display settings description')).toBeInTheDocument();
         expect(screen.getByText('English baseline description')).toBeInTheDocument();
         expect(screen.getByText('English Workload')).toBeInTheDocument();
@@ -230,6 +236,7 @@ describe('HelpDialog', () => {
         expectSvg('help-icon-project', '16', 'path', { d: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5' });
         expectSvg('help-icon-version', '16', 'path', { d: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z' });
         expectSvg('help-icon-status', '16', 'path', { d: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' });
+        expectSvg('help-icon-chart-settings', '16', 'line', { x1: '3', y1: '6', x2: '21', y2: '6' });
         expectSvg('help-icon-hierarchy', '16', 'path', { d: 'M7 5v14' });
         expectSvg('help-icon-calendar', '16', 'rect', { x: '3', y: '5', width: '18', height: '16', rx: '2' });
         expectSvg('help-icon-star', '16', 'path', { d: 'M12 2l3 5h6l-5 4 2 6-6-4-6 4 2-6-5-4h6z' });
@@ -251,6 +258,7 @@ describe('HelpDialog', () => {
         expectItemIcon('English Project Filter', 'help-icon-project');
         expectItemIcon('English Version Filter', 'help-icon-version');
         expectItemIcon('English Status Filter', 'help-icon-status');
+        expectItemIcon('English Chart', 'help-icon-chart-settings');
         expectItemIcon('English Task Bar Dates', 'help-icon-calendar');
         expectItemIcon('English Hierarchy Lines', 'help-icon-hierarchy');
         expectItemIcon('English Orphan Points', 'help-icon-star');

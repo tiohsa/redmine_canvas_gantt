@@ -142,7 +142,8 @@ describe('Preferences storage', () => {
     });
 
     it('uses shared display preferences when sharing is enabled', () => {
-        saveGlobalDisplayPreferences({ showTaskTitles: false, sidebarWidth: 460 }, true);
+        saveGlobalDisplayPreferences({ showTaskTitles: false, sidebarWidth: 460, autoSave: true }, true);
+        savePreferences({ autoSave: false }, 1);
         saveDisplayPreferences({ showBaseline: true, sidebarWidth: 520, sidebarFontSize: 15 }, 1);
 
         const projectLoaded = loadDisplayPreferencesWithSource(1);
@@ -150,12 +151,14 @@ describe('Preferences storage', () => {
         expect(projectLoaded.globalEnabled).toBe(true);
         expect(projectLoaded.preferences.showTaskTitles).toBe(false);
         expect(projectLoaded.preferences.sidebarWidth).toBe(460);
+        expect(loadPreferences(1).autoSave).toBe(true);
 
         const globalLoaded = loadDisplayPreferencesWithSource(2);
         expect(globalLoaded.source).toBe('global');
         expect(globalLoaded.globalEnabled).toBe(true);
         expect(globalLoaded.preferences.showTaskTitles).toBe(false);
         expect(globalLoaded.preferences.sidebarWidth).toBe(460);
+        expect(loadPreferences(2).autoSave).toBe(true);
 
         saveGlobalDisplayPreferences({ showTaskTitles: true }, false);
 
