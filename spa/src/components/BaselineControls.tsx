@@ -44,7 +44,7 @@ export const BaselineControls: React.FC<BaselineControlsProps> = ({
     if (!baselineEditable && !baselineViewable) return null;
 
     const isSaving = baselineSaveStatus === 'saving';
-    const isActive = showBaseline || hasBaseline || isSaving;
+    const isActive = showBaseline || isSaving;
 
     return (
         <div ref={baselineSaveMenuRef} style={{ position: 'relative' }}>

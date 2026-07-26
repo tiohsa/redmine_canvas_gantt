@@ -460,7 +460,7 @@ describe('GanttToolbar shortcuts', () => {
 
         expect(saveBaselineMock).toHaveBeenCalledWith(expect.objectContaining({ scope: 'project' }));
         expect(useBaselineStore.getState().hasBaseline).toBe(true);
-        expect(screen.getByRole('button', { name: 'Save Baseline' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Save Baseline' })).toHaveAttribute('aria-pressed', 'false');
 
         fireEvent.click(screen.getByRole('button', { name: 'Save Baseline' }));
         fireEvent.click(screen.getByRole('checkbox', { name: 'Show baseline comparison' }));
