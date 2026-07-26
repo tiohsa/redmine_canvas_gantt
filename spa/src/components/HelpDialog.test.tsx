@@ -70,10 +70,11 @@ describe('HelpDialog', () => {
         expect(screen.getByText('English Cancel')).toBeInTheDocument();
     });
 
-    it('uses the BaselineControls icon for Baseline', () => {
+    it('uses the eye icon for Baseline', () => {
         openHelp('English');
         const icon = screen.getByTestId('help-icon-baseline');
-        expect(icon.querySelector('path')).toHaveAttribute('d', 'M4 5h16v14H4z');
-        expect(icon.querySelectorAll('path')).toHaveLength(3);
+        expect(icon.querySelector('path')).toHaveAttribute('d', 'M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z');
+        expect(icon.querySelector('circle')).toHaveAttribute('cx', '12');
+        expect(icon.querySelector('circle')).toHaveAttribute('r', '3');
     });
 });

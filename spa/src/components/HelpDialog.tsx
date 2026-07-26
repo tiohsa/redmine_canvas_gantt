@@ -153,9 +153,8 @@ const chartSettingsIcon = (
 
 const baselineIcon = (
     <svg data-testid="help-icon-baseline" width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
-        <path d="M4 5h16v14H4z" />
-        <path d="M8 5v4h8V5" />
-        <path d="M8 19v-5h8v5" />
+        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" />
+        <circle cx="12" cy="12" r="3" />
     </svg>
 );
 

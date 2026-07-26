@@ -2,7 +2,12 @@ const PORTAL_ROOT_ID = 'redmine-canvas-gantt-portal-root';
 
 export const getPortalRoot = (): HTMLDivElement => {
     const existingRoot = document.getElementById(PORTAL_ROOT_ID);
-    if (existingRoot instanceof HTMLDivElement) {
+    if (existingRoot) {
+        if (!(existingRoot instanceof HTMLDivElement)) {
+            throw new Error(`Element #${PORTAL_ROOT_ID} must be a div`);
+        }
+
+        existingRoot.classList.add('rcg-theme');
         return existingRoot;
     }
 
