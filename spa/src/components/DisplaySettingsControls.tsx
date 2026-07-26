@@ -27,6 +27,70 @@ interface DisplaySettingsControlsProps {
     onToggleDisplaySettingsMenu: () => void;
 }
 
+interface DisplaySettingSwitchProps {
+    checked: boolean;
+    label: string;
+    onChange: React.ChangeEventHandler<HTMLInputElement>;
+}
+
+const DisplaySettingSwitch: React.FC<DisplaySettingSwitchProps> = ({ checked, label, onChange }) => (
+    <label
+        style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            minHeight: 32,
+            padding: '2px 0',
+            cursor: 'pointer'
+        }}
+    >
+        <span>{label}</span>
+        <span style={{ position: 'relative', display: 'inline-flex', flex: '0 0 auto', width: 36, height: 20 }}>
+            <input
+                type="checkbox"
+                role="switch"
+                checked={checked}
+                onChange={onChange}
+                style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    margin: 0,
+                    opacity: 0,
+                    cursor: 'pointer'
+                }}
+            />
+            <span
+                aria-hidden="true"
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    width: '100%',
+                    padding: 2,
+                    borderRadius: 9999,
+                    background: checked ? designTokens.brandPrimary : designTokens.controlBorder,
+                    boxShadow: designTokens.controlInsetShadow,
+                    transition: 'background-color 150ms ease'
+                }}
+            >
+                <span
+                    style={{
+                        width: 16,
+                        height: 16,
+                        borderRadius: '50%',
+                        background: designTokens.controlBg,
+                        boxShadow: designTokens.controlActiveShadow,
+                        transform: checked ? 'translateX(16px)' : 'translateX(0)',
+                        transition: 'transform 150ms ease'
+                    }}
+                />
+            </span>
+        </span>
+    </label>
+);
+
 export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = ({
     displaySettingsMenuRef,
     className,
@@ -223,42 +287,18 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                         <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginBottom: 4 }}>
                             {i18n.t('label_display_settings') || 'Display settings'}
                         </div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showProgressLine} onChange={toggleProgressLine} />
-                            <span>{i18n.t('label_progress_line') || 'Progress line'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={organizeByDependency} onChange={() => setOrganizeByDependency(!organizeByDependency)} />
-                            <span>{i18n.t('label_organize_by_dependency') || 'Organize by dependency'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showStartDateOnly} onChange={toggleStartDateOnly} />
-                            <span>{i18n.t('label_show_start_date_only') || 'Show start-date-only tasks'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showDueDateOnly} onChange={toggleDueDateOnly} />
-                            <span>{i18n.t('label_show_due_date_only') || 'Show due-date-only tasks'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showTaskTitles} onChange={toggleTaskTitles} />
-                            <span>{i18n.t('label_toggle_task_titles') || 'Show tickets'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showTaskBarDates} onChange={toggleTaskBarDates} />
-                            <span>{i18n.t('label_toggle_task_bar_dates') || 'Show task-bar dates'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showHierarchyLines} onChange={toggleHierarchyLines} />
-                            <span>{i18n.t('label_toggle_hierarchy_lines') || 'Show hierarchy lines'}</span>
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                            <input
-                                type="checkbox"
-                                checked={displayPreferencesGlobalEnabled}
-                                onChange={(event) => setShareAcrossProjects(event.target.checked)}
-                            />
-                            <span>{i18n.t('label_share_display_settings_across_projects') || 'Share settings across all projects'}</span>
-                        </label>
+                        <DisplaySettingSwitch checked={showProgressLine} onChange={toggleProgressLine} label={i18n.t('label_progress_line') || 'Progress line'} />
+                        <DisplaySettingSwitch checked={organizeByDependency} onChange={() => setOrganizeByDependency(!organizeByDependency)} label={i18n.t('label_organize_by_dependency') || 'Organize by dependency'} />
+                        <DisplaySettingSwitch checked={showStartDateOnly} onChange={toggleStartDateOnly} label={i18n.t('label_show_start_date_only') || 'Show start-date-only tasks'} />
+                        <DisplaySettingSwitch checked={showDueDateOnly} onChange={toggleDueDateOnly} label={i18n.t('label_show_due_date_only') || 'Show due-date-only tasks'} />
+                        <DisplaySettingSwitch checked={showTaskTitles} onChange={toggleTaskTitles} label={i18n.t('label_toggle_task_titles') || 'Show tickets'} />
+                        <DisplaySettingSwitch checked={showTaskBarDates} onChange={toggleTaskBarDates} label={i18n.t('label_toggle_task_bar_dates') || 'Show task-bar dates'} />
+                        <DisplaySettingSwitch checked={showHierarchyLines} onChange={toggleHierarchyLines} label={i18n.t('label_toggle_hierarchy_lines') || 'Show hierarchy lines'} />
+                        <DisplaySettingSwitch
+                            checked={displayPreferencesGlobalEnabled}
+                            onChange={(event) => setShareAcrossProjects(event.target.checked)}
+                            label={i18n.t('label_share_display_settings_across_projects') || 'Share settings across all projects'}
+                        />
 
                         <div
                             role="group"

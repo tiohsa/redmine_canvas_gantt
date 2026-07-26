@@ -1051,6 +1051,8 @@ describe('GanttToolbar shortcuts', () => {
         expect(dueToggle).toBeInTheDocument();
         expect(titleToggle).toBeInTheDocument();
         expect(barDateToggle).toBeInTheDocument();
+        expect(startToggle).toHaveAttribute('role', 'switch');
+        expect(titleToggle).toHaveAttribute('role', 'switch');
         expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
 
         fireEvent.click(titleToggle);
