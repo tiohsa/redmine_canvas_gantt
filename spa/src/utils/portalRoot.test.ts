@@ -16,4 +16,13 @@ describe('getPortalRoot', () => {
         expect(first).toHaveClass('rcg-theme');
         expect(document.body.querySelectorAll('#redmine-canvas-gantt-portal-root')).toHaveLength(1);
     });
+
+    it('rejects an element with the reserved id when it is not a div', () => {
+        const conflictingElement = document.createElement('span');
+        conflictingElement.id = 'redmine-canvas-gantt-portal-root';
+        document.body.appendChild(conflictingElement);
+
+        expect(() => getPortalRoot()).toThrow('must be a div');
+        expect(document.body.querySelectorAll('#redmine-canvas-gantt-portal-root')).toHaveLength(1);
+    });
 });
