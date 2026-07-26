@@ -161,6 +161,16 @@ describe('IssueIframeDialog', () => {
         expect(footerButtons[1].style.minWidth).toBe('88px');
     });
 
+    it('offers bulk child creation for an issue show dialog', () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123', queryDialogUrl: null });
+
+        render(<IssueIframeDialog />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
+    });
+
     it('shrinks dialog height for short iframe content', async () => {
         const { container } = render(<IssueIframeDialog />);
         const iframe = container.querySelector('iframe') as HTMLIFrameElement;
@@ -232,6 +242,40 @@ describe('IssueIframeDialog', () => {
         expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Edit issue' })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Save issue' })).not.toBeInTheDocument();
+    });
+
+    it('changes the issue-show primary action to Save and auto-submits the parent exactly once', async () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123', queryDialogUrl: null });
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = '<div id="content"><p>Issue detail</p></div>';
+        const iframeWindow = { location: { href: 'http://example.com/issues/123' }, document: doc };
+        Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+
+        fireEvent.load(iframe);
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'Child A' }
+        });
+
+        expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        expect(iframeWindow.location.href).toBe('/issues/123/edit');
+        expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
+
+        doc.body.innerHTML = '<form id="issue-form"><input type="submit" value="Save" /></form>';
+        const submit = doc.querySelector('input[type="submit"]') as HTMLInputElement;
+        const submitClick = vi.spyOn(submit, 'click');
+        iframeWindow.location.href = 'http://example.com/issues/123/edit';
+        fireEvent.load(iframe);
+        expect(submitClick).toHaveBeenCalledTimes(1);
+
+        fireEvent.load(iframe);
+        expect(submitClick).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('button', { name: /loading|saving/i })).toBeDisabled();
     });
 
     it('shows Save comment and submits the active journal edit form', () => {

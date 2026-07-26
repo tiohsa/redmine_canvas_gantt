@@ -108,4 +108,15 @@ describe('iframeStyles', () => {
         expect(findIssueDialogErrorElement(doc)).toBe(conflict);
         expect(getIssueDialogErrorMessage(doc)).toBe('Update conflict');
     });
+
+    it('detects Redmine flash-error as an error signal', () => {
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const error = doc.createElement('div');
+        error.className = 'flash-error';
+        error.textContent = 'Save failed';
+        doc.body.appendChild(error);
+
+        expect(findIssueDialogErrorElement(doc)).toBe(error);
+        expect(getIssueDialogErrorMessage(doc)).toBe('Save failed');
+    });
 });

@@ -833,7 +833,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
   describe 'POST #bulk_create_subtasks' do
     let(:current_user) { instance_double(User, id: 7, logged?: true, login: 'tester', language: 'en') }
     let(:issue_scope) { double('IssueScope') }
-    let(:parent_project) { instance_double(Project, id: 2) }
+    let(:parent_tracker) { instance_double(Tracker, id: 3, name: 'Bug') }
+    let(:parent_project) { instance_double(Project, id: 2, trackers: [parent_tracker]) }
     let(:parent_issue) do
       instance_double(
         Issue,
@@ -906,7 +907,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(JSON.parse(response.body)).to eq('error' => 'Issue not found in this project')
     end
 
-    it 'creates subtasks with inherited fields and reports partial failure' do
+    it 'rolls back all subtasks when one row fails' do
       allow(User.current).to receive(:allowed_to?).with(:add_issues, parent_project).and_return(true)
       allow(User.current).to receive(:allowed_to?).with(:manage_subtasks, parent_project).and_return(true)
 
@@ -939,9 +940,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         tracker_id: 3,
         status_id: 4,
         priority_id: 5,
-        assigned_to_id: 6,
-        fixed_version_id: 7,
-        category_id: 8
+        assigned_to_id: 6
       ))
       expect(failed_issue).to have_received(:safe_attributes=).with(hash_including(
         subject: 'Task B',
@@ -953,10 +952,10 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body['status']).to eq('ok')
-      expect(body['success_count']).to eq(1)
-      expect(body['fail_count']).to eq(1)
-      expect(body['results'].map { |r| r['status'] }).to eq(['ok', 'error'])
-      expect(body['results'][0]['issue_id']).to eq(501)
+      expect(body['success_count']).to eq(0)
+      expect(body['fail_count']).to eq(2)
+      expect(body['results'].map { |r| r['status'] }).to eq(['error', 'error'])
+      expect(body['results'][0]['errors']).to eq(['No child tickets were created because another row failed'])
       expect(body['results'][1]['errors']).to eq(['Subject is invalid'])
     end
 
@@ -987,6 +986,35 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(body['fail_count']).to eq(1)
       expect(body['results'][0]['status']).to eq('error')
       expect(body['results'][0]['errors']).to eq(['Parent linkage failed'])
+    end
+  end
+
+  describe 'GET #subtask_trackers' do
+    let(:current_user) { instance_double(User, id: 7, logged?: true, login: 'tester', language: 'en') }
+    let(:issue_scope) { double('IssueScope') }
+    let(:tracker) { instance_double(Tracker, id: 3, name: 'Bug') }
+    let(:parent_project) { instance_double(Project, trackers: [tracker]) }
+    let(:parent_issue) { instance_double(Issue, id: 99, project: parent_project) }
+
+    before do
+      allow(User).to receive(:current).and_return(current_user)
+      allow(current_user).to receive(:allowed_to?).and_return(false)
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
+      end
+      allow(Issue).to receive(:visible).and_return(issue_scope)
+      allow(issue_scope).to receive(:find).with('99').and_return(parent_issue)
+      allow(controller).to receive(:ensure_issue_in_scope).and_return(true)
+      allow(controller).to receive(:ensure_issue_in_operation_scope).and_return(true)
+    end
+
+    it 'returns the trackers available to the parent project' do
+      get :subtask_trackers,
+          params: { project_id: 'demo', parent_issue_id: '99', operation_issue_ids: [99] },
+          format: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to eq('trackers' => [{ 'id' => 3, 'name' => 'Bug' }])
     end
   end
 
