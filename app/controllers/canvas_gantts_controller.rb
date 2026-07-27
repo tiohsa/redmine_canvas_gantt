@@ -355,9 +355,12 @@ class CanvasGanttsController < ApplicationController
 
   before_action :resolve_canvas_project
   before_action :set_permissions
-  before_action :ensure_view_permission, only: [:index, :data, :queries, :edit_meta]
+  # Every Canvas Gantt endpoint, including JSON mutation endpoints, is part of
+  # the feature gated by this permission. Individual Issue operations perform
+  # their own standard Redmine authorization below.
+  before_action :ensure_view_permission
   skip_forgery_protection only: [:asset]
-  skip_before_action :resolve_canvas_project, :set_permissions, only: [:asset]
+  skip_before_action :resolve_canvas_project, :set_permissions, :ensure_view_permission, only: [:asset]
 
   # GET /plugin_assets/redmine_canvas_gantt/build/*asset_path
   # Fallback asset delivery when public/plugin_assets static serving is disabled.
@@ -686,7 +689,7 @@ class CanvasGanttsController < ApplicationController
   end
 
   def ensure_baseline_edit_permission
-    return true if User.current.allowed_to?(:edit_canvas_gantt, @project)
+    return true if User.current.allowed_to?(:manage_canvas_gantt_baseline, @project)
 
     render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
     false
@@ -696,7 +699,7 @@ class CanvasGanttsController < ApplicationController
     @permissions ||= {
       editable: User.current.allowed_to?(:edit_issues, @project),
       viewable: User.current.allowed_to?(:view_canvas_gantt, @project),
-      baseline_editable: User.current.allowed_to?(:edit_canvas_gantt, @project)
+      baseline_editable: User.current.allowed_to?(:manage_canvas_gantt_baseline, @project)
     }
   end
 

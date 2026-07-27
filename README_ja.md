@@ -64,7 +64,7 @@ Edge、Firefox、Safari を使用してください。Internet Explorer は対�
 ### セキュリティと影響
 
 - データベースマイグレーション: なし
-- 追加パーミッション: `view_canvas_gantt`, `edit_canvas_gantt`
+- 追加パーミッション: `view_canvas_gantt`, `manage_canvas_gantt_baseline`
 - アンインストール: プラグインディレクトリを削除する前に、Redmine の実行環境からクリーンアップタスクを実行します。Docker Compose の場合は `redmine` サービスのコンテナ内で実行します。このタスクは保存済みベースラインを含む Redmine のプラグイン設定行全体を削除します。各ユーザーのブラウザ `localStorage` はサーバー側タスクでは削除されません。
 
 ## インストール
@@ -132,7 +132,9 @@ Edge、Firefox、Safari を使用してください。Internet Explorer は対�
    **プロジェクト** -> **設定** -> **モジュール** で **Canvas Gantt** を有効化します。
 
 3. 権限を付与します。
-   **管理** -> **ロールと権限** で `view_canvas_gantt` と `edit_canvas_gantt` を必要に応じて付与します。
+   **管理** -> **ロールと権限** で Canvas Gantt の利用には `view_canvas_gantt` を付与します。Issue 操作は対象IssueのProjectに対する Redmine 標準権限 `edit_issues`、`delete_issues`、`add_issues`、`manage_subtasks` で制御します。Baseline 保存を許可するロールにだけ `manage_canvas_gantt_baseline` を付与します。
+
+   `edit_canvas_gantt` を使用していたバージョンから更新する場合は、該当ロールを確認してください。この廃止権限は自動移行されません。Baseline 保存を継続するロールだけに `manage_canvas_gantt_baseline` を付与し、通常のIssue操作にCanvas固有権限は不要です。
 
 4. チャートを開きます。
    プロジェクトメニューの **Canvas Gantt** をクリックします。
@@ -156,7 +158,7 @@ Edge、Firefox、Safari を使用してください。Internet Explorer は対�
 - プロジェクトごとに単一のベースライン snapshot を保持し、新しく保存すると既存 snapshot を置き換えます。
 - ツールバーから `現在のフィルタ結果` または `プロジェクト全体` のどちらを保存するかを選べます。
 - 保存範囲が `プロジェクト全体` でも、ゴーストバーと差分 popover は現在表示中のタスクに対してのみ表示されます。
-- ベースラインの閲覧には `view_canvas_gantt`、保存には `edit_canvas_gantt` が必要です。
+- ベースラインの閲覧には `view_canvas_gantt`、保存には `manage_canvas_gantt_baseline` が必要です。
 - ベースラインは Redmine の設定領域 `Setting.plugin_redmine_canvas_gantt` に保存されます。プラグインディレクトリを削除するだけでは残るため、先にアンインストール用クリーンアップタスクを実行してください。
 
 ### ワークロード、表示設定、出力
@@ -316,7 +318,7 @@ docker compose exec -T redmine bundle exec rake db:fixtures:load
 1. 対象 project を開きます。
 2. **設定** -> **モジュール** を開きます。
 3. **Canvas Gantt** を有効化します。
-4. 編集が必要な場合は、利用ロールに `view_canvas_gantt` と `edit_canvas_gantt` を付与します。
+4. 編集が必要な場合は、利用ロールに `view_canvas_gantt` と対象IssueのProjectに対する該当する Redmine 標準権限を付与します。Baseline 保存には `manage_canvas_gantt_baseline` も付与します。
 
 ### スタックを停止
 

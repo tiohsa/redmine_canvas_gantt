@@ -126,7 +126,7 @@ Redmine Canvas Gantt は、Ruby on Rails バックエンドと `spa/` ディレ�
 
 - API キー、トークン、機密情報をコミットしないでください。
 - 機密設定は環境変数または Redmine の設定機能内に保持してください。
-- Redmine の権限設定である `view_canvas_gantt` および `edit_canvas_gantt` を尊重し、正しく適用してください。
+- Canvas Gantt へのアクセスは `view_canvas_gantt`、Baseline 保存は `manage_canvas_gantt_baseline` を尊重してください。Issue 操作は対象IssueのProjectに対する Redmine 標準権限を使用してください。
 - `/plugin_assets/redmine_canvas_gantt/build/*` 周辺のアセットパスの安全検証処理を維持し、壊さないようにしてください。
 
 ## リポジトリのレイアウト (Repository Layout)
