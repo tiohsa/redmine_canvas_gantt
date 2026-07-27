@@ -106,6 +106,18 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(JSON.parse(response.body)).to eq('error' => 'Permission denied')
     end
 
+    it 'requires view permission before a direct mutation API request is processed' do
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: true, viewable: false, baseline_editable: true })
+      end
+      expect(Issue).not_to receive(:visible)
+
+      patch :update, params: { project_id: 'demo', id: '10', task: { subject: 'Denied' } }, format: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(JSON.parse(response.body)).to eq('error' => 'Permission denied')
+    end
+
     it 'returns data payload with expected top-level keys' do
       payload_builder = instance_double(RedmineCanvasGantt::DataPayloadBuilder)
       baseline_repository = instance_double(RedmineCanvasGantt::BaselineRepository)
@@ -393,7 +405,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:descendant_project_ids).and_return([1])
       allow(User).to receive(:current).and_return(current_user)
       allow(current_user).to receive(:allowed_to?).and_return(false)
-      allow(current_user).to receive(:allowed_to?).with(:edit_canvas_gantt, project).and_return(true)
+      allow(current_user).to receive(:allowed_to?).with(:manage_canvas_gantt_baseline, project).and_return(true)
       allow(controller).to receive(:set_permissions) do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true, baseline_editable: true })
       end
@@ -483,7 +495,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
 
     it 'returns forbidden when edit permission is missing' do
-      allow(current_user).to receive(:allowed_to?).with(:edit_canvas_gantt, project).and_return(false)
+      allow(current_user).to receive(:allowed_to?).with(:manage_canvas_gantt_baseline, project).and_return(false)
 
       post :save_baseline, params: { project_id: 'demo' }, format: :json
 
@@ -780,6 +792,27 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body)['status']).to eq('ok')
+    end
+  end
+
+  describe '#issue_editable?' do
+    let(:current_user) { instance_double(User) }
+    let(:canvas_project) { instance_double(Project, id: 1, name: 'Parent') }
+    let(:child_project) { instance_double(Project, id: 2, name: 'Child') }
+    let(:child_issue) { instance_double(Issue, project: child_project, editable?: true) }
+
+    before do
+      allow(User).to receive(:current).and_return(current_user)
+      allow(current_user).to receive(:allowed_to?).and_return(false)
+    end
+
+    it 'uses the target child issue project rather than the canvas project' do
+      allow(current_user).to receive(:allowed_to?).with(:edit_issues, child_project).and_return(true)
+      allow(current_user).to receive(:allowed_to?).with(:edit_issues, canvas_project).and_return(false)
+
+      expect(controller.send(:issue_editable?, child_issue)).to be(true)
+      expect(current_user).to have_received(:allowed_to?).with(:edit_issues, child_project)
+      expect(current_user).not_to have_received(:allowed_to?).with(:edit_issues, canvas_project)
     end
   end
 

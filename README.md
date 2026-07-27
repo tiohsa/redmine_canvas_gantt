@@ -76,7 +76,7 @@ Use a current desktop version of Chrome, Edge, Firefox, or Safari with HTML5 Can
 ### Security and impact
 
 - Database migration: none
-- Added permissions: `view_canvas_gantt`, `edit_canvas_gantt`
+- Added permissions: `view_canvas_gantt`, `manage_canvas_gantt_baseline`
 - Uninstall: run the cleanup task from the Redmine application environment before removing the plugin directory. For Docker Compose, run it inside the `redmine` service container. The task deletes the complete Redmine plugin settings row, including stored baselines. Browser `localStorage` remains local to each user and is not removed by the server-side task.
 
 ## Installation
@@ -143,7 +143,9 @@ The cleanup task deletes the `plugin_redmine_canvas_gantt` row from Redmine's `s
    Open **Project** -> **Settings** -> **Modules** and enable **Canvas Gantt**.
 
 3. Grant permissions.
-   In **Administration** -> **Roles and permissions**, grant `view_canvas_gantt` and `edit_canvas_gantt` as needed.
+   In **Administration** -> **Roles and permissions**, grant `view_canvas_gantt` to use Canvas Gantt. Issue actions use Redmine's standard permissions on the target issue's project: `edit_issues`, `delete_issues`, `add_issues`, and `manage_subtasks`. Grant `manage_canvas_gantt_baseline` only to roles allowed to save a baseline.
+
+   When upgrading from a version that used `edit_canvas_gantt`, review affected roles: that retired permission is not migrated automatically. Grant `manage_canvas_gantt_baseline` only where baseline saving should remain available; no Canvas-specific permission is needed for normal Issue actions.
 
 4. Open the chart.
    Click **Canvas Gantt** from the project menu.
@@ -167,7 +169,7 @@ The cleanup task deletes the `plugin_redmine_canvas_gantt` row from Redmine's `s
 - Each project stores a single baseline snapshot, and saving a new one replaces the previous snapshot.
 - The toolbar lets you save either the current filtered view or the whole project as the baseline scope.
 - Baseline bars and diff popovers only render for tasks currently visible in the chart, even when the saved scope was the whole project.
-- Viewing baseline comparison requires `view_canvas_gantt`. Saving a baseline requires `edit_canvas_gantt`.
+- Viewing baseline comparison requires `view_canvas_gantt`. Saving a baseline requires `manage_canvas_gantt_baseline`.
 - Baselines are stored in `Setting.plugin_redmine_canvas_gantt` in Redmine's settings area. Removing the plugin directory alone does not delete them; run the uninstall cleanup task first.
 
 ### Workload, display settings, and export
@@ -318,7 +320,7 @@ docker compose exec -T redmine bundle exec rake db:fixtures:load
 1. Open the target project.
 2. Go to **Settings** -> **Modules**.
 3. Enable **Canvas Gantt**.
-4. Ensure the active role has `view_canvas_gantt` and `edit_canvas_gantt` if editing is required.
+4. Ensure the active role has `view_canvas_gantt` and the relevant standard Issue permissions if editing is required. To save baselines, also grant `manage_canvas_gantt_baseline`.
 
 ### Stop the stack
 

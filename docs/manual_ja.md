@@ -24,7 +24,11 @@ Redmine Canvas Gantt は、Redmine 上のチケットを Canvas ベースのタ�
 | 権限 | 用途 |
 | --- | --- |
 | `view_canvas_gantt` | Canvas Gantt 画面を表示する |
-| `edit_canvas_gantt` | タスク移動、期間変更、依存関係操作、インライン編集などを行う |
+| `manage_canvas_gantt_baseline` | Baseline snapshot を保存・置換する |
+
+Issue の編集は `edit_issues` と対象Issueの `issue.editable?`、削除は `delete_issues`、子Issue作成は `add_issues` と `manage_subtasks`、関連操作は両端のIssueに対する編集可否で判定します。いずれも Canvas を開いた親Projectではなく、対象IssueのProjectの Redmine 標準権限を使用します。
+
+旧バージョンの `edit_canvas_gantt` は廃止しました。既存ロールは自動移行されないため、Baseline 保存を継続するロールだけに `manage_canvas_gantt_baseline` を付与してください。
 
 ### 2.3 画面を開く
 
@@ -259,7 +263,7 @@ Redmine Canvas Gantt は、Redmine 上のチケットを Canvas ベースのタ�
 
 ### 10.2 編集できない
 
-- `edit_canvas_gantt` 権限があるか確認します
+- 対象IssueのProjectで `edit_issues`（削除は `delete_issues`、子Issue作成は `add_issues` と `manage_subtasks`）があるか確認します
 - プラグイン設定で該当項目のインライン編集が有効か確認します
 - 自動保存が OFF の場合は `保存` を押します
 
