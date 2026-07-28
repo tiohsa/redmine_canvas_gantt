@@ -1,6 +1,7 @@
 import type { CustomFieldMeta } from '../types/editMeta';
 import type { Relation, Task } from '../types';
 import { buildExportFilename, downloadBlob } from './download';
+import { formatDateOnly } from '../utils/dateOnly';
 
 const CSV_HEADERS = [
     ['id', 'ID'],
@@ -28,7 +29,7 @@ const CSV_HEADERS = [
 
 const formatDate = (value?: number) => {
     if (value === undefined || !Number.isFinite(value)) return '';
-    return new Date(value).toISOString().slice(0, 10);
+    return formatDateOnly(value) ?? '';
 };
 
 const escapeCsv = (value: unknown) => {

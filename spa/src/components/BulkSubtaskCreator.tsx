@@ -31,9 +31,7 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
     ({ parentId, onTasksCreated, hideStandaloneButton, showTopBorder = true, trackerOptions = [], defaultTrackerId, onContentChange }, ref) => {
         const [expanded, setExpanded] = React.useState(false);
         const [inputMode, setInputMode] = React.useState<'text' | 'table'>('text');
-        const [subjects, setSubjects] = React.useState('');
         const [rows, setRows] = React.useState<BulkSubtaskRow[]>(() => createEmptyRows(defaultTrackerId));
-        const [textTrackerId, setTextTrackerId] = React.useState(defaultTrackerId);
         const [loading, setLoading] = React.useState(false);
         const [completed, setCompleted] = React.useState(false);
         const addNotification = useUIStore(state => state.addNotification);
@@ -42,11 +40,8 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
             () => tasks.filter(task => !task.isContextOnly).map(task => task.id),
             [tasks]
         );
-        const hasSubjects = React.useCallback(() => (
-            inputMode === 'table'
-                ? rows.some(row => row.subject.trim().length > 0)
-                : subjects.split('\n').some(subject => subject.trim().length > 0)
-        ), [inputMode, rows, subjects]);
+        const hasSubjects = React.useCallback(() => rows.some(row => row.subject.trim().length > 0), [rows]);
+        const textValue = rows.map(row => row.subject).join('\n').replace(/\n+$/, '');
 
         React.useEffect(() => {
             onContentChange?.(hasSubjects());
@@ -55,30 +50,13 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
         const handleInputModeChange = (nextMode: 'text' | 'table') => {
             if (nextMode === inputMode) return;
 
-            if (nextMode === 'table') {
-                const textSubjects = subjects.split('\n');
-                setRows(current => {
-                    const rowCount = Math.max(MIN_TABLE_ROWS, current.length, textSubjects.length);
-                    return Array.from({ length: rowCount }, (_, index) => ({
-                        subject: textSubjects[index] ?? '',
-                        tracker_id: current[index]?.tracker_id ?? defaultTrackerId
-                    }));
-                });
-            } else {
-                let lastSubjectIndex = rows.length;
-                while (lastSubjectIndex > 0 && rows[lastSubjectIndex - 1].subject === '') {
-                    lastSubjectIndex -= 1;
-                }
-                setSubjects(rows.slice(0, lastSubjectIndex).map(row => row.subject).join('\n'));
-            }
-
             setInputMode(nextMode);
         };
 
         const createSubtasks = async (newParentId?: string) => {
-            const subtasks: BulkSubtaskRow[] = inputMode === 'table'
-                ? rows.filter(row => row.subject.trim()).map(row => ({ subject: row.subject.trim(), ...(row.tracker_id ? { tracker_id: row.tracker_id } : {}) }))
-                : subjects.split('\n').map(subject => subject.trim()).filter(Boolean).map(subject => ({ subject, ...(textTrackerId ? { tracker_id: textTrackerId } : {}) }));
+            const subtasks: BulkSubtaskRow[] = rows
+                .filter(row => row.subject.trim())
+                .map(row => ({ subject: row.subject.trim(), ...(row.tracker_id ? { tracker_id: row.tracker_id } : {}) }));
             if (subtasks.length === 0) return { success: 0, fail: 0 };
 
             setLoading(true);
@@ -92,9 +70,7 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                     return { success: 0, fail: subtasks.length };
                 }
 
-                const bulkPayload = inputMode === 'table' || textTrackerId
-                    ? { subtasks }
-                    : { subjects: subtasks.map(row => row.subject) };
+                const bulkPayload = subtasks.some(row => row.tracker_id) ? { subtasks } : { subjects: subtasks.map(row => row.subject) };
                 const result = await apiClient.bulkCreateSubtasks({
                     parentId: targetParentId,
                     ...bulkPayload,
@@ -110,9 +86,7 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                 }
 
                 if (successCount > 0 && failCount === 0) {
-                    setSubjects('');
                     setRows(createEmptyRows(defaultTrackerId));
-                    setTextTrackerId(defaultTrackerId);
                     setExpanded(false);
                     setCompleted(true);
                     onTasksCreated?.();
@@ -256,8 +230,11 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                                         <span>{i18n.t('field_tracker') || 'Tracker'}</span>
                                         <select
                                             aria-label={i18n.t('field_tracker') || 'Tracker'}
-                                            value={textTrackerId ?? ''}
-                                            onChange={(event) => setTextTrackerId(event.target.value ? Number(event.target.value) : undefined)}
+                                            value={rows[0]?.tracker_id ?? ''}
+                                            onChange={(event) => {
+                                                const trackerId = event.target.value ? Number(event.target.value) : undefined;
+                                                setRows(current => current.map(row => ({ ...row, tracker_id: trackerId })));
+                                            }}
                                             disabled={loading}
                                             style={{
                                                 width: 275,
@@ -279,8 +256,14 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                                 )}
                                 <textarea
                                     data-testid="bulk-subtask-subjects"
-                                    value={subjects}
-                                    onChange={(e) => setSubjects(e.target.value)}
+                                    value={textValue}
+                                    onChange={(e) => {
+                                        const subjects = e.target.value.split('\n');
+                                        setRows(current => Array.from({ length: Math.max(MIN_TABLE_ROWS, current.length, subjects.length) }, (_, index) => ({
+                                            subject: subjects[index] ?? '',
+                                            tracker_id: current[index]?.tracker_id ?? defaultTrackerId
+                                        })));
+                                    }}
                                     placeholder={i18n.t('placeholder_bulk_subtask_creation') || "Enter one ticket subject per line..."}
                                     disabled={loading}
                                     rows={5}
@@ -294,15 +277,15 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                                 <button
                                     data-testid="bulk-subtask-create-button"
                                     onClick={handleCreateStandalone}
-                                    disabled={loading || !(inputMode === 'table' ? rows.some(row => row.subject.trim()) : subjects.trim())}
+                                    disabled={loading || !hasSubjects()}
                                     style={{
                                         padding: '6px 12px',
-                                        background: loading || !subjects.trim() ? '#ccc' : '#1a73e8',
+                                        background: loading || !hasSubjects() ? '#ccc' : '#1a73e8',
                                         color: '#fff',
                                         border: 'none',
                                         borderRadius: 4,
                                         fontSize: 13,
-                                        cursor: loading || !subjects.trim() ? 'default' : 'pointer'
+                                        cursor: loading || !hasSubjects() ? 'default' : 'pointer'
                                     }}
                                 >
                                     {loading ? (i18n.t('label_loading') || 'Creating...') : (i18n.t('button_create') || 'Create')}

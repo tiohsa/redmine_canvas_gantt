@@ -17,6 +17,7 @@ import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/bas
 import type { QueryContext } from '../query/types';
 import type { BusinessCalendarPayload } from '../types/businessCalendar';
 import { normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
+import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { sessionFetch } from './sessionFetch';
 
 type ApiTask = Record<string, unknown>;
@@ -457,11 +458,7 @@ export const apiClient = {
     fetchData: async (params?: { query?: ResolvedQueryState; queryContext?: QueryContext; rawSearch?: string }): Promise<ApiData> => {
         const config = getConfig();
 
-        const parseDate = (value: string | null | undefined): number | null => {
-            if (!value) return null;
-            const ts = new Date(value).getTime();
-            return Number.isFinite(ts) ? ts : null;
-        };
+        const parseDate = parseDateOnly;
 
         const qs = params?.rawSearch
             ? params.rawSearch.replace(/^\?/, '')
@@ -790,8 +787,8 @@ export const apiClient = {
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
                 task: {
-                    start_date: (task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toISOString().split('T')[0] : null,
-                    due_date: (task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toISOString().split('T')[0] : null,
+                    start_date: formatDateOnly(task.startDate),
+                    due_date: formatDateOnly(task.dueDate),
                     parent_issue_id: task.parentId ? Number(task.parentId) : null,
                     lock_version: task.lockVersion
                 }

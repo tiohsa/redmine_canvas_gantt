@@ -399,11 +399,11 @@ class CanvasGanttsController < ApplicationController
         initial_state: resolved_query[:initial_state],
         query_context: resolved_query[:query_context],
         warnings: resolved_query[:warnings] + baseline_load.warnings,
-        baseline: baseline_load.snapshot,
+        baseline: visible_baseline_snapshot(baseline_load.snapshot, project_ids),
         business_calendar: business_calendar_resolver.payload(projects: business_calendar_projects(project_ids))
       )
     rescue => e
-      render json: { error: e.message }, status: :internal_server_error
+      render_internal_error(e)
     end
   end
 
@@ -422,7 +422,7 @@ class CanvasGanttsController < ApplicationController
       end
     }
   rescue => e
-    render json: { error: e.message }, status: :internal_server_error
+    render_internal_error(e)
   end
 
   # POST /projects/:project_id/canvas_gantt/baseline.json
@@ -450,7 +450,7 @@ class CanvasGanttsController < ApplicationController
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue => e
-    render json: { error: e.message }, status: :internal_server_error
+    render_internal_error(e)
   end
 
   # GET /projects/:project_id/canvas_gantt/tasks/:id/edit_meta.json
@@ -479,7 +479,7 @@ class CanvasGanttsController < ApplicationController
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
   rescue => e
-    render json: { error: e.message }, status: :internal_server_error
+    render_internal_error(e)
   end
 
   # PATCH /projects/:project_id/canvas_gantt/tasks/:id.json
@@ -586,7 +586,7 @@ class CanvasGanttsController < ApplicationController
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
   rescue => e
-    render json: { error: e.message }, status: :internal_server_error
+    render_internal_error(e)
   end
 
   # PATCH /projects/:project_id/canvas_gantt/relations/:id.json
@@ -604,7 +604,7 @@ class CanvasGanttsController < ApplicationController
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found) }, status: :not_found
   rescue => e
-    render json: { error: e.message }, status: :internal_server_error
+    render_internal_error(e)
   end
 
   # DELETE /projects/:project_id/canvas_gantt/relations/:id.json
@@ -617,7 +617,7 @@ class CanvasGanttsController < ApplicationController
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found) }, status: :not_found
   rescue => e
-    render json: { error: e.message }, status: :internal_server_error
+    render_internal_error(e)
   end
 
   private
@@ -722,7 +722,19 @@ class CanvasGanttsController < ApplicationController
   end
 
   def baseline_project_issues(project_ids)
-    Issue.visible.where(project_id: project_ids).includes(*ISSUE_INCLUDES).to_a
+    Issue.visible.where(project_id: project_ids).select(:id, :start_date, :due_date).to_a
+  end
+
+  def visible_baseline_snapshot(snapshot, project_ids)
+    return nil unless snapshot
+
+    issue_ids = snapshot.task_states.map(&:issue_id)
+    visible_issue_ids = if issue_ids.empty?
+                          []
+                        else
+                          Issue.visible.where(project_id: project_ids, id: issue_ids).pluck(:id)
+                        end
+    snapshot.with_task_states(visible_issue_ids)
   end
 
   def baseline_save_scope
@@ -771,7 +783,13 @@ class CanvasGanttsController < ApplicationController
   end
 
   def filter_option_issues(project_ids)
-    Issue.visible.where(project_id: project_ids).includes(:assigned_to, :project).to_a
+    Issue.visible.where(project_id: project_ids).select(:id, :assigned_to_id, :project_id).includes(:assigned_to).to_a
+  end
+
+  def render_internal_error(error)
+    request_id = request.request_id
+    Rails.logger.error("[Canvas Gantt][#{request_id}] #{error.class}: #{error.message}\n#{Array(error.backtrace).join("\n")}")
+    render json: { error: "#{canvas_gantt_l(:label_unknown_error)} (request ID: #{request_id})" }, status: :internal_server_error
   end
 
   def member_candidate_ids

@@ -4,6 +4,8 @@ require 'time'
 module RedmineCanvasGantt
   class BaselineRepository
     STORAGE_KEY = 'baseline_snapshots'.freeze
+    SETTING_NAME = 'plugin_redmine_canvas_gantt'.freeze
+    SETTINGS_MUTEX = Mutex.new
     LoadResult = Struct.new(:snapshot, :warnings, keyword_init: true)
 
     def initialize(settings_reader: Setting, current_user_class: User)
@@ -26,10 +28,12 @@ module RedmineCanvasGantt
     def replace(project_id:, snapshot:)
       raise ArgumentError, 'project_id mismatch' if snapshot.project_id != project_id.to_i
 
-      settings = plugin_settings
-      snapshots = normalize_snapshots(settings[STORAGE_KEY])
-      snapshots[project_id.to_s] = snapshot.to_storage_hash
-      write_plugin_settings(settings.merge(STORAGE_KEY => snapshots))
+      synchronize_settings do
+        settings = @locked_setting ? @plugin_settings : plugin_settings(refresh: true)
+        snapshots = normalize_snapshots(settings[STORAGE_KEY])
+        snapshots[project_id.to_s] = snapshot.to_storage_hash
+        write_plugin_settings(settings.merge(STORAGE_KEY => snapshots))
+      end
       snapshot
     end
 
@@ -61,7 +65,8 @@ module RedmineCanvasGantt
       normalize_snapshots(plugin_settings[STORAGE_KEY])
     end
 
-    def plugin_settings
+    def plugin_settings(refresh: false)
+      @plugin_settings = nil if refresh
       @plugin_settings ||= begin
         settings = @settings_reader.plugin_redmine_canvas_gantt
         settings.is_a?(Hash) ? settings.dup : {}
@@ -69,8 +74,35 @@ module RedmineCanvasGantt
     end
 
     def write_plugin_settings(settings)
+      if @locked_setting
+        @plugin_settings = settings
+        return
+      end
+
       @settings_reader.plugin_redmine_canvas_gantt = settings
       @plugin_settings = settings
+    end
+
+    def synchronize_settings
+      return SETTINGS_MUTEX.synchronize { yield } unless database_settings?
+
+      @settings_reader.transaction do
+        setting = @settings_reader.lock.find_or_create_by!(name: SETTING_NAME)
+        @locked_setting = setting
+        @plugin_settings = setting.value.is_a?(Hash) ? setting.value.dup : {}
+        yield
+        setting.value = @plugin_settings
+        setting.save!
+        @settings_reader.clear_cache if @settings_reader.respond_to?(:clear_cache)
+      ensure
+        @locked_setting = nil
+      end
+    rescue ActiveRecord::RecordNotUnique
+      retry
+    end
+
+    def database_settings?
+      @settings_reader.respond_to?(:transaction) && @settings_reader.respond_to?(:lock)
     end
 
     def normalize_snapshots(value)

@@ -4,6 +4,7 @@ import type { InlineEditSettings, TaskEditMeta } from '../../types/editMeta';
 import { InlineEditService } from '../../services/InlineEditService';
 import { useUIStore } from '../../stores/UIStore';
 import { customFieldIdFromColumnKey, customFieldEditField, customFieldIdFromEditField, isCustomFieldColumnKey } from './sidebarColumns';
+import { formatDateOnly } from '../../utils/dateOnly';
 
 type Params = {
     settings: InlineEditSettings;
@@ -28,11 +29,7 @@ export const useSidebarInlineEdit = ({
 
     const toDateInputValue = React.useCallback((timestamp: number | undefined) => {
         if (timestamp === undefined || !Number.isFinite(timestamp)) return '';
-        try {
-            return new Date(timestamp).toISOString().split('T')[0];
-        } catch {
-            return '';
-        }
+        return formatDateOnly(timestamp) ?? '';
     }, []);
 
     const getSortField = React.useCallback((columnKey: string): string | null => {

@@ -873,7 +873,7 @@ describe('UiSidebar', () => {
         // Date changes should update local state only (for batch save)
         await waitFor(() => {
             const t = useTaskStore.getState().allTasks[0];
-            const expectedDate = new Date('2025-01-02').getTime();
+        const expectedDate = new Date(2025, 0, 2).getTime();
             expect(t?.startDate).toBe(expectedDate);
         });
         await waitFor(() => {

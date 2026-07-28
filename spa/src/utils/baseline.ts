@@ -1,6 +1,7 @@
 import type { Task } from '../types';
 import type { BaselineSaveScope, BaselineSnapshot, BaselineTaskState } from '../types/baseline';
 import { LayoutEngine } from '../engines/LayoutEngine';
+import { formatDateOnly, parseDateOnly } from './dateOnly';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -19,8 +20,7 @@ export type BaselineDiff = {
 
 const parseDateString = (value: string | null | undefined): number | null => {
     if (!value) return null;
-    const parsed = new Date(value).getTime();
-    return Number.isFinite(parsed) ? parsed : null;
+    return parseDateOnly(value);
 };
 
 export const parseBaselineDateValue = (value: unknown): number | null => {
@@ -38,7 +38,7 @@ export const formatBaselineDate = (value: number | null | undefined): string => 
         return '-';
     }
 
-    return new Date(value).toISOString().slice(0, 10);
+    return formatDateOnly(value) ?? '-';
 };
 
 export const formatBaselineCapturedAt = (value: string | null | undefined): string => {

@@ -118,6 +118,23 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(JSON.parse(response.body)).to eq('error' => 'Permission denied')
     end
 
+    it 'logs unexpected failures without exposing their details to the client' do
+      resolver = instance_double(RedmineCanvasGantt::QueryStateResolver)
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: true, viewable: true, baseline_editable: true })
+      end
+      allow(controller).to receive(:descendant_project_ids).and_return([1])
+      allow(controller).to receive(:query_state_resolver).and_return(resolver)
+      allow(resolver).to receive(:resolve).and_raise(StandardError, 'database connection details')
+      expect(Rails.logger).to receive(:error).with(include('database connection details'))
+
+      get :data, params: { project_id: 'demo' }, format: :json
+
+      expect(response).to have_http_status(:internal_server_error)
+      expect(response.body).not_to include('database connection details')
+      expect(JSON.parse(response.body).fetch('error')).to include('request ID:')
+    end
+
     it 'returns data payload with expected top-level keys' do
       payload_builder = instance_double(RedmineCanvasGantt::DataPayloadBuilder)
       baseline_repository = instance_double(RedmineCanvasGantt::BaselineRepository)
@@ -141,6 +158,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:filter_option_issues).with([1, 2]).and_return([filter_option_issue])
       allow(controller).to receive(:query_state_resolver).and_return(resolver)
       allow(controller).to receive(:baseline_repository).and_return(baseline_repository)
+      allow(controller).to receive(:visible_baseline_snapshot).with(baseline_snapshot, [1, 2]).and_return(baseline_snapshot)
       issue = double('Issue', project_id: 1)
       allow(resolver).to receive(:resolve).and_return({
         issues: [issue],
@@ -501,6 +519,29 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:forbidden)
       expect(JSON.parse(response.body)).to eq('error' => 'Permission denied')
+    end
+  end
+
+  describe '#visible_baseline_snapshot' do
+    it 'excludes private, permission-revoked, and hidden-subproject issue states from the payload' do
+      snapshot = RedmineCanvasGantt::BaselineSnapshot.new(
+        snapshot_id: 'baseline-1', project_id: 1, captured_at: Time.utc(2026, 7, 27),
+        captured_by_id: 7, captured_by_name: 'Alice', scope: 'project',
+        task_states: [
+          RedmineCanvasGantt::BaselineTaskState.new(issue_id: 10, baseline_start_date: Date.new(2026, 7, 1), baseline_due_date: Date.new(2026, 7, 2)),
+          RedmineCanvasGantt::BaselineTaskState.new(issue_id: 11, baseline_start_date: Date.new(2026, 7, 3), baseline_due_date: Date.new(2026, 7, 4)),
+          RedmineCanvasGantt::BaselineTaskState.new(issue_id: 12, baseline_start_date: Date.new(2026, 7, 5), baseline_due_date: Date.new(2026, 7, 6))
+        ]
+      )
+      visible_scope = instance_double(ActiveRecord::Relation)
+      filtered_scope = instance_double(ActiveRecord::Relation)
+      allow(Issue).to receive(:visible).and_return(visible_scope)
+      expect(visible_scope).to receive(:where).with(project_id: [1, 2], id: [10, 11, 12]).and_return(filtered_scope)
+      allow(filtered_scope).to receive(:pluck).with(:id).and_return([10])
+
+      visible_snapshot = controller.send(:visible_baseline_snapshot, snapshot, [1, 2])
+
+      expect(visible_snapshot.to_payload_hash[:tasks_by_issue_id].keys).to eq(['10'])
     end
   end
 
