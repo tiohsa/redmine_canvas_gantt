@@ -208,8 +208,8 @@ describe('apiClient.fetchData', () => {
             tasksByIssueId: {
                 '10': {
                     issueId: '10',
-                    baselineStartDate: new Date('2026-04-10').getTime(),
-                    baselineDueDate: new Date('2026-04-15').getTime()
+                baselineStartDate: new Date(2026, 3, 10).getTime(),
+                baselineDueDate: new Date(2026, 3, 15).getTime()
                 }
             }
         });

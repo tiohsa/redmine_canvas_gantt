@@ -231,6 +231,25 @@ describe('BulkSubtaskCreator', () => {
         expect(screen.getByRole('combobox', { name: 'Tracker 1' })).toHaveValue('2');
     });
 
+    it('preserves row trackers when creating from text mode', async () => {
+        vi.mocked(apiClient.bulkCreateSubtasks).mockResolvedValue({ status: 'ok', successCount: 2, failCount: 0, results: [] });
+        render(<BulkSubtaskCreator parentId="100" trackerOptions={[{ id: 1, name: 'Bug' }, { id: 2, name: 'Feature' }]} defaultTrackerId={1} />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+        fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'Task A' } });
+        fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: 'Task B' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Tracker 2' }), { target: { value: '2' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Text input' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+        await waitFor(() => expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledWith({
+            parentId: '100',
+            subtasks: [{ subject: 'Task A', tracker_id: 1 }, { subject: 'Task B', tracker_id: 2 }],
+            operationIssueIds: []
+        }));
+    });
+
     it('uses the default tracker for text lines added beyond existing table rows', () => {
         render(
             <BulkSubtaskCreator

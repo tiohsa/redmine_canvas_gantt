@@ -66,6 +66,41 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
       persisted = captured_settings.last
       expect(persisted['baseline_snapshots']['1']).to eq(snapshot.to_storage_hash)
     end
+
+    it 'preserves another project baseline when repositories have cached an older settings value' do
+      first_repository = described_class.new(settings_reader: settings_reader)
+      second_repository = described_class.new(settings_reader: settings_reader)
+      first_repository.send(:plugin_settings)
+      second_repository.send(:plugin_settings)
+
+      [
+        [first_repository, 1, 'baseline-1'],
+        [second_repository, 2, 'baseline-2']
+      ].each do |repository, project_id, snapshot_id|
+        repository.replace(project_id: project_id, snapshot: RedmineCanvasGantt::BaselineSnapshot.new(
+          snapshot_id: snapshot_id, project_id: project_id, captured_at: Time.utc(2026, 4, 1),
+          captured_by_id: 7, captured_by_name: 'Alice', scope: 'project', task_states: []
+        ))
+      end
+
+      expect(captured_settings.last['baseline_snapshots'].keys).to contain_exactly('1', '2')
+    end
+
+    it 'preserves every project baseline during concurrent saves' do
+      repositories = [1, 2].map { described_class.new(settings_reader: settings_reader) }
+      threads = repositories.each_with_index.map do |concurrent_repository, index|
+        Thread.new do
+          project_id = index + 1
+          concurrent_repository.replace(project_id: project_id, snapshot: RedmineCanvasGantt::BaselineSnapshot.new(
+            snapshot_id: "baseline-#{project_id}", project_id: project_id, captured_at: Time.utc(2026, 4, 1),
+            captured_by_id: 7, captured_by_name: 'Alice', scope: 'project', task_states: []
+          ))
+        end
+      end
+      threads.each(&:join)
+
+      expect(captured_settings.last['baseline_snapshots'].keys).to contain_exactly('1', '2')
+    end
   end
 
   describe '#load' do

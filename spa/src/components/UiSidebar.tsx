@@ -22,6 +22,7 @@ import { parseTrackerIconMap, resolveTrackerIconKind } from './sidebar/trackerIc
 import { TrackerIcon } from './sidebar/trackerIcon';
 import { designTokens, fontFamilies } from '../styles/designTokens';
 import { formatDate } from '../utils/dateUtils';
+import { parseDateOnly } from '../utils/dateOnly';
 const NOTIFICATION_COLUMN_KEY = 'notification';
 
 type CanvasGanttSettings = InlineEditSettings & {
@@ -1159,7 +1160,7 @@ export const UiSidebar: React.FC = () => {
                                                                 controlHeight={inlineControlHeight}
                                                                 onCancel={close}
                                                                 onCommit={async (next) => {
-                                                                    const nextTsOrUndefined = next === '' ? undefined : new Date(next).getTime();
+                                                                    const nextTsOrUndefined = next === '' ? undefined : parseDateOnly(next) ?? undefined;
 
                                                                     // Validate using extracted validateDateRange utility
                                                                     const { validateDateRange } = await import('../utils/dateValidation');
@@ -1194,7 +1195,7 @@ export const UiSidebar: React.FC = () => {
                                                                 controlHeight={inlineControlHeight}
                                                                 onCancel={close}
                                                                 onCommit={async (next) => {
-                                                                    const nextTsOrUndefined = next === '' ? undefined : new Date(next).getTime();
+                                                                    const nextTsOrUndefined = next === '' ? undefined : parseDateOnly(next) ?? undefined;
 
                                                                     // Validate using extracted validateDateRange utility
                                                                     const { validateDateRange } = await import('../utils/dateValidation');

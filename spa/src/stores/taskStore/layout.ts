@@ -1,6 +1,7 @@
 import type { FilterProjectOption, LayoutRow, Relation, Task, Version } from '../../types';
 import { i18n } from '../../utils/i18n';
 import type { CustomFieldMeta } from '../../types/editMeta';
+import { parseDateOnly } from '../../utils/dateOnly';
 import type { SortConfig } from './types';
 
 export const NO_VERSION_ID = '_none';
@@ -162,8 +163,7 @@ export const buildLayout = (
                 return raw;
             }
             if (meta.fieldFormat === 'date') {
-                const ts = new Date(raw).getTime();
-                return Number.isFinite(ts) ? ts : raw;
+                return parseDateOnly(raw) ?? raw;
             }
             return raw;
         }

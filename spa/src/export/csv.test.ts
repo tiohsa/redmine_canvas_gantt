@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildTasksCsv } from './csv';
 import type { Task } from '../types';
 import type { CustomFieldMeta } from '../types/editMeta';
+import { parseDateOnly } from '../utils/dateOnly';
 
 describe('buildTasksCsv', () => {
     it('exports tasks as table rows with custom fields', () => {
@@ -25,8 +26,8 @@ describe('buildTasksCsv', () => {
                 trackerName: 'Task',
                 statusName: 'In Progress',
                 assignedToName: 'Alice',
-                startDate: new Date('2026-03-01').getTime(),
-                dueDate: new Date('2026-03-05').getTime(),
+                startDate: parseDateOnly('2026-03-01')!,
+                dueDate: parseDateOnly('2026-03-05')!,
                 ratioDone: 70,
                 priorityName: 'High',
                 authorName: 'Bob',

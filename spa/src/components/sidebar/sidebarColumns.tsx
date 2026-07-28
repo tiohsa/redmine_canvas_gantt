@@ -1,6 +1,7 @@
 import { i18n } from '../../utils/i18n';
 import type { CustomFieldMeta } from '../../types/editMeta';
 import type { Task } from '../../types';
+import { parseDateOnly } from '../../utils/dateOnly';
 
 export const CUSTOM_FIELD_COLUMN_PREFIX = 'cf:';
 export const CUSTOM_FIELD_EDIT_PREFIX = 'customField:';
@@ -22,8 +23,8 @@ export const formatCustomFieldCellValue = (task: Task, customField: CustomFieldM
     if (raw === undefined || raw === null || raw === '') return '-';
     if (customField.fieldFormat === 'bool') return raw === '1' ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No');
     if (customField.fieldFormat === 'date') {
-        const ts = new Date(raw).getTime();
-        return Number.isFinite(ts) ? new Date(ts).toLocaleDateString() : raw;
+        const ts = parseDateOnly(raw);
+        return ts !== null ? new Date(ts).toLocaleDateString() : raw;
     }
     return raw;
 };
