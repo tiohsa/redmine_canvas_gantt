@@ -865,7 +865,9 @@ describe('UiSidebar', () => {
             fireEvent.doubleClick(cell);
         });
 
-        const day = await screen.findByText('2');
+        const day = await screen.findByRole('gridcell', {
+            name: 'Choose Thursday, January 2nd, 2025'
+        });
         await act(async () => {
             fireEvent.click(day);
         });
