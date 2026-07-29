@@ -11,7 +11,7 @@ import {
     RELATION_HIT_TOLERANCE_PX,
     shouldRenderRelationsAtZoom
 } from '../renderers/relationGeometry';
-import { snapToUtcDay } from '../utils/time';
+import { snapToLocalDay } from '../utils/time';
 import { panViewportByPixels } from './viewportPan';
 
 type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
@@ -171,7 +171,7 @@ export class InteractionEngine {
     }
 
     private snapToDate(timestamp: number): number {
-        return snapToUtcDay(timestamp);
+        return snapToLocalDay(timestamp);
     }
 
     private isResizeIntent(

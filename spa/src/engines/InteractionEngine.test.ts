@@ -6,6 +6,7 @@ import { LayoutEngine } from './LayoutEngine';
 import type { Relation, Task } from '../types';
 import { RelationType } from '../types/constraints';
 import { buildRelationRenderContext, buildRelationRoutePoints, getPolylineMidpoint } from '../renderers/relationGeometry';
+import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -164,6 +165,24 @@ describe('InteractionEngine viewport panning', () => {
 });
 
 describe('InteractionEngine task updates', () => {
+    it.each([
+        ['move', '2026-03-08', '2026-03-09'],
+        ['start resize', '2026-11-01', '2026-11-02'],
+        ['due resize', '2026-07-27', '2026-07-28']
+    ])('keeps calendar dates local across %s snapping', (_operation, input, expected) => {
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const timestamp = parseDateOnly(input);
+        expect(timestamp).not.toBeNull();
+
+        const snapped = (engine as unknown as { snapToDate(value: number): number })
+            .snapToDate(timestamp! + 24 * 60 * 60 * 1000);
+
+        expect(formatDateOnly(snapped)).toBe(expected);
+        engine.detach();
+        container.remove();
+    });
+
     it('依存関係があるタスク更新後にデータを再取得する', async () => {
         setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
         const container = createContainer();
@@ -218,7 +237,7 @@ describe('InteractionEngine task updates', () => {
     it('週表示でタスクを右に移動してもバー幅を維持する', () => {
         const DAY_MS = 24 * 60 * 60 * 1000;
         setViewport({
-            startDate: Date.UTC(2026, 2, 1),
+            startDate: new Date(2026, 2, 1).getTime(),
             scrollX: 0,
             scrollY: 0,
             scale: 10 / DAY_MS
@@ -230,8 +249,8 @@ describe('InteractionEngine task updates', () => {
         const task = baseTask({
             id: 'week-task',
             rowIndex: 0,
-            startDate: Date.UTC(2026, 2, 11),
-            dueDate: Date.UTC(2026, 2, 13)
+            startDate: new Date(2026, 2, 11).getTime(),
+            dueDate: new Date(2026, 2, 13).getTime()
         });
         seedTasks([task]);
 
@@ -254,8 +273,8 @@ describe('InteractionEngine task updates', () => {
         const movedTask = useTaskStore.getState().tasks[0];
         const afterBounds = LayoutEngine.getTaskBounds(movedTask, viewport, 'bar', zoomLevel);
 
-        expect(movedTask.startDate).toBe(Date.UTC(2026, 2, 13));
-        expect(movedTask.dueDate).toBe(Date.UTC(2026, 2, 15));
+        expect(formatDateOnly(movedTask.startDate)).toBe('2026-03-13');
+        expect(formatDateOnly(movedTask.dueDate)).toBe('2026-03-15');
         expect(afterBounds.width).toBe(beforeBounds.width);
 
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
@@ -424,10 +443,12 @@ describe('InteractionEngine cursor behavior', () => {
 
     it('starts resizing from the visible start handle', () => {
         const DAY_MS = 24 * 60 * 60 * 1000;
-        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS });
+        const startDate = parseDateOnly('2026-07-01')!;
+        const dueDate = parseDateOnly('2026-07-11')!;
+        setViewport({ startDate, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS });
         const container = createContainer();
         const engine = new InteractionEngine(container);
-        const task = baseTask({ id: 'handle-start-task', rowIndex: 0, startDate: 0, dueDate: DAY_MS * 10 });
+        const task = baseTask({ id: 'handle-start-task', rowIndex: 0, startDate, dueDate });
         seedTasks([task]);
 
         const handle = document.createElement('div');
@@ -448,8 +469,8 @@ describe('InteractionEngine cursor behavior', () => {
             bubbles: true
         }));
 
-        expect(useTaskStore.getState().tasks[0].startDate).toBe(DAY_MS * 2);
-        expect(useTaskStore.getState().tasks[0].dueDate).toBe(DAY_MS * 10);
+        expect(formatDateOnly(useTaskStore.getState().tasks[0].startDate)).toBe('2026-07-03');
+        expect(useTaskStore.getState().tasks[0].dueDate).toBe(dueDate);
 
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         engine.detach();
@@ -458,10 +479,12 @@ describe('InteractionEngine cursor behavior', () => {
 
     it('starts resizing from the visible end handle', () => {
         const DAY_MS = 24 * 60 * 60 * 1000;
-        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS });
+        const startDate = parseDateOnly('2026-07-01')!;
+        const dueDate = parseDateOnly('2026-07-11')!;
+        setViewport({ startDate, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS });
         const container = createContainer();
         const engine = new InteractionEngine(container);
-        const task = baseTask({ id: 'handle-end-task', rowIndex: 0, startDate: 0, dueDate: DAY_MS * 10 });
+        const task = baseTask({ id: 'handle-end-task', rowIndex: 0, startDate, dueDate });
         seedTasks([task]);
 
         const handle = document.createElement('div');
@@ -482,8 +505,8 @@ describe('InteractionEngine cursor behavior', () => {
             bubbles: true
         }));
 
-        expect(useTaskStore.getState().tasks[0].startDate).toBe(0);
-        expect(useTaskStore.getState().tasks[0].dueDate).toBe(DAY_MS * 12);
+        expect(useTaskStore.getState().tasks[0].startDate).toBe(startDate);
+        expect(formatDateOnly(useTaskStore.getState().tasks[0].dueDate)).toBe('2026-07-13');
 
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         engine.detach();
@@ -713,12 +736,13 @@ describe('InteractionEngine relation selection', () => {
 
     it('prefers resize over relation selection when clicking the visible end handle area', () => {
         const DAY_MS = 24 * 60 * 60 * 1000;
-        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS, rowHeight: 36 });
+        const startDate = parseDateOnly('2026-07-01')!;
+        setViewport({ startDate, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS, rowHeight: 36 });
         const container = createContainer();
         const engine = new InteractionEngine(container);
 
-        const task1 = baseTask({ id: '1', rowIndex: 0, startDate: 0, dueDate: DAY_MS });
-        const task2 = baseTask({ id: '2', rowIndex: 1, startDate: DAY_MS * 4, dueDate: DAY_MS * 5 });
+        const task1 = baseTask({ id: '1', rowIndex: 0, startDate, dueDate: parseDateOnly('2026-07-02')! });
+        const task2 = baseTask({ id: '2', rowIndex: 1, startDate: parseDateOnly('2026-07-05')!, dueDate: parseDateOnly('2026-07-06')! });
         const relation: Relation = { id: 'r1', from: '1', to: '2', type: 'precedes' };
 
         useTaskStore.setState({
@@ -755,7 +779,7 @@ describe('InteractionEngine relation selection', () => {
 
         expect(useTaskStore.getState().selectedTaskId).toBe('1');
         expect(useTaskStore.getState().selectedRelationId).toBeNull();
-        expect(useTaskStore.getState().tasks[0].dueDate).toBe(DAY_MS * 2);
+        expect(formatDateOnly(useTaskStore.getState().tasks[0].dueDate)).toBe('2026-07-03');
 
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         engine.detach();

@@ -14,12 +14,61 @@ interface BulkSubtaskCreatorProps {
     onContentChange?: (hasSubjects: boolean) => void;
 }
 export interface BulkSubtaskRow { subject: string; tracker_id?: number }
+interface EditableBulkSubtaskRow extends BulkSubtaskRow { id: number }
 
 const MIN_TABLE_ROWS = 3;
 
-const createEmptyRows = (defaultTrackerId?: number): BulkSubtaskRow[] => (
-    Array.from({ length: MIN_TABLE_ROWS }, () => ({ subject: '', tracker_id: defaultTrackerId }))
+const createEmptyRows = (nextRowId: () => number, defaultTrackerId?: number): EditableBulkSubtaskRow[] => (
+    Array.from({ length: MIN_TABLE_ROWS }, () => ({ id: nextRowId(), subject: '', tracker_id: defaultTrackerId }))
 );
+
+const subjectsForTextMode = (rows: EditableBulkSubtaskRow[]): string =>
+    rows.map(row => row.subject).join('\n').replace(/\n+$/, '');
+
+const reconcileTextRows = (
+    current: EditableBulkSubtaskRow[],
+    subjects: string[],
+    previousSubjectCount: number,
+    nextRowId: () => number,
+    defaultTrackerId?: number
+): EditableBulkSubtaskRow[] => {
+    const activeCurrent = current.slice(0, previousSubjectCount);
+    const previousSubjects = activeCurrent.map(row => row.subject);
+    let prefixLength = 0;
+    while (
+        prefixLength < previousSubjects.length &&
+        prefixLength < subjects.length &&
+        previousSubjects[prefixLength] === subjects[prefixLength]
+    ) {
+        prefixLength += 1;
+    }
+
+    let suffixLength = 0;
+    while (
+        suffixLength < previousSubjects.length - prefixLength &&
+        suffixLength < subjects.length - prefixLength &&
+        previousSubjects[previousSubjects.length - 1 - suffixLength] === subjects[subjects.length - 1 - suffixLength]
+    ) {
+        suffixLength += 1;
+    }
+
+    const prefix = activeCurrent.slice(0, prefixLength);
+    const previousMiddle = activeCurrent.slice(prefixLength, activeCurrent.length - suffixLength);
+    const nextMiddleSubjects = subjects.slice(prefixLength, subjects.length - suffixLength);
+    const middle = nextMiddleSubjects.map((subject, index) => {
+        const existing = previousMiddle[index];
+        return existing
+            ? { ...existing, subject }
+            : { id: nextRowId(), subject, tracker_id: defaultTrackerId };
+    });
+    const suffix = suffixLength > 0 ? activeCurrent.slice(activeCurrent.length - suffixLength) : [];
+
+    const reconciled = [...prefix, ...middle, ...suffix];
+    while (reconciled.length < MIN_TABLE_ROWS) {
+        reconciled.push({ id: nextRowId(), subject: '', tracker_id: defaultTrackerId });
+    }
+    return reconciled;
+};
 
 export interface BulkSubtaskCreatorHandle {
     createSubtasks: (newParentId?: string) => Promise<{ success: number; fail: number }>;
@@ -29,9 +78,16 @@ export interface BulkSubtaskCreatorHandle {
 
 export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, BulkSubtaskCreatorProps>(
     ({ parentId, onTasksCreated, hideStandaloneButton, showTopBorder = true, trackerOptions = [], defaultTrackerId, onContentChange }, ref) => {
+        const nextRowIdRef = React.useRef(0);
+        const nextRowId = React.useCallback(() => {
+            nextRowIdRef.current += 1;
+            return nextRowIdRef.current;
+        }, []);
         const [expanded, setExpanded] = React.useState(false);
         const [inputMode, setInputMode] = React.useState<'text' | 'table'>('text');
-        const [rows, setRows] = React.useState<BulkSubtaskRow[]>(() => createEmptyRows(defaultTrackerId));
+        const [rows, setRows] = React.useState<EditableBulkSubtaskRow[]>(() => createEmptyRows(nextRowId, defaultTrackerId));
+        const [textValue, setTextValue] = React.useState('');
+        const [textTrackerId, setTextTrackerId] = React.useState(defaultTrackerId);
         const [loading, setLoading] = React.useState(false);
         const [completed, setCompleted] = React.useState(false);
         const addNotification = useUIStore(state => state.addNotification);
@@ -41,8 +97,6 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
             [tasks]
         );
         const hasSubjects = React.useCallback(() => rows.some(row => row.subject.trim().length > 0), [rows]);
-        const textValue = rows.map(row => row.subject).join('\n').replace(/\n+$/, '');
-
         React.useEffect(() => {
             onContentChange?.(hasSubjects());
         }, [hasSubjects, onContentChange]);
@@ -50,6 +104,9 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
         const handleInputModeChange = (nextMode: 'text' | 'table') => {
             if (nextMode === inputMode) return;
 
+            if (nextMode === 'text') {
+                setTextValue(subjectsForTextMode(rows));
+            }
             setInputMode(nextMode);
         };
 
@@ -86,7 +143,9 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                 }
 
                 if (successCount > 0 && failCount === 0) {
-                    setRows(createEmptyRows(defaultTrackerId));
+                    setRows(createEmptyRows(nextRowId, defaultTrackerId));
+                    setTextValue('');
+                    setTextTrackerId(defaultTrackerId);
                     setExpanded(false);
                     setCompleted(true);
                     onTasksCreated?.();
@@ -214,7 +273,7 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                                 <thead><tr><th style={{ textAlign: 'left' }}>#</th><th style={{ textAlign: 'left' }}>{i18n.t('label_bulk_subtask_subject') || 'Subject'}</th><th /></tr></thead>
                                 <tbody>
                                     {rows.map((row, index) => (
-                                        <tr key={index}>
+                                        <tr key={row.id}>
                                             <td>{index + 1}</td>
                                             <td><input value={row.subject} onChange={(e) => setRows(current => current.map((value, i) => i === index ? { ...value, subject: e.target.value } : value))} disabled={loading} aria-label={`${i18n.t('label_bulk_subtask_subject') || 'Subject'} ${index + 1}`} style={{ width: '100%', boxSizing: 'border-box' }} /></td>
                                             <td>{trackerOptions.length > 0 && <select aria-label={`${i18n.t('field_tracker') || 'Tracker'} ${index + 1}`} value={row.tracker_id ?? ''} onChange={(e) => setRows(current => current.map((value, i) => i === index ? { ...value, tracker_id: e.target.value ? Number(e.target.value) : undefined } : value))} disabled={loading}><option value="">{i18n.t('label_default') || 'Default'}</option>{trackerOptions.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select>}</td>
@@ -230,9 +289,10 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                                         <span>{i18n.t('field_tracker') || 'Tracker'}</span>
                                         <select
                                             aria-label={i18n.t('field_tracker') || 'Tracker'}
-                                            value={rows[0]?.tracker_id ?? ''}
+                                            value={textTrackerId ?? ''}
                                             onChange={(event) => {
                                                 const trackerId = event.target.value ? Number(event.target.value) : undefined;
+                                                setTextTrackerId(trackerId);
                                                 setRows(current => current.map(row => ({ ...row, tracker_id: trackerId })));
                                             }}
                                             disabled={loading}
@@ -258,11 +318,16 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                                     data-testid="bulk-subtask-subjects"
                                     value={textValue}
                                     onChange={(e) => {
-                                        const subjects = e.target.value.split('\n');
-                                        setRows(current => Array.from({ length: Math.max(MIN_TABLE_ROWS, current.length, subjects.length) }, (_, index) => ({
-                                            subject: subjects[index] ?? '',
-                                            tracker_id: current[index]?.tracker_id ?? defaultTrackerId
-                                        })));
+                                        const nextTextValue = e.target.value;
+                                        const subjects = nextTextValue.split('\n');
+                                        setTextValue(nextTextValue);
+                                        setRows(current => reconcileTextRows(
+                                            current,
+                                            subjects,
+                                            textValue.split('\n').length,
+                                            nextRowId,
+                                            textTrackerId
+                                        ));
                                     }}
                                     placeholder={i18n.t('placeholder_bulk_subtask_creation') || "Enter one ticket subject per line..."}
                                     disabled={loading}
@@ -271,7 +336,7 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                                 />
                             </>
                         )}
-                        {inputMode === 'table' && <button type="button" onClick={() => setRows(current => [...current, { subject: '', tracker_id: defaultTrackerId }])} disabled={loading}>{i18n.t('label_bulk_subtask_add_row') || '+ Add row'}</button>}
+                        {inputMode === 'table' && <button type="button" onClick={() => setRows(current => [...current, { id: nextRowId(), subject: '', tracker_id: defaultTrackerId }])} disabled={loading}>{i18n.t('label_bulk_subtask_add_row') || '+ Add row'}</button>}
                         {!hideStandaloneButton && (
                             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                                 <button

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-28T14:24:35.373Z",
+  "generatedAt": "2026-07-29T13:58:56.020Z",
   "baseUrl": "http://127.0.0.1:4173",
   "sampleCount": 3,
   "regressionThreshold": 1.2,
@@ -13,21 +13,21 @@
       "samples": [
         {
           "sample": 1,
-          "renderMs": 603,
+          "renderMs": 673,
           "domNodes": 1779,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 2,
-          "renderMs": 592.7,
+          "renderMs": 659.3,
           "domNodes": 1779,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 3,
-          "renderMs": 605.3,
+          "renderMs": 657.1,
           "domNodes": 1779,
           "visibleRows": 16,
           "canvasCount": 4
@@ -35,10 +35,10 @@
       ],
       "metrics": {
         "renderMs": {
-          "min": 592.7,
-          "median": 603,
-          "mean": 600.33,
-          "max": 605.3
+          "min": 657.1,
+          "median": 659.3,
+          "mean": 663.13,
+          "max": 673
         }
       },
       "budget": {
@@ -56,21 +56,21 @@
       "samples": [
         {
           "sample": 1,
-          "renderMs": 858.5,
+          "renderMs": 956.4,
           "domNodes": 5779,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 2,
-          "renderMs": 881.8,
+          "renderMs": 943.7,
           "domNodes": 5779,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 3,
-          "renderMs": 846.4,
+          "renderMs": 941.9,
           "domNodes": 5779,
           "visibleRows": 16,
           "canvasCount": 4
@@ -78,10 +78,10 @@
       ],
       "metrics": {
         "renderMs": {
-          "min": 846.4,
-          "median": 858.5,
-          "mean": 862.23,
-          "max": 881.8
+          "min": 941.9,
+          "median": 943.7,
+          "mean": 947.33,
+          "max": 956.4
         }
       },
       "budget": {
@@ -99,21 +99,21 @@
       "samples": [
         {
           "sample": 1,
-          "renderMs": 1384.4,
+          "renderMs": 1398.8,
           "domNodes": 10779,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 2,
-          "renderMs": 1441.7,
+          "renderMs": 1492.7,
           "domNodes": 10779,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 3,
-          "renderMs": 1376.9,
+          "renderMs": 1443.2,
           "domNodes": 10779,
           "visibleRows": 16,
           "canvasCount": 4
@@ -121,10 +121,10 @@
       ],
       "metrics": {
         "renderMs": {
-          "min": 1376.9,
-          "median": 1384.4,
-          "mean": 1401,
-          "max": 1441.7
+          "min": 1398.8,
+          "median": 1443.2,
+          "mean": 1444.9,
+          "max": 1492.7
         }
       },
       "budget": {
@@ -142,21 +142,21 @@
       "samples": [
         {
           "sample": 1,
-          "renderMs": 610.9,
+          "renderMs": 643,
           "domNodes": 1779,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 2,
-          "renderMs": 612.3,
+          "renderMs": 626.2,
           "domNodes": 1779,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 3,
-          "renderMs": 626.9,
+          "renderMs": 646.5,
           "domNodes": 1779,
           "visibleRows": 16,
           "canvasCount": 4
@@ -164,10 +164,10 @@
       ],
       "metrics": {
         "renderMs": {
-          "min": 610.9,
-          "median": 612.3,
-          "mean": 616.7,
-          "max": 626.9
+          "min": 626.2,
+          "median": 643,
+          "mean": 638.57,
+          "max": 646.5
         }
       },
       "budget": {
@@ -185,21 +185,21 @@
       "samples": [
         {
           "sample": 1,
-          "renderMs": 642.8,
+          "renderMs": 659.5,
           "domNodes": 1779,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 2,
-          "renderMs": 637.9,
+          "renderMs": 662.1,
           "domNodes": 1779,
           "visibleRows": 16,
           "canvasCount": 4
         },
         {
           "sample": 3,
-          "renderMs": 626.1,
+          "renderMs": 656.6,
           "domNodes": 1779,
           "visibleRows": 16,
           "canvasCount": 4
@@ -207,10 +207,10 @@
       ],
       "metrics": {
         "renderMs": {
-          "min": 626.1,
-          "median": 637.9,
-          "mean": 635.6,
-          "max": 642.8
+          "min": 656.6,
+          "median": 659.5,
+          "mean": 659.4,
+          "max": 662.1
         }
       },
       "budget": {

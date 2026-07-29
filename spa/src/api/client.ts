@@ -470,7 +470,7 @@ export const apiClient = {
         });
 
         if (!response.ok) {
-            throw new Error(`API Error: ${response.statusText}`);
+            throw new Error(await parseErrorMessage(response));
         }
 
         const payload = await response.json();
