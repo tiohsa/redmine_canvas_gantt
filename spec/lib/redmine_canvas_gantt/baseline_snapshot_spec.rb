@@ -29,8 +29,8 @@ RSpec.describe RedmineCanvasGantt::BaselineSnapshot do
       snapshot_id: 'baseline-1', project_id: 1, captured_at: Time.utc(2026, 7, 27),
       captured_by_id: 7, captured_by_name: 'Alice', scope: 'project',
       task_states: [
-        RedmineCanvasGantt::BaselineTaskState.new(issue_id: 10),
-        RedmineCanvasGantt::BaselineTaskState.new(issue_id: 11)
+        RedmineCanvasGantt::BaselineTaskState.new(issue_id: 10, baseline_start_date: nil, baseline_due_date: nil),
+        RedmineCanvasGantt::BaselineTaskState.new(issue_id: 11, baseline_start_date: nil, baseline_due_date: nil)
       ]
     )
 
