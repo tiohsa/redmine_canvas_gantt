@@ -103,8 +103,65 @@ describe('OverlayRenderer progress line', () => {
         (renderer as unknown as { drawProgressLine: (c: CanvasRenderingContext2D, v: typeof viewport, t: typeof dueTodayTask[], z: 0 | 1 | 2) => void })
             .drawProgressLine(ctx, viewport, [dueTodayTask], 2);
 
-        const xToday = (todayStart + ONE_DAY - viewport.startDate) * viewport.scale - viewport.scrollX;
+        const today = new Date(todayStart);
+        const todayCellEnd = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) + ONE_DAY;
+        const xToday = (todayCellEnd - viewport.startDate) * viewport.scale - viewport.scrollX;
         expect(ctx.lineTo).toHaveBeenCalledWith(xToday, expect.any(Number));
+    });
+
+    it('calculates progress from projected task bounds', () => {
+        const startDate = new Date(2026, 0, 1).getTime();
+        const dueDate = new Date(2026, 0, 2).getTime();
+        const utcViewport = {
+            ...viewport,
+            startDate: Date.UTC(2026, 0, 1)
+        };
+        const task = {
+            ...buildTask('task-1', startDate, dueDate, 0),
+            ratioDone: 50
+        };
+        useTaskStore.setState({
+            taskStatuses: [{ id: 1, name: 'Open', isClosed: false }],
+            tasks: [task]
+        });
+        useUIStore.setState({ showProgressLine: true });
+        const ctx = createMockContext();
+        const canvas = {
+            width: 1000,
+            height: 600,
+            getContext: vi.fn(() => ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+
+        (renderer as unknown as { drawProgressLine: (c: CanvasRenderingContext2D, v: Viewport, t: Task[], z: 0 | 1 | 2) => void })
+            .drawProgressLine(ctx, utcViewport, [task], 2);
+
+        expect(ctx.lineTo).toHaveBeenCalledWith(1, expect.any(Number));
+    });
+});
+
+describe('OverlayRenderer today line', () => {
+    it('draws at the right edge of the projected local calendar day', () => {
+        const today = new Date();
+        const todayCellStart = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+        const utcViewport = {
+            ...viewport,
+            startDate: todayCellStart - ONE_DAY,
+            width: 10
+        };
+        const ctx = createMockContext();
+        const canvas = {
+            width: 10,
+            height: 600,
+            getContext: vi.fn(() => ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+
+        (renderer as unknown as { drawTodayLine: (c: CanvasRenderingContext2D, v: Viewport, w: number, h: number) => void })
+            .drawTodayLine(ctx, utcViewport, 10, 600);
+
+        expect(ctx.moveTo).toHaveBeenCalledWith(2, 0);
+        expect(ctx.lineTo).toHaveBeenCalledWith(2, 600);
     });
 });
 

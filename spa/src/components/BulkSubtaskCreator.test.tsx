@@ -286,6 +286,92 @@ describe('BulkSubtaskCreator', () => {
         expect(screen.getByTestId('bulk-subtask-subjects')).toHaveValue('Task A\n\nTask C');
     });
 
+    it('keeps a trailing newline while the user adds the next text row', () => {
+        render(<BulkSubtaskCreator parentId="100" />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'Task A\n' }
+        });
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toHaveValue('Task A\n');
+    });
+
+    it('does not move row trackers when text rows are deleted or inserted', () => {
+        render(
+            <BulkSubtaskCreator
+                parentId="100"
+                trackerOptions={[{ id: 1, name: 'Bug' }, { id: 2, name: 'Feature' }]}
+                defaultTrackerId={1}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'Task A\nTask B\nTask C' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+        fireEvent.change(screen.getByRole('combobox', { name: 'Tracker 2' }), {
+            target: { value: '2' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Text input' }));
+
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'Task B\nTask C' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+        expect(screen.getByRole('combobox', { name: 'Tracker 1' })).toHaveValue('2');
+        expect(screen.getByRole('combobox', { name: 'Tracker 2' })).toHaveValue('1');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Text input' }));
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'New task\nTask B\nTask C' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+        expect(screen.getByRole('combobox', { name: 'Tracker 1' })).toHaveValue('1');
+        expect(screen.getByRole('combobox', { name: 'Tracker 2' })).toHaveValue('2');
+        expect(screen.getByRole('combobox', { name: 'Tracker 3' })).toHaveValue('1');
+    });
+
+    it('preserves tracker identity through middle edits and blank-line insertion', () => {
+        render(
+            <BulkSubtaskCreator
+                parentId="100"
+                trackerOptions={[{ id: 1, name: 'Bug' }, { id: 2, name: 'Feature' }]}
+                defaultTrackerId={1}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'Task A\nTask B\nTask C' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+        fireEvent.change(screen.getByRole('combobox', { name: 'Tracker 2' }), {
+            target: { value: '2' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Text input' }));
+
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'Task A\nRenamed B\nTask C' }
+        });
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'Task A\n\nRenamed B\nTask C' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+        expect(screen.getByRole('combobox', { name: 'Tracker 1' })).toHaveValue('1');
+        expect(screen.getByRole('combobox', { name: 'Tracker 2' })).toHaveValue('1');
+        expect(screen.getByRole('combobox', { name: 'Tracker 3' })).toHaveValue('2');
+        expect(screen.getByRole('combobox', { name: 'Tracker 4' })).toHaveValue('1');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Text input' }));
+        fireEvent.change(screen.getByTestId('bulk-subtask-subjects'), {
+            target: { value: 'Task A\nRenamed B\nTask C' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Table input' }));
+        expect(screen.getByRole('combobox', { name: 'Tracker 2' })).toHaveValue('2');
+    });
+
     it('shows at least three table rows when the text input is empty', () => {
         render(<BulkSubtaskCreator parentId="100" />);
 

@@ -47,6 +47,23 @@ describe('apiClient.fetchData', () => {
         delete window.RedmineCanvasGantt;
     });
 
+    it('preserves the server request ID in an error response', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+            json: async () => ({ error: 'Unknown error (request ID: request-123)' })
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.fetchData()).rejects.toThrow('Unknown error (request ID: request-123)');
+    });
+
     it('normalizes relations (from/to/id) to string', async () => {
         window.RedmineCanvasGantt = {
             projectId: 1,
