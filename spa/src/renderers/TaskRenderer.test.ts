@@ -3,10 +3,12 @@ import { TaskRenderer } from './TaskRenderer';
 import type { Task, Viewport } from '../types';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
-const TEST_START_DATE = Date.UTC(2026, 0, 1);
+const TEST_TIMELINE_START_DATE = Date.UTC(2026, 0, 1);
+const TEST_START_DATE = new Date(2026, 0, 1).getTime();
+const TEST_DUE_DATE = new Date(2026, 0, 2).getTime();
 
 const viewport: Viewport = {
-    startDate: TEST_START_DATE,
+    startDate: TEST_TIMELINE_START_DATE,
     scrollX: 0,
     scrollY: 0,
     scale: 1 / ONE_DAY,
@@ -22,7 +24,7 @@ const buildTask = (): Task => ({
     projectName: 'Project',
     displayOrder: 0,
     startDate: TEST_START_DATE,
-    dueDate: TEST_START_DATE + ONE_DAY,
+    dueDate: TEST_DUE_DATE,
     ratioDone: 0,
     statusId: 1,
     lockVersion: 0,
@@ -55,6 +57,53 @@ const buildContext = () => ({
 }) as unknown as CanvasRenderingContext2D;
 
 describe('TaskRenderer', () => {
+    it('aligns project and version summaries to calendar cell boundaries', () => {
+        const ctx = buildContext();
+        const canvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new TaskRenderer(canvas);
+        const projectSummary = vi.spyOn(
+            renderer as unknown as { drawProjectSummaryBar: (...args: unknown[]) => void },
+            'drawProjectSummaryBar'
+        );
+        const versionSummary = vi.spyOn(
+            renderer as unknown as { drawVersionSummaryBar: (...args: unknown[]) => void },
+            'drawVersionSummaryBar'
+        );
+        const localStart = new Date(2026, 0, 1).getTime();
+        const localDue = new Date(2026, 0, 2).getTime();
+
+        renderer.render(viewport, [], 2, 2, [], [
+            { type: 'header', projectId: 'p1', rowIndex: 0, startDate: localStart, dueDate: localDue },
+            { type: 'version', id: 'v1', versionId: 'v1', name: 'Version', projectId: 'p1', rowIndex: 1, startDate: localStart, dueDate: localDue }
+        ]);
+
+        expect(projectSummary).toHaveBeenCalledWith(ctx, 0, 2, 0, viewport.rowHeight);
+        expect(versionSummary).toHaveBeenCalledWith(ctx, 0, 2, viewport.rowHeight, viewport.rowHeight, 0);
+    });
+
+    it('centers one-sided task markers in the UTC timeline cell', () => {
+        const ctx = buildContext();
+        const canvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new TaskRenderer(canvas);
+        const drawPoint = vi.spyOn(
+            renderer as unknown as { drawTaskAsPoint: (...args: unknown[]) => void },
+            'drawTaskAsPoint'
+        ).mockImplementation(() => undefined);
+        const localDate = new Date(2026, 0, 1).getTime();
+
+        renderer.render(viewport, [{ ...buildTask(), startDate: localDate, dueDate: undefined }], 1, 2, []);
+
+        expect(drawPoint).toHaveBeenCalledWith(ctx, expect.any(Object), 0.5, 0, viewport.rowHeight, 'triangle_right');
+    });
+
     it('draws task titles when enabled', () => {
         const ctx = buildContext();
         const canvas = {
@@ -95,6 +144,26 @@ describe('TaskRenderer', () => {
         expect(ctx.fillText).toHaveBeenCalledWith('1/1', expect.any(Number), expect.any(Number));
         expect(ctx.fillText).toHaveBeenCalledWith('1/2', expect.any(Number), expect.any(Number));
         expect(ctx.fillText).toHaveBeenCalledWith('Task 1', expect.any(Number), expect.any(Number));
+    });
+
+    it('formats local DateOnly labels without shifting them to the previous UTC date', () => {
+        const ctx = buildContext();
+        const canvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(ctx)
+        } as unknown as HTMLCanvasElement;
+        const task = {
+            ...buildTask(),
+            startDate: new Date(2026, 7, 10).getTime(),
+            dueDate: new Date(2026, 7, 13).getTime(),
+            ratioDone: 100
+        };
+
+        new TaskRenderer(canvas).render(viewport, [task], 1, 2, [], [], false, true, true, null, false);
+
+        expect(ctx.fillText).toHaveBeenCalledWith('8/10', expect.any(Number), expect.any(Number));
+        expect(ctx.fillText).toHaveBeenCalledWith('8/13', expect.any(Number), expect.any(Number));
     });
 
     it('does not draw task bar dates when disabled', () => {

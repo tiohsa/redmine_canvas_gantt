@@ -53,10 +53,7 @@ export class TaskRenderer {
 
         const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
 
-        const ONE_DAY = 24 * 60 * 60 * 1000;
-        const todayTs = new Date().setHours(0, 0, 0, 0);
-        const todayLineTs = todayTs + ONE_DAY;
-        const xTodayLine = LayoutEngine.dateToX(todayLineTs, viewport) - viewport.scrollX;
+        const xTodayLine = LayoutEngine.calendarDateToX(Date.now(), viewport, 'end') - viewport.scrollX;
 
         const showDependencyIndicators = zoomLevel === 0 || zoomLevel === 1;
         const dependencySummary = showDependencyIndicators ? buildDependencySummary(tasks, relations) : null;
@@ -68,8 +65,8 @@ export class TaskRenderer {
                     if (row.startDate !== undefined && row.dueDate !== undefined) {
                         const s = LayoutEngine.snapDate(row.startDate, zoomLevel);
                         const d = LayoutEngine.snapDate(row.dueDate, zoomLevel);
-                        const x1 = LayoutEngine.dateToX(s, viewport) - viewport.scrollX;
-                        const x2 = LayoutEngine.dateToX(d + ONE_DAY, viewport) - viewport.scrollX;
+                        const x1 = LayoutEngine.calendarDateToX(s, viewport, 'start') - viewport.scrollX;
+                        const x2 = LayoutEngine.calendarDateToX(d, viewport, 'end') - viewport.scrollX;
                         const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
                         this.drawProjectSummaryBar(ctx, x1, x2, y, viewport.rowHeight);
                     }
@@ -77,8 +74,8 @@ export class TaskRenderer {
                     if (row.startDate !== undefined && row.dueDate !== undefined) {
                         const s = LayoutEngine.snapDate(row.startDate, zoomLevel);
                         const d = LayoutEngine.snapDate(row.dueDate, zoomLevel);
-                        const x1 = LayoutEngine.dateToX(s, viewport) - viewport.scrollX;
-                        const x2 = LayoutEngine.dateToX(d + ONE_DAY, viewport) - viewport.scrollX;
+                        const x1 = LayoutEngine.calendarDateToX(s, viewport, 'start') - viewport.scrollX;
+                        const x2 = LayoutEngine.calendarDateToX(d, viewport, 'end') - viewport.scrollX;
                         const y = row.rowIndex * viewport.rowHeight - viewport.scrollY;
                         this.drawVersionSummaryBar(ctx, x1, x2, y, viewport.rowHeight, row.ratioDone ?? 0);
                         if (showTaskTitles) {
@@ -134,8 +131,8 @@ export class TaskRenderer {
             } else if (showStartDateOnly && Number.isFinite(task.startDate)) {
                 // Only Start Date -> Draw as a point (triangle_right)
                 // Position orphan points at the center of the day cell.
-                const startDate = LayoutEngine.snapDate(task.startDate, zoomLevel) + ONE_DAY / 2;
-                const startX = LayoutEngine.dateToX(startDate, viewport) - viewport.scrollX;
+                const startDate = LayoutEngine.snapDate(task.startDate, zoomLevel);
+                const startX = LayoutEngine.calendarDateToX(startDate, viewport, 'center') - viewport.scrollX;
                 this.drawTaskAsPoint(ctx, task, startX, rowY, viewport.rowHeight, 'triangle_right');
 
                 if (showTaskBarDates) {
@@ -164,8 +161,8 @@ export class TaskRenderer {
             } else if (showDueDateOnly && Number.isFinite(task.dueDate)) {
                 // Only Due Date -> Draw as a point (diamond)
                 // Position orphan points at the center of the day cell.
-                const dueDate = LayoutEngine.snapDate(task.dueDate, zoomLevel) + ONE_DAY / 2;
-                const dueX = LayoutEngine.dateToX(dueDate, viewport) - viewport.scrollX;
+                const dueDate = LayoutEngine.snapDate(task.dueDate, zoomLevel);
+                const dueX = LayoutEngine.calendarDateToX(dueDate, viewport, 'center') - viewport.scrollX;
                 this.drawTaskAsPoint(ctx, task, dueX, rowY, viewport.rowHeight, 'diamond');
 
                 if (showTaskBarDates) {
@@ -313,7 +310,7 @@ export class TaskRenderer {
     ) {
         const formatDate = (timestamp: number) => {
             const date = new Date(timestamp);
-            return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
+            return `${date.getMonth() + 1}/${date.getDate()}`;
         };
 
         const textY = bar.y + bar.height / 2;

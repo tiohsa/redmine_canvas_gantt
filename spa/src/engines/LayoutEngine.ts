@@ -1,7 +1,11 @@
 import type { Task, Viewport, Bounds, ZoomLevel } from '../types';
 import { snapToLocalDay } from '../utils/time';
 
+type CalendarCellPosition = 'start' | 'center' | 'end';
+
 export class LayoutEngine {
+  private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
   /**
    * Converts a timestamp to an X coordinate relative to the start of the project timeline (scrollX=0).
    */
@@ -18,6 +22,31 @@ export class LayoutEngine {
   }
 
   /**
+   * Projects a local calendar date onto the fixed-width UTC timeline used by the grid.
+   */
+  static calendarDateToTimeline(date: number, position: CalendarCellPosition = 'start'): number {
+    if (!Number.isFinite(date)) return NaN;
+
+    const calendarDate = new Date(date);
+    const cellStart = Date.UTC(
+      calendarDate.getFullYear(),
+      calendarDate.getMonth(),
+      calendarDate.getDate()
+    );
+    const offset = position === 'center'
+      ? this.ONE_DAY_MS / 2
+      : position === 'end'
+        ? this.ONE_DAY_MS
+        : 0;
+
+    return cellStart + offset;
+  }
+
+  static calendarDateToX(date: number, viewport: Viewport, position: CalendarCellPosition = 'start'): number {
+    return this.dateToX(this.calendarDateToTimeline(date, position), viewport);
+  }
+
+  /**
    * Returns the screen bounding box for a task bar.
    */
   public static snapDate(timestamp: number | undefined, _zoomLevel?: ZoomLevel): number {
@@ -27,7 +56,6 @@ export class LayoutEngine {
   }
 
   static getTaskBounds(task: Task, viewport: Viewport, kind: 'bar' | 'hit' = 'bar', zoomLevel?: ZoomLevel): Bounds {
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
     const start = task.startDate;
     const due = task.dueDate;
 
@@ -42,8 +70,7 @@ export class LayoutEngine {
       const date = Number.isFinite(start) ? start! : due!;
       const snappedDate = this.snapDate(date, zoomLevel);
       // Center single-date markers in the corresponding day cell.
-      const shiftedDate = snappedDate + ONE_DAY_MS / 2;
-      const cx = this.dateToX(shiftedDate, viewport) - viewport.scrollX;
+      const cx = this.calendarDateToX(snappedDate, viewport, 'center') - viewport.scrollX;
       const x = cx - POINT_SIZE / 2;
 
       if (kind === 'hit') {
@@ -57,13 +84,14 @@ export class LayoutEngine {
     }
 
     const snappedStart = this.snapDate(start, zoomLevel);
-    const snappedDue = Math.max(snappedStart, this.snapDate(due, zoomLevel));
-    // Add 1 day to make due date inclusive (bar ends at the END of due date, not the start)
-    const snappedDueInclusive = snappedDue + ONE_DAY_MS;
-    const x = this.dateToX(snappedStart, viewport) - viewport.scrollX;
+    const timelineStart = this.calendarDateToTimeline(snappedStart);
+    const timelineDue = Math.max(timelineStart, this.calendarDateToTimeline(this.snapDate(due, zoomLevel)));
+    // Add one fixed UTC timeline day to make the due date inclusive.
+    const timelineEnd = timelineDue + this.ONE_DAY_MS;
+    const x = this.dateToX(timelineStart, viewport) - viewport.scrollX;
     const y = task.rowIndex * viewport.rowHeight - viewport.scrollY;
     // Ensure width is at least something visible (e.g., 2px) even if duration is 0
-    const width = Math.max(2, (snappedDueInclusive - snappedStart) * viewport.scale);
+    const width = Math.max(2, (timelineEnd - timelineStart) * viewport.scale);
 
     if (kind === 'hit') {
       return { x, y, width, height: viewport.rowHeight };

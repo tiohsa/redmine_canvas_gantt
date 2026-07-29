@@ -49,6 +49,37 @@ const buildContext = () => ({
 });
 
 describe('BaselineRenderer', () => {
+    it('aligns a local-date baseline bar to UTC timeline cells', () => {
+        const ctx = buildContext();
+        const canvas = {
+            width: 800,
+            height: 600,
+            getContext: vi.fn().mockReturnValue(ctx)
+        } as unknown as HTMLCanvasElement;
+        const baselineStartDate = new Date(2026, 0, 1).getTime();
+        const baselineDueDate = new Date(2026, 0, 2).getTime();
+        const utcViewport = { ...viewport, startDate: Date.UTC(2026, 0, 1) };
+
+        new BaselineRenderer(canvas).render({
+            viewport: utcViewport,
+            tasks: [{ ...buildTask('1', 0), startDate: baselineStartDate, dueDate: baselineDueDate }],
+            rowCount: 1,
+            zoomLevel: 2,
+            showBaseline: true,
+            snapshot: {
+                snapshotId: 'baseline-1',
+                projectId: '1',
+                capturedAt: '2026-04-01T00:00:00.000Z',
+                scope: 'project',
+                tasksByIssueId: {
+                    '1': { issueId: '1', baselineStartDate, baselineDueDate }
+                }
+            }
+        });
+
+        expect(ctx.fillRect).toHaveBeenCalledWith(0, expect.any(Number), 2, expect.any(Number));
+    });
+
     it('draws a ghost bar when baseline has both start and due dates', () => {
         const ctx = buildContext();
         const canvas = {
