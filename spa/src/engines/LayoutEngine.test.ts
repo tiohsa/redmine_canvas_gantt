@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { LayoutEngine } from './LayoutEngine';
 import type { Viewport, Task } from '../types';
-import { parseDateOnly } from '../utils/dateOnly';
+import { parseDateOnly, toTimelineDate } from '../utils/dateOnly';
 
 describe('LayoutEngine', () => {
     const ONE_DAY = 24 * 60 * 60 * 1000;
@@ -15,11 +15,22 @@ describe('LayoutEngine', () => {
         rowHeight: 40
     };
 
+    it('rejects raw instants at the CalendarDate and TimelineDate canvas boundaries', () => {
+        void (() => {
+            // @ts-expect-error Instants must first become a local CalendarDate.
+            LayoutEngine.calendarDateToX(Date.now(), mockViewport);
+            // @ts-expect-error CalendarDate values must be projected before timeline arithmetic.
+            LayoutEngine.dateToX(parseDateOnly('2024-01-02')!, mockViewport);
+        });
+
+        expect(true).toBe(true);
+    });
+
     it('dateToX converts date to x coordinate accurately', () => {
         const date = parseDateOnly('2024-01-02')!; // +1 day
         // 1 day = 86400000 ms
         const expectedX = 86400000;
-        expect(LayoutEngine.dateToX(date, mockViewport)).toBe(expectedX);
+        expect(LayoutEngine.dateToX(toTimelineDate(date), mockViewport)).toBe(expectedX);
     });
 
     it('getTaskBounds returns correct geometry', () => {
@@ -59,7 +70,7 @@ describe('LayoutEngine', () => {
 
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
         const expectedCenter = LayoutEngine.dateToX(
-            LayoutEngine.calendarDateToTimeline(task.startDate!, 'center'),
+            LayoutEngine.calendarDateToTimeline(LayoutEngine.snapDate(task.startDate!), 'center'),
             mockViewport
         );
 
@@ -82,11 +93,11 @@ describe('LayoutEngine', () => {
 
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
         const expectedStart = LayoutEngine.dateToX(
-            LayoutEngine.calendarDateToTimeline(task.startDate!),
+            LayoutEngine.calendarDateToTimeline(LayoutEngine.snapDate(task.startDate!)),
             mockViewport
         );
         const expectedEnd = LayoutEngine.dateToX(
-            LayoutEngine.calendarDateToTimeline(task.dueDate!, 'end'),
+            LayoutEngine.calendarDateToTimeline(LayoutEngine.snapDate(task.dueDate!), 'end'),
             mockViewport
         );
 
@@ -182,8 +193,8 @@ describe('LayoutEngine', () => {
             hasChildren: false
         };
 
-        const expectedStart = LayoutEngine.calendarDateToTimeline(task.startDate!);
-        const expectedDueInclusive = LayoutEngine.calendarDateToTimeline(task.dueDate!, 'end');
+        const expectedStart = LayoutEngine.calendarDateToTimeline(LayoutEngine.snapDate(task.startDate!));
+        const expectedDueInclusive = LayoutEngine.calendarDateToTimeline(LayoutEngine.snapDate(task.dueDate!), 'end');
         const expectedX = LayoutEngine.dateToX(expectedStart, mockViewport);
         const expectedWidth = expectedDueInclusive - expectedStart;
 

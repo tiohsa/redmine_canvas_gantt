@@ -33,7 +33,7 @@ import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
-import { fromLocalDate } from '../utils/dateOnly';
+import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
@@ -190,7 +190,7 @@ const oneYearAgo = new Date();
 oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
 const DEFAULT_VIEWPORT: Viewport = {
-    startDate: preferences.viewport?.startDate ?? fromLocalDate(oneYearAgo),
+    startDate: preferences.viewport?.startDate ?? toTimelineDate(fromLocalDate(oneYearAgo)),
     scrollX: preferences.viewport?.scrollX ?? 0,
     scrollY: preferences.viewport?.scrollY ?? 0,
     scale: preferences.viewport?.scale ?? preferences.customScales?.[preferences.zoomLevel ?? 1] ?? ZOOM_SCALES[preferences.zoomLevel ?? 1],
@@ -625,12 +625,12 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
 
 const getTaskFocusTimestamp = (task: Task): number => {
     if (Number.isFinite(task.startDate)) {
-        return task.startDate!;
+        return toTimelineDate(toCalendarDate(task.startDate!));
     }
     if (Number.isFinite(task.dueDate)) {
-        return task.dueDate!;
+        return toTimelineDate(toCalendarDate(task.dueDate!));
     }
-    return Date.now();
+    return toTimelineDate(todayCalendarDate());
 };
 
 const matchesTaskFilters = (task: Task, state: TaskState): boolean => {

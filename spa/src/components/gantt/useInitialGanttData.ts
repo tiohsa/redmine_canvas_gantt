@@ -6,7 +6,7 @@ import type { Viewport } from '../../types';
 import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState } from '../../utils/queryParams';
 import { loadLastUsedSharedQueryProjectState } from '../../utils/sharedQueryState';
 import { resolvedQueryStateFromProjectState, resolvedStateToQueryContext } from '../../query/queryStateCodec';
-import { fromLocalDate } from '../../utils/dateOnly';
+import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../../utils/dateOnly';
 
 type Params = {
     viewportFromStorage: boolean;
@@ -89,12 +89,14 @@ export const useInitialGanttData = ({
                     const minStart = getMinFiniteStartDate(data.tasks);
                     const oneYearAgo = new Date();
                     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-                    oneYearAgo.setHours(0, 0, 0, 0);
-                    const oneYearAgoCalendarDate = fromLocalDate(oneYearAgo);
+                    const oneYearAgoTimelineDate = toTimelineDate(fromLocalDate(oneYearAgo));
 
-                    const startDate = Math.min(minStart ?? oneYearAgoCalendarDate, oneYearAgoCalendarDate);
+                    const startDate = Math.min(
+                        minStart === null ? oneYearAgoTimelineDate : toTimelineDate(toCalendarDate(minStart)),
+                        oneYearAgoTimelineDate
+                    );
                     const currentViewport = useTaskStore.getState().viewport;
-                    const now = fromLocalDate(new Date());
+                    const now = toTimelineDate(todayCalendarDate());
                     const scrollX = Math.max(0, (now - startDate) * currentViewport.scale - 100);
 
                     updateViewport({ startDate, scrollX });

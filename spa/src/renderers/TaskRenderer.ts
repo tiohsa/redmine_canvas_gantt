@@ -5,7 +5,7 @@ import type { BaselineSnapshot } from '../types/baseline';
 import { calculateBaselineDiff, getBaselineTaskState } from '../utils/baseline';
 import { canvasFonts, designTokens } from '../styles/designTokens';
 import { getCanvasLogicalSize, snapTextPosition } from '../utils/canvasDpr';
-import { calendarDateKey } from '../utils/dateOnly';
+import { calendarDateKey, todayCalendarDate, type CalendarDate } from '../utils/dateOnly';
 
 export class TaskRenderer {
     private canvas: HTMLCanvasElement;
@@ -42,7 +42,8 @@ export class TaskRenderer {
         baselineSnapshot: BaselineSnapshot | null = null,
         showBaseline: boolean = false,
         showStartDateOnly: boolean = showPointsOrphans,
-        showDueDateOnly: boolean = showPointsOrphans
+        showDueDateOnly: boolean = showPointsOrphans,
+        today: CalendarDate = todayCalendarDate()
     ) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
@@ -54,7 +55,7 @@ export class TaskRenderer {
 
         const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
 
-        const xTodayLine = LayoutEngine.calendarDateToX(Date.now(), viewport, 'end') - viewport.scrollX;
+        const xTodayLine = LayoutEngine.calendarDateToX(today, viewport, 'end') - viewport.scrollX;
 
         const showDependencyIndicators = zoomLevel === 0 || zoomLevel === 1;
         const dependencySummary = showDependencyIndicators ? buildDependencySummary(tasks, relations) : null;
@@ -134,7 +135,7 @@ export class TaskRenderer {
                 // Position orphan points at the center of the day cell.
                 const startDate = LayoutEngine.snapDate(task.startDate, zoomLevel);
                 const startX = LayoutEngine.calendarDateToX(startDate, viewport, 'center') - viewport.scrollX;
-                this.drawTaskAsPoint(ctx, task, startX, rowY, viewport.rowHeight, 'triangle_right');
+                this.drawTaskAsPoint(ctx, task, startX, rowY, viewport.rowHeight, 'triangle_right', today);
 
                 if (showTaskBarDates) {
                     this.drawTaskBarDates(ctx, task, {
@@ -164,7 +165,7 @@ export class TaskRenderer {
                 // Position orphan points at the center of the day cell.
                 const dueDate = LayoutEngine.snapDate(task.dueDate, zoomLevel);
                 const dueX = LayoutEngine.calendarDateToX(dueDate, viewport, 'center') - viewport.scrollX;
-                this.drawTaskAsPoint(ctx, task, dueX, rowY, viewport.rowHeight, 'diamond');
+                this.drawTaskAsPoint(ctx, task, dueX, rowY, viewport.rowHeight, 'diamond', today);
 
                 if (showTaskBarDates) {
                     this.drawTaskBarDates(ctx, task, {
@@ -532,7 +533,8 @@ export class TaskRenderer {
         x: number,
         y: number,
         rowHeight: number,
-        shape: 'diamond' | 'triangle_left' | 'triangle_right' = 'diamond'
+        shape: 'diamond' | 'triangle_left' | 'triangle_right' = 'diamond',
+        today: CalendarDate
     ) {
         if (!Number.isFinite(x)) return;
 
@@ -543,14 +545,13 @@ export class TaskRenderer {
 
         // Color determination
         let color: string = TaskRenderer.PLAN_GRAY;
-        const now = new Date().setHours(0, 0, 0, 0);
         let isDelayed = false;
 
         const taskDate = Number.isFinite(task.startDate) ? task.startDate : task.dueDate;
 
         if (task.ratioDone === 100) {
             color = TaskRenderer.DONE_GREEN;
-        } else if (taskDate && taskDate < now) {
+        } else if (taskDate !== undefined && taskDate < today) {
             // date is in the past and not done
             color = TaskRenderer.DELAY_RED;
             isDelayed = true;

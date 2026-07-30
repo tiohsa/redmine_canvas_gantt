@@ -33,7 +33,7 @@ import { useColumnMenuDrag } from './sidebar/useColumnMenuDrag';
 import { useSavedQueriesLoader } from './gantt/useSavedQueriesLoader';
 import { useToolbarShortcuts } from './gantt/useToolbarShortcuts';
 import { fontFamilies, designTokens } from '../styles/designTokens';
-import { fromLocalDate } from '../utils/dateOnly';
+import { toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import './GanttToolbar.css';
 
 interface GanttToolbarProps {
@@ -247,7 +247,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     };
 
     const handleTodayClick = () => {
-        const today = fromLocalDate(new Date());
+        const today = toTimelineDate(todayCalendarDate());
         let newStartDate = viewport.startDate;
 
         // If today is before current start date, move start date back

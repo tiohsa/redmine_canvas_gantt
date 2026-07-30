@@ -3,6 +3,7 @@ const CALENDAR_DAY_MS = 24 * 60 * 60 * 1000;
 
 declare const calendarDateBrand: unique symbol;
 declare const timelineDateBrand: unique symbol;
+declare const instantBrand: unique symbol;
 
 /**
  * A Redmine date-only value represented as UTC midnight.
@@ -15,6 +16,9 @@ export type CalendarDate = number & { readonly [calendarDateBrand]: 'CalendarDat
 /** A fixed-width Canvas timeline value. */
 export type TimelineDate = number & { readonly [timelineDateBrand]: 'TimelineDate' };
 
+/** An elapsed real-world timestamp. It must be converted before date-only use. */
+export type Instant = number & { readonly [instantBrand]: 'Instant' };
+
 const createUtcCalendarDate = (year: number, monthIndex: number, day: number): CalendarDate => {
     // Date.UTC treats years 0..99 as 1900..1999. setUTCFullYear preserves the
     // literal Redmine year and also performs calendar overflow validation.
@@ -25,7 +29,7 @@ const createUtcCalendarDate = (year: number, monthIndex: number, day: number): C
 };
 
 /** Parses a Redmine CalendarDate into its timezone-independent encoding. */
-export const parseDateOnly = (value: string | null | undefined): number | null => {
+export const parseDateOnly = (value: string | null | undefined): CalendarDate | null => {
     if (!value) return null;
     const match = DATE_ONLY_PATTERN.exec(value);
     if (!match) return null;
@@ -97,7 +101,7 @@ export const calendarWeekday = (value: number): number => {
  * Projects a CalendarDate onto the fixed-width Canvas timeline.
  * This is the only boundary where a date-only value becomes a timeline value.
  */
-export const toTimelineDate = (value: number): TimelineDate => {
+export const toTimelineDate = (value: CalendarDate): TimelineDate => {
     if (!Number.isFinite(value)) return Number.NaN as TimelineDate;
     const date = new Date(value);
     return createUtcCalendarDate(
@@ -137,3 +141,11 @@ export const fromLocalDate = (value: Date): CalendarDate => {
     if (!Number.isFinite(value.getTime())) return Number.NaN as CalendarDate;
     return createUtcCalendarDate(value.getFullYear(), value.getMonth(), value.getDate());
 };
+
+/**
+ * Returns the browser user's current local calendar day.
+ *
+ * This is the sole instant-to-CalendarDate boundary for "today". Callers may
+ * inject a clock in tests, but must never pass a raw epoch value as a date.
+ */
+export const todayCalendarDate = (clock: () => Date = () => new Date()): CalendarDate => fromLocalDate(clock());

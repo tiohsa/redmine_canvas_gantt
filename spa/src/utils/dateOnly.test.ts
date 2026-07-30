@@ -6,7 +6,8 @@ import {
     diffCalendarDays,
     formatDateOnly,
     parseDateOnly,
-    toTimelineDate
+    toTimelineDate,
+    todayCalendarDate
 } from './dateOnly';
 
 describe('DateOnly', () => {
@@ -42,5 +43,19 @@ describe('DateOnly', () => {
     it('uses the CalendarDate weekday rather than a local instant weekday', () => {
         expect(calendarWeekday(parseDateOnly('2026-03-09')!)).toBe(1);
         expect(calendarWeekday(parseDateOnly('2026-03-08')!)).toBe(0);
+    });
+});
+
+describe('todayCalendarDate', () => {
+    it('uses the browser-local day rather than the UTC date of the instant', () => {
+        const localDate = new Date(2026, 0, 10, 0, 1);
+
+        expect(calendarDateKey(todayCalendarDate(() => localDate))).toBe('2026-01-10');
+    });
+
+    it('keeps the local day at DST-adjacent clock times', () => {
+        const localDate = new Date(2026, 2, 8, 0, 1);
+
+        expect(calendarDateKey(todayCalendarDate(() => localDate))).toBe('2026-03-08');
     });
 });
