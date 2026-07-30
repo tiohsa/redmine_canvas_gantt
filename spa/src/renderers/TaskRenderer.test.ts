@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TaskRenderer } from './TaskRenderer';
 import type { Task, Viewport } from '../types';
+import { parseDateOnly } from '../utils/dateOnly';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 const TEST_TIMELINE_START_DATE = Date.UTC(2026, 0, 1);
-const TEST_START_DATE = new Date(2026, 0, 1).getTime();
-const TEST_DUE_DATE = new Date(2026, 0, 2).getTime();
+const TEST_START_DATE = parseDateOnly('2026-01-01')!;
+const TEST_DUE_DATE = parseDateOnly('2026-01-02')!;
 
 const viewport: Viewport = {
     startDate: TEST_TIMELINE_START_DATE,
@@ -73,8 +74,8 @@ describe('TaskRenderer', () => {
             renderer as unknown as { drawVersionSummaryBar: (...args: unknown[]) => void },
             'drawVersionSummaryBar'
         );
-        const localStart = new Date(2026, 0, 1).getTime();
-        const localDue = new Date(2026, 0, 2).getTime();
+        const localStart = parseDateOnly('2026-01-01')!;
+        const localDue = parseDateOnly('2026-01-02')!;
 
         renderer.render(viewport, [], 2, 2, [], [
             { type: 'header', projectId: 'p1', rowIndex: 0, startDate: localStart, dueDate: localDue },
@@ -97,7 +98,7 @@ describe('TaskRenderer', () => {
             renderer as unknown as { drawTaskAsPoint: (...args: unknown[]) => void },
             'drawTaskAsPoint'
         ).mockImplementation(() => undefined);
-        const localDate = new Date(2026, 0, 1).getTime();
+        const localDate = parseDateOnly('2026-01-01')!;
 
         renderer.render(viewport, [{ ...buildTask(), startDate: localDate, dueDate: undefined }], 1, 2, []);
 
@@ -155,8 +156,8 @@ describe('TaskRenderer', () => {
         } as unknown as HTMLCanvasElement;
         const task = {
             ...buildTask(),
-            startDate: new Date(2026, 7, 10).getTime(),
-            dueDate: new Date(2026, 7, 13).getTime(),
+            startDate: parseDateOnly('2026-08-10')!,
+            dueDate: parseDateOnly('2026-08-13')!,
             ratioDone: 100
         };
 

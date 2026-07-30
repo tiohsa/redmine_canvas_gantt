@@ -33,6 +33,7 @@ import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
+import { fromLocalDate } from '../utils/dateOnly';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
@@ -185,9 +186,11 @@ interface TaskState {
 
 const preferences = loadPreferences();
 const initialUrlState = readIssueQueryParamsFromUrl();
+const oneYearAgo = new Date();
+oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
 const DEFAULT_VIEWPORT: Viewport = {
-    startDate: preferences.viewport?.startDate ?? new Date().setFullYear(new Date().getFullYear() - 1),
+    startDate: preferences.viewport?.startDate ?? fromLocalDate(oneYearAgo),
     scrollX: preferences.viewport?.scrollX ?? 0,
     scrollY: preferences.viewport?.scrollY ?? 0,
     scale: preferences.viewport?.scale ?? preferences.customScales?.[preferences.zoomLevel ?? 1] ?? ZOOM_SCALES[preferences.zoomLevel ?? 1],

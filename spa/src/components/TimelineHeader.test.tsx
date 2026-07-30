@@ -28,7 +28,7 @@ const context = {
 vi.mock('../stores/TaskStore', () => ({
     useTaskStore: () => ({
         viewport: {
-            startDate: new Date(2027, 0, 4).getTime(),
+            startDate: Date.UTC(2027, 0, 4),
             scrollX: 0,
             scrollY: 0,
             scale: 40 / (24 * 60 * 60 * 1000),
@@ -42,11 +42,11 @@ vi.mock('../stores/TaskStore', () => ({
 
 vi.mock('../utils/grid', () => ({
     getGridScales: () => ({
-        top: [{ time: new Date(2027, 0, 1).getTime(), x: -120, label: '2027/01' }],
-        middle: [{ time: new Date(2027, 0, 4).getTime(), x: 0, label: 'W1' }],
+        top: [{ time: Date.UTC(2027, 0, 1), x: -120, label: '2027/01' }],
+        middle: [{ time: Date.UTC(2027, 0, 4), x: 0, label: 'W1' }],
         bottom: [
-            { time: new Date(2027, 0, 4).getTime(), x: 0, label: '4' },
-            { time: new Date(2027, 0, 5).getTime(), x: 40, label: '5' }
+            { time: Date.UTC(2027, 0, 4), x: 0, label: '4' },
+            { time: Date.UTC(2027, 0, 5), x: 40, label: '5' }
         ]
     })
 }));

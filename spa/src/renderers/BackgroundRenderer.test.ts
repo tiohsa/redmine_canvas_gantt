@@ -9,8 +9,8 @@ vi.mock('../utils/grid', () => ({
         top: [],
         middle: [],
         bottom: [
-            { time: new Date('2027-01-04').getTime(), x: 0 },
-            { time: new Date('2027-01-05').getTime(), x: 10 }
+            { time: Date.UTC(2027, 0, 4), x: 0 },
+            { time: Date.UTC(2027, 0, 5), x: 10 }
         ]
     })
 }));

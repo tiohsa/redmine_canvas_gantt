@@ -6,7 +6,7 @@ import { LayoutEngine } from './LayoutEngine';
 import type { Relation, Task } from '../types';
 import { RelationType } from '../types/constraints';
 import { buildRelationRenderContext, buildRelationRoutePoints, getPolylineMidpoint } from '../renderers/relationGeometry';
-import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
+import { diffCalendarDays, formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -234,10 +234,33 @@ describe('InteractionEngine task updates', () => {
         container.remove();
     });
 
-    it('週表示でタスクを右に移動してもバー幅を維持する', () => {
+    it.each([
+        {
+            label: 'America/Los_Angeles DST start',
+            originalStart: '2026-03-07',
+            originalDue: '2026-03-09',
+            moveDays: 4,
+            expectedStart: '2026-03-11',
+            expectedDue: '2026-03-13'
+        },
+        {
+            label: 'America/Los_Angeles DST end',
+            originalStart: '2026-10-31',
+            originalDue: '2026-11-02',
+            moveDays: 4,
+            expectedStart: '2026-11-04',
+            expectedDue: '2026-11-06'
+        }
+    ])('preserves calendar duration and bar width across $label', ({
+        originalStart,
+        originalDue,
+        moveDays,
+        expectedStart,
+        expectedDue
+    }) => {
         const DAY_MS = 24 * 60 * 60 * 1000;
         setViewport({
-            startDate: new Date(2026, 2, 1).getTime(),
+            startDate: parseDateOnly('2026-03-01')!,
             scrollX: 0,
             scrollY: 0,
             scale: 10 / DAY_MS
@@ -249,8 +272,8 @@ describe('InteractionEngine task updates', () => {
         const task = baseTask({
             id: 'week-task',
             rowIndex: 0,
-            startDate: new Date(2026, 2, 11).getTime(),
-            dueDate: new Date(2026, 2, 13).getTime()
+            startDate: parseDateOnly(originalStart)!,
+            dueDate: parseDateOnly(originalDue)!
         });
         seedTasks([task]);
 
@@ -265,7 +288,7 @@ describe('InteractionEngine task updates', () => {
             bubbles: true
         }));
         window.dispatchEvent(new MouseEvent('mousemove', {
-            clientX: startX + 2 * 10,
+            clientX: startX + moveDays * 10,
             clientY: startY,
             bubbles: true
         }));
@@ -273,8 +296,11 @@ describe('InteractionEngine task updates', () => {
         const movedTask = useTaskStore.getState().tasks[0];
         const afterBounds = LayoutEngine.getTaskBounds(movedTask, viewport, 'bar', zoomLevel);
 
-        expect(formatDateOnly(movedTask.startDate)).toBe('2026-03-13');
-        expect(formatDateOnly(movedTask.dueDate)).toBe('2026-03-15');
+        expect(formatDateOnly(movedTask.startDate)).toBe(expectedStart);
+        expect(formatDateOnly(movedTask.dueDate)).toBe(expectedDue);
+        expect(diffCalendarDays(movedTask.startDate!, movedTask.dueDate!)).toBe(
+            diffCalendarDays(task.startDate!, task.dueDate!)
+        );
         expect(afterBounds.width).toBe(beforeBounds.width);
 
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));

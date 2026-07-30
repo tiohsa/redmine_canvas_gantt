@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { LayoutEngine } from './LayoutEngine';
 import type { Viewport, Task } from '../types';
+import { parseDateOnly } from '../utils/dateOnly';
 
 describe('LayoutEngine', () => {
     const ONE_DAY = 24 * 60 * 60 * 1000;
     const mockViewport: Viewport = {
-        startDate: new Date(2024, 0, 1, 0, 0, 0, 0).getTime(),
+        startDate: parseDateOnly('2024-01-01')!,
         scrollX: 0,
         scrollY: 0,
         scale: 1, // 1 px per ms
@@ -15,7 +16,7 @@ describe('LayoutEngine', () => {
     };
 
     it('dateToX converts date to x coordinate accurately', () => {
-        const date = new Date(2024, 0, 2).getTime(); // +1 day
+        const date = parseDateOnly('2024-01-02')!; // +1 day
         // 1 day = 86400000 ms
         const expectedX = 86400000;
         expect(LayoutEngine.dateToX(date, mockViewport)).toBe(expectedX);
@@ -25,8 +26,8 @@ describe('LayoutEngine', () => {
         const task: Task = {
             id: '1',
             subject: 'Test',
-            startDate: new Date(2024, 0, 1).getTime(),
-            dueDate: new Date(2024, 0, 2).getTime(),
+            startDate: parseDateOnly('2024-01-01')!,
+            dueDate: parseDateOnly('2024-01-02')!,
             rowIndex: 0,
             ratioDone: 0,
             statusId: 1,
@@ -46,7 +47,7 @@ describe('LayoutEngine', () => {
         const task: Task = {
             id: '1',
             subject: 'Single Date',
-            startDate: new Date(2024, 0, 1).getTime(),
+            startDate: parseDateOnly('2024-01-01')!,
             dueDate: undefined,
             rowIndex: 0,
             ratioDone: 0,
@@ -57,9 +58,8 @@ describe('LayoutEngine', () => {
         };
 
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
-        const date = new Date(task.startDate!);
         const expectedCenter = LayoutEngine.dateToX(
-            Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) + ONE_DAY / 2,
+            LayoutEngine.calendarDateToTimeline(task.startDate!, 'center'),
             mockViewport
         );
 
@@ -70,8 +70,8 @@ describe('LayoutEngine', () => {
         const task: Task = {
             id: '1',
             subject: 'Snap',
-            startDate: new Date(2024, 0, 1).getTime(),
-            dueDate: new Date(2024, 0, 2).getTime(),
+            startDate: parseDateOnly('2024-01-01')!,
+            dueDate: parseDateOnly('2024-01-02')!,
             rowIndex: 0,
             ratioDone: 0,
             statusId: 1,
@@ -81,14 +81,12 @@ describe('LayoutEngine', () => {
         };
 
         const bounds = LayoutEngine.getTaskBounds(task, mockViewport, 'bar', 2);
-        const start = new Date(task.startDate!);
-        const due = new Date(task.dueDate!);
         const expectedStart = LayoutEngine.dateToX(
-            Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()),
+            LayoutEngine.calendarDateToTimeline(task.startDate!),
             mockViewport
         );
         const expectedEnd = LayoutEngine.dateToX(
-            Date.UTC(due.getFullYear(), due.getMonth(), due.getDate()) + ONE_DAY,
+            LayoutEngine.calendarDateToTimeline(task.dueDate!, 'end'),
             mockViewport
         );
 
@@ -97,7 +95,7 @@ describe('LayoutEngine', () => {
     });
 
     it('uses exactly one UTC grid cell for a same-day task', () => {
-        const calendarDate = new Date(2026, 6, 29).getTime();
+        const calendarDate = parseDateOnly('2026-07-29')!;
         const viewport: Viewport = {
             ...mockViewport,
             startDate: Date.UTC(2026, 6, 29),
@@ -123,13 +121,13 @@ describe('LayoutEngine', () => {
     });
 
     it.each([
-        [2026, 2, 8],
-        [2026, 10, 1]
-    ])('keeps cell boundaries fixed across DST transition date %i-%i-%i', (year, month, day) => {
-        const calendarDate = new Date(year, month, day).getTime();
+        ['2026-03-08'],
+        ['2026-11-01']
+    ])('keeps cell boundaries fixed across DST transition date %s', (date) => {
+        const calendarDate = parseDateOnly(date)!;
         const viewport: Viewport = {
             ...mockViewport,
-            startDate: Date.UTC(year, month, day),
+            startDate: calendarDate,
             scale: 40 / ONE_DAY
         };
         const task: Task = {
@@ -155,8 +153,8 @@ describe('LayoutEngine', () => {
         const task: Task = {
             id: '1',
             subject: 'Test',
-            startDate: new Date(2024, 0, 1).getTime(),
-            dueDate: new Date(2024, 0, 2).getTime(),
+            startDate: parseDateOnly('2024-01-01')!,
+            dueDate: parseDateOnly('2024-01-02')!,
             rowIndex: 2,
             ratioDone: 0,
             statusId: 1,
@@ -174,8 +172,8 @@ describe('LayoutEngine', () => {
         const task: Task = {
             id: '1',
             subject: 'Cross Zoom',
-            startDate: new Date(2024, 0, 3).getTime(),
-            dueDate: new Date(2024, 0, 5).getTime(),
+            startDate: parseDateOnly('2024-01-03')!,
+            dueDate: parseDateOnly('2024-01-05')!,
             rowIndex: 0,
             ratioDone: 0,
             statusId: 1,
@@ -184,12 +182,8 @@ describe('LayoutEngine', () => {
             hasChildren: false
         };
 
-        const startDate = task.startDate!;
-        const dueDate = task.dueDate!;
-        const start = new Date(startDate);
-        const due = new Date(dueDate);
-        const expectedStart = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
-        const expectedDueInclusive = Date.UTC(due.getFullYear(), due.getMonth(), due.getDate()) + ONE_DAY;
+        const expectedStart = LayoutEngine.calendarDateToTimeline(task.startDate!);
+        const expectedDueInclusive = LayoutEngine.calendarDateToTimeline(task.dueDate!, 'end');
         const expectedX = LayoutEngine.dateToX(expectedStart, mockViewport);
         const expectedWidth = expectedDueInclusive - expectedStart;
 

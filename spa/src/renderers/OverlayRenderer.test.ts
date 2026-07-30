@@ -4,6 +4,7 @@ import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
 import type { Relation, Task, Viewport } from '../types';
 import { RelationType } from '../types/constraints';
+import { addCalendarDays, fromLocalDate, parseDateOnly } from '../utils/dateOnly';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
@@ -62,9 +63,9 @@ const buildTask = (id: string, startDate: number, dueDate: number, rowIndex: num
 
 describe('OverlayRenderer progress line', () => {
     it('passes through today line when due date is today', () => {
-        const todayStart = new Date().setHours(0, 0, 0, 0);
+        const todayStart = fromLocalDate(new Date());
         const viewport = {
-            startDate: todayStart - ONE_DAY * 2,
+            startDate: addCalendarDays(todayStart, -2),
             scrollX: 0,
             scrollY: 0,
             scale: 1 / ONE_DAY,
@@ -76,7 +77,7 @@ describe('OverlayRenderer progress line', () => {
         const dueTodayTask = {
             id: 'task-1',
             subject: 'due today',
-            startDate: todayStart - ONE_DAY * 3,
+            startDate: addCalendarDays(todayStart, -3),
             dueDate: todayStart,
             ratioDone: 0,
             statusId: 1,
@@ -103,15 +104,14 @@ describe('OverlayRenderer progress line', () => {
         (renderer as unknown as { drawProgressLine: (c: CanvasRenderingContext2D, v: typeof viewport, t: typeof dueTodayTask[], z: 0 | 1 | 2) => void })
             .drawProgressLine(ctx, viewport, [dueTodayTask], 2);
 
-        const today = new Date(todayStart);
-        const todayCellEnd = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) + ONE_DAY;
+        const todayCellEnd = addCalendarDays(todayStart, 1);
         const xToday = (todayCellEnd - viewport.startDate) * viewport.scale - viewport.scrollX;
         expect(ctx.lineTo).toHaveBeenCalledWith(xToday, expect.any(Number));
     });
 
     it('calculates progress from projected task bounds', () => {
-        const startDate = new Date(2026, 0, 1).getTime();
-        const dueDate = new Date(2026, 0, 2).getTime();
+        const startDate = parseDateOnly('2026-01-01')!;
+        const dueDate = parseDateOnly('2026-01-02')!;
         const utcViewport = {
             ...viewport,
             startDate: Date.UTC(2026, 0, 1)
@@ -142,11 +142,10 @@ describe('OverlayRenderer progress line', () => {
 
 describe('OverlayRenderer today line', () => {
     it('draws at the right edge of the projected local calendar day', () => {
-        const today = new Date();
-        const todayCellStart = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+        const todayCellStart = fromLocalDate(new Date());
         const utcViewport = {
             ...viewport,
-            startDate: todayCellStart - ONE_DAY,
+            startDate: addCalendarDays(todayCellStart, -1),
             width: 10
         };
         const ctx = createMockContext();

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BaselineRenderer } from './BaselineRenderer';
 import type { Task, Viewport } from '../types';
+import { parseDateOnly } from '../utils/dateOnly';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -56,8 +57,8 @@ describe('BaselineRenderer', () => {
             height: 600,
             getContext: vi.fn().mockReturnValue(ctx)
         } as unknown as HTMLCanvasElement;
-        const baselineStartDate = new Date(2026, 0, 1).getTime();
-        const baselineDueDate = new Date(2026, 0, 2).getTime();
+        const baselineStartDate = parseDateOnly('2026-01-01')!;
+        const baselineDueDate = parseDateOnly('2026-01-02')!;
         const utcViewport = { ...viewport, startDate: Date.UTC(2026, 0, 1) };
 
         new BaselineRenderer(canvas).render({

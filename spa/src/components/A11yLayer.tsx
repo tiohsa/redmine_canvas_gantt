@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
 import type { Task } from '../types';
+import { toLocalDisplayDate } from '../utils/dateOnly';
 
 export const A11yLayer: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
@@ -55,10 +56,10 @@ export const A11yLayer: React.FC = () => {
                     onKeyDown={(e) => handleKeyDown(e, task)}
                     aria-label={i18n.t('label_task_aria_label', {
                         subject: task.subject,
-                        start: (task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toLocaleDateString() : (i18n.t('label_not_set') || 'Not set'),
-                        end: (task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toLocaleDateString() : (i18n.t('label_not_set') || 'Not set'),
+                        start: (task.startDate && Number.isFinite(task.startDate)) ? toLocalDisplayDate(task.startDate).toLocaleDateString() : (i18n.t('label_not_set') || 'Not set'),
+                        end: (task.dueDate && Number.isFinite(task.dueDate)) ? toLocalDisplayDate(task.dueDate).toLocaleDateString() : (i18n.t('label_not_set') || 'Not set'),
                         status: task.ratioDone
-                    }) || `Task: ${task.subject}. Start: ${(task.startDate && Number.isFinite(task.startDate)) ? new Date(task.startDate).toLocaleDateString() : 'Not set'}. End: ${(task.dueDate && Number.isFinite(task.dueDate)) ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}. Status: ${task.ratioDone}%`}
+                    }) || `Task: ${task.subject}. Start: ${(task.startDate && Number.isFinite(task.startDate)) ? toLocalDisplayDate(task.startDate).toLocaleDateString() : 'Not set'}. End: ${(task.dueDate && Number.isFinite(task.dueDate)) ? toLocalDisplayDate(task.dueDate).toLocaleDateString() : 'Not set'}. Status: ${task.ratioDone}%`}
                 >
                     {task.subject}
                 </li>

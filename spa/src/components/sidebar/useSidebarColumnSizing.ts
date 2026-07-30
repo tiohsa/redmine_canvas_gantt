@@ -7,6 +7,7 @@ import { getStatusColor } from '../../utils/styles';
 import { i18n } from '../../utils/i18n';
 import { formatCustomFieldCellValue } from './sidebarColumns';
 import { canvasFonts, fontFamilies } from '../../styles/designTokens';
+import { toLocalDisplayDate } from '../../utils/dateOnly';
 
 type Params = {
     tasks: Task[];
@@ -107,8 +108,8 @@ export const useSidebarColumnSizing = ({ tasks, customFields, setColumnWidth }: 
 
         newWidths.status = getColWidth(i18n.t('field_status') || 'Status', (t: Task) => getStatusColor(t.statusId).label) + 16;
         newWidths.assignee = Math.max(measure(i18n.t('field_assigned_to') || 'Assignee') + 24, ...tasks.slice(0, 50).map(t => t.assignedToName ? 36 : 0));
-        newWidths.startDate = getColWidth(i18n.t('field_start_date') || 'Start Date', (t: Task) => (t.startDate !== undefined && Number.isFinite(t.startDate)) ? new Date(t.startDate).toLocaleDateString() : '-');
-        newWidths.dueDate = getColWidth(i18n.t('field_due_date') || 'Due Date', (t: Task) => (t.dueDate !== undefined && Number.isFinite(t.dueDate)) ? new Date(t.dueDate).toLocaleDateString() : '-');
+        newWidths.startDate = getColWidth(i18n.t('field_start_date') || 'Start Date', (t: Task) => (t.startDate !== undefined && Number.isFinite(t.startDate)) ? toLocalDisplayDate(t.startDate).toLocaleDateString() : '-');
+        newWidths.dueDate = getColWidth(i18n.t('field_due_date') || 'Due Date', (t: Task) => (t.dueDate !== undefined && Number.isFinite(t.dueDate)) ? toLocalDisplayDate(t.dueDate).toLocaleDateString() : '-');
         newWidths.ratioDone = Math.max(measure(i18n.t('field_done_ratio') || 'Progress') + 24, ...tasks.slice(0, 50).map(() => 32));
 
         const addAutoWidth = (key: string, title: string, accessor: (t: Task) => string) => {

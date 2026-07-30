@@ -17,8 +17,9 @@ import { calculateDelay } from './relationEditing';
 import { AutoScheduleMoveMode, RelationType } from '../types/constraints';
 import type { Task } from '../types';
 import { TaskLogicService } from '../services/TaskLogicService';
+import { parseDateOnly } from './dateOnly';
 
-const timestamp = (date: string): number => new Date(date).getTime();
+const timestamp = (date: string): number => parseDateOnly(date)!;
 const task = (id: string, projectId: string, startDate: string, dueDate: string): Task => ({
     id,
     projectId,
@@ -131,7 +132,7 @@ describe('businessCalendar', () => {
     });
 
     it('keeps date-only calendar semantics independent of the browser timezone', () => {
-        const redmineDate = Date.UTC(2027, 0, 3, 23, 30);
+        const redmineDate = timestamp('2027-01-03');
 
         expect(timestampToBusinessDateKey(redmineDate)).toBe('2027-01-03');
         expect(getDayInfo(redmineDate, '1')).toEqual({

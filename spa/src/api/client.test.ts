@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
+import { addCalendarDays, diffCalendarDays, formatDateOnly, parseDateOnly } from '../utils/dateOnly';
+import { LayoutEngine } from '../engines/LayoutEngine';
+import { TaskLogicService } from '../services/TaskLogicService';
 
 describe('apiClient.fetchQueries', () => {
     afterEach(() => {
@@ -225,11 +228,98 @@ describe('apiClient.fetchData', () => {
             tasksByIssueId: {
                 '10': {
                     issueId: '10',
-                baselineStartDate: new Date(2026, 3, 10).getTime(),
-                baselineDueDate: new Date(2026, 3, 15).getTime()
+                baselineStartDate: parseDateOnly('2026-04-10'),
+                baselineDueDate: parseDateOnly('2026-04-15')
                 }
             }
         });
+    });
+});
+
+describe('CalendarDate persistence invariant', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('preserves DateOnly through load, timeline projection, move, scheduling, save, and reload', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key'
+        };
+        const payloadFor = (startDate: string, dueDate: string) => ({
+            tasks: [{
+                id: 10,
+                subject: 'DST task',
+                project_id: 1,
+                start_date: startDate,
+                due_date: dueDate,
+                ratio_done: 0,
+                status_id: 1,
+                lock_version: 0,
+                editable: true
+            }],
+            relations: [],
+            versions: [],
+            filter_options: { projects: [{ id: 1, name: 'P' }], assignees: [] },
+            statuses: [],
+            project: { id: 1, name: 'P' },
+            permissions: { editable: true, viewable: true, baseline_editable: true }
+        });
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => payloadFor('2026-03-07', '2026-03-09')
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ lock_version: 1, task_id: 10 })
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => payloadFor('2026-03-11', '2026-03-13')
+            });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        const loaded = await apiClient.fetchData();
+        const original = loaded.tasks[0];
+        const viewport = {
+            startDate: parseDateOnly('2026-03-01')!,
+            scrollX: 0,
+            scrollY: 0,
+            scale: 1 / (24 * 60 * 60 * 1000),
+            width: 800,
+            height: 600,
+            rowHeight: 32
+        };
+        expect(LayoutEngine.getTaskBounds(original, viewport).width).toBe(3);
+
+        const durationDays = diffCalendarDays(original.startDate!, original.dueDate!);
+        const movedStart = addCalendarDays(original.startDate!, 4);
+        const movedDue = addCalendarDays(movedStart, durationDays);
+        const movedTask = { ...original, startDate: movedStart, dueDate: movedDue };
+        expect(TaskLogicService.checkDependencies(
+            [movedTask],
+            [],
+            movedTask.id,
+            movedStart,
+            movedDue
+        )).toEqual({ updates: new Map() });
+
+        await expect(apiClient.updateTask(movedTask)).resolves.toMatchObject({ status: 'ok' });
+        const saveRequest = fetchMock.mock.calls[1]?.[1] as RequestInit;
+        expect(JSON.parse(String(saveRequest.body)).task).toMatchObject({
+            start_date: '2026-03-11',
+            due_date: '2026-03-13'
+        });
+
+        const reloaded = await apiClient.fetchData();
+        expect(formatDateOnly(reloaded.tasks[0].startDate)).toBe('2026-03-11');
+        expect(formatDateOnly(reloaded.tasks[0].dueDate)).toBe('2026-03-13');
+        expect(diffCalendarDays(reloaded.tasks[0].startDate!, reloaded.tasks[0].dueDate!)).toBe(durationDays);
     });
 });
 

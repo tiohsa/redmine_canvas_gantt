@@ -1,9 +1,6 @@
 import type { Task } from '../types';
 import type { BaselineSaveScope, BaselineSnapshot, BaselineTaskState } from '../types/baseline';
-import { LayoutEngine } from '../engines/LayoutEngine';
-import { formatDateOnly, parseDateOnly } from './dateOnly';
-
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+import { diffCalendarDays, formatDateOnly, parseDateOnly } from './dateOnly';
 
 export type BaselineDiff = {
     hasDifference: boolean;
@@ -62,9 +59,7 @@ export const buildBaselineTaskDurationDays = (start: number | null, due: number 
     }
 
     if (Number.isFinite(start ?? NaN) && Number.isFinite(due ?? NaN)) {
-        const normalizedStart = LayoutEngine.snapDate(start ?? NaN);
-        const normalizedDue = Math.max(normalizedStart, LayoutEngine.snapDate(due ?? NaN));
-        return Math.max(1, Math.round((normalizedDue - normalizedStart) / ONE_DAY_MS) + 1);
+        return Math.max(1, diffCalendarDays(start ?? NaN, due ?? NaN) + 1);
     }
 
     return 1;
@@ -86,11 +81,11 @@ export const calculateBaselineDiff = (
 
     const startDeltaDays =
         currentStartDate !== null && baselineStartDate !== null
-            ? Math.round((currentStartDate - baselineStartDate) / ONE_DAY_MS)
+            ? diffCalendarDays(baselineStartDate, currentStartDate)
             : null;
     const dueDeltaDays =
         currentDueDate !== null && baselineDueDate !== null
-            ? Math.round((currentDueDate - baselineDueDate) / ONE_DAY_MS)
+            ? diffCalendarDays(baselineDueDate, currentDueDate)
             : null;
     const durationDeltaDays =
         currentDurationDays !== null && baselineDurationDays !== null

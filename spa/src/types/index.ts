@@ -4,8 +4,8 @@ export interface Task {
     projectId?: string;
     projectName?: string;
     displayOrder?: number;
-    startDate?: number; // Timestamp
-    dueDate?: number; // Timestamp
+    startDate?: number; // CalendarDate canonical encoding (UTC midnight, not an instant)
+    dueDate?: number; // CalendarDate canonical encoding (UTC midnight, not an instant)
     ratioDone: number;
     statusId: number;
     assignedToId?: number | null;
@@ -117,7 +117,7 @@ export interface BusinessQueryState {
 }
 
 export interface Viewport {
-    startDate: number; // Timestamp of left edge
+    startDate: number; // Fixed-width Canvas timeline value at the left edge
     scrollX: number; // Horizontal scroll offset (pixels)
     scrollY: number; // Vertical scroll offset (pixels)
     scale: number; // Pixels per millisecond (or day)

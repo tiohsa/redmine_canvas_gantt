@@ -3,6 +3,7 @@ import { getGridScales } from '../utils/grid';
 import { canvasFonts, designTokens } from '../styles/designTokens';
 import { getCanvasLogicalSize, snapTextPosition, snapLinePosition } from '../utils/canvasDpr';
 import type { AssigneeWorkload, DailyWorkload, WorkloadData } from '../services/WorkloadLogicService';
+import { calendarWeekday } from '../utils/dateOnly';
 
 export interface WorkloadRenderState {
     viewport: Viewport;
@@ -153,8 +154,7 @@ export class WorkloadRenderer {
         if (zoomLevel === 2) {
             const ticks = scales.bottom;
             ticks.forEach((tick, i) => {
-                const d = new Date(tick.time);
-                const dow = d.getDay();
+                const dow = calendarWeekday(tick.time);
                 if (dow === 0 || dow === 6) {
                     const w = (i < ticks.length - 1)
                         ? ticks[i + 1].x - tick.x
