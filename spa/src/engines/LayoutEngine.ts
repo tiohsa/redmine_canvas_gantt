@@ -1,5 +1,5 @@
 import type { Task, Viewport, Bounds, ZoomLevel } from '../types';
-import { snapToLocalDay } from '../utils/time';
+import { timelineToCalendarDate, toTimelineDate } from '../utils/dateOnly';
 
 type CalendarCellPosition = 'start' | 'center' | 'end';
 
@@ -27,12 +27,7 @@ export class LayoutEngine {
   static calendarDateToTimeline(date: number, position: CalendarCellPosition = 'start'): number {
     if (!Number.isFinite(date)) return NaN;
 
-    const calendarDate = new Date(date);
-    const cellStart = Date.UTC(
-      calendarDate.getFullYear(),
-      calendarDate.getMonth(),
-      calendarDate.getDate()
-    );
+    const cellStart = toTimelineDate(date);
     const offset = position === 'center'
       ? this.ONE_DAY_MS / 2
       : position === 'end'
@@ -52,7 +47,7 @@ export class LayoutEngine {
   public static snapDate(timestamp: number | undefined, _zoomLevel?: ZoomLevel): number {
     void _zoomLevel;
     if (timestamp === undefined || !Number.isFinite(timestamp)) return NaN;
-    return snapToLocalDay(timestamp);
+    return timelineToCalendarDate(timestamp);
   }
 
   static getTaskBounds(task: Task, viewport: Viewport, kind: 'bar' | 'hit' = 'bar', zoomLevel?: ZoomLevel): Bounds {

@@ -2,6 +2,7 @@ import type { DraftRelation, Relation, Task } from '../types';
 import { RelationType, type DefaultRelationType } from '../types/constraints';
 import { i18n } from './i18n';
 import { addWorkingDays, diffWorkingDays } from './businessCalendar';
+import { timelineToCalendarDate } from './dateOnly';
 
 const DELAY_ENABLED_RELATIONS: ReadonlySet<string> = new Set([RelationType.Precedes, RelationType.Follows]);
 
@@ -69,12 +70,6 @@ const RELATION_INFO_FALLBACKS: Record<DefaultRelationType, string> = {
     [RelationType.Precedes]: 'The predecessor task must finish before the successor task starts.',
     [RelationType.Relates]: 'Creates a reference link only. It does not apply any schedule constraint.',
     [RelationType.Blocks]: 'The source task blocks the target task until the blocking work is finished.'
-};
-
-const toUtcDayStart = (timestamp: number): Date => {
-    const date = new Date(timestamp);
-    date.setUTCHours(0, 0, 0, 0);
-    return date;
 };
 
 export const supportsDelayForUiType = (relationType: DefaultRelationType): boolean =>
@@ -154,7 +149,7 @@ export const calculateDelay = (
 
     const successorProjectId = endpoints.successor.projectId;
     const minimumSuccessorStart = addWorkingDays(endpoints.predecessor.dueDate, 1, successorProjectId);
-    if (toUtcDayStart(endpoints.successor.startDate).getTime() < minimumSuccessorStart) {
+    if (timelineToCalendarDate(endpoints.successor.startDate) < minimumSuccessorStart) {
         return {
             message: getAutoCalculationUnavailableMessage()
         };
@@ -188,7 +183,7 @@ export const validateRelationDelayConsistency = (
         1 + delay,
         endpoints.successor.projectId
     );
-    if (toUtcDayStart(endpoints.successor.startDate).getTime() >= minimumSuccessorStart) {
+    if (timelineToCalendarDate(endpoints.successor.startDate) >= minimumSuccessorStart) {
         return { valid: true };
     }
 

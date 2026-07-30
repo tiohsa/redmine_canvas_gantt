@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { computeContentSizes, mapDomScrollToViewport, mapViewportToDomScroll } from './contentSize';
 import type { Viewport } from '../../types';
+import { parseDateOnly } from '../../utils/dateOnly';
 
 const baseViewport: Viewport = {
-    startDate: new Date('2025-01-01').getTime(),
+    startDate: parseDateOnly('2025-01-01')!,
     scrollX: 0,
     scrollY: 0,
     scale: 0.001,

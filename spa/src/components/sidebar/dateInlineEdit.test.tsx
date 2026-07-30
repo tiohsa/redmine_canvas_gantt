@@ -8,6 +8,7 @@ import type { Task } from '../../types';
 import { buildColumnSettingsFromVisibleKeys } from '../../components/sidebar/sidebarColumnSettings';
 import { getColumnDefinitions } from '../../components/sidebar/sidebarColumnCatalog';
 import { InlineEditService } from '../../services/InlineEditService';
+import { parseDateOnly } from '../../utils/dateOnly';
 
 describe('UiSidebar Date Inline Edit Integration', () => {
     const taskId = 'test-task-1';
@@ -55,8 +56,8 @@ describe('UiSidebar Date Inline Edit Integration', () => {
         const task: Task = {
             id: taskId,
             subject: 'Test Date Inline Edit Affordance',
-            startDate: new Date('2026-05-01').getTime(),
-            dueDate: new Date('2026-05-10').getTime(),
+            startDate: parseDateOnly('2026-05-01')!,
+            dueDate: parseDateOnly('2026-05-10')!,
             ratioDone: 0,
             statusId: 1,
             lockVersion: 1,

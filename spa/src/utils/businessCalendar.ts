@@ -4,6 +4,12 @@ import type {
     BusinessCalendarPayload,
     BusinessDayInfo
 } from '../types/businessCalendar';
+import {
+    addCalendarDays,
+    calendarDateKey,
+    calendarWeekday,
+    timelineToCalendarDate
+} from './dateOnly';
 import { getNonWorkingWeekDays } from './nonWorkingWeekDays';
 
 type UnknownRecord = Record<string, unknown>;
@@ -115,18 +121,13 @@ export const getCalendarIdForProject = (projectId?: string | number | null): str
     return configuredPayload.defaultCalendarId;
 };
 
-const padDatePart = (value: number): string => String(value).padStart(2, '0');
-
-export const timestampToBusinessDateKey = (timestamp: number): string => {
-    const date = new Date(timestamp);
-    return `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}-${padDatePart(date.getUTCDate())}`;
-};
+export const timestampToBusinessDateKey = (timestamp: number): string => calendarDateKey(timestamp);
 
 const legacyDayInfo = (timestamp: number, weekDays?: Set<number>): BusinessDayInfo => {
     const nonWorkingWeekDays = weekDays ?? getNonWorkingWeekDays();
     return {
         name: null,
-        type: nonWorkingWeekDays.has(new Date(timestamp).getUTCDay()) ? 'non_working' : 'working',
+        type: nonWorkingWeekDays.has(calendarWeekday(timestamp)) ? 'non_working' : 'working',
         source: 'weekly'
     };
 };
@@ -145,7 +146,7 @@ export const getDayInfo = (timestamp: number, projectId?: ProjectCalendarArgumen
 
     return {
         name: null,
-        type: calendar.nonWorkingWeekDays.includes(new Date(timestamp).getUTCDay()) ? 'non_working' : 'working',
+        type: calendar.nonWorkingWeekDays.includes(calendarWeekday(timestamp)) ? 'non_working' : 'working',
         source: 'weekly'
     };
 };
@@ -154,48 +155,41 @@ export const isWorkingDay = (timestamp: number, projectId?: ProjectCalendarArgum
     getDayInfo(timestamp, projectId).type === 'working'
 );
 
-const toUtcDayStart = (timestamp: number): Date => {
-    const date = new Date(timestamp);
-    date.setUTCHours(0, 0, 0, 0);
-    return date;
-};
-
 export const addWorkingDays = (timestamp: number, days: number, projectId?: ProjectCalendarArgument): number => {
-    const date = toUtcDayStart(timestamp);
+    let date = timelineToCalendarDate(timestamp);
     let remaining = Math.max(0, Math.floor(days));
     while (remaining > 0) {
-        date.setUTCDate(date.getUTCDate() + 1);
-        if (isWorkingDay(date.getTime(), projectId)) remaining -= 1;
+        date = addCalendarDays(date, 1);
+        if (isWorkingDay(date, projectId)) remaining -= 1;
     }
-    return date.getTime();
+    return date;
 };
 
 export const shiftByWorkingDays = (timestamp: number, days: number, projectId?: ProjectCalendarArgument): number => {
     const normalizedDays = Math.trunc(days);
-    if (normalizedDays === 0) return toUtcDayStart(timestamp).getTime();
+    if (normalizedDays === 0) return timelineToCalendarDate(timestamp);
     if (normalizedDays > 0) return addWorkingDays(timestamp, normalizedDays, projectId);
 
-    const date = toUtcDayStart(timestamp);
+    let date = timelineToCalendarDate(timestamp);
     let remaining = Math.abs(normalizedDays);
     while (remaining > 0) {
-        date.setUTCDate(date.getUTCDate() - 1);
-        if (isWorkingDay(date.getTime(), projectId)) remaining -= 1;
+        date = addCalendarDays(date, -1);
+        if (isWorkingDay(date, projectId)) remaining -= 1;
     }
-    return date.getTime();
+    return date;
 };
 
 export const diffWorkingDays = (fromTimestamp: number, toTimestamp: number, projectId?: ProjectCalendarArgument): number => {
-    const from = toUtcDayStart(fromTimestamp);
-    const to = toUtcDayStart(toTimestamp);
-    if (from.getTime() === to.getTime()) return 0;
+    const from = timelineToCalendarDate(fromTimestamp);
+    const to = timelineToCalendarDate(toTimestamp);
+    if (from === to) return 0;
 
-    const step = from.getTime() < to.getTime() ? 1 : -1;
+    const step = from < to ? 1 : -1;
     let current = from;
     let delta = 0;
-    while (current.getTime() !== to.getTime()) {
-        current = new Date(current.getTime());
-        current.setUTCDate(current.getUTCDate() + step);
-        if (isWorkingDay(current.getTime(), projectId)) delta += step;
+    while (current !== to) {
+        current = addCalendarDays(current, step);
+        if (isWorkingDay(current, projectId)) delta += step;
     }
     return delta;
 };

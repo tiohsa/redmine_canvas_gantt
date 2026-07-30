@@ -9,6 +9,7 @@ import { SIDEBAR_RESIZE_CURSOR, SIDEBAR_DRAG_EDGE_TOLERANCE } from '../constants
 import { resetCanvasGanttTestState } from '../test/testSetup';
 import { buildColumnSettingsFromVisibleKeys } from '../components/sidebar/sidebarColumnSettings';
 import { getColumnDefinitions } from '../components/sidebar/sidebarColumnCatalog';
+import { parseDateOnly } from '../utils/dateOnly';
 
 describe('UiSidebar', () => {
     const initialUpdateViewport = useTaskStore.getState().updateViewport;
@@ -840,8 +841,8 @@ describe('UiSidebar', () => {
         const task: Task = {
             id: taskId,
             subject: 'Old',
-            startDate: new Date('2025-01-01').getTime(),
-            dueDate: new Date('2025-01-05').getTime(),
+            startDate: parseDateOnly('2025-01-01')!,
+            dueDate: parseDateOnly('2025-01-05')!,
             ratioDone: 0,
             statusId: 1,
             lockVersion: 1,
@@ -875,7 +876,7 @@ describe('UiSidebar', () => {
         // Date changes should update local state only (for batch save)
         await waitFor(() => {
             const t = useTaskStore.getState().allTasks[0];
-        const expectedDate = new Date(2025, 0, 2).getTime();
+            const expectedDate = parseDateOnly('2025-01-02');
             expect(t?.startDate).toBe(expectedDate);
         });
         await waitFor(() => {
@@ -978,8 +979,8 @@ describe('UiSidebar', () => {
         const task: Task = {
             id: taskId,
             subject: 'Version task',
-            startDate: new Date('2025-01-01').getTime(),
-            dueDate: new Date('2025-01-05').getTime(),
+            startDate: parseDateOnly('2025-01-01')!,
+            dueDate: parseDateOnly('2025-01-05')!,
             ratioDone: 0,
             statusId: 1,
             lockVersion: 1,
@@ -1092,8 +1093,8 @@ describe('UiSidebar', () => {
             subject: 'Assignee task',
             assignedToId: 10,
             assignedToName: 'Alice Able',
-            startDate: new Date('2025-01-01').getTime(),
-            dueDate: new Date('2025-01-05').getTime(),
+            startDate: parseDateOnly('2025-01-01')!,
+            dueDate: parseDateOnly('2025-01-05')!,
             ratioDone: 0,
             statusId: 1,
             lockVersion: 1,
@@ -1224,8 +1225,8 @@ describe('UiSidebar', () => {
             subject: 'Unassign task',
             assignedToId: 10,
             assignedToName: 'Alice Able',
-            startDate: new Date('2025-01-01').getTime(),
-            dueDate: new Date('2025-01-05').getTime(),
+            startDate: parseDateOnly('2025-01-01')!,
+            dueDate: parseDateOnly('2025-01-05')!,
             ratioDone: 0,
             statusId: 1,
             lockVersion: 1,
@@ -1654,8 +1655,8 @@ describe('UiSidebar', () => {
         const task: Task = {
             id: taskId,
             subject: 'CF task',
-            startDate: new Date('2025-01-01').getTime(),
-            dueDate: new Date('2025-01-05').getTime(),
+            startDate: parseDateOnly('2025-01-01')!,
+            dueDate: parseDateOnly('2025-01-05')!,
             ratioDone: 0,
             statusId: 1,
             lockVersion: 1,
@@ -1735,8 +1736,8 @@ describe('UiSidebar', () => {
         const task: Task = {
             id: taskId,
             subject: 'CF task',
-            startDate: new Date('2025-01-01').getTime(),
-            dueDate: new Date('2025-01-05').getTime(),
+            startDate: parseDateOnly('2025-01-01')!,
+            dueDate: parseDateOnly('2025-01-05')!,
             ratioDone: 0,
             statusId: 1,
             lockVersion: 1,
@@ -1843,8 +1844,8 @@ describe('UiSidebar', () => {
         const task: Task = {
             id: taskId,
             subject: 'Compact row task',
-            startDate: new Date('2025-01-01').getTime(),
-            dueDate: new Date('2025-01-05').getTime(),
+            startDate: parseDateOnly('2025-01-01')!,
+            dueDate: parseDateOnly('2025-01-05')!,
             ratioDone: 0,
             statusId: 1,
             lockVersion: 1,
@@ -1948,8 +1949,8 @@ describe('UiSidebar', () => {
         const task: Task = {
             id: taskId,
             subject: 'Estimated hours task',
-            startDate: new Date('2025-01-01').getTime(),
-            dueDate: new Date('2025-01-05').getTime(),
+            startDate: parseDateOnly('2025-01-01')!,
+            dueDate: parseDateOnly('2025-01-05')!,
             ratioDone: 0,
             statusId: 1,
             estimatedHours: 1.5,

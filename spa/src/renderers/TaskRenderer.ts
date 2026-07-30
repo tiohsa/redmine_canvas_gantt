@@ -5,6 +5,7 @@ import type { BaselineSnapshot } from '../types/baseline';
 import { calculateBaselineDiff, getBaselineTaskState } from '../utils/baseline';
 import { canvasFonts, designTokens } from '../styles/designTokens';
 import { getCanvasLogicalSize, snapTextPosition } from '../utils/canvasDpr';
+import { calendarDateKey } from '../utils/dateOnly';
 
 export class TaskRenderer {
     private canvas: HTMLCanvasElement;
@@ -309,8 +310,8 @@ export class TaskRenderer {
         dateGap = TaskRenderer.TASK_BAR_DATE_GAP
     ) {
         const formatDate = (timestamp: number) => {
-            const date = new Date(timestamp);
-            return `${date.getMonth() + 1}/${date.getDate()}`;
+            const [, month, day] = calendarDateKey(timestamp).split('-');
+            return `${Number(month)}/${Number(day)}`;
         };
 
         const textY = bar.y + bar.height / 2;

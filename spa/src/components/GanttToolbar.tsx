@@ -33,6 +33,7 @@ import { useColumnMenuDrag } from './sidebar/useColumnMenuDrag';
 import { useSavedQueriesLoader } from './gantt/useSavedQueriesLoader';
 import { useToolbarShortcuts } from './gantt/useToolbarShortcuts';
 import { fontFamilies, designTokens } from '../styles/designTokens';
+import { fromLocalDate } from '../utils/dateOnly';
 import './GanttToolbar.css';
 
 interface GanttToolbarProps {
@@ -246,18 +247,18 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     };
 
     const handleTodayClick = () => {
-        const now = Date.now();
+        const today = fromLocalDate(new Date());
         let newStartDate = viewport.startDate;
 
         // If today is before current start date, move start date back
-        if (now < newStartDate) {
+        if (today < newStartDate) {
             // Move start date to 1 month before today to give some context
-            const d = new Date(now);
-            d.setMonth(d.getMonth() - 1);
+            const d = new Date(today);
+            d.setUTCMonth(d.getUTCMonth() - 1);
             newStartDate = d.getTime();
         }
 
-        const todayX = (now - newStartDate) * viewport.scale;
+        const todayX = (today - newStartDate) * viewport.scale;
         // Center the view (assuming width is available in viewport, otherwise guess)
         const centeredX = Math.max(0, todayX - (viewport.width / 2));
         updateViewport({ startDate: newStartDate, scrollX: centeredX });
@@ -265,9 +266,9 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
 
     const navigateMonth = (offset: number) => {
         const leftDate = new Date(viewport.startDate + viewport.scrollX / viewport.scale);
-        leftDate.setDate(1);
-        leftDate.setMonth(leftDate.getMonth() + offset);
-        leftDate.setHours(0, 0, 0, 0);
+        leftDate.setUTCDate(1);
+        leftDate.setUTCMonth(leftDate.getUTCMonth() + offset);
+        leftDate.setUTCHours(0, 0, 0, 0);
         updateViewport({ startDate: leftDate.getTime(), scrollX: 0 });
     };
 

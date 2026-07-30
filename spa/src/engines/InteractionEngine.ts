@@ -11,7 +11,7 @@ import {
     RELATION_HIT_TOLERANCE_PX,
     shouldRenderRelationsAtZoom
 } from '../renderers/relationGeometry';
-import { snapToLocalDay } from '../utils/time';
+import { addCalendarDays, diffCalendarDays, timelineToCalendarDate } from '../utils/dateOnly';
 import { panViewportByPixels } from './viewportPan';
 
 type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
@@ -171,7 +171,7 @@ export class InteractionEngine {
     }
 
     private snapToDate(timestamp: number): number {
-        return snapToLocalDay(timestamp);
+        return timelineToCalendarDate(timestamp);
     }
 
     private isResizeIntent(
@@ -382,12 +382,15 @@ export class InteractionEngine {
 
             if (Number.isFinite(this.drag.originalStartDate) && Number.isFinite(this.drag.originalDueDate)) {
                 const newStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
-                const duration = this.drag.originalDueDate! - this.drag.originalStartDate!;
+                const durationDays = diffCalendarDays(
+                    this.drag.originalStartDate!,
+                    this.drag.originalDueDate!
+                );
 
                 if (currentTask && currentTask.startDate !== newStart) {
                     updateTask(this.drag.taskId, {
                         startDate: newStart,
-                        dueDate: newStart + duration
+                        dueDate: addCalendarDays(newStart, durationDays)
                     });
                 }
             } else if (Number.isFinite(this.drag.originalStartDate)) {

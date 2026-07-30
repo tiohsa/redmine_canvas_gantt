@@ -11,6 +11,7 @@ import {
 } from './relationGeometry';
 import { designTokens } from '../styles/designTokens';
 import { getCanvasLogicalSize } from '../utils/canvasDpr';
+import { fromLocalDate } from '../utils/dateOnly';
 
 export type OverlayRenderState = {
     viewport: Viewport;
@@ -86,7 +87,7 @@ export class OverlayRenderer {
         if (drawableTasks.length === 0) return;
 
         // Calculate Today X
-        const todayStart = new Date().setHours(0, 0, 0, 0);
+        const todayStart = fromLocalDate(new Date());
         const xToday = LayoutEngine.calendarDateToX(todayStart, viewport, 'end') - viewport.scrollX;
 
         ctx.save();
@@ -258,7 +259,7 @@ export class OverlayRenderer {
 
     private drawTodayLine(ctx: CanvasRenderingContext2D, viewport: Viewport, width: number, height: number) {
         // Redmine standard: draw at the right edge of "today" column.
-        const x = LayoutEngine.calendarDateToX(Date.now(), viewport, 'end') - viewport.scrollX;
+        const x = LayoutEngine.calendarDateToX(fromLocalDate(new Date()), viewport, 'end') - viewport.scrollX;
 
         if (x >= 0 && x <= width) {
             const COLOR = '#4285f4'; // Blue like the reference image

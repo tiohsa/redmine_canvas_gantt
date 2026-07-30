@@ -1,5 +1,11 @@
 import type { Task } from '../types';
-import { ONE_DAY_MS } from '../constants';
+import { isWorkingDay } from '../utils/businessCalendar';
+import {
+    addCalendarDays,
+    calendarDateKey,
+    fromLocalDate,
+    toCalendarDate
+} from '../utils/dateOnly';
 
 export interface WorkloadOptions {
     capacityThreshold: number; // e.g. 8.0
@@ -34,42 +40,28 @@ export interface WorkloadData {
 }
 
 export class WorkloadLogicService {
-    /**
-     * Set hours to 00:00:00.000 local time to align dates consistently
-     */
     static normalizeDate(timestamp: number): number {
-        const d = new Date(timestamp);
-        d.setHours(0, 0, 0, 0);
-        return d.getTime();
+        return toCalendarDate(timestamp);
     }
 
-    /**
-     * Format timestamp as YYYY-MM-DD in local time
-     */
     static formatDateStr(timestamp: number): string {
-        const d = new Date(timestamp);
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
+        return calendarDateKey(timestamp);
     }
 
-    static isBusinessDay(timestamp: number): boolean {
-        const d = new Date(timestamp);
-        const day = d.getDay();
-        return day !== 0 && day !== 6; // 0 is Sunday, 6 is Saturday
+    static isBusinessDay(timestamp: number, projectId?: string): boolean {
+        return isWorkingDay(timestamp, projectId);
     }
 
-    static getBusinessDaysInRange(startMs: number, endMs: number): number[] {
+    static getBusinessDaysInRange(startMs: number, endMs: number, projectId?: string): number[] {
         const days: number[] = [];
         let current = this.normalizeDate(startMs);
         const end = this.normalizeDate(endMs);
 
         while (current <= end) {
-            if (this.isBusinessDay(current)) {
+            if (this.isBusinessDay(current, projectId)) {
                 days.push(current);
             }
-            current += ONE_DAY_MS;
+            current = addCalendarDays(current, 1);
         }
 
         return days;
@@ -84,7 +76,7 @@ export class WorkloadLogicService {
         let overloadedAssigneeCount = 0;
         let overloadedDayCount = 0;
         
-        const todayMs = this.normalizeDate(Date.now());
+        const todayMs = fromLocalDate(new Date());
 
         tasks.forEach(task => {
             // 1. the issue has an assignee
@@ -98,7 +90,7 @@ export class WorkloadLogicService {
             // 5. closed issues option
             if (!options.includeClosedIssues && closedStatusIds.has(task.statusId)) return;
 
-            const businessDays = this.getBusinessDaysInRange(task.startDate, task.dueDate);
+            const businessDays = this.getBusinessDaysInRange(task.startDate, task.dueDate, task.projectId);
             if (businessDays.length === 0) return; // No business days in range
 
             const dailyLoad = task.estimatedHours / businessDays.length;
