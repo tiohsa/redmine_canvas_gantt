@@ -141,6 +141,20 @@ describe('OverlayRenderer progress line', () => {
 });
 
 describe('OverlayRenderer today line', () => {
+    it('passes one CalendarDate to both progress and today-line rendering in a frame', () => {
+        const ctx = createMockContext();
+        const canvas = { width: 10, height: 600, getContext: vi.fn(() => ctx) } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+        const today = parseDateOnly('2026-01-10')!;
+        const progressLine = vi.spyOn(renderer as unknown as { drawProgressLine: (...args: unknown[]) => void }, 'drawProgressLine');
+        const todayLine = vi.spyOn(renderer as unknown as { drawTodayLine: (...args: unknown[]) => void }, 'drawTodayLine');
+
+        renderer.render({ viewport, tasks: [], relations: [], rowCount: 0, zoomLevel: 2, selectedTaskId: null, selectedRelationId: null, draftRelation: null, today });
+
+        expect(progressLine).toHaveBeenCalledWith(ctx, viewport, [], 2, today);
+        expect(todayLine).toHaveBeenCalledWith(ctx, viewport, 10, 600, today);
+    });
+
     it('draws at the right edge of the projected local calendar day', () => {
         const todayCellStart = fromLocalDate(new Date());
         const utcViewport = {

@@ -11,7 +11,7 @@ import {
 } from './relationGeometry';
 import { designTokens } from '../styles/designTokens';
 import { getCanvasLogicalSize } from '../utils/canvasDpr';
-import { fromLocalDate } from '../utils/dateOnly';
+import { todayCalendarDate, type CalendarDate } from '../utils/dateOnly';
 
 export type OverlayRenderState = {
     viewport: Viewport;
@@ -22,6 +22,7 @@ export type OverlayRenderState = {
     selectedTaskId: string | null;
     selectedRelationId: string | null;
     draftRelation: DraftRelation | null;
+    today?: CalendarDate;
 };
 
 export class OverlayRenderer {
@@ -40,7 +41,8 @@ export class OverlayRenderer {
         zoomLevel,
         selectedTaskId,
         selectedRelationId,
-        draftRelation
+        draftRelation,
+        today = todayCalendarDate()
     }: OverlayRenderState) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
@@ -71,13 +73,13 @@ export class OverlayRenderer {
         }
 
         // Draw Inazuma line (Progress Line)
-        this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel);
+        this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel, today);
 
         // Draw "Today" line
-        this.drawTodayLine(ctx, viewport, width, height);
+        this.drawTodayLine(ctx, viewport, width, height, today);
     }
 
-    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[], zoomLevel: ZoomLevel) {
+    private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[], zoomLevel: ZoomLevel, todayStart: CalendarDate = todayCalendarDate()) {
         const { showProgressLine } = useUIStore.getState();
         if (!showProgressLine) return;
 
@@ -87,7 +89,6 @@ export class OverlayRenderer {
         if (drawableTasks.length === 0) return;
 
         // Calculate Today X
-        const todayStart = fromLocalDate(new Date());
         const xToday = LayoutEngine.calendarDateToX(todayStart, viewport, 'end') - viewport.scrollX;
 
         ctx.save();
@@ -257,9 +258,9 @@ export class OverlayRenderer {
         ctx.setLineDash([]);
     }
 
-    private drawTodayLine(ctx: CanvasRenderingContext2D, viewport: Viewport, width: number, height: number) {
+    private drawTodayLine(ctx: CanvasRenderingContext2D, viewport: Viewport, width: number, height: number, today: CalendarDate = todayCalendarDate()) {
         // Redmine standard: draw at the right edge of "today" column.
-        const x = LayoutEngine.calendarDateToX(fromLocalDate(new Date()), viewport, 'end') - viewport.scrollX;
+        const x = LayoutEngine.calendarDateToX(today, viewport, 'end') - viewport.scrollX;
 
         if (x >= 0 && x <= width) {
             const COLOR = '#4285f4'; // Blue like the reference image

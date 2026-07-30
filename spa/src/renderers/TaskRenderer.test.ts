@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TaskRenderer } from './TaskRenderer';
 import type { Task, Viewport } from '../types';
-import { parseDateOnly } from '../utils/dateOnly';
+import { addCalendarDays, parseDateOnly, todayCalendarDate } from '../utils/dateOnly';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 const TEST_TIMELINE_START_DATE = Date.UTC(2026, 0, 1);
@@ -102,7 +102,58 @@ describe('TaskRenderer', () => {
 
         renderer.render(viewport, [{ ...buildTask(), startDate: localDate, dueDate: undefined }], 1, 2, []);
 
-        expect(drawPoint).toHaveBeenCalledWith(ctx, expect.any(Object), 0.5, 0, viewport.rowHeight, 'triangle_right');
+        expect(drawPoint).toHaveBeenCalledWith(ctx, expect.any(Object), 0.5, 0, viewport.rowHeight, 'triangle_right', expect.any(Number));
+    });
+
+    it('uses the supplied local CalendarDate for a multi-day delay hatch boundary', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 0, 10, 0, 1));
+        const ctx = buildContext();
+        const canvas = { width: 800, height: 600, getContext: vi.fn().mockReturnValue(ctx) } as unknown as HTMLCanvasElement;
+        const renderer = new TaskRenderer(canvas);
+        const drawHatchedRect = vi.spyOn(
+            renderer as unknown as { drawHatchedRect: (...args: unknown[]) => void },
+            'drawHatchedRect'
+        ).mockImplementation(() => undefined);
+        const today = todayCalendarDate();
+        const task = { ...buildTask(), startDate: parseDateOnly('2026-01-08')!, dueDate: parseDateOnly('2026-01-12')! };
+
+        renderer.render(viewport, [task], 1, 2, [], [], false, false, true, null, false, true, true, today);
+
+        // Jan 8 through Jan 10 is the completed portion of the five-cell bar.
+        expect(drawHatchedRect).toHaveBeenCalledWith(ctx, 7, expect.any(Number), 3, expect.any(Number));
+        vi.useRealTimers();
+    });
+
+    it.each([
+        ['start-only', { dueDate: undefined }, -1, true],
+        ['start-only', { dueDate: undefined }, 0, false],
+        ['start-only', { dueDate: undefined }, 1, false],
+        ['due-only', { startDate: undefined }, -1, true],
+        ['due-only', { startDate: undefined }, 0, false],
+        ['due-only', { startDate: undefined }, 1, false]
+    ])('%s unfinished task is delayed only when its date precedes local today', (_label, patch, offset, expectedDelayed) => {
+        const ctx = buildContext();
+        const canvas = { width: 800, height: 600, getContext: vi.fn().mockReturnValue(ctx) } as unknown as HTMLCanvasElement;
+        const renderer = new TaskRenderer(canvas);
+        class TestPath2D {
+            moveTo() {}
+            lineTo() {}
+            closePath() {}
+        }
+        vi.stubGlobal('Path2D', TestPath2D);
+        const drawHatchedPath = vi.spyOn(
+            renderer as unknown as { drawHatchedPath: (...args: unknown[]) => void },
+            'drawHatchedPath'
+        ).mockImplementation(() => undefined);
+        const today = parseDateOnly('2026-01-10')!;
+        const taskDate = addCalendarDays(today, offset);
+        const task = { ...buildTask(), startDate: taskDate, dueDate: taskDate, ...patch };
+
+        renderer.render(viewport, [task], 1, 2, [], [], false, false, true, null, false, true, true, today);
+
+        expect(drawHatchedPath).toHaveBeenCalledTimes(expectedDelayed ? 1 : 0);
+        vi.unstubAllGlobals();
     });
 
     it('draws task titles when enabled', () => {

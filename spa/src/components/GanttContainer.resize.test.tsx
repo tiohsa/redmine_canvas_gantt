@@ -106,6 +106,20 @@ vi.mock('../api/client', () => ({
 }));
 
 describe('GanttContainer Resize', () => {
+    it('shares one CalendarDate with the task and overlay renderers for each canvas frame', async () => {
+        render(<GanttContainer />);
+
+        await waitFor(() => {
+            const taskArgs = taskRenderMock.mock.calls.at(-1) ?? [];
+            const overlayArgs = overlayRenderMock.mock.calls.at(-1) ?? [];
+            const taskToday = taskArgs.at(-1);
+            const overlayToday = (overlayArgs[0] as { today?: number } | undefined)?.today;
+
+            expect(taskToday).toEqual(overlayToday);
+            expect(Number.isFinite(taskToday as number)).toBe(true);
+        });
+    });
+
     beforeEach(() => {
         document.body.style.cursor = '';
         document.body.style.userSelect = '';

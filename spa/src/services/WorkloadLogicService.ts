@@ -3,7 +3,7 @@ import { isWorkingDay } from '../utils/businessCalendar';
 import {
     addCalendarDays,
     calendarDateKey,
-    fromLocalDate,
+    todayCalendarDate,
     toCalendarDate
 } from '../utils/dateOnly';
 
@@ -76,7 +76,7 @@ export class WorkloadLogicService {
         let overloadedAssigneeCount = 0;
         let overloadedDayCount = 0;
         
-        const todayMs = fromLocalDate(new Date());
+        const todayMs = todayCalendarDate();
 
         tasks.forEach(task => {
             // 1. the issue has an assignee

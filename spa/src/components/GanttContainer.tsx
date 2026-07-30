@@ -23,6 +23,7 @@ import { useInitialGanttData } from './gantt/useInitialGanttData';
 import { useScrollSync } from './gantt/useScrollSync';
 import { exportTasksAsCsv } from '../export/csv';
 import { exportSnapshotAsPng } from '../export/png';
+import { todayCalendarDate } from '../utils/dateOnly';
 import type { GanttExportHandle, GanttExportSnapshot } from '../export/types';
 import type { TimelineHeaderHandle } from './TimelineHeader';
 import { i18n } from '../utils/i18n';
@@ -246,6 +247,8 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
     }, [updateViewport]);
 
     const drawCanvases = useCallback(() => {
+        // One CalendarDate is shared by every renderer in this frame.
+        const today = todayCalendarDate();
         if (engines.current.bg) {
             engines.current.bg.render(viewport, zoomLevel, selectedTaskId, tasks);
         }
@@ -260,10 +263,10 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
             });
         }
         if (engines.current.task) {
-            engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows, showTaskTitles, showTaskBarDates, showPointsOrphans, baselineSnapshot, showBaseline, showStartDateOnly, showDueDateOnly);
+            engines.current.task.render(viewport, tasks, rowCount, zoomLevel, relations, layoutRows, showTaskTitles, showTaskBarDates, showPointsOrphans, baselineSnapshot, showBaseline, showStartDateOnly, showDueDateOnly, today);
         }
         if (engines.current.overlay) {
-            engines.current.overlay.render(overlayRenderState);
+            engines.current.overlay.render({ ...overlayRenderState, today });
         }
     }, [
         layoutRows,

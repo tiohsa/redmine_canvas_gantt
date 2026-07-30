@@ -1,5 +1,5 @@
 import type { Task, Viewport, Bounds, ZoomLevel } from '../types';
-import { timelineToCalendarDate, toTimelineDate } from '../utils/dateOnly';
+import { timelineToCalendarDate, toTimelineDate, type CalendarDate, type TimelineDate } from '../utils/dateOnly';
 
 type CalendarCellPosition = 'start' | 'center' | 'end';
 
@@ -9,7 +9,7 @@ export class LayoutEngine {
   /**
    * Converts a timestamp to an X coordinate relative to the start of the project timeline (scrollX=0).
    */
-  static dateToX(date: number, viewport: Viewport): number {
+  static dateToX(date: TimelineDate, viewport: Viewport): number {
     return (date - viewport.startDate) * viewport.scale;
     // Note: To get screen X, subtract viewport.scrollX
   }
@@ -17,15 +17,15 @@ export class LayoutEngine {
   /**
    * Converts an X coordinate (relative to timeline start) back to a timestamp.
    */
-  static xToDate(x: number, viewport: Viewport): number {
-    return x / viewport.scale + viewport.startDate;
+  static xToDate(x: number, viewport: Viewport): TimelineDate {
+    return (x / viewport.scale + viewport.startDate) as TimelineDate;
   }
 
   /**
    * Projects a local calendar date onto the fixed-width UTC timeline used by the grid.
    */
-  static calendarDateToTimeline(date: number, position: CalendarCellPosition = 'start'): number {
-    if (!Number.isFinite(date)) return NaN;
+  static calendarDateToTimeline(date: CalendarDate, position: CalendarCellPosition = 'start'): TimelineDate {
+    if (!Number.isFinite(date)) return Number.NaN as TimelineDate;
 
     const cellStart = toTimelineDate(date);
     const offset = position === 'center'
@@ -34,19 +34,19 @@ export class LayoutEngine {
         ? this.ONE_DAY_MS
         : 0;
 
-    return cellStart + offset;
+    return (cellStart + offset) as TimelineDate;
   }
 
-  static calendarDateToX(date: number, viewport: Viewport, position: CalendarCellPosition = 'start'): number {
+  static calendarDateToX(date: CalendarDate, viewport: Viewport, position: CalendarCellPosition = 'start'): number {
     return this.dateToX(this.calendarDateToTimeline(date, position), viewport);
   }
 
   /**
    * Returns the screen bounding box for a task bar.
    */
-  public static snapDate(timestamp: number | undefined, _zoomLevel?: ZoomLevel): number {
+  public static snapDate(timestamp: number | undefined, _zoomLevel?: ZoomLevel): CalendarDate {
     void _zoomLevel;
-    if (timestamp === undefined || !Number.isFinite(timestamp)) return NaN;
+    if (timestamp === undefined || !Number.isFinite(timestamp)) return Number.NaN as CalendarDate;
     return timelineToCalendarDate(timestamp);
   }
 
