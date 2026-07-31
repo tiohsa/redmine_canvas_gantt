@@ -78,10 +78,10 @@ window.RedmineCanvasGantt = {
         label_dependencies_short: 'Link',
         label_progress_line: 'Progress Line',
         label_organize_by_dependency: 'Organize by dependency',
-        label_show_start_date_only: 'Show start-date-only tasks',
-        label_show_due_date_only: 'Show due-date-only tasks',
-        label_toggle_task_titles: 'Show tickets',
-        label_toggle_task_bar_dates: 'Show task-bar dates',
+        label_show_start_date_only: 'Start-date-only tasks',
+        label_show_due_date_only: 'Due-date-only tasks',
+        label_toggle_task_titles: 'Ticket titles',
+        label_toggle_task_bar_dates: 'Task-bar dates',
         label_relation_title: 'Dependency',
         label_relation_updated: 'Dependency updated',
         label_relation_delay_invalid: 'Delay must be 0 or greater',
@@ -111,7 +111,7 @@ window.RedmineCanvasGantt = {
         label_export_unavailable: 'Export is unavailable in the current layout',
         label_export_failed: 'Export failed',
         label_today: 'Today',
-        label_toggle_hierarchy_lines: 'Toggle Hierarchy Lines',
+        label_toggle_hierarchy_lines: 'Hierarchy lines',
         help_desc_export: 'Export the current Gantt view as a PNG image, or download the visible task data as CSV including hierarchy and dependency columns.'
     },
     settings: {

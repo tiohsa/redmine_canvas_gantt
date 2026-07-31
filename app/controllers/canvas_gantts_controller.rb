@@ -168,6 +168,7 @@ class CanvasGanttsController < ApplicationController
     label_version_short: :label_version_short,
     label_status_short: :label_status_short,
     label_progress_short: :label_progress_short,
+    label_display_short: :label_display_short,
     label_column_short: :label_column_short,
     label_dependencies_short: :label_dependencies_short,
     label_query_short: :label_query_short,

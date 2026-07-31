@@ -275,7 +275,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                         boxShadow: designTokens.menuShadow,
                         padding: 12,
                         minWidth: 280,
-                        maxHeight: '400px',
+                        maxHeight: '340px',
                         overflowY: 'auto',
                         zIndex: 20,
                         display: 'flex',
@@ -290,23 +290,31 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                         <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginBottom: 4 }}>
                             {i18n.t('label_settings') || 'Settings'}
                         </div>
-                        <DisplaySettingSwitch
-                            checked={autoSave}
-                            onChange={(event) => setAutoSave(event.target.checked)}
-                            label={i18n.t('help_label_autosave') || 'Auto Save'}
-                        />
-                        <DisplaySettingSwitch checked={showProgressLine} onChange={toggleProgressLine} label={i18n.t('label_progress_line') || 'Progress line'} />
-                        <DisplaySettingSwitch checked={organizeByDependency} onChange={() => setOrganizeByDependency(!organizeByDependency)} label={i18n.t('label_organize_by_dependency') || 'Organize by dependency'} />
-                        <DisplaySettingSwitch checked={showStartDateOnly} onChange={toggleStartDateOnly} label={i18n.t('label_show_start_date_only') || 'Show start-date-only tasks'} />
-                        <DisplaySettingSwitch checked={showDueDateOnly} onChange={toggleDueDateOnly} label={i18n.t('label_show_due_date_only') || 'Show due-date-only tasks'} />
-                        <DisplaySettingSwitch checked={showTaskTitles} onChange={toggleTaskTitles} label={i18n.t('label_toggle_task_titles') || 'Show tickets'} />
-                        <DisplaySettingSwitch checked={showTaskBarDates} onChange={toggleTaskBarDates} label={i18n.t('label_toggle_task_bar_dates') || 'Show task-bar dates'} />
-                        <DisplaySettingSwitch checked={showHierarchyLines} onChange={toggleHierarchyLines} label={i18n.t('label_toggle_hierarchy_lines') || 'Show hierarchy lines'} />
-                        <DisplaySettingSwitch
-                            checked={displayPreferencesGlobalEnabled}
-                            onChange={(event) => setShareAcrossProjects(event.target.checked)}
-                            label={i18n.t('label_share_display_settings_across_projects') || 'Share settings across all projects'}
-                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 8 }}>
+                            <DisplaySettingSwitch
+                                checked={autoSave}
+                                onChange={(event) => setAutoSave(event.target.checked)}
+                                label={i18n.t('help_label_autosave') || 'Auto Save'}
+                            />
+                            <DisplaySettingSwitch
+                                checked={displayPreferencesGlobalEnabled}
+                                onChange={(event) => setShareAcrossProjects(event.target.checked)}
+                                label={i18n.t('label_share_display_settings_across_projects') || 'Share settings across all projects'}
+                            />
+                        </div>
+
+                        <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginTop: 12, marginBottom: 4 }}>
+                            {i18n.t('label_display_short') || 'Display'}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <DisplaySettingSwitch checked={showProgressLine} onChange={toggleProgressLine} label={i18n.t('label_progress_line') || 'Progress line'} />
+                            <DisplaySettingSwitch checked={organizeByDependency} onChange={() => setOrganizeByDependency(!organizeByDependency)} label={i18n.t('label_organize_by_dependency') || 'Organize by dependency'} />
+                            <DisplaySettingSwitch checked={showStartDateOnly} onChange={toggleStartDateOnly} label={i18n.t('label_show_start_date_only') || 'Start-date-only tasks'} />
+                            <DisplaySettingSwitch checked={showDueDateOnly} onChange={toggleDueDateOnly} label={i18n.t('label_show_due_date_only') || 'Due-date-only tasks'} />
+                            <DisplaySettingSwitch checked={showTaskTitles} onChange={toggleTaskTitles} label={i18n.t('label_toggle_task_titles') || 'Ticket titles'} />
+                            <DisplaySettingSwitch checked={showTaskBarDates} onChange={toggleTaskBarDates} label={i18n.t('label_toggle_task_bar_dates') || 'Task-bar dates'} />
+                            <DisplaySettingSwitch checked={showHierarchyLines} onChange={toggleHierarchyLines} label={i18n.t('label_toggle_hierarchy_lines') || 'Hierarchy lines'} />
+                        </div>
 
                         <div
                             role="group"

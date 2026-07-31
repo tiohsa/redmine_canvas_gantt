@@ -152,18 +152,18 @@ describe('DisplaySettingsControls', () => {
         expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('title', 'Settings');
         expect(screen.getByTestId('display-settings-menu-button')).toHaveAttribute('aria-label', 'Settings');
         expect(screen.getByTestId('display-settings-menu')).toHaveStyle({
-            maxHeight: '400px',
+            maxHeight: '340px',
             overflowY: 'auto'
         });
         expect(screen.getByLabelText('Row height').parentElement?.parentElement).toHaveStyle({
             gridTemplateColumns: 'repeat(2, minmax(0, 1fr))'
         });
         expect(screen.getByLabelText('Organize by dependency')).toBeInTheDocument();
-        expect(screen.getByLabelText('Show start-date-only tasks')).toBeChecked();
-        expect(screen.getByLabelText('Show due-date-only tasks')).toBeChecked();
-        expect(screen.getByLabelText('Show tickets')).toBeChecked();
-        expect(screen.getByLabelText('Show task-bar dates')).not.toBeChecked();
-        expect(screen.getByLabelText('Show hierarchy lines')).toBeChecked();
+        expect(screen.getByLabelText('Start-date-only tasks')).toBeChecked();
+        expect(screen.getByLabelText('Due-date-only tasks')).toBeChecked();
+        expect(screen.getByLabelText('Ticket titles')).toBeChecked();
+        expect(screen.getByLabelText('Task-bar dates')).not.toBeChecked();
+        expect(screen.getByLabelText('Hierarchy lines')).toBeChecked();
         expect(screen.getByLabelText('Share settings across all projects')).not.toBeChecked();
         expect(screen.getByLabelText('Auto Save')).toHaveAttribute('role', 'switch');
         expect(screen.getByLabelText('Auto Save').parentElement).toHaveStyle({ width: '32px', height: '18px' });
@@ -178,8 +178,8 @@ describe('DisplaySettingsControls', () => {
 
         fireEvent.click(screen.getByLabelText('Progress line'));
         fireEvent.click(screen.getByLabelText('Organize by dependency'));
-        fireEvent.click(screen.getByLabelText('Show start-date-only tasks'));
-        fireEvent.click(screen.getByLabelText('Show hierarchy lines'));
+        fireEvent.click(screen.getByLabelText('Start-date-only tasks'));
+        fireEvent.click(screen.getByLabelText('Hierarchy lines'));
         fireEvent.change(screen.getByTestId('display-settings-row-height-select'), { target: { value: '52' } });
         fireEvent.change(screen.getByTestId('display-settings-font-size-select'), { target: { value: '15' } });
 
