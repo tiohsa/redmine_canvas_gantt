@@ -184,12 +184,28 @@ describe('InteractionEngine task updates', () => {
     });
 
     it('依存関係があるタスク更新後にデータを再取得する', async () => {
-        setViewport({ startDate: 0, scrollX: 0, scrollY: 0, scale: 1 });
+        const day = 24 * 60 * 60 * 1000;
+        setViewport({
+            startDate: parseDateOnly('2025-12-01')!,
+            scrollX: 0,
+            scrollY: 0,
+            scale: 10 / day
+        });
         const container = createContainer();
         const engine = new InteractionEngine(container);
 
-        const task1 = baseTask({ id: '1', rowIndex: 0 });
-        const task2 = baseTask({ id: '2', rowIndex: 1, startDate: 20, dueDate: 30 });
+        const task1 = baseTask({
+            id: '1',
+            rowIndex: 0,
+            startDate: parseDateOnly('2026-01-01')!,
+            dueDate: parseDateOnly('2026-01-10')!
+        });
+        const task2 = baseTask({
+            id: '2',
+            rowIndex: 1,
+            startDate: parseDateOnly('2026-01-20')!,
+            dueDate: parseDateOnly('2026-01-30')!
+        });
         const relations: Relation[] = [{ id: 'r1', from: '1', to: '2', type: 'precedes' }];
 
         useTaskStore.setState({
@@ -204,12 +220,16 @@ describe('InteractionEngine task updates', () => {
             filterText: '',
             sortConfig: null,
             autoSave: true,
-            modifiedTaskIds: new Set(['1'])
+            modifiedTaskIds: new Set()
         });
 
-        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 1 });
-        vi.mocked(apiClient.fetchData).mockResolvedValue({
-            tasks: [task1, task2],
+        let persistedTask: Task | undefined;
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
+            if (task.id === task1.id) persistedTask = { ...task, lockVersion: 1 };
+            return { status: 'ok', lockVersion: 1 };
+        });
+        vi.mocked(apiClient.fetchData).mockImplementation(async () => ({
+            tasks: [persistedTask ?? task1, task2],
             relations,
             versions: [],
             filterOptions: { projects: [], assignees: [] },
@@ -217,7 +237,7 @@ describe('InteractionEngine task updates', () => {
             statuses: [],
             project: { id: 'p1', name: 'Project' },
             permissions: { editable: true, viewable: true, baselineEditable: true }
-        });
+        }));
 
         const { viewport, zoomLevel } = useTaskStore.getState();
         const bounds = LayoutEngine.getTaskBounds(task1, viewport, 'hit', zoomLevel);
@@ -225,10 +245,16 @@ describe('InteractionEngine task updates', () => {
         window.dispatchEvent(new MouseEvent('mousemove', { clientX: bounds.x + 11, clientY: bounds.y + 1, bubbles: true }));
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
 
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        expect(apiClient.updateTask).toHaveBeenCalled();
-        expect(apiClient.fetchData).toHaveBeenCalled();
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalled());
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalled());
+        expect(persistedTask).toBeDefined();
+        const reloadedTask = useTaskStore.getState().allTasks.find((task) => task.id === task1.id);
+        expect(reloadedTask).toMatchObject({
+            startDate: persistedTask?.startDate,
+            dueDate: persistedTask?.dueDate,
+            lockVersion: 1
+        });
+        expect(useTaskStore.getState().modifiedTaskIds.has(task1.id)).toBe(false);
 
         engine.detach();
         container.remove();

@@ -5,7 +5,7 @@ import { getMinFiniteStartDate } from '../../utils/taskRange';
 import type { Viewport } from '../../types';
 import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState } from '../../utils/queryParams';
 import { loadLastUsedSharedQueryProjectState } from '../../utils/sharedQueryState';
-import { resolvedQueryStateFromProjectState, resolvedStateToQueryContext } from '../../query/queryStateCodec';
+import { resolvedQueryStateFromProjectState } from '../../query/queryStateCodec';
 import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../../utils/dateOnly';
 
 type Params = {
@@ -23,7 +23,7 @@ export const useInitialGanttData = ({
         if (hasFetched.current) return;
         hasFetched.current = true;
 
-        import('../../api/client').then(({ apiClient }) => {
+        const loadInitialData = async () => {
             const storedProjectState = loadLastUsedSharedQueryProjectState();
             const initialSharedQueryState = resolveInitialSharedQueryState(
                 window.location.search,
@@ -65,43 +65,37 @@ export const useInitialGanttData = ({
                 })()
                 : initialRawSearch;
 
-            apiClient.fetchData({
+            const hasExplicitInitialState = initialSharedQueryState.source !== 'default';
+            const initialState = hasExplicitInitialState
+                ? initialSharedQueryState.state
+                : undefined;
+
+            await useTaskStore.getState().loadInitialData({
                 rawSearch: apiRawSearch,
                 query: initialApiQuery,
-                queryContext: initialQueryContext
-            }).then(data => {
-                const hasExplicitInitialState = initialSharedQueryState.source !== 'default';
-                const initialState = hasExplicitInitialState
-                    ? { ...data.initialState, ...initialSharedQueryState.state }
-                    : data.initialState;
-                const queryContext = hasExplicitInitialState
-                    ? (initialQueryContext ?? resolvedStateToQueryContext(initialSharedQueryState.state))
-                    : data.queryContext;
+                queryContext: initialQueryContext,
+                initialState
+            });
+            void useTaskStore.getState().loadSavedQueries();
 
-                useTaskStore.getState().applyApiData({
-                    ...data,
-                    initialState,
-                    queryContext
-                });
-                void useTaskStore.getState().loadSavedQueries();
+            if (!viewportFromStorage) {
+                const minStart = getMinFiniteStartDate(useTaskStore.getState().allTasks);
+                const oneYearAgo = new Date();
+                oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+                const oneYearAgoTimelineDate = toTimelineDate(fromLocalDate(oneYearAgo));
 
-                if (!viewportFromStorage) {
-                    const minStart = getMinFiniteStartDate(data.tasks);
-                    const oneYearAgo = new Date();
-                    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-                    const oneYearAgoTimelineDate = toTimelineDate(fromLocalDate(oneYearAgo));
+                const startDate = Math.min(
+                    minStart === null ? oneYearAgoTimelineDate : toTimelineDate(toCalendarDate(minStart)),
+                    oneYearAgoTimelineDate
+                );
+                const currentViewport = useTaskStore.getState().viewport;
+                const now = toTimelineDate(todayCalendarDate());
+                const scrollX = Math.max(0, (now - startDate) * currentViewport.scale - 100);
 
-                    const startDate = Math.min(
-                        minStart === null ? oneYearAgoTimelineDate : toTimelineDate(toCalendarDate(minStart)),
-                        oneYearAgoTimelineDate
-                    );
-                    const currentViewport = useTaskStore.getState().viewport;
-                    const now = toTimelineDate(todayCalendarDate());
-                    const scrollX = Math.max(0, (now - startDate) * currentViewport.scale - 100);
+                updateViewport({ startDate, scrollX });
+            }
+        };
 
-                    updateViewport({ startDate, scrollX });
-                }
-            }).catch(err => console.error('Failed to load Gantt data', err));
-        });
+        void loadInitialData().catch(err => console.error('Failed to load Gantt data', err));
     }, [updateViewport, viewportFromStorage]);
 };

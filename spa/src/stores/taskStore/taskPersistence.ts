@@ -20,6 +20,21 @@ type FetchDataParams = {
     };
 };
 
+const taskWriteQueues = new Map<string, Promise<void>>();
+
+export const enqueueTaskWrite = async <T>(taskId: string, operation: () => Promise<T>): Promise<T> => {
+    const previous = taskWriteQueues.get(taskId) ?? Promise.resolve();
+    const queued = previous.then(operation, operation);
+    const marker = queued.then(() => undefined, () => undefined);
+    taskWriteQueues.set(taskId, marker);
+
+    try {
+        return await queued;
+    } finally {
+        if (taskWriteQueues.get(taskId) === marker) taskWriteQueues.delete(taskId);
+    }
+};
+
 export const createTaskLayoutSnapshot = (state: TaskLayoutSnapshot): TaskLayoutSnapshot => ({
     allTasks: state.allTasks.map((task) => ({ ...task })),
     tasks: state.tasks.map((task) => ({ ...task })),
@@ -55,7 +70,8 @@ export const saveModifiedTasks = async (
     modifiedTaskIds: Set<string>,
     selectedStatusIds: number[],
     updateTask: (task: Task) => Promise<UpdateTaskFieldsResult>,
-    fetchData: (params: FetchDataParams) => Promise<FetchDataResult>
+    fetchData: (params: FetchDataParams) => Promise<FetchDataResult>,
+    onTaskSaved?: (taskId: string, lockVersion?: number) => void
 ) => {
     const mutableTaskById = new Map(tasks.map(task => [task.id, { ...task }]));
     const hasSamePersistedFields = (local: Task, remote: Task): boolean => {
@@ -119,39 +135,80 @@ export const saveModifiedTasks = async (
 
             return 0;
         });
+    const taskRank = new Map(tasksToUpdate.map((task) => [
+        task.id,
+        `${calcDepth(task.id)}:${calcDependencyOrder(task.id)}`
+    ]));
 
     const failures = new Map<string, string>();
     let pending = tasksToUpdate.map(task => task.id);
-    const maxPasses = Math.max(1, pending.length);
+    const maxPasses = Math.max(1, pending.length * 2);
 
     for (let pass = 0; pass < maxPasses && pending.length > 0; pass += 1) {
         let progress = false;
         const nextPending: string[] = [];
         const conflictTaskIds: string[] = [];
 
-        for (const taskId of pending) {
-            const task = mutableTaskById.get(taskId);
-            if (!task) continue;
-            const result = await updateTask(task);
-
-            if (result.status === 'ok') {
-                progress = true;
-                failures.delete(taskId);
-                if (typeof result.lockVersion === 'number') {
-                    mutableTaskById.set(taskId, { ...task, lockVersion: result.lockVersion });
+        let remaining = [...pending];
+        while (remaining.length > 0) {
+            const firstTaskId = remaining[0];
+            const rank = taskRank.get(firstTaskId);
+            const batch = remaining.filter((taskId) => taskRank.get(taskId) === rank);
+            const batchIds = new Set(batch);
+            remaining = remaining.filter((taskId) => !batchIds.has(taskId));
+            const results = await Promise.all(batch.map(async (taskId) => {
+                const task = mutableTaskById.get(taskId);
+                if (!task) return { taskId, task, result: undefined, error: undefined };
+                try {
+                    const result = await enqueueTaskWrite(taskId, () => updateTask(task));
+                    return { taskId, task, result, error: undefined };
+                } catch (error) {
+                    return {
+                        taskId,
+                        task,
+                        result: undefined,
+                        error: error instanceof Error ? error.message : (i18n.t('label_unknown_error') || 'Unknown error')
+                    };
                 }
-                continue;
-            }
+            }));
 
-            if (result.status === 'conflict') {
-                conflictTaskIds.push(taskId);
+            for (const { taskId, task, result, error } of results) {
+                if (!task) continue;
+                if (error) {
+                    failures.set(taskId, error);
+                    nextPending.push(taskId);
+                    continue;
+                }
+                if (!result) continue;
+
+                if (result.status === 'ok') {
+                    progress = true;
+                    failures.delete(taskId);
+                    if (typeof result.lockVersion === 'number') {
+                        mutableTaskById.set(taskId, { ...task, lockVersion: result.lockVersion });
+                    }
+                    onTaskSaved?.(taskId, result.lockVersion);
+                    continue;
+                }
+
+                if (result.status === 'conflict') {
+                    conflictTaskIds.push(taskId);
+                }
+                failures.set(taskId, result.error || (i18n.t('label_unknown_error') || 'Unknown error'));
+                nextPending.push(taskId);
             }
-            failures.set(taskId, result.error || (i18n.t('label_unknown_error') || 'Unknown error'));
-            nextPending.push(taskId);
         }
 
         if (conflictTaskIds.length > 0) {
-            const latest = await fetchData({ query: { selectedStatusIds } });
+            let latest: FetchDataResult;
+            try {
+                latest = await fetchData({ query: { selectedStatusIds } });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : (i18n.t('label_unknown_error') || 'Unknown error');
+                conflictTaskIds.forEach((taskId) => failures.set(taskId, message));
+                pending = nextPending;
+                break;
+            }
             const latestTaskById = new Map(latest.tasks.map(task => [task.id, task]));
             const refreshedPending: string[] = [];
 
@@ -166,10 +223,21 @@ export const saveModifiedTasks = async (
                 if (hasSamePersistedFields(localTask, latestTask)) {
                     failures.delete(taskId);
                     progress = true;
+                    onTaskSaved?.(taskId, latestTask.lockVersion);
                     continue;
                 }
 
-                if (conflictTaskIds.includes(taskId)) continue;
+                if (conflictTaskIds.includes(taskId)) {
+                    onTaskSaved?.(taskId, latestTask.lockVersion);
+                    mutableTaskById.set(taskId, { ...localTask, lockVersion: latestTask.lockVersion });
+                    // Refreshing the remote lock version makes this task
+                    // eligible for a bounded retry even when it is the only
+                    // task in the batch. Do not let progress from an
+                    // unrelated task be required to preserve the edit.
+                    progress = true;
+                    refreshedPending.push(taskId);
+                    continue;
+                }
                 refreshedPending.push(taskId);
             }
 

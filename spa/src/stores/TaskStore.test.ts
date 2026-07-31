@@ -36,6 +36,27 @@ const buildTask = (overrides: Partial<Task>): Task => ({
     ...overrides
 });
 
+const buildApiData = (tasks: Task[]) => ({
+    tasks,
+    relations: [],
+    versions: [],
+    filterOptions: { projects: [], assignees: [] },
+    statuses: [],
+    customFields: [],
+    project: { id: 'p1', name: 'P1' },
+    permissions: { editable: true, viewable: true, baselineEditable: true }
+});
+
+const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+    return { promise, resolve, reject };
+};
+
 describe('TaskStore viewport clamping', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -416,6 +437,23 @@ describe('TaskStore shared query persistence', () => {
         useTaskStore.setState({ groupByProject: true, groupByAssignee: false });
 
         await useTaskStore.getState().applySavedQuery(12);
+
+        expect(useTaskStore.getState().groupByProject).toBe(false);
+        expect(useTaskStore.getState().groupByAssignee).toBe(false);
+    });
+
+    it('keeps an explicit group_by override ahead of a server initial-state default', async () => {
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            ...buildApiData([]),
+            initialState: { groupBy: 'project' }
+        });
+        useTaskStore.setState({
+            explicitGroupByOverride: null,
+            groupByProject: false,
+            groupByAssignee: false
+        });
+
+        await useTaskStore.getState().refreshData();
 
         expect(useTaskStore.getState().groupByProject).toBe(false);
         expect(useTaskStore.getState().groupByAssignee).toBe(false);
@@ -1098,6 +1136,273 @@ describe('TaskStore background refresh safety', () => {
         });
 
         consoleError.mockRestore();
+    });
+});
+
+describe('TaskStore asynchronous state ownership', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        vi.mocked(apiClient.fetchData).mockReset();
+        vi.mocked(apiClient.updateTask).mockReset();
+    });
+
+    it('applies only the newest refresh when responses complete in reverse order', async () => {
+        const first = deferred<ReturnType<typeof buildApiData>>();
+        const second = deferred<ReturnType<typeof buildApiData>>();
+        let refreshCount = 0;
+        vi.mocked(apiClient.fetchData).mockImplementation(() => {
+            refreshCount += 1;
+            return refreshCount === 1 ? first.promise : second.promise;
+        });
+
+        const firstRefresh = useTaskStore.getState().refreshData();
+        const secondRefresh = useTaskStore.getState().refreshData();
+        second.resolve(buildApiData([buildTask({ id: 'new' })]));
+        await Promise.resolve();
+        first.resolve(buildApiData([buildTask({ id: 'old' })]));
+
+        await Promise.all([firstRefresh, secondRefresh]);
+        expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['new']);
+    });
+
+    it('does not surface a superseded request rejection after a newer refresh wins', async () => {
+        const first = deferred<ReturnType<typeof buildApiData>>();
+        const second = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData)
+            .mockImplementationOnce(() => first.promise)
+            .mockImplementationOnce(() => second.promise);
+
+        const firstRefresh = useTaskStore.getState().refreshData();
+        const secondRefresh = useTaskStore.getState().refreshData();
+        second.resolve(buildApiData([buildTask({ id: 'new' })]));
+        first.reject(new Error('request aborted after supersession'));
+
+        await expect(firstRefresh).resolves.toBeUndefined();
+        await secondRefresh;
+        expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['new']);
+    });
+
+    it('applies only the newest saved query when query responses complete in reverse order', async () => {
+        const first = deferred<ReturnType<typeof buildApiData>>();
+        const second = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData)
+            .mockImplementationOnce(() => first.promise)
+            .mockImplementationOnce(() => second.promise);
+
+        const firstQuery = useTaskStore.getState().applySavedQuery(1);
+        const secondQuery = useTaskStore.getState().applySavedQuery(2);
+        second.resolve(buildApiData([buildTask({ id: 'query-2' })]));
+        first.resolve(buildApiData([buildTask({ id: 'query-1' })]));
+
+        await Promise.all([firstQuery, secondQuery]);
+        expect(useTaskStore.getState().activeQueryId).toBe(2);
+        expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['query-2']);
+    });
+
+    it('keeps only the third filter refresh when three requests overlap', async () => {
+        const requests = [deferred<ReturnType<typeof buildApiData>>(), deferred<ReturnType<typeof buildApiData>>(), deferred<ReturnType<typeof buildApiData>>()];
+        vi.mocked(apiClient.fetchData).mockImplementationOnce(() => requests[0].promise)
+            .mockImplementationOnce(() => requests[1].promise)
+            .mockImplementationOnce(() => requests[2].promise);
+
+        const refreshes = [
+            useTaskStore.getState().refreshData(),
+            useTaskStore.getState().refreshData(),
+            useTaskStore.getState().refreshData()
+        ];
+        requests[2].resolve(buildApiData([buildTask({ id: 'filter-3' })]));
+        requests[1].resolve(buildApiData([buildTask({ id: 'filter-2' })]));
+        requests[0].resolve(buildApiData([buildTask({ id: 'filter-1' })]));
+        await Promise.all(refreshes);
+
+        expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['filter-3']);
+    });
+
+    it('keeps only the last result after three actual assignee filter changes', async () => {
+        const requests = [deferred<ReturnType<typeof buildApiData>>(), deferred<ReturnType<typeof buildApiData>>(), deferred<ReturnType<typeof buildApiData>>()];
+        let requestIndex = 0;
+        vi.mocked(apiClient.fetchData).mockImplementation(() => requests[requestIndex++].promise);
+
+        useTaskStore.getState().setSelectedAssigneeIds([1]);
+        useTaskStore.getState().setSelectedAssigneeIds([2]);
+        useTaskStore.getState().setSelectedAssigneeIds([3]);
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(3));
+
+        requests[2].resolve(buildApiData([buildTask({ id: 'assignee-3' })]));
+        requests[1].resolve(buildApiData([buildTask({ id: 'assignee-2' })]));
+        requests[0].resolve(buildApiData([buildTask({ id: 'assignee-1' })]));
+        await vi.waitFor(() => expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['assignee-3']));
+    });
+
+    it('can refresh successfully after the newest request fails', async () => {
+        vi.mocked(apiClient.fetchData).mockRejectedValueOnce(new Error('temporary failure'));
+        const failed = useTaskStore.getState().refreshData();
+        await expect(failed).rejects.toThrow('temporary failure');
+
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce(buildApiData([buildTask({ id: 'recovered' })]));
+        await useTaskStore.getState().refreshData();
+        expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['recovered']);
+    });
+
+    it('keeps an edit made while a refresh is in flight dirty and local', async () => {
+        const request = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockReturnValue(request.promise);
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: 2 })]);
+
+        const refresh = useTaskStore.getState().refreshData();
+        useTaskStore.getState().updateTask('task-1', { dueDate: 8 });
+        request.resolve(buildApiData([buildTask({ id: 'task-1', dueDate: 3 })]));
+        await refresh;
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === 'task-1')?.dueDate).toBe(8);
+        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+    });
+
+    it('does not let a pre-delete refresh resurrect a locally removed task', async () => {
+        const request = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockReturnValue(request.promise);
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1' })]);
+
+        const refresh = useTaskStore.getState().refreshData();
+        useTaskStore.getState().removeTask('task-1');
+        request.resolve(buildApiData([buildTask({ id: 'task-1' })]));
+        await refresh;
+
+        expect(useTaskStore.getState().allTasks).toEqual([]);
+    });
+
+    it('saves an edit added while the previous save is in flight', async () => {
+        const firstSave = deferred<{ status: 'ok'; lockVersion: number }>();
+        let saveCount = 0;
+        vi.mocked(apiClient.updateTask).mockImplementation(async () => {
+            saveCount += 1;
+            if (saveCount === 1) return firstSave.promise;
+            return { status: 'ok', lockVersion: 3 };
+        });
+        let reloadCount = 0;
+        vi.mocked(apiClient.fetchData).mockImplementation(async () => {
+            reloadCount += 1;
+            return buildApiData([
+                buildTask({ id: 'task-1', dueDate: reloadCount === 1 ? 5 : 8, lockVersion: reloadCount + 1 })
+            ]);
+        });
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: 2 })]);
+        useTaskStore.getState().updateTask('task-1', { dueDate: 5 });
+
+        const saving = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(1));
+        useTaskStore.getState().updateTask('task-1', { dueDate: 8 });
+        firstSave.resolve({ status: 'ok', lockVersion: 2 });
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(2));
+        await saving;
+
+        const state = useTaskStore.getState();
+        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.dueDate)).toEqual([5, 8]);
+        expect(state.allTasks.find(task => task.id === 'task-1')?.dueDate).toBe(8);
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it('resaves an edit made while a conflict refresh is in flight', async () => {
+        const conflictRefresh = deferred<ReturnType<typeof buildApiData>>();
+        let saveCount = 0;
+        let reloadCount = 0;
+        vi.mocked(apiClient.updateTask).mockImplementation(async () => {
+            saveCount += 1;
+            return saveCount === 1
+                ? { status: 'conflict', error: 'stale lock' }
+                : { status: 'ok', lockVersion: 4 };
+        });
+        vi.mocked(apiClient.fetchData).mockImplementation(async () => {
+            reloadCount += 1;
+            if (reloadCount === 1) return conflictRefresh.promise;
+            return buildApiData([buildTask({ id: 'task-1', dueDate: 8, lockVersion: 4 })]);
+        });
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: 2, lockVersion: 1 })]);
+        useTaskStore.getState().updateTask('task-1', { dueDate: 5 });
+
+        const saving = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(1));
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
+        useTaskStore.getState().updateTask('task-1', { dueDate: 8 });
+        conflictRefresh.resolve(buildApiData([buildTask({ id: 'task-1', dueDate: 6, lockVersion: 2 })]));
+        await saving;
+
+        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.dueDate)).toEqual([5, 5, 8]);
+        expect(vi.mocked(apiClient.updateTask).mock.calls[1][0].lockVersion).toBe(2);
+        expect(useTaskStore.getState().allTasks.find(task => task.id === 'task-1')?.dueDate).toBe(8);
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it('coalesces overlapping saveChanges calls for the same edit stream', async () => {
+        const firstSave = deferred<{ status: 'ok'; lockVersion: number }>();
+        let saveCount = 0;
+        vi.mocked(apiClient.updateTask).mockImplementation(async () => {
+            saveCount += 1;
+            if (saveCount === 1) return firstSave.promise;
+            return { status: 'ok', lockVersion: 3 };
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            buildTask({ id: 'task-1', dueDate: 8, lockVersion: 3 })
+        ]));
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: 2 })]);
+        useTaskStore.getState().updateTask('task-1', { dueDate: 5 });
+
+        const firstOperation = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(1));
+        useTaskStore.getState().updateTask('task-1', { dueDate: 8 });
+        const secondOperation = useTaskStore.getState().saveChanges();
+
+        firstSave.resolve({ status: 'ok', lockVersion: 2 });
+        await Promise.all([firstOperation, secondOperation]);
+
+        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.dueDate)).toEqual([5, 8]);
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it('keeps a failed task dirty and allows it to be saved again', async () => {
+        let attempts = 0;
+        vi.mocked(apiClient.updateTask).mockImplementation(async () => {
+            attempts += 1;
+            return attempts === 1
+                ? { status: 'error', error: 'temporary failure' }
+                : { status: 'ok', lockVersion: 2 };
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            buildTask({ id: 'task-1', dueDate: 8, lockVersion: 2 })
+        ]));
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: 2 })]);
+        useTaskStore.getState().updateTask('task-1', { dueDate: 8 });
+
+        const firstFailures = await useTaskStore.getState().saveChanges();
+        expect(firstFailures.has('task-1')).toBe(true);
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
+
+        const secondFailures = await useTaskStore.getState().saveChanges();
+        expect(secondFailures.size).toBe(0);
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it('does not clear another task when one task fails to save', async () => {
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => (
+            task.id === 'task-a'
+                ? { status: 'error', error: 'task A failed' }
+                : { status: 'ok', lockVersion: 2 }
+        ));
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            buildTask({ id: 'task-a', dueDate: 8 }),
+            buildTask({ id: 'task-b', dueDate: 9 })
+        ]));
+        useTaskStore.getState().setTasks([
+            buildTask({ id: 'task-a', dueDate: 2 }),
+            buildTask({ id: 'task-b', dueDate: 3 })
+        ]);
+        useTaskStore.getState().updateTask('task-a', { dueDate: 8 });
+        useTaskStore.getState().updateTask('task-b', { dueDate: 9 });
+
+        await useTaskStore.getState().saveChanges();
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-a')).toBe(true);
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-b')).toBe(false);
     });
 });
 
@@ -2006,5 +2311,33 @@ describe('TaskStore drag parent updates', () => {
         expect(result.status).toBe('error');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBe('parent');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.lockVersion).toBe(2);
+    });
+
+    it('does not let an earlier parent move clear a later optimistic move', async () => {
+        const { setTasks, moveTaskAsChild } = useTaskStore.getState();
+        const first = deferred<{ status: 'ok'; lockVersion: number; parentId: string }>();
+        const second = deferred<{ status: 'error'; error: string }>();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: 'parent-1', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: 'parent-2', projectId: 'p1', displayOrder: 2 }),
+            buildTask({ id: 'child', projectId: 'p1', displayOrder: 3, lockVersion: 2 })
+        ]);
+        vi.mocked(apiClient.updateTaskFields)
+            .mockReturnValueOnce(first.promise)
+            .mockReturnValueOnce(second.promise);
+
+        const firstMove = moveTaskAsChild('child', 'parent-1');
+        await Promise.resolve();
+        const secondMove = moveTaskAsChild('child', 'parent-2');
+        first.resolve({ status: 'ok', lockVersion: 3, parentId: 'parent-1' });
+        await Promise.resolve();
+        second.resolve({ status: 'error', error: 'rejected' });
+
+        expect((await firstMove).status).toBe('ok');
+        expect((await secondMove).status).toBe('error');
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBe('parent-1');
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.lockVersion).toBe(3);
     });
 });
