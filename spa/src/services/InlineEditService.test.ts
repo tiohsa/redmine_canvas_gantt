@@ -25,6 +25,14 @@ const buildTask = (overrides: Partial<Task> = {}): Task => ({
     ...overrides
 });
 
+const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+        resolve = res;
+    });
+    return { promise, resolve };
+};
+
 describe('InlineEditService', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -86,5 +94,67 @@ describe('InlineEditService', () => {
         expect(rolledBack?.subject).toBe('Original subject');
         expect(useUIStore.getState().notifications[0]?.type).toBe('error');
         expect(useUIStore.getState().notifications[0]?.message).toBe('Validation failed');
+    });
+
+    it('does not let an earlier failure roll back a newer inline edit', async () => {
+        const firstSave = deferred<{ status: 'error'; error: string }>();
+        vi.mocked(apiClient.updateTaskFields)
+            .mockReturnValueOnce(firstSave.promise)
+            .mockResolvedValueOnce({ status: 'ok', lockVersion: 5 });
+        const initialTask = buildTask();
+        useTaskStore.setState({
+            allTasks: [initialTask],
+            tasks: [initialTask]
+        });
+
+        const first = InlineEditService.saveTaskFields({
+            taskId: 'task-1',
+            optimisticTaskUpdates: { subject: 'First edit' },
+            rollbackTaskUpdates: { subject: 'Original subject' },
+            fields: { subject: 'First edit' }
+        });
+        await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
+
+        const second = InlineEditService.saveTaskFields({
+            taskId: 'task-1',
+            optimisticTaskUpdates: { subject: 'Second edit' },
+            rollbackTaskUpdates: { subject: 'First edit' },
+            fields: { subject: 'Second edit' }
+        });
+        firstSave.resolve({ status: 'error', error: 'First edit failed' });
+
+        const results = await Promise.allSettled([first, second]);
+        expect(results[0]?.status).toBe('rejected');
+        expect(results[1]?.status).toBe('fulfilled');
+        expect(useTaskStore.getState().allTasks[0]?.subject).toBe('Second edit');
+        expect(useTaskStore.getState().allTasks[0]?.lockVersion).toBe(5);
+        expect(apiClient.updateTaskFields).toHaveBeenLastCalledWith('task-1', {
+            subject: 'Second edit',
+            lock_version: 3
+        });
+    });
+
+    it('keeps the optimistic edit dirty when the server reports a conflict', async () => {
+        const initialTask = buildTask();
+        useTaskStore.setState({
+            allTasks: [initialTask],
+            tasks: [initialTask]
+        });
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
+            status: 'conflict',
+            error: 'The task changed on the server.'
+        });
+
+        await expect(
+            InlineEditService.saveTaskFields({
+                taskId: 'task-1',
+                optimisticTaskUpdates: { subject: 'Local edit' },
+                rollbackTaskUpdates: { subject: 'Original subject' },
+                fields: { subject: 'Local edit' }
+            })
+        ).rejects.toThrow('The task changed on the server.');
+
+        expect(useTaskStore.getState().allTasks[0]?.subject).toBe('Local edit');
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
     });
 });

@@ -1049,10 +1049,10 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
         fireEvent.click(screen.getByTestId('display-settings-menu-button'));
-        const startToggle = screen.getByLabelText('Show start-date-only tasks');
-        const dueToggle = screen.getByLabelText('Show due-date-only tasks');
-        const titleToggle = screen.getByLabelText('Show tickets');
-        const barDateToggle = screen.getByLabelText('Show task-bar dates');
+        const startToggle = screen.getByLabelText('Start-date-only tasks');
+        const dueToggle = screen.getByLabelText('Due-date-only tasks');
+        const titleToggle = screen.getByLabelText('Ticket titles');
+        const barDateToggle = screen.getByLabelText('Task-bar dates');
         const autoSaveToggle = screen.getByLabelText('Auto Save');
 
         expect(startToggle).toBeInTheDocument();

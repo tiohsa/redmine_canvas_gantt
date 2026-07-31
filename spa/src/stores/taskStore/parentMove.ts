@@ -16,10 +16,11 @@ type ParentMoveState = LayoutState & {
     layoutRows: LayoutRow[];
     rowCount: number;
     modifiedTaskIds: Set<string>;
+    editGenerations: Record<string, number>;
     autoSave: boolean;
 };
 
-type ParentMovePatch = Partial<Pick<ParentMoveState, 'allTasks' | 'tasks' | 'layoutRows' | 'rowCount' | 'modifiedTaskIds'>>;
+type ParentMovePatch = Partial<Pick<ParentMoveState, 'allTasks' | 'tasks' | 'layoutRows' | 'rowCount' | 'modifiedTaskIds' | 'editGenerations'>>;
 
 type ParentMoveCallbacks = {
     sourceTaskId: string;
@@ -31,6 +32,7 @@ type ParentMoveCallbacks = {
     buildNextAllTasks: (allTasks: Task[], sourceTaskId: string, nextOrder: number) => Task[];
     buildOptimisticPatch: (state: ParentMoveState, nextAllTasks: Task[]) => ParentMovePatch;
     buildSuccessPatch: (state: ParentMoveState, sourceBefore: Task, result: UpdateTaskFieldsResult) => ParentMovePatch;
+    isCurrentOperation: (state: ParentMoveState, sourceBefore: Task, operationGeneration: number) => boolean;
     updateTaskFields: (taskId: string, payload: { parent_issue_id: string | null; lock_version: number }) => Promise<UpdateTaskFieldsResult>;
     validatePersistedResult: (result: UpdateTaskFieldsResult, expectedParentId: string | undefined) => boolean;
     missingSourceResult: MoveTaskAsChildResult;
@@ -48,6 +50,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
         buildNextAllTasks,
         buildOptimisticPatch,
         buildSuccessPatch,
+        isCurrentOperation,
         updateTaskFields,
         validatePersistedResult,
         missingSourceResult,
@@ -64,6 +67,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
 
     const nextOrder = buildNextOrder(beforeState.allTasks, sourceBefore);
     const nextAllTasks = buildNextAllTasks(beforeState.allTasks, sourceTaskId, nextOrder);
+    const operationGeneration = (beforeState.editGenerations[sourceTaskId] ?? 0) + 1;
 
     setState(buildOptimisticPatch(beforeState, nextAllTasks));
 
@@ -84,19 +88,21 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
             lock_version: sourceBefore.lockVersion
         });
     } catch (error) {
-        restoreSnapshot(snapshot);
+        if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
         return failedResult(error instanceof Error ? error.message : undefined);
     }
 
     if (result.status !== 'ok' || !validatePersistedResult(result, expectedParentId)) {
-        restoreSnapshot(snapshot);
+        if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
         return buildMoveTaskResult(result.status === 'ok' ? 'error' : result.status, {
             error: result.error || (failedResult().error ?? (i18n.t('label_failed_to_update_parent') || 'Failed to update parent'))
         });
     }
 
     const currentState = getState();
-    setState(buildSuccessPatch(currentState, sourceBefore, result));
+    if (isCurrentOperation(currentState, sourceBefore, operationGeneration)) {
+        setState(buildSuccessPatch(currentState, sourceBefore, result));
+    }
 
     return buildMoveTaskResult('ok', {
         lockVersion: result.lockVersion,

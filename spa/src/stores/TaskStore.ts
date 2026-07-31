@@ -14,7 +14,7 @@ import { buildLayout, getVersionRowId, NO_VERSION_ID } from './taskStore/layout'
 import { applyFilters } from './taskStore/filters';
 import { isDescendantTask, tailDisplayOrderForParent, tailDisplayOrderForRoot } from './taskStore/hierarchy';
 import { computeCenteredViewport } from './taskStore/viewport';
-import { buildMoveTaskResult, saveModifiedTasks } from './taskStore/taskPersistence';
+import { buildMoveTaskResult, enqueueTaskWrite, saveModifiedTasks } from './taskStore/taskPersistence';
 import { runParentMove } from './taskStore/parentMove';
 import { buildUniformExpansionMaps, initializeExpansionMaps } from './taskStore/expansion';
 import { syncSharedQueryState, type SharedQuerySyncState } from './taskStore/querySync';
@@ -34,6 +34,7 @@ import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
 import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
+import { apiClient } from '../api/client';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
@@ -58,6 +59,20 @@ type DerivedTaskStatePatch = Pick<TaskState, 'tasks' | 'layoutRows' | 'rowCount'
 type ApiData = NonNullable<
     Awaited<ReturnType<typeof import('../api/client').apiClient.fetchData>>
 >;
+
+type InitialDataParams = {
+    rawSearch?: string;
+    query?: ResolvedQueryState;
+    queryContext?: QueryContext;
+    initialState?: ResolvedQueryState;
+};
+
+let dataRequestGeneration = 0;
+const invalidateDataRequests = () => {
+    dataRequestGeneration += 1;
+};
+
+let saveChangesOperation: Promise<Map<string, string>> | null = null;
 
 const queueRefreshData = (refreshData: () => Promise<void>) => {
     queueMicrotask(() => {
@@ -118,6 +133,7 @@ interface TaskState {
 
     isSortingSuspended: boolean;
     modifiedTaskIds: Set<string>;
+    editGenerations: Record<string, number>;
     autoSave: boolean;
     initialDataLoaded: boolean;
 
@@ -147,6 +163,7 @@ interface TaskState {
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
     updateTask: (id: string, updates: Partial<Task>) => void;
+    setTaskLockVersion: (id: string, lockVersion: number) => void;
     removeTask: (id: string) => void;
     updateViewport: (updates: Partial<Viewport>) => void;
     setRowHeight: (height: number) => void;
@@ -172,6 +189,7 @@ interface TaskState {
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
     refreshData: () => Promise<void>;
+    loadInitialData: (params: InitialDataParams) => Promise<void>;
     loadSavedQueries: (force?: boolean) => Promise<void>;
     applySavedQuery: (queryId: number) => Promise<void>;
     clearSavedQuery: () => Promise<void>;
@@ -384,9 +402,21 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
     const customFields = data.customFields ?? [];
     const versions = data.versions ?? [];
     const relations = data.relations ?? [];
-    const tasks = data.tasks ?? [];
+    const serverTasks = data.tasks ?? [];
+    const localTaskById = new Map(state.allTasks.map((task) => [task.id, task]));
+    const mergedServerTasks = serverTasks.map((task) => (
+        state.modifiedTaskIds.has(task.id) ? (localTaskById.get(task.id) ?? task) : task
+    ));
+    const serverTaskIds = new Set(serverTasks.map((task) => task.id));
+    const tasks = [
+        ...mergedServerTasks,
+        ...state.allTasks.filter((task) => state.modifiedTaskIds.has(task.id) && !serverTaskIds.has(task.id))
+    ];
     const nextResolved: ResolvedQueryState = {
         ...(data.initialState ?? toResolvedQueryStateFromStore(state)),
+        ...(state.explicitGroupByOverride !== undefined
+            ? { groupBy: state.explicitGroupByOverride }
+            : {}),
         // A Saved Query can define Redmine's project_id filter, but it must not
         // replace the independent Canvas project scope.
         ...(state.projectSelectionExplicit
@@ -461,7 +491,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
             projectExpansion,
             versionExpansion,
             taskExpansion,
-            modifiedTaskIds: new Set<string>(),
+            modifiedTaskIds: new Set(state.modifiedTaskIds),
             ...toDerivedTaskStatePatch(derived)
         }
     };
@@ -472,16 +502,22 @@ type ParentMoveStoreState = LayoutState & {
     layoutRows: LayoutRow[];
     rowCount: number;
     modifiedTaskIds: Set<string>;
+    editGenerations: Record<string, number>;
     autoSave: boolean;
 };
 
 const buildParentMoveOptimisticPatch = (state: ParentMoveStoreState, nextAllTasks: Task[]) => {
     const layout = buildLayoutFromState(state, { allTasks: nextAllTasks });
+    const sourceTaskId = nextAllTasks.find((task, index) => task.parentId !== state.allTasks[index]?.parentId || task.displayOrder !== state.allTasks[index]?.displayOrder)?.id;
+    const editGenerations = sourceTaskId
+        ? { ...state.editGenerations, [sourceTaskId]: (state.editGenerations[sourceTaskId] ?? 0) + 1 }
+        : state.editGenerations;
     return {
         allTasks: nextAllTasks,
         tasks: layout.tasks,
         layoutRows: layout.layoutRows,
-        rowCount: layout.rowCount
+        rowCount: layout.rowCount,
+        editGenerations
     };
 };
 
@@ -685,7 +721,23 @@ const computeFocusedViewport = (state: TaskState, task: Task) => {
 };
 
 
-export const useTaskStore = create<TaskState>((set, get) => ({
+export const useTaskStore = create<TaskState>((set, get) => {
+    const requestAndApplyData = async (
+        fetchData: () => Promise<ApiData>,
+        generation: number = ++dataRequestGeneration
+    ): Promise<void> => {
+        try {
+            const data = await fetchData();
+            if (generation !== dataRequestGeneration) return;
+            get().applyApiData(data);
+        } catch (error) {
+            // A superseded request must not surface as a user-visible failure.
+            if (generation !== dataRequestGeneration) return;
+            throw error;
+        }
+    };
+
+    return ({
     allTasks: [],
     tasks: [],
     relations: [],
@@ -735,6 +787,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     showSubprojects: true,
     isSortingSuspended: false,
     modifiedTaskIds: new Set(),
+    editGenerations: {},
     autoSave: preferences.autoSave ?? false,
     initialDataLoaded: false,
 
@@ -897,6 +950,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         };
     }),
     setSelectedStatusFromServer: (ids) => {
+        invalidateDataRequests();
         const queryContext = setStatusOverride(get().queryContext, ids.length > 0
             ? { mode: 'subset', values: ids }
             : { mode: 'all' });
@@ -918,6 +972,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     addRelation: (relation) => set((state) => {
         const exists = state.relations.some(r => r.from === relation.from && r.to === relation.to && r.type === relation.type);
         if (exists) return state;
+        invalidateDataRequests();
         const nextRelations = [...state.relations, relation];
         const { nextTasks, modifiedTaskIds, derived } = buildRelationChange(state, relation, nextRelations);
         return {
@@ -929,6 +984,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         };
     }),
     replaceRelation: (relation) => set((state) => {
+        invalidateDataRequests();
         const existingIndex = state.relations.findIndex(r => r.id === relation.id);
         const nextRelations =
             existingIndex === -1
@@ -945,6 +1001,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }),
     removeRelation: (relationId) => set((state) => {
         const nextRelations = state.relations.filter(r => r.id !== relationId);
+        if (nextRelations.length === state.relations.length) return state;
+        invalidateDataRequests();
         const derived = buildDerivedTaskState(state, { relations: nextRelations });
         return {
             relations: nextRelations,
@@ -1016,6 +1074,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         }
 
         const { apiClient } = await import('../api/client');
+        invalidateDataRequests();
         return runParentMove({
             sourceTaskId,
             expectedParentId: targetTaskId,
@@ -1030,10 +1089,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             )),
             buildOptimisticPatch: buildParentMoveOptimisticPatch,
             buildSuccessPatch: buildParentMoveSuccessPatch,
-            updateTaskFields: (taskId, payload) => apiClient.updateTaskFields(taskId, {
+            isCurrentOperation: (state, sourceBefore, operationGeneration) => (
+                state.editGenerations[sourceBefore.id] === operationGeneration &&
+                state.allTasks.find((task) => task.id === sourceBefore.id)?.parentId === targetTaskId
+            ),
+            updateTaskFields: (taskId, payload) => enqueueTaskWrite(taskId, () => apiClient.updateTaskFields(taskId, {
                 parent_issue_id: Number(targetTaskId),
                 lock_version: payload.lock_version
-            }),
+            })),
             validatePersistedResult: (result) => result.parentId === targetTaskId,
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure
@@ -1045,6 +1108,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         }
 
         const { apiClient } = await import('../api/client');
+        invalidateDataRequests();
         return runParentMove({
             sourceTaskId,
             expectedParentId: undefined,
@@ -1059,10 +1123,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             )),
             buildOptimisticPatch: buildParentMoveOptimisticPatch,
             buildSuccessPatch: buildParentMoveSuccessPatch,
-            updateTaskFields: (taskId, payload) => apiClient.updateTaskFields(taskId, {
+            isCurrentOperation: (state, sourceBefore, operationGeneration) => (
+                state.editGenerations[sourceBefore.id] === operationGeneration &&
+                state.allTasks.find((task) => task.id === sourceBefore.id)?.parentId === undefined
+            ),
+            updateTaskFields: (taskId, payload) => enqueueTaskWrite(taskId, () => apiClient.updateTaskFields(taskId, {
                 parent_issue_id: null,
                 lock_version: payload.lock_version
-            }),
+            })),
             validatePersistedResult: (result) => result.parentId === undefined,
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure
@@ -1077,6 +1145,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             console.warn('Task is not editable');
             return state;
         }
+
+        invalidateDataRequests();
 
         const updatedTask = { ...task, ...updates };
         TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
@@ -1134,6 +1204,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const newModifiedIds = new Set(state.modifiedTaskIds);
         newModifiedIds.add(id);
         pendingUpdates.forEach((_, key) => newModifiedIds.add(key));
+        const nextEditGenerations = { ...state.editGenerations };
+        [id, ...pendingUpdates.keys()].forEach((taskId) => {
+            nextEditGenerations[taskId] = (nextEditGenerations[taskId] ?? 0) + 1;
+        });
 
         const nextSchedulingSummary = buildDerivedSchedulingSummary(finalTasks, state.relations);
 
@@ -1159,7 +1233,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
                 allTasks: finalTasks,
                 tasks: newViewTasks,
                 ...nextSchedulingSummary,
-                modifiedTaskIds: newModifiedIds // Add here for suspended case
+                modifiedTaskIds: newModifiedIds, // Add here for suspended case
+                editGenerations: nextEditGenerations
             };
         }
 
@@ -1168,13 +1243,25 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return {
             allTasks: finalTasks,
             ...toDerivedTaskStatePatch(derived),
-            modifiedTaskIds: newModifiedIds // Add here for normal case
+            modifiedTaskIds: newModifiedIds, // Add here for normal case
+            editGenerations: nextEditGenerations
         };
+    }),
+
+    setTaskLockVersion: (id, lockVersion) => set((state) => {
+        const allTasks = state.allTasks.map((task) => (
+            task.id === id ? { ...task, lockVersion } : task
+        ));
+        const tasks = state.tasks.map((task) => (
+            task.id === id ? { ...task, lockVersion } : task
+        ));
+        return { allTasks, tasks };
     }),
 
 
 
     removeTask: (id) => set((state) => {
+        invalidateDataRequests();
         const finalTasks = state.allTasks.filter(t => t.id !== id);
         const derived = buildDerivedTaskState(state, { allTasks: finalTasks });
         return {
@@ -1411,6 +1498,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }),
 
     setSelectedAssigneeIds: (ids) => set((state) => {
+        invalidateDataRequests();
         const layout = buildLayoutFromState(state, { selectedAssigneeIds: ids });
         const queryContext = setAssigneeOverride(state.queryContext, ids.length > 0
             ? { mode: 'subset', values: ids }
@@ -1428,6 +1516,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     }),
 
     setSelectedProjectIds: (ids) => set((state) => {
+        invalidateDataRequests();
         const layout = buildLayoutFromState(state, { selectedProjectIds: ids });
         const nextState = {
             selectedProjectIds: ids,
@@ -1441,6 +1530,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return nextState;
     }),
     setSelectedVersionIds: (ids) => set((state) => {
+        invalidateDataRequests();
         const layout = buildLayoutFromState(state, { selectedVersionIds: ids });
         const queryContext = setVersionOverride(state.queryContext, ids.length > 0
             ? { mode: 'subset', values: ids }
@@ -1460,6 +1550,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const current = get();
         if (current.memberProjectsOnly === enabled) return;
 
+        invalidateDataRequests();
         set({ memberProjectsOnly: enabled });
         saveDisplayPreferences({ memberProjectsOnly: enabled }, current.currentProjectId);
         syncSharedQueryState({ ...get(), memberProjectsOnly: enabled });
@@ -1584,14 +1675,25 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return nextState;
     }),
     refreshData: async () => {
-        const { apiClient } = await import('../api/client');
+        const generation = ++dataRequestGeneration;
         const state = get();
-        const data = await apiClient.fetchData({
+        await requestAndApplyData(() => apiClient.fetchData({
             query: toResolvedQueryStateFromStore(state),
             queryContext: state.queryContext
-        });
-        if (!data) return;
-        get().applyApiData(data);
+        }), generation);
+    },
+
+    loadInitialData: async (params) => {
+        const generation = ++dataRequestGeneration;
+        await requestAndApplyData(async () => {
+            const { initialState, ...fetchParams } = params;
+            const data = await apiClient.fetchData(fetchParams);
+            return {
+                ...data,
+                ...(initialState ? { initialState: { ...data.initialState, ...initialState } } : {}),
+                ...(params.queryContext ? { queryContext: params.queryContext } : {})
+            };
+        }, generation);
     },
 
     loadSavedQueries: async (force = false) => {
@@ -1616,7 +1718,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     },
 
     applySavedQuery: async (queryId) => {
-        const { apiClient } = await import('../api/client');
+        const generation = ++dataRequestGeneration;
         const state = get();
         const queryContext = selectSavedQuery(queryId);
         const query: ResolvedQueryState = {
@@ -1631,11 +1733,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         });
         replaceIssueQueryParamsInUrl(query, queryContext);
         syncSharedQueryState({ ...get(), activeQueryId: queryId });
-        const data = await apiClient.fetchData({ query, queryContext });
-        get().applyApiData(data);
+        await requestAndApplyData(() => apiClient.fetchData({ query, queryContext }), generation);
     },
 
     clearSavedQuery: async () => {
+        invalidateDataRequests();
         const state = get();
         const queryContext = clearSavedQueryToStandalone(standaloneOverridesFromState(state));
         set({ activeQueryId: null, ...queryContextPatch(queryContext) });
@@ -1644,30 +1746,73 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     },
 
     saveChanges: async () => {
-        const { apiClient } = await import('../api/client');
-        const state = get();
-        const failures = await saveModifiedTasks(
-            state.allTasks,
-            state.relations,
-            state.modifiedTaskIds,
-            state.selectedStatusIds,
-            apiClient.updateTask,
-            apiClient.fetchData
-        );
+        if (saveChangesOperation) return saveChangesOperation;
 
-        await state.refreshData();
-        if (failures.size > 0) {
-            const [failedTaskId, failedReason] = failures.entries().next().value as [string, string];
-            useUIStore.getState().addNotification(
-                `${i18n.t('label_failed_to_save') || 'Failed to save'} (#${failedTaskId}: ${failedReason})`,
-                'error'
-            );
+        const operation = (async () => {
+            while (true) {
+                const snapshot = get();
+                if (snapshot.modifiedTaskIds.size === 0) return new Map<string, string>();
+
+                const snapshotGenerations = { ...snapshot.editGenerations };
+                const snapshotTaskIds = new Set(snapshot.modifiedTaskIds);
+                invalidateDataRequests();
+                const failures = await saveModifiedTasks(
+                    snapshot.allTasks,
+                    snapshot.relations,
+                    snapshot.modifiedTaskIds,
+                    snapshot.selectedStatusIds,
+                    apiClient.updateTask,
+                    apiClient.fetchData,
+                    (taskId, lockVersion) => {
+                        if (typeof lockVersion !== 'number') return;
+                        set((state) => {
+                            const allTasks = state.allTasks.map((task) => (
+                                task.id === taskId ? { ...task, lockVersion } : task
+                            ));
+                            const derived = buildDerivedTaskState(state, { allTasks });
+                            return {
+                                allTasks,
+                                ...toDerivedTaskStatePatch(derived)
+                            };
+                        });
+                    }
+                );
+
+                set((state) => {
+                    const modifiedTaskIds = new Set(state.modifiedTaskIds);
+                    snapshotTaskIds.forEach((taskId) => {
+                        if (!failures.has(taskId) && state.editGenerations[taskId] === snapshotGenerations[taskId]) {
+                            modifiedTaskIds.delete(taskId);
+                        }
+                    });
+                    return { modifiedTaskIds };
+                });
+
+                await get().refreshData();
+                if (failures.size > 0) {
+                    const [failedTaskId, failedReason] = failures.entries().next().value as [string, string];
+                    useUIStore.getState().addNotification(
+                        `${i18n.t('label_failed_to_save') || 'Failed to save'} (#${failedTaskId}: ${failedReason})`,
+                        'error'
+                    );
+                    return failures;
+                }
+
+                if (get().modifiedTaskIds.size === 0) return failures;
+            }
+        })();
+
+        saveChangesOperation = operation;
+        try {
+            return await operation;
+        } finally {
+            if (saveChangesOperation === operation) saveChangesOperation = null;
         }
-        return failures;
     },
 
     discardChanges: async () => {
         const state = get();
         await state.refreshData();
     }
-}));
+});
+});
