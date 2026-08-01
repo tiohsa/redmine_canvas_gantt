@@ -66,9 +66,15 @@ export type MutationOperationContext = {
     startedAt: number;
 };
 
+export type MutationLifecycle<T> = {
+    onSuccess?: (result: T, context: MutationOperationContext) => void | Promise<void>;
+    onError?: (error: unknown, context: MutationOperationContext) => void | Promise<void>;
+};
+
 export const enqueueMutationOperation = async <T>(
     entityIds: string[],
-    operation: (context?: MutationOperationContext) => Promise<T>
+    operation: (context?: MutationOperationContext) => Promise<T>,
+    lifecycle?: MutationLifecycle<T>
 ): Promise<T> => {
     const keys = [...new Set(entityIds)].sort();
     const context: MutationOperationContext = {
@@ -89,10 +95,12 @@ export const enqueueMutationOperation = async <T>(
         );
         try {
             const result = await operation(context);
+            await lifecycle?.onSuccess?.(result, context);
             completeMutationOperation(context, 'succeeded');
             mutationLifecycleMetrics.completed += 1;
             return result;
         } catch (error) {
+            await lifecycle?.onError?.(error, context);
             completeMutationOperation(context, 'failed');
             mutationLifecycleMetrics.failed += 1;
             throw error;
@@ -128,8 +136,12 @@ const completeMutationOperation = (context: MutationOperationContext, status: 's
     }
 };
 
-export const enqueueTaskWrite = async <T>(taskId: string, operation: (context?: MutationOperationContext) => Promise<T>): Promise<T> => (
-    enqueueMutationOperation([taskId], operation)
+export const enqueueTaskWrite = async <T>(
+    taskId: string,
+    operation: (context?: MutationOperationContext) => Promise<T>,
+    lifecycle?: MutationLifecycle<T>
+): Promise<T> => (
+    enqueueMutationOperation([taskId], operation, lifecycle)
 );
 
 export const createTaskLayoutSnapshot = (state: TaskLayoutSnapshot): TaskLayoutSnapshot => ({
@@ -267,7 +279,16 @@ export const saveModifiedTasks = async (
                 const task = mutableTaskById.get(taskId);
                 if (!task) return { taskId, task, result: undefined, error: undefined };
                 try {
-                    const result = await enqueueTaskWrite(taskId, (context) => updateTask(task, context?.operationId));
+                    const result = await enqueueTaskWrite(
+                        taskId,
+                        (context) => updateTask(task, context?.operationId),
+                        {
+                            onSuccess: (savedResult) => {
+                                onTaskResult?.(taskId, savedResult);
+                                if (savedResult.status === 'ok') onTaskSaved?.(taskId, savedResult.lockVersion);
+                            }
+                        }
+                    );
                     return { taskId, task, result, error: undefined };
                 } catch (error) {
                     return {
@@ -290,15 +311,12 @@ export const saveModifiedTasks = async (
                 }
                 if (!result) continue;
                 attemptCounts.set(taskId, attempt + 1);
-                onTaskResult?.(taskId, result);
-
                 if (result.status === 'ok') {
                     progress = true;
                     failures.delete(taskId);
                     if (typeof result.lockVersion === 'number') {
                         mutableTaskById.set(taskId, { ...task, lockVersion: result.lockVersion });
                     }
-                    onTaskSaved?.(taskId, result.lockVersion);
                     continue;
                 }
 

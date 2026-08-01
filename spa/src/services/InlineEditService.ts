@@ -27,45 +27,54 @@ export class InlineEditService {
 
         let result;
         try {
-            result = await taskMutationService.updateTaskFields(taskId, (() => {
-                const latest = useTaskStore.getState().allTasks.find((task) => task.id === taskId);
-                return {
-                    ...fields,
-                    lock_version: latest?.lockVersion ?? current.lockVersion
-                };
-            })());
+            result = await taskMutationService.updateTaskFields(
+                taskId,
+                () => {
+                    const latest = useTaskStore.getState().allTasks.find((task) => task.id === taskId);
+                    return {
+                        ...fields,
+                        lock_version: latest?.lockVersion ?? current.lockVersion
+                    };
+                },
+                {
+                    onSuccess: (completedResult) => {
+                        if (completedResult.status === 'ok') {
+                            if (completedResult.completeness || completedResult.invalidatedEntityIds || completedResult.deletedEntityIds) {
+                                useTaskStore.getState().applyTaskMutationMetadata(taskId, completedResult);
+                            }
+                            useTaskStore.getState().commitTaskOperation(taskId, operationGeneration, completedResult.lockVersion);
+                            return;
+                        }
+
+                        if (completedResult.status === 'conflict') {
+                            useTaskStore.getState().registerTaskConflict(taskId, completedResult.error || (i18n.t('label_conflict') || 'Conflict'));
+                        } else if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
+                            useTaskStore.getState().updateTask(taskId, rollbackTaskUpdates);
+                        }
+                    },
+                    onError: (error) => {
+                        if (typeof ApiMutationError !== 'undefined' && error instanceof ApiMutationError && error.status === 'not_found' && isCurrentOperation()) {
+                            useTaskStore.getState().markTaskTombstone(taskId, 'server');
+                            useTaskStore.getState().registerTaskConflict(taskId, error.message || (i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists'));
+                        }
+                        if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
+                            useTaskStore.getState().updateTask(taskId, rollbackTaskUpdates);
+                        }
+                    }
+                }
+            );
         } catch (error) {
-            if (typeof ApiMutationError !== 'undefined' && error instanceof ApiMutationError && error.status === 'not_found' && isCurrentOperation()) {
-                useTaskStore.getState().markTaskTombstone(taskId, 'server');
-                useTaskStore.getState().registerTaskConflict(taskId, error.message || (i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists'));
-            }
-            if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
-                updateTask(taskId, rollbackTaskUpdates);
-            }
             const message = error instanceof Error ? error.message : (i18n.t('label_failed_to_save') || 'Failed to save');
             useUIStore.getState().addNotification(message, 'error');
             throw error;
         }
 
-        if (result.status === 'ok') {
-            if (result.completeness || result.invalidatedEntityIds || result.deletedEntityIds) {
-                useTaskStore.getState().applyTaskMutationMetadata(taskId, result);
-            }
-            useTaskStore.getState().commitTaskOperation(taskId, operationGeneration, result.lockVersion);
-            return;
-        }
+        if (result.status === 'ok') return;
 
         // An optimistic-lock conflict means the server may have accepted a
         // newer remote version. Keep the local edit dirty so the normal save
         // path can retry it with the current lock version; rolling it back
         // here would silently discard the user's change.
-        if (result.status === 'conflict') {
-            useTaskStore.getState().registerTaskConflict(taskId, result.error || (i18n.t('label_conflict') || 'Conflict'));
-        }
-        if (result.status !== 'conflict' && isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
-            updateTask(taskId, rollbackTaskUpdates);
-        }
-
         useUIStore.getState().addNotification(result.error || (i18n.t('label_failed_to_save') || 'Failed to save'), 'error');
         throw new Error(result.error || (i18n.t('label_failed_to_save') || 'Failed to save'));
     }

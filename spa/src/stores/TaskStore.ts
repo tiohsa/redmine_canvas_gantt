@@ -1292,10 +1292,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 state.editGenerations[sourceBefore.id] === operationGeneration &&
                 state.allTasks.find((task) => task.id === sourceBefore.id)?.parentId === targetTaskId
             ),
-            updateTaskFields: (taskId, payload) => taskMutationService.updateTaskFields(taskId, {
-                parent_issue_id: Number(targetTaskId),
-                lock_version: payload.lock_version
-            }),
+            updateTaskFields: (taskId, payload, lifecycle) => taskMutationService.updateTaskFields(
+                taskId,
+                () => ({
+                    parent_issue_id: Number(targetTaskId),
+                    lock_version: payload().lock_version
+                }),
+                lifecycle
+            ),
             validatePersistedResult: (result) => result.parentId === targetTaskId,
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure,
@@ -1336,10 +1340,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 state.editGenerations[sourceBefore.id] === operationGeneration &&
                 state.allTasks.find((task) => task.id === sourceBefore.id)?.parentId === undefined
             ),
-            updateTaskFields: (taskId, payload) => taskMutationService.updateTaskFields(taskId, {
-                parent_issue_id: null,
-                lock_version: payload.lock_version
-            }),
+            updateTaskFields: (taskId, payload, lifecycle) => taskMutationService.updateTaskFields(
+                taskId,
+                () => ({
+                    parent_issue_id: null,
+                    lock_version: payload().lock_version
+                }),
+                lifecycle
+            ),
             validatePersistedResult: (result) => result.parentId === undefined,
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure,

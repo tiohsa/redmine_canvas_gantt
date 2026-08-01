@@ -2448,7 +2448,11 @@ describe('TaskStore drag parent updates', () => {
         await Promise.resolve();
         const secondMove = moveTaskAsChild('child', 'parent-2');
         first.resolve({ status: 'ok', lockVersion: 3, parentId: 'parent-1' });
-        await Promise.resolve();
+        await vi.waitFor(() => {
+            const calls = vi.mocked(apiClient.updateTaskFields).mock.calls;
+            expect(calls).toHaveLength(2);
+            expect(calls[1]?.[1]).toMatchObject({ lock_version: 3 });
+        });
         second.resolve({ status: 'error', error: 'rejected' });
 
         expect((await firstMove).status).toBe('ok');
