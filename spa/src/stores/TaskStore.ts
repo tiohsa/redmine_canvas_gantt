@@ -2521,9 +2521,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         if (result.status === 'ok') {
                             get().completeBarOperationTask(taskId, snapshotGenerations[taskId]);
                         } else if (result.status === 'validation_error' || result.status === 'forbidden' || result.status === 'not_found') {
-                            terminalBarFailureTaskGenerations.set(taskId, snapshotGenerations[taskId] ?? 0);
-                        } else if (result.status === 'conflict') {
-                            get().discardBarOperationForTask(taskId, snapshotGenerations[taskId]);
+                            const operationGeneration = snapshotGenerations[taskId] ?? 0;
+                            const hasBarOperation = Object.values(get().barOperations).some((operation) => (
+                                operation.entityGenerations[taskId] === operationGeneration
+                            ));
+                            if (hasBarOperation) {
+                                terminalBarFailureTaskGenerations.set(taskId, operationGeneration);
+                            }
                         }
                         if (result.status === 'not_found') {
                             get().markTaskTombstone(taskId, 'server');
@@ -2533,15 +2537,18 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     (taskId, message) => {
                         conflictMessages.set(taskId, message);
                     },
-                    () => terminalBarFailureTaskGenerations.size > 0
+                    (taskId) => {
+                        if (terminalBarFailureTaskGenerations.size === 0) return false;
+                        const operationGeneration = terminalBarFailureTaskGenerations.get(taskId);
+                        if (operationGeneration !== undefined) return true;
+                        return Object.values(get().barOperations).some((operation) => (
+                            operation.entityGenerations[taskId] !== undefined &&
+                            Object.entries(operation.entityGenerations).some(([failedTaskId, failedGeneration]) => (
+                                terminalBarFailureTaskGenerations.get(failedTaskId) === failedGeneration
+                            ))
+                        ));
+                    }
                 );
-
-                terminalBarFailureTaskGenerations.forEach((operationGeneration, taskId) => {
-                    const operation = Object.values(get().barOperations).find((candidate) => (
-                        candidate.entityGenerations[taskId] === operationGeneration
-                    ));
-                    if (operation) get().rollbackBarOperation(operation.operationId);
-                });
 
                 set((state) => {
                     const modifiedTaskIds = new Set(state.modifiedTaskIds);
@@ -2569,6 +2576,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         return { taskConflicts };
                     });
                 }
+                terminalBarFailureTaskGenerations.forEach((operationGeneration, taskId) => {
+                    const operation = Object.values(get().barOperations).find((candidate) => (
+                        candidate.entityGenerations[taskId] === operationGeneration
+                    ));
+                    if (operation) get().rollbackBarOperation(operation.operationId);
+                });
                 if (failures.size > 0) {
                     const [failedTaskId, failedReason] = failures.entries().next().value as [string, string];
                     useUIStore.getState().addNotification(
