@@ -819,8 +819,12 @@ export const IssueIframeDialog: React.FC = () => {
                             trackerOptions={trackerOptions}
                             defaultTrackerId={defaultTrackerId}
                             onContentChange={setHasBulkSubjects}
-                            onTasksCreated={() => {
-                                void refreshData();
+                            onTasksCreated={(metadata) => {
+                                if (parentId) {
+                                    useTaskStore.getState().applyTaskMutationMetadata(parentId, metadata);
+                                } else {
+                                    void refreshData();
+                                }
                             }}
                         />
                     </div>

@@ -26,6 +26,8 @@ describe('BulkSubtaskCreator', () => {
         useUIStore.setState({ addNotification: notify });
         vi.mocked(apiClient.bulkCreateSubtasks).mockResolvedValue({
             status: 'ok',
+            completeness: 'partial',
+            invalidatedEntityIds: ['100', '101', '102'],
             successCount: 2,
             failCount: 0,
             results: []
@@ -53,7 +55,10 @@ describe('BulkSubtaskCreator', () => {
             operationIssueIds: ['100']
         }, expect.stringMatching(/^mutation:/));
         expect(notify).toHaveBeenCalledWith('2 tasks created.', 'success');
-        expect(onTasksCreated).toHaveBeenCalledTimes(1);
+        expect(onTasksCreated).toHaveBeenCalledWith(expect.objectContaining({
+            completeness: 'partial',
+            invalidatedEntityIds: ['100', '101', '102']
+        }));
     });
 
     it('sends only operation-scope tasks and excludes context-only parents', async () => {

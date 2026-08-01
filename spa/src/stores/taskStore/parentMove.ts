@@ -3,10 +3,10 @@ import { buildMoveTaskResult, createTaskLayoutSnapshot } from './taskPersistence
 import { i18n } from '../../utils/i18n';
 import type { LayoutState } from './types';
 import type { TaskLayoutSnapshot } from './types';
-import type { MutationStatus } from '../../api/client';
+import type { MutationMetadata, MutationStatus } from '../../api/client';
 import type { LocalPatch, ServerSnapshot } from './stateContract';
 
-type UpdateTaskFieldsResult = {
+type UpdateTaskFieldsResult = MutationMetadata & {
     status: MutationStatus;
     error?: string;
     lockVersion?: number;
@@ -42,6 +42,7 @@ type ParentMoveCallbacks = {
     missingSourceResult: MoveTaskAsChildResult;
     failedResult: (error?: string) => MoveTaskAsChildResult;
     onConflict?: (taskId: string, message: string) => void;
+    onMutationMetadata?: (taskId: string, metadata: MutationMetadata) => void;
 };
 
 export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<MoveTaskAsChildResult> => {
@@ -60,7 +61,8 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
         validatePersistedResult,
         missingSourceResult,
         failedResult,
-        onConflict
+        onConflict,
+        onMutationMetadata
     } = callbacks;
 
     const beforeState = getState();
@@ -111,6 +113,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
     // optimistic parent move is already visible. buildSuccessPatch preserves
     // that newer local patch and commits only the matching operation.
     setState(buildSuccessPatch(currentState, sourceBefore, result, operationGeneration));
+    onMutationMetadata?.(sourceTaskId, result);
 
     return buildMoveTaskResult('ok', {
         lockVersion: result.lockVersion,

@@ -1,5 +1,6 @@
 import type { Relation } from '../types';
 import { apiClient } from '../api/client';
+import type { MutationMetadata } from '../api/client';
 import { enqueueMutationOperation } from '../stores/taskStore/taskPersistence';
 
 /**
@@ -20,19 +21,19 @@ export const taskMutationService = {
         enqueueMutationOperation([taskId], (context) => apiClient.updateTaskFields(taskId, fields, context?.operationId))
     ),
 
-    createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation> => (
+    createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation & MutationMetadata> => (
         enqueueMutationOperation([fromId, toId], (context) => apiClient.createRelation(fromId, toId, type, delay, context?.operationId))
     ),
 
-    updateRelation: (relationId: string, type: string, delay?: number): Promise<Relation> => (
+    updateRelation: (relationId: string, type: string, delay?: number): Promise<Relation & MutationMetadata> => (
         enqueueMutationOperation([relationId], (context) => apiClient.updateRelation(relationId, type, delay, context?.operationId))
     ),
 
-    deleteRelation: (relationId: string) => (
+    deleteRelation: (relationId: string): Promise<MutationMetadata | undefined> => (
         enqueueMutationOperation([relationId], (context) => apiClient.deleteRelation(relationId, context?.operationId))
     ),
 
-    deleteTask: (taskId: string) => (
+    deleteTask: (taskId: string): Promise<MutationMetadata | undefined> => (
         enqueueMutationOperation([taskId], (context) => apiClient.deleteTask(taskId, context?.operationId))
     ),
 

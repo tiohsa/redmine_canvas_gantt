@@ -2,9 +2,9 @@ import type { Relation, Task } from '../../types';
 import type { MoveTaskAsChildResult } from '../../types';
 import { i18n } from '../../utils/i18n';
 import type { TaskLayoutSnapshot } from './types';
-import type { MutationStatus } from '../../api/client';
+import type { MutationMetadata, MutationStatus } from '../../api/client';
 
-type UpdateTaskFieldsResult = {
+export type UpdateTaskFieldsResult = MutationMetadata & {
     status: MutationStatus | 'error';
     error?: string;
     lockVersion?: number;
