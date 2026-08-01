@@ -14,7 +14,7 @@ import { buildLayout, getVersionRowId, NO_VERSION_ID } from './taskStore/layout'
 import { applyFilters } from './taskStore/filters';
 import { isDescendantTask, tailDisplayOrderForParent, tailDisplayOrderForRoot } from './taskStore/hierarchy';
 import { computeCenteredViewport } from './taskStore/viewport';
-import { buildMoveTaskResult, enqueueTaskWrite, saveModifiedTasks } from './taskStore/taskPersistence';
+import { buildMoveTaskResult, saveModifiedTasks } from './taskStore/taskPersistence';
 import { runParentMove } from './taskStore/parentMove';
 import { buildUniformExpansionMaps, initializeExpansionMaps } from './taskStore/expansion';
 import { syncSharedQueryState, type SharedQuerySyncState } from './taskStore/querySync';
@@ -35,6 +35,19 @@ import { AutoScheduleMoveMode } from '../types/constraints';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
 import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
+import { taskMutationService } from '../services/taskMutationService';
+import {
+    applyLocalPatches,
+    canApplyReadResponse,
+    createReadContext,
+    createServerSnapshot,
+    replaceServerSnapshot,
+    type DerivedInvalidation,
+    type LocalPatch,
+    type EntityTombstone,
+    type ReadContext,
+    type ServerSnapshot
+} from './taskStore/stateContract';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
@@ -60,6 +73,12 @@ type ApiData = NonNullable<
     Awaited<ReturnType<typeof import('../api/client').apiClient.fetchData>>
 >;
 
+export type TaskConflictRecord = {
+    taskId: string;
+    message: string;
+    detectedAt: number;
+};
+
 type InitialDataParams = {
     rawSearch?: string;
     query?: ResolvedQueryState;
@@ -74,8 +93,28 @@ const invalidateDataRequests = () => {
 
 let saveChangesOperation: Promise<Map<string, string>> | null = null;
 
+export const readLifecycleMetrics = {
+    requestsStarted: 0,
+    responsesApplied: 0,
+    staleResponsesRejected: 0,
+    failures: 0,
+    maxInflight: 0
+};
+
+export const resetReadLifecycleMetrics = () => {
+    readLifecycleMetrics.requestsStarted = 0;
+    readLifecycleMetrics.responsesApplied = 0;
+    readLifecycleMetrics.staleResponsesRejected = 0;
+    readLifecycleMetrics.failures = 0;
+    readLifecycleMetrics.maxInflight = 0;
+};
+
 const queueRefreshData = (refreshData: () => Promise<void>) => {
     queueMicrotask(() => {
+        // Each UI scope change is an explicit read invalidation. This keeps
+        // separately queued changes observable while identical direct
+        // refresh calls can still share an in-flight request.
+        dataRequestGeneration += 1;
         void refreshData().catch((error) => console.error('Failed to refresh data', error));
     });
 };
@@ -136,6 +175,11 @@ interface TaskState {
     editGenerations: Record<string, number>;
     autoSave: boolean;
     initialDataLoaded: boolean;
+    activeReadContext: ReadContext | null;
+    serverTaskSnapshot: ServerSnapshot<Task>;
+    localTaskPatches: Record<string, Array<LocalPatch<Task>>>;
+    taskTombstones: Record<string, EntityTombstone>;
+    taskConflicts: Record<string, TaskConflictRecord>;
 
     // Actions
     setAutoSave: (enabled: boolean) => void;
@@ -150,7 +194,7 @@ interface TaskState {
     restoreCanvasScope: (state?: ResolvedQueryState) => void;
     restoreExplicitGroupByOverride: (groupBy: ResolvedQueryState['groupBy'] | undefined) => void;
     applyResolvedQueryState: (state?: ResolvedQueryState) => void;
-    applyApiData: (data: ApiData) => void;
+    applyApiData: (data: ApiData, readContext?: ReadContext) => void;
     setSelectedStatusFromServer: (ids: number[]) => void;
     setShowVersions: (show: boolean) => void;
     addRelation: (relation: Relation) => void;
@@ -164,7 +208,12 @@ interface TaskState {
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
     updateTask: (id: string, updates: Partial<Task>) => void;
     setTaskLockVersion: (id: string, lockVersion: number) => void;
+    commitTaskOperation: (id: string, operationGeneration: number, lockVersion?: number) => void;
     removeTask: (id: string) => void;
+    markTaskTombstone: (id: string, source?: EntityTombstone['source'], operationId?: string) => void;
+    clearTaskTombstone: (id: string) => void;
+    registerTaskConflict: (id: string, message: string) => void;
+    resolveTaskConflict: (id: string, resolution: 'remote' | 'local' | 'dismiss') => Promise<void>;
     updateViewport: (updates: Partial<Viewport>) => void;
     setRowHeight: (height: number) => void;
     setViewMode: (mode: ViewMode) => void;
@@ -302,6 +351,8 @@ const buildLayoutFromState = (state: LayoutState, overrides: Partial<LayoutState
 };
 
 const buildDerivedSchedulingSummary = (tasks: Task[], relations: Relation[]): DerivedSchedulingSummary => {
+    derivedRecalculationCounters.scheduling += 1;
+    derivedRecalculationCounters.criticalPath += 1;
     const criticalPath = TaskLogicService.calculateCriticalPath(tasks, relations);
 
     return {
@@ -311,14 +362,38 @@ const buildDerivedSchedulingSummary = (tasks: Task[], relations: Relation[]): De
     };
 };
 
+export const derivedRecalculationCounters = {
+    scheduling: 0,
+    criticalPath: 0,
+    layout: 0
+};
+
+export const resetDerivedRecalculationCounters = () => {
+    derivedRecalculationCounters.scheduling = 0;
+    derivedRecalculationCounters.criticalPath = 0;
+    derivedRecalculationCounters.layout = 0;
+};
+
 const buildDerivedTaskState = (
     state: TaskState,
-    overrides: Partial<LayoutState> & { allTasks?: Task[]; relations?: Relation[] } = {}
+    overrides: Partial<LayoutState> & {
+        allTasks?: Task[];
+        relations?: Relation[];
+        derivedInvalidation?: DerivedInvalidation;
+        schedulingSummary?: DerivedSchedulingSummary;
+    } = {}
 ): DerivedTaskState => {
     const allTasks = overrides.allTasks ?? state.allTasks;
     const relations = overrides.relations ?? state.relations;
+    derivedRecalculationCounters.layout += 1;
     const layout = buildLayoutFromState(state, { ...overrides, allTasks, relations });
-    const schedulingSummary = buildDerivedSchedulingSummary(allTasks, relations);
+    const schedulingSummary = overrides.schedulingSummary ?? (overrides.derivedInvalidation === 'none' || overrides.derivedInvalidation === 'layout'
+        ? {
+            schedulingStates: state.schedulingStates,
+            criticalPathMetrics: state.criticalPathMetrics,
+            criticalPathProjectFinish: state.criticalPathProjectFinish
+        }
+        : buildDerivedSchedulingSummary(allTasks, relations));
 
     return {
         tasks: layout.tasks,
@@ -397,20 +472,27 @@ type ApiDataPatchResult = {
     querySyncState: SharedQuerySyncState;
 };
 
-const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult => {
+const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadContext): ApiDataPatchResult => {
     const filterOptions = data.filterOptions ?? EMPTY_FILTER_OPTIONS;
     const customFields = data.customFields ?? [];
     const versions = data.versions ?? [];
     const relations = data.relations ?? [];
-    const serverTasks = data.tasks ?? [];
-    const localTaskById = new Map(state.allTasks.map((task) => [task.id, task]));
-    const mergedServerTasks = serverTasks.map((task) => (
-        state.modifiedTaskIds.has(task.id) ? (localTaskById.get(task.id) ?? task) : task
-    ));
+    const serverTasks = (data.tasks ?? []).filter(task => !state.taskTombstones[task.id]);
+    const mergedServerTasks = serverTasks.map((task) => {
+        const patches = state.localTaskPatches[task.id] ?? [];
+        return patches.length > 0 ? applyLocalPatches(task, patches) : task;
+    });
     const serverTaskIds = new Set(serverTasks.map((task) => task.id));
+    const preservesDirtyScope = !readContext || !state.activeReadContext || (
+        state.activeReadContext.projectId === readContext.projectId &&
+        state.activeReadContext.queryIdentity === readContext.queryIdentity &&
+        state.activeReadContext.scopeIdentity === readContext.scopeIdentity
+    );
     const tasks = [
         ...mergedServerTasks,
-        ...state.allTasks.filter((task) => state.modifiedTaskIds.has(task.id) && !serverTaskIds.has(task.id))
+        ...(preservesDirtyScope
+            ? state.allTasks.filter((task) => state.modifiedTaskIds.has(task.id) && !serverTaskIds.has(task.id) && !state.taskTombstones[task.id])
+            : [])
     ];
     const nextResolved: ResolvedQueryState = {
         ...(data.initialState ?? toResolvedQueryStateFromStore(state)),
@@ -492,6 +574,11 @@ const buildApiDataPatch = (data: ApiData, state: TaskState): ApiDataPatchResult 
             versionExpansion,
             taskExpansion,
             modifiedTaskIds: new Set(state.modifiedTaskIds),
+            serverTaskSnapshot: replaceServerSnapshot(
+                state.serverTaskSnapshot,
+                serverTasks,
+                readContext ?? state.activeReadContext
+            ),
             ...toDerivedTaskStatePatch(derived)
         }
     };
@@ -504,6 +591,8 @@ type ParentMoveStoreState = LayoutState & {
     modifiedTaskIds: Set<string>;
     editGenerations: Record<string, number>;
     autoSave: boolean;
+    localTaskPatches: Record<string, Array<LocalPatch<Task>>>;
+    serverTaskSnapshot: ServerSnapshot<Task>;
 };
 
 const buildParentMoveOptimisticPatch = (state: ParentMoveStoreState, nextAllTasks: Task[]) => {
@@ -512,32 +601,72 @@ const buildParentMoveOptimisticPatch = (state: ParentMoveStoreState, nextAllTask
     const editGenerations = sourceTaskId
         ? { ...state.editGenerations, [sourceTaskId]: (state.editGenerations[sourceTaskId] ?? 0) + 1 }
         : state.editGenerations;
+    const sourceBefore = sourceTaskId ? state.allTasks.find(task => task.id === sourceTaskId) : undefined;
+    const sourceAfter = sourceTaskId ? nextAllTasks.find(task => task.id === sourceTaskId) : undefined;
+    const localTaskPatches = { ...state.localTaskPatches };
+    if (sourceTaskId && sourceBefore && sourceAfter) {
+        const generation = editGenerations[sourceTaskId] ?? 0;
+        const fields: Partial<Task> = {};
+        if (sourceBefore.parentId !== sourceAfter.parentId) fields.parentId = sourceAfter.parentId;
+        if (sourceBefore.displayOrder !== sourceAfter.displayOrder) fields.displayOrder = sourceAfter.displayOrder;
+        localTaskPatches[sourceTaskId] = [
+            ...(localTaskPatches[sourceTaskId] ?? []),
+            { entityId: sourceTaskId, fields, generation, operationId: `parent-move:${sourceTaskId}:${generation}` }
+        ];
+    }
     return {
         allTasks: nextAllTasks,
         tasks: layout.tasks,
         layoutRows: layout.layoutRows,
         rowCount: layout.rowCount,
-        editGenerations
+        editGenerations,
+        localTaskPatches
     };
 };
 
-const buildParentMoveSuccessPatch = (state: ParentMoveStoreState, sourceBefore: Task, result: { lockVersion?: number }) => {
+const buildParentMoveSuccessPatch = (state: ParentMoveStoreState, sourceBefore: Task, result: { lockVersion?: number; parentId?: string }, operationGeneration: number) => {
     const sourceTaskId = sourceBefore.id;
+    const currentSource = state.allTasks.find((task) => task.id === sourceTaskId);
+    const responseParentId = result.parentId;
+    const operationId = `parent-move:${sourceTaskId}:${operationGeneration}`;
+    const operationPatch = (state.localTaskPatches[sourceTaskId] ?? []).find(patch => patch.operationId === operationId);
     const updatedAllTasks = state.allTasks.map((task) => (
         task.id === sourceTaskId
-            ? { ...task, lockVersion: result.lockVersion ?? task.lockVersion }
+            ? { ...task, lockVersion: Math.max(task.lockVersion, result.lockVersion ?? task.lockVersion) }
             : task
     ));
     const layout = buildLayoutFromState(state, { allTasks: updatedAllTasks });
     const nextModified = new Set(state.modifiedTaskIds);
-    nextModified.delete(sourceTaskId);
+    const localTaskPatches = { ...state.localTaskPatches };
+    if (operationPatch) {
+        localTaskPatches[sourceTaskId] = (localTaskPatches[sourceTaskId] ?? []).filter(patch => patch.operationId !== operationId);
+        if (localTaskPatches[sourceTaskId].length === 0) {
+            delete localTaskPatches[sourceTaskId];
+            nextModified.delete(sourceTaskId);
+        }
+    } else if (!currentSource || responseParentId === undefined || currentSource.parentId === responseParentId) {
+        nextModified.delete(sourceTaskId);
+    }
+    const serverTask = state.serverTaskSnapshot.entitiesById[sourceTaskId] ?? sourceBefore;
+    const nextServerTask = operationPatch
+        ? { ...serverTask, ...operationPatch.fields, lockVersion: Math.max(serverTask.lockVersion, result.lockVersion ?? serverTask.lockVersion) }
+        : { ...serverTask, lockVersion: Math.max(serverTask.lockVersion, result.lockVersion ?? serverTask.lockVersion) };
 
     return {
         allTasks: updatedAllTasks,
         tasks: layout.tasks,
         layoutRows: layout.layoutRows,
         rowCount: layout.rowCount,
-        modifiedTaskIds: nextModified
+        modifiedTaskIds: nextModified,
+        localTaskPatches,
+        serverTaskSnapshot: {
+            ...state.serverTaskSnapshot,
+            entitiesById: { ...state.serverTaskSnapshot.entitiesById, [sourceTaskId]: nextServerTask },
+            revisions: {
+                ...state.serverTaskSnapshot.revisions,
+                [sourceTaskId]: Math.max(state.serverTaskSnapshot.revisions[sourceTaskId] ?? 0, nextServerTask.lockVersion)
+            }
+        }
     };
 };
 
@@ -722,19 +851,72 @@ const computeFocusedViewport = (state: TaskState, task: Task) => {
 
 
 export const useTaskStore = create<TaskState>((set, get) => {
+    const inflightReads = new Map<string, Promise<void>>();
+    let auxiliaryReadContext: ReadContext | null = null;
+    let auxiliaryReadGeneration = 0;
+    let mutationResyncGeneration = 0;
+    let activeReadContext: ReadContext | null = null;
     const requestAndApplyData = async (
         fetchData: () => Promise<ApiData>,
-        generation: number = ++dataRequestGeneration
+        context: ReadContext
     ): Promise<void> => {
+        const readKey = context.contextId;
+        const existing = inflightReads.get(readKey);
+        if (existing) return existing;
+        activeReadContext = context;
+        readLifecycleMetrics.requestsStarted += 1;
+        readLifecycleMetrics.maxInflight = Math.max(readLifecycleMetrics.maxInflight, inflightReads.size + 1);
+        const request = (async () => {
         try {
             const data = await fetchData();
-            if (generation !== dataRequestGeneration) return;
-            get().applyApiData(data);
+            if (context.generation !== dataRequestGeneration || !canApplyReadResponse(activeReadContext, context)) {
+                readLifecycleMetrics.staleResponsesRejected += 1;
+                return;
+            }
+            get().applyApiData(data, context);
+            readLifecycleMetrics.responsesApplied += 1;
         } catch (error) {
             // A superseded request must not surface as a user-visible failure.
-            if (generation !== dataRequestGeneration) return;
+            if (context.generation !== dataRequestGeneration || !canApplyReadResponse(activeReadContext, context)) {
+                readLifecycleMetrics.staleResponsesRejected += 1;
+                return;
+            }
+            readLifecycleMetrics.failures += 1;
             throw error;
         }
+        })();
+        inflightReads.set(readKey, request);
+        try {
+            await request;
+        } finally {
+            if (inflightReads.get(readKey) === request) inflightReads.delete(readKey);
+        }
+    };
+    const fetchMutationResyncData = async (params: { query?: { selectedStatusIds?: number[] } }): Promise<ApiData> => {
+        const state = get();
+        const generation = ++dataRequestGeneration;
+        const resyncGeneration = ++mutationResyncGeneration;
+        readLifecycleMetrics.requestsStarted += 1;
+        readLifecycleMetrics.maxInflight = Math.max(readLifecycleMetrics.maxInflight, 1);
+        const query = {
+            ...toResolvedQueryStateFromStore(state),
+            ...(params.query?.selectedStatusIds ? { selectedStatusIds: params.query.selectedStatusIds } : {})
+        };
+        const context = createReadContext({
+            generation,
+            projectId: state.currentProjectId,
+            query,
+            scope: { showSubprojects: state.showSubprojects, memberProjectsOnly: state.memberProjectsOnly },
+            purpose: 'mutation_resync',
+            mergePolicy: 'preserve_dirty'
+        });
+        activeReadContext = context;
+        const data = await apiClient.fetchData({ query, queryContext: state.queryContext });
+        if (resyncGeneration !== mutationResyncGeneration || !canApplyReadResponse(activeReadContext, context)) {
+            readLifecycleMetrics.staleResponsesRejected += 1;
+            throw new Error('Superseded mutation resync');
+        }
+        return data;
     };
 
     return ({
@@ -790,18 +972,24 @@ export const useTaskStore = create<TaskState>((set, get) => {
     editGenerations: {},
     autoSave: preferences.autoSave ?? false,
     initialDataLoaded: false,
+    activeReadContext: null,
+    serverTaskSnapshot: createServerSnapshot<Task>([]),
+    localTaskPatches: {},
+    taskTombstones: {},
+    taskConflicts: {},
 
     setAutoSave: (enabled) => set({ autoSave: enabled }),
 
     setTasks: (tasks) => set((state) => {
-        const { projectExpansion, taskExpansion, versionExpansion } = initializeExpansionMaps(tasks, {
+        const effectiveTasks = tasks.filter(task => !state.taskTombstones[task.id]);
+        const { projectExpansion, taskExpansion, versionExpansion } = initializeExpansionMaps(effectiveTasks, {
             projectExpansion: state.projectExpansion,
             versionExpansion: state.versionExpansion,
             taskExpansion: state.taskExpansion
         });
 
         const derived = buildDerivedTaskState(state, {
-            allTasks: tasks,
+            allTasks: effectiveTasks,
             projectExpansion,
             versionExpansion,
             taskExpansion
@@ -908,13 +1096,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
         syncSharedQueryState(nextState);
         return nextState;
     }),
-    applyApiData: (data) => {
+    applyApiData: (data, readContext) => {
         const businessCalendar = configureBusinessCalendar(data.businessCalendar);
         let querySyncState: SharedQuerySyncState | null = null;
         set((state) => {
-            const result = buildApiDataPatch(data, state);
+            const result = buildApiDataPatch(data, state, readContext);
             querySyncState = result.querySyncState;
-            return result.patch;
+            return { ...result.patch, activeReadContext: readContext ?? activeReadContext };
         });
         if (data.initialState?.visibleColumns?.length) {
             useUIStore.getState().applyQueryVisibleColumns(data.initialState.visibleColumns);
@@ -1073,14 +1261,22 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return buildMoveTaskResult('error', { error: i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target' });
         }
 
-        const { apiClient } = await import('../api/client');
         invalidateDataRequests();
         return runParentMove({
             sourceTaskId,
             expectedParentId: targetTaskId,
             getState: () => get(),
             setState: (patch) => set(patch),
-            restoreSnapshot: (snapshot) => set(snapshot),
+            restoreSnapshot: (snapshot) => set((state) => {
+                const currentTask = state.allTasks.find((task) => task.id === sourceTaskId);
+                const snapshotTask = snapshot.allTasks.find((task) => task.id === sourceTaskId);
+                const lockVersion = Math.max(currentTask?.lockVersion ?? 0, snapshotTask?.lockVersion ?? 0);
+                return {
+                    ...snapshot,
+                    allTasks: snapshot.allTasks.map((task) => task.id === sourceTaskId ? { ...task, lockVersion } : task),
+                    tasks: snapshot.tasks.map((task) => task.id === sourceTaskId ? { ...task, lockVersion } : task)
+                };
+            }),
             buildNextOrder: (allTasks) => tailDisplayOrderForParent(allTasks, targetTaskId, sourceTaskId),
             buildNextAllTasks: (allTasks, movingTaskId, nextOrder) => allTasks.map((task) => (
                 task.id === movingTaskId
@@ -1093,13 +1289,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 state.editGenerations[sourceBefore.id] === operationGeneration &&
                 state.allTasks.find((task) => task.id === sourceBefore.id)?.parentId === targetTaskId
             ),
-            updateTaskFields: (taskId, payload) => enqueueTaskWrite(taskId, () => apiClient.updateTaskFields(taskId, {
+            updateTaskFields: (taskId, payload) => taskMutationService.updateTaskFields(taskId, {
                 parent_issue_id: Number(targetTaskId),
                 lock_version: payload.lock_version
-            })),
+            }),
             validatePersistedResult: (result) => result.parentId === targetTaskId,
             missingSourceResult: buildParentMoveFailure(),
-            failedResult: buildParentMoveFailure
+            failedResult: buildParentMoveFailure,
+            onConflict: (taskId, message) => get().registerTaskConflict(taskId, message)
         });
     },
     moveTaskToRoot: async (sourceTaskId) => {
@@ -1107,14 +1304,22 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return buildMoveTaskResult('error', { error: i18n.t('label_parent_drop_invalid_target') || 'Invalid drop target' });
         }
 
-        const { apiClient } = await import('../api/client');
         invalidateDataRequests();
         return runParentMove({
             sourceTaskId,
             expectedParentId: undefined,
             getState: () => get(),
             setState: (patch) => set(patch),
-            restoreSnapshot: (snapshot) => set(snapshot),
+            restoreSnapshot: (snapshot) => set((state) => {
+                const currentTask = state.allTasks.find((task) => task.id === sourceTaskId);
+                const snapshotTask = snapshot.allTasks.find((task) => task.id === sourceTaskId);
+                const lockVersion = Math.max(currentTask?.lockVersion ?? 0, snapshotTask?.lockVersion ?? 0);
+                return {
+                    ...snapshot,
+                    allTasks: snapshot.allTasks.map((task) => task.id === sourceTaskId ? { ...task, lockVersion } : task),
+                    tasks: snapshot.tasks.map((task) => task.id === sourceTaskId ? { ...task, lockVersion } : task)
+                };
+            }),
             buildNextOrder: (allTasks, sourceBefore) => tailDisplayOrderForRoot(allTasks, sourceBefore),
             buildNextAllTasks: (allTasks, movingTaskId, nextOrder) => allTasks.map((task) => (
                 task.id === movingTaskId
@@ -1127,13 +1332,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 state.editGenerations[sourceBefore.id] === operationGeneration &&
                 state.allTasks.find((task) => task.id === sourceBefore.id)?.parentId === undefined
             ),
-            updateTaskFields: (taskId, payload) => enqueueTaskWrite(taskId, () => apiClient.updateTaskFields(taskId, {
+            updateTaskFields: (taskId, payload) => taskMutationService.updateTaskFields(taskId, {
                 parent_issue_id: null,
                 lock_version: payload.lock_version
-            })),
+            }),
             validatePersistedResult: (result) => result.parentId === undefined,
             missingSourceResult: buildParentMoveFailure(),
-            failedResult: buildParentMoveFailure
+            failedResult: buildParentMoveFailure,
+            onConflict: (taskId, message) => get().registerTaskConflict(taskId, message)
         });
     },
 
@@ -1208,8 +1414,37 @@ export const useTaskStore = create<TaskState>((set, get) => {
         [id, ...pendingUpdates.keys()].forEach((taskId) => {
             nextEditGenerations[taskId] = (nextEditGenerations[taskId] ?? 0) + 1;
         });
+        const nextLocalTaskPatches = { ...state.localTaskPatches };
+        const patchFor = (taskId: string, fields: Partial<Task>) => {
+            const meaningfulFields = Object.fromEntries(
+                Object.entries(fields).filter(([key]) => key !== 'lockVersion' && key !== 'id')
+            ) as Partial<Task>;
+            if (Object.keys(meaningfulFields).length === 0) return;
+            const generation = nextEditGenerations[taskId] ?? 0;
+            const operationId = `edit:${taskId}:${generation}`;
+            nextLocalTaskPatches[taskId] = [
+                ...(nextLocalTaskPatches[taskId] ?? []).filter(patch => patch.operationId !== operationId),
+                { entityId: taskId, fields: meaningfulFields, generation, operationId }
+            ];
+        };
+        patchFor(id, updates);
+        pendingUpdates.forEach((fields, taskId) => patchFor(taskId, fields));
 
-        const nextSchedulingSummary = buildDerivedSchedulingSummary(finalTasks, state.relations);
+        const changedFields = new Set([...Object.keys(updates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
+        const requiresLayout = ['projectId', 'assignedToId', 'fixedVersionId'].some(field => changedFields.has(field));
+        const requiresScheduling = ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => changedFields.has(field));
+        const derivedInvalidation: DerivedInvalidation = requiresScheduling
+            ? 'critical_path'
+            : requiresLayout
+                ? 'layout'
+                : 'none';
+        const nextSchedulingSummary = requiresScheduling
+            ? buildDerivedSchedulingSummary(finalTasks, state.relations)
+            : {
+                schedulingStates: state.schedulingStates,
+                criticalPathMetrics: state.criticalPathMetrics,
+                criticalPathProjectFinish: state.criticalPathProjectFinish
+            };
 
         if (state.isSortingSuspended) {
             // Just update the view 'tasks' without re-layout (preserving order)
@@ -1234,28 +1469,117 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 tasks: newViewTasks,
                 ...nextSchedulingSummary,
                 modifiedTaskIds: newModifiedIds, // Add here for suspended case
-                editGenerations: nextEditGenerations
+                editGenerations: nextEditGenerations,
+                localTaskPatches: nextLocalTaskPatches
             };
         }
 
-        const derived = buildDerivedTaskState(state, { allTasks: finalTasks });
+        if (!requiresLayout && !requiresScheduling) {
+            const nextViewTasks = state.tasks.map(viewTask => {
+                const updated = finalTasks.find(task => task.id === viewTask.id);
+                return updated ? {
+                    ...updated,
+                    rowIndex: viewTask.rowIndex,
+                    indentLevel: viewTask.indentLevel,
+                    treeLevelGuides: viewTask.treeLevelGuides,
+                    isLastChild: viewTask.isLastChild,
+                    hasChildren: viewTask.hasChildren
+                } : viewTask;
+            });
+            return {
+                allTasks: finalTasks,
+                tasks: nextViewTasks,
+                modifiedTaskIds: newModifiedIds,
+                editGenerations: nextEditGenerations,
+                localTaskPatches: nextLocalTaskPatches
+            };
+        }
+
+        const derived = buildDerivedTaskState(state, {
+            allTasks: finalTasks,
+            derivedInvalidation,
+            schedulingSummary: nextSchedulingSummary
+        });
 
         return {
             allTasks: finalTasks,
             ...toDerivedTaskStatePatch(derived),
             modifiedTaskIds: newModifiedIds, // Add here for normal case
-            editGenerations: nextEditGenerations
+            editGenerations: nextEditGenerations,
+            localTaskPatches: nextLocalTaskPatches
         };
     }),
 
     setTaskLockVersion: (id, lockVersion) => set((state) => {
+        const currentLockVersion = state.allTasks.find(task => task.id === id)?.lockVersion ?? 0;
+        if (lockVersion < currentLockVersion) return state;
         const allTasks = state.allTasks.map((task) => (
             task.id === id ? { ...task, lockVersion } : task
         ));
         const tasks = state.tasks.map((task) => (
             task.id === id ? { ...task, lockVersion } : task
         ));
-        return { allTasks, tasks };
+        const serverEntity = state.serverTaskSnapshot.entitiesById[id];
+        return {
+            allTasks,
+            tasks,
+            ...(serverEntity && lockVersion >= (state.serverTaskSnapshot.revisions[id] ?? 0)
+                ? {
+                    serverTaskSnapshot: {
+                        ...state.serverTaskSnapshot,
+                        entitiesById: {
+                            ...state.serverTaskSnapshot.entitiesById,
+                            [id]: { ...serverEntity, lockVersion }
+                        },
+                        revisions: { ...state.serverTaskSnapshot.revisions, [id]: lockVersion }
+                    }
+                }
+                : {})
+        };
+    }),
+
+    commitTaskOperation: (id, operationGeneration, lockVersion) => set((state) => {
+        const currentTask = state.allTasks.find(task => task.id === id);
+        if (!currentTask) return state;
+        const operationPatches = (state.localTaskPatches[id] ?? []).filter(patch => patch.generation === operationGeneration);
+        if (operationPatches.length === 0) return state;
+        const committedFields = operationPatches.reduce<Partial<Task>>(
+            (fields, patch) => ({ ...fields, ...patch.fields }),
+            {}
+        );
+        const committedTask = {
+            ...(state.serverTaskSnapshot.entitiesById[id] ?? currentTask),
+            ...committedFields,
+            lockVersion: Math.max(currentTask.lockVersion, lockVersion ?? currentTask.lockVersion)
+        };
+        const localTaskPatches = { ...state.localTaskPatches };
+        localTaskPatches[id] = (localTaskPatches[id] ?? []).filter(patch => patch.generation !== operationGeneration);
+        if (localTaskPatches[id].length === 0) delete localTaskPatches[id];
+        const modifiedTaskIds = new Set(state.modifiedTaskIds);
+        if (!localTaskPatches[id]) modifiedTaskIds.delete(id);
+        const taskConflicts = { ...state.taskConflicts };
+        delete taskConflicts[id];
+        const allTasks = state.allTasks.map(task => task.id === id
+            ? { ...task, lockVersion: committedTask.lockVersion }
+            : task);
+        const tasks = state.tasks.map(task => task.id === id
+            ? { ...task, lockVersion: committedTask.lockVersion }
+            : task);
+        return {
+            allTasks,
+            tasks,
+            modifiedTaskIds,
+            localTaskPatches,
+            taskConflicts,
+            serverTaskSnapshot: {
+                ...state.serverTaskSnapshot,
+                entitiesById: { ...state.serverTaskSnapshot.entitiesById, [id]: committedTask },
+                revisions: {
+                    ...state.serverTaskSnapshot.revisions,
+                    [id]: Math.max(state.serverTaskSnapshot.revisions[id] ?? 0, committedTask.lockVersion)
+                }
+            }
+        };
     }),
 
 
@@ -1264,11 +1588,103 @@ export const useTaskStore = create<TaskState>((set, get) => {
         invalidateDataRequests();
         const finalTasks = state.allTasks.filter(t => t.id !== id);
         const derived = buildDerivedTaskState(state, { allTasks: finalTasks });
+        const localTaskPatches = { ...state.localTaskPatches };
+        delete localTaskPatches[id];
+        const modifiedTaskIds = new Set(state.modifiedTaskIds);
+        modifiedTaskIds.delete(id);
         return {
             allTasks: finalTasks,
-            ...toDerivedTaskStatePatch(derived)
+            ...toDerivedTaskStatePatch(derived),
+            modifiedTaskIds,
+            localTaskPatches,
+            taskTombstones: {
+                ...state.taskTombstones,
+                [id]: { entityId: id, deletedAt: Date.now(), source: 'local' }
+            }
         };
     }),
+
+    markTaskTombstone: (id, source = 'server', operationId) => set((state) => {
+        invalidateDataRequests();
+        const finalTasks = state.allTasks.filter(task => task.id !== id);
+        const derived = buildDerivedTaskState(state, { allTasks: finalTasks });
+        return {
+            allTasks: finalTasks,
+            ...toDerivedTaskStatePatch(derived),
+            taskTombstones: {
+                ...state.taskTombstones,
+                [id]: { entityId: id, deletedAt: Date.now(), source, operationId }
+            }
+        };
+    }),
+
+    clearTaskTombstone: (id) => set((state) => {
+        if (!state.taskTombstones[id]) return state;
+        const taskTombstones = { ...state.taskTombstones };
+        delete taskTombstones[id];
+        return { taskTombstones };
+    }),
+
+    registerTaskConflict: (id, message) => set((state) => ({
+        taskConflicts: {
+            ...state.taskConflicts,
+            [id]: { taskId: id, message, detectedAt: Date.now() }
+        }
+    })),
+
+    resolveTaskConflict: async (id, resolution) => {
+        if (resolution === 'dismiss') {
+            set((state) => {
+                if (!state.taskConflicts[id]) return state;
+                const taskConflicts = { ...state.taskConflicts };
+                delete taskConflicts[id];
+                return { taskConflicts };
+            });
+            return;
+        }
+
+        if (resolution === 'local') {
+            set((state) => {
+                if (!state.taskConflicts[id]) return state;
+                const taskConflicts = { ...state.taskConflicts };
+                delete taskConflicts[id];
+                return { taskConflicts };
+            });
+            await get().saveChanges();
+            return;
+        }
+
+        invalidateDataRequests();
+        set((state) => {
+            const remoteTask = state.serverTaskSnapshot.entitiesById[id];
+            const allTasks = remoteTask
+                ? state.allTasks.some(task => task.id === id)
+                    ? state.allTasks.map(task => task.id === id ? remoteTask : task)
+                    : [...state.allTasks, remoteTask]
+                : state.allTasks.filter(task => task.id !== id);
+            const derived = buildDerivedTaskState(state, { allTasks });
+            const localTaskPatches = { ...state.localTaskPatches };
+            delete localTaskPatches[id];
+            const modifiedTaskIds = new Set(state.modifiedTaskIds);
+            modifiedTaskIds.delete(id);
+            const taskTombstones = { ...state.taskTombstones };
+            if (remoteTask) {
+                delete taskTombstones[id];
+            } else {
+                taskTombstones[id] = { entityId: id, deletedAt: Date.now(), source: 'server' };
+            }
+            const taskConflicts = { ...state.taskConflicts };
+            delete taskConflicts[id];
+            return {
+                allTasks,
+                ...toDerivedTaskStatePatch(derived),
+                localTaskPatches,
+                modifiedTaskIds,
+                taskTombstones,
+                taskConflicts
+            };
+        });
+    },
 
     updateViewport: (updates) => set((state) => {
         const nextViewport = { ...state.viewport, ...updates };
@@ -1675,16 +2091,30 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return nextState;
     }),
     refreshData: async () => {
-        const generation = ++dataRequestGeneration;
         const state = get();
-        await requestAndApplyData(() => apiClient.fetchData({
-            query: toResolvedQueryStateFromStore(state),
-            queryContext: state.queryContext
-        }), generation);
+        const query = toResolvedQueryStateFromStore(state);
+        const scope = { showSubprojects: state.showSubprojects, memberProjectsOnly: state.memberProjectsOnly };
+        const generation = ++dataRequestGeneration;
+        const context = createReadContext({
+            generation,
+            projectId: state.currentProjectId,
+            query,
+            scope,
+            purpose: 'refresh'
+        });
+        await requestAndApplyData(() => apiClient.fetchData({ query, queryContext: state.queryContext }), context);
     },
 
     loadInitialData: async (params) => {
         const generation = ++dataRequestGeneration;
+        const state = get();
+        const context = createReadContext({
+            generation,
+            projectId: state.currentProjectId,
+            query: params.query ?? params.initialState ?? {},
+            scope: { rawSearch: params.rawSearch, queryContext: params.queryContext },
+            purpose: 'initial_load'
+        });
         await requestAndApplyData(async () => {
             const { initialState, ...fetchParams } = params;
             const data = await apiClient.fetchData(fetchParams);
@@ -1693,7 +2123,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 ...(initialState ? { initialState: { ...data.initialState, ...initialState } } : {}),
                 ...(params.queryContext ? { queryContext: params.queryContext } : {})
             };
-        }, generation);
+        }, context);
     },
 
     loadSavedQueries: async (force = false) => {
@@ -1702,13 +2132,24 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return;
         }
 
+        const context = createReadContext({
+            generation: ++auxiliaryReadGeneration,
+            projectId: get().currentProjectId,
+            query: { force },
+            scope: { savedQueries: true },
+            purpose: 'saved_queries',
+            mergePolicy: 'replace'
+        });
+        auxiliaryReadContext = context;
         set({ savedQueriesStatus: 'loading', savedQueriesError: null });
 
         try {
             const { apiClient } = await import('../api/client');
             const queries = await apiClient.fetchQueries();
+            if (!canApplyReadResponse(auxiliaryReadContext, context)) return;
             set({ savedQueries: queries, savedQueriesStatus: 'ready' });
         } catch (error) {
+            if (!canApplyReadResponse(auxiliaryReadContext, context)) return;
             set({
                 savedQueries: [],
                 savedQueriesStatus: 'error',
@@ -1733,7 +2174,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
         });
         replaceIssueQueryParamsInUrl(query, queryContext);
         syncSharedQueryState({ ...get(), activeQueryId: queryId });
-        await requestAndApplyData(() => apiClient.fetchData({ query, queryContext }), generation);
+        const context = createReadContext({
+            generation,
+            projectId: state.currentProjectId,
+            query,
+            scope: { showSubprojects: state.showSubprojects, memberProjectsOnly: state.memberProjectsOnly },
+            purpose: 'saved_query'
+        });
+        await requestAndApplyData(() => apiClient.fetchData({ query, queryContext }), context);
     },
 
     clearSavedQuery: async () => {
@@ -1755,40 +2203,88 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
                 const snapshotGenerations = { ...snapshot.editGenerations };
                 const snapshotTaskIds = new Set(snapshot.modifiedTaskIds);
+                const conflictMessages = new Map<string, string>();
+                const requiresResync = [...snapshotTaskIds].some(taskId => (
+                    (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
+                        ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => field in patch.fields)
+                    ))
+                ));
                 invalidateDataRequests();
                 const failures = await saveModifiedTasks(
                     snapshot.allTasks,
                     snapshot.relations,
                     snapshot.modifiedTaskIds,
                     snapshot.selectedStatusIds,
-                    apiClient.updateTask,
-                    apiClient.fetchData,
+                    taskMutationService.updateTask,
+                    fetchMutationResyncData,
                     (taskId, lockVersion) => {
                         if (typeof lockVersion !== 'number') return;
                         set((state) => {
+                            const savedTask = snapshot.allTasks.find((task) => task.id === taskId);
                             const allTasks = state.allTasks.map((task) => (
-                                task.id === taskId ? { ...task, lockVersion } : task
+                                task.id === taskId ? { ...task, lockVersion: Math.max(task.lockVersion, lockVersion) } : task
                             ));
-                            const derived = buildDerivedTaskState(state, { allTasks });
+                            const currentServerTask = state.serverTaskSnapshot.entitiesById[taskId] ?? savedTask;
+                            const persistedFields: Partial<Task> = savedTask
+                                ? {
+                                    startDate: savedTask.startDate,
+                                    dueDate: savedTask.dueDate,
+                                    parentId: savedTask.parentId,
+                                    displayOrder: savedTask.displayOrder
+                                }
+                                : {};
                             return {
                                 allTasks,
-                                ...toDerivedTaskStatePatch(derived)
+                                serverTaskSnapshot: {
+                                    ...state.serverTaskSnapshot,
+                                    entitiesById: {
+                                        ...state.serverTaskSnapshot.entitiesById,
+                                        ...(currentServerTask
+                                            ? { [taskId]: { ...currentServerTask, ...persistedFields, lockVersion: Math.max(currentServerTask.lockVersion, lockVersion) } }
+                                            : {})
+                                    },
+                                    revisions: { ...state.serverTaskSnapshot.revisions, [taskId]: Math.max(state.serverTaskSnapshot.revisions[taskId] ?? 0, lockVersion) }
+                                }
                             };
                         });
+                    },
+                    (taskId, result) => {
+                        if (result.status === 'not_found') {
+                            get().markTaskTombstone(taskId, 'server');
+                            get().registerTaskConflict(taskId, result.error || (i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists'));
+                        }
+                    },
+                    (taskId, message) => {
+                        conflictMessages.set(taskId, message);
                     }
                 );
 
                 set((state) => {
                     const modifiedTaskIds = new Set(state.modifiedTaskIds);
+                    const localTaskPatches = { ...state.localTaskPatches };
                     snapshotTaskIds.forEach((taskId) => {
-                        if (!failures.has(taskId) && state.editGenerations[taskId] === snapshotGenerations[taskId]) {
+                        if (failures.has(taskId)) return;
+                        const currentGeneration = state.editGenerations[taskId] ?? 0;
+                        const savedGeneration = snapshotGenerations[taskId] ?? 0;
+                        localTaskPatches[taskId] = (localTaskPatches[taskId] ?? [])
+                            .filter(patch => patch.generation > savedGeneration);
+                        if (currentGeneration === savedGeneration) {
                             modifiedTaskIds.delete(taskId);
                         }
                     });
-                    return { modifiedTaskIds };
+                    return { modifiedTaskIds, localTaskPatches };
                 });
 
-                await get().refreshData();
+                if (requiresResync || conflictMessages.size > 0) await get().refreshData();
+                if (conflictMessages.size > 0) {
+                    set((state) => {
+                        const taskConflicts = { ...state.taskConflicts };
+                        conflictMessages.forEach((message, taskId) => {
+                            taskConflicts[taskId] = { taskId, message, detectedAt: Date.now() };
+                        });
+                        return { taskConflicts };
+                    });
+                }
                 if (failures.size > 0) {
                     const [failedTaskId, failedReason] = failures.entries().next().value as [string, string];
                     useUIStore.getState().addNotification(
@@ -1812,6 +2308,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
     discardChanges: async () => {
         const state = get();
+        set({ localTaskPatches: {}, modifiedTaskIds: new Set() });
         await state.refreshData();
     }
 });

@@ -150,7 +150,7 @@ describe('HtmlOverlay', () => {
         fireEvent.click(screen.getByTestId('relation-save-button'));
 
         await waitFor(() => {
-            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, 0);
+            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, 0, expect.stringMatching(/^mutation:/));
             expect(useTaskStore.getState().relations).toEqual([relation]);
             expect(useTaskStore.getState().draftRelation).toBeNull();
         });
@@ -183,7 +183,7 @@ describe('HtmlOverlay', () => {
         fireEvent.click(screen.getByTestId('relation-save-button'));
 
         await waitFor(() => {
-            expect(apiClient.createRelation).toHaveBeenCalledWith('2', '1', RelationType.Relates, undefined);
+            expect(apiClient.createRelation).toHaveBeenCalledWith('2', '1', RelationType.Relates, undefined, expect.stringMatching(/^mutation:/));
             expect(useTaskStore.getState().relations).toEqual([relation]);
         });
     });
@@ -361,7 +361,7 @@ describe('HtmlOverlay', () => {
         fireEvent.mouseUp(window);
 
         await waitFor(() => {
-            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, 0);
+            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, 0, expect.stringMatching(/^mutation:/));
             expect(useTaskStore.getState().relations).toEqual([relation]);
         });
         expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
@@ -384,7 +384,7 @@ describe('HtmlOverlay', () => {
         fireEvent.click(screen.getByTestId('relation-save-button'));
 
         await waitFor(() => {
-            expect(apiClient.updateRelation).toHaveBeenCalledWith('rel-1', RelationType.Blocked, undefined);
+            expect(apiClient.updateRelation).toHaveBeenCalledWith('rel-1', RelationType.Blocked, undefined, expect.stringMatching(/^mutation:/));
             expect(useTaskStore.getState().relations).toEqual([updatedRelation]);
             expect(useTaskStore.getState().selectedRelationId).toBeNull();
         });
@@ -467,7 +467,7 @@ describe('HtmlOverlay', () => {
         fireEvent.click(await screen.findByTestId('relation-save-button'));
 
         await waitFor(() => {
-            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, 0);
+            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, 0, expect.stringMatching(/^mutation:/));
         });
     });
 
@@ -509,7 +509,7 @@ describe('HtmlOverlay', () => {
         fireEvent.click(await screen.findByTestId('relation-delete-button'));
 
         await waitFor(() => {
-            expect(apiClient.deleteRelation).toHaveBeenCalledWith('rel-1');
+            expect(apiClient.deleteRelation).toHaveBeenCalledWith('rel-1', expect.stringMatching(/^mutation:/));
             expect(useTaskStore.getState().relations).toEqual([]);
             expect(useTaskStore.getState().selectedRelationId).toBeNull();
         });

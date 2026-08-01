@@ -7,7 +7,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore, DEFAULT_COLUMNS } from '../stores/UIStore';
 import { useBaselineStore } from '../stores/BaselineStore';
 import { i18n } from '../utils/i18n';
-import { apiClient } from '../api/client';
+import { taskMutationService } from '../services/taskMutationService';
 import { getRelationTypeLabel } from '../utils/relationEditing';
 import { savePreferences } from '../utils/preferences';
 import { buildRedmineUrl } from '../utils/redmineUrl';
@@ -218,7 +218,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                 }
             }
 
-            const result = await apiClient.saveBaseline({
+            const result = await taskMutationService.saveBaseline({
                 query: scope === 'filtered' ? toResolvedQueryStateFromStore(useTaskStore.getState()) : undefined,
                 scope
             });

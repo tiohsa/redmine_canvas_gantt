@@ -68,15 +68,37 @@ interface ApiData {
     businessCalendar?: BusinessCalendarPayload;
 }
 
-interface BaselineSaveResult {
+export interface MutationMetadata {
+    completeness?: 'complete' | 'partial';
+    invalidatedEntityIds?: string[];
+    deletedEntityIds?: string[];
+}
+
+interface BaselineSaveResult extends MutationMetadata {
     status: 'ok' | 'error';
     baseline: BaselineSnapshot | null;
     warnings?: string[];
     error?: string;
 }
 
-interface UpdateTaskResult {
-    status: 'ok' | 'conflict' | 'error';
+export type MutationStatus = 'ok' | 'error' | 'validation_error' | 'conflict' | 'forbidden' | 'not_found' | 'transient_error';
+
+export class ApiMutationError extends Error {
+    readonly status: Exclude<MutationStatus, 'ok'>;
+    readonly httpStatus: number;
+    readonly fieldErrors?: Record<string, string>;
+
+    constructor(status: Exclude<MutationStatus, 'ok'>, message: string, httpStatus: number, fieldErrors?: Record<string, string>) {
+        super(message);
+        this.name = 'ApiMutationError';
+        this.status = status;
+        this.httpStatus = httpStatus;
+        this.fieldErrors = fieldErrors;
+    }
+}
+
+interface UpdateTaskResult extends MutationMetadata {
+    status: MutationStatus;
     lockVersion?: number;
     taskId?: string;
     parentId?: string;
@@ -86,6 +108,8 @@ interface UpdateTaskResult {
 
 export interface BulkCreateSubtasksResult {
     status: 'ok';
+    completeness?: 'complete' | 'partial';
+    invalidatedEntityIds?: string[];
     successCount: number;
     failCount: number;
     results: Array<{
@@ -151,6 +175,44 @@ const parseErrorMessage = async (response: Response): Promise<string> => {
     }
 
     return response.statusText;
+};
+
+const mutationStatusForHttp = (status: number): Exclude<MutationStatus, 'ok'> => {
+    if (status === 409) return 'conflict';
+    if (status === 403) return 'forbidden';
+    if (status === 404) return 'not_found';
+    if (status === 422) return 'validation_error';
+    return 'transient_error';
+};
+
+const parseMutationError = async (response: Response): Promise<ApiMutationError> => {
+    const payload = await response.json().catch(() => ({} as UnknownRecord));
+    const record = asRecord(payload) ?? {};
+    const errors = Array.isArray(record.errors) && record.errors.every(error => typeof error === 'string')
+        ? Object.fromEntries((record.errors as string[]).map((error, index) => [`error_${index}`, error]))
+        : undefined;
+    const message = typeof record.error === 'string' && record.error
+        ? record.error
+        : errors
+            ? Object.values(errors).join(', ')
+            : response.statusText;
+    return new ApiMutationError(mutationStatusForHttp(response.status), message, response.status, errors);
+};
+
+const parseMutationMetadata = (value: unknown): Pick<UpdateTaskResult, 'completeness' | 'invalidatedEntityIds' | 'deletedEntityIds'> => {
+    const record = asRecord(value);
+    const completeness = record?.completeness;
+    const ids = record?.invalidated_entity_ids;
+    const deletedIds = record?.deleted_entity_ids;
+    const metadata: Pick<UpdateTaskResult, 'completeness' | 'invalidatedEntityIds' | 'deletedEntityIds'> = {};
+    if (completeness === 'complete' || completeness === 'partial') metadata.completeness = completeness;
+    if (Array.isArray(ids)) metadata.invalidatedEntityIds = ids
+        .filter(id => typeof id === 'number' || typeof id === 'string')
+        .map(String);
+    if (Array.isArray(deletedIds)) metadata.deletedEntityIds = deletedIds
+        .filter(id => typeof id === 'number' || typeof id === 'string')
+        .map(String);
+    return metadata;
 };
 
 const parseEditOption = (value: unknown): EditOption | null => {
@@ -608,7 +670,7 @@ export const apiClient = {
         };
     },
 
-    saveBaseline: async (params?: { query?: ResolvedQueryState; rawSearch?: string; scope?: BaselineSaveScope }): Promise<BaselineSaveResult> => {
+    saveBaseline: async (params?: { query?: ResolvedQueryState; rawSearch?: string; scope?: BaselineSaveScope }, operationId?: string): Promise<BaselineSaveResult> => {
         const config = getConfig();
         const scope = params?.scope ?? 'filtered';
 
@@ -622,7 +684,7 @@ export const apiClient = {
         const response = await sessionFetch(url, {
             method: 'POST',
             headers: buildJsonHeaders(config, true),
-            body: JSON.stringify({ scope })
+            body: JSON.stringify({ scope, ...(operationId ? { client_operation_id: operationId } : {}) })
         });
 
         if (!response.ok) {
@@ -641,6 +703,7 @@ export const apiClient = {
             : [];
         return {
             status: typeof root.status === 'string' ? root.status as 'ok' | 'error' : 'ok',
+            ...parseMutationMetadata(root),
             baseline: baselinePayload.snapshot,
             warnings: [...warnings, ...baselinePayload.warnings]
         };
@@ -778,7 +841,7 @@ export const apiClient = {
         };
     },
 
-    updateTask: async (task: Task): Promise<UpdateTaskResult> => {
+    updateTask: async (task: Task, operationId?: string): Promise<UpdateTaskResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
@@ -791,7 +854,8 @@ export const apiClient = {
                     due_date: formatDateOnly(task.dueDate),
                     parent_issue_id: task.parentId ? Number(task.parentId) : null,
                     lock_version: task.lockVersion
-                }
+                },
+                ...(operationId ? { client_operation_id: operationId } : {})
             })
         });
 
@@ -800,12 +864,14 @@ export const apiClient = {
         }
 
         if (!response.ok) {
-            return { status: 'error', error: await parseErrorMessage(response) };
+            const error = await parseMutationError(response);
+            return { status: error.status, error: error.message };
         }
 
         const data = await response.json();
         return {
             status: 'ok',
+            ...parseMutationMetadata(data),
             lockVersion: data.lock_version,
             taskId: data.task_id ? String(data.task_id) : String(task.id),
             parentId: data.parent_id ? String(data.parent_id) : undefined,
@@ -813,14 +879,14 @@ export const apiClient = {
         };
     },
 
-    updateTaskFields: async (taskId: string, fields: Record<string, unknown>): Promise<UpdateTaskResult> => {
+    updateTaskFields: async (taskId: string, fields: Record<string, unknown>, operationId?: string): Promise<UpdateTaskResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
         const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${taskId}.json?${query}`, {
             method: 'PATCH',
             headers: buildJsonHeaders(config, true),
-            body: JSON.stringify({ task: fields })
+            body: JSON.stringify({ task: fields, ...(operationId ? { client_operation_id: operationId } : {}) })
         });
 
         if (response.status === 409) {
@@ -828,12 +894,14 @@ export const apiClient = {
         }
 
         if (!response.ok) {
-            return { status: 'error', error: await parseErrorMessage(response) };
+            const error = await parseMutationError(response);
+            return { status: error.status, error: error.message };
         }
 
         const data = await response.json();
         return {
             status: 'ok',
+            ...parseMutationMetadata(data),
             lockVersion: data.lock_version,
             taskId: data.task_id ? String(data.task_id) : String(taskId),
             parentId: data.parent_id ? String(data.parent_id) : undefined,
@@ -841,7 +909,7 @@ export const apiClient = {
         };
     },
 
-    createRelation: async (fromId: string, toId: string, type: string, delay?: number): Promise<Relation> => {
+    createRelation: async (fromId: string, toId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
@@ -854,13 +922,13 @@ export const apiClient = {
                     issue_to_id: toId,
                     relation_type: type,
                     ...(typeof delay === 'number' ? { delay } : {})
-                }
+                },
+                ...(operationId ? { client_operation_id: operationId } : {})
             })
         });
 
         if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || response.statusText);
+            throw await parseMutationError(response);
         }
 
         const payload = await response.json();
@@ -872,10 +940,10 @@ export const apiClient = {
             throw new Error('Invalid relation response');
         }
 
-        return relation;
+        return { ...relation, ...parseMutationMetadata(payload) };
     },
 
-    updateRelation: async (relationId: string, type: string, delay?: number): Promise<Relation> => {
+    updateRelation: async (relationId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
         const response = await sessionFetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
@@ -885,31 +953,34 @@ export const apiClient = {
                 relation: {
                     relation_type: type,
                     ...(typeof delay === 'number' ? { delay } : {})
-                }
+                },
+                ...(operationId ? { client_operation_id: operationId } : {})
             })
         });
 
         if (!response.ok) {
-            throw new Error(await parseErrorMessage(response));
+            throw await parseMutationError(response);
         }
 
         const payload = await response.json();
-        return normalizeRelation(payload, { fromId: '', toId: '', type });
+        return { ...normalizeRelation(payload, { fromId: '', toId: '', type }), ...parseMutationMetadata(payload) };
     },
 
-    deleteRelation: async (relationId: string): Promise<void> => {
+    deleteRelation: async (relationId: string, operationId?: string): Promise<MutationMetadata | undefined> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
         const response = await sessionFetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
             method: 'DELETE',
-            headers: buildJsonHeaders(config, true)
+            headers: buildJsonHeaders(config, true),
+            ...(operationId ? { body: JSON.stringify({ client_operation_id: operationId }) } : {})
         });
 
         if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || response.statusText);
+            throw await parseMutationError(response);
         }
+        const payload = typeof response.json === 'function' ? await response.json().catch(() => ({})) : {};
+        return parseMutationMetadata(payload);
     },
 
     getSubtaskTrackers: async (parentId: string, operationIssueIds: string[] = []): Promise<Array<{ id: number; name: string }>> => {
@@ -920,12 +991,12 @@ export const apiClient = {
         const response = await sessionFetch(`${getGlobalApiBase(config)}/subtasks/trackers.json?${query.toString()}`, {
             headers: buildJsonHeaders(config)
         });
-        if (!response.ok) throw new Error(await parseErrorMessage(response));
+        if (!response.ok) throw await parseMutationError(response);
         const payload = await response.json() as { trackers?: Array<{ id: number; name: string }> };
         return Array.isArray(payload.trackers) ? payload.trackers : [];
     },
 
-    bulkCreateSubtasks: async (payload: { parentId: string; subjects?: string[]; subtasks?: Array<{ subject: string; tracker_id?: number }>; operationIssueIds?: string[] }): Promise<BulkCreateSubtasksResult> => {
+    bulkCreateSubtasks: async (payload: { parentId: string; subjects?: string[]; subtasks?: Array<{ subject: string; tracker_id?: number }>; operationIssueIds?: string[] }, operationId?: string): Promise<BulkCreateSubtasksResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
         const response = await sessionFetch(`${getGlobalApiBase(config)}/subtasks/bulk.json?${query}`, {
@@ -934,13 +1005,13 @@ export const apiClient = {
             body: JSON.stringify({
                 parent_issue_id: Number(payload.parentId),
                 ...(payload.subtasks ? { subtasks: payload.subtasks } : { subjects: payload.subjects ?? [] }),
-                operation_issue_ids: (payload.operationIssueIds ?? []).map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0)
+                operation_issue_ids: (payload.operationIssueIds ?? []).map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0),
+                ...(operationId ? { client_operation_id: operationId } : {})
             })
         });
 
         if (!response.ok) {
-            const err = await parseErrorMessage(response);
-            throw new Error(err);
+            throw await parseMutationError(response);
         }
 
         const data = await response.json();
@@ -960,24 +1031,27 @@ export const apiClient = {
 
         return {
             status: 'ok',
+            ...parseMutationMetadata(data),
             successCount: typeof data.success_count === 'number' ? data.success_count : 0,
             failCount: typeof data.fail_count === 'number' ? data.fail_count : 0,
             results
         };
     },
 
-    deleteTask: async (taskId: string): Promise<void> => {
+    deleteTask: async (taskId: string, operationId?: string): Promise<MutationMetadata | undefined> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
         const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${taskId}.json?${query}`, {
             method: 'DELETE',
-            headers: buildJsonHeaders(config, true)
+            headers: buildJsonHeaders(config, true),
+            ...(operationId ? { body: JSON.stringify({ client_operation_id: operationId }) } : {})
         });
 
         if (!response.ok) {
-            const err = await parseErrorMessage(response);
-            throw new Error(err);
+            throw await parseMutationError(response);
         }
+        const payload = typeof response.json === 'function' ? await response.json().catch(() => ({})) : {};
+        return parseMutationMetadata(payload);
     }
 };

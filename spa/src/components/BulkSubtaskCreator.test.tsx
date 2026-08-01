@@ -51,7 +51,7 @@ describe('BulkSubtaskCreator', () => {
             parentId: '100',
             subjects: ['Task A', 'Task B'],
             operationIssueIds: ['100']
-        });
+        }, expect.stringMatching(/^mutation:/));
         expect(notify).toHaveBeenCalledWith('2 tasks created.', 'success');
         expect(onTasksCreated).toHaveBeenCalledTimes(1);
     });
@@ -86,7 +86,7 @@ describe('BulkSubtaskCreator', () => {
             parentId: '100',
             subjects: ['Task A'],
             operationIssueIds: ['101']
-        });
+        }, expect.stringMatching(/^mutation:/));
     });
 
     it('exposes hasSubjects and returns success/fail counts via imperative handle', async () => {
@@ -152,7 +152,7 @@ describe('BulkSubtaskCreator', () => {
                     { subject: 'Task B', tracker_id: 2 }
                 ],
                 operationIssueIds: []
-            });
+            }, expect.stringMatching(/^mutation:/));
         });
     });
 
@@ -243,11 +243,14 @@ describe('BulkSubtaskCreator', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Text input' }));
         fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
-        await waitFor(() => expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledWith({
-            parentId: '100',
-            subtasks: [{ subject: 'Task A', tracker_id: 1 }, { subject: 'Task B', tracker_id: 2 }],
-            operationIssueIds: []
-        }));
+        await waitFor(() => expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledWith(
+            {
+                parentId: '100',
+                subtasks: [{ subject: 'Task A', tracker_id: 1 }, { subject: 'Task B', tracker_id: 2 }],
+                operationIssueIds: []
+            },
+            expect.stringMatching(/^mutation:/)
+        ));
     });
 
     it('uses the default tracker for text lines added beyond existing table rows', () => {

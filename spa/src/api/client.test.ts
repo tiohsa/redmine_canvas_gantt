@@ -276,7 +276,14 @@ describe('CalendarDate persistence invariant', () => {
             })
             .mockResolvedValueOnce({
                 ok: true,
-                json: async () => ({ lock_version: 1, task_id: 10 })
+                json: async () => ({
+                    status: 'ok',
+                    completeness: 'partial',
+                    invalidated_entity_ids: [10],
+                    deleted_entity_ids: [99],
+                    lock_version: 1,
+                    task_id: 10
+                })
             })
             .mockResolvedValueOnce({
                 ok: true,
@@ -309,7 +316,12 @@ describe('CalendarDate persistence invariant', () => {
             movedDue
         )).toEqual({ updates: new Map() });
 
-        await expect(apiClient.updateTask(movedTask)).resolves.toMatchObject({ status: 'ok' });
+        await expect(apiClient.updateTask(movedTask)).resolves.toMatchObject({
+            status: 'ok',
+            completeness: 'partial',
+            invalidatedEntityIds: ['10'],
+            deletedEntityIds: ['99']
+        });
         const saveRequest = fetchMock.mock.calls[1]?.[1] as RequestInit;
         expect(JSON.parse(String(saveRequest.body)).task).toMatchObject({
             start_date: '2026-03-11',
@@ -563,5 +575,60 @@ describe('apiClient.deleteTask', () => {
         }));
         const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
         expect(new Headers(requestInit.headers).get('X-CSRF-Token')).toBe('token');
+    });
+});
+
+describe('mutation error classification', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it.each([
+        [403, 'forbidden'],
+        [404, 'not_found'],
+        [422, 'validation_error'],
+        [500, 'transient_error']
+    ] as const)('classifies HTTP %s as %s', async (httpStatus, expectedStatus) => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: httpStatus,
+            statusText: 'Request failed',
+            json: async () => ({ error: 'operation failed' })
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.updateTaskFields('42', { subject: 'draft' })).resolves.toMatchObject({
+            status: expectedStatus,
+            error: 'operation failed'
+        });
+    });
+
+    it('sends the optional operation id outside the legacy task payload', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ lock_version: 4, task_id: 42 })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.updateTaskFields('42', { subject: 'draft' }, 'mutation:42');
+
+        const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+        expect(JSON.parse(String(request.body))).toEqual({
+            task: { subject: 'draft' },
+            client_operation_id: 'mutation:42'
+        });
     });
 });

@@ -62,11 +62,14 @@ describe('InlineEditService', () => {
         const updated = useTaskStore.getState().allTasks.find((task) => task.id === 'task-1');
         expect(updated?.subject).toBe('Updated subject');
         expect(updated?.lockVersion).toBe(4);
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
+        expect(useTaskStore.getState().localTaskPatches['task-1']).toBeUndefined();
+        expect(useTaskStore.getState().serverTaskSnapshot.entitiesById['task-1']?.subject).toBe('Updated subject');
         expect(useUIStore.getState().notifications).toHaveLength(0);
         expect(apiClient.updateTaskFields).toHaveBeenCalledWith('task-1', {
             subject: 'Updated subject',
             lock_version: 3
-        });
+        }, expect.stringMatching(/^mutation:/));
     });
 
     it('rolls back optimistic update and pushes error notification on failure', async () => {
@@ -131,7 +134,7 @@ describe('InlineEditService', () => {
         expect(apiClient.updateTaskFields).toHaveBeenLastCalledWith('task-1', {
             subject: 'Second edit',
             lock_version: 3
-        });
+        }, expect.stringMatching(/^mutation:/));
     });
 
     it('keeps the optimistic edit dirty when the server reports a conflict', async () => {
@@ -156,5 +159,6 @@ describe('InlineEditService', () => {
 
         expect(useTaskStore.getState().allTasks[0]?.subject).toBe('Local edit');
         expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
+        expect(useTaskStore.getState().taskConflicts['task-1']?.message).toBe('The task changed on the server.');
     });
 });

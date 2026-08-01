@@ -2,9 +2,10 @@ import type { Relation, Task } from '../../types';
 import type { MoveTaskAsChildResult } from '../../types';
 import { i18n } from '../../utils/i18n';
 import type { TaskLayoutSnapshot } from './types';
+import type { MutationStatus } from '../../api/client';
 
 type UpdateTaskFieldsResult = {
-    status: 'ok' | 'error' | 'conflict';
+    status: MutationStatus | 'error';
     error?: string;
     lockVersion?: number;
     parentId?: string;
@@ -21,19 +22,115 @@ type FetchDataParams = {
 };
 
 const taskWriteQueues = new Map<string, Promise<void>>();
+let mutationSequence = 0;
+const activeMutationOperations = new Map<string, MutationOperationRecord>();
+const completedMutationOperations = new Map<string, MutationOperationRecord>();
+const MAX_COMPLETED_MUTATIONS = 128;
 
-export const enqueueTaskWrite = async <T>(taskId: string, operation: () => Promise<T>): Promise<T> => {
-    const previous = taskWriteQueues.get(taskId) ?? Promise.resolve();
-    const queued = previous.then(operation, operation);
+export const mutationLifecycleMetrics = {
+    started: 0,
+    completed: 0,
+    failed: 0,
+    active: 0,
+    maxActive: 0,
+    maxPendingKeys: 0
+};
+
+export const resetMutationLifecycleMetrics = () => {
+    mutationLifecycleMetrics.started = 0;
+    mutationLifecycleMetrics.completed = 0;
+    mutationLifecycleMetrics.failed = 0;
+    mutationLifecycleMetrics.active = 0;
+    mutationLifecycleMetrics.maxActive = 0;
+    mutationLifecycleMetrics.maxPendingKeys = 0;
+};
+
+export type MutationOperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export type MutationOperationRecord = MutationOperationContext & {
+    status: MutationOperationStatus;
+    completedAt?: number;
+};
+
+export const getMutationOperationRecords = (): MutationOperationRecord[] => [
+    ...activeMutationOperations.values(),
+    ...completedMutationOperations.values()
+];
+
+export const getPendingMutationQueueSize = (): number => taskWriteQueues.size;
+
+export type MutationOperationContext = {
+    operationId: string;
+    entityIds: string[];
+    generation: number;
+    startedAt: number;
+};
+
+export const enqueueMutationOperation = async <T>(
+    entityIds: string[],
+    operation: (context?: MutationOperationContext) => Promise<T>
+): Promise<T> => {
+    const keys = [...new Set(entityIds)].sort();
+    const context: MutationOperationContext = {
+        operationId: `mutation:${++mutationSequence}`,
+        entityIds: keys,
+        generation: mutationSequence,
+        startedAt: Date.now()
+    };
+    activeMutationOperations.set(context.operationId, { ...context, status: 'queued' });
+    const previous = keys.map(key => taskWriteQueues.get(key) ?? Promise.resolve());
+    const run = async () => {
+        activeMutationOperations.set(context.operationId, { ...context, status: 'running' });
+        mutationLifecycleMetrics.started += 1;
+        mutationLifecycleMetrics.active += 1;
+        mutationLifecycleMetrics.maxActive = Math.max(
+            mutationLifecycleMetrics.maxActive,
+            mutationLifecycleMetrics.active
+        );
+        try {
+            const result = await operation(context);
+            completeMutationOperation(context, 'succeeded');
+            mutationLifecycleMetrics.completed += 1;
+            return result;
+        } catch (error) {
+            completeMutationOperation(context, 'failed');
+            mutationLifecycleMetrics.failed += 1;
+            throw error;
+        } finally {
+            mutationLifecycleMetrics.active = Math.max(0, mutationLifecycleMetrics.active - 1);
+        }
+    };
+    const queued = Promise.all(previous).then(run, run);
     const marker = queued.then(() => undefined, () => undefined);
-    taskWriteQueues.set(taskId, marker);
+    keys.forEach(key => taskWriteQueues.set(key, marker));
+    mutationLifecycleMetrics.maxPendingKeys = Math.max(
+        mutationLifecycleMetrics.maxPendingKeys,
+        taskWriteQueues.size
+    );
 
     try {
         return await queued;
     } finally {
-        if (taskWriteQueues.get(taskId) === marker) taskWriteQueues.delete(taskId);
+        keys.forEach(key => {
+            if (taskWriteQueues.get(key) === marker) taskWriteQueues.delete(key);
+        });
     }
 };
+
+const completeMutationOperation = (context: MutationOperationContext, status: 'succeeded' | 'failed') => {
+    const record = { ...context, status, completedAt: Date.now() };
+    activeMutationOperations.delete(context.operationId);
+    completedMutationOperations.set(context.operationId, record);
+    while (completedMutationOperations.size > MAX_COMPLETED_MUTATIONS) {
+        const oldest = completedMutationOperations.keys().next().value;
+        if (!oldest) break;
+        completedMutationOperations.delete(oldest);
+    }
+};
+
+export const enqueueTaskWrite = async <T>(taskId: string, operation: (context?: MutationOperationContext) => Promise<T>): Promise<T> => (
+    enqueueMutationOperation([taskId], operation)
+);
 
 export const createTaskLayoutSnapshot = (state: TaskLayoutSnapshot): TaskLayoutSnapshot => ({
     allTasks: state.allTasks.map((task) => ({ ...task })),
@@ -69,9 +166,11 @@ export const saveModifiedTasks = async (
     relations: Relation[],
     modifiedTaskIds: Set<string>,
     selectedStatusIds: number[],
-    updateTask: (task: Task) => Promise<UpdateTaskFieldsResult>,
+    updateTask: (task: Task, operationId?: string) => Promise<UpdateTaskFieldsResult>,
     fetchData: (params: FetchDataParams) => Promise<FetchDataResult>,
-    onTaskSaved?: (taskId: string, lockVersion?: number) => void
+    onTaskSaved?: (taskId: string, lockVersion?: number) => void,
+    onTaskResult?: (taskId: string, result: UpdateTaskFieldsResult) => void,
+    onConflict?: (taskId: string, message: string) => void
 ) => {
     const mutableTaskById = new Map(tasks.map(task => [task.id, { ...task }]));
     const hasSamePersistedFields = (local: Task, remote: Task): boolean => {
@@ -141,13 +240,21 @@ export const saveModifiedTasks = async (
     ]));
 
     const failures = new Map<string, string>();
+    const availableTaskIds = new Set(tasks.map(task => task.id));
+    modifiedIdSet.forEach((taskId) => {
+        if (!availableTaskIds.has(taskId)) {
+            failures.set(taskId, i18n.t('label_task_not_found') || 'Task no longer exists');
+        }
+    });
     let pending = tasksToUpdate.map(task => task.id);
     const maxPasses = Math.max(1, pending.length * 2);
+    const attemptCounts = new Map<string, number>();
 
     for (let pass = 0; pass < maxPasses && pending.length > 0; pass += 1) {
         let progress = false;
         const nextPending: string[] = [];
         const conflictTaskIds: string[] = [];
+        const conflictMessages = new Map<string, string>();
 
         let remaining = [...pending];
         while (remaining.length > 0) {
@@ -160,7 +267,7 @@ export const saveModifiedTasks = async (
                 const task = mutableTaskById.get(taskId);
                 if (!task) return { taskId, task, result: undefined, error: undefined };
                 try {
-                    const result = await enqueueTaskWrite(taskId, () => updateTask(task));
+                    const result = await enqueueTaskWrite(taskId, (context) => updateTask(task, context?.operationId));
                     return { taskId, task, result, error: undefined };
                 } catch (error) {
                     return {
@@ -174,12 +281,16 @@ export const saveModifiedTasks = async (
 
             for (const { taskId, task, result, error } of results) {
                 if (!task) continue;
+                const attempt = attemptCounts.get(taskId) ?? 0;
                 if (error) {
+                    attemptCounts.set(taskId, attempt + 1);
                     failures.set(taskId, error);
-                    nextPending.push(taskId);
+                    if (attempt < 1) nextPending.push(taskId);
                     continue;
                 }
                 if (!result) continue;
+                attemptCounts.set(taskId, attempt + 1);
+                onTaskResult?.(taskId, result);
 
                 if (result.status === 'ok') {
                     progress = true;
@@ -193,9 +304,18 @@ export const saveModifiedTasks = async (
 
                 if (result.status === 'conflict') {
                     conflictTaskIds.push(taskId);
+                    conflictMessages.set(taskId, result.error || (i18n.t('label_conflict') || 'Conflict'));
+                    nextPending.push(taskId);
+                } else if (result.status === 'error' && (attemptCounts.get(taskId) ?? 0) < 2) {
+                    // Legacy adapters report transport/server failures as
+                    // `error`; retain their bounded transient retry behavior.
+                    failures.set(taskId, result.error || (i18n.t('label_unknown_error') || 'Unknown error'));
+                    nextPending.push(taskId);
+                } else {
+                    // Validation, permission, not-found, and other terminal
+                    // responses must not be resent as if they were conflicts.
+                    failures.set(taskId, result.error || (i18n.t('label_unknown_error') || 'Unknown error'));
                 }
-                failures.set(taskId, result.error || (i18n.t('label_unknown_error') || 'Unknown error'));
-                nextPending.push(taskId);
             }
         }
 
@@ -205,7 +325,10 @@ export const saveModifiedTasks = async (
                 latest = await fetchData({ query: { selectedStatusIds } });
             } catch (error) {
                 const message = error instanceof Error ? error.message : (i18n.t('label_unknown_error') || 'Unknown error');
-                conflictTaskIds.forEach((taskId) => failures.set(taskId, message));
+                conflictTaskIds.forEach((taskId) => {
+                    failures.set(taskId, message);
+                    onConflict?.(taskId, message);
+                });
                 pending = nextPending;
                 break;
             }
@@ -228,6 +351,12 @@ export const saveModifiedTasks = async (
                 }
 
                 if (conflictTaskIds.includes(taskId)) {
+                    if ((attemptCounts.get(taskId) ?? 0) >= 2) {
+                        const message = conflictMessages.get(taskId) || (i18n.t('label_conflict') || 'Conflict');
+                        failures.set(taskId, message);
+                        onConflict?.(taskId, message);
+                        continue;
+                    }
                     onTaskSaved?.(taskId, latestTask.lockVersion);
                     mutableTaskById.set(taskId, { ...localTask, lockVersion: latestTask.lockVersion });
                     // Refreshing the remote lock version makes this task

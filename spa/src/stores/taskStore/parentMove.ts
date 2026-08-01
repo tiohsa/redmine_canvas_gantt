@@ -3,9 +3,11 @@ import { buildMoveTaskResult, createTaskLayoutSnapshot } from './taskPersistence
 import { i18n } from '../../utils/i18n';
 import type { LayoutState } from './types';
 import type { TaskLayoutSnapshot } from './types';
+import type { MutationStatus } from '../../api/client';
+import type { LocalPatch, ServerSnapshot } from './stateContract';
 
 type UpdateTaskFieldsResult = {
-    status: 'ok' | 'conflict' | 'error';
+    status: MutationStatus;
     error?: string;
     lockVersion?: number;
     parentId?: string;
@@ -18,9 +20,11 @@ type ParentMoveState = LayoutState & {
     modifiedTaskIds: Set<string>;
     editGenerations: Record<string, number>;
     autoSave: boolean;
+    localTaskPatches: Record<string, Array<LocalPatch<Task>>>;
+    serverTaskSnapshot: ServerSnapshot<Task>;
 };
 
-type ParentMovePatch = Partial<Pick<ParentMoveState, 'allTasks' | 'tasks' | 'layoutRows' | 'rowCount' | 'modifiedTaskIds' | 'editGenerations'>>;
+type ParentMovePatch = Partial<Pick<ParentMoveState, 'allTasks' | 'tasks' | 'layoutRows' | 'rowCount' | 'modifiedTaskIds' | 'editGenerations' | 'localTaskPatches' | 'serverTaskSnapshot'>>;
 
 type ParentMoveCallbacks = {
     sourceTaskId: string;
@@ -31,12 +35,13 @@ type ParentMoveCallbacks = {
     buildNextOrder: (allTasks: Task[], sourceBefore: Task) => number;
     buildNextAllTasks: (allTasks: Task[], sourceTaskId: string, nextOrder: number) => Task[];
     buildOptimisticPatch: (state: ParentMoveState, nextAllTasks: Task[]) => ParentMovePatch;
-    buildSuccessPatch: (state: ParentMoveState, sourceBefore: Task, result: UpdateTaskFieldsResult) => ParentMovePatch;
+    buildSuccessPatch: (state: ParentMoveState, sourceBefore: Task, result: UpdateTaskFieldsResult, operationGeneration: number) => ParentMovePatch;
     isCurrentOperation: (state: ParentMoveState, sourceBefore: Task, operationGeneration: number) => boolean;
     updateTaskFields: (taskId: string, payload: { parent_issue_id: string | null; lock_version: number }) => Promise<UpdateTaskFieldsResult>;
     validatePersistedResult: (result: UpdateTaskFieldsResult, expectedParentId: string | undefined) => boolean;
     missingSourceResult: MoveTaskAsChildResult;
     failedResult: (error?: string) => MoveTaskAsChildResult;
+    onConflict?: (taskId: string, message: string) => void;
 };
 
 export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<MoveTaskAsChildResult> => {
@@ -54,7 +59,8 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
         updateTaskFields,
         validatePersistedResult,
         missingSourceResult,
-        failedResult
+        failedResult,
+        onConflict
     } = callbacks;
 
     const beforeState = getState();
@@ -93,16 +99,18 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
     }
 
     if (result.status !== 'ok' || !validatePersistedResult(result, expectedParentId)) {
+        if (result.status === 'conflict') onConflict?.(sourceTaskId, result.error || (i18n.t('label_parent_drop_conflict') || 'Task was updated by another user'));
         if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
-        return buildMoveTaskResult(result.status === 'ok' ? 'error' : result.status, {
+        return buildMoveTaskResult(result.status === 'conflict' ? 'conflict' : 'error', {
             error: result.error || (failedResult().error ?? (i18n.t('label_failed_to_update_parent') || 'Failed to update parent'))
         });
     }
 
     const currentState = getState();
-    if (isCurrentOperation(currentState, sourceBefore, operationGeneration)) {
-        setState(buildSuccessPatch(currentState, sourceBefore, result));
-    }
+    // The response still advances the server revision even when a newer
+    // optimistic parent move is already visible. buildSuccessPatch preserves
+    // that newer local patch and commits only the matching operation.
+    setState(buildSuccessPatch(currentState, sourceBefore, result, operationGeneration));
 
     return buildMoveTaskResult('ok', {
         lockVersion: result.lockVersion,

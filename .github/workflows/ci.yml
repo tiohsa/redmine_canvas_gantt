@@ -88,6 +88,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check async state contract boundaries
+        run: npm run check:async-contract
+
   test:
     name: test
     needs: init
