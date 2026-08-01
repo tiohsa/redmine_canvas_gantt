@@ -80,6 +80,133 @@ describe('TaskStore viewport clamping', () => {
     });
 });
 
+describe('TaskStore bar operation rollback', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('restores the task and clears its optimistic patch after a terminal failure', () => {
+        const original = buildTask({
+            id: 'bar-task',
+            startDate: MONDAY,
+            dueDate: TUESDAY,
+            lockVersion: 4
+        });
+        useTaskStore.setState({ allTasks: [original], tasks: [original] });
+
+        const operationId = useTaskStore.getState().beginBarOperation();
+        useTaskStore.getState().updateTask('bar-task', {
+            startDate: WEDNESDAY,
+            dueDate: THURSDAY
+        });
+        useTaskStore.getState().endBarOperation(operationId);
+
+        expect(useTaskStore.getState().allTasks[0].startDate).toBe(WEDNESDAY);
+        expect(useTaskStore.getState().modifiedTaskIds).toContain('bar-task');
+
+        useTaskStore.getState().rollbackBarOperation(operationId);
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks[0]).toMatchObject(original);
+        expect(state.modifiedTaskIds).not.toContain('bar-task');
+        expect(state.localTaskPatches['bar-task']).toBeUndefined();
+    });
+
+    it('does not rollback a later edit owned by a newer generation', () => {
+        const original = buildTask({
+            id: 'bar-task',
+            startDate: MONDAY,
+            dueDate: TUESDAY,
+            lockVersion: 4
+        });
+        useTaskStore.setState({ allTasks: [original], tasks: [original] });
+
+        const operationId = useTaskStore.getState().beginBarOperation();
+        useTaskStore.getState().updateTask('bar-task', {
+            startDate: WEDNESDAY,
+            dueDate: THURSDAY
+        });
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.getState().updateTask('bar-task', {
+            startDate: FRIDAY,
+            dueDate: FRIDAY
+        });
+
+        useTaskStore.getState().rollbackBarOperation(operationId);
+
+        expect(useTaskStore.getState().allTasks[0].startDate).toBe(FRIDAY);
+        expect(useTaskStore.getState().modifiedTaskIds).toContain('bar-task');
+    });
+
+    it('rolls back only the bar fields when a later edit changes another field', () => {
+        const original = buildTask({
+            id: 'bar-task',
+            subject: 'original',
+            startDate: MONDAY,
+            dueDate: TUESDAY,
+            lockVersion: 4
+        });
+        useTaskStore.setState({ allTasks: [original], tasks: [original] });
+
+        const operationId = useTaskStore.getState().beginBarOperation();
+        useTaskStore.getState().updateTask('bar-task', {
+            startDate: WEDNESDAY,
+            dueDate: THURSDAY
+        });
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.getState().updateTask('bar-task', { subject: 'later edit' });
+
+        useTaskStore.getState().rollbackBarOperation(operationId);
+
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject({
+            subject: 'later edit',
+            startDate: MONDAY,
+            dueDate: TUESDAY
+        });
+        expect(useTaskStore.getState().modifiedTaskIds).toContain('bar-task');
+    });
+
+    it('keeps a later bar operation outside the earlier operation baseline', () => {
+        const taskA = buildTask({ id: 'bar-a', startDate: MONDAY, dueDate: TUESDAY });
+        const taskB = buildTask({ id: 'bar-b', startDate: MONDAY, dueDate: TUESDAY });
+        useTaskStore.setState({ allTasks: [taskA, taskB], tasks: [taskA, taskB] });
+
+        const firstOperation = useTaskStore.getState().beginBarOperation('bar-a');
+        useTaskStore.getState().updateTask('bar-a', { dueDate: WEDNESDAY });
+        useTaskStore.getState().endBarOperation(firstOperation);
+
+        const secondOperation = useTaskStore.getState().beginBarOperation('bar-b');
+        useTaskStore.getState().updateTask('bar-b', { dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(secondOperation);
+
+        useTaskStore.getState().rollbackBarOperation(firstOperation);
+
+        expect(useTaskStore.getState().allTasks.find(task => task.id === 'bar-a')?.dueDate).toBe(TUESDAY);
+        expect(useTaskStore.getState().allTasks.find(task => task.id === 'bar-b')?.dueDate).toBe(THURSDAY);
+    });
+
+    it('does not let an older save callback complete a newer bar operation', () => {
+        const original = buildTask({ id: 'bar-task', startDate: MONDAY, dueDate: TUESDAY });
+        useTaskStore.setState({ allTasks: [original], tasks: [original] });
+
+        const olderOperation = useTaskStore.getState().beginBarOperation('bar-task');
+        useTaskStore.getState().updateTask('bar-task', { dueDate: WEDNESDAY });
+        useTaskStore.getState().endBarOperation(olderOperation);
+        const olderGeneration = useTaskStore.getState().barOperations[olderOperation].entityGenerations['bar-task'];
+
+        const newerOperation = useTaskStore.getState().beginBarOperation('bar-task');
+        useTaskStore.getState().updateTask('bar-task', { dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(newerOperation);
+        const newerGeneration = useTaskStore.getState().barOperations[newerOperation].entityGenerations['bar-task'];
+
+        expect(newerGeneration).toBeGreaterThan(olderGeneration);
+        useTaskStore.getState().completeBarOperationTask('bar-task', olderGeneration);
+
+        expect(useTaskStore.getState().barOperations[olderOperation]).toBeUndefined();
+        expect(useTaskStore.getState().barOperations[newerOperation]).toBeDefined();
+    });
+});
+
 describe('TaskStore zoom behavior', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -1533,6 +1660,25 @@ describe('TaskStore asynchronous state ownership', () => {
         const secondFailures = await useTaskStore.getState().saveChanges();
         expect(secondFailures.size).toBe(0);
         expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it.each(['validation_error', 'forbidden'] as const)('rolls a bar operation back on a terminal %s response', async (status) => {
+        vi.mocked(apiClient.updateTask).mockResolvedValue({
+            status,
+            error: 'Dates violate a rule'
+        });
+        const original = buildTask({ id: 'task-1', startDate: MONDAY, dueDate: TUESDAY });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([original]));
+        useTaskStore.getState().setTasks([original]);
+        const operationId = useTaskStore.getState().beginBarOperation();
+        useTaskStore.getState().updateTask('task-1', { startDate: WEDNESDAY, dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(operationId);
+
+        await useTaskStore.getState().saveChanges();
+
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject(original);
+        expect(useTaskStore.getState().modifiedTaskIds).not.toContain('task-1');
+        expect(useTaskStore.getState().barOperations).toEqual({});
     });
 
     it('does not clear another task when one task fails to save', async () => {

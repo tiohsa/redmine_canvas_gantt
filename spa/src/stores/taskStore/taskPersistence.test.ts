@@ -103,6 +103,38 @@ describe('saveModifiedTasks', () => {
         expect(maxActive).toBe(2);
     });
 
+    it('stops unsent dependency batches after a terminal bar-operation failure', async () => {
+        const tasks = [
+            buildTask({ id: 'A' }),
+            buildTask({ id: 'B', parentId: 'A' })
+        ];
+        const updateTask = vi.fn().mockImplementation(async (task: Task) => (
+            task.id === 'A'
+                ? { status: 'validation_error' as const, error: 'invalid date' }
+                : { status: 'ok' as const, lockVersion: 2 }
+        ));
+        let terminalFailure = false;
+
+        const failures = await saveModifiedTasks(
+            tasks,
+            [],
+            new Set(['A', 'B']),
+            [],
+            updateTask,
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined,
+            (_taskId, result) => {
+                if (result.status === 'validation_error') terminalFailure = true;
+            },
+            undefined,
+            () => terminalFailure
+        );
+
+        expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A']);
+        expect(failures.has('A')).toBe(true);
+        expect(failures.has('B')).toBe(true);
+    });
+
     it('reapplies the local value with the latest lock version after an optimistic-lock conflict', async () => {
         const local = buildTask({ id: 'A', dueDate: 10, lockVersion: 1 });
         const remote = buildTask({ id: 'A', dueDate: 12, lockVersion: 2 });
