@@ -886,8 +886,10 @@ describe('UiSidebar', () => {
             );
         });
 
-        // Verify task is marked for batch save
-        expect(useTaskStore.getState().modifiedTaskIds.has(taskId)).toBe(true);
+        // A successful inline operation commits its matching local patch.
+        expect(useTaskStore.getState().modifiedTaskIds.has(taskId)).toBe(false);
+        expect(useTaskStore.getState().serverTaskSnapshot.entitiesById[taskId]?.startDate)
+            .toBe(parseDateOnly('2025-01-02'));
     });
 
     it('shows the version inline edit empty option using the version-specific unset label', async () => {

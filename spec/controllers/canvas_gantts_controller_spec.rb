@@ -861,7 +861,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     let(:current_user) { instance_double(User, id: 7, logged?: true, login: 'tester', language: 'en') }
     let(:issue_scope) { double('IssueScope') }
     let(:issue_project) { instance_double(Project, id: 1) }
-    let(:issue) { instance_double(Issue, id: 10, project: issue_project, deletable?: true) }
+    let(:issue) { instance_double(Issue, id: 10, parent_id: nil, project: issue_project, deletable?: true) }
 
     before do
       allow(User).to receive(:current).and_return(current_user)
@@ -882,7 +882,12 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(issue).to have_received(:destroy)
       expect(response).to have_http_status(:ok)
-      expect(JSON.parse(response.body)).to eq('status' => 'ok')
+      expect(JSON.parse(response.body)).to eq(
+        'status' => 'ok',
+        'completeness' => 'partial',
+        'invalidated_entity_ids' => [10],
+        'deleted_entity_ids' => [10]
+      )
     end
 
     it 'returns forbidden without delete permission' do
@@ -1109,6 +1114,9 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
       allow(controller).to receive(:current_view_scope).and_return({ issues: [] })
       allow(IssueRelation).to receive(:find).with('77').and_return(relation)
+      allow(relation).to receive(:id).and_return(77)
+      allow(relation).to receive(:issue_from_id).and_return(10)
+      allow(relation).to receive(:issue_to_id).and_return(11)
       allow(relation).to receive(:issue_from).and_return(issue_from)
       allow(relation).to receive(:issue_to).and_return(issue_to)
       allow(issue_from).to receive(:due_date).and_return(Date.new(2026, 1, 2))
@@ -1134,6 +1142,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body)).to eq(
         'status' => 'ok',
+        'completeness' => 'complete',
+        'invalidated_entity_ids' => [10, 11],
         'relation' => {
           'id' => 77,
           'from' => 10,
@@ -1284,6 +1294,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body)).to eq(
         'status' => 'ok',
+        'completeness' => 'complete',
+        'invalidated_entity_ids' => [10, 11],
         'relation' => {
           'id' => 88,
           'from' => 10,
@@ -1329,7 +1341,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
   end
 
   describe '#save_relation_change business calendar fallback' do
-    let(:relation) { instance_double(IssueRelation) }
+    let(:relation) { instance_double(IssueRelation, id: 77, issue_from_id: 10, issue_to_id: 11) }
     let(:issue_from) { instance_double(Issue) }
     let(:issue_to) { instance_double(Issue) }
 
@@ -1360,7 +1372,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
   describe 'DELETE #destroy_relation' do
     let(:current_user) { instance_double(User, id: 7, logged?: true, login: 'tester', language: 'en') }
-    let(:relation) { instance_double(IssueRelation) }
+    let(:relation) { instance_double(IssueRelation, id: 77, issue_from_id: 10, issue_to_id: 11) }
     let(:project_from) { instance_double(Project, id: 1) }
     let(:project_to) { instance_double(Project, id: 2) }
     let(:issue_from) { instance_double(Issue, id: 10, project_id: 1, project: project_from, editable?: false) }
@@ -1389,7 +1401,12 @@ RSpec.describe CanvasGanttsController, type: :controller do
       delete :destroy_relation, params: { project_id: 'demo', id: '77' }, format: :json
 
       expect(response).to have_http_status(:ok)
-      expect(JSON.parse(response.body)).to eq('status' => 'ok')
+      expect(JSON.parse(response.body)).to eq(
+        'status' => 'ok',
+        'completeness' => 'partial',
+        'invalidated_entity_ids' => [10, 11],
+        'deleted_entity_ids' => [77]
+      )
       expect(relation).to have_received(:destroy)
     end
 

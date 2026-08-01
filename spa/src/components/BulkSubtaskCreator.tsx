@@ -2,7 +2,7 @@ import React from 'react';
 import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
-import { apiClient } from '../api/client';
+import { taskMutationService } from '../services/taskMutationService';
 
 interface BulkSubtaskCreatorProps {
     parentId?: string;
@@ -128,12 +128,13 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                 }
 
                 const bulkPayload = subtasks.some(row => row.tracker_id) ? { subtasks } : { subjects: subtasks.map(row => row.subject) };
-                const result = await apiClient.bulkCreateSubtasks({
+                const operationIssueIdsForRequest = newParentId && !operationIssueIds.includes(targetParentId)
+                    ? [...operationIssueIds, targetParentId]
+                    : operationIssueIds;
+                const result = await taskMutationService.bulkCreateSubtasks({
                     parentId: targetParentId,
                     ...bulkPayload,
-                    operationIssueIds: newParentId && !operationIssueIds.includes(targetParentId)
-                        ? [...operationIssueIds, targetParentId]
-                        : operationIssueIds
+                    operationIssueIds: operationIssueIdsForRequest
                 });
                 successCount = result.successCount;
                 failCount = result.failCount;

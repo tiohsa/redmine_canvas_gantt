@@ -225,6 +225,10 @@ class CanvasGanttsController < ApplicationController
     label_parent_drop_forbidden: :label_parent_drop_forbidden,
     label_parent_drop_conflict: :label_parent_drop_conflict,
     label_parent_drop_failed: :label_parent_drop_failed,
+    label_conflict_resolution: :label_conflict_resolution,
+    button_use_remote: :button_use_remote,
+    button_keep_local_retry: :button_keep_local_retry,
+    button_dismiss_conflict: :button_dismiss_conflict,
     label_issue: :label_issue,
     label_new: :label_new,
     label_bulk_subtask_creation: :label_bulk_subtask_creation,
@@ -443,11 +447,10 @@ class CanvasGanttsController < ApplicationController
     )
     saved_snapshot = baseline_repository.replace(project_id: @project.id, snapshot: baseline_snapshot)
 
-    render json: {
-      status: 'ok',
+    render json: mutation_response(status: 'ok', completeness: 'complete').merge(
       baseline: saved_snapshot.to_payload_hash,
       warnings: warnings
-    }
+    )
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue => e
@@ -490,6 +493,7 @@ class CanvasGanttsController < ApplicationController
     return unless ensure_issue_editable(issue)
     parent_issue = load_parent_issue(issue, params.dig(:task, :parent_issue_id))
     return unless parent_issue != :invalid
+    previous_parent_id = issue.parent_id
 
     # Optimistic Locking Check handled by ActiveRecord automatically if lock_version is present
     issue.init_journal(User.current)
@@ -503,13 +507,16 @@ class CanvasGanttsController < ApplicationController
         return
       end
 
-      render json: {
+      render json: mutation_response(
         status: 'ok',
+        completeness: 'partial',
+        invalidated_entity_ids: [issue.id, previous_parent_id, issue.parent_id]
+      ).merge(
         lock_version: issue.lock_version,
         task_id: issue.id,
         parent_id: issue.parent_id,
         sibling_position: 'tail'
-      }
+      )
     else
       render json: { errors: issue.errors.full_messages }, status: :unprocessable_entity
     end
@@ -525,8 +532,14 @@ class CanvasGanttsController < ApplicationController
     return unless ensure_issue_in_scope(issue)
     return unless ensure_issue_deletable(issue)
 
+    parent_id = issue.parent_id
     issue.destroy
-    render json: { status: 'ok' }
+    render json: mutation_response(
+      status: 'ok',
+      completeness: 'partial',
+      invalidated_entity_ids: [issue.id, parent_id],
+      deleted_entity_ids: [issue.id]
+    )
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
   end
@@ -549,7 +562,11 @@ class CanvasGanttsController < ApplicationController
       return
     end
 
-    render json: bulk_subtask_creator.call(parent_issue: parent_issue, subjects: subjects, subtasks: subtasks)
+    result = bulk_subtask_creator.call(parent_issue: parent_issue, subjects: subjects, subtasks: subtasks)
+    created_ids = Array(result[:results] || result['results']).filter_map do |entry|
+      entry[:issue_id] || entry['issue_id'] if entry.respond_to?(:[])
+    end
+    render json: mutation_response(status: 'ok', completeness: 'partial', invalidated_entity_ids: [parent_issue.id] + created_ids).merge(result)
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_parent_task_not_found) }, status: :not_found
   end
@@ -614,7 +631,12 @@ class CanvasGanttsController < ApplicationController
     return unless ensure_relation_editable!(relation)
 
     relation.destroy
-    render json: { status: 'ok' }
+    render json: mutation_response(
+      status: 'ok',
+      completeness: 'partial',
+      invalidated_entity_ids: [relation.issue_from_id, relation.issue_to_id],
+      deleted_entity_ids: [relation.id]
+    )
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found) }, status: :not_found
   rescue => e
@@ -791,6 +813,18 @@ class CanvasGanttsController < ApplicationController
     request_id = request.request_id
     Rails.logger.error("[Canvas Gantt][#{request_id}] #{error.class}: #{error.message}\n#{Array(error.backtrace).join("\n")}")
     render json: { error: "#{canvas_gantt_l(:label_unknown_error)} (request ID: #{request_id})" }, status: :internal_server_error
+  end
+
+  # Mutation responses retain the legacy top-level fields while exposing the
+  # lifecycle metadata needed by newer clients. All fields are additive so
+  # existing Redmine integrations can continue to ignore them.
+  def mutation_response(status:, completeness:, invalidated_entity_ids: [], deleted_entity_ids: [])
+    {
+      status: status,
+      completeness: completeness,
+      invalidated_entity_ids: Array(invalidated_entity_ids).compact.map(&:to_i).uniq,
+      **(deleted_entity_ids.empty? ? {} : { deleted_entity_ids: Array(deleted_entity_ids).compact.map(&:to_i).uniq })
+    }
   end
 
   def member_candidate_ids
@@ -987,7 +1021,11 @@ class CanvasGanttsController < ApplicationController
 
   def render_relation_save_result(relation)
     if relation.save
-      render json: { status: 'ok', relation: relation_params_normalizer.serialize_relation(relation) }
+      render json: mutation_response(
+        status: 'ok',
+        completeness: 'complete',
+        invalidated_entity_ids: [relation.issue_from_id, relation.issue_to_id]
+      ).merge(relation: relation_params_normalizer.serialize_relation(relation))
     else
       render json: { errors: relation.errors.full_messages }, status: :unprocessable_entity
     end

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useTaskStore } from './TaskStore';
+import { useTaskStore, derivedRecalculationCounters, resetDerivedRecalculationCounters } from './TaskStore';
 import type { Task } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { apiClient } from '../api/client';
@@ -1259,6 +1259,106 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.modifiedTaskIds.has('task-1')).toBe(true);
     });
 
+    it('does not re-add a dirty task when a refresh changes scope', async () => {
+        const request = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce(buildApiData([buildTask({ id: 'task-1', projectId: '1', dueDate: 2 })]))
+            .mockReturnValueOnce(request.promise);
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', projectId: '1', dueDate: 2 })]);
+        await useTaskStore.getState().refreshData();
+        useTaskStore.getState().updateTask('task-1', { dueDate: 8 });
+        useTaskStore.getState().setCurrentProjectId('2');
+
+        const refresh = useTaskStore.getState().refreshData();
+        request.resolve(buildApiData([]));
+        await refresh;
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks).toEqual([]);
+        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+        expect(state.localTaskPatches['task-1']).toHaveLength(1);
+    });
+
+    it('does not recalculate critical path for a non-scheduling field edit', () => {
+        resetDerivedRecalculationCounters();
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', assignedToId: null })]);
+        resetDerivedRecalculationCounters();
+
+        useTaskStore.getState().updateTask('task-1', { assignedToId: 7 });
+
+        expect(derivedRecalculationCounters.criticalPath).toBe(0);
+        expect(derivedRecalculationCounters.layout).toBe(1);
+    });
+
+    it('recalculates scheduling and critical path once for a date edit', () => {
+        resetDerivedRecalculationCounters();
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', startDate: MONDAY, dueDate: TUESDAY })]);
+        resetDerivedRecalculationCounters();
+
+        useTaskStore.getState().updateTask('task-1', { dueDate: WEDNESDAY });
+
+        expect(derivedRecalculationCounters.scheduling).toBe(1);
+        expect(derivedRecalculationCounters.criticalPath).toBe(1);
+    });
+
+    it('keeps a not-found task as a tombstone while retaining its local patch', () => {
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1' })]);
+        useTaskStore.getState().updateTask('task-1', { subject: 'local draft' });
+        useTaskStore.getState().markTaskTombstone('task-1', 'server');
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks).toEqual([]);
+        expect(state.taskTombstones['task-1']?.source).toBe('server');
+        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+        expect(state.localTaskPatches['task-1']).toHaveLength(1);
+    });
+
+    it('does not silently commit a local patch for a tombstoned task', async () => {
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1' })]);
+        useTaskStore.getState().updateTask('task-1', { subject: 'local draft' });
+        useTaskStore.getState().markTaskTombstone('task-1', 'server');
+
+        const failures = await useTaskStore.getState().saveChanges();
+
+        expect(failures.has('task-1')).toBe(true);
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
+        expect(useTaskStore.getState().localTaskPatches['task-1']).toHaveLength(1);
+    });
+
+    it('clears a stale tombstone when conflict resolution adopts a remote task', async () => {
+        const remoteTask = buildTask({ id: 'task-1', subject: 'remote', lockVersion: 4 });
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', subject: 'local' })]);
+        useTaskStore.getState().markTaskTombstone('task-1', 'server');
+        useTaskStore.setState({
+            serverTaskSnapshot: {
+                entitiesById: { 'task-1': remoteTask },
+                revisions: { 'task-1': remoteTask.lockVersion },
+                context: null
+            },
+            taskConflicts: {
+                'task-1': { taskId: 'task-1', message: 'not found', detectedAt: Date.now() }
+            }
+        });
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
+
+        const state = useTaskStore.getState();
+        expect(state.taskTombstones['task-1']).toBeUndefined();
+        expect(state.allTasks).toEqual([remoteTask]);
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it('keeps a tombstone when conflict resolution has no remote task', async () => {
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', subject: 'local' })]);
+        useTaskStore.getState().registerTaskConflict('task-1', 'Task no longer exists');
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks).toEqual([]);
+        expect(state.taskTombstones['task-1']?.source).toBe('server');
+        expect(state.taskConflicts['task-1']).toBeUndefined();
+    });
+
     it('does not let a pre-delete refresh resurrect a locally removed task', async () => {
         const request = deferred<ReturnType<typeof buildApiData>>();
         vi.mocked(apiClient.fetchData).mockReturnValue(request.promise);
@@ -2234,10 +2334,11 @@ describe('TaskStore drag parent updates', () => {
         expect(result.status).toBe('ok');
         expect(result.parentId).toBeUndefined();
         expect(result.siblingPosition).toBe('tail');
-        expect(vi.mocked(apiClient.updateTaskFields)).toHaveBeenCalledWith('child', {
-            parent_issue_id: null,
-            lock_version: 2
-        });
+        expect(vi.mocked(apiClient.updateTaskFields)).toHaveBeenCalledWith(
+            'child',
+            { parent_issue_id: null, lock_version: 2 },
+            expect.stringMatching(/^mutation:/)
+        );
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBeUndefined();
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.lockVersion).toBe(3);
     });
@@ -2265,10 +2366,11 @@ describe('TaskStore drag parent updates', () => {
             parentId: '11',
             siblingPosition: 'tail'
         });
-        expect(vi.mocked(apiClient.updateTaskFields)).toHaveBeenCalledWith('10', {
-            parent_issue_id: 11,
-            lock_version: 2
-        });
+        expect(vi.mocked(apiClient.updateTaskFields)).toHaveBeenCalledWith(
+            '10',
+            { parent_issue_id: 11, lock_version: 2 },
+            expect.stringMatching(/^mutation:/)
+        );
         expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.parentId).toBe('11');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.lockVersion).toBe(3);
     });

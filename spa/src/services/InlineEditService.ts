@@ -2,7 +2,8 @@ import type { Task } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
-import { enqueueTaskWrite } from '../stores/taskStore/taskPersistence';
+import { taskMutationService } from './taskMutationService';
+import { ApiMutationError } from '../api/client';
 
 export class InlineEditService {
     static async saveTaskFields(params: {
@@ -24,17 +25,20 @@ export class InlineEditService {
             useTaskStore.getState().editGenerations[taskId] === operationGeneration
         );
 
-        const { apiClient } = await import('../api/client');
         let result;
         try {
-            result = await enqueueTaskWrite(taskId, () => {
+            result = await taskMutationService.updateTaskFields(taskId, (() => {
                 const latest = useTaskStore.getState().allTasks.find((task) => task.id === taskId);
-                return apiClient.updateTaskFields(taskId, {
+                return {
                     ...fields,
                     lock_version: latest?.lockVersion ?? current.lockVersion
-                });
-            });
+                };
+            })());
         } catch (error) {
+            if (typeof ApiMutationError !== 'undefined' && error instanceof ApiMutationError && error.status === 'not_found' && isCurrentOperation()) {
+                useTaskStore.getState().markTaskTombstone(taskId, 'server');
+                useTaskStore.getState().registerTaskConflict(taskId, error.message || (i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists'));
+            }
             if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
                 updateTask(taskId, rollbackTaskUpdates);
             }
@@ -44,9 +48,7 @@ export class InlineEditService {
         }
 
         if (result.status === 'ok') {
-            if (result.lockVersion !== undefined) {
-                useTaskStore.getState().setTaskLockVersion(taskId, result.lockVersion);
-            }
+            useTaskStore.getState().commitTaskOperation(taskId, operationGeneration, result.lockVersion);
             return;
         }
 
@@ -54,6 +56,9 @@ export class InlineEditService {
         // newer remote version. Keep the local edit dirty so the normal save
         // path can retry it with the current lock version; rolling it back
         // here would silently discard the user's change.
+        if (result.status === 'conflict') {
+            useTaskStore.getState().registerTaskConflict(taskId, result.error || (i18n.t('label_conflict') || 'Conflict'));
+        }
         if (result.status !== 'conflict' && isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
             updateTask(taskId, rollbackTaskUpdates);
         }

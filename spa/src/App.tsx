@@ -3,6 +3,7 @@ import { useTaskStore } from './stores/TaskStore';
 import { GanttContainer } from './components/GanttContainer';
 import { GanttToolbar } from './components/GanttToolbar';
 import Toast from './components/Toast';
+import { ConflictResolutionPanel } from './components/ConflictResolutionPanel';
 import type { GanttExportHandle } from './export/types';
 
 import { useUIStore } from './stores/UIStore';
@@ -51,6 +52,7 @@ function App() {
       </div>
 
       <Toast />
+      <ConflictResolutionPanel />
     </div>
   );
 }

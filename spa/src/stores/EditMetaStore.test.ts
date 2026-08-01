@@ -85,6 +85,24 @@ describe('EditMetaStore', () => {
         expect(apiClient.fetchEditMeta).toHaveBeenLastCalledWith('1', 3);
     });
 
+    it('does not let an older metadata response overwrite a newer context', async () => {
+        let resolveOlder!: (value: TaskEditMeta) => void;
+        const older = new Promise<TaskEditMeta>(resolve => { resolveOlder = resolve; });
+        const newer = { ...metaFixture, task: { ...metaFixture.task, projectId: 3 } };
+        vi.mocked(apiClient.fetchEditMeta)
+            .mockReturnValueOnce(older)
+            .mockResolvedValueOnce(newer);
+
+        const first = useEditMetaStore.getState().fetchEditMeta('1', { force: true });
+        const second = useEditMetaStore.getState().fetchEditMeta('1', { targetProjectId: 3, force: true });
+        await second;
+        resolveOlder(metaFixture);
+        await first;
+
+        expect(useEditMetaStore.getState().metaByTaskId['1']?.task.projectId).toBe(3);
+        expect(useEditMetaStore.getState().activeReadContext?.purpose).toBe('edit_meta');
+    });
+
     it('stores error when fetchEditMeta fails and clearError resets it', async () => {
         vi.mocked(apiClient.fetchEditMeta).mockRejectedValue(new Error('Network down'));
 

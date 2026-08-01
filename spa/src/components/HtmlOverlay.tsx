@@ -2,7 +2,7 @@ import React from 'react';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
 import { LayoutEngine } from '../engines/LayoutEngine';
-import { apiClient } from '../api/client';
+import { taskMutationService } from '../services/taskMutationService';
 import { RelationType } from '../types/constraints';
 import { useUIStore } from '../stores/UIStore';
 import { useBaselineStore } from '../stores/BaselineStore';
@@ -242,21 +242,21 @@ export const HtmlOverlay: React.FC = () => {
     }, [hitTestTask, setDragDraftState, toLocalPoint]);
 
     const handleCreateRelation = React.useCallback(async (relation: DraftRelation, rawType: string, delay?: number) => {
-        const createdRelation = await apiClient.createRelation(relation.from, relation.to, rawType, delay);
+        const createdRelation = await taskMutationService.createRelation(relation.from, relation.to, rawType, delay);
         addRelation(createdRelation);
         clearRelationSelection();
         useUIStore.getState().addNotification(i18n.t('label_relation_added') || 'Dependency created', 'success');
     }, [addRelation, clearRelationSelection]);
 
     const handleUpdateRelation = React.useCallback(async (relationId: string, rawType: string, delay?: number) => {
-        const updatedRelation = await apiClient.updateRelation(relationId, rawType, delay);
+        const updatedRelation = await taskMutationService.updateRelation(relationId, rawType, delay);
         replaceRelation(updatedRelation);
         clearRelationSelection();
         useUIStore.getState().addNotification(i18n.t('label_relation_updated') || 'Dependency updated', 'success');
     }, [clearRelationSelection, replaceRelation]);
 
     const handleRemoveRelation = React.useCallback(async (relationId: string) => {
-        await apiClient.deleteRelation(relationId);
+        await taskMutationService.deleteRelation(relationId);
         removeRelation(relationId);
         clearRelationSelection();
         setContextMenu(null);
@@ -484,7 +484,7 @@ export const HtmlOverlay: React.FC = () => {
         if (!window.confirm(message)) return;
 
         try {
-            await apiClient.deleteTask(taskId);
+            await taskMutationService.deleteTask(taskId);
             useTaskStore.getState().removeTask(taskId);
             useUIStore.getState().addNotification((i18n.t('button_delete') || 'Delete') + ': ' + (i18n.t('label_success') || 'Success'), 'success');
         } catch (error: unknown) {

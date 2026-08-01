@@ -8,6 +8,7 @@ import type { BulkSubtaskCreatorHandle } from './BulkSubtaskCreator';
 import { fontFamilies, designTokens } from '../styles/designTokens';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import { apiClient } from '../api/client';
+import { canApplyReadResponse, createReadContext, type ReadContext } from '../stores/taskStore/stateContract';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
@@ -132,6 +133,8 @@ export const IssueIframeDialog: React.FC = () => {
     const dialogResizeCleanupRef = React.useRef<(() => void) | null>(null);
     const isSavingRef = React.useRef(false);
     const pendingAutoSubmitRef = React.useRef(false);
+    const trackerReadContextRef = React.useRef<ReadContext | null>(null);
+    const trackerReadGenerationRef = React.useRef(0);
     const saveTargetRef = React.useRef<SaveTarget>(null);
     const [iframeError, setIframeError] = React.useState<string | null>(null);
     const [dialogMode, setDialogMode] = React.useState<IssueDialogMode>('form');
@@ -524,18 +527,26 @@ export const IssueIframeDialog: React.FC = () => {
         const operationIssueIds = useTaskStore.getState().tasks
             .filter(task => !task.isContextOnly)
             .map(task => task.id);
-        let cancelled = false;
+        const context = createReadContext({
+            generation: ++trackerReadGenerationRef.current,
+            projectId: useTaskStore.getState().currentProjectId,
+            query: { parentId, operationIssueIds },
+            scope: { dialog: activeDialogUrl },
+            purpose: 'subtask_trackers',
+            mergePolicy: 'replace'
+        });
+        trackerReadContextRef.current = context;
         void apiClient.getSubtaskTrackers(parentId, operationIssueIds)
             .then(options => {
-                if (!cancelled && options.length > 0) setTrackerOptions(options);
+                if (canApplyReadResponse(trackerReadContextRef.current, context) && options.length > 0) setTrackerOptions(options);
             })
             .catch(error => {
                 console.debug('Failed to load subtask tracker options', error);
             });
         return () => {
-            cancelled = true;
+            if (trackerReadContextRef.current?.contextId === context.contextId) trackerReadContextRef.current = null;
         };
-    }, [canBulkCreateForParent, isQueryDialog, parentId]);
+    }, [activeDialogUrl, canBulkCreateForParent, isQueryDialog, parentId]);
 
     React.useEffect(() => {
         iframeEscapeCleanupRef.current?.();
