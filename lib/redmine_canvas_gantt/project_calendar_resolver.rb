@@ -46,6 +46,21 @@ module RedmineCanvasGantt
       day_info(date, project: project).fetch(:type) == 'working'
     end
 
+    def normalize_working_date(date, direction:, project:)
+      current = date.to_date
+      step = direction.to_sym == :backward ? -1 : 1
+      current += step until working_day?(current, project: project)
+      current
+    end
+
+    def next_working_day(date, project:)
+      normalize_working_date(date, direction: :forward, project: project)
+    end
+
+    def previous_working_day(date, project:)
+      normalize_working_date(date, direction: :backward, project: project)
+    end
+
     def add_working_days(date, days, project:)
       current = date.to_date
       remaining = [days.to_i, 0].max

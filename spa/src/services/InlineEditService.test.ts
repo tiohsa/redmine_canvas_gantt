@@ -4,6 +4,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { apiClient } from '../api/client';
 import type { Task } from '../types';
+import { configureBusinessCalendar } from '../utils/businessCalendar';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -70,6 +71,49 @@ describe('InlineEditService', () => {
             subject: 'Updated subject',
             lock_version: 3
         }, expect.stringMatching(/^mutation:/));
+    });
+
+    it('sends the canonical working date for an inline date edit', async () => {
+        configureBusinessCalendar({
+            status: 'ok',
+            revision: 'test',
+            defaultCalendarId: 'p1',
+            projectCalendarIds: { p1: 'p1' },
+            calendars: {
+                p1: {
+                    id: 'p1',
+                    name: 'P1',
+                    nonWorkingWeekDays: [0, 6],
+                    days: {
+                        '2026-01-07': { name: 'Holiday', type: 'non_working' }
+                    }
+                }
+            },
+            warnings: []
+        });
+        try {
+            const initialTask = buildTask({
+                projectId: 'p1',
+                startDate: Date.UTC(2026, 0, 5),
+                dueDate: Date.UTC(2026, 0, 6)
+            });
+            useTaskStore.setState({ allTasks: [initialTask], tasks: [initialTask] });
+            vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+
+            await InlineEditService.saveTaskFields({
+                taskId: 'task-1',
+                optimisticTaskUpdates: { dueDate: Date.UTC(2026, 0, 7) },
+                rollbackTaskUpdates: { dueDate: initialTask.dueDate },
+                fields: { due_date: '2026-01-07' }
+            });
+
+            expect(apiClient.updateTaskFields).toHaveBeenCalledWith('task-1', {
+                due_date: '2026-01-06',
+                lock_version: 3
+            }, expect.stringMatching(/^mutation:/));
+        } finally {
+            configureBusinessCalendar(undefined);
+        }
     });
 
     it('rolls back optimistic update and pushes error notification on failure', async () => {

@@ -32,7 +32,7 @@ import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
-import { configureBusinessCalendar } from '../utils/businessCalendar';
+import { configureBusinessCalendar, normalizeWorkingDate } from '../utils/businessCalendar';
 import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
@@ -750,6 +750,32 @@ const resolveCascadingScheduleUpdates = (
     return { tasks: workingTasks, updates };
 };
 
+const hasOwnField = (value: object, field: string): boolean => (
+    Object.prototype.hasOwnProperty.call(value, field)
+);
+
+const normalizeTaskDateUpdates = (task: Task, updates: Partial<Task>): Partial<Task> => {
+    if (!hasOwnField(updates, 'startDate') && !hasOwnField(updates, 'dueDate')) return updates;
+
+    const nextUpdates = { ...updates };
+    const rawStart = hasOwnField(updates, 'startDate') ? updates.startDate : task.startDate;
+    const rawDue = hasOwnField(updates, 'dueDate') ? updates.dueDate : task.dueDate;
+    const nextStart = Number.isFinite(rawStart)
+        ? normalizeWorkingDate(rawStart!, 'forward', task.projectId)
+        : rawStart;
+    const nextDue = Number.isFinite(rawDue)
+        ? normalizeWorkingDate(rawDue!, 'backward', task.projectId)
+        : rawDue;
+
+    if (hasOwnField(updates, 'startDate') || nextStart !== task.startDate) {
+        nextUpdates.startDate = nextStart;
+    }
+    if (hasOwnField(updates, 'dueDate') || nextDue !== task.dueDate) {
+        nextUpdates.dueDate = nextDue;
+    }
+    return nextUpdates;
+};
+
 const buildRelationChange = (state: TaskState, relation: Relation, nextRelations: Relation[]) => {
     let nextTasks = state.allTasks;
     const originTaskId = relation.type === 'follows' ? relation.to : relation.from;
@@ -1367,13 +1393,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         invalidateDataRequests();
 
-        const updatedTask = { ...task, ...updates };
+        const canonicalUpdates = normalizeTaskDateUpdates(task, updates);
+        const updatedTask = { ...task, ...canonicalUpdates };
         TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
 
         let currentTasks = state.allTasks.map(t => t.id === id ? updatedTask : t);
         const pendingUpdates = new Map<string, Partial<Task>>();
 
-        if (updates.startDate !== undefined || updates.dueDate !== undefined) {
+        if (hasOwnField(canonicalUpdates, 'startDate') || hasOwnField(canonicalUpdates, 'dueDate')) {
             const depResult = TaskLogicService.checkDependencies(
                 state.allTasks,
                 state.relations,
@@ -1440,10 +1467,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 { entityId: taskId, fields: meaningfulFields, generation, operationId }
             ];
         };
-        patchFor(id, updates);
+        patchFor(id, canonicalUpdates);
         pendingUpdates.forEach((fields, taskId) => patchFor(taskId, fields));
 
-        const changedFields = new Set([...Object.keys(updates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
+        const changedFields = new Set([...Object.keys(canonicalUpdates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
         const requiresLayout = ['projectId', 'assignedToId', 'fixedVersionId'].some(field => changedFields.has(field));
         const requiresScheduling = ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => changedFields.has(field));
         const derivedInvalidation: DerivedInvalidation = requiresScheduling

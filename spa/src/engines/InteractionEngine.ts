@@ -11,7 +11,8 @@ import {
     RELATION_HIT_TOLERANCE_PX,
     shouldRenderRelationsAtZoom
 } from '../renderers/relationGeometry';
-import { addCalendarDays, diffCalendarDays, timelineToCalendarDate } from '../utils/dateOnly';
+import { timelineToCalendarDate } from '../utils/dateOnly';
+import { diffWorkingDays, normalizeWorkingDate, shiftByWorkingDays } from '../utils/businessCalendar';
 import { panViewportByPixels } from './viewportPan';
 
 type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
@@ -379,22 +380,30 @@ export class InteractionEngine {
         } else if (this.drag.mode === 'task-move' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
+            const projectId = currentTask?.projectId;
 
             if (Number.isFinite(this.drag.originalStartDate) && Number.isFinite(this.drag.originalDueDate)) {
-                const newStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
-                const durationDays = diffCalendarDays(
+                const candidateStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
+                const newStart = normalizeWorkingDate(candidateStart, 'forward', projectId);
+                const durationDays = diffWorkingDays(
                     this.drag.originalStartDate!,
-                    this.drag.originalDueDate!
+                    this.drag.originalDueDate!,
+                    projectId
                 );
+                const newDue = shiftByWorkingDays(newStart, durationDays, projectId);
 
                 if (currentTask && currentTask.startDate !== newStart) {
                     updateTask(this.drag.taskId, {
                         startDate: newStart,
-                        dueDate: addCalendarDays(newStart, durationDays)
+                        dueDate: newDue
                     });
                 }
             } else if (Number.isFinite(this.drag.originalStartDate)) {
-                const newStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
+                const newStart = normalizeWorkingDate(
+                    this.snapToDate(this.drag.originalStartDate! + timeDelta),
+                    'forward',
+                    projectId
+                );
                 if (currentTask && currentTask.startDate !== newStart) {
                     updateTask(this.drag.taskId, {
                         startDate: newStart
@@ -402,7 +411,11 @@ export class InteractionEngine {
                 }
             } else if (Number.isFinite(this.drag.originalDueDate)) {
                 // Determine delta based on drag start
-                const newDue = this.snapToDate(this.drag.originalDueDate! + timeDelta);
+                const newDue = normalizeWorkingDate(
+                    this.snapToDate(this.drag.originalDueDate! + timeDelta),
+                    'backward',
+                    projectId
+                );
                 if (currentTask && currentTask.dueDate !== newDue) {
                     updateTask(this.drag.taskId, {
                         dueDate: newDue
@@ -411,18 +424,24 @@ export class InteractionEngine {
             }
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
-            const newStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
-
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
+            const newStart = normalizeWorkingDate(
+                this.snapToDate(this.drag.originalStartDate! + timeDelta),
+                'forward',
+                currentTask?.projectId
+            );
 
             if (currentTask && newStart <= this.drag.originalDueDate! && currentTask.startDate !== newStart) {
                 updateTask(this.drag.taskId, { startDate: newStart });
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
             const timeDelta = dx / viewport.scale;
-            const newEnd = this.snapToDate(this.drag.originalDueDate! + timeDelta);
-
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
+            const newEnd = normalizeWorkingDate(
+                this.snapToDate(this.drag.originalDueDate! + timeDelta),
+                'backward',
+                currentTask?.projectId
+            );
 
             if (currentTask && newEnd >= this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
                 updateTask(this.drag.taskId, { dueDate: newEnd });

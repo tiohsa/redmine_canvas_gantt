@@ -195,7 +195,7 @@ Canvas Gantt にはプラグイン設定画面はありません。UI の既定�
 
 ### 業務カレンダー
 
-Canvas Gantt は、週次非稼働日、国別祝日、会社休業日、振替稼働日を名前付き業務カレンダーで扱えます。解決済みの同じカレンダーを、依存関係検証、自動スケジュール、クリティカルパス計算、Canvas 背景描画に使用します。DB マイグレーションは不要です。休日データは外部 YAML を read-only の実行時設定として読み込み、`Setting.plugin_redmine_canvas_gantt` には保存しません。
+Canvas Gantt は、週次非稼働日、国別祝日、会社休業日、振替稼働日を名前付き業務カレンダーで扱えます。解決済みの同じカレンダーを、依存関係検証、自動スケジュール、クリティカルパス計算、Canvas 背景描画、タスク日付の直接変更に使用します。Gantt のドラッグ・リサイズやサイドバーの日付編集で非稼働日が選ばれた場合、開始日は次の稼働日、終了日は直前の稼働日に補正されます。DB マイグレーションは不要です。休日データは外部 YAML を read-only の実行時設定として読み込み、`Setting.plugin_redmine_canvas_gantt` には保存しません。
 
 既定ディレクトリは `<Rails.root>/config/redmine_canvas_gantt/business_calendars` です。別の場所を使う場合は `REDMINE_CANVAS_GANTT_CALENDAR_DIR` を設定します。[同梱サンプル](examples/business_calendars/)を初期ファイルとして利用できます。
 

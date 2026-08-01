@@ -8,6 +8,9 @@ import {
     isBusinessCalendarReady,
     isWorkingDay,
     normalizeBusinessCalendarPayload,
+    normalizeWorkingDate,
+    nextWorkingDay,
+    previousWorkingDay,
     shiftByWorkingDays,
     timestampToBusinessDateKey
 } from './businessCalendar';
@@ -108,6 +111,12 @@ describe('businessCalendar', () => {
         expect(addWorkingDays(timestamp('2027-01-04'), 1, '2')).toBe(timestamp('2027-01-06'));
         expect(shiftByWorkingDays(timestamp('2027-01-06'), -1, '2')).toBe(timestamp('2027-01-04'));
         expect(diffWorkingDays(timestamp('2027-01-04'), timestamp('2027-01-06'), '2')).toBe(1);
+    });
+
+    it('normalizes a non-working task date in the requested direction', () => {
+        expect(nextWorkingDay(timestamp('2027-01-04'), '1')).toBe(timestamp('2027-01-05'));
+        expect(previousWorkingDay(timestamp('2027-01-04'), '1')).toBe(timestamp('2027-01-03'));
+        expect(normalizeWorkingDate(timestamp('2027-01-03'), 'forward', '1')).toBe(timestamp('2027-01-03'));
     });
 
     it('falls back to legacy Redmine weekdays when payload is absent', () => {

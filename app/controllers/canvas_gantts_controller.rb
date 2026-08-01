@@ -498,7 +498,9 @@ class CanvasGanttsController < ApplicationController
     # Optimistic Locking Check handled by ActiveRecord automatically if lock_version is present
     issue.init_journal(User.current)
     original_values = original_project_move_values(issue)
-    issue.safe_attributes = permitted_task_params
+    task_attributes = permitted_task_params
+    normalize_task_date_attributes!(task_attributes, issue)
+    issue.safe_attributes = task_attributes
     return unless ensure_project_move_valid!(issue, original_values)
 
     if issue.save
@@ -901,6 +903,29 @@ class CanvasGanttsController < ApplicationController
 
   def permitted_task_params
     params.require(:task).permit(*(TASK_PERMITTED_ATTRIBUTES + [{ custom_field_values: {} }]))
+  end
+
+  def normalize_task_date_attributes!(task_attributes, issue)
+    return task_attributes unless task_attributes.key?(:start_date) || task_attributes.key?(:due_date)
+
+    start_value = task_attributes.key?(:start_date) ? task_attributes[:start_date] : issue.start_date
+    due_value = task_attributes.key?(:due_date) ? task_attributes[:due_date] : issue.due_date
+
+    if start_value.present?
+      task_attributes[:start_date] = normalize_task_date_value(start_value, direction: :forward, project: issue.project)
+    end
+    if due_value.present?
+      task_attributes[:due_date] = normalize_task_date_value(due_value, direction: :backward, project: issue.project)
+    end
+
+    task_attributes
+  end
+
+  def normalize_task_date_value(value, direction:, project:)
+    date = value.respond_to?(:to_date) ? value.to_date : Date.iso8601(value.to_s)
+    business_calendar_resolver.normalize_working_date(date, direction: direction, project: project)
+  rescue ArgumentError, Date::Error
+    value
   end
 
   def relation_params
