@@ -45,7 +45,7 @@ type ParentMoveCallbacks = {
     validatePersistedResult: (result: UpdateTaskFieldsResult, expectedParentId: string | undefined) => boolean;
     missingSourceResult: MoveTaskAsChildResult;
     failedResult: (error?: string) => MoveTaskAsChildResult;
-    onConflict?: (taskId: string, message: string) => void;
+    onConflict?: (taskId: string, message: string, operationGeneration: number) => void;
     onMutationMetadata?: (taskId: string, metadata: MutationMetadata) => void;
 };
 
@@ -103,7 +103,11 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
             }
 
             if (completedResult.status === 'conflict') {
-                onConflict?.(sourceTaskId, completedResult.error || (i18n.t('label_parent_drop_conflict') || 'Task was updated by another user'));
+                onConflict?.(
+                    sourceTaskId,
+                    completedResult.error || (i18n.t('label_parent_drop_conflict') || 'Task was updated by another user'),
+                    operationGeneration
+                );
             }
             if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
         },

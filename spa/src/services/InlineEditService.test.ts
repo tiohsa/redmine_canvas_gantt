@@ -240,6 +240,9 @@ describe('InlineEditService', () => {
 
         expect(useTaskStore.getState().allTasks[0]?.subject).toBe('Local edit');
         expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
-        expect(useTaskStore.getState().taskConflicts['task-1']?.message).toBe('The task changed on the server.');
+        expect(useTaskStore.getState().taskConflicts['task-1']).toMatchObject({
+            message: 'The task changed on the server.',
+            generation: 1
+        });
     });
 });
