@@ -6,6 +6,7 @@ import { apiClient } from '../api/client';
 import { useUIStore } from './UIStore';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import { loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
+import { configureBusinessCalendar } from '../utils/businessCalendar';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -1298,6 +1299,43 @@ describe('TaskStore asynchronous state ownership', () => {
 
         expect(derivedRecalculationCounters.scheduling).toBe(1);
         expect(derivedRecalculationCounters.criticalPath).toBe(1);
+    });
+
+    it('canonicalizes direct date updates with the task project calendar', () => {
+        configureBusinessCalendar({
+            status: 'ok',
+            revision: 'test',
+            defaultCalendarId: 'p1',
+            projectCalendarIds: { p1: 'p1' },
+            calendars: {
+                p1: {
+                    id: 'p1',
+                    name: 'P1',
+                    nonWorkingWeekDays: [0, 6],
+                    days: {
+                        '2026-01-07': { name: 'Holiday', type: 'non_working' }
+                    }
+                }
+            },
+            warnings: []
+        });
+
+        try {
+            useTaskStore.getState().setTasks([buildTask({
+                id: 'task-1',
+                projectId: 'p1',
+                startDate: MONDAY,
+                dueDate: TUESDAY
+            })]);
+            useTaskStore.getState().updateTask('task-1', { dueDate: WEDNESDAY });
+
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'task-1')).toMatchObject({
+                startDate: MONDAY,
+                dueDate: TUESDAY
+            });
+        } finally {
+            configureBusinessCalendar(undefined);
+        }
     });
 
     it('keeps a not-found task as a tombstone while retaining its local patch', () => {

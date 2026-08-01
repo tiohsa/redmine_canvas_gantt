@@ -59,6 +59,22 @@ RSpec.describe RedmineCanvasGantt::ProjectCalendarResolver do
     expect(resolver.add_working_days(Date.new(2027, 1, 2), 1, project: project)).to eq(workday)
   end
 
+  it 'normalizes dates toward the requested working-day boundary' do
+    custom = calendar(
+      'custom',
+      days: { Date.new(2027, 1, 4) => { name: 'Company holiday', type: 'non_working' } }
+    )
+    repository = instance_double(
+      RedmineCanvasGantt::BusinessCalendarRepository,
+      snapshot: snapshot(default: 'custom', calendars: { 'custom' => custom })
+    )
+    resolver = described_class.new(repository: repository, fallback_non_working_week_days: [6, 7])
+    project = instance_double(Project, id: 1, identifier: 'project', ancestors: [])
+
+    expect(resolver.next_working_day(Date.new(2027, 1, 4), project: project)).to eq(Date.new(2027, 1, 5))
+    expect(resolver.previous_working_day(Date.new(2027, 1, 4), project: project)).to eq(Date.new(2027, 1, 1))
+  end
+
   it 'falls back to Redmine weekdays without an assigned calendar' do
     repository = instance_double(
       RedmineCanvasGantt::BusinessCalendarRepository,

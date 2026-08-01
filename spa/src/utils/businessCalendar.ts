@@ -13,7 +13,8 @@ import {
 import { getNonWorkingWeekDays } from './nonWorkingWeekDays';
 
 type UnknownRecord = Record<string, unknown>;
-type ProjectCalendarArgument = string | number | Set<number> | null | undefined;
+export type ProjectCalendarArgument = string | number | Set<number> | null | undefined;
+export type WorkingDateDirection = 'forward' | 'backward';
 
 const EMPTY_PAYLOAD: BusinessCalendarPayload = {
     status: 'ok',
@@ -153,6 +154,36 @@ export const getDayInfo = (timestamp: number, projectId?: ProjectCalendarArgumen
 
 export const isWorkingDay = (timestamp: number, projectId?: ProjectCalendarArgument): boolean => (
     getDayInfo(timestamp, projectId).type === 'working'
+);
+
+/**
+ * Returns the nearest working date in the requested direction.
+ * Date-only values remain UTC-midnight calendar dates throughout the walk.
+ */
+export const normalizeWorkingDate = (
+    timestamp: number,
+    direction: WorkingDateDirection,
+    projectId?: ProjectCalendarArgument
+): number => {
+    // Task dates are date-only UTC midnights. Preserve non-date numeric values
+    // used by generic store callers rather than collapsing them to epoch day 0.
+    if (!Number.isFinite(timestamp) || timestamp !== timelineToCalendarDate(timestamp)) {
+        return timestamp;
+    }
+    let date = timelineToCalendarDate(timestamp);
+    const step = direction === 'forward' ? 1 : -1;
+    while (!isWorkingDay(date, projectId)) {
+        date = addCalendarDays(date, step);
+    }
+    return date;
+};
+
+export const nextWorkingDay = (timestamp: number, projectId?: ProjectCalendarArgument): number => (
+    normalizeWorkingDate(timestamp, 'forward', projectId)
+);
+
+export const previousWorkingDay = (timestamp: number, projectId?: ProjectCalendarArgument): number => (
+    normalizeWorkingDate(timestamp, 'backward', projectId)
 );
 
 export const addWorkingDays = (timestamp: number, days: number, projectId?: ProjectCalendarArgument): number => {

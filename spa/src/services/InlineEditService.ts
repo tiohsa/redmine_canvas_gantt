@@ -4,6 +4,7 @@ import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
 import { taskMutationService } from './taskMutationService';
 import { ApiMutationError } from '../api/client';
+import { formatDateOnly } from '../utils/dateOnly';
 
 export class InlineEditService {
     static async saveTaskFields(params: {
@@ -20,6 +21,14 @@ export class InlineEditService {
         if (Object.keys(optimisticTaskUpdates).length > 0) {
             updateTask(taskId, optimisticTaskUpdates);
         }
+        const canonicalTask = useTaskStore.getState().allTasks.find((task) => task.id === taskId);
+        const canonicalFields = { ...fields };
+        if (Object.prototype.hasOwnProperty.call(fields, 'start_date') && fields.start_date !== '') {
+            canonicalFields.start_date = formatDateOnly(canonicalTask?.startDate);
+        }
+        if (Object.prototype.hasOwnProperty.call(fields, 'due_date') && fields.due_date !== '') {
+            canonicalFields.due_date = formatDateOnly(canonicalTask?.dueDate);
+        }
         const operationGeneration = useTaskStore.getState().editGenerations[taskId] ?? 0;
         const isCurrentOperation = () => (
             useTaskStore.getState().editGenerations[taskId] === operationGeneration
@@ -32,7 +41,7 @@ export class InlineEditService {
                 () => {
                     const latest = useTaskStore.getState().allTasks.find((task) => task.id === taskId);
                     return {
-                        ...fields,
+                        ...canonicalFields,
                         lock_version: latest?.lockVersion ?? current.lockVersion
                     };
                 },

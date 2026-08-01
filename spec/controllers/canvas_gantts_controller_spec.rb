@@ -58,6 +58,34 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe '#normalize_task_date_attributes!' do
+    it 'canonicalizes both finite endpoints through the project calendar' do
+      resolver = instance_double(RedmineCanvasGantt::ProjectCalendarResolver)
+      allow(controller).to receive(:business_calendar_resolver).and_return(resolver)
+      allow(resolver).to receive(:normalize_working_date)
+        .with(Date.new(2027, 1, 4), direction: :forward, project: project)
+        .and_return(Date.new(2027, 1, 5))
+      allow(resolver).to receive(:normalize_working_date)
+        .with(Date.new(2027, 1, 4), direction: :backward, project: project)
+        .and_return(Date.new(2027, 1, 3))
+
+      issue = instance_double(
+        Issue,
+        project: project,
+        start_date: Date.new(2027, 1, 4),
+        due_date: Date.new(2027, 1, 4)
+      )
+      attributes = { start_date: '2027-01-04', due_date: '2027-01-04' }
+
+      controller.send(:normalize_task_date_attributes!, attributes, issue)
+
+      expect(attributes).to eq(
+        start_date: Date.new(2027, 1, 5),
+        due_date: Date.new(2027, 1, 3)
+      )
+    end
+  end
+
   describe '#safe_build_asset_path' do
     around do |example|
       Dir.mktmpdir do |dir|
