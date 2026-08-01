@@ -1702,6 +1702,56 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(useTaskStore.getState().modifiedTaskIds.has('task-a')).toBe(true);
         expect(useTaskStore.getState().modifiedTaskIds.has('task-b')).toBe(false);
     });
+
+    it('continues an ordinary child task save after a bar task terminal failure', async () => {
+        const barTask = buildTask({ id: 'bar-task', dueDate: 8 });
+        const ordinaryTask = buildTask({ id: 'ordinary-task', parentId: 'bar-task', dueDate: 9 });
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => (
+            task.id === 'bar-task'
+                ? { status: 'validation_error', error: 'Dates violate a rule' }
+                : { status: 'ok', lockVersion: 2 }
+        ));
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([barTask, ordinaryTask]));
+        useTaskStore.getState().setTasks([barTask, ordinaryTask]);
+
+        const operationId = useTaskStore.getState().beginBarOperation('bar-task');
+        useTaskStore.getState().updateTask('bar-task', { dueDate: 10 });
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.getState().updateTask('ordinary-task', { ratioDone: 11 });
+
+        await useTaskStore.getState().saveChanges();
+
+        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id)).toEqual([
+            'bar-task',
+            'ordinary-task'
+        ]);
+        expect(useTaskStore.getState().allTasks.find(task => task.id === 'bar-task')?.dueDate).toBe(9);
+        expect(useTaskStore.getState().modifiedTaskIds.has('ordinary-task')).toBe(false);
+    });
+
+    it('rolls back a bar operation when conflict retry ends in a terminal failure', async () => {
+        const original = buildTask({ id: 'task-1', startDate: MONDAY, dueDate: TUESDAY, lockVersion: 1 });
+        const remote = buildTask({ id: 'task-1', startDate: MONDAY, dueDate: FRIDAY, lockVersion: 2 });
+        let attempts = 0;
+        vi.mocked(apiClient.updateTask).mockImplementation(async () => {
+            attempts += 1;
+            return attempts === 1
+                ? { status: 'conflict', error: 'Conflict' }
+                : { status: 'validation_error', error: 'Dates violate a rule' };
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([remote]));
+        useTaskStore.getState().setTasks([original]);
+
+        const operationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(operationId);
+
+        await useTaskStore.getState().saveChanges();
+
+        expect(attempts).toBe(2);
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject(original);
+        expect(useTaskStore.getState().barOperations).toEqual({});
+    });
 });
 
 describe('TaskStore focusTask', () => {

@@ -135,6 +135,37 @@ describe('saveModifiedTasks', () => {
         expect(failures.has('B')).toBe(true);
     });
 
+    it('aborts only the pending tasks selected by the ownership policy', async () => {
+        const tasks = [
+            buildTask({ id: 'A' }),
+            buildTask({ id: 'B', parentId: 'A' }),
+            buildTask({ id: 'C', parentId: 'A' })
+        ];
+        const updateTask = vi.fn().mockImplementation(async (task: Task) => (
+            task.id === 'A'
+                ? { status: 'validation_error' as const, error: 'invalid date' }
+                : { status: 'ok' as const, lockVersion: 2 }
+        ));
+
+        const failures = await saveModifiedTasks(
+            tasks,
+            [],
+            new Set(['A', 'B', 'C']),
+            [],
+            updateTask,
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined,
+            undefined,
+            undefined,
+            (taskId) => taskId === 'B'
+        );
+
+        expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A', 'C']);
+        expect(failures.has('A')).toBe(true);
+        expect(failures.has('B')).toBe(true);
+        expect(failures.has('C')).toBe(false);
+    });
+
     it('reapplies the local value with the latest lock version after an optimistic-lock conflict', async () => {
         const local = buildTask({ id: 'A', dueDate: 10, lockVersion: 1 });
         const remote = buildTask({ id: 'A', dueDate: 12, lockVersion: 2 });

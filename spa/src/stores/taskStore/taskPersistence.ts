@@ -183,7 +183,7 @@ export const saveModifiedTasks = async (
     onTaskSaved?: (taskId: string, lockVersion?: number) => void,
     onTaskResult?: (taskId: string, result: UpdateTaskFieldsResult) => void,
     onConflict?: (taskId: string, message: string) => void,
-    shouldAbortRemaining?: () => boolean
+    shouldAbortRemaining?: (taskId: string) => boolean
 ) => {
     const mutableTaskById = new Map(tasks.map(task => [task.id, { ...task }]));
     const hasSamePersistedFields = (local: Task, remote: Task): boolean => {
@@ -268,8 +268,6 @@ export const saveModifiedTasks = async (
         const nextPending: string[] = [];
         const conflictTaskIds: string[] = [];
         const conflictMessages = new Map<string, string>();
-        let aborted = false;
-
         let remaining = [...pending];
         while (remaining.length > 0) {
             const firstTaskId = remaining[0];
@@ -338,19 +336,18 @@ export const saveModifiedTasks = async (
                 }
             }
 
-            if (shouldAbortRemaining?.()) {
-                pending.forEach((taskId) => {
+            if (shouldAbortRemaining) {
+                const abortedTaskIds = new Set(
+                    remaining.filter((taskId) => shouldAbortRemaining(taskId))
+                );
+                abortedTaskIds.forEach((taskId) => {
                     if (!attemptCounts.has(taskId) && !failures.has(taskId)) {
                         failures.set(taskId, i18n.t('label_failed_to_save') || 'Skipped after a terminal mutation failure');
                     }
                 });
-                pending = [];
-                aborted = true;
-                break;
+                remaining = remaining.filter((taskId) => !abortedTaskIds.has(taskId));
             }
         }
-
-        if (aborted) break;
 
         if (conflictTaskIds.length > 0) {
             let latest: FetchDataResult;
