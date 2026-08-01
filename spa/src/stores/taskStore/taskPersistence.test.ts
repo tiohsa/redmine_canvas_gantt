@@ -17,6 +17,33 @@ const buildTask = (overrides: Partial<Task>): Task => ({
 });
 
 describe('saveModifiedTasks', () => {
+    it('runs lifecycle completion before releasing an entity queue slot', async () => {
+        const events: string[] = [];
+        let releaseFirst!: () => void;
+        const first = enqueueMutationOperation(
+            ['A'],
+            async () => {
+                events.push('first:transport');
+                await new Promise<void>(resolve => { releaseFirst = resolve; });
+                return 'first';
+            },
+            {
+                onSuccess: async () => {
+                    events.push('first:commit');
+                }
+            }
+        );
+        const second = enqueueMutationOperation(['A'], async () => {
+            events.push('second:transport');
+            return 'second';
+        });
+
+        await vi.waitFor(() => expect(events).toEqual(['first:transport']));
+        releaseFirst();
+        await expect(Promise.all([first, second])).resolves.toEqual(['first', 'second']);
+        expect(events).toEqual(['first:transport', 'first:commit', 'second:transport']);
+    });
+
     it('serializes overlapping multi-entity operations and cleans the queue', async () => {
         const events: string[] = [];
         const operationIds: string[] = [];

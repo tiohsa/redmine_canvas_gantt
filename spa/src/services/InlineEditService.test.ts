@@ -137,6 +137,43 @@ describe('InlineEditService', () => {
         }, expect.stringMatching(/^mutation:/));
     });
 
+    it('uses the committed lock version for a queued newer inline edit', async () => {
+        const firstSave = deferred<{ status: 'ok'; lockVersion: number }>();
+        vi.mocked(apiClient.updateTaskFields)
+            .mockReturnValueOnce(firstSave.promise)
+            .mockResolvedValueOnce({ status: 'ok', lockVersion: 5 });
+        const initialTask = buildTask();
+        useTaskStore.setState({
+            allTasks: [initialTask],
+            tasks: [initialTask]
+        });
+
+        const first = InlineEditService.saveTaskFields({
+            taskId: 'task-1',
+            optimisticTaskUpdates: { subject: 'First edit' },
+            rollbackTaskUpdates: { subject: 'Original subject' },
+            fields: { subject: 'First edit' }
+        });
+        await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
+
+        const second = InlineEditService.saveTaskFields({
+            taskId: 'task-1',
+            optimisticTaskUpdates: { subject: 'Second edit' },
+            rollbackTaskUpdates: { subject: 'First edit' },
+            fields: { subject: 'Second edit' }
+        });
+        expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1);
+
+        firstSave.resolve({ status: 'ok', lockVersion: 4 });
+        await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+        expect(apiClient.updateTaskFields).toHaveBeenLastCalledWith('task-1', {
+            subject: 'Second edit',
+            lock_version: 4
+        }, expect.stringMatching(/^mutation:/));
+        expect(useTaskStore.getState().allTasks[0]?.subject).toBe('Second edit');
+        expect(useTaskStore.getState().allTasks[0]?.lockVersion).toBe(5);
+    });
+
     it('keeps the optimistic edit dirty when the server reports a conflict', async () => {
         const initialTask = buildTask();
         useTaskStore.setState({

@@ -1,5 +1,5 @@
 import type { LayoutRow, MoveTaskAsChildResult, Task } from '../../types';
-import { buildMoveTaskResult, createTaskLayoutSnapshot } from './taskPersistence';
+import { buildMoveTaskResult, createTaskLayoutSnapshot, type MutationLifecycle } from './taskPersistence';
 import { i18n } from '../../utils/i18n';
 import type { LayoutState } from './types';
 import type { TaskLayoutSnapshot } from './types';
@@ -37,7 +37,11 @@ type ParentMoveCallbacks = {
     buildOptimisticPatch: (state: ParentMoveState, nextAllTasks: Task[]) => ParentMovePatch;
     buildSuccessPatch: (state: ParentMoveState, sourceBefore: Task, result: UpdateTaskFieldsResult, operationGeneration: number) => ParentMovePatch;
     isCurrentOperation: (state: ParentMoveState, sourceBefore: Task, operationGeneration: number) => boolean;
-    updateTaskFields: (taskId: string, payload: { parent_issue_id: string | null; lock_version: number }) => Promise<UpdateTaskFieldsResult>;
+    updateTaskFields: (
+        taskId: string,
+        payload: () => { parent_issue_id: string | null; lock_version: number },
+        lifecycle?: MutationLifecycle<UpdateTaskFieldsResult>
+    ) => Promise<UpdateTaskFieldsResult>;
     validatePersistedResult: (result: UpdateTaskFieldsResult, expectedParentId: string | undefined) => boolean;
     missingSourceResult: MoveTaskAsChildResult;
     failedResult: (error?: string) => MoveTaskAsChildResult;
@@ -90,30 +94,41 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
     }
 
     let result: UpdateTaskFieldsResult;
+    const lifecycle: MutationLifecycle<UpdateTaskFieldsResult> = {
+        onSuccess: (completedResult) => {
+            if (completedResult.status === 'ok' && validatePersistedResult(completedResult, expectedParentId)) {
+                setState(buildSuccessPatch(getState(), sourceBefore, completedResult, operationGeneration));
+                onMutationMetadata?.(sourceTaskId, completedResult);
+                return;
+            }
+
+            if (completedResult.status === 'conflict') {
+                onConflict?.(sourceTaskId, completedResult.error || (i18n.t('label_parent_drop_conflict') || 'Task was updated by another user'));
+            }
+            if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
+        },
+        onError: () => {
+            if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
+        }
+    };
     try {
-        result = await updateTaskFields(sourceTaskId, {
-            parent_issue_id: expectedParentId ?? null,
-            lock_version: sourceBefore.lockVersion
-        });
+        result = await updateTaskFields(
+            sourceTaskId,
+            () => ({
+                parent_issue_id: expectedParentId ?? null,
+                lock_version: getState().allTasks.find(task => task.id === sourceTaskId)?.lockVersion ?? sourceBefore.lockVersion
+            }),
+            lifecycle
+        );
     } catch (error) {
-        if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
         return failedResult(error instanceof Error ? error.message : undefined);
     }
 
     if (result.status !== 'ok' || !validatePersistedResult(result, expectedParentId)) {
-        if (result.status === 'conflict') onConflict?.(sourceTaskId, result.error || (i18n.t('label_parent_drop_conflict') || 'Task was updated by another user'));
-        if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
         return buildMoveTaskResult(result.status === 'conflict' ? 'conflict' : 'error', {
             error: result.error || (failedResult().error ?? (i18n.t('label_failed_to_update_parent') || 'Failed to update parent'))
         });
     }
-
-    const currentState = getState();
-    // The response still advances the server revision even when a newer
-    // optimistic parent move is already visible. buildSuccessPatch preserves
-    // that newer local patch and commits only the matching operation.
-    setState(buildSuccessPatch(currentState, sourceBefore, result, operationGeneration));
-    onMutationMetadata?.(sourceTaskId, result);
 
     return buildMoveTaskResult('ok', {
         lockVersion: result.lockVersion,

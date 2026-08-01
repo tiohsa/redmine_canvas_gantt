@@ -1,7 +1,10 @@
 import type { Relation } from '../types';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
-import { enqueueMutationOperation } from '../stores/taskStore/taskPersistence';
+import { enqueueMutationOperation, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
+
+type TaskFields = Record<string, unknown>;
+type TaskFieldsFactory = TaskFields | (() => TaskFields);
 
 /**
  * Single frontend boundary for mutations that are not part of the bulk Task
@@ -17,8 +20,18 @@ export const taskMutationService = {
         enqueueMutationOperation([`baseline:${payload.scope}`], (context) => apiClient.saveBaseline(payload, context?.operationId))
     ),
 
-    updateTaskFields: (taskId: string, fields: Record<string, unknown>) => (
-        enqueueMutationOperation([taskId], (context) => apiClient.updateTaskFields(taskId, fields, context?.operationId))
+    updateTaskFields: (
+        taskId: string,
+        fields: TaskFieldsFactory,
+        lifecycle?: MutationLifecycle<Awaited<ReturnType<typeof apiClient.updateTaskFields>>>
+    ) => enqueueMutationOperation(
+        [taskId],
+        (context) => apiClient.updateTaskFields(
+            taskId,
+            typeof fields === 'function' ? fields() : fields,
+            context?.operationId
+        ),
+        lifecycle
     ),
 
     createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation & MutationMetadata> => (
