@@ -1512,6 +1512,213 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.modifiedTaskIds.has('task-1')).toBe(false);
     });
 
+    it('cleans the settled bar operation when conflict resolution adopts the remote task', async () => {
+        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
+        const remoteTask = buildTask({ id: 'task-1', dueDate: FRIDAY, lockVersion: 2 });
+        useTaskStore.getState().setTasks([localTask]);
+        const operationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.setState({
+            serverTaskSnapshot: {
+                entitiesById: { 'task-1': remoteTask },
+                revisions: { 'task-1': remoteTask.lockVersion },
+                context: null
+            },
+            taskConflicts: {
+                'task-1': { taskId: 'task-1', message: 'Conflict', detectedAt: Date.now() }
+            }
+        });
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks).toEqual([remoteTask]);
+        expect(state.localTaskPatches['task-1']).toBeUndefined();
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+        expect(state.barOperations).toEqual({});
+    });
+
+    it('settles only the resolved entity in a linked bar operation', async () => {
+        const localTasks = [
+            buildTask({ id: 'task-a', dueDate: TUESDAY }),
+            buildTask({ id: 'task-b', dueDate: WEDNESDAY })
+        ];
+        const remoteTaskA = buildTask({ id: 'task-a', dueDate: FRIDAY, lockVersion: 2 });
+        useTaskStore.getState().setTasks(localTasks);
+        const operationId = useTaskStore.getState().beginBarOperation('task-a');
+        useTaskStore.getState().updateTask('task-a', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-b', { dueDate: FRIDAY });
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.setState({
+            serverTaskSnapshot: {
+                entitiesById: { 'task-a': remoteTaskA, 'task-b': localTasks[1] },
+                revisions: { 'task-a': remoteTaskA.lockVersion, 'task-b': localTasks[1].lockVersion },
+                context: null
+            },
+            taskConflicts: {
+                'task-a': { taskId: 'task-a', message: 'Conflict', detectedAt: Date.now() }
+            }
+        });
+
+        await useTaskStore.getState().resolveTaskConflict('task-a', 'remote');
+
+        const state = useTaskStore.getState();
+        const operation = state.barOperations[operationId];
+        expect(operation).toBeDefined();
+        expect(operation.entityGenerations['task-a']).toBeUndefined();
+        expect(operation.entityGenerations['task-b']).toBeDefined();
+        expect(state.localTaskPatches['task-b']).toHaveLength(1);
+    });
+
+    it('preserves later-generation patches when resolving an earlier remote conflict', async () => {
+        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
+        const remoteTask = buildTask({ id: 'task-1', dueDate: FRIDAY, lockVersion: 2 });
+        useTaskStore.getState().setTasks([localTask]);
+
+        const firstOperationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(firstOperationId);
+        const conflictGeneration = useTaskStore.getState().editGenerations['task-1'];
+
+        const laterOperationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' });
+        useTaskStore.getState().endBarOperation(laterOperationId);
+        const laterGeneration = useTaskStore.getState().editGenerations['task-1'];
+
+        useTaskStore.setState({
+            serverTaskSnapshot: {
+                entitiesById: { 'task-1': remoteTask },
+                revisions: { 'task-1': remoteTask.lockVersion },
+                context: null
+            },
+            taskConflicts: {
+                'task-1': {
+                    taskId: 'task-1',
+                    message: 'Conflict',
+                    detectedAt: Date.now(),
+                    generation: conflictGeneration
+                }
+            }
+        });
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === 'task-1')).toMatchObject({
+            dueDate: FRIDAY,
+            subject: 'later local edit'
+        });
+        expect(state.localTaskPatches['task-1']).toEqual([
+            expect.objectContaining({ generation: laterGeneration, fields: { subject: 'later local edit' } })
+        ]);
+        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+        expect(state.barOperations[firstOperationId]).toBeUndefined();
+        expect(state.barOperations[laterOperationId]).toBeDefined();
+    });
+
+    it('keeps the local patch and bar operation when conflict is dismissed', async () => {
+        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
+        useTaskStore.getState().setTasks([localTask]);
+        const operationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'dismiss');
+
+        const state = useTaskStore.getState();
+        expect(state.taskConflicts['task-1']).toBeUndefined();
+        expect(state.localTaskPatches['task-1']).toHaveLength(1);
+        expect(state.barOperations[operationId]).toBeDefined();
+    });
+
+    it('cleans the bar operation after a successful local conflict retry', async () => {
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 2 });
+        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
+        useTaskStore.getState().setTasks([localTask]);
+        const operationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...localTask, dueDate: THURSDAY, lockVersion: 2 }
+        ]));
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'local');
+
+        expect(apiClient.updateTask).toHaveBeenCalled();
+        expect(useTaskStore.getState().barOperations).toEqual({});
+    });
+
+    it('settles the conflicted operation without removing a later operation after local retry', async () => {
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 3 });
+        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
+        useTaskStore.getState().setTasks([localTask]);
+
+        const conflictedOperationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(conflictedOperationId);
+        useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
+
+        const laterOperationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' });
+        useTaskStore.getState().endBarOperation(laterOperationId);
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...localTask, dueDate: THURSDAY, subject: 'later local edit', lockVersion: 3 }
+        ]));
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'local');
+
+        const state = useTaskStore.getState();
+        expect(state.barOperations[conflictedOperationId]).toBeUndefined();
+        expect(state.barOperations[laterOperationId]).toBeUndefined();
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it('settles every saved generation while preserving an edit created during local retry', async () => {
+        const firstSaveRequest = deferred<{ status: 'ok'; lockVersion: number }>();
+        const secondSaveRequest = deferred<{ status: 'ok'; lockVersion: number }>();
+        vi.mocked(apiClient.updateTask)
+            .mockReturnValueOnce(firstSaveRequest.promise)
+            .mockReturnValueOnce(secondSaveRequest.promise);
+        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
+        useTaskStore.getState().setTasks([localTask]);
+
+        const operationIds = [1, 2, 3].map(() => {
+            const operationId = useTaskStore.getState().beginBarOperation('task-1');
+            useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+            useTaskStore.getState().endBarOperation(operationId);
+            return operationId;
+        });
+        const conflictGeneration = useTaskStore.getState().editGenerations['task-1'] - 2;
+        useTaskStore.getState().registerTaskConflict('task-1', 'Conflict', conflictGeneration);
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...localTask, dueDate: THURSDAY, lockVersion: 2 }
+        ]));
+
+        const retry = useTaskStore.getState().resolveTaskConflict('task-1', 'local');
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalled());
+
+        const laterOperationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' });
+        useTaskStore.getState().endBarOperation(laterOperationId);
+        firstSaveRequest.resolve({ status: 'ok', lockVersion: 2 });
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(2));
+
+        const intermediateState = useTaskStore.getState();
+        operationIds.forEach((operationId) => expect(intermediateState.barOperations[operationId]).toBeUndefined());
+        expect(intermediateState.barOperations[laterOperationId]).toBeDefined();
+
+        secondSaveRequest.resolve({ status: 'ok', lockVersion: 3 });
+        await retry;
+
+        const state = useTaskStore.getState();
+        operationIds.forEach((operationId) => expect(state.barOperations[operationId]).toBeUndefined());
+        expect(state.barOperations[laterOperationId]).toBeUndefined();
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
     it('keeps a tombstone when conflict resolution has no remote task', async () => {
         useTaskStore.getState().setTasks([buildTask({ id: 'task-1', subject: 'local' })]);
         useTaskStore.getState().registerTaskConflict('task-1', 'Task no longer exists');
@@ -1524,8 +1731,48 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.taskConflicts['task-1']).toBeUndefined();
     });
 
+    it('clears all task operation ownership when remote resolution adopts a tombstone', async () => {
+        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
+        useTaskStore.getState().setTasks([localTask]);
+
+        const firstOperationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(firstOperationId);
+        useTaskStore.getState().registerTaskConflict('task-1', 'Task no longer exists');
+
+        const laterOperationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' });
+        useTaskStore.getState().endBarOperation(laterOperationId);
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks).toEqual([]);
+        expect(state.localTaskPatches['task-1']).toBeUndefined();
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+        expect(state.barOperations).toEqual({});
+    });
+
+    it('clears the active operation when remote resolution adopts a tombstone', async () => {
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: TUESDAY })]);
+        const operationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().registerTaskConflict('task-1', 'Task no longer exists');
+
+        expect(useTaskStore.getState().activeBarOperationId).toBe(operationId);
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
+
+        const state = useTaskStore.getState();
+        expect(state.barOperations).toEqual({});
+        expect(state.activeBarOperationId).toBeNull();
+    });
+
     it('applies deleted task metadata through the shared task transition', () => {
-        useTaskStore.getState().setTasks([buildTask({ id: 'task-1' })]);
+        const task = buildTask({ id: 'task-1' });
+        useTaskStore.getState().setTasks([task]);
+        const operationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { dueDate: TUESDAY });
+        useTaskStore.getState().endBarOperation(operationId);
 
         useTaskStore.getState().applyTaskMutationMetadata('task-1', {
             completeness: 'partial',
@@ -1536,6 +1783,37 @@ describe('TaskStore asynchronous state ownership', () => {
         const state = useTaskStore.getState();
         expect(state.allTasks).toEqual([]);
         expect(state.taskTombstones['task-1']?.source).toBe('server');
+        expect(state.barOperations).toEqual({});
+    });
+
+    it('clears deleted task ownership while preserving linked task ownership', () => {
+        useTaskStore.getState().setTasks([
+            buildTask({ id: 'task-a', dueDate: MONDAY }),
+            buildTask({ id: 'task-b', dueDate: TUESDAY })
+        ]);
+        const operationId = useTaskStore.getState().beginBarOperation('task-a');
+        useTaskStore.getState().updateTask('task-a', { dueDate: WEDNESDAY });
+        useTaskStore.getState().updateTask('task-b', { dueDate: THURSDAY });
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.setState({ activeBarOperationId: operationId });
+
+        useTaskStore.getState().removeTask('task-a');
+
+        const state = useTaskStore.getState();
+        expect(state.barOperations[operationId]?.entityGenerations['task-a']).toBeUndefined();
+        expect(state.barOperations[operationId]?.entityGenerations['task-b']).toBeDefined();
+        expect(state.activeBarOperationId).toBeNull();
+    });
+
+    it('keeps bar operation ownership while a task tombstone is pending resolution', () => {
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: MONDAY })]);
+        const operationId = useTaskStore.getState().beginBarOperation('task-1');
+        useTaskStore.getState().updateTask('task-1', { dueDate: TUESDAY });
+        useTaskStore.getState().endBarOperation(operationId);
+
+        useTaskStore.getState().markTaskTombstone('task-1', 'server');
+
+        expect(useTaskStore.getState().barOperations[operationId]).toBeDefined();
     });
 
     it('does not let a pre-delete refresh resurrect a locally removed task', async () => {
@@ -2693,5 +2971,28 @@ describe('TaskStore drag parent updates', () => {
         expect((await secondMove).status).toBe('error');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBe('parent-1');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.lockVersion).toBe(3);
+    });
+
+    it('records the parent move generation when a delayed conflict arrives after a later edit', async () => {
+        const request = deferred<{ status: 'conflict'; error: string }>();
+        const { setTasks, moveTaskAsChild, updateTask } = useTaskStore.getState();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: 'child', projectId: 'p1', displayOrder: 2, lockVersion: 2 })
+        ]);
+        vi.mocked(apiClient.updateTaskFields).mockReturnValue(request.promise);
+
+        const move = moveTaskAsChild('child', 'parent');
+        await Promise.resolve();
+        const parentMoveGeneration = useTaskStore.getState().editGenerations.child;
+        updateTask('child', { subject: 'later local edit' });
+        expect(useTaskStore.getState().editGenerations.child).toBeGreaterThan(parentMoveGeneration);
+
+        request.resolve({ status: 'conflict', error: 'stale parent move' });
+        expect((await move).status).toBe('conflict');
+
+        expect(useTaskStore.getState().taskConflicts.child?.generation).toBe(parentMoveGeneration);
     });
 });

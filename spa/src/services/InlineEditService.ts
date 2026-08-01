@@ -56,7 +56,11 @@ export class InlineEditService {
                         }
 
                         if (completedResult.status === 'conflict') {
-                            useTaskStore.getState().registerTaskConflict(taskId, completedResult.error || (i18n.t('label_conflict') || 'Conflict'));
+                            useTaskStore.getState().registerTaskConflict(
+                                taskId,
+                                completedResult.error || (i18n.t('label_conflict') || 'Conflict'),
+                                operationGeneration
+                            );
                         } else if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
                             useTaskStore.getState().updateTask(taskId, rollbackTaskUpdates);
                         }
@@ -64,7 +68,11 @@ export class InlineEditService {
                     onError: (error) => {
                         if (typeof ApiMutationError !== 'undefined' && error instanceof ApiMutationError && error.status === 'not_found' && isCurrentOperation()) {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');
-                            useTaskStore.getState().registerTaskConflict(taskId, error.message || (i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists'));
+                            useTaskStore.getState().registerTaskConflict(
+                                taskId,
+                                error.message || (i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists'),
+                                operationGeneration
+                            );
                         }
                         if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
                             useTaskStore.getState().updateTask(taskId, rollbackTaskUpdates);
