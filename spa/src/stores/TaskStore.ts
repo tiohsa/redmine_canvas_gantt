@@ -80,6 +80,38 @@ export type TaskConflictRecord = {
     detectedAt: number;
 };
 
+type BarOperationRecord = {
+    operationId: string;
+    baselineAllTasks: Task[];
+    baselineGenerations: Record<string, number>;
+    entityGenerations: Record<string, number>;
+    completedTaskIds: string[];
+};
+
+const captureBarOperationBaselines = (
+    operations: Record<string, BarOperationRecord>,
+    tasks: Task[],
+    generations: Record<string, number>,
+    operationId: string | null,
+    entityIds: Iterable<string>
+): Record<string, BarOperationRecord> => {
+    const activeOperationId = operationId;
+    const operation = activeOperationId ? operations[activeOperationId] : undefined;
+    if (!activeOperationId || !operation) return operations;
+    const ids = new Set(entityIds);
+    const taskById = new Map(tasks.map(task => [task.id, task]));
+    const capturedIds = new Set(operation.baselineAllTasks.map(task => task.id));
+    const baselineAllTasks = [...operation.baselineAllTasks];
+    const baselineGenerations = { ...operation.baselineGenerations };
+    ids.forEach((taskId) => {
+        const task = taskById.get(taskId);
+        if (!task || capturedIds.has(taskId)) return;
+        baselineAllTasks.push({ ...task });
+        baselineGenerations[taskId] = baselineGenerations[taskId] ?? (generations[taskId] ?? 0);
+    });
+    return { ...operations, [activeOperationId]: { ...operation, baselineAllTasks, baselineGenerations } };
+};
+
 type InitialDataParams = {
     rawSearch?: string;
     query?: ResolvedQueryState;
@@ -93,6 +125,7 @@ const invalidateDataRequests = () => {
 };
 
 let saveChangesOperation: Promise<Map<string, string>> | null = null;
+let barOperationSequence = 0;
 
 export const readLifecycleMetrics = {
     requestsStarted: 0,
@@ -181,6 +214,8 @@ interface TaskState {
     localTaskPatches: Record<string, Array<LocalPatch<Task>>>;
     taskTombstones: Record<string, EntityTombstone>;
     taskConflicts: Record<string, TaskConflictRecord>;
+    barOperations: Record<string, BarOperationRecord>;
+    activeBarOperationId: string | null;
 
     // Actions
     setAutoSave: (enabled: boolean) => void;
@@ -208,6 +243,11 @@ interface TaskState {
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
     updateTask: (id: string, updates: Partial<Task>) => void;
+    beginBarOperation: (seedTaskId?: string) => string;
+    endBarOperation: (operationId: string) => void;
+    rollbackBarOperation: (operationId: string) => void;
+    completeBarOperationTask: (taskId: string, operationGeneration?: number) => void;
+    discardBarOperationForTask: (taskId: string, operationGeneration?: number) => void;
     setTaskLockVersion: (id: string, lockVersion: number) => void;
     commitTaskOperation: (id: string, operationGeneration: number, lockVersion?: number) => void;
     applyTaskMutationMetadata: (taskId: string, metadata: MutationMetadata) => void;
@@ -1006,6 +1046,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
     localTaskPatches: {},
     taskTombstones: {},
     taskConflicts: {},
+    barOperations: {},
+    activeBarOperationId: null,
 
     setAutoSave: (enabled) => set({ autoSave: enabled }),
 
@@ -1382,6 +1424,137 @@ export const useTaskStore = create<TaskState>((set, get) => {
         });
     },
 
+    beginBarOperation: (seedTaskId) => {
+        const operationId = `bar:${++barOperationSequence}`;
+        const state = get();
+        const seedTask = seedTaskId ? state.allTasks.find(task => task.id === seedTaskId) : undefined;
+        set((state) => ({
+            barOperations: {
+                ...state.barOperations,
+                [operationId]: {
+                    operationId,
+                    baselineAllTasks: seedTask ? [{ ...seedTask }] : [],
+                    baselineGenerations: seedTask ? { [seedTask.id]: state.editGenerations[seedTask.id] ?? 0 } : {},
+                    entityGenerations: {},
+                    completedTaskIds: []
+                }
+            },
+            activeBarOperationId: operationId
+        }));
+        return operationId;
+    },
+
+    endBarOperation: (operationId) => set((state) => {
+        const operation = state.barOperations[operationId];
+        if (!operation) return state;
+        const entityGenerations = Object.fromEntries(
+            state.allTasks
+                .filter(task => (state.editGenerations[task.id] ?? 0) > (operation.baselineGenerations[task.id] ?? 0))
+                .map(task => [task.id, state.editGenerations[task.id]])
+        ) as Record<string, number>;
+        if (Object.keys(entityGenerations).length === 0) {
+            const barOperations = { ...state.barOperations };
+            delete barOperations[operationId];
+            return {
+                barOperations,
+                ...(state.activeBarOperationId === operationId ? { activeBarOperationId: null } : {})
+            };
+        }
+        return {
+            barOperations: {
+                ...state.barOperations,
+                [operationId]: { ...operation, entityGenerations }
+            },
+            ...(state.activeBarOperationId === operationId ? { activeBarOperationId: null } : {})
+        };
+    }),
+
+    completeBarOperationTask: (taskId, completedGeneration) => set((state) => {
+        const currentGeneration = state.editGenerations[taskId] ?? 0;
+        let changed = false;
+        const barOperations = Object.fromEntries(Object.entries(state.barOperations).flatMap(([operationId, operation]) => {
+            const operationGeneration = operation.entityGenerations[taskId];
+            if (operationGeneration === undefined || operationGeneration > currentGeneration ||
+                (completedGeneration !== undefined && operationGeneration !== completedGeneration) ||
+                operation.completedTaskIds.includes(taskId)) {
+                return [[operationId, operation]];
+            }
+            changed = true;
+            const completedTaskIds = [...operation.completedTaskIds, taskId];
+            return completedTaskIds.length >= Object.keys(operation.entityGenerations).length
+                ? []
+                : [[operationId, { ...operation, completedTaskIds }]];
+        }));
+        return changed ? { barOperations } : state;
+    }),
+
+    discardBarOperationForTask: (taskId, operationGeneration) => set((state) => {
+        const operationEntry = Object.entries(state.barOperations).find(([, operation]) => (
+            Object.prototype.hasOwnProperty.call(operation.entityGenerations, taskId) &&
+            (operationGeneration === undefined || operation.entityGenerations[taskId] === operationGeneration)
+        ));
+        if (!operationEntry) return state;
+        const [operationId] = operationEntry;
+        const barOperations = { ...state.barOperations };
+        delete barOperations[operationId];
+        return {
+            barOperations,
+            ...(state.activeBarOperationId === operationId ? { activeBarOperationId: null } : {})
+        };
+    }),
+
+    rollbackBarOperation: (operationId) => set((state) => {
+        const operation = state.barOperations[operationId];
+        if (!operation) return state;
+
+        const baselineById = new Map(operation.baselineAllTasks.map(task => [task.id, task]));
+        const rollbackIds = new Set(
+            Object.entries(operation.entityGenerations)
+                .filter(([taskId, generation]) => (
+                    (state.editGenerations[taskId] ?? 0) >= generation &&
+                    !operation.completedTaskIds.includes(taskId) &&
+                    (state.localTaskPatches[taskId] ?? []).some(patch => patch.generation === generation)
+                ))
+                .map(([taskId]) => taskId)
+        );
+        const allTasks = state.allTasks.map(task => {
+            const baseline = baselineById.get(task.id);
+            if (!rollbackIds.has(task.id) || !baseline) return task;
+            const operationGeneration = operation.entityGenerations[task.id];
+            const laterPatches = (state.localTaskPatches[task.id] ?? []).filter(
+                patch => patch.generation > operationGeneration
+            );
+            return applyLocalPatches(baseline, laterPatches);
+        });
+        const localTaskPatches = { ...state.localTaskPatches };
+        const modifiedTaskIds = new Set(state.modifiedTaskIds);
+        rollbackIds.forEach((taskId) => {
+            localTaskPatches[taskId] = (localTaskPatches[taskId] ?? []).filter(
+                patch => patch.generation !== operation.entityGenerations[taskId]
+            );
+            if (localTaskPatches[taskId].length === 0) {
+                delete localTaskPatches[taskId];
+                modifiedTaskIds.delete(taskId);
+            }
+        });
+        const schedulingSummary = buildDerivedSchedulingSummary(allTasks, state.relations);
+        const derived = buildDerivedTaskState(state, {
+            allTasks,
+            derivedInvalidation: 'critical_path',
+            schedulingSummary
+        });
+        const barOperations = { ...state.barOperations };
+        delete barOperations[operationId];
+        return {
+            allTasks,
+            ...toDerivedTaskStatePatch(derived),
+            modifiedTaskIds,
+            localTaskPatches,
+            barOperations,
+            ...(state.activeBarOperationId === operationId ? { activeBarOperationId: null } : {})
+        };
+    }),
+
     updateTask: (id, updates) => set((state) => {
         const task = state.allTasks.find(t => t.id === id);
         if (!task) return state;
@@ -1438,11 +1611,19 @@ export const useTaskStore = create<TaskState>((set, get) => {
             currentTasks = cascadingUpdates.tasks;
             cascadingUpdates.updates.forEach((patch, taskId) => pendingUpdates.set(taskId, patch));
 
-            const finalTasks = state.allTasks.map(t => {
+        const finalTasks = state.allTasks.map(t => {
             if (t.id === id) return updatedTask;
             if (pendingUpdates.has(t.id)) return { ...t, ...pendingUpdates.get(t.id) };
             return t;
         });
+
+        const barOperations = captureBarOperationBaselines(
+            state.barOperations,
+            state.allTasks,
+            state.editGenerations,
+            state.activeBarOperationId,
+            [id, ...pendingUpdates.keys()]
+        );
 
 
 
@@ -1510,7 +1691,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 ...nextSchedulingSummary,
                 modifiedTaskIds: newModifiedIds, // Add here for suspended case
                 editGenerations: nextEditGenerations,
-                localTaskPatches: nextLocalTaskPatches
+                localTaskPatches: nextLocalTaskPatches,
+                barOperations
             };
         }
 
@@ -1531,7 +1713,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 tasks: nextViewTasks,
                 modifiedTaskIds: newModifiedIds,
                 editGenerations: nextEditGenerations,
-                localTaskPatches: nextLocalTaskPatches
+                localTaskPatches: nextLocalTaskPatches,
+                barOperations
             };
         }
 
@@ -1546,7 +1729,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
             ...toDerivedTaskStatePatch(derived),
             modifiedTaskIds: newModifiedIds, // Add here for normal case
             editGenerations: nextEditGenerations,
-            localTaskPatches: nextLocalTaskPatches
+            localTaskPatches: nextLocalTaskPatches,
+            barOperations
         };
     }),
 
@@ -2286,6 +2470,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
                 const snapshotGenerations = { ...snapshot.editGenerations };
                 const snapshotTaskIds = new Set(snapshot.modifiedTaskIds);
+                const terminalBarFailureTaskGenerations = new Map<string, number>();
                 const conflictMessages = new Map<string, string>();
                 const requiresResync = [...snapshotTaskIds].some(taskId => (
                     (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
@@ -2333,6 +2518,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     },
                     (taskId, result) => {
                         get().applyTaskMutationMetadata(taskId, result);
+                        if (result.status === 'ok') {
+                            get().completeBarOperationTask(taskId, snapshotGenerations[taskId]);
+                        } else if (result.status === 'validation_error' || result.status === 'forbidden' || result.status === 'not_found') {
+                            terminalBarFailureTaskGenerations.set(taskId, snapshotGenerations[taskId] ?? 0);
+                        } else if (result.status === 'conflict') {
+                            get().discardBarOperationForTask(taskId, snapshotGenerations[taskId]);
+                        }
                         if (result.status === 'not_found') {
                             get().markTaskTombstone(taskId, 'server');
                             get().registerTaskConflict(taskId, result.error || (i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists'));
@@ -2340,8 +2532,16 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     },
                     (taskId, message) => {
                         conflictMessages.set(taskId, message);
-                    }
+                    },
+                    () => terminalBarFailureTaskGenerations.size > 0
                 );
+
+                terminalBarFailureTaskGenerations.forEach((operationGeneration, taskId) => {
+                    const operation = Object.values(get().barOperations).find((candidate) => (
+                        candidate.entityGenerations[taskId] === operationGeneration
+                    ));
+                    if (operation) get().rollbackBarOperation(operation.operationId);
+                });
 
                 set((state) => {
                     const modifiedTaskIds = new Set(state.modifiedTaskIds);
@@ -2392,7 +2592,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
     discardChanges: async () => {
         const state = get();
-        set({ localTaskPatches: {}, modifiedTaskIds: new Set() });
+        set({ localTaskPatches: {}, modifiedTaskIds: new Set(), barOperations: {}, activeBarOperationId: null });
         await state.refreshData();
     }
 });

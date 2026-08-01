@@ -182,7 +182,8 @@ export const saveModifiedTasks = async (
     fetchData: (params: FetchDataParams) => Promise<FetchDataResult>,
     onTaskSaved?: (taskId: string, lockVersion?: number) => void,
     onTaskResult?: (taskId: string, result: UpdateTaskFieldsResult) => void,
-    onConflict?: (taskId: string, message: string) => void
+    onConflict?: (taskId: string, message: string) => void,
+    shouldAbortRemaining?: () => boolean
 ) => {
     const mutableTaskById = new Map(tasks.map(task => [task.id, { ...task }]));
     const hasSamePersistedFields = (local: Task, remote: Task): boolean => {
@@ -267,6 +268,7 @@ export const saveModifiedTasks = async (
         const nextPending: string[] = [];
         const conflictTaskIds: string[] = [];
         const conflictMessages = new Map<string, string>();
+        let aborted = false;
 
         let remaining = [...pending];
         while (remaining.length > 0) {
@@ -335,7 +337,20 @@ export const saveModifiedTasks = async (
                     failures.set(taskId, result.error || (i18n.t('label_unknown_error') || 'Unknown error'));
                 }
             }
+
+            if (shouldAbortRemaining?.()) {
+                pending.forEach((taskId) => {
+                    if (!attemptCounts.has(taskId) && !failures.has(taskId)) {
+                        failures.set(taskId, i18n.t('label_failed_to_save') || 'Skipped after a terminal mutation failure');
+                    }
+                });
+                pending = [];
+                aborted = true;
+                break;
+            }
         }
+
+        if (aborted) break;
 
         if (conflictTaskIds.length > 0) {
             let latest: FetchDataResult;

@@ -322,6 +322,48 @@ describe('InteractionEngine task updates', () => {
         }
     });
 
+    it('restores the original bar position after an auto-save validation failure', async () => {
+        const task = baseTask({ id: 'rejected-task', startDate: 0, dueDate: 10 });
+        seedTasks([task], { autoSave: true });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({
+            status: 'validation_error',
+            error: 'Invalid task dates'
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [task],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [] },
+            statuses: [],
+            customFields: [],
+            project: { id: 'p1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        container.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: bounds.x + bounds.width / 2,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+        window.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: bounds.x + bounds.width / 2 + 20,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalled());
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject(task);
+        expect(useTaskStore.getState().modifiedTaskIds).not.toContain(task.id);
+
+        engine.detach();
+        container.remove();
+    });
+
     it.each([
         {
             label: 'America/Los_Angeles DST start',

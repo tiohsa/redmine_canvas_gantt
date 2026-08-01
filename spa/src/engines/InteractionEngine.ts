@@ -32,7 +32,7 @@ interface DragState {
     taskId: string | null;
     originalStartDate: number | undefined;
     originalDueDate: number | undefined;
-    snapshot: Task[] | null;
+    barOperationId: string | null;
 }
 
 export class InteractionEngine {
@@ -44,7 +44,7 @@ export class InteractionEngine {
         taskId: null,
         originalStartDate: undefined,
         originalDueDate: undefined,
-        snapshot: null
+        barOperationId: null
     };
 
     constructor(container: HTMLElement) {
@@ -283,7 +283,7 @@ export class InteractionEngine {
                     taskId: resolvedHit.task.id,
                     originalStartDate: resolvedHit.task.startDate,
                     originalDueDate: resolvedHit.task.dueDate,
-                    snapshot: JSON.parse(JSON.stringify(useTaskStore.getState().allTasks))
+                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id)
                 };
             } else if (resolvedHit.region === 'start') {
                 this.drag = {
@@ -293,7 +293,7 @@ export class InteractionEngine {
                     taskId: resolvedHit.task.id,
                     originalStartDate: resolvedHit.task.startDate,
                     originalDueDate: resolvedHit.task.dueDate,
-                    snapshot: JSON.parse(JSON.stringify(useTaskStore.getState().allTasks))
+                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id)
                 };
             } else if (resolvedHit.region === 'end') {
                 this.drag = {
@@ -303,7 +303,7 @@ export class InteractionEngine {
                     taskId: resolvedHit.task.id,
                     originalStartDate: resolvedHit.task.startDate,
                     originalDueDate: resolvedHit.task.dueDate,
-                    snapshot: JSON.parse(JSON.stringify(useTaskStore.getState().allTasks))
+                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id)
                 };
             }
         } else if (resolvedHit.task) {
@@ -319,7 +319,7 @@ export class InteractionEngine {
                 taskId: null,
                 originalStartDate: 0,
                 originalDueDate: 0,
-                snapshot: null
+                barOperationId: null
             };
         }
     };
@@ -452,16 +452,18 @@ export class InteractionEngine {
     private handleMouseUp = async () => {
         const draggedTaskId = this.drag.taskId;
         const wasDragging = this.drag.mode !== 'none' && this.drag.mode !== 'pan' && draggedTaskId;
+        const barOperationId = this.drag.barOperationId;
 
 
         // Resume sorting (will trigger re-layout)
         useTaskStore.getState().setSortingSuspended(false);
 
-        this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: undefined, originalDueDate: undefined, snapshot: null };
+        this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: undefined, originalDueDate: undefined, barOperationId: null };
         this.container.style.cursor = DEFAULT_CURSOR;
 
         if (wasDragging && draggedTaskId) {
-            const { autoSave, saveChanges } = useTaskStore.getState();
+            const { autoSave, saveChanges, endBarOperation } = useTaskStore.getState();
+            if (barOperationId) endBarOperation(barOperationId);
             if (autoSave) {
                 saveChanges().catch(console.error);
             }

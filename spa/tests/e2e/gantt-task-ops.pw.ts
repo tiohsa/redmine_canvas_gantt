@@ -163,3 +163,39 @@ test('does not expose inline edit controls for tasks outside the current view', 
   await expect(page.getByText('I-P2-HIDDEN')).toHaveCount(0);
   await expect(page.getByTestId('cell-302-status')).toHaveCount(0);
 });
+
+test('rolls a bar resize back after a terminal API rejection', async ({ page }) => {
+  await setupMockApp(page, { failTaskPatch: true });
+  await waitForInitialRender(page);
+
+  await page.getByTestId('task-row-201').dispatchEvent('click');
+  const handle = page.getByTestId('task-resize-handle-end-201');
+  await expect(handle).toBeVisible();
+
+  const original = await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    useTaskStore.getState().setAutoSave(true);
+    const task = useTaskStore.getState().allTasks.find((candidate) => candidate.id === '201');
+    return task ? { startDate: task.startDate, dueDate: task.dueDate } : null;
+  });
+  expect(original).not.toBeNull();
+
+  const box = await handle.boundingBox();
+  expect(box).not.toBeNull();
+  const x = box!.x + box!.width / 2;
+  const y = box!.y + box!.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 40, y);
+  await page.mouse.up();
+
+  await expect.poll(async () => page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    const task = useTaskStore.getState().allTasks.find((candidate) => candidate.id === '201');
+    return task ? {
+      startDate: task.startDate,
+      dueDate: task.dueDate,
+      dirty: useTaskStore.getState().modifiedTaskIds.has('201')
+    } : null;
+  })).toEqual({ ...original, dirty: false });
+});
