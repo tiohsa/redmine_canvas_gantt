@@ -3,10 +3,11 @@ import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
 import { taskMutationService } from '../services/taskMutationService';
+import type { MutationMetadata } from '../api/client';
 
 interface BulkSubtaskCreatorProps {
     parentId?: string;
-    onTasksCreated?: () => void;
+    onTasksCreated?: (metadata: MutationMetadata) => void;
     hideStandaloneButton?: boolean;
     showTopBorder?: boolean;
     trackerOptions?: Array<{ id: number; name: string }>;
@@ -143,13 +144,20 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                     addNotification(i18n.t('label_bulk_subtask_count_success', { count: successCount }) || `${successCount} tasks created.`, 'success');
                 }
 
+                if (successCount > 0) {
+                    if (onTasksCreated) {
+                        onTasksCreated(result);
+                    } else {
+                        useTaskStore.getState().applyTaskMutationMetadata(targetParentId, result);
+                    }
+                }
+
                 if (successCount > 0 && failCount === 0) {
                     setRows(createEmptyRows(nextRowId, defaultTrackerId));
                     setTextValue('');
                     setTextTrackerId(defaultTrackerId);
                     setExpanded(false);
                     setCompleted(true);
-                    onTasksCreated?.();
                 }
 
                 if (failCount > 0) {

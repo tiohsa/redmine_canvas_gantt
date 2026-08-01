@@ -1359,6 +1359,20 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.taskConflicts['task-1']).toBeUndefined();
     });
 
+    it('applies deleted task metadata through the shared task transition', () => {
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1' })]);
+
+        useTaskStore.getState().applyTaskMutationMetadata('task-1', {
+            completeness: 'partial',
+            invalidatedEntityIds: ['task-1'],
+            deletedEntityIds: ['task-1']
+        });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks).toEqual([]);
+        expect(state.taskTombstones['task-1']?.source).toBe('server');
+    });
+
     it('does not let a pre-delete refresh resurrect a locally removed task', async () => {
         const request = deferred<ReturnType<typeof buildApiData>>();
         vi.mocked(apiClient.fetchData).mockReturnValue(request.promise);

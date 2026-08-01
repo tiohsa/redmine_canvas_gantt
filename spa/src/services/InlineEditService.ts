@@ -48,6 +48,9 @@ export class InlineEditService {
         }
 
         if (result.status === 'ok') {
+            if (result.completeness || result.invalidatedEntityIds || result.deletedEntityIds) {
+                useTaskStore.getState().applyTaskMutationMetadata(taskId, result);
+            }
             useTaskStore.getState().commitTaskOperation(taskId, operationGeneration, result.lockVersion);
             return;
         }

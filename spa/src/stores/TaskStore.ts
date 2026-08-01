@@ -35,6 +35,7 @@ import { AutoScheduleMoveMode } from '../types/constraints';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
 import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
+import type { MutationMetadata } from '../api/client';
 import { taskMutationService } from '../services/taskMutationService';
 import {
     applyLocalPatches,
@@ -209,6 +210,8 @@ interface TaskState {
     updateTask: (id: string, updates: Partial<Task>) => void;
     setTaskLockVersion: (id: string, lockVersion: number) => void;
     commitTaskOperation: (id: string, operationGeneration: number, lockVersion?: number) => void;
+    applyTaskMutationMetadata: (taskId: string, metadata: MutationMetadata) => void;
+    refreshForMutationMetadata: (metadata: MutationMetadata) => void;
     removeTask: (id: string) => void;
     markTaskTombstone: (id: string, source?: EntityTombstone['source'], operationId?: string) => void;
     clearTaskTombstone: (id: string) => void;
@@ -1296,7 +1299,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
             validatePersistedResult: (result) => result.parentId === targetTaskId,
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure,
-            onConflict: (taskId, message) => get().registerTaskConflict(taskId, message)
+            onConflict: (taskId, message) => get().registerTaskConflict(taskId, message),
+            onMutationMetadata: (taskId, metadata) => get().applyTaskMutationMetadata(taskId, metadata)
         });
     },
     moveTaskToRoot: async (sourceTaskId) => {
@@ -1339,7 +1343,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
             validatePersistedResult: (result) => result.parentId === undefined,
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure,
-            onConflict: (taskId, message) => get().registerTaskConflict(taskId, message)
+            onConflict: (taskId, message) => get().registerTaskConflict(taskId, message),
+            onMutationMetadata: (taskId, metadata) => get().applyTaskMutationMetadata(taskId, metadata)
         });
     },
 
@@ -1581,6 +1586,49 @@ export const useTaskStore = create<TaskState>((set, get) => {
             }
         };
     }),
+
+    applyTaskMutationMetadata: (taskId, metadata) => {
+        const invalidatedIds = new Set(metadata.invalidatedEntityIds ?? []);
+        const deletedIds = new Set(metadata.deletedEntityIds ?? []);
+        const needsRefresh = [...invalidatedIds].some(id => id !== taskId);
+
+        if (invalidatedIds.size > 0 || deletedIds.size > 0) invalidateDataRequests();
+
+        set((state) => {
+            if (!deletedIds.has(taskId)) return state;
+
+            const finalTasks = state.allTasks.filter(task => task.id !== taskId);
+            const derived = buildDerivedTaskState(state, { allTasks: finalTasks });
+            const localTaskPatches = { ...state.localTaskPatches };
+            delete localTaskPatches[taskId];
+            const modifiedTaskIds = new Set(state.modifiedTaskIds);
+            modifiedTaskIds.delete(taskId);
+            return {
+                allTasks: finalTasks,
+                ...toDerivedTaskStatePatch(derived),
+                localTaskPatches,
+                modifiedTaskIds,
+                taskTombstones: {
+                    ...state.taskTombstones,
+                    [taskId]: { entityId: taskId, deletedAt: Date.now(), source: 'server' }
+                }
+            };
+        });
+
+        if (needsRefresh) {
+            queueMicrotask(() => {
+                void get().refreshData().catch((error) => console.error('Failed to refresh invalidated tasks', error));
+            });
+        }
+    },
+
+    refreshForMutationMetadata: (metadata) => {
+        if ((metadata.invalidatedEntityIds?.length ?? 0) === 0) return;
+        invalidateDataRequests();
+        queueMicrotask(() => {
+            void get().refreshData().catch((error) => console.error('Failed to refresh invalidated tasks', error));
+        });
+    },
 
 
 
@@ -2249,6 +2297,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         });
                     },
                     (taskId, result) => {
+                        get().applyTaskMutationMetadata(taskId, result);
                         if (result.status === 'not_found') {
                             get().markTaskTombstone(taskId, 'server');
                             get().registerTaskConflict(taskId, result.error || (i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists'));
