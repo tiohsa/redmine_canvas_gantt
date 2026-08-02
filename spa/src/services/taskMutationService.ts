@@ -16,9 +16,14 @@ export const taskMutationService = {
     // dependency batches; do not add a second per-task queue here.
     updateTask: (task: Parameters<typeof apiClient.updateTask>[0], operationId?: string) => apiClient.updateTask(task, operationId),
 
-    saveBaseline: (payload: NonNullable<Parameters<typeof apiClient.saveBaseline>[0]>) => (
-        enqueueMutationOperation([`baseline:${payload.scope}`], (context) => apiClient.saveBaseline(payload, context?.operationId))
-    ),
+    saveBaseline: (payload: NonNullable<Parameters<typeof apiClient.saveBaseline>[0]>) => {
+        const scope = payload.scope ?? 'filtered';
+        const normalizedPayload = { ...payload, scope };
+        return enqueueMutationOperation(
+            [`baseline:${scope}`],
+            (context) => apiClient.saveBaseline(normalizedPayload, context?.operationId)
+        );
+    },
 
     updateTaskFields: (
         taskId: string,

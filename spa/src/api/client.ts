@@ -19,6 +19,14 @@ import type { BusinessCalendarPayload } from '../types/businessCalendar';
 import { normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { sessionFetch } from './sessionFetch';
+import type { MutationStatusValue } from './mutationOutcome';
+
+export {
+    classifyMutationError,
+    classifyMutationResult,
+    classifyMutationStatus
+} from './mutationOutcome';
+export type { MutationOutcome, MutationOutcomeKind } from './mutationOutcome';
 
 type ApiTask = Record<string, unknown>;
 type ApiRelation = Record<string, unknown>;
@@ -81,7 +89,7 @@ interface BaselineSaveResult extends MutationMetadata {
     error?: string;
 }
 
-export type MutationStatus = 'ok' | 'error' | 'validation_error' | 'conflict' | 'forbidden' | 'not_found' | 'transient_error';
+export type MutationStatus = MutationStatusValue;
 
 export class ApiMutationError extends Error {
     readonly status: Exclude<MutationStatus, 'ok'>;
@@ -688,7 +696,7 @@ export const apiClient = {
         });
 
         if (!response.ok) {
-            return { status: 'error', baseline: null, error: await parseErrorMessage(response) };
+            throw await parseMutationError(response);
         }
 
         const payload = await response.json();

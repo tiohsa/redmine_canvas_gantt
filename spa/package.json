@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "benchmark": "npm run build && node ./scripts/run-benchmark.mjs",
     "benchmark:ci": "npm run build && CI=1 node ./scripts/run-benchmark.mjs --ci",
+    "check:build-artifacts": "node ./scripts/check-build-artifacts.mjs",
     "security:supply-chain": "node ./scripts/check-supply-chain.mjs",
     "check:async-contract": "node ./scripts/check-async-contract.mjs",
     "security": "npm run security:supply-chain",

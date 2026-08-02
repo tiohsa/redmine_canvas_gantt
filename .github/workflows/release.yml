@@ -20,6 +20,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify tracked SPA build artifacts
+        run: node spa/scripts/check-build-artifacts.mjs --archive-ref "${GITHUB_SHA}"
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

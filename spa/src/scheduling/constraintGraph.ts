@@ -82,8 +82,16 @@ export const buildSchedulingEdges = (relations: Relation[]): SchedulingEdge[] =>
         .filter((edge): edge is SchedulingEdge => Boolean(edge))
 );
 
-export const detectConstraintCycleTaskIds = (relations: Relation[]): Set<string> => {
-    const edges = buildSchedulingEdges(relations);
+/**
+ * Return only nodes that belong to a directed cycle.
+ *
+ * Kahn's algorithm is useful for calculating a topological order, but its
+ * remaining nodes are not all cycle members: a node downstream of a cycle
+ * remains unprocessed as well.  Remove the acyclic prefix first, then walk
+ * the residual graph iteratively so deep dependency chains do not depend on
+ * the JavaScript call stack.
+ */
+export const detectSchedulingCycleTaskIds = (edges: SchedulingEdge[]): Set<string> => {
     const adjacency = new Map<string, string[]>();
     const taskIds = new Set<string>();
 
@@ -95,34 +103,87 @@ export const detectConstraintCycleTaskIds = (relations: Relation[]): Set<string>
         adjacency.set(edge.predecessorId, successors);
     });
 
+    const indegree = new Map<string, number>([...taskIds].map((taskId) => [taskId, 0]));
+    edges.forEach((edge) => {
+        indegree.set(edge.successorId, (indegree.get(edge.successorId) ?? 0) + 1);
+    });
+
+    const queue = [...taskIds].filter((taskId) => indegree.get(taskId) === 0);
+    const removed = new Set<string>();
+    for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+        const taskId = queue[queueIndex];
+        removed.add(taskId);
+        (adjacency.get(taskId) ?? []).forEach((successorId) => {
+            const nextIndegree = (indegree.get(successorId) ?? 0) - 1;
+            indegree.set(successorId, nextIndegree);
+            if (nextIndegree === 0) queue.push(successorId);
+        });
+    }
+
+    const residualTaskIds = new Set([...taskIds].filter((taskId) => !removed.has(taskId)));
+    const residualAdjacency = new Map<string, string[]>();
+    residualTaskIds.forEach((taskId) => {
+        residualAdjacency.set(
+            taskId,
+            (adjacency.get(taskId) ?? []).filter((successorId) => residualTaskIds.has(successorId))
+        );
+    });
     const state = new Map<string, 0 | 1 | 2>();
-    const stack: string[] = [];
     const cyclicTaskIds = new Set<string>();
 
-    const visit = (taskId: string) => {
-        const currentState = state.get(taskId) ?? 0;
-        if (currentState === 1) {
-            const cycleStart = stack.lastIndexOf(taskId);
-            const cycleSlice = cycleStart >= 0 ? stack.slice(cycleStart) : [taskId];
-            cycleSlice.forEach((value) => cyclicTaskIds.add(value));
-            cyclicTaskIds.add(taskId);
-            return;
+    residualTaskIds.forEach((startTaskId) => {
+        if ((state.get(startTaskId) ?? 0) !== 0) return;
+
+        const path: string[] = [];
+        const pathIndexes = new Map<string, number>();
+        const frames: Array<{ taskId: string; nextSuccessorIndex: number }> = [];
+        state.set(startTaskId, 1);
+        path.push(startTaskId);
+        pathIndexes.set(startTaskId, 0);
+        frames.push({ taskId: startTaskId, nextSuccessorIndex: 0 });
+
+        while (frames.length > 0) {
+            const frame = frames[frames.length - 1];
+            const successors = residualAdjacency.get(frame.taskId) ?? [];
+
+            if (frame.nextSuccessorIndex >= successors.length) {
+                state.set(frame.taskId, 2);
+                frames.pop();
+                const pathIndex = pathIndexes.get(frame.taskId);
+                if (pathIndex !== undefined && path[path.length - 1] === frame.taskId) {
+                    path.pop();
+                    pathIndexes.delete(frame.taskId);
+                }
+                continue;
+            }
+
+            const successorId = successors[frame.nextSuccessorIndex];
+            frame.nextSuccessorIndex += 1;
+            const successorState = state.get(successorId) ?? 0;
+
+            if (successorState === 0) {
+                state.set(successorId, 1);
+                pathIndexes.set(successorId, path.length);
+                path.push(successorId);
+                frames.push({ taskId: successorId, nextSuccessorIndex: 0 });
+                continue;
+            }
+
+            if (successorState === 1) {
+                const cycleStart = pathIndexes.get(successorId);
+                if (cycleStart !== undefined) {
+                    path.slice(cycleStart).forEach((taskId) => cyclicTaskIds.add(taskId));
+                }
+            }
         }
+    });
 
-        if (currentState === 2) return;
-
-        state.set(taskId, 1);
-        stack.push(taskId);
-
-        (adjacency.get(taskId) ?? []).forEach((successorId) => visit(successorId));
-
-        stack.pop();
-        state.set(taskId, 2);
-    };
-
-    taskIds.forEach((taskId) => visit(taskId));
     return cyclicTaskIds;
 };
+
+export const detectConstraintCycleTaskIds = (relations: Relation[]): Set<string> => (
+    detectSchedulingCycleTaskIds(buildSchedulingEdges(relations))
+);
 
 const applyState = (
     states: Record<string, SchedulingStateInfo>,

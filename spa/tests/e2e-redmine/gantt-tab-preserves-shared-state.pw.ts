@@ -48,6 +48,8 @@ test('restores the last-used shared query state when reopening bare Canvas Gantt
   await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
   await expect(page.getByText('Loading Canvas Gantt...')).toHaveCount(0);
   await expect(page).toHaveURL(/group_by=none/);
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('canvasGantt:lastSharedQueryState')))
+    .toContain('"groupBy":null');
 
   await canvasTab.click();
   await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();

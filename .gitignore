@@ -45,8 +45,7 @@ Thumbs.db
 .venv/
 .serena/
 .rtk/
-
-
 .tokensave
 spa/bench/results/
+.agents/
 

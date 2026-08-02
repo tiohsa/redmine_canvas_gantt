@@ -1,14 +1,32 @@
 import type { Relation, Task } from '../../types';
 import type { MoveTaskAsChildResult } from '../../types';
+import {
+    buildSchedulingEdges,
+    detectSchedulingCycleTaskIds
+} from '../../scheduling/constraintGraph';
 import { i18n } from '../../utils/i18n';
 import type { TaskLayoutSnapshot } from './types';
 import type { MutationMetadata, MutationStatus } from '../../api/client';
+import {
+    classifyMutationError,
+    classifyMutationResult,
+    classifyMutationStatus
+} from '../../api/mutationOutcome';
+import type { MutationOutcomeKind } from '../../api/mutationOutcome';
 
 export type UpdateTaskFieldsResult = MutationMetadata & {
     status: MutationStatus | 'error';
     error?: string;
     lockVersion?: number;
     parentId?: string;
+};
+
+export type SaveModifiedTasksResult = {
+    failures: Map<string, string>;
+    savedTaskIds: Set<string>;
+    unsentTaskIds: Set<string>;
+    abortedTaskIds: Set<string>;
+    batchStatus: 'completed' | 'partial_failure' | 'preflight_failure';
 };
 
 type FetchDataResult = {
@@ -26,6 +44,7 @@ let mutationSequence = 0;
 const activeMutationOperations = new Map<string, MutationOperationRecord>();
 const completedMutationOperations = new Map<string, MutationOperationRecord>();
 const MAX_COMPLETED_MUTATIONS = 128;
+export const MAX_TASK_WRITE_CONCURRENCY = 8;
 
 export const mutationLifecycleMetrics = {
     started: 0,
@@ -49,6 +68,7 @@ export type MutationOperationStatus = 'queued' | 'running' | 'succeeded' | 'fail
 
 export type MutationOperationRecord = MutationOperationContext & {
     status: MutationOperationStatus;
+    outcome?: MutationOutcomeKind;
     completedAt?: number;
 };
 
@@ -96,12 +116,12 @@ export const enqueueMutationOperation = async <T>(
         try {
             const result = await operation(context);
             await lifecycle?.onSuccess?.(result, context);
-            completeMutationOperation(context, 'succeeded');
+            completeMutationOperation(context, 'succeeded', classifyMutationResult(result).kind);
             mutationLifecycleMetrics.completed += 1;
             return result;
         } catch (error) {
             await lifecycle?.onError?.(error, context);
-            completeMutationOperation(context, 'failed');
+            completeMutationOperation(context, 'failed', classifyMutationError(error).kind);
             mutationLifecycleMetrics.failed += 1;
             throw error;
         } finally {
@@ -125,8 +145,12 @@ export const enqueueMutationOperation = async <T>(
     }
 };
 
-const completeMutationOperation = (context: MutationOperationContext, status: 'succeeded' | 'failed') => {
-    const record = { ...context, status, completedAt: Date.now() };
+const completeMutationOperation = (
+    context: MutationOperationContext,
+    status: 'succeeded' | 'failed',
+    outcome: MutationOutcomeKind
+) => {
+    const record = { ...context, status, outcome, completedAt: Date.now() };
     activeMutationOperations.delete(context.operationId);
     completedMutationOperations.set(context.operationId, record);
     while (completedMutationOperations.size > MAX_COMPLETED_MUTATIONS) {
@@ -184,7 +208,7 @@ export const saveModifiedTasks = async (
     onTaskResult?: (taskId: string, result: UpdateTaskFieldsResult) => void,
     onConflict?: (taskId: string, message: string) => void,
     shouldAbortRemaining?: (taskId: string) => boolean
-) => {
+): Promise<SaveModifiedTasksResult> => {
     const mutableTaskById = new Map(tasks.map(task => [task.id, { ...task }]));
     const hasSamePersistedFields = (local: Task, remote: Task): boolean => {
         const sameStartDate = local.startDate === remote.startDate;
@@ -208,144 +232,236 @@ export const saveModifiedTasks = async (
         return depth;
     };
     const modifiedIdSet = new Set(Array.from(modifiedTaskIds));
-    const dependencyOrderCache = new Map<string, number>();
-    const incomingHardDependencies = new Map<string, string[]>();
+    const modifiedTasks = tasks.filter(task => modifiedIdSet.has(task.id));
+    const dependencyOrder = new Map(modifiedTasks.map(task => [task.id, 0]));
+    const dependencyIndegree = new Map(modifiedTasks.map(task => [task.id, 0]));
+    const dependencyOutgoing = new Map<string, string[]>();
+    const dependencyPredecessors = new Map<string, Set<string>>();
+    const dependencyEdges = buildSchedulingEdges(relations).filter(({ predecessorId, successorId }) => (
+        dependencyOrder.has(predecessorId) && dependencyOrder.has(successorId)
+    ));
 
-    relations.forEach((relation) => {
-        if (relation.type !== 'precedes' && relation.type !== 'follows') return;
-
-        const predecessorId = relation.type === 'follows' ? relation.to : relation.from;
-        const successorId = relation.type === 'follows' ? relation.from : relation.to;
-        if (!modifiedIdSet.has(predecessorId) || !modifiedIdSet.has(successorId)) return;
-
-        const predecessors = incomingHardDependencies.get(successorId) ?? [];
-        predecessors.push(predecessorId);
-        incomingHardDependencies.set(successorId, predecessors);
+    dependencyEdges.forEach(({ predecessorId, successorId }) => {
+        const successors = dependencyOutgoing.get(predecessorId) ?? [];
+        successors.push(successorId);
+        dependencyOutgoing.set(predecessorId, successors);
+        dependencyIndegree.set(successorId, (dependencyIndegree.get(successorId) ?? 0) + 1);
+        const predecessors = dependencyPredecessors.get(successorId) ?? new Set<string>();
+        predecessors.add(predecessorId);
+        dependencyPredecessors.set(successorId, predecessors);
     });
-    const calcDependencyOrder = (taskId: string, visiting: Set<string> = new Set()): number => {
-        if (dependencyOrderCache.has(taskId)) return dependencyOrderCache.get(taskId)!;
-        if (visiting.has(taskId)) return 0;
 
-        visiting.add(taskId);
-        const predecessors = incomingHardDependencies.get(taskId) ?? [];
-        const order = predecessors.length === 0
-            ? 0
-            : 1 + Math.max(...predecessors.map((predecessorId) => calcDependencyOrder(predecessorId, visiting)));
-        visiting.delete(taskId);
-        dependencyOrderCache.set(taskId, order);
-        return order;
-    };
+    const rankIndegree = new Map(dependencyIndegree);
+    const readyTaskIds = modifiedTasks
+        .filter(task => rankIndegree.get(task.id) === 0)
+        .map(task => task.id);
+    for (let queueIndex = 0; queueIndex < readyTaskIds.length; queueIndex += 1) {
+        const predecessorId = readyTaskIds[queueIndex];
+        const predecessorOrder = dependencyOrder.get(predecessorId) ?? 0;
+        (dependencyOutgoing.get(predecessorId) ?? []).forEach((successorId) => {
+            dependencyOrder.set(
+                successorId,
+                Math.max(dependencyOrder.get(successorId) ?? 0, predecessorOrder + 1)
+            );
+            const nextIndegree = (rankIndegree.get(successorId) ?? 0) - 1;
+            rankIndegree.set(successorId, nextIndegree);
+            if (nextIndegree === 0) readyTaskIds.push(successorId);
+        });
+    }
+    const cyclicTaskIds = detectSchedulingCycleTaskIds(dependencyEdges);
 
     const tasksToUpdate = tasks
         .filter(t => modifiedTaskIds.has(t.id))
         .sort((a, b) => {
-            const depthDelta = calcDepth(a.id) - calcDepth(b.id);
-            if (depthDelta !== 0) return depthDelta;
-
-            const dependencyDelta = calcDependencyOrder(b.id) - calcDependencyOrder(a.id);
+            // Persist predecessors before their modified successors so that
+            // server-side dependency validation observes the updated dates.
+            const dependencyDelta = (dependencyOrder.get(a.id) ?? 0) - (dependencyOrder.get(b.id) ?? 0);
             if (dependencyDelta !== 0) return dependencyDelta;
 
-            return 0;
+            // Preserve the existing parent-before-child order when tasks are
+            // not ordered by a dependency relationship.
+            return calcDepth(a.id) - calcDepth(b.id);
         });
-    const taskRank = new Map(tasksToUpdate.map((task) => [
-        task.id,
-        `${calcDepth(task.id)}:${calcDependencyOrder(task.id)}`
-    ]));
 
     const failures = new Map<string, string>();
+    const savedTaskIds = new Set<string>();
+    const unsentTaskIds = new Set(modifiedIdSet);
+    const abortedTaskIds = new Set<string>();
+    const cycleMessage = i18n.t('label_scheduling_state_cyclic') || 'This task participates in a dependency cycle.';
     const availableTaskIds = new Set(tasks.map(task => task.id));
     modifiedIdSet.forEach((taskId) => {
         if (!availableTaskIds.has(taskId)) {
             failures.set(taskId, i18n.t('label_task_not_found') || 'Task no longer exists');
         }
     });
-    let pending = tasksToUpdate.map(task => task.id);
-    const maxPasses = Math.max(1, pending.length * 2);
+    if (cyclicTaskIds.size > 0) {
+        cyclicTaskIds.forEach((taskId) => failures.set(taskId, cycleMessage));
+        return {
+            failures,
+            savedTaskIds,
+            unsentTaskIds,
+            abortedTaskIds,
+            batchStatus: 'preflight_failure'
+        };
+    }
+
+    const pendingTaskIds = new Set(tasksToUpdate.map(task => task.id));
+    const settledTaskIds = new Set<string>();
+    const blockedTaskIds = new Set<string>();
+    const terminalFailureTaskIds = new Set<string>();
     const attemptCounts = new Map<string, number>();
+    const conflictMessages = new Map<string, string>();
+    const failureMessage = i18n.t('label_failed_to_save') || 'Failed to save task';
+    const unknownErrorMessage = i18n.t('label_unknown_error') || 'Unknown error';
+    const conflictMessage = i18n.t('label_conflict') || 'Conflict';
+    let hasProcessedTask = false;
 
-    for (let pass = 0; pass < maxPasses && pending.length > 0; pass += 1) {
-        let progress = false;
-        const nextPending: string[] = [];
+    const abortOwnedPendingTasks = () => {
+        if (!shouldAbortRemaining) return;
+        [...pendingTaskIds].forEach((taskId) => {
+            if (!shouldAbortRemaining(taskId)) return;
+            pendingTaskIds.delete(taskId);
+            abortedTaskIds.add(taskId);
+            failures.set(taskId, failureMessage);
+        });
+    };
+
+    const blockTasksWithFailedPredecessors = () => {
+        let changed = true;
+        while (changed) {
+            changed = false;
+            [...pendingTaskIds].forEach((taskId) => {
+                const failedPredecessor = [...(dependencyPredecessors.get(taskId) ?? [])]
+                    .find(predecessorId => (
+                        terminalFailureTaskIds.has(predecessorId) ||
+                        blockedTaskIds.has(predecessorId) ||
+                        abortedTaskIds.has(predecessorId)
+                    ));
+                if (!failedPredecessor) return;
+
+                pendingTaskIds.delete(taskId);
+                blockedTaskIds.add(taskId);
+                failures.set(taskId, `${failureMessage}: predecessor ${failedPredecessor} was not saved`);
+                changed = true;
+            });
+        }
+    };
+
+    while (pendingTaskIds.size > 0) {
+        if (hasProcessedTask) abortOwnedPendingTasks();
+        blockTasksWithFailedPredecessors();
+        if (pendingTaskIds.size === 0) break;
+
+        const readyCandidates = tasksToUpdate
+            .map(task => task.id)
+            .filter(taskId => (
+                pendingTaskIds.has(taskId) &&
+                [...(dependencyPredecessors.get(taskId) ?? [])].every(predecessorId => settledTaskIds.has(predecessorId))
+            ));
+
+        if (readyCandidates.length === 0) {
+            // This is a defensive terminal state. A real cycle is rejected by
+            // preflight above; any remaining task here has an unresolved
+            // dependency that cannot be safely sent.
+            readyCandidates.push(...pendingTaskIds);
+            readyCandidates.forEach((taskId) => {
+                pendingTaskIds.delete(taskId);
+                blockedTaskIds.add(taskId);
+                failures.set(taskId, failureMessage);
+            });
+            break;
+        }
+
+        // Keep the existing parent-depth tie breaker as a scheduling stage:
+        // roots are sent before their children even when no hard relation
+        // exists. Hard predecessor settlement remains the actual successor
+        // gate; this stage only preserves the established stable order.
+        const firstReadyTaskId = readyCandidates[0];
+        const firstReadyRank = dependencyOrder.get(firstReadyTaskId) ?? 0;
+        const firstReadyDepth = calcDepth(firstReadyTaskId);
+        const readyTaskIds = readyCandidates.filter((taskId) => (
+            (dependencyOrder.get(taskId) ?? 0) === firstReadyRank &&
+            calcDepth(taskId) === firstReadyDepth
+        ));
+        const batch = readyTaskIds.slice(0, MAX_TASK_WRITE_CONCURRENCY);
+        batch.forEach(taskId => pendingTaskIds.delete(taskId));
         const conflictTaskIds: string[] = [];
-        const conflictMessages = new Map<string, string>();
-        let remaining = [...pending];
-        while (remaining.length > 0) {
-            const firstTaskId = remaining[0];
-            const rank = taskRank.get(firstTaskId);
-            const batch = remaining.filter((taskId) => taskRank.get(taskId) === rank);
-            const batchIds = new Set(batch);
-            remaining = remaining.filter((taskId) => !batchIds.has(taskId));
-            const results = await Promise.all(batch.map(async (taskId) => {
-                const task = mutableTaskById.get(taskId);
-                if (!task) return { taskId, task, result: undefined, error: undefined };
-                try {
-                    const result = await enqueueTaskWrite(
-                        taskId,
-                        (context) => updateTask(task, context?.operationId),
-                        {
-                            onSuccess: (savedResult) => {
-                                onTaskResult?.(taskId, savedResult);
-                                if (savedResult.status === 'ok') onTaskSaved?.(taskId, savedResult.lockVersion);
-                            }
+
+        const results = await Promise.all(batch.map(async (taskId) => {
+            const task = mutableTaskById.get(taskId);
+            if (!task) return { taskId, task, result: undefined, error: undefined };
+            try {
+                const result = await enqueueTaskWrite(
+                    taskId,
+                    (context) => {
+                        unsentTaskIds.delete(taskId);
+                        return updateTask(task, context?.operationId);
+                    },
+                    {
+                        onSuccess: (savedResult) => {
+                            onTaskResult?.(taskId, savedResult);
+                            if (savedResult.status === 'ok') onTaskSaved?.(taskId, savedResult.lockVersion);
                         }
-                    );
-                    return { taskId, task, result, error: undefined };
-                } catch (error) {
-                    return {
-                        taskId,
-                        task,
-                        result: undefined,
-                        error: error instanceof Error ? error.message : (i18n.t('label_unknown_error') || 'Unknown error')
-                    };
-                }
-            }));
-
-            for (const { taskId, task, result, error } of results) {
-                if (!task) continue;
-                const attempt = attemptCounts.get(taskId) ?? 0;
-                if (error) {
-                    attemptCounts.set(taskId, attempt + 1);
-                    failures.set(taskId, error);
-                    if (attempt < 1) nextPending.push(taskId);
-                    continue;
-                }
-                if (!result) continue;
-                attemptCounts.set(taskId, attempt + 1);
-                if (result.status === 'ok') {
-                    progress = true;
-                    failures.delete(taskId);
-                    if (typeof result.lockVersion === 'number') {
-                        mutableTaskById.set(taskId, { ...task, lockVersion: result.lockVersion });
                     }
-                    continue;
-                }
-
-                if (result.status === 'conflict') {
-                    conflictTaskIds.push(taskId);
-                    conflictMessages.set(taskId, result.error || (i18n.t('label_conflict') || 'Conflict'));
-                    nextPending.push(taskId);
-                } else if (result.status === 'error' && (attemptCounts.get(taskId) ?? 0) < 2) {
-                    // Legacy adapters report transport/server failures as
-                    // `error`; retain their bounded transient retry behavior.
-                    failures.set(taskId, result.error || (i18n.t('label_unknown_error') || 'Unknown error'));
-                    nextPending.push(taskId);
-                } else {
-                    // Validation, permission, not-found, and other terminal
-                    // responses must not be resent as if they were conflicts.
-                    failures.set(taskId, result.error || (i18n.t('label_unknown_error') || 'Unknown error'));
-                }
-            }
-
-            if (shouldAbortRemaining) {
-                const abortedTaskIds = new Set(
-                    remaining.filter((taskId) => shouldAbortRemaining(taskId))
                 );
-                abortedTaskIds.forEach((taskId) => {
-                    if (!attemptCounts.has(taskId) && !failures.has(taskId)) {
-                        failures.set(taskId, i18n.t('label_failed_to_save') || 'Skipped after a terminal mutation failure');
-                    }
-                });
-                remaining = remaining.filter((taskId) => !abortedTaskIds.has(taskId));
+                return { taskId, task, result, error: undefined };
+            } catch (error) {
+                return { taskId, task, result: undefined, error };
+            }
+        }));
+
+        for (const { taskId, task, result, error } of results) {
+            if (!task) continue;
+
+            const attempt = attemptCounts.get(taskId) ?? 0;
+            const nextAttempt = attempt + 1;
+            attemptCounts.set(taskId, nextAttempt);
+
+            if (error) {
+                const outcome = classifyMutationError(error);
+                const message = outcome.message || (
+                    error instanceof Error
+                        ? error.message
+                        : (typeof error === 'string' ? error : String(error))
+                );
+                failures.set(taskId, message);
+                if (outcome.kind === 'conflict') {
+                    conflictTaskIds.push(taskId);
+                    conflictMessages.set(taskId, message);
+                    pendingTaskIds.add(taskId);
+                } else if (outcome.kind === 'transient' && attempt < 1) {
+                    pendingTaskIds.add(taskId);
+                } else {
+                    terminalFailureTaskIds.add(taskId);
+                }
+                continue;
+            }
+            if (!result) continue;
+
+            const outcome = classifyMutationStatus(result.status);
+            const message = result.error || unknownErrorMessage;
+            if (outcome === 'success') {
+                failures.delete(taskId);
+                settledTaskIds.add(taskId);
+                savedTaskIds.add(taskId);
+                if (typeof result.lockVersion === 'number') {
+                    mutableTaskById.set(taskId, { ...task, lockVersion: result.lockVersion });
+                }
+            } else if (outcome === 'conflict') {
+                failures.set(taskId, result.error || conflictMessage);
+                conflictMessages.set(taskId, result.error || conflictMessage);
+                conflictTaskIds.push(taskId);
+                pendingTaskIds.add(taskId);
+            } else if (outcome === 'transient' && attempt < 1) {
+                // Both the current `transient_error` status and the legacy
+                // `error` status share the same bounded retry policy.
+                failures.set(taskId, message);
+                pendingTaskIds.add(taskId);
+            } else {
+                // Validation, permission, not-found, and exhausted transient
+                // responses are terminal and must gate their successors.
+                failures.set(taskId, message);
+                terminalFailureTaskIds.add(taskId);
             }
         }
 
@@ -354,59 +470,71 @@ export const saveModifiedTasks = async (
             try {
                 latest = await fetchData({ query: { selectedStatusIds } });
             } catch (error) {
-                const message = error instanceof Error ? error.message : (i18n.t('label_unknown_error') || 'Unknown error');
-                conflictTaskIds.forEach((taskId) => {
+                const message = error instanceof Error ? error.message : unknownErrorMessage;
+                [...new Set(conflictTaskIds)].forEach((taskId) => {
+                    pendingTaskIds.delete(taskId);
+                    terminalFailureTaskIds.add(taskId);
                     failures.set(taskId, message);
                     onConflict?.(taskId, message);
                 });
-                pending = nextPending;
-                break;
+                hasProcessedTask = true;
+                continue;
             }
-            const latestTaskById = new Map(latest.tasks.map(task => [task.id, task]));
-            const refreshedPending: string[] = [];
 
-            for (const taskId of nextPending) {
+            const latestTaskById = new Map(latest.tasks.map(task => [task.id, task]));
+            [...new Set(conflictTaskIds)].forEach((taskId) => {
                 const localTask = mutableTaskById.get(taskId);
                 const latestTask = latestTaskById.get(taskId);
                 if (!localTask || !latestTask) {
-                    refreshedPending.push(taskId);
-                    continue;
+                    // Leave a first conflict eligible for its bounded retry;
+                    // an absent remote entity becomes terminal on exhaustion.
+                    if ((attemptCounts.get(taskId) ?? 0) >= 2) {
+                        pendingTaskIds.delete(taskId);
+                        terminalFailureTaskIds.add(taskId);
+                        const message = conflictMessages.get(taskId) || conflictMessage;
+                        failures.set(taskId, message);
+                        onConflict?.(taskId, message);
+                    }
+                    return;
                 }
 
                 if (hasSamePersistedFields(localTask, latestTask)) {
+                    pendingTaskIds.delete(taskId);
                     failures.delete(taskId);
-                    progress = true;
+                    settledTaskIds.add(taskId);
+                    savedTaskIds.add(taskId);
+                    unsentTaskIds.delete(taskId);
                     onTaskSaved?.(taskId, latestTask.lockVersion);
-                    continue;
+                    return;
                 }
 
-                if (conflictTaskIds.includes(taskId)) {
-                    if ((attemptCounts.get(taskId) ?? 0) >= 2) {
-                        const message = conflictMessages.get(taskId) || (i18n.t('label_conflict') || 'Conflict');
-                        failures.set(taskId, message);
-                        onConflict?.(taskId, message);
-                        continue;
-                    }
-                    onTaskSaved?.(taskId, latestTask.lockVersion);
-                    mutableTaskById.set(taskId, { ...localTask, lockVersion: latestTask.lockVersion });
-                    // Refreshing the remote lock version makes this task
-                    // eligible for a bounded retry even when it is the only
-                    // task in the batch. Do not let progress from an
-                    // unrelated task be required to preserve the edit.
-                    progress = true;
-                    refreshedPending.push(taskId);
-                    continue;
+                if ((attemptCounts.get(taskId) ?? 0) >= 2) {
+                    pendingTaskIds.delete(taskId);
+                    terminalFailureTaskIds.add(taskId);
+                    const message = conflictMessages.get(taskId) || conflictMessage;
+                    failures.set(taskId, message);
+                    onConflict?.(taskId, message);
+                    return;
                 }
-                refreshedPending.push(taskId);
-            }
 
-            pending = refreshedPending;
-        } else {
-            pending = nextPending;
+                onTaskSaved?.(taskId, latestTask.lockVersion);
+                mutableTaskById.set(taskId, { ...localTask, lockVersion: latestTask.lockVersion });
+            });
         }
 
-        if (!progress) break;
+        hasProcessedTask = true;
     }
 
-    return failures;
+    modifiedIdSet.forEach((taskId) => {
+        if (savedTaskIds.has(taskId) || failures.has(taskId) || unsentTaskIds.has(taskId)) return;
+        failures.set(taskId, failureMessage);
+    });
+
+    return {
+        failures,
+        savedTaskIds,
+        unsentTaskIds,
+        abortedTaskIds,
+        batchStatus: failures.size > 0 ? 'partial_failure' : 'completed'
+    };
 };

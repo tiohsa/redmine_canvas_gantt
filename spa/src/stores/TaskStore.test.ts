@@ -1917,7 +1917,7 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
     });
 
-    it('keeps a failed task dirty and allows it to be saved again', async () => {
+    it('retries a legacy transient error and clears the task after success', async () => {
         let attempts = 0;
         vi.mocked(apiClient.updateTask).mockImplementation(async () => {
             attempts += 1;
@@ -1932,12 +1932,14 @@ describe('TaskStore asynchronous state ownership', () => {
         useTaskStore.getState().updateTask('task-1', { dueDate: 8 });
 
         const firstFailures = await useTaskStore.getState().saveChanges();
-        expect(firstFailures.has('task-1')).toBe(true);
-        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
+        expect(firstFailures.size).toBe(0);
+        expect(attempts).toBe(2);
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
 
         const secondFailures = await useTaskStore.getState().saveChanges();
         expect(secondFailures.size).toBe(0);
         expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
+        expect(attempts).toBe(2);
     });
 
     it.each(['validation_error', 'forbidden'] as const)('rolls a bar operation back on a terminal %s response', async (status) => {
@@ -2029,6 +2031,41 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(attempts).toBe(2);
         expect(useTaskStore.getState().allTasks[0]).toMatchObject(original);
         expect(useTaskStore.getState().barOperations).toEqual({});
+    });
+
+    it('keeps a conflict terminal when both resync and follow-up refresh fail', async () => {
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'conflict', error: 'stale lock' });
+        vi.mocked(apiClient.fetchData).mockRejectedValue(new Error('resync unavailable'));
+        const original = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+
+        const failures = await useTaskStore.getState().saveChanges();
+
+        expect(failures.get('task-1')).toBe('resync unavailable');
+        expect(useTaskStore.getState().taskConflicts['task-1']).toMatchObject({
+            taskId: 'task-1',
+            message: 'resync unavailable'
+        });
+        expect(useTaskStore.getState().modifiedTaskIds).toContain('task-1');
+    });
+
+    it('keeps a conflict unresolved when resync response excludes the task from scope', async () => {
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'conflict', error: 'stale lock' });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([]));
+        const original = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+
+        const failures = await useTaskStore.getState().saveChanges();
+
+        expect(vi.mocked(apiClient.updateTask)).toHaveBeenCalledTimes(2);
+        expect(failures.get('task-1')).toBe('stale lock');
+        expect(useTaskStore.getState().taskConflicts['task-1']).toMatchObject({
+            taskId: 'task-1',
+            message: 'stale lock'
+        });
+        expect(useTaskStore.getState().modifiedTaskIds).toContain('task-1');
     });
 });
 
@@ -2759,7 +2796,7 @@ describe('TaskStore saveChanges ordering', () => {
         expect(addNotification).not.toHaveBeenCalled();
     });
 
-    it('saveChanges saves downstream dependency updates before their predecessor', async () => {
+    it('saveChanges saves predecessor updates before downstream dependency updates', async () => {
         const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();
 
         setTasks([
@@ -2775,11 +2812,70 @@ describe('TaskStore saveChanges ordering', () => {
         await saveChanges();
 
         const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
-        expect(updatedIds).toEqual(['19', '18']);
+        expect(updatedIds).toEqual(['18', '19']);
         expect(addNotification).not.toHaveBeenCalled();
     });
 
-    it('saveChanges retries a predecessor after delay mismatch once successor is saved', async () => {
+    it('saves a three-task dependency chain before downstream validation', async () => {
+        const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();
+
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        setTasks([
+            buildTask({ id: '1', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: '2', startDate: WEDNESDAY, dueDate: THURSDAY }),
+            buildTask({ id: '3', startDate: FRIDAY, dueDate: FRIDAY })
+        ]);
+        setRelations([
+            { id: '12', from: '1', to: '2', type: 'precedes', delay: 0 },
+            { id: '23', from: '2', to: '3', type: 'precedes', delay: 0 }
+        ]);
+
+        updateTask('1', { dueDate: WEDNESDAY });
+        updateTask('2', { dueDate: THURSDAY });
+        updateTask('3', { startDate: FRIDAY, dueDate: FRIDAY });
+
+        const persisted = new Set<string>();
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
+            if (task.id === '2' && !persisted.has('1')) {
+                return { status: 'error', error: 'Task 1 must be saved first' };
+            }
+            if (task.id === '3' && !persisted.has('2')) {
+                return { status: 'error', error: 'Task 2 must be saved first' };
+            }
+            persisted.add(task.id);
+            return { status: 'ok', lockVersion: 2 };
+        });
+
+        const failures = await saveChanges();
+
+        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id)).toEqual(['1', '2', '3']);
+        expect(failures).toEqual(new Map());
+        expect(addNotification).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
+    });
+
+    it('saveChanges prioritizes dependency order over parent depth', async () => {
+        const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();
+
+        setTasks([
+            buildTask({ id: 'parent', startDate: MONDAY, dueDate: FRIDAY }),
+            buildTask({ id: '18', parentId: 'parent', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: '19', startDate: THURSDAY, dueDate: FRIDAY })
+        ]);
+        setRelations([
+            { id: 'r1', from: '18', to: '19', type: 'precedes', delay: 0 }
+        ]);
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+
+        updateTask('18', { startDate: TUESDAY, dueDate: WEDNESDAY });
+        await saveChanges();
+
+        const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
+        expect(updatedIds.indexOf('18')).toBeLessThan(updatedIds.indexOf('19'));
+        expect(addNotification).not.toHaveBeenCalled();
+    });
+
+    it('saveChanges does not require a downstream retry after predecessor is saved first', async () => {
         const { setTasks, setRelations, saveChanges } = useTaskStore.getState();
 
         setTasks([
@@ -2797,22 +2893,82 @@ describe('TaskStore saveChanges ordering', () => {
             ]
         });
 
-        let successorSaved = false;
-        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
-            if (task.id === '18' && !successorSaved) {
-                return { status: 'error', error: 'Delay does not match the current task dates.' };
-            }
-            if (task.id === '19') {
-                successorSaved = true;
-            }
+        vi.mocked(apiClient.updateTask).mockImplementation(async () => {
             return { status: 'ok', lockVersion: 2 };
         });
 
         await saveChanges();
 
         const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);
-        expect(updatedIds).toEqual(['19', '18']);
+        expect(updatedIds).toEqual(['18', '19']);
         expect(addNotification).not.toHaveBeenCalled();
+    });
+
+    it('retains every local patch when a dependency cycle rejects an independent task in the same batch', async () => {
+        const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();
+
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        setTasks([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'C', startDate: MONDAY, dueDate: TUESDAY })
+        ]);
+        updateTask('A', { dueDate: WEDNESDAY });
+        updateTask('B', { dueDate: THURSDAY });
+        updateTask('C', { dueDate: FRIDAY });
+        setRelations([
+            { id: 'AB', from: 'A', to: 'B', type: 'precedes', delay: 0 },
+            { id: 'BA', from: 'B', to: 'A', type: 'precedes', delay: 0 }
+        ]);
+
+        const failures = await saveChanges();
+
+        expect(vi.mocked(apiClient.updateTask)).not.toHaveBeenCalled();
+        expect(vi.mocked(apiClient.fetchData)).not.toHaveBeenCalled();
+        expect(failures.get('A')).toContain('dependency cycle');
+        expect(failures.get('B')).toContain('dependency cycle');
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set(['A', 'B', 'C']));
+        expect(useTaskStore.getState().localTaskPatches.A).toHaveLength(1);
+        expect(useTaskStore.getState().localTaskPatches.B).toHaveLength(1);
+        expect(useTaskStore.getState().localTaskPatches.C).toHaveLength(1);
+        expect(useTaskStore.getState().allTasks.map(task => [task.id, task.dueDate])).toEqual([
+            ['A', WEDNESDAY],
+            ['B', THURSDAY],
+            ['C', FRIDAY]
+        ]);
+        expect(addNotification).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries a transient error on a downstream relation task and cleans both saved tasks', async () => {
+        const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();
+
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
+        setTasks([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: MONDAY, dueDate: TUESDAY })
+        ]);
+        updateTask('A', { dueDate: WEDNESDAY });
+        updateTask('B', { dueDate: THURSDAY });
+        setRelations([
+            { id: 'AB', from: 'A', to: 'B', type: 'precedes', delay: 0 }
+        ]);
+
+        let downstreamAttempts = 0;
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
+            if (task.id === 'B') {
+                downstreamAttempts += 1;
+                if (downstreamAttempts === 1) return { status: 'error', error: 'temporary relation failure' };
+            }
+            return { status: 'ok', lockVersion: 2 };
+        });
+
+        const failures = await saveChanges();
+
+        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id)).toEqual(['A', 'B', 'B']);
+        expect(failures).toEqual(new Map());
+        expect(addNotification).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
+        expect(useTaskStore.getState().localTaskPatches).toEqual({});
     });
 });
 

@@ -79,8 +79,13 @@ Redmine Canvas Gantt は、Ruby on Rails バックエンドと `spa/` ディレ�
 - バックエンドのテスト（スペック）は Redmine の実行環境から実行する必要があります。
   - **Docker 環境の場合**:
     ```bash
+    docker compose up -d --wait
+    docker compose exec -T redmine bundle config unset without
+    docker compose exec -T redmine bundle add rspec-rails --version '~> 8.0' --group test --skip-install
+    docker compose exec -T redmine bundle install --jobs 4 --retry 3
     docker compose exec -T redmine bundle exec rspec plugins/redmine_canvas_gantt/spec
     ```
+    コンテナの Bundler 設定では `development` と `test` が除外されている場合があるため、RSpec 実行前に `without` を解除し、Redmine のバージョンに対応する `rspec-rails` をコンテナ内へ追加します。Redmine 6.0/6.1 では `~> 7.1`、Redmine 7.0 では `~> 8.0` を使用してください。コンテナを再作成した場合は、この依存関係の準備を再実行します。
   - **非 Docker 環境の場合**: Redmine のルートディレクトリから実行します。
     ```bash
     bundle exec rspec plugins/redmine_canvas_gantt/spec

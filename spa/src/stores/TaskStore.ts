@@ -2561,7 +2561,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     ))
                 ));
                 invalidateDataRequests();
-                const failures = await saveModifiedTasks(
+                const saveResult = await saveModifiedTasks(
                     snapshot.allTasks,
                     snapshot.relations,
                     snapshot.modifiedTaskIds,
@@ -2639,16 +2639,22 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         ));
                     }
                 );
+                const { failures, savedTaskIds } = saveResult;
 
                 set((state) => {
                     const modifiedTaskIds = new Set(state.modifiedTaskIds);
                     const localTaskPatches = { ...state.localTaskPatches };
                     snapshotTaskIds.forEach((taskId) => {
-                        if (failures.has(taskId)) return;
+                        if (!savedTaskIds.has(taskId)) return;
                         const currentGeneration = state.editGenerations[taskId] ?? 0;
                         const savedGeneration = snapshotGenerations[taskId] ?? 0;
-                        localTaskPatches[taskId] = (localTaskPatches[taskId] ?? [])
+                        const remainingPatches = (localTaskPatches[taskId] ?? [])
                             .filter(patch => patch.generation > savedGeneration);
+                        if (remainingPatches.length > 0) {
+                            localTaskPatches[taskId] = remainingPatches;
+                        } else {
+                            delete localTaskPatches[taskId];
+                        }
                         if (currentGeneration === savedGeneration) {
                             modifiedTaskIds.delete(taskId);
                         }
@@ -2656,7 +2662,17 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     return { modifiedTaskIds, localTaskPatches };
                 });
 
-                if (requiresResync || conflictMessages.size > 0) await get().refreshData();
+                if (saveResult.batchStatus !== 'preflight_failure' && (requiresResync || conflictMessages.size > 0)) {
+                    try {
+                        await get().refreshData();
+                    } catch (error) {
+                        // A failed conflict resync is already represented as a
+                        // terminal conflict. Do not replace that actionable
+                        // result with a second refresh exception; the local
+                        // patch must remain available for manual resolution.
+                        if (conflictMessages.size === 0) throw error;
+                    }
+                }
                 if (conflictMessages.size > 0) {
                     set((state) => {
                         const taskConflicts = { ...state.taskConflicts };

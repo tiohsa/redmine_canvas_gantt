@@ -86,6 +86,17 @@ describe('constraintGraph', () => {
         expect([...cyclicTaskIds].sort()).toEqual(['A', 'B', 'C']);
     });
 
+    it('does not classify cycle downstream or independent components as cycle members', () => {
+        const cyclicTaskIds = detectConstraintCycleTaskIds([
+            { id: 'ab', from: 'A', to: 'B', type: RelationType.Precedes },
+            { id: 'ba', from: 'B', to: 'A', type: RelationType.Precedes },
+            { id: 'bc', from: 'B', to: 'C', type: RelationType.Precedes },
+            { id: 'de', from: 'D', to: 'E', type: RelationType.Precedes }
+        ]);
+
+        expect([...cyclicTaskIds].sort()).toEqual(['A', 'B']);
+    });
+
     it('derives unscheduled, conflicted, and cyclic task states', () => {
         const tasks = [
             buildTask({ id: 'A', dueDate: DAY * 2 }),

@@ -547,6 +547,31 @@ describe('apiClient.saveBaseline', () => {
             warnings: ['baseline warning']
         });
     });
+
+    it('preserves the typed mutation status for baseline failures', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: false,
+            status: 403,
+            statusText: 'Forbidden',
+            json: async () => ({ error: 'Baseline permission denied' })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await expect(apiClient.saveBaseline({ scope: 'project' }))
+            .rejects.toMatchObject({
+                name: 'ApiMutationError',
+                status: 'forbidden',
+                httpStatus: 403,
+                message: 'Baseline permission denied'
+            });
+    });
 });
 
 describe('apiClient.deleteTask', () => {
