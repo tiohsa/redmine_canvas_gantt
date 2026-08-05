@@ -23,7 +23,7 @@ describe('ConflictResolutionPanel', () => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
     });
 
-    it('offers remote, local retry, and dismiss choices while retaining the draft', () => {
+    it('offers explicit remote and local retry choices while retaining the draft', () => {
         const saveChanges = vi.fn().mockResolvedValue(new Map());
         useTaskStore.setState({
             allTasks: [task('Local', 1)],
@@ -40,7 +40,7 @@ describe('ConflictResolutionPanel', () => {
         render(<ConflictResolutionPanel />);
         expect(screen.getByTestId('conflict-use-remote-1')).toBeInTheDocument();
         expect(screen.getByTestId('conflict-keep-local-1')).toBeInTheDocument();
-        expect(screen.getByTestId('conflict-dismiss-1')).toBeInTheDocument();
+        expect(screen.queryByTestId('conflict-dismiss-1')).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByTestId('conflict-keep-local-1'));
         expect(saveChanges).toHaveBeenCalledTimes(1);
@@ -69,4 +69,3 @@ describe('ConflictResolutionPanel', () => {
         expect(useTaskStore.getState().taskConflicts['1']).toBeUndefined();
     });
 });
-

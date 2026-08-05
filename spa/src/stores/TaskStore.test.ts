@@ -1465,7 +1465,7 @@ describe('TaskStore asynchronous state ownership', () => {
         }
     });
 
-    it('keeps a not-found task as a tombstone while retaining its local patch', () => {
+    it('cleans local draft state when a not-found task becomes a tombstone', () => {
         useTaskStore.getState().setTasks([buildTask({ id: 'task-1' })]);
         useTaskStore.getState().updateTask('task-1', { subject: 'local draft' });
         useTaskStore.getState().markTaskTombstone('task-1', 'server');
@@ -1473,20 +1473,20 @@ describe('TaskStore asynchronous state ownership', () => {
         const state = useTaskStore.getState();
         expect(state.allTasks).toEqual([]);
         expect(state.taskTombstones['task-1']?.source).toBe('server');
-        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
-        expect(state.localTaskPatches['task-1']).toHaveLength(1);
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+        expect(state.localTaskPatches['task-1']).toBeUndefined();
     });
 
-    it('does not silently commit a local patch for a tombstoned task', async () => {
+    it('does not keep a tombstoned task eligible for a later save', async () => {
         useTaskStore.getState().setTasks([buildTask({ id: 'task-1' })]);
         useTaskStore.getState().updateTask('task-1', { subject: 'local draft' });
         useTaskStore.getState().markTaskTombstone('task-1', 'server');
 
         const failures = await useTaskStore.getState().saveChanges();
 
-        expect(failures.has('task-1')).toBe(true);
-        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
-        expect(useTaskStore.getState().localTaskPatches['task-1']).toHaveLength(1);
+        expect(failures.has('task-1')).toBe(false);
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
+        expect(useTaskStore.getState().localTaskPatches['task-1']).toBeUndefined();
     });
 
     it('clears a stale tombstone when conflict resolution adopts a remote task', async () => {
@@ -1617,7 +1617,7 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.barOperations[laterOperationId]).toBeDefined();
     });
 
-    it('keeps the local patch and bar operation when conflict is dismissed', async () => {
+    it('does not resolve a conflict by dismissing only its conflict record', async () => {
         const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
         useTaskStore.getState().setTasks([localTask]);
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
@@ -1628,7 +1628,7 @@ describe('TaskStore asynchronous state ownership', () => {
         await useTaskStore.getState().resolveTaskConflict('task-1', 'dismiss');
 
         const state = useTaskStore.getState();
-        expect(state.taskConflicts['task-1']).toBeUndefined();
+        expect(state.taskConflicts['task-1']).toBeDefined();
         expect(state.localTaskPatches['task-1']).toHaveLength(1);
         expect(state.barOperations[operationId]).toBeDefined();
     });
@@ -1649,6 +1649,32 @@ describe('TaskStore asynchronous state ownership', () => {
 
         expect(apiClient.updateTask).toHaveBeenCalled();
         expect(useTaskStore.getState().barOperations).toEqual({});
+    });
+
+    it('retries inline conflict resolution with the local field payload and current lock version', async () => {
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 3 });
+        const localTask = buildTask({ id: 'task-1', statusId: 1, statusName: 'New', lockVersion: 1 });
+        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().updateTask('task-1', { statusId: 2, statusName: 'In Progress' });
+        useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...localTask, subject: 'remote subject', lockVersion: 2 }
+        ]));
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'local');
+
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        expect(apiClient.fetchData).toHaveBeenCalled();
+        expect(apiClient.updateTaskFields).toHaveBeenCalledWith(
+            'task-1',
+            expect.objectContaining({ status_id: 2, lock_version: 2 }),
+            expect.any(String)
+        );
+        const state = useTaskStore.getState();
+        expect(state.taskConflicts['task-1']).toBeUndefined();
+        expect(state.localTaskPatches['task-1']).toBeUndefined();
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+        expect(state.allTasks.find(task => task.id === 'task-1')?.lockVersion).toBe(3);
     });
 
     it('settles the conflicted operation without removing a later operation after local retry', async () => {
@@ -1805,7 +1831,7 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.activeBarOperationId).toBeNull();
     });
 
-    it('keeps bar operation ownership while a task tombstone is pending resolution', () => {
+    it('clears bar operation ownership when a task tombstone is terminal', () => {
         useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: MONDAY })]);
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
         useTaskStore.getState().updateTask('task-1', { dueDate: TUESDAY });
@@ -1813,7 +1839,7 @@ describe('TaskStore asynchronous state ownership', () => {
 
         useTaskStore.getState().markTaskTombstone('task-1', 'server');
 
-        expect(useTaskStore.getState().barOperations[operationId]).toBeDefined();
+        expect(useTaskStore.getState().barOperations[operationId]).toBeUndefined();
     });
 
     it('does not let a pre-delete refresh resurrect a locally removed task', async () => {
@@ -1860,7 +1886,7 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.modifiedTaskIds.has('task-1')).toBe(false);
     });
 
-    it('resaves an edit made while a conflict refresh is in flight', async () => {
+    it('keeps an edit made while a conflict refresh is in flight dirty for explicit resolution', async () => {
         const conflictRefresh = deferred<ReturnType<typeof buildApiData>>();
         let saveCount = 0;
         let reloadCount = 0;
@@ -1885,10 +1911,13 @@ describe('TaskStore asynchronous state ownership', () => {
         conflictRefresh.resolve(buildApiData([buildTask({ id: 'task-1', dueDate: 6, lockVersion: 2 })]));
         await saving;
 
-        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.dueDate)).toEqual([5, 5, 8]);
-        expect(vi.mocked(apiClient.updateTask).mock.calls[1][0].lockVersion).toBe(2);
+        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.dueDate)).toEqual([5]);
         expect(useTaskStore.getState().allTasks.find(task => task.id === 'task-1')?.dueDate).toBe(8);
-        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
+        expect(useTaskStore.getState().taskConflicts['task-1']).toMatchObject({
+            taskId: 'task-1',
+            message: 'stale lock'
+        });
     });
 
     it('coalesces overlapping saveChanges calls for the same edit stream', async () => {
@@ -2009,16 +2038,10 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(useTaskStore.getState().modifiedTaskIds.has('ordinary-task')).toBe(false);
     });
 
-    it('rolls back a bar operation when conflict retry ends in a terminal failure', async () => {
+    it('keeps a bar operation unresolved when conflict resync shows a different remote value', async () => {
         const original = buildTask({ id: 'task-1', startDate: MONDAY, dueDate: TUESDAY, lockVersion: 1 });
         const remote = buildTask({ id: 'task-1', startDate: MONDAY, dueDate: FRIDAY, lockVersion: 2 });
-        let attempts = 0;
-        vi.mocked(apiClient.updateTask).mockImplementation(async () => {
-            attempts += 1;
-            return attempts === 1
-                ? { status: 'conflict', error: 'Conflict' }
-                : { status: 'validation_error', error: 'Dates violate a rule' };
-        });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'conflict', error: 'Conflict' });
         vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([remote]));
         useTaskStore.getState().setTasks([original]);
 
@@ -2028,9 +2051,13 @@ describe('TaskStore asynchronous state ownership', () => {
 
         await useTaskStore.getState().saveChanges();
 
-        expect(attempts).toBe(2);
-        expect(useTaskStore.getState().allTasks[0]).toMatchObject(original);
-        expect(useTaskStore.getState().barOperations).toEqual({});
+        expect(vi.mocked(apiClient.updateTask)).toHaveBeenCalledTimes(1);
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject({ dueDate: THURSDAY });
+        expect(useTaskStore.getState().barOperations[operationId]).toBeDefined();
+        expect(useTaskStore.getState().taskConflicts['task-1']).toMatchObject({
+            taskId: 'task-1',
+            message: 'Conflict'
+        });
     });
 
     it('keeps a conflict terminal when both resync and follow-up refresh fail', async () => {
@@ -2059,7 +2086,7 @@ describe('TaskStore asynchronous state ownership', () => {
 
         const failures = await useTaskStore.getState().saveChanges();
 
-        expect(vi.mocked(apiClient.updateTask)).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(apiClient.updateTask)).toHaveBeenCalledTimes(1);
         expect(failures.get('task-1')).toBe('stale lock');
         expect(useTaskStore.getState().taskConflicts['task-1']).toMatchObject({
             taskId: 'task-1',
@@ -2904,6 +2931,31 @@ describe('TaskStore saveChanges ordering', () => {
         expect(addNotification).not.toHaveBeenCalled();
     });
 
+    it('saveChanges clears all local patches after a 1,000 task successful save burst', async () => {
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+        const tasks = Array.from({ length: 1000 }, (_, index) => (
+            buildTask({
+                id: `patch-leak-${index}`,
+                startDate: MONDAY,
+                dueDate: TUESDAY,
+                lockVersion: 1
+            })
+        ));
+
+        setTasks(tasks);
+        tasks.forEach((task, index) => {
+            updateTask(task.id, { dueDate: TUESDAY + DAY * ((index % 5) + 1) });
+        });
+
+        const failures = await saveChanges();
+
+        expect(failures).toEqual(new Map());
+        expect(vi.mocked(apiClient.updateTask)).toHaveBeenCalledTimes(1000);
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
+        expect(useTaskStore.getState().localTaskPatches).toEqual({});
+        expect(addNotification).not.toHaveBeenCalled();
+    }, 15_000);
+
     it('retains every local patch when a dependency cycle rejects an independent task in the same batch', async () => {
         const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();
 
@@ -3095,6 +3147,53 @@ describe('TaskStore drag parent updates', () => {
         expect(result.status).toBe('error');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBe('parent');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.lockVersion).toBe(2);
+    });
+
+    it('moveTaskAsChild tombstones the task when API resolves not_found', async () => {
+        const { setTasks, moveTaskAsChild } = useTaskStore.getState();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: '11', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: '10', projectId: 'p1', displayOrder: 2, lockVersion: 2 })
+        ]);
+
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
+            status: 'not_found',
+            error: 'Task no longer exists'
+        });
+
+        const result = await moveTaskAsChild('10', '11');
+
+        const state = useTaskStore.getState();
+        expect(result.status).toBe('error');
+        expect(state.allTasks.some((task) => task.id === '10')).toBe(false);
+        expect(state.taskTombstones['10']?.source).toBe('server');
+        expect(state.modifiedTaskIds.has('10')).toBe(false);
+        expect(state.localTaskPatches['10']).toBeUndefined();
+    });
+
+    it('moveTaskToRoot tombstones the task when API rejects with not_found', async () => {
+        const { setTasks, moveTaskToRoot } = useTaskStore.getState();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', displayOrder: 1, lockVersion: 2 })
+        ]);
+
+        vi.mocked(apiClient.updateTaskFields).mockRejectedValueOnce(
+            Object.assign(new Error('Task no longer exists'), { status: 'not_found' })
+        );
+
+        const result = await moveTaskToRoot('child');
+
+        const state = useTaskStore.getState();
+        expect(result.status).toBe('error');
+        expect(state.allTasks.some((task) => task.id === 'child')).toBe(false);
+        expect(state.taskTombstones.child?.source).toBe('server');
+        expect(state.modifiedTaskIds.has('child')).toBe(false);
+        expect(state.localTaskPatches.child).toBeUndefined();
     });
 
     it('does not let an earlier parent move clear a later optimistic move', async () => {

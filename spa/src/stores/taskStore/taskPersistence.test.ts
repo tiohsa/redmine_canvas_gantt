@@ -17,6 +17,55 @@ const buildTask = (overrides: Partial<Task>): Task => ({
 });
 
 describe('saveModifiedTasks', () => {
+    it.each([
+        { bodyStatus: 'ok' as const, recordStatus: 'succeeded' as const, outcome: 'success' as const, metric: 'completed' as const },
+        { bodyStatus: 'validation_error' as const, recordStatus: 'failed' as const, outcome: 'terminal' as const, metric: 'failed' as const },
+        { bodyStatus: 'forbidden' as const, recordStatus: 'failed' as const, outcome: 'terminal' as const, metric: 'failed' as const },
+        { bodyStatus: 'not_found' as const, recordStatus: 'failed' as const, outcome: 'terminal' as const, metric: 'failed' as const },
+        { bodyStatus: 'conflict' as const, recordStatus: 'conflict' as const, outcome: 'conflict' as const, metric: 'failed' as const },
+        { bodyStatus: 'transient_error' as const, recordStatus: 'failed' as const, outcome: 'transient' as const, metric: 'failed' as const }
+    ])('records resolved $bodyStatus mutations as $recordStatus, not transport success', async ({ bodyStatus, recordStatus, outcome, metric }) => {
+        const onSuccess = vi.fn();
+        const result = await enqueueMutationOperation(['transition-table'], async (context) => ({
+            status: bodyStatus,
+            operationId: context!.operationId
+        }), { onSuccess });
+
+        const record = getMutationOperationRecords().find(entry => entry.operationId === result.operationId);
+        expect(record).toMatchObject({
+            status: recordStatus,
+            outcome
+        });
+
+        if (metric === 'completed') {
+            expect(record?.status).toBe('succeeded');
+            expect(onSuccess).toHaveBeenCalledTimes(1);
+        } else {
+            expect(record?.status).not.toBe('succeeded');
+            expect(onSuccess).not.toHaveBeenCalled();
+        }
+    });
+
+    it.each([
+        { malformedResult: null, label: 'null result' },
+        { malformedResult: 'ok', label: 'primitive result' },
+        { malformedResult: {}, label: 'missing status' },
+        { malformedResult: { status: 'unexpected' }, label: 'unknown status' }
+    ])('records $label as a protocol failure', async ({ malformedResult }) => {
+        const onSuccess = vi.fn();
+        const result = await enqueueMutationOperation(['protocol-table'], async (context) => ({
+            ...(malformedResult && typeof malformedResult === 'object' ? malformedResult : { value: malformedResult }),
+            operationId: context!.operationId
+        }), { onSuccess });
+
+        const record = getMutationOperationRecords().find(entry => entry.operationId === result.operationId);
+        expect(record).toMatchObject({
+            status: 'failed',
+            outcome: 'terminal'
+        });
+        expect(onSuccess).not.toHaveBeenCalled();
+    });
+
     it('runs lifecycle completion before releasing an entity queue slot', async () => {
         const events: string[] = [];
         let releaseFirst!: () => void;
@@ -25,7 +74,7 @@ describe('saveModifiedTasks', () => {
             async () => {
                 events.push('first:transport');
                 await new Promise<void>(resolve => { releaseFirst = resolve; });
-                return 'first';
+                return { status: 'ok' as const, value: 'first' };
             },
             {
                 onSuccess: async () => {
@@ -35,12 +84,15 @@ describe('saveModifiedTasks', () => {
         );
         const second = enqueueMutationOperation(['A'], async () => {
             events.push('second:transport');
-            return 'second';
+            return { status: 'ok' as const, value: 'second' };
         });
 
         await vi.waitFor(() => expect(events).toEqual(['first:transport']));
         releaseFirst();
-        await expect(Promise.all([first, second])).resolves.toEqual(['first', 'second']);
+        await expect(Promise.all([first, second])).resolves.toEqual([
+            { status: 'ok', value: 'first' },
+            { status: 'ok', value: 'second' }
+        ]);
         expect(events).toEqual(['first:transport', 'first:commit', 'second:transport']);
     });
 
@@ -53,26 +105,59 @@ describe('saveModifiedTasks', () => {
             events.push('first:start');
             await new Promise<void>(resolve => { releaseFirst = resolve; });
             events.push('first:end');
-            return 'first';
+            return { status: 'ok' as const, value: 'first' };
         });
         const second = enqueueMutationOperation(['A', 'B'], async (context) => {
             operationIds.push(context!.operationId);
             events.push('second:start');
-            return 'second';
+            return { status: 'ok' as const, value: 'second' };
         });
 
         await vi.waitFor(() => expect(events).toEqual(['first:start']));
         releaseFirst();
-        await expect(Promise.all([first, second])).resolves.toEqual(['first', 'second']);
+        await expect(Promise.all([first, second])).resolves.toEqual([
+            { status: 'ok', value: 'first' },
+            { status: 'ok', value: 'second' }
+        ]);
         expect(events).toEqual(['first:start', 'first:end', 'second:start']);
         expect(operationIds).toHaveLength(2);
         expect(new Set(operationIds).size).toBe(2);
 
-        await expect(enqueueMutationOperation(['A'], async (context) => context!.operationId)).resolves.toMatch(/^mutation:/);
+        await expect(enqueueMutationOperation(['A'], async (context) => ({ status: 'ok' as const, operationId: context!.operationId })))
+            .resolves.toMatchObject({ status: 'ok', operationId: expect.stringMatching(/^mutation:/) });
         expect(getPendingMutationQueueSize()).toBe(0);
         const records = getMutationOperationRecords().filter(record => operationIds.includes(record.operationId));
         expect(records.map(record => record.status)).toEqual(['succeeded', 'succeeded']);
         expect(records.every(record => record.entityIds.join(',') === 'A,B')).toBe(true);
+    });
+
+    it('deduplicates duplicate entity ids before queueing a mutation', async () => {
+        const result = await enqueueMutationOperation(['A', 'A', 'B'], async (context) => ({
+            status: 'ok' as const,
+            operationId: context!.operationId,
+            entityIds: context!.entityIds
+        }));
+
+        expect(result.entityIds).toEqual(['A', 'B']);
+        const record = getMutationOperationRecords().find(entry => entry.operationId === result.operationId);
+        expect(record).toMatchObject({
+            status: 'succeeded',
+            entityIds: ['A', 'B']
+        });
+        expect(getPendingMutationQueueSize()).toBe(0);
+    });
+
+    it.each([
+        { label: 'empty', entityIds: [] as unknown as string[] },
+        { label: 'null', entityIds: [null] as unknown as string[] },
+        { label: 'blank', entityIds: [''] }
+    ])('rejects $label mutation entity scopes without running the operation', async ({ entityIds }) => {
+        const operation = vi.fn(async () => ({ status: 'ok' as const }));
+
+        await expect(enqueueMutationOperation(entityIds, operation)).rejects.toThrow(/entity id/);
+
+        expect(operation).not.toHaveBeenCalled();
+        expect(getPendingMutationQueueSize()).toBe(0);
     });
 
     it('saves independent tasks in parallel while preserving dependency order', async () => {
@@ -431,9 +516,9 @@ describe('saveModifiedTasks', () => {
         expect(result.batchStatus).toBe('partial_failure');
     });
 
-    it('reapplies the local value with the latest lock version after an optimistic-lock conflict', async () => {
+    it('treats a conflict as idempotent success only when remote persisted fields already match', async () => {
         const local = buildTask({ id: 'A', dueDate: 10, lockVersion: 1 });
-        const remote = buildTask({ id: 'A', dueDate: 12, lockVersion: 2 });
+        const remote = buildTask({ id: 'A', dueDate: 10, lockVersion: 2 });
         const other = buildTask({ id: 'B', lockVersion: 1 });
         let attempts = 0;
         const updateTask = vi.fn().mockImplementation(async (task: Task) => {
@@ -458,13 +543,12 @@ describe('saveModifiedTasks', () => {
             fetchData
         );
 
-        expect(updateTask.mock.calls.filter(([task]) => task.id === 'A')).toHaveLength(2);
-        expect(updateTask.mock.calls.filter(([task]) => task.id === 'A')[1][0].lockVersion).toBe(2);
+        expect(updateTask.mock.calls.filter(([task]) => task.id === 'A')).toHaveLength(1);
         expect(result.failures.has('A')).toBe(false);
         expect(result.savedTaskIds).toEqual(new Set(['A', 'B']));
     });
 
-    it('stops conflict retries after two sends for one task', async () => {
+    it('does not automatically retry after a conflict when remote persisted fields differ', async () => {
         const local = buildTask({ id: 'A', dueDate: 10, lockVersion: 1 });
         const remote = buildTask({ id: 'A', dueDate: 12, lockVersion: 2 });
         const updateTask = vi.fn().mockResolvedValue({
@@ -481,7 +565,7 @@ describe('saveModifiedTasks', () => {
             vi.fn().mockResolvedValue({ tasks: [remote] })
         );
 
-        expect(updateTask).toHaveBeenCalledTimes(2);
+        expect(updateTask).toHaveBeenCalledTimes(1);
         expect(result.failures.get('A')).toBe('conflict');
         expect(result.savedTaskIds).toEqual(new Set());
         expect(result.batchStatus).toBe('partial_failure');
@@ -537,33 +621,25 @@ describe('saveModifiedTasks', () => {
             onConflict
         );
 
-        expect(updateTask).toHaveBeenCalledTimes(2);
-        expect(fetchData).toHaveBeenCalledTimes(2);
+        expect(updateTask).toHaveBeenCalledTimes(1);
+        expect(fetchData).toHaveBeenCalledTimes(1);
         expect(result.savedTaskIds).toEqual(new Set());
         expect(result.failures.get('A')).toBe('stale lock');
         expect(onConflict).toHaveBeenCalledWith('A', 'stale lock');
     });
 
-    it('resolves multiple conflicts in one resync without mixing their lock versions', async () => {
+    it('records multiple differing conflicts in one resync without retrying with newer lock versions', async () => {
         const localA = buildTask({ id: 'A', dueDate: 10, lockVersion: 1 });
         const localB = buildTask({ id: 'B', dueDate: 20, lockVersion: 3 });
         const remoteA = buildTask({ id: 'A', dueDate: 11, lockVersion: 2 });
         const remoteB = buildTask({ id: 'B', dueDate: 21, lockVersion: 4 });
-        let attemptsA = 0;
-        let attemptsB = 0;
         const updateTask = vi.fn().mockImplementation(async (task: Task) => {
-            if (task.id === 'A') {
-                attemptsA += 1;
-                return attemptsA === 1
-                    ? { status: 'conflict' as const, error: 'A stale lock' }
-                    : { status: 'ok' as const, lockVersion: 5 };
-            }
-            attemptsB += 1;
-            return attemptsB === 1
-                ? { status: 'conflict' as const, error: 'B stale lock' }
-                : { status: 'ok' as const, lockVersion: 6 };
+            return task.id === 'A'
+                ? { status: 'conflict' as const, error: 'A stale lock' }
+                : { status: 'conflict' as const, error: 'B stale lock' };
         });
         const fetchData = vi.fn().mockResolvedValue({ tasks: [remoteA, remoteB] });
+        const onConflict = vi.fn();
 
         const result = await saveModifiedTasks(
             [localA, localB],
@@ -571,14 +647,21 @@ describe('saveModifiedTasks', () => {
             new Set(['A', 'B']),
             [],
             updateTask,
-            fetchData
+            fetchData,
+            undefined,
+            undefined,
+            onConflict
         );
 
         expect(fetchData).toHaveBeenCalledTimes(1);
-        expect(updateTask.mock.calls.filter(([task]) => task.id === 'A')[1][0].lockVersion).toBe(2);
-        expect(updateTask.mock.calls.filter(([task]) => task.id === 'B')[1][0].lockVersion).toBe(4);
-        expect(result.failures).toEqual(new Map());
-        expect(result.savedTaskIds).toEqual(new Set(['A', 'B']));
+        expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A', 'B']);
+        expect(result.failures).toEqual(new Map([
+            ['A', 'A stale lock'],
+            ['B', 'B stale lock']
+        ]));
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(onConflict).toHaveBeenCalledWith('A', 'A stale lock');
+        expect(onConflict).toHaveBeenCalledWith('B', 'B stale lock');
     });
 
     it('blocks a successor after a not-found predecessor', async () => {

@@ -143,6 +143,35 @@ describe('InlineEditService', () => {
         expect(useUIStore.getState().notifications[0]?.message).toBe('Validation failed');
     });
 
+    it('tombstones the task without rollback when a rejected mutation is not_found', async () => {
+        const initialTask = buildTask();
+        useTaskStore.setState({
+            allTasks: [initialTask],
+            tasks: [initialTask]
+        });
+
+        vi.mocked(apiClient.updateTaskFields).mockRejectedValueOnce(
+            Object.assign(new Error('Task no longer exists'), { status: 'not_found' })
+        );
+
+        await expect(
+            InlineEditService.saveTaskFields({
+                taskId: 'task-1',
+                optimisticTaskUpdates: { subject: 'Local edit' },
+                rollbackTaskUpdates: { subject: 'Original subject' },
+                fields: { subject: 'Local edit' }
+            })
+        ).rejects.toThrow('Task no longer exists');
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.some((task) => task.id === 'task-1')).toBe(false);
+        expect(state.taskTombstones['task-1']?.source).toBe('server');
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+        expect(state.localTaskPatches['task-1']).toBeUndefined();
+        expect(state.taskConflicts['task-1']).toBeUndefined();
+        expect(useUIStore.getState().notifications[0]?.message).toBe('Task no longer exists');
+    });
+
     it('does not let an earlier failure roll back a newer inline edit', async () => {
         const firstSave = deferred<{ status: 'error'; error: string }>();
         vi.mocked(apiClient.updateTaskFields)

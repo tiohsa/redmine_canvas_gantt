@@ -326,6 +326,10 @@ jobs:
         if: ${{ !matrix.full_e2e }}
         run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/business-calendar.pw.ts
 
+      - name: Run mutation contract E2E
+        if: ${{ !matrix.full_e2e }}
+        run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/mutation-contract.pw.ts
+
       - name: Run baseline permission E2E
         if: ${{ !matrix.full_e2e }}
         run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/baseline-permissions.pw.ts

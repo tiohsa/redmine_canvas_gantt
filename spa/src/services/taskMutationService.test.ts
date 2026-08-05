@@ -17,14 +17,16 @@ describe('taskMutationService mutation boundary', () => {
             error: 'temporary failure'
         });
         let operationId = '';
+        const onSuccess = vi.fn();
 
         const result = await taskMutationService.updateTaskFields(
             'nonbulk-status-task',
             { subject: 'draft' },
             {
-                onSuccess: (_value, context) => {
+                onResult: (_value, context) => {
                     operationId = context.operationId;
-                }
+                },
+                onSuccess
             }
         );
 
@@ -32,6 +34,7 @@ describe('taskMutationService mutation boundary', () => {
         expect(updateTaskFields).toHaveBeenCalledTimes(1);
         expect(getMutationOperationRecords().find(record => record.operationId === operationId)?.outcome)
             .toBe('transient');
+        expect(onSuccess).not.toHaveBeenCalled();
     });
 
     it('does not retry a thrown non-bulk mutation error', async () => {
@@ -52,6 +55,56 @@ describe('taskMutationService mutation boundary', () => {
         const record = getMutationOperationRecords()
             .filter(candidate => candidate.entityIds.includes('baseline:project'))
             .at(-1);
+        expect(record).toMatchObject({ status: 'failed', outcome: 'terminal' });
+    });
+
+    it('records resolved baseline responses without snapshots as failed domain operations', async () => {
+        vi.spyOn(apiClient, 'saveBaseline').mockResolvedValue({
+            status: 'ok',
+            baseline: null
+        });
+
+        const result = await taskMutationService.saveBaseline({ scope: 'project' });
+
+        const record = getMutationOperationRecords()
+            .filter(candidate => candidate.entityIds.includes('baseline:project'))
+            .at(-1);
+        expect(result.baseline).toBeNull();
+        expect(record).toMatchObject({ status: 'failed', outcome: 'terminal' });
+    });
+
+    it('records thrown relation conflicts as conflict operations', async () => {
+        const error = new ApiMutationError('conflict', 'stale relation', 409);
+        vi.spyOn(apiClient, 'createRelation').mockRejectedValue(error);
+
+        await expect(taskMutationService.createRelation('10', '11', 'precedes')).rejects.toBe(error);
+
+        const record = getMutationOperationRecords()
+            .filter(candidate => candidate.entityIds.includes('10') && candidate.entityIds.includes('11'))
+            .at(-1);
+        expect(record).toMatchObject({ status: 'conflict', outcome: 'conflict' });
+    });
+
+    it('records resolved bulk subtask row failures as failed domain operations', async () => {
+        vi.spyOn(apiClient, 'bulkCreateSubtasks').mockResolvedValue({
+            status: 'ok',
+            successCount: 0,
+            failCount: 2,
+            results: [
+                { status: 'error', subject: 'A', errors: ['blank'] },
+                { status: 'error', subject: 'B', errors: ['rolled back'] }
+            ]
+        });
+
+        const result = await taskMutationService.bulkCreateSubtasks({
+            parentId: '20',
+            subjects: ['A', 'B']
+        });
+
+        const record = getMutationOperationRecords()
+            .filter(candidate => candidate.entityIds.includes('20'))
+            .at(-1);
+        expect(result.failCount).toBe(2);
         expect(record).toMatchObject({ status: 'failed', outcome: 'terminal' });
     });
 

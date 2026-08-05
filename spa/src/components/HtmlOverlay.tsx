@@ -6,7 +6,7 @@ import { taskMutationService } from '../services/taskMutationService';
 import { RelationType } from '../types/constraints';
 import { useUIStore } from '../stores/UIStore';
 import { useBaselineStore } from '../stores/BaselineStore';
-import type { DraftRelation, Task } from '../types';
+import type { DraftRelation, Relation, Task } from '../types';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import { calculateBaselineDiff, formatBaselineCapturedAt, getBaselineTaskState } from '../utils/baseline';
 import {
@@ -52,6 +52,11 @@ const RESIZE_HANDLE_SELECTED_BORDER = rgbaFromPrimary(0.82);
 const RESIZE_HANDLE_GRIP = designTokens.controlActiveFg;
 const RESIZE_HANDLE_SHADOW = `0 1px 3px ${rgbaFromPrimary(0.18)}`;
 const BASELINE_POPOVER_OFFSET = 12;
+
+const toRelationState = (relation: Relation): Relation => {
+    const { id, from, to, type, delay } = relation;
+    return delay === undefined ? { id, from, to, type } : { id, from, to, type, delay };
+};
 
 
 export const HtmlOverlay: React.FC = () => {
@@ -243,7 +248,7 @@ export const HtmlOverlay: React.FC = () => {
 
     const handleCreateRelation = React.useCallback(async (relation: DraftRelation, rawType: string, delay?: number) => {
         const createdRelation = await taskMutationService.createRelation(relation.from, relation.to, rawType, delay);
-        addRelation(createdRelation);
+        addRelation(toRelationState(createdRelation));
         useTaskStore.getState().refreshForMutationMetadata(createdRelation);
         clearRelationSelection();
         useUIStore.getState().addNotification(i18n.t('label_relation_added') || 'Dependency created', 'success');
@@ -251,7 +256,7 @@ export const HtmlOverlay: React.FC = () => {
 
     const handleUpdateRelation = React.useCallback(async (relationId: string, rawType: string, delay?: number) => {
         const updatedRelation = await taskMutationService.updateRelation(relationId, rawType, delay);
-        replaceRelation(updatedRelation);
+        replaceRelation(toRelationState(updatedRelation));
         useTaskStore.getState().refreshForMutationMetadata(updatedRelation);
         clearRelationSelection();
         useUIStore.getState().addNotification(i18n.t('label_relation_updated') || 'Dependency updated', 'success');

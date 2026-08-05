@@ -15,6 +15,21 @@ import { getNonWorkingWeekDays } from './nonWorkingWeekDays';
 type UnknownRecord = Record<string, unknown>;
 export type ProjectCalendarArgument = string | number | Set<number> | null | undefined;
 export type WorkingDateDirection = 'forward' | 'backward';
+export type TaskDateIntervalMode = 'move' | 'resize_start' | 'resize_due' | 'direct_edit' | 'project_move' | 'legacy_unspecified';
+
+export type TaskDateInterval = {
+    startDate?: number | null;
+    dueDate?: number | null;
+};
+
+export type NormalizeTaskDateIntervalResult = {
+    valid: true;
+    interval: TaskDateInterval;
+} | {
+    valid: false;
+    interval: TaskDateInterval;
+    error: 'invalid_interval';
+};
 
 const EMPTY_PAYLOAD: BusinessCalendarPayload = {
     status: 'ok',
@@ -185,6 +200,37 @@ export const nextWorkingDay = (timestamp: number, projectId?: ProjectCalendarArg
 export const previousWorkingDay = (timestamp: number, projectId?: ProjectCalendarArgument): number => (
     normalizeWorkingDate(timestamp, 'backward', projectId)
 );
+
+export const normalizeTaskDateInterval = (
+    interval: TaskDateInterval,
+    options: {
+        changedFields: { startDate?: boolean; dueDate?: boolean };
+        projectId?: ProjectCalendarArgument;
+        mode?: TaskDateIntervalMode;
+    }
+): NormalizeTaskDateIntervalResult => {
+    const startChanged = options.changedFields.startDate === true;
+    const dueChanged = options.changedFields.dueDate === true;
+    const startDate = Number.isFinite(interval.startDate)
+        ? normalizeWorkingDate(interval.startDate!, 'forward', options.projectId)
+        : interval.startDate;
+    const dueDate = Number.isFinite(interval.dueDate)
+        ? normalizeWorkingDate(interval.dueDate!, 'backward', options.projectId)
+        : interval.dueDate;
+    const normalized = { startDate, dueDate };
+
+    if (Number.isFinite(startDate) && Number.isFinite(dueDate) && startDate! > dueDate!) {
+        if (options.mode === 'resize_start' && !dueChanged) {
+            return { valid: true, interval: { ...normalized, startDate: dueDate } };
+        }
+        if (options.mode === 'resize_due' && !startChanged) {
+            return { valid: true, interval: { ...normalized, dueDate: startDate } };
+        }
+        return { valid: false, interval: normalized, error: 'invalid_interval' };
+    }
+
+    return { valid: true, interval: normalized };
+};
 
 export const addWorkingDays = (timestamp: number, days: number, projectId?: ProjectCalendarArgument): number => {
     let date = timelineToCalendarDate(timestamp);

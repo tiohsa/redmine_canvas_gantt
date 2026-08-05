@@ -125,7 +125,7 @@ describe('HtmlOverlay', () => {
 
     it('opens a draft relation popover after dragging a dependency handle when auto apply is off', async () => {
         const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes, delay: 0 };
-        vi.mocked(apiClient.createRelation).mockResolvedValue(relation);
+        vi.mocked(apiClient.createRelation).mockResolvedValue({ status: 'ok', ...relation });
 
         act(() => {
             useUIStore.setState({ autoApplyDefaultRelation: false });
@@ -159,7 +159,7 @@ describe('HtmlOverlay', () => {
 
     it('creates reversed endpoints when dragging from the left dependency handle', async () => {
         const relation: Relation = { id: 'rel-1', from: '2', to: '1', type: RelationType.Relates };
-        vi.mocked(apiClient.createRelation).mockResolvedValue(relation);
+        vi.mocked(apiClient.createRelation).mockResolvedValue({ status: 'ok', ...relation });
 
         act(() => {
             useUIStore.setState({ autoApplyDefaultRelation: false });
@@ -337,7 +337,7 @@ describe('HtmlOverlay', () => {
 
     it('creates relation immediately after dragging when auto apply is on', async () => {
         const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes, delay: 2 };
-        vi.mocked(apiClient.createRelation).mockResolvedValue(relation);
+        vi.mocked(apiClient.createRelation).mockResolvedValue({ status: 'ok', ...relation });
 
         act(() => {
             useUIStore.setState({
@@ -369,7 +369,7 @@ describe('HtmlOverlay', () => {
     it('updates an existing relation from the popover', async () => {
         const existingRelation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Follows, delay: 2 };
         const updatedRelation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Blocked };
-        vi.mocked(apiClient.updateRelation).mockResolvedValue(updatedRelation);
+        vi.mocked(apiClient.updateRelation).mockResolvedValue({ status: 'ok', ...updatedRelation });
 
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);
@@ -447,7 +447,7 @@ describe('HtmlOverlay', () => {
 
     it('allows save when dependency dates are missing', async () => {
         const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes, delay: 0 };
-        vi.mocked(apiClient.createRelation).mockResolvedValue(relation);
+        vi.mocked(apiClient.createRelation).mockResolvedValue({ status: 'ok', ...relation });
 
         act(() => {
             useTaskStore.getState().setTasks([
@@ -497,7 +497,7 @@ describe('HtmlOverlay', () => {
     });
 
     it('deletes a relation from the popover after confirmation', async () => {
-        vi.mocked(apiClient.deleteRelation).mockResolvedValue(undefined);
+        vi.mocked(apiClient.deleteRelation).mockResolvedValue({ status: 'ok' });
 
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);

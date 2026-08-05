@@ -3,7 +3,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
 import { taskMutationService } from './taskMutationService';
-import { ApiMutationError } from '../api/client';
+import { classifyMutationError } from '../api/mutationOutcome';
 import { formatDateOnly } from '../utils/dateOnly';
 
 export class InlineEditService {
@@ -46,7 +46,7 @@ export class InlineEditService {
                     };
                 },
                 {
-                    onSuccess: (completedResult) => {
+                    onResult: (completedResult) => {
                         if (completedResult.status === 'ok') {
                             if (completedResult.completeness || completedResult.invalidatedEntityIds || completedResult.deletedEntityIds) {
                                 useTaskStore.getState().applyTaskMutationMetadata(taskId, completedResult);
@@ -61,21 +61,19 @@ export class InlineEditService {
                                 completedResult.error || (i18n.t('label_conflict') || 'Conflict'),
                                 operationGeneration
                             );
+                        } else if (completedResult.status === 'not_found' && isCurrentOperation()) {
+                            useTaskStore.getState().markTaskTombstone(taskId, 'server');
                         } else if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
-                            useTaskStore.getState().updateTask(taskId, rollbackTaskUpdates);
+                            useTaskStore.getState().rollbackTaskOperation(taskId, operationGeneration, rollbackTaskUpdates);
                         }
                     },
                     onError: (error) => {
-                        if (typeof ApiMutationError !== 'undefined' && error instanceof ApiMutationError && error.status === 'not_found' && isCurrentOperation()) {
+                        if (classifyMutationError(error).status === 'not_found' && isCurrentOperation()) {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');
-                            useTaskStore.getState().registerTaskConflict(
-                                taskId,
-                                error.message || (i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists'),
-                                operationGeneration
-                            );
+                            return;
                         }
                         if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
-                            useTaskStore.getState().updateTask(taskId, rollbackTaskUpdates);
+                            useTaskStore.getState().rollbackTaskOperation(taskId, operationGeneration, rollbackTaskUpdates);
                         }
                     }
                 }

@@ -71,13 +71,6 @@ export const ConflictResolutionPanel: React.FC = () => {
                             >
                                 {i18n.t('button_keep_local_retry') || 'Keep local & retry'}
                             </button>
-                            <button
-                                type="button"
-                                data-testid={`conflict-dismiss-${conflict.taskId}`}
-                                onClick={() => void resolveTaskConflict(conflict.taskId, 'dismiss')}
-                            >
-                                {i18n.t('button_dismiss_conflict') || 'Dismiss'}
-                            </button>
                         </div>
                     </div>
                 );
@@ -85,4 +78,3 @@ export const ConflictResolutionPanel: React.FC = () => {
         </section>
     );
 };
-

@@ -273,7 +273,7 @@ Kubernetes では同じパスへ ConfigMap などを read-only でマウント�
 
 このリポジトリには、Redmine 7.0.0 と MariaDB 11.4 をローカルで起動するための `docker-compose.yml` が含まれています。互換バージョンを使う場合は `REDMINE_IMAGE=redmine:6.0.6` または `redmine:6.1.2` を指定します。
 
-GitHub Actions では Redmine 6.0.6、6.1.2、7.0.0 の backend spec、互換スモークテスト、YAML業務カレンダーのpayload経路を継続検証します。Redmine 7.0.0 は MariaDB 11.4 の Compose DBを使ったローカル検証も行います。
+GitHub Actions では Redmine 6.0.6、6.1.2、7.0.0 の backend spec と Redmine E2E を継続検証します。Redmine 6.0.6 では targeted compatibility suite（smoke、business calendar、mutation contract、baseline permissions）を実行し、Redmine 6.1.2 と 7.0.0 では full Redmine Playwright suite を実行します。Redmine 7.0.0 は MariaDB 11.4 の Compose DBを使ったローカル検証も行います。
 
 独自休日カレンダーを使用する場合は、`redmine` サービスに次の設定を追加します。`business_calendars/`
 には `settings.yml` と、`generated/` および `custom/` 配下のカレンダー YAML を配置してください。

@@ -273,7 +273,7 @@ If `redmica_ui_extension` applies Select2 behavior that interferes with Canvas G
 
 This repository includes `docker-compose.yml` for running a local Redmine 7.0.0 + MariaDB 11.4 environment. Set `REDMINE_IMAGE` to `redmine:6.0.6` or `redmine:6.1.2` to run a compatibility version instead.
 
-GitHub Actions continuously verifies Redmine 6.0.6, 6.1.2, and 7.0.0 with backend specs, compatibility smoke tests, and the YAML business-calendar payload path. Redmine 7.0.0 is also validated locally with the MariaDB 11.4 Compose database.
+GitHub Actions continuously verifies Redmine 6.0.6, 6.1.2, and 7.0.0 with backend specs and Redmine E2E coverage. Redmine 6.0.6 runs the targeted compatibility suite (smoke, business calendar, mutation contract, and baseline permissions). Redmine 6.1.2 and 7.0.0 run the full Redmine Playwright suite. Redmine 7.0.0 is also validated locally with the MariaDB 11.4 Compose database.
 
 To use a custom holiday calendar, add the following settings to the `redmine` service. Place
 `settings.yml` and the calendar YAML files under `business_calendars/`, including the `generated/`

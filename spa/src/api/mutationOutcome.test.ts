@@ -27,8 +27,42 @@ describe('mutation outcome classification', () => {
         });
     });
 
-    it('treats an unknown non-mutation result as successful queue work', () => {
-        expect(classifyMutationResult({ value: 1 })).toEqual({ kind: 'success' });
+    it('treats resolved mutation results with failed rows as terminal domain failures', () => {
+        expect(classifyMutationResult({
+            status: 'ok',
+            successCount: 0,
+            failCount: 2,
+            results: [
+                { status: 'error', subject: 'A', errors: ['blank'] },
+                { status: 'error', subject: 'B', errors: ['rolled back'] }
+            ]
+        })).toEqual({
+            kind: 'terminal',
+            status: 'ok'
+        });
+    });
+
+    it('treats a resolved baseline save without a snapshot as a terminal domain failure', () => {
+        expect(classifyMutationResult({
+            status: 'ok',
+            baseline: null
+        })).toEqual({
+            kind: 'terminal',
+            status: 'ok'
+        });
+    });
+
+    it.each([
+        undefined,
+        null,
+        1,
+        { value: 1 },
+        { status: 'surprise' }
+    ])('treats malformed mutation result %s as a protocol error', (value) => {
+        expect(classifyMutationResult(value)).toEqual({
+            kind: 'terminal',
+            status: 'protocol_error'
+        });
     });
 
     it('classifies typed mutation errors without losing their message', () => {

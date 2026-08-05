@@ -12,7 +12,7 @@ describe('async lifecycle performance counters', () => {
 
         await Promise.all(Array.from({ length: 32 }, (_, index) => enqueueMutationOperation(
             [`metric-task-${index % 4}`],
-            async () => index
+            async () => ({ status: 'ok' as const, index })
         )));
 
         expect(mutationLifecycleMetrics.started).toBe(32);

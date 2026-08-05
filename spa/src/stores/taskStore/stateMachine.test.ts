@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { classifyMutationResult } from '../../api/mutationOutcome';
 import {
     applyLocalPatches,
     canApplyReadResponse,
@@ -7,17 +8,217 @@ import {
     createServerSnapshot,
     mergeServerEntity,
     replaceServerSnapshot,
-    type LocalPatch
+    type LocalPatch,
+    type ServerSnapshot
 } from './stateContract';
 
-type Entity = { id: string; subject: string; startDate?: number; lockVersion: number };
+type Entity = { id: string; subject: string; startDate?: number; dueDate?: number; lockVersion: number };
+
+type TransitionMachine = {
+    snapshot: ServerSnapshot<Entity>;
+    patches: Array<LocalPatch<Entity>>;
+    tombstones: Set<string>;
+    conflicts: Set<string>;
+    dirtyEntityIds: Set<string>;
+    queuedOperationIds: Set<string>;
+    retryCounts: Map<string, number>;
+    completedOperationIds: Set<string>;
+};
+
+type TransitionInput = {
+    operationId: string;
+    entityId: string;
+    response: unknown;
+    rollbackTerminal?: boolean;
+    remoteMatchesLocal?: boolean;
+};
 
 const nextRandom = (seed: number): [number, number] => {
     const next = (seed * 1664525 + 1013904223) >>> 0;
     return [next, next / 0x1_0000_0000];
 };
 
+const createMachine = (): TransitionMachine => ({
+    snapshot: createServerSnapshot<Entity>([
+        { id: '1', subject: 'initial', startDate: 1, dueDate: 2, lockVersion: 1 }
+    ]),
+    patches: [],
+    tombstones: new Set(),
+    conflicts: new Set(),
+    dirtyEntityIds: new Set(),
+    queuedOperationIds: new Set(),
+    retryCounts: new Map(),
+    completedOperationIds: new Set()
+});
+
+const beginLocalEdit = (machine: TransitionMachine, operationId: string, fields: Partial<Entity>) => {
+    machine.patches.push({
+        entityId: '1',
+        fields,
+        generation: Number(operationId.replace(/\D/g, '')) || 1,
+        operationId
+    });
+    machine.dirtyEntityIds.add('1');
+    machine.queuedOperationIds.add(operationId);
+};
+
+const syncDirtyFromPatches = (machine: TransitionMachine, entityId: string) => {
+    if (machine.patches.some((patch) => patch.entityId === entityId)) {
+        machine.dirtyEntityIds.add(entityId);
+    } else {
+        machine.dirtyEntityIds.delete(entityId);
+    }
+};
+
+const removeEntityFromSnapshot = (snapshot: ServerSnapshot<Entity>, entityId: string): ServerSnapshot<Entity> => {
+    const entitiesById = { ...snapshot.entitiesById };
+    const revisions = { ...snapshot.revisions };
+    delete entitiesById[entityId];
+    delete revisions[entityId];
+    return { ...snapshot, entitiesById, revisions };
+};
+
+const applyMutationTransition = (machine: TransitionMachine, input: TransitionInput) => {
+    const { entityId, operationId } = input;
+    const outcome = classifyMutationResult(input.response);
+    machine.queuedOperationIds.delete(operationId);
+
+    if (outcome.kind === 'success') {
+        machine.patches = commitOperationPatches(machine.patches, operationId);
+        const entity = (input.response as { entity?: Entity }).entity;
+        if (entity) machine.snapshot = mergeServerEntity(machine.snapshot, entity, 'complete', entity.lockVersion);
+        machine.conflicts.delete(entityId);
+        machine.completedOperationIds.add(operationId);
+    } else if (outcome.kind === 'conflict') {
+        const local = applyLocalPatches(machine.snapshot.entitiesById[entityId], machine.patches);
+        const remote = input.remoteMatchesLocal ? { ...local, lockVersion: local.lockVersion + 1 } : undefined;
+        if (remote) {
+            machine.patches = commitOperationPatches(machine.patches, operationId);
+            machine.snapshot = mergeServerEntity(machine.snapshot, remote, 'complete', remote.lockVersion);
+            machine.completedOperationIds.add(operationId);
+            machine.conflicts.delete(entityId);
+        } else {
+            machine.conflicts.add(entityId);
+        }
+    } else if (outcome.kind === 'transient') {
+        const retries = machine.retryCounts.get(operationId) ?? 0;
+        machine.retryCounts.set(operationId, Math.min(1, retries + 1));
+        if (retries < 1) machine.queuedOperationIds.add(operationId);
+    } else if (outcome.status === 'not_found') {
+        machine.patches = machine.patches.filter((patch) => patch.entityId !== entityId);
+        machine.snapshot = removeEntityFromSnapshot(machine.snapshot, entityId);
+        machine.tombstones.add(entityId);
+        machine.conflicts.delete(entityId);
+    } else if (input.rollbackTerminal) {
+        machine.patches = commitOperationPatches(machine.patches, operationId);
+        machine.conflicts.delete(entityId);
+    }
+
+    syncDirtyFromPatches(machine, entityId);
+};
+
 describe('state lifecycle reference model', () => {
+    it.each([
+        {
+            label: 'ok',
+            response: { status: 'ok', entity: { id: '1', subject: 'server', startDate: 3, dueDate: 4, lockVersion: 2 } },
+            rollbackTerminal: false,
+            remoteMatchesLocal: false,
+            expected: { committed: true, rollback: false, tombstone: false, conflict: false, retry: false, dirty: false }
+        },
+        {
+            label: 'validation',
+            response: { status: 'validation_error', error: 'invalid' },
+            rollbackTerminal: true,
+            remoteMatchesLocal: false,
+            expected: { committed: false, rollback: true, tombstone: false, conflict: false, retry: false, dirty: false }
+        },
+        {
+            label: 'forbidden',
+            response: { status: 'forbidden', error: 'not allowed' },
+            rollbackTerminal: true,
+            remoteMatchesLocal: false,
+            expected: { committed: false, rollback: true, tombstone: false, conflict: false, retry: false, dirty: false }
+        },
+        {
+            label: 'not_found',
+            response: { status: 'not_found', error: 'gone' },
+            rollbackTerminal: false,
+            remoteMatchesLocal: false,
+            expected: { committed: false, rollback: false, tombstone: true, conflict: false, retry: false, dirty: false }
+        },
+        {
+            label: 'conflict same',
+            response: { status: 'conflict', error: 'stale' },
+            rollbackTerminal: false,
+            remoteMatchesLocal: true,
+            expected: { committed: true, rollback: false, tombstone: false, conflict: false, retry: false, dirty: false }
+        },
+        {
+            label: 'conflict different',
+            response: { status: 'conflict', error: 'stale' },
+            rollbackTerminal: false,
+            remoteMatchesLocal: false,
+            expected: { committed: false, rollback: false, tombstone: false, conflict: true, retry: false, dirty: true }
+        },
+        {
+            label: 'transient',
+            response: { status: 'transient_error', error: 'temporary' },
+            rollbackTerminal: false,
+            remoteMatchesLocal: false,
+            expected: { committed: false, rollback: false, tombstone: false, conflict: false, retry: true, dirty: true }
+        },
+        {
+            label: 'protocol error',
+            response: { value: 'missing status' },
+            rollbackTerminal: true,
+            remoteMatchesLocal: false,
+            expected: { committed: false, rollback: true, tombstone: false, conflict: false, retry: false, dirty: false }
+        }
+    ])('applies the mutation transition table for $label', ({ response, rollbackTerminal, remoteMatchesLocal, expected }) => {
+        const machine = createMachine();
+        beginLocalEdit(machine, 'operation-1', { subject: 'local' });
+
+        applyMutationTransition(machine, {
+            entityId: '1',
+            operationId: 'operation-1',
+            response,
+            rollbackTerminal,
+            remoteMatchesLocal
+        });
+
+        expect(machine.completedOperationIds.has('operation-1')).toBe(expected.committed);
+        expect(machine.tombstones.has('1')).toBe(expected.tombstone);
+        expect(machine.conflicts.has('1')).toBe(expected.conflict);
+        expect(machine.queuedOperationIds.has('operation-1')).toBe(expected.retry);
+        expect(machine.dirtyEntityIds.has('1')).toBe(expected.dirty);
+        expect(machine.patches.some((patch) => patch.operationId === 'operation-1')).toBe(
+            !expected.committed && !expected.rollback && !expected.tombstone
+        );
+    });
+
+    it('keeps retries bounded to one transient retry without committing or rolling back local patches', () => {
+        const machine = createMachine();
+        beginLocalEdit(machine, 'operation-1', { subject: 'local' });
+
+        applyMutationTransition(machine, {
+            entityId: '1',
+            operationId: 'operation-1',
+            response: { status: 'transient_error', error: 'temporary' }
+        });
+        applyMutationTransition(machine, {
+            entityId: '1',
+            operationId: 'operation-1',
+            response: { status: 'transient_error', error: 'still unavailable' }
+        });
+
+        expect(machine.retryCounts.get('operation-1')).toBe(1);
+        expect(machine.queuedOperationIds.has('operation-1')).toBe(false);
+        expect(machine.completedOperationIds.has('operation-1')).toBe(false);
+        expect(machine.dirtyEntityIds.has('1')).toBe(true);
+        expect(machine.patches.some((patch) => patch.operationId === 'operation-1')).toBe(true);
+    });
+
     it('preserves lifecycle invariants across deterministic operation sequences', () => {
         for (let seed = 1; seed <= 100; seed += 1) {
             let randomSeed = seed;

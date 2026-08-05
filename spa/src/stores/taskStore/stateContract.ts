@@ -59,7 +59,7 @@ export type MutationOperation<T extends { id: string }> = {
     rollbackPatch: Array<LocalPatch<T>>;
     retryCount: number;
     startedAt: number;
-    status: 'pending' | 'succeeded' | 'failed' | 'conflict';
+    status: 'pending' | 'succeeded' | 'failed' | 'conflict' | 'cancelled';
 };
 
 export type DerivedInvalidation = 'none' | 'layout' | 'schedule' | 'critical_path';

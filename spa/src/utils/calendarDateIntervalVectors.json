@@ -1,0 +1,234 @@
+{
+  "calendarPayload": {
+    "status": "ok",
+    "revision": "shared-calendar-date-interval-v1",
+    "default_calendar_id": "company-japan",
+    "project_calendar_ids": {
+      "1": "company-japan",
+      "2": "US"
+    },
+    "calendars": {
+      "company-japan": {
+        "id": "company-japan",
+        "name": "Japan Company",
+        "non_working_week_days": [0, 6],
+        "days": {
+          "2027-01-03": { "name": "Substitute workday", "type": "working" },
+          "2027-01-04": { "name": "Company holiday", "type": "non_working" },
+          "2027-05-03": { "name": "Company holiday", "type": "non_working" },
+          "2027-05-04": { "name": "Company holiday", "type": "non_working" },
+          "2027-05-05": { "name": "Company holiday", "type": "non_working" },
+          "2027-12-31": { "name": "Year-end holiday", "type": "non_working" },
+          "2028-01-03": { "name": "New year holiday", "type": "non_working" }
+        }
+      },
+      "US": {
+        "id": "US",
+        "name": "United States",
+        "non_working_week_days": [0, 6],
+        "days": {
+          "2027-01-05": { "name": "US holiday", "type": "non_working" }
+        }
+      }
+    },
+    "warnings": []
+  },
+  "cases": [
+    {
+      "name": "weekday interval stays unchanged",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["start_date", "due_date"],
+      "startDate": "2027-01-05",
+      "dueDate": "2027-01-06",
+      "expected": {
+        "valid": true,
+        "startDate": "2027-01-05",
+        "dueDate": "2027-01-06"
+      }
+    },
+    {
+      "name": "same non-working day direct edit is rejected after correction",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["start_date", "due_date"],
+      "startDate": "2027-01-04",
+      "dueDate": "2027-01-04",
+      "expected": {
+        "valid": false,
+        "startDate": "2027-01-05",
+        "dueDate": "2027-01-03",
+        "error": "invalid_interval"
+      }
+    },
+    {
+      "name": "start-only holiday edit preserves valid interval",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["start_date"],
+      "startDate": "2027-01-04",
+      "dueDate": "2027-01-06",
+      "expected": {
+        "valid": true,
+        "startDate": "2027-01-05",
+        "dueDate": "2027-01-06"
+      }
+    },
+    {
+      "name": "saturday start edit normalizes forward to next working day",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["start_date"],
+      "startDate": "2027-01-02",
+      "dueDate": "2027-01-06",
+      "expected": {
+        "valid": true,
+        "startDate": "2027-01-03",
+        "dueDate": "2027-01-06"
+      }
+    },
+    {
+      "name": "due-only holiday edit preserves valid interval",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["due_date"],
+      "startDate": "2027-01-01",
+      "dueDate": "2027-01-04",
+      "expected": {
+        "valid": true,
+        "startDate": "2027-01-01",
+        "dueDate": "2027-01-03"
+      }
+    },
+    {
+      "name": "sunday due edit normalizes backward to previous working day",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["due_date"],
+      "startDate": "2027-01-08",
+      "dueDate": "2027-01-10",
+      "expected": {
+        "valid": true,
+        "startDate": "2027-01-08",
+        "dueDate": "2027-01-08"
+      }
+    },
+    {
+      "name": "project move uses destination calendar",
+      "projectId": "2",
+      "mode": "project_move",
+      "changedFields": ["start_date", "due_date"],
+      "startDate": "2027-01-05",
+      "dueDate": "2027-01-06",
+      "expected": {
+        "valid": true,
+        "startDate": "2027-01-06",
+        "dueDate": "2027-01-06"
+      }
+    },
+    {
+      "name": "resize start clamps to due boundary",
+      "projectId": "1",
+      "mode": "resize_start",
+      "changedFields": ["start_date"],
+      "startDate": "2027-01-04",
+      "dueDate": "2027-01-03",
+      "expected": {
+        "valid": true,
+        "startDate": "2027-01-03",
+        "dueDate": "2027-01-03"
+      }
+    },
+    {
+      "name": "resize due clamps to start boundary",
+      "projectId": "1",
+      "mode": "resize_due",
+      "changedFields": ["due_date"],
+      "startDate": "2027-01-05",
+      "dueDate": "2027-01-04",
+      "expected": {
+        "valid": true,
+        "startDate": "2027-01-05",
+        "dueDate": "2027-01-05"
+      }
+    },
+    {
+      "name": "consecutive holidays normalize start forward across the run",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["start_date"],
+      "startDate": "2027-05-03",
+      "dueDate": "2027-05-07",
+      "expected": {
+        "valid": true,
+        "startDate": "2027-05-06",
+        "dueDate": "2027-05-07"
+      }
+    },
+    {
+      "name": "consecutive holidays normalize due backward across weekend",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["due_date"],
+      "startDate": "2027-04-30",
+      "dueDate": "2027-05-05",
+      "expected": {
+        "valid": true,
+        "startDate": "2027-04-30",
+        "dueDate": "2027-04-30"
+      }
+    },
+    {
+      "name": "year boundary normalizes start across new year holidays",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["start_date"],
+      "startDate": "2027-12-31",
+      "dueDate": "2028-01-05",
+      "expected": {
+        "valid": true,
+        "startDate": "2028-01-04",
+        "dueDate": "2028-01-05"
+      }
+    },
+    {
+      "name": "leap day weekday interval stays unchanged",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["start_date", "due_date"],
+      "startDate": "2028-02-29",
+      "dueDate": "2028-02-29",
+      "expected": {
+        "valid": true,
+        "startDate": "2028-02-29",
+        "dueDate": "2028-02-29"
+      }
+    },
+    {
+      "name": "null start endpoint is preserved while due is normalized",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["due_date"],
+      "startDate": null,
+      "dueDate": "2027-01-04",
+      "expected": {
+        "valid": true,
+        "startDate": null,
+        "dueDate": "2027-01-03"
+      }
+    },
+    {
+      "name": "null due endpoint is preserved while start is normalized",
+      "projectId": "1",
+      "mode": "direct_edit",
+      "changedFields": ["start_date"],
+      "startDate": "2027-01-04",
+      "dueDate": null,
+      "expected": {
+        "valid": true,
+        "startDate": "2027-01-05",
+        "dueDate": null
+      }
+    }
+  ]
+}

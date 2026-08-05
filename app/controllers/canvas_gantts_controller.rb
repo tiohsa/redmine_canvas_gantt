@@ -228,7 +228,6 @@ class CanvasGanttsController < ApplicationController
     label_conflict_resolution: :label_conflict_resolution,
     button_use_remote: :button_use_remote,
     button_keep_local_retry: :button_keep_local_retry,
-    button_dismiss_conflict: :button_dismiss_conflict,
     label_issue: :label_issue,
     label_new: :label_new,
     label_bulk_subtask_creation: :label_bulk_subtask_creation,
@@ -499,7 +498,10 @@ class CanvasGanttsController < ApplicationController
     issue.init_journal(User.current)
     original_values = original_project_move_values(issue)
     task_attributes = permitted_task_params
-    normalize_task_date_attributes!(task_attributes, issue)
+    if task_attributes.key?(:start_date) || task_attributes.key?(:due_date)
+      calendar_project = task_date_calendar_project(issue, task_attributes)
+      return unless normalize_task_date_attributes!(task_attributes, issue, project: calendar_project)
+    end
     issue.safe_attributes = task_attributes
     return unless ensure_project_move_valid!(issue, original_values)
 
@@ -905,27 +907,45 @@ class CanvasGanttsController < ApplicationController
     params.require(:task).permit(*(TASK_PERMITTED_ATTRIBUTES + [{ custom_field_values: {} }]))
   end
 
-  def normalize_task_date_attributes!(task_attributes, issue)
-    return task_attributes unless task_attributes.key?(:start_date) || task_attributes.key?(:due_date)
+  def normalize_task_date_attributes!(task_attributes, issue, project: issue.project)
+    return true unless task_attributes.key?(:start_date) || task_attributes.key?(:due_date)
 
     start_value = task_attributes.key?(:start_date) ? task_attributes[:start_date] : issue.start_date
     due_value = task_attributes.key?(:due_date) ? task_attributes[:due_date] : issue.due_date
-
-    if start_value.present?
-      task_attributes[:start_date] = normalize_task_date_value(start_value, direction: :forward, project: issue.project)
+    normalized = business_calendar_resolver.normalize_date_interval(
+      start_date: start_value,
+      due_date: due_value,
+      changed_fields: task_attributes.slice(:start_date, :due_date).keys,
+      project: project,
+      mode: requested_date_update_mode
+    )
+    unless normalized[:valid]
+      render json: { errors: [canvas_gantt_l(:error_canvas_gantt_invalid_dates)] }, status: :unprocessable_entity
+      return false
     end
-    if due_value.present?
-      task_attributes[:due_date] = normalize_task_date_value(due_value, direction: :backward, project: issue.project)
-    end
 
-    task_attributes
+    if task_attributes.key?(:start_date) && normalized[:start_date].present?
+      task_attributes[:start_date] = normalized[:start_date]
+    end
+    if task_attributes.key?(:due_date) && normalized[:due_date].present?
+      task_attributes[:due_date] = normalized[:due_date]
+    end
+    true
   end
 
-  def normalize_task_date_value(value, direction:, project:)
-    date = value.respond_to?(:to_date) ? value.to_date : Date.iso8601(value.to_s)
-    business_calendar_resolver.normalize_working_date(date, direction: direction, project: project)
-  rescue ArgumentError, Date::Error
-    value
+  def requested_date_update_mode
+    raw_mode = params.dig(:task, :date_update_mode).to_s
+    %w[move resize_start resize_due direct_edit project_move legacy_unspecified].include?(raw_mode) ? raw_mode.to_sym : :legacy_unspecified
+  end
+
+  def task_date_calendar_project(issue, task_attributes)
+    raw_project_id = task_attributes[:project_id] || task_attributes['project_id']
+    target_project_id = Integer(raw_project_id, exception: false)
+    return issue.project unless target_project_id && target_project_id != issue.project_id
+
+    Project.visible.find(target_project_id)
+  rescue ActiveRecord::RecordNotFound
+    issue.project
   end
 
   def relation_params

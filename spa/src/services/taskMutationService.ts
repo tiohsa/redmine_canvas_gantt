@@ -39,19 +39,19 @@ export const taskMutationService = {
         lifecycle
     ),
 
-    createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation & MutationMetadata> => (
+    createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
         enqueueMutationOperation([fromId, toId], (context) => apiClient.createRelation(fromId, toId, type, delay, context?.operationId))
     ),
 
-    updateRelation: (relationId: string, type: string, delay?: number): Promise<Relation & MutationMetadata> => (
+    updateRelation: (relationId: string, type: string, delay?: number): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
         enqueueMutationOperation([relationId], (context) => apiClient.updateRelation(relationId, type, delay, context?.operationId))
     ),
 
-    deleteRelation: (relationId: string): Promise<MutationMetadata | undefined> => (
+    deleteRelation: (relationId: string): Promise<MutationMetadata & { status: 'ok' }> => (
         enqueueMutationOperation([relationId], (context) => apiClient.deleteRelation(relationId, context?.operationId))
     ),
 
-    deleteTask: (taskId: string): Promise<MutationMetadata | undefined> => (
+    deleteTask: (taskId: string): Promise<MutationMetadata & { status: 'ok' }> => (
         enqueueMutationOperation([taskId], (context) => apiClient.deleteTask(taskId, context?.operationId))
     ),
 

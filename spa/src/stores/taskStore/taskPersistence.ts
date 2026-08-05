@@ -64,7 +64,7 @@ export const resetMutationLifecycleMetrics = () => {
     mutationLifecycleMetrics.maxPendingKeys = 0;
 };
 
-export type MutationOperationStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+export type MutationOperationStatus = 'queued' | 'running' | 'succeeded' | 'conflict' | 'failed' | 'cancelled';
 
 export type MutationOperationRecord = MutationOperationContext & {
     status: MutationOperationStatus;
@@ -87,8 +87,19 @@ export type MutationOperationContext = {
 };
 
 export type MutationLifecycle<T> = {
+    onResult?: (result: T, context: MutationOperationContext) => void | Promise<void>;
     onSuccess?: (result: T, context: MutationOperationContext) => void | Promise<void>;
     onError?: (error: unknown, context: MutationOperationContext) => void | Promise<void>;
+};
+
+const normalizeMutationEntityIds = (entityIds: string[]): string[] => {
+    if (entityIds.length === 0) {
+        throw new Error('Mutation operation requires at least one entity id');
+    }
+    if (!entityIds.every(entityId => typeof entityId === 'string' && entityId.trim() !== '')) {
+        throw new Error('Mutation operation entity ids must be non-empty strings');
+    }
+    return [...new Set(entityIds)].sort();
 };
 
 export const enqueueMutationOperation = async <T>(
@@ -96,7 +107,7 @@ export const enqueueMutationOperation = async <T>(
     operation: (context?: MutationOperationContext) => Promise<T>,
     lifecycle?: MutationLifecycle<T>
 ): Promise<T> => {
-    const keys = [...new Set(entityIds)].sort();
+    const keys = normalizeMutationEntityIds(entityIds);
     const context: MutationOperationContext = {
         operationId: `mutation:${++mutationSequence}`,
         entityIds: keys,
@@ -115,13 +126,22 @@ export const enqueueMutationOperation = async <T>(
         );
         try {
             const result = await operation(context);
-            await lifecycle?.onSuccess?.(result, context);
-            completeMutationOperation(context, 'succeeded', classifyMutationResult(result).kind);
-            mutationLifecycleMetrics.completed += 1;
+            const outcome = classifyMutationResult(result).kind;
+            await lifecycle?.onResult?.(result, context);
+            if (outcome === 'success') {
+                await lifecycle?.onSuccess?.(result, context);
+            }
+            completeMutationOperation(context, mutationStatusForOutcome(outcome), outcome);
+            if (outcome === 'success') {
+                mutationLifecycleMetrics.completed += 1;
+            } else {
+                mutationLifecycleMetrics.failed += 1;
+            }
             return result;
         } catch (error) {
             await lifecycle?.onError?.(error, context);
-            completeMutationOperation(context, 'failed', classifyMutationError(error).kind);
+            const outcome = classifyMutationError(error).kind;
+            completeMutationOperation(context, mutationStatusForOutcome(outcome), outcome);
             mutationLifecycleMetrics.failed += 1;
             throw error;
         } finally {
@@ -147,7 +167,7 @@ export const enqueueMutationOperation = async <T>(
 
 const completeMutationOperation = (
     context: MutationOperationContext,
-    status: 'succeeded' | 'failed',
+    status: Extract<MutationOperationStatus, 'succeeded' | 'conflict' | 'failed' | 'cancelled'>,
     outcome: MutationOutcomeKind
 ) => {
     const record = { ...context, status, outcome, completedAt: Date.now() };
@@ -158,6 +178,12 @@ const completeMutationOperation = (
         if (!oldest) break;
         completedMutationOperations.delete(oldest);
     }
+};
+
+const mutationStatusForOutcome = (outcome: MutationOutcomeKind): 'succeeded' | 'conflict' | 'failed' => {
+    if (outcome === 'success') return 'succeeded';
+    if (outcome === 'conflict') return 'conflict';
+    return 'failed';
 };
 
 export const enqueueTaskWrite = async <T>(
@@ -398,9 +424,11 @@ export const saveModifiedTasks = async (
                         return updateTask(task, context?.operationId);
                     },
                     {
-                        onSuccess: (savedResult) => {
+                        onResult: (savedResult) => {
                             onTaskResult?.(taskId, savedResult);
-                            if (savedResult.status === 'ok') onTaskSaved?.(taskId, savedResult.lockVersion);
+                        },
+                        onSuccess: (savedResult) => {
+                            onTaskSaved?.(taskId, savedResult.lockVersion);
                         }
                     }
                 );
@@ -428,7 +456,6 @@ export const saveModifiedTasks = async (
                 if (outcome.kind === 'conflict') {
                     conflictTaskIds.push(taskId);
                     conflictMessages.set(taskId, message);
-                    pendingTaskIds.add(taskId);
                 } else if (outcome.kind === 'transient' && attempt < 1) {
                     pendingTaskIds.add(taskId);
                 } else {
@@ -451,7 +478,6 @@ export const saveModifiedTasks = async (
                 failures.set(taskId, result.error || conflictMessage);
                 conflictMessages.set(taskId, result.error || conflictMessage);
                 conflictTaskIds.push(taskId);
-                pendingTaskIds.add(taskId);
             } else if (outcome === 'transient' && attempt < 1) {
                 // Both the current `transient_error` status and the legacy
                 // `error` status share the same bounded retry policy.
@@ -486,15 +512,11 @@ export const saveModifiedTasks = async (
                 const localTask = mutableTaskById.get(taskId);
                 const latestTask = latestTaskById.get(taskId);
                 if (!localTask || !latestTask) {
-                    // Leave a first conflict eligible for its bounded retry;
-                    // an absent remote entity becomes terminal on exhaustion.
-                    if ((attemptCounts.get(taskId) ?? 0) >= 2) {
-                        pendingTaskIds.delete(taskId);
-                        terminalFailureTaskIds.add(taskId);
-                        const message = conflictMessages.get(taskId) || conflictMessage;
-                        failures.set(taskId, message);
-                        onConflict?.(taskId, message);
-                    }
+                    pendingTaskIds.delete(taskId);
+                    terminalFailureTaskIds.add(taskId);
+                    const message = conflictMessages.get(taskId) || conflictMessage;
+                    failures.set(taskId, message);
+                    onConflict?.(taskId, message);
                     return;
                 }
 
@@ -508,17 +530,11 @@ export const saveModifiedTasks = async (
                     return;
                 }
 
-                if ((attemptCounts.get(taskId) ?? 0) >= 2) {
-                    pendingTaskIds.delete(taskId);
-                    terminalFailureTaskIds.add(taskId);
-                    const message = conflictMessages.get(taskId) || conflictMessage;
-                    failures.set(taskId, message);
-                    onConflict?.(taskId, message);
-                    return;
-                }
-
-                onTaskSaved?.(taskId, latestTask.lockVersion);
-                mutableTaskById.set(taskId, { ...localTask, lockVersion: latestTask.lockVersion });
+                pendingTaskIds.delete(taskId);
+                terminalFailureTaskIds.add(taskId);
+                const message = conflictMessages.get(taskId) || conflictMessage;
+                failures.set(taskId, message);
+                onConflict?.(taskId, message);
             });
         }
 

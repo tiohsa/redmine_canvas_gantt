@@ -4,7 +4,7 @@ export type MutationOutcomeKind = 'success' | 'transient' | 'conflict' | 'termin
 
 export type MutationOutcome = {
     kind: MutationOutcomeKind;
-    status?: MutationStatusValue | 'error';
+    status?: MutationStatusValue | 'error' | 'protocol_error';
     message?: string;
 };
 
@@ -25,10 +25,20 @@ export const classifyMutationStatus = (status: MutationStatusValue | 'error'): M
 };
 
 export const classifyMutationResult = (value: unknown): MutationOutcome => {
-    if (!value || typeof value !== 'object') return { kind: 'success' };
+    if (!value || typeof value !== 'object') return { kind: 'terminal', status: 'protocol_error' };
+    const record = value as Record<string, unknown>;
     const status = (value as { status?: unknown }).status;
-    if (typeof status !== 'string' || !isMutationStatus(status)) return { kind: 'success' };
+    if (typeof status !== 'string' || !isMutationStatus(status)) return { kind: 'terminal', status: 'protocol_error' };
     const message = (value as { error?: unknown }).error;
+    const failCount = (value as { failCount?: unknown }).failCount;
+    const baselineMissing = Object.prototype.hasOwnProperty.call(record, 'baseline') && record.baseline === null;
+    if (status === 'ok' && ((typeof failCount === 'number' && failCount > 0) || baselineMissing)) {
+        return {
+            kind: 'terminal',
+            status,
+            message: typeof message === 'string' ? message : undefined
+        };
+    }
     return {
         kind: classifyMutationStatus(status),
         status,

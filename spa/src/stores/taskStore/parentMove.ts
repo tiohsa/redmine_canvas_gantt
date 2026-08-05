@@ -5,6 +5,7 @@ import type { LayoutState } from './types';
 import type { TaskLayoutSnapshot } from './types';
 import type { MutationMetadata, MutationStatus } from '../../api/client';
 import type { LocalPatch, ServerSnapshot } from './stateContract';
+import { classifyMutationError } from '../../api/mutationOutcome';
 
 type UpdateTaskFieldsResult = MutationMetadata & {
     status: MutationStatus;
@@ -46,6 +47,7 @@ type ParentMoveCallbacks = {
     missingSourceResult: MoveTaskAsChildResult;
     failedResult: (error?: string) => MoveTaskAsChildResult;
     onConflict?: (taskId: string, message: string, operationGeneration: number) => void;
+    onNotFound?: (taskId: string, operationGeneration: number, operationId?: string) => void;
     onMutationMetadata?: (taskId: string, metadata: MutationMetadata) => void;
 };
 
@@ -66,6 +68,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
         missingSourceResult,
         failedResult,
         onConflict,
+        onNotFound,
         onMutationMetadata
     } = callbacks;
 
@@ -95,7 +98,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
 
     let result: UpdateTaskFieldsResult;
     const lifecycle: MutationLifecycle<UpdateTaskFieldsResult> = {
-        onSuccess: (completedResult) => {
+        onResult: (completedResult, context) => {
             if (completedResult.status === 'ok' && validatePersistedResult(completedResult, expectedParentId)) {
                 setState(buildSuccessPatch(getState(), sourceBefore, completedResult, operationGeneration));
                 onMutationMetadata?.(sourceTaskId, completedResult);
@@ -108,10 +111,17 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
                     completedResult.error || (i18n.t('label_parent_drop_conflict') || 'Task was updated by another user'),
                     operationGeneration
                 );
+            } else if (completedResult.status === 'not_found') {
+                onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
+                return;
             }
             if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
         },
-        onError: () => {
+        onError: (error, context) => {
+            if (classifyMutationError(error).status === 'not_found') {
+                onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
+                return;
+            }
             if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
         }
     };

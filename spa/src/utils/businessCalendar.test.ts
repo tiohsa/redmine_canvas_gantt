@@ -8,12 +8,15 @@ import {
     isBusinessCalendarReady,
     isWorkingDay,
     normalizeBusinessCalendarPayload,
+    normalizeTaskDateInterval,
     normalizeWorkingDate,
     nextWorkingDay,
     previousWorkingDay,
     shiftByWorkingDays,
     timestampToBusinessDateKey
 } from './businessCalendar';
+import type { TaskDateIntervalMode } from './businessCalendar';
+import intervalVectors from './calendarDateIntervalVectors.json';
 import { calculateLinkedDownstreamUpdates, recalculateDownstreamTasks } from '../scheduling/constraintGraph';
 import { calculateCriticalPath } from '../scheduling/criticalPath';
 import { calculateDelay } from './relationEditing';
@@ -118,6 +121,79 @@ describe('businessCalendar', () => {
         expect(previousWorkingDay(timestamp('2027-01-04'), '1')).toBe(timestamp('2027-01-03'));
         expect(normalizeWorkingDate(timestamp('2027-01-03'), 'forward', '1')).toBe(timestamp('2027-01-03'));
     });
+
+    it('rejects interval normalization that would invert start and due dates', () => {
+        expect(normalizeTaskDateInterval(
+            { startDate: timestamp('2027-01-04'), dueDate: timestamp('2027-01-04') },
+            { changedFields: { startDate: true, dueDate: true }, projectId: '1', mode: 'direct_edit' }
+        )).toEqual({
+            valid: false,
+            interval: {
+                startDate: timestamp('2027-01-05'),
+                dueDate: timestamp('2027-01-03')
+            },
+            error: 'invalid_interval'
+        });
+    });
+
+    it.each(intervalVectors.cases)('matches shared interval vector: $name', (testCase) => {
+        configureBusinessCalendar(intervalVectors.calendarPayload);
+
+        const result = normalizeTaskDateInterval(
+            {
+                startDate: testCase.startDate === null ? null : timestamp(testCase.startDate),
+                dueDate: testCase.dueDate === null ? null : timestamp(testCase.dueDate)
+            },
+            {
+                changedFields: {
+                    startDate: testCase.changedFields.includes('start_date'),
+                    dueDate: testCase.changedFields.includes('due_date')
+                },
+                projectId: testCase.projectId,
+                mode: testCase.mode as TaskDateIntervalMode
+            }
+        );
+
+        expect(result.valid).toBe(testCase.expected.valid);
+        expect(result.interval.startDate).toBe(testCase.expected.startDate === null ? null : timestamp(testCase.expected.startDate));
+        expect(result.interval.dueDate).toBe(testCase.expected.dueDate === null ? null : timestamp(testCase.expected.dueDate));
+        if (!result.valid) {
+            expect(result.error).toBe(testCase.expected.error);
+        }
+    });
+
+    it('normalizes 5,000 task date intervals within a bounded complexity gate', () => {
+        configureBusinessCalendar(intervalVectors.calendarPayload);
+        const intervals = Array.from({ length: 5000 }, (_, index) => {
+            const day = (index % 20) + 1;
+            const startDay = String(day).padStart(2, '0');
+            const dueDay = String(Math.min(day + 4, 28)).padStart(2, '0');
+            return {
+                startDate: timestamp(`2027-05-${startDay}`),
+                dueDate: timestamp(`2027-05-${dueDay}`)
+            };
+        });
+
+        const startedAt = performance.now();
+        const normalized = intervals.map((interval) => normalizeTaskDateInterval(
+            interval,
+            {
+                changedFields: { startDate: true, dueDate: true },
+                projectId: '1',
+                mode: 'direct_edit'
+            }
+        ));
+        const elapsedMs = performance.now() - startedAt;
+
+        expect(normalized).toHaveLength(5000);
+        expect(normalized.every((result) => (
+            !result.valid
+            || !Number.isFinite(result.interval.startDate)
+            || !Number.isFinite(result.interval.dueDate)
+            || result.interval.startDate! <= result.interval.dueDate!
+        ))).toBe(true);
+        expect(elapsedMs).toBeLessThan(1000);
+    }, 5_000);
 
     it('falls back to legacy Redmine weekdays when payload is absent', () => {
         configureBusinessCalendar(undefined);

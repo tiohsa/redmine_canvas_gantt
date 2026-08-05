@@ -61,6 +61,25 @@ module RedmineCanvasGantt
       normalize_working_date(date, direction: :backward, project: project)
     end
 
+    def normalize_date_interval(start_date:, due_date:, changed_fields:, project:, mode: :legacy_unspecified)
+      normalized_start = normalize_interval_endpoint(start_date, direction: :forward, project: project)
+      normalized_due = normalize_interval_endpoint(due_date, direction: :backward, project: project)
+      result = { start_date: normalized_start, due_date: normalized_due }
+
+      if normalized_start.is_a?(Date) && normalized_due.is_a?(Date) && normalized_start > normalized_due
+        if mode.to_sym == :resize_start && !changed_fields.include?(:due_date)
+          return result.merge(start_date: normalized_due, valid: true)
+        end
+        if mode.to_sym == :resize_due && !changed_fields.include?(:start_date)
+          return result.merge(due_date: normalized_start, valid: true)
+        end
+
+        return result.merge(valid: false, error: :invalid_interval)
+      end
+
+      result.merge(valid: true)
+    end
+
     def add_working_days(date, days, project:)
       current = date.to_date
       remaining = [days.to_i, 0].max
@@ -104,6 +123,15 @@ module RedmineCanvasGantt
         parsed % 7 if parsed&.between?(1, 7)
       end.uniq.sort
       (normalized.size >= 7 ? [] : normalized).freeze
+    end
+
+    def normalize_interval_endpoint(value, direction:, project:)
+      return value if value.blank?
+
+      date = value.respond_to?(:to_date) ? value.to_date : Date.iso8601(value.to_s)
+      normalize_working_date(date, direction: direction, project: project)
+    rescue ArgumentError, Date::Error
+      value
     end
   end
 end

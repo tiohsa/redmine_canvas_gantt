@@ -59,15 +59,22 @@ RSpec.describe CanvasGanttsController, type: :controller do
   end
 
   describe '#normalize_task_date_attributes!' do
-    it 'canonicalizes both finite endpoints through the project calendar' do
+    it 'canonicalizes both finite endpoints through the project calendar interval' do
       resolver = instance_double(RedmineCanvasGantt::ProjectCalendarResolver)
       allow(controller).to receive(:business_calendar_resolver).and_return(resolver)
-      allow(resolver).to receive(:normalize_working_date)
-        .with(Date.new(2027, 1, 4), direction: :forward, project: project)
-        .and_return(Date.new(2027, 1, 5))
-      allow(resolver).to receive(:normalize_working_date)
-        .with(Date.new(2027, 1, 4), direction: :backward, project: project)
-        .and_return(Date.new(2027, 1, 3))
+      allow(resolver).to receive(:normalize_date_interval)
+        .with(
+          start_date: '2027-01-04',
+          due_date: '2027-01-04',
+          changed_fields: %i[start_date due_date],
+          project: project,
+          mode: :legacy_unspecified
+        )
+        .and_return(
+          valid: true,
+          start_date: Date.new(2027, 1, 5),
+          due_date: Date.new(2027, 1, 5)
+        )
 
       issue = instance_double(
         Issue,
@@ -81,7 +88,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(attributes).to eq(
         start_date: Date.new(2027, 1, 5),
-        due_date: Date.new(2027, 1, 3)
+        due_date: Date.new(2027, 1, 5)
       )
     end
   end

@@ -32,8 +32,8 @@ import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
-import { configureBusinessCalendar, normalizeWorkingDate } from '../utils/businessCalendar';
-import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
+import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/businessCalendar';
+import { formatDateOnly, fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
 import { taskMutationService } from '../services/taskMutationService';
@@ -167,6 +167,18 @@ const terminalTaskDeletionPatch = (
         localTaskPatches,
         modifiedTaskIds,
         ...settlement,
+        taskConflicts: Object.fromEntries(
+            Object.entries(state.taskConflicts).filter(([conflictTaskId]) => conflictTaskId !== taskId)
+        ),
+        serverTaskSnapshot: {
+            ...state.serverTaskSnapshot,
+            entitiesById: Object.fromEntries(
+                Object.entries(state.serverTaskSnapshot.entitiesById).filter(([entityId]) => entityId !== taskId)
+            ),
+            revisions: Object.fromEntries(
+                Object.entries(state.serverTaskSnapshot.revisions).filter(([entityId]) => entityId !== taskId)
+            )
+        },
         taskTombstones: {
             ...state.taskTombstones,
             [taskId]: { entityId: taskId, deletedAt: Date.now(), source }
@@ -212,6 +224,34 @@ const invalidateDataRequests = () => {
 
 let saveChangesOperation: Promise<Map<string, string>> | null = null;
 let barOperationSequence = 0;
+
+const blankableId = (value: string | number | null | undefined): string | number =>
+    value === null || value === undefined || value === '' ? '' : value;
+
+const numberOrNull = (value: string | number | null | undefined): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const buildTaskPatchFieldsPayload = (task: Task, fields: Partial<Task>): Record<string, unknown> => {
+    const payload: Record<string, unknown> = {};
+    if (Object.prototype.hasOwnProperty.call(fields, 'subject')) payload.subject = task.subject;
+    if (Object.prototype.hasOwnProperty.call(fields, 'startDate')) payload.start_date = formatDateOnly(task.startDate);
+    if (Object.prototype.hasOwnProperty.call(fields, 'dueDate')) payload.due_date = formatDateOnly(task.dueDate);
+    if (Object.prototype.hasOwnProperty.call(fields, 'parentId')) payload.parent_issue_id = numberOrNull(task.parentId);
+    if (Object.prototype.hasOwnProperty.call(fields, 'ratioDone')) payload.done_ratio = task.ratioDone;
+    if (Object.prototype.hasOwnProperty.call(fields, 'statusId')) payload.status_id = task.statusId;
+    if (Object.prototype.hasOwnProperty.call(fields, 'assignedToId')) payload.assigned_to_id = task.assignedToId ?? '';
+    if (Object.prototype.hasOwnProperty.call(fields, 'priorityId')) payload.priority_id = blankableId(task.priorityId);
+    if (Object.prototype.hasOwnProperty.call(fields, 'categoryId')) payload.category_id = blankableId(task.categoryId);
+    if (Object.prototype.hasOwnProperty.call(fields, 'estimatedHours')) payload.estimated_hours = task.estimatedHours ?? '';
+    if (Object.prototype.hasOwnProperty.call(fields, 'projectId')) payload.project_id = blankableId(task.projectId);
+    if (Object.prototype.hasOwnProperty.call(fields, 'trackerId')) payload.tracker_id = blankableId(task.trackerId);
+    if (Object.prototype.hasOwnProperty.call(fields, 'fixedVersionId')) payload.fixed_version_id = blankableId(task.fixedVersionId);
+    if (Object.prototype.hasOwnProperty.call(fields, 'customFieldValues')) payload.custom_field_values = task.customFieldValues ?? {};
+    return payload;
+};
 
 export const readLifecycleMetrics = {
     requestsStarted: 0,
@@ -337,6 +377,7 @@ interface TaskState {
     completeBarOperationTask: (taskId: string, operationGeneration?: number) => void;
     setTaskLockVersion: (id: string, lockVersion: number) => void;
     commitTaskOperation: (id: string, operationGeneration: number, lockVersion?: number) => void;
+    rollbackTaskOperation: (id: string, operationGeneration: number, rollbackFields?: Partial<Task>) => void;
     applyTaskMutationMetadata: (taskId: string, metadata: MutationMetadata) => void;
     refreshForMutationMetadata: (metadata: MutationMetadata) => void;
     removeTask: (id: string) => void;
@@ -885,20 +926,29 @@ const normalizeTaskDateUpdates = (task: Task, updates: Partial<Task>): Partial<T
     if (!hasOwnField(updates, 'startDate') && !hasOwnField(updates, 'dueDate')) return updates;
 
     const nextUpdates = { ...updates };
-    const rawStart = hasOwnField(updates, 'startDate') ? updates.startDate : task.startDate;
-    const rawDue = hasOwnField(updates, 'dueDate') ? updates.dueDate : task.dueDate;
-    const nextStart = Number.isFinite(rawStart)
-        ? normalizeWorkingDate(rawStart!, 'forward', task.projectId)
-        : rawStart;
-    const nextDue = Number.isFinite(rawDue)
-        ? normalizeWorkingDate(rawDue!, 'backward', task.projectId)
-        : rawDue;
+    const normalized = normalizeTaskDateInterval(
+        {
+            startDate: hasOwnField(updates, 'startDate') ? updates.startDate : task.startDate,
+            dueDate: hasOwnField(updates, 'dueDate') ? updates.dueDate : task.dueDate
+        },
+        {
+            changedFields: {
+                startDate: hasOwnField(updates, 'startDate'),
+                dueDate: hasOwnField(updates, 'dueDate')
+            },
+            projectId: updates.projectId ?? task.projectId,
+            mode: 'legacy_unspecified'
+        }
+    );
+    if (!normalized.valid) return { ...nextUpdates, startDate: task.startDate, dueDate: task.dueDate };
+    const nextStart = normalized.interval.startDate;
+    const nextDue = normalized.interval.dueDate;
 
     if (hasOwnField(updates, 'startDate') || nextStart !== task.startDate) {
-        nextUpdates.startDate = nextStart;
+        nextUpdates.startDate = nextStart ?? undefined;
     }
     if (hasOwnField(updates, 'dueDate') || nextDue !== task.dueDate) {
-        nextUpdates.dueDate = nextDue;
+        nextUpdates.dueDate = nextDue ?? undefined;
     }
     return nextUpdates;
 };
@@ -1459,6 +1509,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure,
             onConflict: (taskId, message, operationGeneration) => get().registerTaskConflict(taskId, message, operationGeneration),
+            onNotFound: (taskId, _operationGeneration, operationId) => get().markTaskTombstone(taskId, 'server', operationId),
             onMutationMetadata: (taskId, metadata) => get().applyTaskMutationMetadata(taskId, metadata)
         });
     },
@@ -1507,6 +1558,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure,
             onConflict: (taskId, message, operationGeneration) => get().registerTaskConflict(taskId, message, operationGeneration),
+            onNotFound: (taskId, _operationGeneration, operationId) => get().markTaskTombstone(taskId, 'server', operationId),
             onMutationMetadata: (taskId, metadata) => get().applyTaskMutationMetadata(taskId, metadata)
         });
     },
@@ -1891,6 +1943,44 @@ export const useTaskStore = create<TaskState>((set, get) => {
         };
     }),
 
+    rollbackTaskOperation: (id, operationGeneration, rollbackFields = {}) => set((state) => {
+        const currentTask = state.allTasks.find(task => task.id === id);
+        const serverTask = state.serverTaskSnapshot.entitiesById[id] ?? (currentTask ? { ...currentTask, ...rollbackFields } : undefined);
+        if (!serverTask) return terminalTaskDeletionPatch(state, id, 'server');
+
+        const laterPatches = (state.localTaskPatches[id] ?? []).filter(patch => patch.generation > operationGeneration);
+        const rolledBackTask = laterPatches.length > 0 ? applyLocalPatches(serverTask, laterPatches) : serverTask;
+        const allTasks = state.allTasks.some(task => task.id === id)
+            ? state.allTasks.map(task => task.id === id ? rolledBackTask : task)
+            : [...state.allTasks, rolledBackTask];
+        const derived = buildDerivedTaskState(state, { allTasks });
+        const localTaskPatches = { ...state.localTaskPatches };
+        if (laterPatches.length > 0) {
+            localTaskPatches[id] = laterPatches;
+        } else {
+            delete localTaskPatches[id];
+        }
+        const modifiedTaskIds = new Set(state.modifiedTaskIds);
+        if (laterPatches.length > 0) {
+            modifiedTaskIds.add(id);
+        } else {
+            modifiedTaskIds.delete(id);
+        }
+
+        return {
+            allTasks,
+            ...toDerivedTaskStatePatch(derived),
+            localTaskPatches,
+            modifiedTaskIds,
+            ...settleBarOperationTaskOwnership(
+                state.barOperations,
+                state.activeBarOperationId,
+                id,
+                { mode: 'exact', generation: operationGeneration }
+            )
+        };
+    }),
+
     applyTaskMutationMetadata: (taskId, metadata) => {
         const invalidatedIds = new Set(metadata.invalidatedEntityIds ?? []);
         const deletedIds = new Set(metadata.deletedEntityIds ?? []);
@@ -1927,13 +2017,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
     markTaskTombstone: (id, source = 'server', operationId) => set((state) => {
         invalidateDataRequests();
-        const finalTasks = state.allTasks.filter(task => task.id !== id);
-        const derived = buildDerivedTaskState(state, { allTasks: finalTasks });
+        const patch = terminalTaskDeletionPatch(state, id, source);
         return {
-            allTasks: finalTasks,
-            ...toDerivedTaskStatePatch(derived),
+            ...patch,
             taskTombstones: {
-                ...state.taskTombstones,
+                ...patch.taskTombstones,
                 [id]: { entityId: id, deletedAt: Date.now(), source, operationId }
             }
         };
@@ -1955,23 +2043,80 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
     resolveTaskConflict: async (id, resolution) => {
         if (resolution === 'dismiss') {
-            set((state) => {
-                if (!state.taskConflicts[id]) return state;
-                const taskConflicts = { ...state.taskConflicts };
-                delete taskConflicts[id];
-                return { taskConflicts };
-            });
             return;
         }
 
         if (resolution === 'local') {
-            const conflictGeneration = get().taskConflicts[id]?.generation;
+            const beforeRetry = get();
+            const conflictGeneration = beforeRetry.taskConflicts[id]?.generation;
+            const retryGeneration = beforeRetry.editGenerations[id] ?? conflictGeneration ?? 0;
+            const retryFields = (beforeRetry.localTaskPatches[id] ?? [])
+                .filter(patch => patch.generation <= retryGeneration)
+                .reduce<Partial<Task>>((fields, patch) => ({ ...fields, ...patch.fields }), {});
+            const retryTask = beforeRetry.allTasks.find(task => task.id === id);
+            const retryFieldNames = Object.keys(retryFields);
+            const hasInlineOnlyRetryFields = retryFieldNames.some(field => !['startDate', 'dueDate', 'parentId', 'displayOrder'].includes(field));
+            const canRetryFieldsDirectly = retryTask && hasInlineOnlyRetryFields && Object.keys(buildTaskPatchFieldsPayload(retryTask, retryFields)).length > 0;
             set((state) => {
                 if (!state.taskConflicts[id]) return state;
                 const taskConflicts = { ...state.taskConflicts };
                 delete taskConflicts[id];
                 return { taskConflicts };
             });
+            if (canRetryFieldsDirectly) {
+                try {
+                    const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: get().selectedStatusIds } });
+                    const remoteTask = resyncData.tasks.find(task => task.id === id);
+                    if (!remoteTask) {
+                        get().registerTaskConflict(
+                            id,
+                            i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists',
+                            retryGeneration
+                        );
+                        return;
+                    }
+                    get().applyApiData(resyncData);
+                    const result = await taskMutationService.updateTaskFields(id, () => {
+                        const latestTask = get().allTasks.find(task => task.id === id) ?? retryTask;
+                        return {
+                            ...buildTaskPatchFieldsPayload(latestTask, retryFields),
+                            lock_version: latestTask.lockVersion
+                        };
+                    });
+                    get().applyTaskMutationMetadata(id, result);
+                    if (result.status === 'ok') {
+                        const committedGenerations = [...new Set((get().localTaskPatches[id] ?? [])
+                            .map(patch => patch.generation)
+                            .filter(generation => generation <= retryGeneration))];
+                        committedGenerations.forEach((generation) => {
+                            get().commitTaskOperation(id, generation, result.lockVersion);
+                        });
+                        if (committedGenerations.length === 0 && typeof result.lockVersion === 'number') {
+                            get().setTaskLockVersion(id, result.lockVersion);
+                        }
+                        get().settleBarOperationTaskThrough(id, retryGeneration);
+                        return;
+                    }
+                    if (result.status === 'not_found') {
+                        get().markTaskTombstone(id, 'server');
+                    }
+                    get().registerTaskConflict(
+                        id,
+                        result.error || (i18n.t('label_failed_to_save') || 'Failed to save'),
+                        retryGeneration
+                    );
+                    useUIStore.getState().addNotification(
+                        `${i18n.t('label_failed_to_save') || 'Failed to save'} (#${id}: ${result.error || result.status})`,
+                        'error'
+                    );
+                    return;
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : (i18n.t('label_failed_to_save') || 'Failed to save');
+                    get().registerTaskConflict(id, message, retryGeneration);
+                    useUIStore.getState().addNotification(message, 'error');
+                    return;
+                }
+            }
             const failures = await get().saveChanges();
             if (!failures.has(id) && conflictGeneration !== undefined) {
                 get().settleBarOperationTask(id, conflictGeneration);

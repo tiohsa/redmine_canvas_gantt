@@ -1,5 +1,6 @@
 require_relative '../../spec_helper'
 require_relative '../../../lib/redmine_canvas_gantt/project_calendar_resolver'
+require 'json'
 
 RSpec.describe RedmineCanvasGantt::ProjectCalendarResolver do
   def calendar(id, non_working_week_days: [0, 6], days: {})
@@ -73,6 +74,73 @@ RSpec.describe RedmineCanvasGantt::ProjectCalendarResolver do
 
     expect(resolver.next_working_day(Date.new(2027, 1, 4), project: project)).to eq(Date.new(2027, 1, 5))
     expect(resolver.previous_working_day(Date.new(2027, 1, 4), project: project)).to eq(Date.new(2027, 1, 1))
+  end
+
+  it 'rejects interval normalization when working-day correction would invert the range' do
+    custom = calendar(
+      'custom',
+      days: { Date.new(2027, 1, 4) => { name: 'Company holiday', type: 'non_working' } }
+    )
+    repository = instance_double(
+      RedmineCanvasGantt::BusinessCalendarRepository,
+      snapshot: snapshot(default: 'custom', calendars: { 'custom' => custom })
+    )
+    resolver = described_class.new(repository: repository, fallback_non_working_week_days: [6, 7])
+    project = instance_double(Project, id: 1, identifier: 'project', ancestors: [])
+
+    expect(resolver.normalize_date_interval(
+      start_date: Date.new(2027, 1, 4),
+      due_date: Date.new(2027, 1, 4),
+      changed_fields: %i[start_date due_date],
+      project: project,
+      mode: :direct_edit
+    )).to eq(
+      valid: false,
+      start_date: Date.new(2027, 1, 5),
+      due_date: Date.new(2027, 1, 1),
+      error: :invalid_interval
+    )
+  end
+
+  it 'matches the shared frontend/backend interval vectors' do
+    fixture_path = File.expand_path('../../../spa/src/utils/calendarDateIntervalVectors.json', __dir__)
+    fixture = JSON.parse(File.read(fixture_path))
+    raw_payload = fixture.fetch('calendarPayload')
+    calendars = raw_payload.fetch('calendars').transform_values do |raw_calendar|
+      calendar(
+        raw_calendar.fetch('id'),
+        non_working_week_days: raw_calendar.fetch('non_working_week_days'),
+        days: raw_calendar.fetch('days').each_with_object({}) do |(date, info), result|
+          result[Date.iso8601(date)] = { name: info.fetch('name'), type: info.fetch('type') }
+        end
+      )
+    end
+    repository = instance_double(
+      RedmineCanvasGantt::BusinessCalendarRepository,
+      snapshot: snapshot(
+        default: raw_payload.fetch('default_calendar_id'),
+        assignments: raw_payload.fetch('project_calendar_ids'),
+        calendars: calendars
+      )
+    )
+    resolver = described_class.new(repository: repository, fallback_non_working_week_days: [6, 7])
+
+    fixture.fetch('cases').each do |test_case|
+      project = instance_double(Project, id: test_case.fetch('projectId').to_i, identifier: test_case.fetch('projectId'), ancestors: [])
+      result = resolver.normalize_date_interval(
+        start_date: test_case['startDate'] && Date.iso8601(test_case['startDate']),
+        due_date: test_case['dueDate'] && Date.iso8601(test_case['dueDate']),
+        changed_fields: test_case.fetch('changedFields').map(&:to_sym),
+        project: project,
+        mode: test_case.fetch('mode').to_sym
+      )
+      expected = test_case.fetch('expected')
+
+      expect(result[:valid]).to eq(expected.fetch('valid')), test_case.fetch('name')
+      expect(result[:start_date]&.iso8601).to eq(expected['startDate']), test_case.fetch('name')
+      expect(result[:due_date]&.iso8601).to eq(expected['dueDate']), test_case.fetch('name')
+      expect(result[:error]&.to_s).to eq(expected['error']) if expected['error']
+    end
   end
 
   it 'falls back to Redmine weekdays without an assigned calendar' do

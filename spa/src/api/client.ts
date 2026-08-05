@@ -917,7 +917,7 @@ export const apiClient = {
         };
     },
 
-    createRelation: async (fromId: string, toId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata> => {
+    createRelation: async (fromId: string, toId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata & { status: 'ok' }> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
@@ -948,10 +948,10 @@ export const apiClient = {
             throw new Error('Invalid relation response');
         }
 
-        return { ...relation, ...parseMutationMetadata(payload) };
+        return { status: 'ok', ...relation, ...parseMutationMetadata(payload) };
     },
 
-    updateRelation: async (relationId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata> => {
+    updateRelation: async (relationId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata & { status: 'ok' }> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
         const response = await sessionFetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
@@ -971,10 +971,10 @@ export const apiClient = {
         }
 
         const payload = await response.json();
-        return { ...normalizeRelation(payload, { fromId: '', toId: '', type }), ...parseMutationMetadata(payload) };
+        return { status: 'ok', ...normalizeRelation(payload, { fromId: '', toId: '', type }), ...parseMutationMetadata(payload) };
     },
 
-    deleteRelation: async (relationId: string, operationId?: string): Promise<MutationMetadata | undefined> => {
+    deleteRelation: async (relationId: string, operationId?: string): Promise<MutationMetadata & { status: 'ok' }> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
@@ -988,7 +988,7 @@ export const apiClient = {
             throw await parseMutationError(response);
         }
         const payload = typeof response.json === 'function' ? await response.json().catch(() => ({})) : {};
-        return parseMutationMetadata(payload);
+        return { status: 'ok', ...parseMutationMetadata(payload) };
     },
 
     getSubtaskTrackers: async (parentId: string, operationIssueIds: string[] = []): Promise<Array<{ id: number; name: string }>> => {
@@ -1046,7 +1046,7 @@ export const apiClient = {
         };
     },
 
-    deleteTask: async (taskId: string, operationId?: string): Promise<MutationMetadata | undefined> => {
+    deleteTask: async (taskId: string, operationId?: string): Promise<MutationMetadata & { status: 'ok' }> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
@@ -1060,6 +1060,6 @@ export const apiClient = {
             throw await parseMutationError(response);
         }
         const payload = typeof response.json === 'function' ? await response.json().catch(() => ({})) : {};
-        return parseMutationMetadata(payload);
+        return { status: 'ok', ...parseMutationMetadata(payload) };
     }
 };

@@ -399,7 +399,7 @@ describe('apiClient.createRelation', () => {
         expect(fetchMock).toHaveBeenCalledWith('/canvas_gantt/relations.json?canvas_project_id=1', expect.objectContaining({
             method: 'POST'
         }));
-        expect(rel).toEqual({ id: '1', from: '10', to: '11', type: 'precedes', delay: undefined });
+        expect(rel).toEqual({ status: 'ok', id: '1', from: '10', to: '11', type: 'precedes', delay: undefined });
     });
 
     it('parses relation id when API returns plain object', async () => {
@@ -421,7 +421,7 @@ describe('apiClient.createRelation', () => {
         expect(fetchMock).toHaveBeenCalledWith('/canvas_gantt/relations.json?canvas_project_id=1', expect.objectContaining({
             method: 'POST'
         }));
-        expect(rel).toEqual({ id: '2', from: '10', to: '11', type: 'precedes', delay: 0 });
+        expect(rel).toEqual({ status: 'ok', id: '2', from: '10', to: '11', type: 'precedes', delay: 0 });
     });
 
     it('prefers issue_from_id over issue_id when both are present', async () => {
@@ -449,7 +449,7 @@ describe('apiClient.createRelation', () => {
         vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
 
         const rel = await apiClient.createRelation('10', '11', 'precedes');
-        expect(rel).toEqual({ id: '4', from: '10', to: '11', type: 'precedes', delay: undefined });
+        expect(rel).toEqual({ status: 'ok', id: '4', from: '10', to: '11', type: 'precedes', delay: undefined });
     });
 });
 
@@ -481,7 +481,7 @@ describe('apiClient.updateRelation', () => {
         expect(fetchMock).toHaveBeenCalledWith('/canvas_gantt/relations/3.json?canvas_project_id=1', expect.objectContaining({
             method: 'PATCH'
         }));
-        expect(rel).toEqual({ id: '3', from: '10', to: '11', type: 'blocks', delay: undefined });
+        expect(rel).toEqual({ status: 'ok', id: '3', from: '10', to: '11', type: 'blocks', delay: undefined });
     });
 });
 
@@ -591,7 +591,7 @@ describe('apiClient.deleteTask', () => {
         const fetchMock = vi.fn().mockResolvedValue({ ok: true });
         vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
 
-        await apiClient.deleteTask('42');
+        const result = await apiClient.deleteTask('42');
 
         expect(fetchMock).toHaveBeenCalledWith('/canvas_gantt/tasks/42.json?canvas_project_id=1', expect.objectContaining({
             method: 'DELETE',
@@ -600,6 +600,7 @@ describe('apiClient.deleteTask', () => {
         }));
         const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
         expect(new Headers(requestInit.headers).get('X-CSRF-Token')).toBe('token');
+        expect(result).toEqual({ status: 'ok' });
     });
 });
 
