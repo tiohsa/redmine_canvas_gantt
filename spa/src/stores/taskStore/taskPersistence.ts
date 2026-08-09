@@ -36,6 +36,10 @@ export type MutationIntent = {
     fields: TaskFields;
 };
 
+const BULK_INTENT_WIRE_FIELDS = new Set(['start_date', 'due_date', 'parent_issue_id']);
+const hasBulkIntentFields = (fields: TaskFields): boolean => Object.keys(fields)
+    .some(field => BULK_INTENT_WIRE_FIELDS.has(field));
+
 type FetchDataResult = {
     tasks: Task[];
 };
@@ -261,14 +265,15 @@ export const saveModifiedTasks = async (
     relations: Relation[],
     modifiedTaskIds: Set<string>,
     selectedStatusIds: number[],
-    updateTask: (task: Task, operationId?: string) => Promise<UpdateTaskFieldsResult>,
+    updateTask: (task: Task, operationId?: string, fields?: TaskFields) => Promise<UpdateTaskFieldsResult>,
     fetchData: (params: FetchDataParams) => Promise<FetchDataResult>,
     onTaskSaved?: (taskId: string, lockVersion?: number) => void,
     onTaskResult?: (taskId: string, result: UpdateTaskFieldsResult) => void,
     onConflict?: (taskId: string, message: string, remoteEntity?: PersistedTaskState, remoteRevision?: number) => void,
     shouldAbortRemaining?: (taskId: string) => boolean,
     mutationGenerations: Record<string, number> = {},
-    mutationFields: Record<string, TaskFields> = {}
+    mutationFields: Record<string, TaskFields> = {},
+    preflightFailures: Map<string, string> = new Map()
 ): Promise<SaveModifiedTasksResult> => {
     const mutableTaskById = new Map(tasks.map(task => [task.id, { ...task }]));
     const depthCache = new Map<string, number>();
@@ -403,6 +408,14 @@ export const saveModifiedTasks = async (
         }
     };
 
+    preflightFailures.forEach((message, taskId) => {
+        if (!pendingTaskIds.has(taskId)) return;
+        pendingTaskIds.delete(taskId);
+        terminalFailureTaskIds.add(taskId);
+        failures.set(taskId, message);
+    });
+    blockTasksWithFailedPredecessors();
+
     while (pendingTaskIds.size > 0) {
         if (hasProcessedTask) abortOwnedPendingTasks();
         blockTasksWithFailedPredecessors();
@@ -451,7 +464,8 @@ export const saveModifiedTasks = async (
                     taskId,
                     (context) => {
                         unsentTaskIds.delete(taskId);
-                        return updateTask(task, context?.operationId);
+                        const fields = mutationFields[taskId] ?? taskMutationFields(task);
+                        return updateTask(task, context?.operationId, fields);
                     },
                     {
                         onResult: (savedResult) => {
@@ -502,6 +516,12 @@ export const saveModifiedTasks = async (
                 generation: mutationGenerations[taskId] ?? 0,
                 fields: mutationFields[taskId] ?? taskMutationFields(task)
             };
+            if (!hasBulkIntentFields(intent.fields)) {
+                pendingTaskIds.delete(taskId);
+                terminalFailureTaskIds.add(taskId);
+                failures.set(taskId, 'No Bulk-supported mutation fields are present.');
+                continue;
+            }
             if (outcome === 'success') {
                 failures.delete(taskId);
                 settledTaskIds.add(taskId);
@@ -563,8 +583,7 @@ export const saveModifiedTasks = async (
                     pendingTaskIds.delete(taskId);
                     terminalFailureTaskIds.add(taskId);
                     failures.set(taskId, message);
-                    const candidate = conflictCandidates.get(taskId);
-                    onConflict?.(taskId, `${message} (remote unavailable)`, candidate?.entity, candidate?.revision);
+                    onConflict?.(taskId, `${message} (remote unavailable)`, undefined, undefined);
                 });
                 hasProcessedTask = true;
                 continue;
@@ -574,19 +593,23 @@ export const saveModifiedTasks = async (
             [...new Set(conflictTaskIds)].forEach((taskId) => {
                 const localTask = mutableTaskById.get(taskId);
                 const candidate = conflictCandidates.get(taskId);
-                const latestTask = candidate?.entity && responseContainsIntendedFields(candidate.intent.fields, candidate.entity)
-                    ? candidate.entity
-                    : latestTaskById.get(taskId);
-                if (!localTask || !latestTask || !candidate) {
+                const candidateEntityIsComplete = Boolean(candidate?.entity && responseContainsIntendedFields(candidate.intent.fields, candidate.entity));
+                const latestTask = candidateEntityIsComplete ? candidate?.entity : latestTaskById.get(taskId);
+                const canonicalRemote = latestTask
+                    ? { entity: latestTask, revision: candidateEntityIsComplete
+                        ? (candidate?.revision ?? latestTask.lockVersion)
+                        : latestTask.lockVersion }
+                    : undefined;
+                if (!localTask || !canonicalRemote || !candidate) {
                     pendingTaskIds.delete(taskId);
                     terminalFailureTaskIds.add(taskId);
                     const message = conflictMessages.get(taskId) || conflictMessage;
                     failures.set(taskId, message);
-                    onConflict?.(taskId, `${message} (remote unavailable)`, candidate?.entity, candidate?.revision);
+                    onConflict?.(taskId, `${message} (remote unavailable)`, undefined, undefined);
                     return;
                 }
 
-                if (responseMatchesIntendedFields(candidate.intent.fields, latestTask)) {
+                if (responseMatchesIntendedFields(candidate.intent.fields, canonicalRemote.entity)) {
                     pendingTaskIds.delete(taskId);
                     failures.delete(taskId);
                     settledTaskIds.add(taskId);
@@ -594,11 +617,11 @@ export const saveModifiedTasks = async (
                     unsentTaskIds.delete(taskId);
                     onTaskResult?.(taskId, {
                         status: 'ok',
-                        entity: latestTask,
-                        revision: candidate.revision ?? latestTask.lockVersion,
-                        lockVersion: candidate.revision ?? latestTask.lockVersion
+                        entity: canonicalRemote.entity,
+                        revision: canonicalRemote.revision,
+                        lockVersion: canonicalRemote.revision
                     });
-                    onTaskSaved?.(taskId, candidate.revision ?? latestTask.lockVersion);
+                    onTaskSaved?.(taskId, canonicalRemote.revision);
                     return;
                 }
 
@@ -606,7 +629,7 @@ export const saveModifiedTasks = async (
                 terminalFailureTaskIds.add(taskId);
                 const message = conflictMessages.get(taskId) || conflictMessage;
                 failures.set(taskId, message);
-                onConflict?.(taskId, message, latestTask, candidate.revision ?? latestTask.lockVersion);
+                onConflict?.(taskId, message, canonicalRemote.entity, canonicalRemote.revision);
             });
         }
 

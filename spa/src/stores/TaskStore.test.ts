@@ -2068,12 +2068,27 @@ describe('TaskStore asynchronous state ownership', () => {
 
         await useTaskStore.getState().saveChanges();
 
-        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id)).toEqual([
-            'bar-task',
-            'ordinary-task'
-        ]);
+        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id)).toEqual(['bar-task']);
         expect(useTaskStore.getState().allTasks.find(task => task.id === 'bar-task')?.dueDate).toBe(9);
-        expect(useTaskStore.getState().modifiedTaskIds.has('ordinary-task')).toBe(false);
+        expect(useTaskStore.getState().modifiedTaskIds.has('ordinary-task')).toBe(true);
+        expect(useTaskStore.getState().localTaskPatches['ordinary-task']).toEqual(
+            expect.arrayContaining([expect.objectContaining({ fields: { ratioDone: 11 } })])
+        );
+    });
+
+    it('does not partially settle a mixed Bulk and non-Bulk task', async () => {
+        const task = buildTask({ id: 'mixed-task', dueDate: 2 });
+        useTaskStore.getState().setTasks([task]);
+        useTaskStore.getState().updateTask('mixed-task', { dueDate: 8 });
+        useTaskStore.getState().updateTask('mixed-task', { subject: 'Local subject' });
+
+        const failures = await useTaskStore.getState().saveChanges();
+        const state = useTaskStore.getState();
+
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        expect(failures.get('mixed-task')).toContain('non-bulk');
+        expect(state.modifiedTaskIds.has('mixed-task')).toBe(true);
+        expect(state.localTaskPatches['mixed-task']).toHaveLength(2);
     });
 
     it('keeps a bar operation unresolved when conflict resync shows a different remote value', async () => {

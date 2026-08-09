@@ -8,6 +8,14 @@ import { parseDateOnly } from '../utils/dateOnly';
 export type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
 
+export const BULK_TASK_FIELDS = ['startDate', 'dueDate', 'parentId'] as const;
+export type BulkTaskField = typeof BULK_TASK_FIELDS[number];
+export type BulkTaskMutationDelta = {
+    taskId: string;
+    generation: number;
+    fields: TaskFields;
+};
+
 const TASK_PATCH_MAX_RETRIES = 1;
 
 const canonicalFieldName = (field: string): string => ({
@@ -93,6 +101,21 @@ export const taskMutationFields = (task: { startDate?: number; dueDate?: number;
     parent_issue_id: task.parentId ? Number(task.parentId) : null
 });
 
+export const buildBulkTaskMutationDelta = (
+    taskId: string,
+    generation: number,
+    task: { startDate?: number; dueDate?: number; parentId?: string },
+    changedFields: Iterable<string>
+): BulkTaskMutationDelta => {
+    const changed = new Set(changedFields);
+    const allFields = taskMutationFields(task);
+    const fields: TaskFields = {};
+    if (changed.has('startDate')) fields.start_date = allFields.start_date;
+    if (changed.has('dueDate')) fields.due_date = allFields.due_date;
+    if (changed.has('parentId')) fields.parent_issue_id = allFields.parent_issue_id;
+    return { taskId, generation, fields };
+};
+
 const executeTaskPatch = async (
     taskId: string,
     fields: TaskFieldsFactory,
@@ -130,7 +153,7 @@ const executeTaskPatch = async (
 export const taskMutationService = {
     // The bulk save loop owns the queue for this method so it can order
     // dependency batches; do not add a second per-task queue here.
-    updateTask: (task: Parameters<typeof apiClient.updateTask>[0], operationId?: string) => apiClient.updateTask(task, operationId),
+    updateTask: (task: Parameters<typeof apiClient.updateTask>[0], operationId?: string, fields?: TaskFields) => apiClient.updateTask(task, operationId, fields),
 
     saveBaseline: (payload: NonNullable<Parameters<typeof apiClient.saveBaseline>[0]>) => {
         const scope = payload.scope ?? 'filtered';

@@ -932,20 +932,25 @@ export const apiClient = {
         };
     },
 
-    updateTask: async (task: Task, operationId?: string): Promise<UpdateTaskResult> => {
+    updateTask: async (task: Task, operationId?: string, fields?: Record<string, unknown>): Promise<UpdateTaskResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
+
+        const requestedFields = fields ?? {
+            start_date: task.startDate,
+            due_date: task.dueDate,
+            parent_issue_id: task.parentId ? Number(task.parentId) : null
+        };
+        const taskPayload: Record<string, unknown> = { lock_version: task.lockVersion };
+        if (Object.prototype.hasOwnProperty.call(requestedFields, 'start_date')) taskPayload.start_date = formatDateOnly(task.startDate);
+        if (Object.prototype.hasOwnProperty.call(requestedFields, 'due_date')) taskPayload.due_date = formatDateOnly(task.dueDate);
+        if (Object.prototype.hasOwnProperty.call(requestedFields, 'parent_issue_id')) taskPayload.parent_issue_id = task.parentId ? Number(task.parentId) : null;
 
         const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${task.id}.json?${query}`, {
             method: 'PATCH',
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
-                task: {
-                    start_date: formatDateOnly(task.startDate),
-                    due_date: formatDateOnly(task.dueDate),
-                    parent_issue_id: task.parentId ? Number(task.parentId) : null,
-                    lock_version: task.lockVersion
-                },
+                task: taskPayload,
                 ...(operationId ? { client_operation_id: operationId } : {})
             })
         });

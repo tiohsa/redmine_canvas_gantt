@@ -36,7 +36,7 @@ import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/b
 import { formatDateOnly, fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
-import { taskMutationFields, taskMutationService, type TaskFields } from '../services/taskMutationService';
+import { buildBulkTaskMutationDelta, BULK_TASK_FIELDS, taskMutationService, type TaskFields } from '../services/taskMutationService';
 import {
     applyLocalPatches,
     canApplyReadResponse,
@@ -2797,23 +2797,51 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const snapshotGenerations = { ...snapshot.editGenerations };
                 const snapshotTaskIds = new Set(snapshot.modifiedTaskIds);
                 const snapshotMutationFields: Record<string, TaskFields> = {};
+                const unsupportedMutationFailures = new Map<string, string>();
                 snapshotTaskIds.forEach((taskId) => {
+                    if (snapshot.taskConflicts[taskId]) {
+                        unsupportedMutationFailures.set(
+                            taskId,
+                            'Unresolved task conflict must be resolved before Bulk Save.'
+                        );
+                        return;
+                    }
                     const task = snapshot.allTasks.find(candidate => candidate.id === taskId);
                     const fields = (snapshot.localTaskPatches[taskId] ?? []).reduce<Partial<Task>>(
                         (owned, patch) => ({ ...owned, ...patch.fields }), {}
                     );
                     if (task) {
-                        const allPersistedFields = taskMutationFields(task);
-                        const ownedFields: TaskFields = {};
-                        if (Object.prototype.hasOwnProperty.call(fields, 'startDate')) ownedFields.start_date = allPersistedFields.start_date;
-                        if (Object.prototype.hasOwnProperty.call(fields, 'dueDate')) ownedFields.due_date = allPersistedFields.due_date;
-                        if (Object.prototype.hasOwnProperty.call(fields, 'parentId')) ownedFields.parent_issue_id = allPersistedFields.parent_issue_id;
-                        snapshotMutationFields[taskId] = ownedFields;
+                        // A few compatibility callers can mark a task dirty
+                        // without materializing a LocalPatch. Preserve the
+                        // historical schedule save behavior for that legacy
+                        // state; real LocalPatch snapshots must provide an
+                        // explicit non-empty Bulk delta.
+                        const changedFields = Object.keys(fields).length === 0 && (snapshot.localTaskPatches[taskId] ?? []).length === 0
+                            ? [...BULK_TASK_FIELDS]
+                            : Object.keys(fields);
+                        const bulkFields = changedFields.filter(field => BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
+                        const unsupportedFields = changedFields.filter(field => field !== 'displayOrder' && !BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
+                        const delta = buildBulkTaskMutationDelta(
+                            taskId,
+                            snapshotGenerations[taskId] ?? 0,
+                            task,
+                            bulkFields
+                        );
+                        if (unsupportedFields.length > 0 || Object.keys(delta.fields).length === 0) {
+                            unsupportedMutationFailures.set(
+                                taskId,
+                                unsupportedFields.length > 0
+                                    ? 'Unresolved non-bulk mutation must be resolved before Bulk Save.'
+                                    : 'No Bulk-supported mutation fields are present.'
+                            );
+                        } else {
+                            snapshotMutationFields[taskId] = delta.fields;
+                        }
                     }
                 });
                 const terminalBarFailureTaskGenerations = new Map<string, number>();
                 const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number }>();
-                const requiresResync = [...snapshotTaskIds].some(taskId => (
+                const hasScheduleMutation = [...snapshotTaskIds].some(taskId => (
                     (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
                         ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => field in patch.fields)
                     ))
@@ -2900,7 +2928,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         ));
                     },
                     snapshotGenerations,
-                    snapshotMutationFields
+                    snapshotMutationFields,
+                    unsupportedMutationFailures
                 );
                 const { failures, savedTaskIds } = saveResult;
 
@@ -2912,7 +2941,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         const currentGeneration = state.editGenerations[taskId] ?? 0;
                         const savedGeneration = snapshotGenerations[taskId] ?? 0;
                         const remainingPatches = (localTaskPatches[taskId] ?? [])
-                            .filter(patch => patch.generation > savedGeneration);
+                            .filter(patch => {
+                                if (patch.generation > savedGeneration) return true;
+                                const patchFields = Object.keys(patch.fields);
+                                const hasBulkField = patchFields.some(field => BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
+                                const hasUnsupportedField = patchFields.some(field => (
+                                    field !== 'displayOrder' && !BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number])
+                                ));
+                                return !hasBulkField || hasUnsupportedField;
+                            });
                         if (remainingPatches.length > 0) {
                             localTaskPatches[taskId] = remainingPatches;
                         } else {
@@ -2925,7 +2962,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     return { modifiedTaskIds, localTaskPatches };
                 });
 
-                if (saveResult.batchStatus !== 'preflight_failure' && requiresResync) {
+                const requiresResync = saveResult.savedTaskIds.size > 0 && [...saveResult.savedTaskIds].some(taskId => (
+                    (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
+                        ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => field in patch.fields)
+                    ))
+                ));
+                if (saveResult.batchStatus !== 'preflight_failure' && hasScheduleMutation && requiresResync) {
                     try {
                         await get().refreshData();
                     } catch (error) {

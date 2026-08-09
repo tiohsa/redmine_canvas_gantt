@@ -632,6 +632,52 @@ describe('saveModifiedTasks', () => {
         expect(result.savedTaskIds).toEqual(new Set(['A']));
     });
 
+    it('uses the resynced entity revision as the canonical revision', async () => {
+        const local = buildTask({ id: 'A', dueDate: 10, lockVersion: 1 });
+        const remote = buildTask({ id: 'A', dueDate: 10, parentId: undefined, lockVersion: 7 });
+        const onTaskSaved = vi.fn();
+        const updateTask = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            error: 'stale lock',
+            entity: { id: 'A' },
+            revision: 2
+        });
+
+        const result = await saveModifiedTasks(
+            [local], [], new Set(['A']), [], updateTask,
+            vi.fn().mockResolvedValue({ tasks: [remote] }), onTaskSaved
+        );
+
+        expect(result.savedTaskIds).toEqual(new Set(['A']));
+        expect(onTaskSaved).toHaveBeenCalledWith('A', 7);
+    });
+
+    it('does not send or settle a task with only non-Bulk LocalPatch fields', async () => {
+        const updateTask = vi.fn();
+        const result = await saveModifiedTasks(
+            [buildTask({ id: 'A' })], [], new Set(['A']), [], updateTask,
+            vi.fn().mockResolvedValue({ tasks: [] }), undefined, undefined, undefined,
+            undefined, { A: 1 }, { A: { subject: 'Local' } },
+            new Map([['A', 'Unresolved non-bulk mutation']])
+        );
+
+        expect(updateTask).not.toHaveBeenCalled();
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.failures.get('A')).toContain('Unresolved non-bulk');
+    });
+
+    it('does not classify an empty Bulk intent as semantic success', async () => {
+        const updateTask = vi.fn().mockResolvedValue({ status: 'ok' as const, lockVersion: 2 });
+        const result = await saveModifiedTasks(
+            [buildTask({ id: 'A' })], [], new Set(['A']), [], updateTask,
+            vi.fn().mockResolvedValue({ tasks: [] }), undefined, undefined, undefined,
+            undefined, { A: 1 }, { A: {} }
+        );
+
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.failures.get('A')).toContain('No Bulk-supported');
+    });
+
     it('does not automatically retry after a conflict when remote persisted fields differ', async () => {
         const local = buildTask({ id: 'A', dueDate: 10, lockVersion: 1 });
         const remote = buildTask({ id: 'A', dueDate: 12, lockVersion: 2 });
