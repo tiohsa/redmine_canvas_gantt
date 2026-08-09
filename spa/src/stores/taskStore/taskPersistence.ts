@@ -36,9 +36,7 @@ export type MutationIntent = {
     fields: TaskFields;
 };
 
-const BULK_INTENT_WIRE_FIELDS = new Set(['start_date', 'due_date', 'parent_issue_id']);
-const hasBulkIntentFields = (fields: TaskFields): boolean => Object.keys(fields)
-    .some(field => BULK_INTENT_WIRE_FIELDS.has(field));
+const hasPersistableIntentFields = (fields: TaskFields): boolean => Object.keys(fields).length > 0;
 
 type FetchDataResult = {
     tasks: Task[];
@@ -526,7 +524,7 @@ export const saveModifiedTasks = async (
                 generation: mutationGenerations[taskId] ?? 0,
                 fields: mutationFields[taskId]!
             };
-            if (!hasBulkIntentFields(intent.fields)) {
+            if (!hasPersistableIntentFields(intent.fields)) {
                 pendingTaskIds.delete(taskId);
                 terminalFailureTaskIds.add(taskId);
                 failures.set(taskId, i18n.t('label_no_bulk_supported_mutation_fields') || 'No saveable task changes are available.');

@@ -82,6 +82,7 @@ describe('UiSidebar', () => {
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
         resetCanvasGanttTestState();
+        useTaskStore.setState({ autoSave: true });
     });
 
     afterEach(() => {

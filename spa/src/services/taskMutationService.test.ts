@@ -4,11 +4,49 @@ import {
     enqueueMutationOperation,
     getMutationOperationRecords
 } from '../stores/taskStore/taskPersistence';
-import { taskMutationService } from './taskMutationService';
+import { PERSISTABLE_TASK_FIELDS, taskMutationFields, taskMutationService } from './taskMutationService';
 
 describe('taskMutationService mutation boundary', () => {
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it('serializes every persistable task field through one registry', () => {
+        const fields = taskMutationFields({
+            subject: 'Draft',
+            startDate: Date.UTC(2026, 0, 2),
+            dueDate: Date.UTC(2026, 0, 4),
+            parentId: '7',
+            ratioDone: 50,
+            statusId: 2,
+            assignedToId: null,
+            priorityId: 3,
+            categoryId: 4,
+            estimatedHours: 2,
+            projectId: '5',
+            trackerId: 6,
+            fixedVersionId: '8',
+            authorId: 9,
+            customFieldValues: { '10': 'value' }
+        }, PERSISTABLE_TASK_FIELDS);
+
+        expect(fields).toMatchObject({
+            subject: 'Draft',
+            start_date: '2026-01-02',
+            due_date: '2026-01-04',
+            parent_issue_id: 7,
+            done_ratio: 50,
+            status_id: 2,
+            assigned_to_id: '',
+            priority_id: 3,
+            category_id: 4,
+            estimated_hours: 2,
+            project_id: '5',
+            tracker_id: 6,
+            fixed_version_id: '8',
+            author_id: 9,
+            custom_field_values: { '10': 'value' }
+        });
     });
 
     it('keeps non-bulk status results single-shot while recording the common outcome', async () => {

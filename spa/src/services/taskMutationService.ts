@@ -3,13 +3,31 @@ import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
 import { baselineProjectResourceKey, enqueueMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
 import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
-import { parseDateOnly } from '../utils/dateOnly';
+import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 
 export type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
 
 export const BULK_TASK_FIELDS = ['startDate', 'dueDate', 'parentId'] as const;
 export type BulkTaskField = typeof BULK_TASK_FIELDS[number];
+export const PERSISTABLE_TASK_FIELDS = [
+    'subject',
+    'startDate',
+    'dueDate',
+    'parentId',
+    'ratioDone',
+    'statusId',
+    'assignedToId',
+    'priorityId',
+    'categoryId',
+    'estimatedHours',
+    'projectId',
+    'trackerId',
+    'fixedVersionId',
+    'authorId',
+    'customFieldValues'
+] as const;
+export type PersistableTaskField = typeof PERSISTABLE_TASK_FIELDS[number];
 export type BulkTaskMutationDelta = {
     taskId: string;
     generation: number;
@@ -95,10 +113,64 @@ export const responseContainsIntendedFields = (
         );
     });
 
-export const taskMutationFields = (task: { startDate?: number; dueDate?: number; parentId?: string }): TaskFields => ({
-    start_date: task.startDate,
-    due_date: task.dueDate,
-    parent_issue_id: task.parentId ? Number(task.parentId) : null
+const blankableId = (value: string | number | null | undefined): string | number =>
+    value === null || value === undefined || value === '' ? '' : value;
+
+const numberOrNull = (value: string | number | null | undefined): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+export const taskMutationFields = (
+    task: {
+        subject?: string;
+        startDate?: number;
+        dueDate?: number;
+        parentId?: string;
+        ratioDone?: number;
+        statusId?: number;
+        assignedToId?: number | null;
+        priorityId?: number;
+        categoryId?: number;
+        estimatedHours?: number;
+        projectId?: string;
+        trackerId?: number;
+        fixedVersionId?: string;
+        authorId?: number;
+        customFieldValues?: Record<string, string | null>;
+    },
+    changedFields: Iterable<string> = PERSISTABLE_TASK_FIELDS
+): TaskFields => {
+    const changed = new Set(changedFields);
+    const fields: TaskFields = {};
+    if (changed.has('subject')) fields.subject = task.subject;
+    if (changed.has('startDate')) fields.start_date = formatDateOnly(task.startDate);
+    if (changed.has('dueDate')) fields.due_date = formatDateOnly(task.dueDate);
+    if (changed.has('parentId')) fields.parent_issue_id = numberOrNull(task.parentId);
+    if (changed.has('ratioDone')) fields.done_ratio = task.ratioDone;
+    if (changed.has('statusId')) fields.status_id = task.statusId;
+    if (changed.has('assignedToId')) fields.assigned_to_id = task.assignedToId ?? '';
+    if (changed.has('priorityId')) fields.priority_id = blankableId(task.priorityId);
+    if (changed.has('categoryId')) fields.category_id = blankableId(task.categoryId);
+    if (changed.has('estimatedHours')) fields.estimated_hours = task.estimatedHours ?? '';
+    if (changed.has('projectId')) fields.project_id = blankableId(task.projectId);
+    if (changed.has('trackerId')) fields.tracker_id = blankableId(task.trackerId);
+    if (changed.has('fixedVersionId')) fields.fixed_version_id = blankableId(task.fixedVersionId);
+    if (changed.has('authorId')) fields.author_id = blankableId(task.authorId);
+    if (changed.has('customFieldValues')) fields.custom_field_values = task.customFieldValues ?? {};
+    return fields;
+};
+
+export const buildTaskMutationDelta = (
+    taskId: string,
+    generation: number,
+    task: Parameters<typeof taskMutationFields>[0],
+    changedFields: Iterable<string>
+): BulkTaskMutationDelta => ({
+    taskId,
+    generation,
+    fields: taskMutationFields(task, changedFields)
 });
 
 export const buildBulkTaskMutationDelta = (
@@ -107,13 +179,7 @@ export const buildBulkTaskMutationDelta = (
     task: { startDate?: number; dueDate?: number; parentId?: string },
     changedFields: Iterable<string>
 ): BulkTaskMutationDelta => {
-    const changed = new Set(changedFields);
-    const allFields = taskMutationFields(task);
-    const fields: TaskFields = {};
-    if (changed.has('startDate')) fields.start_date = allFields.start_date;
-    if (changed.has('dueDate')) fields.due_date = allFields.due_date;
-    if (changed.has('parentId')) fields.parent_issue_id = allFields.parent_issue_id;
-    return { taskId, generation, fields };
+    return buildTaskMutationDelta(taskId, generation, task, changedFields);
 };
 
 const executeTaskPatch = async (

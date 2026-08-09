@@ -40,6 +40,7 @@ describe('UiSidebar Blur-to-Save', () => {
         useEditMetaStore.setState({ metaByTaskId: {}, loadingTaskId: null, error: null });
 
         useTaskStore.setState({
+            autoSave: true,
             viewport: {
                 startDate: 0,
                 scrollX: 0,

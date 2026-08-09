@@ -27,6 +27,26 @@ describe('mutation outcome classification', () => {
         });
     });
 
+    it('preserves semantic target/reference failure metadata', () => {
+        expect(classifyMutationResult({
+            status: 'not_found',
+            error: 'Parent task not found',
+            failure: {
+                kind: 'not_found',
+                resource_role: 'reference',
+                resource_type: 'parent_task'
+            }
+        })).toMatchObject({
+            kind: 'terminal',
+            status: 'not_found',
+            failure: {
+                kind: 'not_found',
+                resourceRole: 'reference',
+                resourceType: 'parent_task'
+            }
+        });
+    });
+
     it('treats resolved mutation results with failed rows as terminal domain failures', () => {
         expect(classifyMutationResult({
             status: 'ok',

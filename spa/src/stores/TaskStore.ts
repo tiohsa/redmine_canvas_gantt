@@ -33,10 +33,11 @@ import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/businessCalendar';
-import { formatDateOnly, fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
+import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
-import { buildBulkTaskMutationDelta, BULK_TASK_FIELDS, taskMutationService, type TaskFields } from '../services/taskMutationService';
+import type { MutationRemoteAvailability } from '../api/mutationOutcome';
+import { buildTaskMutationDelta, BULK_TASK_FIELDS, PERSISTABLE_TASK_FIELDS, taskMutationFields, taskMutationService, type TaskFields } from '../services/taskMutationService';
 import {
     applyLocalPatches,
     canApplyReadResponse,
@@ -83,6 +84,7 @@ export type TaskConflictRecord = {
     generation?: number;
     remoteEntity?: PersistedTaskState;
     remoteRevision?: number;
+    remoteAvailability?: MutationRemoteAvailability;
 };
 
 type BarOperationRecord = {
@@ -229,32 +231,8 @@ const invalidateDataRequests = () => {
 let saveChangesOperation: Promise<Map<string, string>> | null = null;
 let barOperationSequence = 0;
 
-const blankableId = (value: string | number | null | undefined): string | number =>
-    value === null || value === undefined || value === '' ? '' : value;
-
-const numberOrNull = (value: string | number | null | undefined): number | null => {
-    if (value === null || value === undefined || value === '') return null;
-    const parsed = typeof value === 'number' ? value : Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-};
-
 const buildTaskPatchFieldsPayload = (task: Task, fields: Partial<Task>): Record<string, unknown> => {
-    const payload: Record<string, unknown> = {};
-    if (Object.prototype.hasOwnProperty.call(fields, 'subject')) payload.subject = task.subject;
-    if (Object.prototype.hasOwnProperty.call(fields, 'startDate')) payload.start_date = formatDateOnly(task.startDate);
-    if (Object.prototype.hasOwnProperty.call(fields, 'dueDate')) payload.due_date = formatDateOnly(task.dueDate);
-    if (Object.prototype.hasOwnProperty.call(fields, 'parentId')) payload.parent_issue_id = numberOrNull(task.parentId);
-    if (Object.prototype.hasOwnProperty.call(fields, 'ratioDone')) payload.done_ratio = task.ratioDone;
-    if (Object.prototype.hasOwnProperty.call(fields, 'statusId')) payload.status_id = task.statusId;
-    if (Object.prototype.hasOwnProperty.call(fields, 'assignedToId')) payload.assigned_to_id = task.assignedToId ?? '';
-    if (Object.prototype.hasOwnProperty.call(fields, 'priorityId')) payload.priority_id = blankableId(task.priorityId);
-    if (Object.prototype.hasOwnProperty.call(fields, 'categoryId')) payload.category_id = blankableId(task.categoryId);
-    if (Object.prototype.hasOwnProperty.call(fields, 'estimatedHours')) payload.estimated_hours = task.estimatedHours ?? '';
-    if (Object.prototype.hasOwnProperty.call(fields, 'projectId')) payload.project_id = blankableId(task.projectId);
-    if (Object.prototype.hasOwnProperty.call(fields, 'trackerId')) payload.tracker_id = blankableId(task.trackerId);
-    if (Object.prototype.hasOwnProperty.call(fields, 'fixedVersionId')) payload.fixed_version_id = blankableId(task.fixedVersionId);
-    if (Object.prototype.hasOwnProperty.call(fields, 'customFieldValues')) payload.custom_field_values = task.customFieldValues ?? {};
-    return payload;
+    return taskMutationFields(task, Object.keys(fields));
 };
 
 export const readLifecycleMetrics = {
@@ -387,7 +365,7 @@ interface TaskState {
     removeTask: (id: string) => void;
     markTaskTombstone: (id: string, source?: EntityTombstone['source'], operationId?: string) => void;
     clearTaskTombstone: (id: string) => void;
-    registerTaskConflict: (id: string, message: string, generation?: number, remoteEntity?: PersistedTaskState, remoteRevision?: number) => void;
+    registerTaskConflict: (id: string, message: string, generation?: number, remoteEntity?: PersistedTaskState, remoteRevision?: number, remoteAvailability?: MutationRemoteAvailability) => void;
     resolveTaskConflict: (id: string, resolution: 'remote' | 'local' | 'dismiss') => Promise<void>;
     updateViewport: (updates: Partial<Viewport>) => void;
     setRowHeight: (height: number) => void;
@@ -2110,10 +2088,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return { taskTombstones };
     }),
 
-    registerTaskConflict: (id, message, generation = get().editGenerations[id], remoteEntity, remoteRevision) => set((state) => ({
+    registerTaskConflict: (id, message, generation = get().editGenerations[id], remoteEntity, remoteRevision, remoteAvailability = remoteEntity ? 'known' : 'needs_refresh') => set((state) => ({
         taskConflicts: {
             ...state.taskConflicts,
-            [id]: { taskId: id, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision }
+            [id]: { taskId: id, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability }
         }
     })),
 
@@ -2217,23 +2195,35 @@ export const useTaskStore = create<TaskState>((set, get) => {
         }
 
         invalidateDataRequests();
+        let remoteEntity = get().taskConflicts[id]?.remoteEntity;
+        if (!remoteEntity) {
+            try {
+                const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: get().selectedStatusIds } });
+                remoteEntity = resyncData.tasks.find(task => task.id === id);
+                if (!remoteEntity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
+                get().applyApiData(resyncData);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
+                const conflict = get().taskConflicts[id];
+                get().registerTaskConflict(id, conflict?.message || message, conflict?.generation, undefined, conflict?.remoteRevision, 'unavailable');
+                useUIStore.getState().addNotification(message, 'error');
+                return;
+            }
+        }
+
+        const resolvedRemoteEntity = remoteEntity;
         set((state) => {
             const recordedConflictGeneration = state.taskConflicts[id]?.generation;
             const conflictGeneration = recordedConflictGeneration ?? state.editGenerations[id] ?? 0;
             const conflictRecord = state.taskConflicts[id];
-                    const remoteEntity = conflictRecord?.remoteEntity;
-                    const currentTask = state.allTasks.find(task => task.id === id)
-                        ?? state.serverTaskSnapshot.entitiesById[id];
-                    // Remote resolution is valid only when the conflict carried
-                    // fresh server state. An older snapshot is not evidence.
-                    const remoteTask = remoteEntity && currentTask
-                        ? { ...currentTask, ...remoteEntity }
-                        : undefined;
-                    if (!remoteTask) return state;
-            const laterPatches = remoteTask && recordedConflictGeneration !== undefined
+            const currentTask = state.allTasks.find(task => task.id === id)
+                ?? state.serverTaskSnapshot.entitiesById[id];
+            if (!currentTask) return state;
+            const remoteTask = { ...currentTask, ...resolvedRemoteEntity };
+            const laterPatches = recordedConflictGeneration !== undefined
                 ? (state.localTaskPatches[id] ?? []).filter(patch => patch.generation > conflictGeneration)
                 : [];
-            const resolvedTask = remoteTask && laterPatches.length > 0
+            const resolvedTask = laterPatches.length > 0
                 ? applyLocalPatches(remoteTask, laterPatches)
                 : remoteTask;
             const allTasks = state.allTasks.some(task => task.id === id)
@@ -2241,17 +2231,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 : [...state.allTasks, resolvedTask];
             const derived = buildDerivedTaskState(state, { allTasks });
             const localTaskPatches = { ...state.localTaskPatches };
-            if (laterPatches.length > 0) {
-                localTaskPatches[id] = laterPatches;
-            } else {
-                delete localTaskPatches[id];
-            }
+            if (laterPatches.length > 0) localTaskPatches[id] = laterPatches;
+            else delete localTaskPatches[id];
             const modifiedTaskIds = new Set(state.modifiedTaskIds);
-            if (laterPatches.length > 0) {
-                modifiedTaskIds.add(id);
-            } else {
-                modifiedTaskIds.delete(id);
-            }
+            if (laterPatches.length > 0) modifiedTaskIds.add(id);
+            else modifiedTaskIds.delete(id);
             const taskTombstones = { ...state.taskTombstones };
             delete taskTombstones[id];
             const taskConflicts = { ...state.taskConflicts };
@@ -2260,9 +2244,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 state.barOperations,
                 state.activeBarOperationId,
                 id,
-                remoteTask
-                    ? { mode: 'exact', generation: conflictGeneration }
-                    : { mode: 'all' }
+                { mode: 'exact', generation: conflictGeneration }
             );
             return {
                 allTasks,
@@ -2811,21 +2793,17 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         (owned, patch) => ({ ...owned, ...patch.fields }), {}
                     );
                     if (task) {
-                        const changedFields = Object.keys(fields);
-                        const bulkFields = changedFields.filter(field => BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
-                        const unsupportedFields = changedFields.filter(field => !BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
-                        const delta = buildBulkTaskMutationDelta(
+                        const changedFields = Object.keys(fields).filter(field => PERSISTABLE_TASK_FIELDS.includes(field as typeof PERSISTABLE_TASK_FIELDS[number]));
+                        const delta = buildTaskMutationDelta(
                             taskId,
                             snapshotGenerations[taskId] ?? 0,
                             task,
-                            bulkFields
+                            changedFields
                         );
-                        if (unsupportedFields.length > 0 || Object.keys(delta.fields).length === 0) {
+                        if (Object.keys(delta.fields).length === 0) {
                             unsupportedMutationFailures.set(
                                 taskId,
-                                unsupportedFields.length > 0
-                                    ? (i18n.t('label_unresolved_non_bulk_mutation') || 'Resolve unsupported changes before saving.')
-                                    : (i18n.t('label_no_bulk_supported_mutation_fields') || 'No saveable task changes are available.')
+                                i18n.t('label_no_bulk_supported_mutation_fields') || 'No saveable task changes are available.'
                             );
                         } else {
                             snapshotMutationFields[taskId] = delta.fields;
@@ -2833,7 +2811,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     }
                 });
                 const terminalBarFailureTaskGenerations = new Map<string, number>();
-                const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number }>();
+                const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number; remoteAvailability: MutationRemoteAvailability }>();
                 const hasScheduleMutation = [...snapshotTaskIds].some(taskId => (
                     (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
                         BULK_TASK_FIELDS.some(field => field in patch.fields)
@@ -2856,11 +2834,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             ));
                             const currentServerTask = state.serverTaskSnapshot.entitiesById[taskId] ?? savedTask;
                             const persistedFields: Partial<Task> = savedTask
-                                ? {
-                                    startDate: savedTask.startDate,
-                                    dueDate: savedTask.dueDate,
-                                    parentId: savedTask.parentId
-                                }
+                                ? (snapshot.localTaskPatches[taskId] ?? [])
+                                    .filter(patch => patch.generation <= (snapshotGenerations[taskId] ?? 0))
+                                    .reduce<Partial<Task>>((fields, patch) => ({ ...fields, ...patch.fields }), {})
                                 : {};
                             return {
                                 allTasks,
@@ -2890,7 +2866,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                                 terminalBarFailureTaskGenerations.set(taskId, operationGeneration);
                             }
                         }
-                        if (result.status === 'not_found') {
+                        if (result.status === 'not_found' && (!result.failure?.resourceRole || result.failure.resourceRole === 'target')) {
                             get().markTaskTombstone(taskId, 'server');
                         }
                     },
@@ -2905,7 +2881,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             message,
                             generation: snapshotGenerations[taskId] ?? 0,
                             remoteEntity,
-                            remoteRevision
+                            remoteRevision,
+                            remoteAvailability: remoteEntity ? 'known' : 'unavailable'
                         });
                     },
                     (taskId) => {
@@ -2934,12 +2911,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         const remainingPatches = (localTaskPatches[taskId] ?? [])
                             .filter(patch => {
                                 if (patch.generation > savedGeneration) return true;
-                                const patchFields = Object.keys(patch.fields);
-                                const hasBulkField = patchFields.some(field => BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
-                                const hasUnsupportedField = patchFields.some(field => (
-                                    !BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number])
-                                ));
-                                return !hasBulkField || hasUnsupportedField;
+                                return false;
                             });
                         if (remainingPatches.length > 0) {
                             localTaskPatches[taskId] = remainingPatches;
@@ -2971,8 +2943,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 if (conflictMessages.size > 0) {
                     set((state) => {
                         const taskConflicts = { ...state.taskConflicts };
-                        conflictMessages.forEach(({ message, generation, remoteEntity, remoteRevision }, taskId) => {
-                            taskConflicts[taskId] = { taskId, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision };
+                        conflictMessages.forEach(({ message, generation, remoteEntity, remoteRevision, remoteAvailability }, taskId) => {
+                            taskConflicts[taskId] = { taskId, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability };
                         });
                         return { taskConflicts };
                     });

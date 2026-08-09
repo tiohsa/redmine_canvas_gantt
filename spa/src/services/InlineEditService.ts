@@ -1,11 +1,11 @@
 import type { Task } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
-import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
 import { taskMutationService } from './taskMutationService';
 import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
 import { formatDateOnly } from '../utils/dateOnly';
 import { hasLocalPatchOwnership } from '../stores/taskStore/stateContract';
+import { useUIStore } from '../stores/UIStore';
 
 export class InlineEditService {
     static async saveTaskFields(params: {
@@ -15,13 +15,16 @@ export class InlineEditService {
         fields: Record<string, unknown>;
     }) {
         const { taskId, optimisticTaskUpdates, rollbackTaskUpdates, fields } = params;
-        const { allTasks, updateTask } = useTaskStore.getState();
+        const { allTasks, updateTask, autoSave } = useTaskStore.getState();
         const current = allTasks.find((t) => t.id === taskId);
         if (!current) throw new Error(i18n.t('label_task_not_found') || 'Task not found');
 
         if (Object.keys(optimisticTaskUpdates).length > 0) {
             updateTask(taskId, optimisticTaskUpdates);
         }
+        if (!autoSave) return;
+
+        const operationGeneration = useTaskStore.getState().editGenerations[taskId] ?? 0;
         const canonicalTask = useTaskStore.getState().allTasks.find((task) => task.id === taskId);
         const canonicalFields = { ...fields };
         if (Object.prototype.hasOwnProperty.call(fields, 'start_date') && fields.start_date !== '') {
@@ -30,7 +33,6 @@ export class InlineEditService {
         if (Object.prototype.hasOwnProperty.call(fields, 'due_date') && fields.due_date !== '') {
             canonicalFields.due_date = formatDateOnly(canonicalTask?.dueDate);
         }
-        const operationGeneration = useTaskStore.getState().editGenerations[taskId] ?? 0;
         const ownsOperation = () => hasLocalPatchOwnership(
             useTaskStore.getState().localTaskPatches[taskId],
             taskId,
@@ -52,24 +54,24 @@ export class InlineEditService {
                 {
                     onResult: (completedResult) => {
                         if (completedResult.status === 'ok') {
-                            if (completedResult.completeness || completedResult.invalidatedEntityIds || completedResult.deletedEntityIds) {
-                                useTaskStore.getState().applyTaskMutationMetadata(taskId, completedResult);
-                            }
+                            useTaskStore.getState().applyTaskMutationMetadata(taskId, completedResult);
                             useTaskStore.getState().commitTaskOperation(taskId, operationGeneration, completedResult.lockVersion);
                             return;
                         }
-
                         if (completedResult.status === 'conflict') {
                             useTaskStore.getState().registerTaskConflict(
                                 taskId,
                                 completedResult.error || (i18n.t('label_conflict') || 'Conflict'),
                                 operationGeneration,
                                 completedResult.entity,
-                                completedResult.revision ?? completedResult.entity?.lockVersion
+                                completedResult.revision ?? completedResult.entity?.lockVersion,
+                                completedResult.entity ? 'known' : 'needs_refresh'
                             );
                             return;
                         }
-                        if (completedResult.status === 'not_found' && ownsOperation()) {
+                        if (completedResult.status === 'not_found' &&
+                            (!completedResult.failure?.resourceRole || completedResult.failure.resourceRole === 'target') &&
+                            ownsOperation()) {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');
                             return;
                         }
@@ -79,11 +81,14 @@ export class InlineEditService {
                         }
                     },
                     onError: (error) => {
-                        if (classifyMutationError(error).status === 'not_found' && ownsOperation()) {
+                        const outcome = classifyMutationError(error);
+                        if (outcome.status === 'not_found' &&
+                            (!outcome.failure?.resourceRole || outcome.failure.resourceRole === 'target') &&
+                            ownsOperation()) {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');
                             return;
                         }
-                        if (classifyMutationError(error).kind === 'transient') return;
+                        if (outcome.kind === 'transient') return;
                         if (ownsOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
                             useTaskStore.getState().rollbackTaskOperation(taskId, operationGeneration, rollbackTaskUpdates);
                         }
@@ -93,16 +98,12 @@ export class InlineEditService {
         } catch (error) {
             const message = error instanceof Error ? error.message : (i18n.t('label_failed_to_save') || 'Failed to save');
             useUIStore.getState().addNotification(message, 'error');
-            throw error;
+            throw new Error(message);
         }
 
         if (result.status === 'ok') return;
-
-        // An optimistic-lock conflict means the server may have accepted a
-        // newer remote version. Keep the local edit dirty so the normal save
-        // path can retry it with the current lock version; rolling it back
-        // here would silently discard the user's change.
-        useUIStore.getState().addNotification(result.error || (i18n.t('label_failed_to_save') || 'Failed to save'), 'error');
-        throw new Error(result.error || (i18n.t('label_failed_to_save') || 'Failed to save'));
+        const message = result.error || (i18n.t('label_failed_to_save') || 'Failed to save');
+        useUIStore.getState().addNotification(message, 'error');
+        throw new Error(message);
     }
 }

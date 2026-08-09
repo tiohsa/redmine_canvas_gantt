@@ -1027,6 +1027,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     it 'returns not found when parent is visible only as a context row outside operation scope' do
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[99, 100])
       allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [], issues: [] })
+      allow(controller).to receive(:ensure_issue_in_scope).and_call_original
 
       post :bulk_create_subtasks,
            params: {
@@ -1038,7 +1039,15 @@ RSpec.describe CanvasGanttsController, type: :controller do
            format: :json
 
       expect(response).to have_http_status(:not_found)
-      expect(JSON.parse(response.body)).to eq('error' => 'Issue not found in this project')
+      expect(JSON.parse(response.body)).to include(
+        'error' => 'Issue not found in this project',
+        'status' => 'not_found',
+        'failure' => include(
+          'kind' => 'not_found',
+          'resource_role' => 'reference',
+          'resource_type' => 'parent_task'
+        )
+      )
     end
 
     it 'rolls back all subtasks when one row fails' do
@@ -1154,6 +1163,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
   describe 'PATCH #update_relation' do
     let(:current_user) { instance_double(User, id: 7, logged?: true, login: 'tester', language: 'en') }
+    let(:issue_scope) { double('IssueScope') }
     let(:relation) { instance_double(IssueRelation, id: 77, issue_from_id: 10, issue_to_id: 11, save: true) }
     let(:project_from) { instance_double(Project, id: 1) }
     let(:project_to) { instance_double(Project, id: 2) }
@@ -1175,6 +1185,9 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(relation).to receive(:issue_to_id).and_return(11)
       allow(relation).to receive(:issue_from).and_return(issue_from)
       allow(relation).to receive(:issue_to).and_return(issue_to)
+      allow(Issue).to receive(:visible).and_return(issue_scope)
+      allow(issue_scope).to receive(:find).with(10).and_return(issue_from)
+      allow(issue_scope).to receive(:find).with(11).and_return(issue_to)
       allow(issue_from).to receive(:due_date).and_return(Date.new(2026, 1, 2))
       allow(issue_to).to receive(:start_date).and_return(Date.new(2026, 1, 7))
       allow(relation).to receive(:errors).and_return(double(full_messages: ['Save failed']))
@@ -1223,13 +1236,23 @@ RSpec.describe CanvasGanttsController, type: :controller do
     it 'returns not found when relation is outside the current project' do
       allow(relation).to receive(:issue_from).and_return(instance_double(Issue, id: 30, project_id: 3, project: project_from, editable?: true))
       allow(relation).to receive(:issue_to).and_return(instance_double(Issue, id: 40, project_id: 4, project: project_to, editable?: true))
+      allow(issue_scope).to receive(:find).with(10).and_return(instance_double(Issue, id: 30, project_id: 3, project: project_from, editable?: true))
+      allow(issue_scope).to receive(:find).with(11).and_return(instance_double(Issue, id: 40, project_id: 4, project: project_to, editable?: true))
 
       patch :update_relation,
             params: { project_id: 'demo', id: '77', relation: { relation_type: 'blocks' } },
             format: :json
 
       expect(response).to have_http_status(:not_found)
-      expect(JSON.parse(response.body)).to eq('error' => 'Relation not found in this project')
+      expect(JSON.parse(response.body)).to include(
+        'error' => 'Relation not found in this project',
+        'status' => 'not_found',
+        'failure' => include(
+          'kind' => 'not_found',
+          'resource_role' => 'relation',
+          'resource_type' => 'relation'
+        )
+      )
     end
 
     it 'rejects an invalid relation type' do
@@ -1429,6 +1452,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
   describe 'DELETE #destroy_relation' do
     let(:current_user) { instance_double(User, id: 7, logged?: true, login: 'tester', language: 'en') }
+    let(:issue_scope) { double('IssueScope') }
     let(:relation) { instance_double(IssueRelation, id: 77, issue_from_id: 10, issue_to_id: 11) }
     let(:project_from) { instance_double(Project, id: 1) }
     let(:project_to) { instance_double(Project, id: 2) }
@@ -1444,6 +1468,9 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
       allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2, 3], issues: [] })
       allow(IssueRelation).to receive(:find).with('77').and_return(relation)
+      allow(Issue).to receive(:visible).and_return(issue_scope)
+      allow(issue_scope).to receive(:find).with(10).and_return(issue_from)
+      allow(issue_scope).to receive(:find).with(11).and_return(issue_to)
       allow(relation).to receive(:issue_from).and_return(issue_from)
       allow(relation).to receive(:issue_to).and_return(issue_to)
       allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_from).and_return(false)
@@ -1451,8 +1478,10 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
 
     it 'destroys a relation when either side belongs to a descendant project' do
-      allow(relation).to receive(:issue_from).and_return(instance_double(Issue, id: 10, project_id: 2, project: project_from, editable?: true))
-      allow(relation).to receive(:issue_to).and_return(instance_double(Issue, id: 11, project_id: 3, project: project_to, editable?: true))
+      descendant_from = instance_double(Issue, id: 10, project_id: 2, project: project_from, editable?: true)
+      descendant_to = instance_double(Issue, id: 11, project_id: 3, project: project_to, editable?: true)
+      allow(issue_scope).to receive(:find).with(10).and_return(descendant_from)
+      allow(issue_scope).to receive(:find).with(11).and_return(descendant_to)
       allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_from).and_return(true)
       allow(relation).to receive(:destroy)
 
@@ -1478,11 +1507,21 @@ RSpec.describe CanvasGanttsController, type: :controller do
     it 'returns not found when relation is outside the current project' do
       allow(relation).to receive(:issue_from).and_return(instance_double(Issue, id: 30, project_id: 3, project: project_from, editable?: true))
       allow(relation).to receive(:issue_to).and_return(instance_double(Issue, id: 40, project_id: 4, project: project_to, editable?: true))
+      allow(issue_scope).to receive(:find).with(10).and_return(instance_double(Issue, id: 30, project_id: 3, project: project_from, editable?: true))
+      allow(issue_scope).to receive(:find).with(11).and_return(instance_double(Issue, id: 40, project_id: 4, project: project_to, editable?: true))
 
       delete :destroy_relation, params: { project_id: 'demo', id: '77' }, format: :json
 
       expect(response).to have_http_status(:not_found)
-      expect(JSON.parse(response.body)).to eq('error' => 'Relation not found in this project')
+      expect(JSON.parse(response.body)).to include(
+        'error' => 'Relation not found in this project',
+        'status' => 'not_found',
+        'failure' => include(
+          'kind' => 'not_found',
+          'resource_role' => 'relation',
+          'resource_type' => 'relation'
+        )
+      )
     end
   end
 

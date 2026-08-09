@@ -8,6 +8,7 @@ import { configureBusinessCalendar } from '../utils/businessCalendar';
 
 vi.mock('../api/client', () => ({
     apiClient: {
+        updateTask: vi.fn(),
         updateTaskFields: vi.fn()
     }
 }));
@@ -37,8 +38,30 @@ const deferred = <T,>() => {
 describe('InlineEditService', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
+        useTaskStore.setState({ autoSave: true });
         useUIStore.setState(useUIStore.getInitialState(), true);
         vi.clearAllMocks();
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task, operationId, fields) => (
+            apiClient.updateTaskFields(task.id, { ...(fields ?? {}), lock_version: task.lockVersion }, operationId)
+        ));
+    });
+
+    it('keeps an inline edit local when Auto Save is OFF', async () => {
+        const initialTask = buildTask();
+        useTaskStore.setState({ autoSave: false, allTasks: [initialTask], tasks: [initialTask] });
+
+        await InlineEditService.saveTaskFields({
+            taskId: 'task-1',
+            optimisticTaskUpdates: { subject: 'Pending subject' },
+            rollbackTaskUpdates: { subject: initialTask.subject },
+            fields: { subject: 'Pending subject' }
+        });
+
+        const state = useTaskStore.getState();
+        expect(apiClient.updateTaskFields).not.toHaveBeenCalled();
+        expect(state.allTasks[0]?.subject).toBe('Pending subject');
+        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+        expect(state.localTaskPatches['task-1']).toHaveLength(1);
     });
 
     it('applies optimistic update and stores returned lock version on success', async () => {
@@ -150,9 +173,10 @@ describe('InlineEditService', () => {
             tasks: [initialTask]
         });
 
-        vi.mocked(apiClient.updateTaskFields).mockRejectedValueOnce(
-            Object.assign(new Error('Task no longer exists'), { status: 'not_found' })
-        );
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValueOnce({
+            status: 'not_found',
+            error: 'Task no longer exists'
+        });
 
         await expect(
             InlineEditService.saveTaskFields({

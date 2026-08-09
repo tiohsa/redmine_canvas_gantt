@@ -2068,27 +2068,32 @@ describe('TaskStore asynchronous state ownership', () => {
 
         await useTaskStore.getState().saveChanges();
 
-        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id)).toEqual(['bar-task']);
+        expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id)).toEqual(['bar-task', 'ordinary-task']);
         expect(useTaskStore.getState().allTasks.find(task => task.id === 'bar-task')?.dueDate).toBe(9);
-        expect(useTaskStore.getState().modifiedTaskIds.has('ordinary-task')).toBe(true);
-        expect(useTaskStore.getState().localTaskPatches['ordinary-task']).toEqual(
-            expect.arrayContaining([expect.objectContaining({ fields: { ratioDone: 11 } })])
-        );
+        expect(useTaskStore.getState().modifiedTaskIds.has('ordinary-task')).toBe(false);
+        expect(useTaskStore.getState().localTaskPatches['ordinary-task']).toBeUndefined();
     });
 
-    it('does not partially settle a mixed Bulk and non-Bulk task', async () => {
+    it('coalesces mixed scheduling and non-scheduling fields into one task save', async () => {
         const task = buildTask({ id: 'mixed-task', dueDate: 2 });
         useTaskStore.getState().setTasks([task]);
         useTaskStore.getState().updateTask('mixed-task', { dueDate: 8 });
         useTaskStore.getState().updateTask('mixed-task', { subject: 'Local subject' });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 1 });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([task]));
 
         const failures = await useTaskStore.getState().saveChanges();
         const state = useTaskStore.getState();
 
-        expect(apiClient.updateTask).not.toHaveBeenCalled();
-        expect(failures.get('mixed-task')).toContain('unsupported changes');
-        expect(state.modifiedTaskIds.has('mixed-task')).toBe(true);
-        expect(state.localTaskPatches['mixed-task']).toHaveLength(2);
+        expect(failures).toEqual(new Map());
+        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+        expect(apiClient.updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'mixed-task' }),
+            expect.any(String),
+            expect.objectContaining({ due_date: '1970-01-01', subject: 'Local subject' })
+        );
+        expect(state.modifiedTaskIds.has('mixed-task')).toBe(false);
+        expect(state.localTaskPatches['mixed-task']).toBeUndefined();
     });
 
     it('keeps a bar operation unresolved when conflict resync shows a different remote value', async () => {
@@ -2740,6 +2745,29 @@ describe('TaskStore saveChanges ordering', () => {
         });
     });
 
+    it('coalesces non-scheduling task fields into one manual mutation', async () => {
+        const task = buildTask({
+            id: 'task-1',
+            subject: 'Before',
+            statusId: 1,
+            ratioDone: 0,
+            lockVersion: 3
+        });
+        useTaskStore.getState().setTasks([task]);
+        useTaskStore.getState().updateTask('task-1', { subject: 'After' });
+        useTaskStore.getState().updateTask('task-1', { statusId: 2, ratioDone: 50 });
+
+        await useTaskStore.getState().saveChanges();
+
+        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+        expect(apiClient.updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'task-1' }),
+            expect.stringMatching(/^mutation:/),
+            expect.objectContaining({ subject: 'After', status_id: 2, done_ratio: 50 })
+        );
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
     it('saveChanges updates parent before child for nested tasks', async () => {
         const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
 
@@ -2755,7 +2783,7 @@ describe('TaskStore saveChanges ordering', () => {
         expect(updatedIds).toEqual(['parent', 'child']);
     });
 
-    it('rejects a legacy displayOrder-only patch instead of treating it as persisted ownership', async () => {
+    it('ignores a legacy displayOrder patch while saving the persistable fields', async () => {
         const task = buildTask({ id: 'task-1', dueDate: 2, displayOrder: 1 });
         const { setTasks } = useTaskStore.getState();
         setTasks([task]);
@@ -2780,14 +2808,20 @@ describe('TaskStore saveChanges ordering', () => {
             modifiedTaskIds: new Set(['task-1']),
             editGenerations: { 'task-1': 2 }
         });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 1 });
 
         await useTaskStore.getState().saveChanges();
 
         const state = useTaskStore.getState();
-        expect(apiClient.updateTask).not.toHaveBeenCalled();
-        expect(state.localTaskPatches['task-1']).toHaveLength(2);
+        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+        expect(apiClient.updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'task-1' }),
+            expect.any(String),
+            { due_date: '1970-01-01' }
+        );
+        expect(state.localTaskPatches['task-1']).toBeUndefined();
         expect(useTaskStore.getState().taskConflicts['task-1']).toBeUndefined();
-        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
     });
 
     it('does not silently save a dirty task without a LocalPatch', async () => {
@@ -2875,8 +2909,8 @@ describe('TaskStore saveChanges ordering', () => {
         const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
 
         setTasks([
-            buildTask({ id: '18', startDate: 10, dueDate: 17, lockVersion: 1 }),
-            buildTask({ id: '19', startDate: 17, dueDate: 24, lockVersion: 1 })
+            buildTask({ id: '18', startDate: MONDAY, dueDate: TUESDAY, lockVersion: 1 }),
+            buildTask({ id: '19', startDate: TUESDAY, dueDate: WEDNESDAY, lockVersion: 1 })
         ]);
 
         vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
@@ -2890,8 +2924,8 @@ describe('TaskStore saveChanges ordering', () => {
         });
 
         const latestTasks = [
-            buildTask({ id: '18', startDate: 11, dueDate: 17, lockVersion: 2 }),
-            buildTask({ id: '19', startDate: 18, dueDate: 25, lockVersion: 2 })
+            buildTask({ id: '18', startDate: TUESDAY, dueDate: TUESDAY, lockVersion: 2 }),
+            buildTask({ id: '19', startDate: THURSDAY, dueDate: FRIDAY, lockVersion: 2 })
         ];
         vi.mocked(apiClient.fetchData)
             .mockResolvedValueOnce({
@@ -2915,8 +2949,8 @@ describe('TaskStore saveChanges ordering', () => {
                 permissions: { editable: true, viewable: true, baselineEditable: true }
             });
 
-        updateTask('18', { startDate: 11, dueDate: 17 });
-        updateTask('19', { startDate: 18, dueDate: 25 });
+        updateTask('18', { startDate: TUESDAY, dueDate: TUESDAY });
+        updateTask('19', { startDate: THURSDAY, dueDate: FRIDAY });
         await saveChanges();
 
         const updatedIds = vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.id);

@@ -8,12 +8,13 @@ module RedmineCanvasGantt
       return nil if raw_parent_issue_id.blank?
 
       parent_issue = @issue_finder.find(raw_parent_issue_id)
-      unless issue_scope_checker.call(parent_issue)
+      if parent_issue.id == source_issue.id
+        validation_error_renderer.call(:error_canvas_gantt_task_cannot_be_child_of_itself)
         return :invalid
       end
 
-      if parent_issue.id == source_issue.id
-        validation_error_renderer.call(:error_canvas_gantt_task_cannot_be_child_of_itself)
+      unless issue_scope_checker.call(parent_issue)
+        not_found_renderer.call(:error_canvas_gantt_parent_task_not_found)
         return :invalid
       end
 

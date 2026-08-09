@@ -115,7 +115,14 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
                 return;
             }
             if (completedResult.status === 'not_found') {
-                onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
+                if (completedResult.failure?.resourceRole === 'reference') {
+                    if (ownsOperation(getState(), sourceBefore, operationGeneration)) {
+                        rollbackOperation?.(operationGeneration, sourceBefore);
+                        if (!rollbackOperation) restoreSnapshot(snapshot);
+                    }
+                } else {
+                    onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
+                }
                 return;
             }
             if (classifyMutationResult(completedResult).kind === 'transient') return;
@@ -125,8 +132,16 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
             }
         },
         onError: (error, context) => {
-            if (classifyMutationError(error).status === 'not_found') {
-                onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
+            const errorOutcome = classifyMutationError(error);
+            if (errorOutcome.status === 'not_found') {
+                if (errorOutcome.failure?.resourceRole === 'reference') {
+                    if (ownsOperation(getState(), sourceBefore, operationGeneration)) {
+                        rollbackOperation?.(operationGeneration, sourceBefore);
+                        if (!rollbackOperation) restoreSnapshot(snapshot);
+                    }
+                } else {
+                    onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
+                }
                 return;
             }
             if (classifyMutationError(error).kind === 'transient') return;

@@ -483,7 +483,13 @@ class CanvasGanttsController < ApplicationController
       options_project: options_project
     )
   rescue ActiveRecord::RecordNotFound
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_task_not_found),
+      kind: 'not_found',
+      resource_role: 'target',
+      resource_type: 'task',
+      resource_id: params[:id]
+    ), status: :not_found
   rescue => e
     render_internal_error(e)
   end
@@ -538,7 +544,13 @@ class CanvasGanttsController < ApplicationController
       revision: remote_issue&.lock_version
     ).merge(error: canvas_gantt_l(:error_canvas_gantt_conflict_reload)), status: :conflict
   rescue ActiveRecord::RecordNotFound
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_task_not_found),
+      kind: 'not_found',
+      resource_role: 'target',
+      resource_type: 'task',
+      resource_id: params[:id]
+    ), status: :not_found
   end
 
   # DELETE /canvas_gantt/tasks/:id.json
@@ -556,14 +568,20 @@ class CanvasGanttsController < ApplicationController
       deleted_entity_ids: [issue.id]
     )
   rescue ActiveRecord::RecordNotFound
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_task_not_found),
+      kind: 'not_found',
+      resource_role: 'target',
+      resource_type: 'task',
+      resource_id: params[:id]
+    ), status: :not_found
   end
 
   # POST /projects/:project_id/canvas_gantt/subtasks/bulk.json
   def bulk_create_subtasks
     parent_issue = Issue.visible.find(params[:parent_issue_id])
-    return unless ensure_issue_in_scope(parent_issue)
-    return unless ensure_issue_in_operation_scope(parent_issue)
+    return unless ensure_issue_in_scope(parent_issue, resource_role: 'reference', resource_type: 'parent_task')
+    return unless ensure_issue_in_operation_scope(parent_issue, resource_role: 'reference', resource_type: 'parent_task')
 
     unless bulk_subtask_creator.allowed?(parent_issue)
       render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
@@ -583,20 +601,30 @@ class CanvasGanttsController < ApplicationController
     end
     render json: mutation_response(status: 'ok', completeness: 'partial', invalidated_entity_ids: [parent_issue.id] + created_ids).merge(result)
   rescue ActiveRecord::RecordNotFound
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_parent_task_not_found) }, status: :not_found
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_parent_task_not_found),
+      kind: 'not_found',
+      resource_role: 'reference',
+      resource_type: 'parent_task'
+    ), status: :not_found
   end
 
   # GET /projects/:project_id/canvas_gantt/subtasks/trackers.json
   def subtask_trackers
     parent_issue = Issue.visible.find(params[:parent_issue_id])
-    return unless ensure_issue_in_scope(parent_issue)
-    return unless ensure_issue_in_operation_scope(parent_issue)
+    return unless ensure_issue_in_scope(parent_issue, resource_role: 'reference', resource_type: 'parent_task')
+    return unless ensure_issue_in_operation_scope(parent_issue, resource_role: 'reference', resource_type: 'parent_task')
 
     render json: {
       trackers: parent_issue.project.trackers.map { |tracker| { id: tracker.id, name: tracker.name } }
     }
   rescue ActiveRecord::RecordNotFound
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_parent_task_not_found) }, status: :not_found
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_parent_task_not_found),
+      kind: 'not_found',
+      resource_role: 'reference',
+      resource_type: 'parent_task'
+    ), status: :not_found
   end
 
   # POST /projects/:project_id/canvas_gantt/relations.json
@@ -617,7 +645,12 @@ class CanvasGanttsController < ApplicationController
       relation_id: '__pending__'
     )
   rescue ActiveRecord::RecordNotFound
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_task_not_found),
+      kind: 'not_found',
+      resource_role: 'relation',
+      resource_type: 'relation'
+    ), status: :not_found
   rescue => e
     render_internal_error(e)
   end
@@ -626,16 +659,22 @@ class CanvasGanttsController < ApplicationController
   def update_relation
     relation = IssueRelation.find(params[:id])
     return unless ensure_relation_editable!(relation)
+    issue_from, issue_to = @authorized_relation_endpoints
 
     save_relation_change(
       relation: relation,
-      issue_from: relation.issue_from,
-      issue_to: relation.issue_to,
+      issue_from: issue_from,
+      issue_to: issue_to,
       relation_id: relation.id,
       replacing_relation_id: relation.id
     )
   rescue ActiveRecord::RecordNotFound
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found) }, status: :not_found
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_relation_not_found),
+      kind: 'not_found',
+      resource_role: 'relation',
+      resource_type: 'relation'
+    ), status: :not_found
   rescue => e
     render_internal_error(e)
   end
@@ -644,16 +683,22 @@ class CanvasGanttsController < ApplicationController
   def destroy_relation
     relation = IssueRelation.find(params[:id])
     return unless ensure_relation_editable!(relation)
+    issue_from, issue_to = @authorized_relation_endpoints
 
     relation.destroy
     render json: mutation_response(
       status: 'ok',
       completeness: 'partial',
-      invalidated_entity_ids: [relation.issue_from_id, relation.issue_to_id],
+      invalidated_entity_ids: [issue_from.id, issue_to.id],
       deleted_entity_ids: [relation.id]
     )
   rescue ActiveRecord::RecordNotFound
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found) }, status: :not_found
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_relation_not_found),
+      kind: 'not_found',
+      resource_role: 'relation',
+      resource_type: 'relation'
+    ), status: :not_found
   rescue => e
     render_internal_error(e)
   end
@@ -833,15 +878,30 @@ class CanvasGanttsController < ApplicationController
   # Mutation responses retain the legacy top-level fields while exposing the
   # lifecycle metadata needed by newer clients. All fields are additive so
   # existing Redmine integrations can continue to ignore them.
-  def mutation_response(status:, completeness:, entity: nil, revision: nil, invalidated_entity_ids: [], deleted_entity_ids: [])
+  def mutation_response(status:, completeness:, entity: nil, revision: nil, invalidated_entity_ids: [], deleted_entity_ids: [], failure: nil)
     {
       status: status,
       completeness: completeness,
       **(entity ? { entity: entity } : {}),
       **(revision ? { revision: revision } : {}),
       invalidated_entity_ids: Array(invalidated_entity_ids).compact.map(&:to_i).uniq,
-      **(deleted_entity_ids.empty? ? {} : { deleted_entity_ids: Array(deleted_entity_ids).compact.map(&:to_i).uniq })
+      **(deleted_entity_ids.empty? ? {} : { deleted_entity_ids: Array(deleted_entity_ids).compact.map(&:to_i).uniq }),
+      **(failure ? { failure: failure } : {})
     }
+  end
+
+  def mutation_failure_response(error:, kind:, resource_role:, resource_type:, resource_id: nil, remote_availability: nil)
+    mutation_response(
+      status: kind,
+      completeness: 'partial',
+      failure: {
+        kind: kind,
+        resource_role: resource_role,
+        resource_type: resource_type,
+        **(resource_id ? { resource_id: resource_id } : {}),
+        **(remote_availability ? { remote_availability: remote_availability } : {})
+      }
+    ).merge(error: error)
   end
 
   def member_candidate_ids
@@ -884,10 +944,16 @@ class CanvasGanttsController < ApplicationController
     query.visibility.to_i == 2
   end
 
-  def ensure_issue_in_scope(issue)
+  def ensure_issue_in_scope(issue, resource_role: 'target', resource_type: 'task')
     return true if mutation_scope_issue?(issue)
 
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_issue_not_found_in_project) }, status: :not_found
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_issue_not_found_in_project),
+      kind: 'not_found',
+      resource_role: resource_role,
+      resource_type: resource_type,
+      resource_id: resource_role == 'target' ? issue&.id : nil
+    ), status: :not_found
     false
   end
 
@@ -966,16 +1032,16 @@ class CanvasGanttsController < ApplicationController
   end
 
   def ensure_relation_editable!(relation)
-    issue_from = relation.issue_from
-    issue_to = relation.issue_to
-
-    if issue_from.nil? || issue_to.nil?
-      render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found) }, status: :not_found
-      return false
-    end
+    issue_from, issue_to = visible_relation_endpoints(relation)
+    return false unless issue_from && issue_to
 
     unless mutation_scope_issue?(issue_from) && mutation_scope_issue?(issue_to)
-      render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found_in_project) }, status: :not_found
+      render json: mutation_failure_response(
+        error: canvas_gantt_l(:error_canvas_gantt_relation_not_found_in_project),
+        kind: 'not_found',
+        resource_role: 'relation',
+        resource_type: 'relation'
+      ), status: :not_found
       return false
     end
 
@@ -984,12 +1050,28 @@ class CanvasGanttsController < ApplicationController
       return false
     end
 
+    @authorized_relation_endpoints = [issue_from, issue_to]
     true
   end
 
+  def visible_relation_endpoints(relation)
+    ids = [relation.issue_from_id, relation.issue_to_id]
+    return nil if ids.any?(&:nil?)
+
+    ids.map { |issue_id| Issue.visible.find(issue_id) }
+  rescue ActiveRecord::RecordNotFound
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_relation_not_found),
+      kind: 'not_found',
+      resource_role: 'relation',
+      resource_type: 'relation'
+    ), status: :not_found
+    nil
+  end
+
   def ensure_relation_createable!(issue_from, issue_to)
-    return false unless ensure_issue_in_scope(issue_from)
-    return false unless ensure_issue_in_scope(issue_to)
+    return false unless ensure_issue_in_scope(issue_from, resource_role: 'relation', resource_type: 'relation')
+    return false unless ensure_issue_in_scope(issue_to, resource_role: 'relation', resource_type: 'relation')
     return false unless ensure_issue_editable(issue_from)
     return false unless ensure_issue_editable(issue_to)
 
@@ -1138,12 +1220,17 @@ class CanvasGanttsController < ApplicationController
     parent_issue_resolver.call(
       source_issue: source_issue,
       raw_parent_issue_id: raw_parent_issue_id,
-      issue_scope_checker: method(:ensure_issue_in_scope),
+      issue_scope_checker: method(:mutation_scope_issue?),
       validation_error_renderer: lambda { |message_key|
         render json: { errors: [canvas_gantt_l(message_key)] }, status: :unprocessable_entity
       },
       not_found_renderer: lambda { |message_key|
-        render json: { error: canvas_gantt_l(message_key) }, status: :not_found
+        render json: mutation_failure_response(
+          error: canvas_gantt_l(message_key),
+          kind: 'not_found',
+          resource_role: 'reference',
+          resource_type: 'parent_task'
+        ), status: :not_found
       }
     )
   end
@@ -1250,14 +1337,20 @@ class CanvasGanttsController < ApplicationController
     target_project
   end
 
-  def ensure_issue_in_operation_scope(issue)
+  def ensure_issue_in_operation_scope(issue, resource_role: 'target', resource_type: 'task')
     operation_issue_ids = requested_operation_issue_ids
     return true if operation_issue_ids.blank?
 
     authorized_operation_issue_ids = operation_issue_ids & mutation_scope_issues.map(&:id).to_set
     return true if authorized_operation_issue_ids.include?(issue.id)
 
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_issue_not_found_in_project) }, status: :not_found
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_issue_not_found_in_project),
+      kind: 'not_found',
+      resource_role: resource_role,
+      resource_type: resource_type,
+      resource_id: resource_role == 'target' ? issue&.id : nil
+    ), status: :not_found
     false
   end
 

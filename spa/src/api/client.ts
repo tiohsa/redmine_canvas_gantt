@@ -20,7 +20,7 @@ import type { BusinessCalendarPayload } from '../types/businessCalendar';
 import { normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { sessionFetch } from './sessionFetch';
-import type { MutationStatusValue } from './mutationOutcome';
+import type { MutationFailure, MutationStatusValue } from './mutationOutcome';
 
 export {
     classifyMutationError,
@@ -83,6 +83,7 @@ export interface MutationMetadata {
     deletedEntityIds?: string[];
     entity?: PersistedTaskState;
     revision?: number;
+    failure?: MutationFailure;
 }
 
 interface BaselineSaveResult extends MutationMetadata {
@@ -98,13 +99,15 @@ export class ApiMutationError extends Error {
     readonly status: Exclude<MutationStatus, 'ok'>;
     readonly httpStatus: number;
     readonly fieldErrors?: Record<string, string>;
+    readonly failure?: MutationFailure;
 
-    constructor(status: Exclude<MutationStatus, 'ok'>, message: string, httpStatus: number, fieldErrors?: Record<string, string>) {
+    constructor(status: Exclude<MutationStatus, 'ok'>, message: string, httpStatus: number, fieldErrors?: Record<string, string>, failure?: MutationFailure) {
         super(message);
         this.name = 'ApiMutationError';
         this.status = status;
         this.httpStatus = httpStatus;
         this.fieldErrors = fieldErrors;
+        this.failure = failure;
     }
 }
 
@@ -209,15 +212,32 @@ const parseMutationError = async (response: Response): Promise<ApiMutationError>
         : errors
             ? Object.values(errors).join(', ')
             : response.statusText;
-    return new ApiMutationError(mutationStatusForHttp(response.status), message, response.status, errors);
+    const failure = parseMutationFailure(record.failure);
+    return new ApiMutationError(mutationStatusForHttp(response.status), message, response.status, errors, failure);
 };
 
-const parseMutationMetadata = (value: unknown): Pick<UpdateTaskResult, 'completeness' | 'invalidatedEntityIds' | 'deletedEntityIds'> => {
+const parseMutationFailure = (value: unknown): MutationFailure | undefined => {
+    if (!value || typeof value !== 'object') return undefined;
+    const record = value as UnknownRecord;
+    const kind = record.kind;
+    if (typeof kind !== 'string') return undefined;
+    const role = record.resource_role;
+    const remoteAvailability = record.remote_availability;
+    return {
+        kind: kind as MutationFailure['kind'],
+        ...(role === 'target' || role === 'reference' || role === 'relation' || role === 'scope' ? { resourceRole: role } : {}),
+        ...(typeof record.resource_type === 'string' ? { resourceType: record.resource_type } : {}),
+        ...(record.resource_id !== undefined && record.resource_id !== null ? { resourceId: String(record.resource_id) } : {}),
+        ...(remoteAvailability === 'known' || remoteAvailability === 'needs_refresh' || remoteAvailability === 'unavailable' || remoteAvailability === 'unknown' ? { remoteAvailability } : {})
+    };
+};
+
+const parseMutationMetadata = (value: unknown): Pick<UpdateTaskResult, 'completeness' | 'invalidatedEntityIds' | 'deletedEntityIds' | 'failure'> => {
     const record = asRecord(value);
     const completeness = record?.completeness;
     const ids = record?.invalidated_entity_ids;
     const deletedIds = record?.deleted_entity_ids;
-    const metadata: Pick<UpdateTaskResult, 'completeness' | 'invalidatedEntityIds' | 'deletedEntityIds'> = {};
+    const metadata: Pick<UpdateTaskResult, 'completeness' | 'invalidatedEntityIds' | 'deletedEntityIds' | 'failure'> = {};
     if (completeness === 'complete' || completeness === 'partial') metadata.completeness = completeness;
     if (Array.isArray(ids)) metadata.invalidatedEntityIds = ids
         .filter(id => typeof id === 'number' || typeof id === 'string')
@@ -225,6 +245,8 @@ const parseMutationMetadata = (value: unknown): Pick<UpdateTaskResult, 'complete
     if (Array.isArray(deletedIds)) metadata.deletedEntityIds = deletedIds
         .filter(id => typeof id === 'number' || typeof id === 'string')
         .map(String);
+    const failure = parseMutationFailure(record?.failure);
+    if (failure) metadata.failure = failure;
     return metadata;
 };
 
@@ -941,10 +963,12 @@ export const apiClient = {
             due_date: task.dueDate,
             parent_issue_id: task.parentId ? Number(task.parentId) : null
         };
-        const taskPayload: Record<string, unknown> = { lock_version: task.lockVersion };
-        if (Object.prototype.hasOwnProperty.call(requestedFields, 'start_date')) taskPayload.start_date = formatDateOnly(task.startDate);
-        if (Object.prototype.hasOwnProperty.call(requestedFields, 'due_date')) taskPayload.due_date = formatDateOnly(task.dueDate);
-        if (Object.prototype.hasOwnProperty.call(requestedFields, 'parent_issue_id')) taskPayload.parent_issue_id = task.parentId ? Number(task.parentId) : null;
+        const taskPayload: Record<string, unknown> = { lock_version: task.lockVersion, ...requestedFields };
+        if (!fields) {
+            if (Object.prototype.hasOwnProperty.call(requestedFields, 'start_date')) taskPayload.start_date = formatDateOnly(task.startDate);
+            if (Object.prototype.hasOwnProperty.call(requestedFields, 'due_date')) taskPayload.due_date = formatDateOnly(task.dueDate);
+            if (Object.prototype.hasOwnProperty.call(requestedFields, 'parent_issue_id')) taskPayload.parent_issue_id = task.parentId ? Number(task.parentId) : null;
+        }
 
         const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${task.id}.json?${query}`, {
             method: 'PATCH',
@@ -961,7 +985,7 @@ export const apiClient = {
 
         if (!response.ok) {
             const error = await parseMutationError(response);
-            return { status: error.status, error: error.message };
+            return { status: error.status, error: error.message, failure: error.failure };
         }
 
         return parseMutationTaskResult(response);
@@ -983,7 +1007,7 @@ export const apiClient = {
 
         if (!response.ok) {
             const error = await parseMutationError(response);
-            return { status: error.status, error: error.message };
+            return { status: error.status, error: error.message, failure: error.failure };
         }
 
         return parseMutationTaskResult(response);
