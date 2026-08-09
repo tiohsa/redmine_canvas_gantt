@@ -3,8 +3,9 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
 import { taskMutationService } from './taskMutationService';
-import { classifyMutationError } from '../api/mutationOutcome';
+import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
 import { formatDateOnly } from '../utils/dateOnly';
+import { hasLocalPatchOwnership } from '../stores/taskStore/stateContract';
 
 export class InlineEditService {
     static async saveTaskFields(params: {
@@ -30,8 +31,11 @@ export class InlineEditService {
             canonicalFields.due_date = formatDateOnly(canonicalTask?.dueDate);
         }
         const operationGeneration = useTaskStore.getState().editGenerations[taskId] ?? 0;
-        const isCurrentOperation = () => (
-            useTaskStore.getState().editGenerations[taskId] === operationGeneration
+        const ownsOperation = () => hasLocalPatchOwnership(
+            useTaskStore.getState().localTaskPatches[taskId],
+            taskId,
+            operationGeneration,
+            `edit:${taskId}:${operationGeneration}`
         );
 
         let result;
@@ -65,22 +69,22 @@ export class InlineEditService {
                             );
                             return;
                         }
-                        if (completedResult.status === 'not_found' && isCurrentOperation()) {
+                        if (completedResult.status === 'not_found' && ownsOperation()) {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');
                             return;
                         }
-                        if (classifyMutationError(completedResult).kind === 'transient') return;
-                        if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
+                        if (classifyMutationResult(completedResult).kind === 'transient') return;
+                        if (ownsOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
                             useTaskStore.getState().rollbackTaskOperation(taskId, operationGeneration, rollbackTaskUpdates);
                         }
                     },
                     onError: (error) => {
-                        if (classifyMutationError(error).status === 'not_found' && isCurrentOperation()) {
+                        if (classifyMutationError(error).status === 'not_found' && ownsOperation()) {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');
                             return;
                         }
                         if (classifyMutationError(error).kind === 'transient') return;
-                        if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
+                        if (ownsOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
                             useTaskStore.getState().rollbackTaskOperation(taskId, operationGeneration, rollbackTaskUpdates);
                         }
                     }

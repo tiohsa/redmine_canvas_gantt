@@ -44,6 +44,7 @@ import {
     createServerSnapshot,
     replaceServerSnapshot,
     mergeServerEntity,
+    hasLocalPatchOwnership,
     type DerivedInvalidation,
     type LocalPatch,
     type EntityTombstone,
@@ -1532,9 +1533,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
             )),
             buildOptimisticPatch: buildParentMoveOptimisticPatch,
             buildSuccessPatch: buildParentMoveSuccessPatch,
-            isCurrentOperation: (state, sourceBefore, operationGeneration) => (
-                state.editGenerations[sourceBefore.id] === operationGeneration &&
-                state.allTasks.find((task) => task.id === sourceBefore.id)?.parentId === targetTaskId
+            ownsOperation: (state, sourceBefore, operationGeneration) => hasLocalPatchOwnership(
+                state.localTaskPatches[sourceBefore.id],
+                sourceBefore.id,
+                operationGeneration
             ),
             updateTaskFields: (taskId, payload, lifecycle) => taskMutationService.updateTaskFields(
                 taskId,
@@ -1586,9 +1588,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
             )),
             buildOptimisticPatch: buildParentMoveOptimisticPatch,
             buildSuccessPatch: buildParentMoveSuccessPatch,
-            isCurrentOperation: (state, sourceBefore, operationGeneration) => (
-                state.editGenerations[sourceBefore.id] === operationGeneration &&
-                state.allTasks.find((task) => task.id === sourceBefore.id)?.parentId === undefined
+            ownsOperation: (state, sourceBefore, operationGeneration) => hasLocalPatchOwnership(
+                state.localTaskPatches[sourceBefore.id],
+                sourceBefore.id,
+                operationGeneration
             ),
             updateTaskFields: (taskId, payload, lifecycle) => taskMutationService.updateTaskFields(
                 taskId,

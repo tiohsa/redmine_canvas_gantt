@@ -270,12 +270,12 @@ const parseMutationEntity = (value: unknown): PersistedTaskState | undefined => 
         ...(has('author_id') ? { authorId: parseNullableNumber('author_id') } : {}),
         ...(typeof record.author_name === 'string' ? { authorName: record.author_name } : {}),
         ...(has('category_id') ? { categoryId: parseNullableNumber('category_id') } : {}),
-        ...(typeof record.category_name === 'string' ? { categoryName: record.category_name } : {}),
+        ...(has('category_name') ? { categoryName: typeof record.category_name === 'string' ? record.category_name : undefined } : {}),
         ...(has('estimated_hours') ? { estimatedHours: parseNullableNumber('estimated_hours') } : {}),
         ...(typeof record.created_on === 'string' ? { createdOn: record.created_on } : {}),
         ...(typeof record.updated_on === 'string' ? { updatedOn: record.updated_on } : {}),
         ...(typeof record.spent_hours === 'number' ? { spentHours: record.spent_hours } : {}),
-        ...(typeof record.fixed_version_name === 'string' ? { fixedVersionName: record.fixed_version_name } : {}),
+        ...(has('fixed_version_name') ? { fixedVersionName: typeof record.fixed_version_name === 'string' ? record.fixed_version_name : undefined } : {}),
         ...(asRecord(record.custom_field_values) ? { customFieldValues: asRecord(record.custom_field_values) as Task['customFieldValues'] } : {})
     };
     return entity;

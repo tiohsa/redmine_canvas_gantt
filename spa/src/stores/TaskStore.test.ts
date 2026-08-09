@@ -3147,6 +3147,34 @@ describe('TaskStore drag parent updates', () => {
         expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.lockVersion).toBe(3);
     });
 
+    it('rolls back only the failed parent move generation when a later edit exists', async () => {
+        const { setTasks, moveTaskAsChild, updateTask } = useTaskStore.getState();
+        const firstMoveRequest = deferred<{ status: 'validation_error'; error: string }>();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: '11', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: '10', projectId: 'p1', displayOrder: 2, lockVersion: 2 })
+        ]);
+        vi.mocked(apiClient.updateTaskFields).mockReturnValueOnce(firstMoveRequest.promise);
+
+        const firstMove = moveTaskAsChild('10', '11');
+        await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
+        updateTask('10', { subject: 'later edit' });
+        firstMoveRequest.resolve({ status: 'validation_error', error: 'Parent validation failed' });
+        await firstMove;
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find((task) => task.id === '10')).toMatchObject({
+            parentId: undefined,
+            subject: 'later edit'
+        });
+        expect(state.localTaskPatches['10']).toEqual([
+            expect.objectContaining({ generation: 2, operationId: 'edit:10:2' })
+        ]);
+        expect(state.modifiedTaskIds.has('10')).toBe(true);
+    });
+
     it('keeps the optimistic parent move when the API request is transient', async () => {
         const { setTasks, moveTaskAsChild } = useTaskStore.getState();
 
@@ -3165,6 +3193,53 @@ describe('TaskStore drag parent updates', () => {
         expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.lockVersion).toBe(2);
         expect(useTaskStore.getState().modifiedTaskIds.has('10')).toBe(true);
         expect(useTaskStore.getState().localTaskPatches['10']).toBeDefined();
+    });
+
+    it('keeps the optimistic parent move after both bounded transient attempts', async () => {
+        const { setTasks, moveTaskAsChild } = useTaskStore.getState();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: '11', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: '10', projectId: 'p1', displayOrder: 2, lockVersion: 2 })
+        ]);
+
+        vi.mocked(apiClient.updateTaskFields)
+            .mockRejectedValueOnce(new Error('network down'))
+            .mockRejectedValueOnce(new Error('network still down'));
+
+        const result = await moveTaskAsChild('10', '11');
+
+        expect(result.status).toBe('error');
+        expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(2);
+        expect(useTaskStore.getState().allTasks.find((task) => task.id === '10')?.parentId).toBe('11');
+        expect(useTaskStore.getState().modifiedTaskIds.has('10')).toBe(true);
+        expect(useTaskStore.getState().localTaskPatches['10']).toBeDefined();
+    });
+
+    it('ignores a terminal response after its operation ownership was already removed', async () => {
+        const { setTasks, moveTaskAsChild, rollbackTaskOperation, updateTask } = useTaskStore.getState();
+        const firstMoveRequest = deferred<{ status: 'validation_error'; error: string }>();
+
+        useTaskStore.setState({ autoSave: true });
+        setTasks([
+            buildTask({ id: '11', projectId: 'p1', displayOrder: 1 }),
+            buildTask({ id: '10', projectId: 'p1', displayOrder: 2, lockVersion: 2 })
+        ]);
+        vi.mocked(apiClient.updateTaskFields).mockReturnValueOnce(firstMoveRequest.promise);
+
+        const firstMove = moveTaskAsChild('10', '11');
+        await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
+        rollbackTaskOperation('10', 1, { parentId: undefined });
+        updateTask('10', { subject: 'newer edit' });
+
+        firstMoveRequest.resolve({ status: 'validation_error', error: 'late failure' });
+        await firstMove;
+
+        expect(useTaskStore.getState().allTasks.find((task) => task.id === '10')).toMatchObject({
+            parentId: undefined,
+            subject: 'newer edit'
+        });
     });
 
     it('moveTaskToRoot rolls back when API response still has parentId', async () => {

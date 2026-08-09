@@ -719,8 +719,10 @@ describe('mutation error classification', () => {
                     due_date: null,
                     parent_id: null,
                     category_id: null,
+                    category_name: null,
                     estimated_hours: null,
-                    fixed_version_id: null
+                    fixed_version_id: null,
+                    fixed_version_name: null
                 }
             })
         }) as unknown as typeof fetch);
@@ -730,9 +732,35 @@ describe('mutation error classification', () => {
         expect(result.entity).toHaveProperty('dueDate', undefined);
         expect(result.entity).toHaveProperty('parentId', undefined);
         expect(result.entity).toHaveProperty('categoryId', undefined);
+        expect(result.entity).toHaveProperty('categoryName', undefined);
         expect(result.entity).toHaveProperty('estimatedHours', undefined);
         expect(result.entity).toHaveProperty('fixedVersionId', undefined);
+        expect(result.entity).toHaveProperty('fixedVersionName', undefined);
         expect(result.entity).not.toHaveProperty('startDate');
+    });
+
+    it('keeps omitted nullable category and version fields absent', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                status: 'ok',
+                entity: { id: 42, subject: 'Unchanged' }
+            })
+        }) as unknown as typeof fetch);
+
+        const result = await apiClient.updateTaskFields('42', { subject: 'Unchanged' });
+
+        expect(result.entity).not.toHaveProperty('categoryId');
+        expect(result.entity).not.toHaveProperty('categoryName');
+        expect(result.entity).not.toHaveProperty('fixedVersionId');
+        expect(result.entity).not.toHaveProperty('fixedVersionName');
     });
 
     it('rejects unknown mutation status strings as protocol errors', async () => {

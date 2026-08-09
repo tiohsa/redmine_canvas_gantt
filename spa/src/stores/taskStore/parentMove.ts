@@ -38,7 +38,7 @@ type ParentMoveCallbacks = {
     buildNextAllTasks: (allTasks: Task[], sourceTaskId: string, nextOrder: number) => Task[];
     buildOptimisticPatch: (state: ParentMoveState, nextAllTasks: Task[]) => ParentMovePatch;
     buildSuccessPatch: (state: ParentMoveState, sourceBefore: Task, result: UpdateTaskFieldsResult, operationGeneration: number) => ParentMovePatch;
-    isCurrentOperation: (state: ParentMoveState, sourceBefore: Task, operationGeneration: number) => boolean;
+    ownsOperation: (state: ParentMoveState, sourceBefore: Task, operationGeneration: number) => boolean;
     updateTaskFields: (
         taskId: string,
         payload: () => { parent_issue_id: string | null; lock_version: number },
@@ -64,7 +64,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
         buildNextAllTasks,
         buildOptimisticPatch,
         buildSuccessPatch,
-        isCurrentOperation,
+        ownsOperation,
         updateTaskFields,
         validatePersistedResult,
         missingSourceResult,
@@ -119,7 +119,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
                 return;
             }
             if (classifyMutationResult(completedResult).kind === 'transient') return;
-            if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) {
+            if (ownsOperation(getState(), sourceBefore, operationGeneration)) {
                 rollbackOperation?.(operationGeneration, sourceBefore);
                 if (!rollbackOperation) restoreSnapshot(snapshot);
             }
@@ -130,7 +130,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
                 return;
             }
             if (classifyMutationError(error).kind === 'transient') return;
-            if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) {
+            if (ownsOperation(getState(), sourceBefore, operationGeneration)) {
                 rollbackOperation?.(operationGeneration, sourceBefore);
                 if (!rollbackOperation) restoreSnapshot(snapshot);
             }

@@ -55,7 +55,20 @@ const responseMatchesIntendedFields = (
     entity: NonNullable<Awaited<ReturnType<typeof apiClient.updateTaskFields>>['entity']>
 ): boolean => Object.entries(fields)
     .filter(([field]) => field !== 'lock_version')
-    .every(([field, expected]) => sameCanonicalValue(field, expected, entity[canonicalFieldName(field) as keyof typeof entity]));
+    .every(([field, expected]) => {
+        const canonicalField = canonicalFieldName(field);
+        if (!Object.prototype.hasOwnProperty.call(entity, canonicalField)) return false;
+        if (field === 'custom_field_values') {
+            if (!expected || typeof expected !== 'object') return sameCanonicalValue(field, expected, entity[canonicalField as keyof typeof entity]);
+            const actual = entity[canonicalField as keyof typeof entity];
+            if (!actual || typeof actual !== 'object') return false;
+            return Object.entries(expected as Record<string, unknown>).every(([key, value]) => (
+                Object.prototype.hasOwnProperty.call(actual, key) &&
+                Object.is(value, (actual as Record<string, unknown>)[key])
+            ));
+        }
+        return sameCanonicalValue(field, expected, entity[canonicalField as keyof typeof entity]);
+    });
 
 const executeTaskPatch = async (
     taskId: string,

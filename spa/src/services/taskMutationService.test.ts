@@ -60,6 +60,20 @@ describe('taskMutationService mutation boundary', () => {
         expect(result).toMatchObject({ status: 'ok', revision: 8 });
     });
 
+    it('does not reconcile response-loss when an intended canonical property is absent', async () => {
+        vi.spyOn(apiClient, 'updateTaskFields')
+            .mockRejectedValueOnce(new ApiMutationError('transient_error', 'response lost', 503))
+            .mockResolvedValueOnce({
+                status: 'conflict',
+                entity: { id: 'absent-task', lockVersion: 8 },
+                revision: 8
+            });
+
+        const result = await taskMutationService.updateTaskFields('absent-task', { due_date: null });
+
+        expect(result.status).toBe('conflict');
+    });
+
     it('compares response-loss dates and explicit clears semantically', async () => {
         vi.spyOn(apiClient, 'updateTaskFields')
             .mockRejectedValueOnce(new ApiMutationError('transient_error', 'response lost', 503))

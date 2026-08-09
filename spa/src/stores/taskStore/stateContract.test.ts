@@ -6,6 +6,7 @@ import {
     commitOperationPatches,
     createReadContext,
     createServerSnapshot,
+    hasLocalPatchOwnership,
     mergeServerEntity,
     replaceServerSnapshot,
     type LocalPatch
@@ -47,5 +48,17 @@ describe('state lifecycle contract', () => {
         expect(applyLocalPatches<Entity>({ id: '1', subject: 'old', lockVersion: 1 }, patches)).toMatchObject({ subject: 'a', startDate: 2 });
         expect(classifyDerivedInvalidation(['subject'])).toBe('none');
         expect(classifyDerivedInvalidation(['startDate'])).toBe('critical_path');
+    });
+
+    it('identifies ownership by task and generation without requiring the latest generation', () => {
+        const patches: Array<LocalPatch<Entity>> = [
+            { entityId: '1', fields: { subject: 'a' }, generation: 1, operationId: 'edit:1:1' },
+            { entityId: '1', fields: { subject: 'b' }, generation: 2, operationId: 'edit:1:2' }
+        ];
+
+        expect(hasLocalPatchOwnership(patches, '1', 1)).toBe(true);
+        expect(hasLocalPatchOwnership(patches, '1', 1, 'edit:1:1')).toBe(true);
+        expect(hasLocalPatchOwnership(patches, '1', 1, 'edit:1:2')).toBe(false);
+        expect(hasLocalPatchOwnership(patches, '1', 3)).toBe(false);
     });
 });

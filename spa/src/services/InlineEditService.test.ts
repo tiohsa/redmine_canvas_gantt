@@ -173,7 +173,7 @@ describe('InlineEditService', () => {
     });
 
     it('does not let an earlier failure roll back a newer inline edit', async () => {
-        const firstSave = deferred<{ status: 'error'; error: string }>();
+        const firstSave = deferred<{ status: 'validation_error'; error: string }>();
         vi.mocked(apiClient.updateTaskFields)
             .mockReturnValueOnce(firstSave.promise)
             .mockResolvedValueOnce({ status: 'error', error: 'First edit failed' })
@@ -198,13 +198,15 @@ describe('InlineEditService', () => {
             rollbackTaskUpdates: { subject: 'First edit' },
             fields: { subject: 'Second edit' }
         });
-        firstSave.resolve({ status: 'error', error: 'First edit failed' });
+        firstSave.resolve({ status: 'validation_error', error: 'First edit failed' });
 
         const results = await Promise.allSettled([first, second]);
         expect(results[0]?.status).toBe('rejected');
         expect(results[1]?.status).toBe('fulfilled');
         expect(useTaskStore.getState().allTasks[0]?.subject).toBe('Second edit');
         expect(useTaskStore.getState().allTasks[0]?.lockVersion).toBe(5);
+        expect(useTaskStore.getState().localTaskPatches['task-1']).toBeUndefined();
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
         expect(apiClient.updateTaskFields).toHaveBeenLastCalledWith('task-1', {
             subject: 'Second edit',
             lock_version: 3

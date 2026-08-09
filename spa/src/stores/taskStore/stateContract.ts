@@ -31,6 +31,17 @@ export type LocalPatch<T extends { id: string }> = {
     operationId: string;
 };
 
+export const hasLocalPatchOwnership = <T extends { id: string }>(
+    patches: Array<LocalPatch<T>> | undefined,
+    taskId: string,
+    generation: number,
+    operationId?: string
+): boolean => (patches ?? []).some((patch) => (
+    patch.entityId === taskId &&
+    patch.generation === generation &&
+    (operationId === undefined || patch.operationId === operationId)
+));
+
 export type EntityTombstone = {
     entityId: string;
     deletedAt: number;
