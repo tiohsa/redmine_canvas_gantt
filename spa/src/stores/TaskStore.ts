@@ -773,17 +773,20 @@ type ParentMoveStoreState = LayoutState & {
 const buildParentMoveOptimisticPatch = (state: ParentMoveStoreState, nextAllTasks: Task[]) => {
     const layout = buildLayoutFromState(state, { allTasks: nextAllTasks });
     const sourceTaskId = nextAllTasks.find((task, index) => task.parentId !== state.allTasks[index]?.parentId || task.displayOrder !== state.allTasks[index]?.displayOrder)?.id;
-    const editGenerations = sourceTaskId
-        ? { ...state.editGenerations, [sourceTaskId]: (state.editGenerations[sourceTaskId] ?? 0) + 1 }
-        : state.editGenerations;
     const sourceBefore = sourceTaskId ? state.allTasks.find(task => task.id === sourceTaskId) : undefined;
     const sourceAfter = sourceTaskId ? nextAllTasks.find(task => task.id === sourceTaskId) : undefined;
+    const fields: Partial<Task> = {};
+    if (sourceBefore && sourceAfter && sourceBefore.parentId !== sourceAfter.parentId) {
+        fields.parentId = sourceAfter.parentId;
+    }
+    const hasPersistedFields = Object.keys(fields).length > 0;
+    const editGenerations = sourceTaskId && hasPersistedFields
+        ? { ...state.editGenerations, [sourceTaskId]: (state.editGenerations[sourceTaskId] ?? 0) + 1 }
+        : state.editGenerations;
     const localTaskPatches = { ...state.localTaskPatches };
     const modifiedTaskIds = new Set(state.modifiedTaskIds);
-    if (sourceTaskId && sourceBefore && sourceAfter) {
+    if (sourceTaskId && sourceBefore && sourceAfter && hasPersistedFields) {
         const generation = editGenerations[sourceTaskId] ?? 0;
-        const fields: Partial<Task> = {};
-        if (sourceBefore.parentId !== sourceAfter.parentId) fields.parentId = sourceAfter.parentId;
         localTaskPatches[sourceTaskId] = [
             ...(localTaskPatches[sourceTaskId] ?? []),
             { entityId: sourceTaskId, fields, generation, operationId: `parent-move:${sourceTaskId}:${generation}` }
@@ -2133,7 +2136,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 ...(beforeRetry.localTaskPatches[id] ?? []).map(patch => patch.generation)
             );
             const retryFieldNames = Object.keys(retryFields);
-            const hasPersistedRetryFields = retryFieldNames.some(field => field !== 'displayOrder');
+            const hasPersistedRetryFields = retryFieldNames.length > 0;
             const canRetryFieldsDirectly = retryTask && hasPersistedRetryFields && Object.keys(buildTaskPatchFieldsPayload(retryTask, retryFields)).length > 0;
             set((state) => {
                 if (!state.taskConflicts[id]) return state;
@@ -2810,7 +2813,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     if (task) {
                         const changedFields = Object.keys(fields);
                         const bulkFields = changedFields.filter(field => BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
-                        const unsupportedFields = changedFields.filter(field => field !== 'displayOrder' && !BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
+                        const unsupportedFields = changedFields.filter(field => !BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
                         const delta = buildBulkTaskMutationDelta(
                             taskId,
                             snapshotGenerations[taskId] ?? 0,
@@ -2934,7 +2937,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                                 const patchFields = Object.keys(patch.fields);
                                 const hasBulkField = patchFields.some(field => BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
                                 const hasUnsupportedField = patchFields.some(field => (
-                                    field !== 'displayOrder' && !BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number])
+                                    !BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number])
                                 ));
                                 return !hasBulkField || hasUnsupportedField;
                             });

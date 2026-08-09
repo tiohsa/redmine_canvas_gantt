@@ -2755,7 +2755,7 @@ describe('TaskStore saveChanges ordering', () => {
         expect(updatedIds).toEqual(['parent', 'child']);
     });
 
-    it('keeps dirty ownership when a later save leaves a displayOrder-only patch', async () => {
+    it('rejects a legacy displayOrder-only patch instead of treating it as persisted ownership', async () => {
         const task = buildTask({ id: 'task-1', dueDate: 2, displayOrder: 1 });
         const { setTasks } = useTaskStore.getState();
         setTasks([task]);
@@ -2784,10 +2784,9 @@ describe('TaskStore saveChanges ordering', () => {
         await useTaskStore.getState().saveChanges();
 
         const state = useTaskStore.getState();
-        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
-        expect(state.localTaskPatches['task-1']).toEqual([
-            expect.objectContaining({ fields: { displayOrder: 5 }, generation: 1 })
-        ]);
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        expect(state.localTaskPatches['task-1']).toHaveLength(2);
+        expect(useTaskStore.getState().taskConflicts['task-1']).toBeUndefined();
         expect(state.modifiedTaskIds.has('task-1')).toBe(true);
     });
 

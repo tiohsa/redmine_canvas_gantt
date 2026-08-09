@@ -13,7 +13,7 @@ import {
     classifyMutationStatus
 } from '../../api/mutationOutcome';
 import type { MutationOutcomeKind } from '../../api/mutationOutcome';
-import { responseContainsIntendedFields, responseMatchesIntendedFields, taskMutationFields, type TaskFields } from '../../services/taskMutationService';
+import { responseContainsIntendedFields, responseMatchesIntendedFields, type TaskFields } from '../../services/taskMutationService';
 
 export type UpdateTaskFieldsResult = MutationMetadata & {
     status: MutationStatus | 'error';
@@ -375,6 +375,7 @@ export const saveModifiedTasks = async (
     const failureMessage = i18n.t('label_failed_to_save') || 'Failed to save task';
     const unknownErrorMessage = i18n.t('label_unknown_error') || 'Unknown error';
     const conflictMessage = i18n.t('label_conflict') || 'Conflict';
+    const missingIntentMessage = `${failureMessage}: explicit mutation intent is required.`;
     let hasProcessedTask = false;
 
     const abortOwnedPendingTasks = () => {
@@ -408,7 +409,16 @@ export const saveModifiedTasks = async (
         }
     };
 
-    preflightFailures.forEach((message, taskId) => {
+    const effectivePreflightFailures = new Map(preflightFailures);
+    modifiedIdSet.forEach((taskId) => {
+        const hasExplicitIntent = Object.prototype.hasOwnProperty.call(mutationFields, taskId) && mutationFields[taskId] !== undefined;
+        if (availableTaskIds.has(taskId) &&
+            !hasExplicitIntent &&
+            !effectivePreflightFailures.has(taskId)) {
+            effectivePreflightFailures.set(taskId, missingIntentMessage);
+        }
+    });
+    effectivePreflightFailures.forEach((message, taskId) => {
         if (!pendingTaskIds.has(taskId)) return;
         pendingTaskIds.delete(taskId);
         terminalFailureTaskIds.add(taskId);
@@ -464,7 +474,7 @@ export const saveModifiedTasks = async (
                     taskId,
                     (context) => {
                         unsentTaskIds.delete(taskId);
-                        const fields = mutationFields[taskId] ?? taskMutationFields(task);
+                        const fields = mutationFields[taskId]!;
                         return updateTask(task, context?.operationId, fields);
                     },
                     {
@@ -514,7 +524,7 @@ export const saveModifiedTasks = async (
             const intent: MutationIntent = {
                 taskId,
                 generation: mutationGenerations[taskId] ?? 0,
-                fields: mutationFields[taskId] ?? taskMutationFields(task)
+                fields: mutationFields[taskId]!
             };
             if (!hasBulkIntentFields(intent.fields)) {
                 pendingTaskIds.delete(taskId);

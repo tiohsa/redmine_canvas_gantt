@@ -8,6 +8,7 @@ import {
     saveModifiedTasks
 } from './taskPersistence';
 import type { Task } from '../../types';
+import type { TaskFields } from '../../services/taskMutationService';
 
 const buildTask = (id: string, dueDate: number, lockVersion = 1): Task => ({
     id,
@@ -21,6 +22,10 @@ const buildTask = (id: string, dueDate: number, lockVersion = 1): Task => ({
     rowIndex: 0,
     hasChildren: false
 });
+
+const dueDateIntent = (tasks: Task[]): Record<string, TaskFields> => Object.fromEntries(
+    tasks.map(task => [task.id, { due_date: task.dueDate }])
+);
 
 describe('lifecycle resource gates', () => {
     it('keeps queues and completed operation history bounded under a 1,000 mutation burst', async () => {
@@ -58,7 +63,7 @@ describe('lifecycle resource gates', () => {
             new Set(localTasks.map((task) => task.id)),
             [],
             updateTask,
-            fetchData
+            fetchData, undefined, undefined, undefined, undefined, undefined, dueDateIntent(localTasks)
         );
 
         expect(updateTask).toHaveBeenCalledTimes(1000);
