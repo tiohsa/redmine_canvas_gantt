@@ -1,4 +1,4 @@
-import type { Relation, Task } from '../../types';
+import type { Relation, Task, PersistedTaskState } from '../../types';
 import type { MoveTaskAsChildResult } from '../../types';
 import {
     buildSchedulingEdges,
@@ -13,6 +13,7 @@ import {
     classifyMutationStatus
 } from '../../api/mutationOutcome';
 import type { MutationOutcomeKind } from '../../api/mutationOutcome';
+import { responseContainsIntendedFields, responseMatchesIntendedFields, taskMutationFields, type TaskFields } from '../../services/taskMutationService';
 
 export type UpdateTaskFieldsResult = MutationMetadata & {
     status: MutationStatus | 'error';
@@ -27,6 +28,12 @@ export type SaveModifiedTasksResult = {
     unsentTaskIds: Set<string>;
     abortedTaskIds: Set<string>;
     batchStatus: 'completed' | 'partial_failure' | 'preflight_failure';
+};
+
+export type MutationIntent = {
+    taskId: string;
+    generation: number;
+    fields: TaskFields;
 };
 
 type FetchDataResult = {
@@ -258,16 +265,12 @@ export const saveModifiedTasks = async (
     fetchData: (params: FetchDataParams) => Promise<FetchDataResult>,
     onTaskSaved?: (taskId: string, lockVersion?: number) => void,
     onTaskResult?: (taskId: string, result: UpdateTaskFieldsResult) => void,
-    onConflict?: (taskId: string, message: string) => void,
-    shouldAbortRemaining?: (taskId: string) => boolean
+    onConflict?: (taskId: string, message: string, remoteEntity?: PersistedTaskState, remoteRevision?: number) => void,
+    shouldAbortRemaining?: (taskId: string) => boolean,
+    mutationGenerations: Record<string, number> = {},
+    mutationFields: Record<string, TaskFields> = {}
 ): Promise<SaveModifiedTasksResult> => {
     const mutableTaskById = new Map(tasks.map(task => [task.id, { ...task }]));
-    const hasSamePersistedFields = (local: Task, remote: Task): boolean => {
-        const sameStartDate = local.startDate === remote.startDate;
-        const sameDueDate = local.dueDate === remote.dueDate;
-        const sameParentId = (local.parentId ?? null) === (remote.parentId ?? null);
-        return sameStartDate && sameDueDate && sameParentId;
-    };
     const depthCache = new Map<string, number>();
     const calcDepth = (taskId: string): number => {
         if (depthCache.has(taskId)) return depthCache.get(taskId)!;
@@ -363,6 +366,7 @@ export const saveModifiedTasks = async (
     const terminalFailureTaskIds = new Set<string>();
     const attemptCounts = new Map<string, number>();
     const conflictMessages = new Map<string, string>();
+    const conflictCandidates = new Map<string, { intent: MutationIntent; message: string; entity?: PersistedTaskState; revision?: number }>();
     const failureMessage = i18n.t('label_failed_to_save') || 'Failed to save task';
     const unknownErrorMessage = i18n.t('label_unknown_error') || 'Unknown error';
     const conflictMessage = i18n.t('label_conflict') || 'Conflict';
@@ -493,6 +497,11 @@ export const saveModifiedTasks = async (
 
             const outcome = classifyMutationStatus(result.status);
             const message = result.error || unknownErrorMessage;
+            const intent: MutationIntent = {
+                taskId,
+                generation: mutationGenerations[taskId] ?? 0,
+                fields: mutationFields[taskId] ?? taskMutationFields(task)
+            };
             if (outcome === 'success') {
                 failures.delete(taskId);
                 settledTaskIds.add(taskId);
@@ -501,9 +510,36 @@ export const saveModifiedTasks = async (
                     mutableTaskById.set(taskId, { ...task, lockVersion: result.lockVersion });
                 }
             } else if (outcome === 'conflict') {
-                failures.set(taskId, result.error || conflictMessage);
-                conflictMessages.set(taskId, result.error || conflictMessage);
-                conflictTaskIds.push(taskId);
+                const candidate = {
+                    intent,
+                    message: result.error || conflictMessage,
+                    entity: result.entity,
+                    revision: result.revision ?? result.entity?.lockVersion
+                };
+                conflictCandidates.set(taskId, candidate);
+                if (result.entity && responseContainsIntendedFields(intent.fields, result.entity)) {
+                    if (!responseMatchesIntendedFields(intent.fields, result.entity)) {
+                        failures.set(taskId, candidate.message);
+                        terminalFailureTaskIds.add(taskId);
+                        onConflict?.(taskId, candidate.message, result.entity, candidate.revision);
+                        continue;
+                    }
+                    failures.delete(taskId);
+                    settledTaskIds.add(taskId);
+                    savedTaskIds.add(taskId);
+                    unsentTaskIds.delete(taskId);
+                    onTaskResult?.(taskId, {
+                        status: 'ok',
+                        entity: result.entity,
+                        revision: candidate.revision,
+                        lockVersion: candidate.revision
+                    });
+                    onTaskSaved?.(taskId, candidate.revision);
+                } else {
+                    failures.set(taskId, candidate.message);
+                    conflictMessages.set(taskId, candidate.message);
+                    conflictTaskIds.push(taskId);
+                }
             } else if (outcome === 'transient' && attempt < 1) {
                 // Both the current `transient_error` status and the legacy
                 // `error` status share the same bounded retry policy.
@@ -527,7 +563,8 @@ export const saveModifiedTasks = async (
                     pendingTaskIds.delete(taskId);
                     terminalFailureTaskIds.add(taskId);
                     failures.set(taskId, message);
-                    onConflict?.(taskId, message);
+                    const candidate = conflictCandidates.get(taskId);
+                    onConflict?.(taskId, `${message} (remote unavailable)`, candidate?.entity, candidate?.revision);
                 });
                 hasProcessedTask = true;
                 continue;
@@ -536,23 +573,32 @@ export const saveModifiedTasks = async (
             const latestTaskById = new Map(latest.tasks.map(task => [task.id, task]));
             [...new Set(conflictTaskIds)].forEach((taskId) => {
                 const localTask = mutableTaskById.get(taskId);
-                const latestTask = latestTaskById.get(taskId);
-                if (!localTask || !latestTask) {
+                const candidate = conflictCandidates.get(taskId);
+                const latestTask = candidate?.entity && responseContainsIntendedFields(candidate.intent.fields, candidate.entity)
+                    ? candidate.entity
+                    : latestTaskById.get(taskId);
+                if (!localTask || !latestTask || !candidate) {
                     pendingTaskIds.delete(taskId);
                     terminalFailureTaskIds.add(taskId);
                     const message = conflictMessages.get(taskId) || conflictMessage;
                     failures.set(taskId, message);
-                    onConflict?.(taskId, message);
+                    onConflict?.(taskId, `${message} (remote unavailable)`, candidate?.entity, candidate?.revision);
                     return;
                 }
 
-                if (hasSamePersistedFields(localTask, latestTask)) {
+                if (responseMatchesIntendedFields(candidate.intent.fields, latestTask)) {
                     pendingTaskIds.delete(taskId);
                     failures.delete(taskId);
                     settledTaskIds.add(taskId);
                     savedTaskIds.add(taskId);
                     unsentTaskIds.delete(taskId);
-                    onTaskSaved?.(taskId, latestTask.lockVersion);
+                    onTaskResult?.(taskId, {
+                        status: 'ok',
+                        entity: latestTask,
+                        revision: candidate.revision ?? latestTask.lockVersion,
+                        lockVersion: candidate.revision ?? latestTask.lockVersion
+                    });
+                    onTaskSaved?.(taskId, candidate.revision ?? latestTask.lockVersion);
                     return;
                 }
 
@@ -560,7 +606,7 @@ export const saveModifiedTasks = async (
                 terminalFailureTaskIds.add(taskId);
                 const message = conflictMessages.get(taskId) || conflictMessage;
                 failures.set(taskId, message);
-                onConflict?.(taskId, message);
+                onConflict?.(taskId, message, latestTask, candidate.revision ?? latestTask.lockVersion);
             });
         }
 

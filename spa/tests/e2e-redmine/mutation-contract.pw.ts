@@ -93,6 +93,31 @@ const createIssue = async (
   return issueId!;
 };
 
+const createPrecedesRelation = async (page: Page, fromIssueId: number, toIssueId: number) => {
+  const result = await page.evaluate(async ({ fromIssueId, toIssueId }) => {
+    const config = (window as Window & { RedmineCanvasGantt: CanvasConfig & { authToken: string } }).RedmineCanvasGantt;
+    const response = await fetch(`${config.apiBase}/relations.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-CSRF-Token': config.authToken
+      },
+      body: JSON.stringify({
+        relation: {
+          issue_from_id: fromIssueId,
+          issue_to_id: toIssueId,
+          relation_type: 'precedes',
+          delay: 0
+        }
+      })
+    });
+    return { status: response.status, body: await response.text() };
+  }, { fromIssueId, toIssueId });
+
+  expect([200, 201], result.body).toContain(result.status);
+};
+
 const loadCanvasPage = async (page: Page, redmineBase: string, projectIdentifier = 'ecookbook', query = '') => {
   await page.goto(`${redmineBase}/projects/${projectIdentifier}/canvas_gantt${query}`);
   await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
@@ -139,7 +164,7 @@ const fetchRestIssue = async (page: Page, issueId: number): Promise<{
   };
 };
 
-const updateIssueThroughRedmineRest = async (page: Page, issueId: number, fields: { subject?: string }) => {
+const updateIssueThroughRedmineRest = async (page: Page, issueId: number, fields: Record<string, unknown>) => {
   const result = await page.evaluate(async ({ issueId, fields, restAuthorization }) => {
     const response = await fetch(`/issues/${issueId}.json`, {
       method: 'PUT',
@@ -202,6 +227,83 @@ test('real Redmine optimistic-lock conflict is terminal for the stale plugin mut
   const after = await fetchRestIssue(page, issueId);
   expect(after.subject).toBe(remoteSubject);
   expect(after.subject).not.toBe(localSubject);
+});
+
+test('linked downstream shift does not publish a self-induced conflict', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, 'ecookbook');
+
+  const originId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas Gantt linked origin')
+  });
+  const downstreamId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas Gantt linked downstream')
+  });
+
+  await loadCanvasPage(page, redmineBase, 'ecookbook');
+  await createPrecedesRelation(page, originId, downstreamId);
+  await updateIssueThroughRedmineRest(page, originId, {
+    start_date: '2027-08-10',
+    due_date: '2027-08-12'
+  });
+  await loadCanvasPage(page, redmineBase, 'ecookbook', '?sort=id:desc');
+  const downstreamBefore = await fetchRestIssue(page, downstreamId);
+  expect(downstreamBefore.startDate).not.toBeNull();
+
+  await page.getByTestId('relation-settings-menu-button').click();
+  await page.getByTestId('auto-schedule-move-mode-select').selectOption('linked_downstream_shift');
+  await page.getByTestId('relation-settings-menu').getByRole('button', { name: /save/i }).click();
+  await page.getByTestId('display-settings-menu-button').click();
+  const autoSave = page.getByLabel('Auto Save');
+  if (!(await autoSave.isChecked())) await autoSave.check({ force: true });
+  await expect(autoSave).toBeChecked();
+
+  const originRow = page.getByTestId(`task-row-${originId}`);
+  const mutationStatuses: number[] = [];
+  page.on('response', (response) => {
+    if (response.request().method() === 'PATCH' && response.url().includes('/tasks/')) {
+      mutationStatuses.push(response.status());
+    }
+  });
+  await originRow.dispatchEvent('click');
+  await originRow.dispatchEvent('mousemove');
+  const startHandle = page.getByTestId(`task-resize-handle-start-${originId}`);
+  const endHandle = page.getByTestId(`task-resize-handle-end-${originId}`);
+  await expect(startHandle).toBeVisible();
+  await expect(endHandle).toBeVisible();
+  const startBox = await startHandle.boundingBox();
+  const endBox = await endHandle.boundingBox();
+  expect(startBox).not.toBeNull();
+  expect(endBox).not.toBeNull();
+  const x = ((startBox!.x + startBox!.width / 2) + (endBox!.x + endBox!.width / 2)) / 2;
+  const y = startBox!.y + startBox!.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 160, y, { steps: 10 });
+  await page.mouse.up();
+
+  await expect.poll(() => mutationStatuses.length).toBeGreaterThan(0);
+  await expect(page.getByTestId(`task-conflict-${originId}`)).toHaveCount(0);
+  await expect(page.getByTestId(`task-conflict-${downstreamId}`)).toHaveCount(0);
+  await expect.poll(async () => {
+    const task = await fetchRestIssue(page, downstreamId);
+    return { startDate: task.startDate, dueDate: task.dueDate };
+  }).not.toEqual({ startDate: downstreamBefore.startDate, dueDate: downstreamBefore.dueDate });
+  const downstreamAfter = await fetchRestIssue(page, downstreamId);
+  const originAfter = await fetchRestIssue(page, originId);
+  expect(originAfter.startDate).not.toBeNull();
+  expect(originAfter.dueDate).not.toBeNull();
+
+  await page.reload();
+  await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
+  await expect(page.getByText('Loading Canvas Gantt...')).toHaveCount(0);
+  await expect(page.getByTestId(`task-conflict-${originId}`)).toHaveCount(0);
+  await expect(page.getByTestId(`task-conflict-${downstreamId}`)).toHaveCount(0);
+  await expect(fetchRestIssue(page, downstreamId)).resolves.toMatchObject({
+    startDate: downstreamAfter.startDate,
+    dueDate: downstreamAfter.dueDate
+  });
 });
 
 test('two independent Canvas sessions preserve the first saved remote edit after a real 409', async ({ browser, baseURL }) => {

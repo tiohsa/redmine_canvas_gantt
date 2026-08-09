@@ -542,7 +542,7 @@ describe('saveModifiedTasks', () => {
 
     it('treats a conflict as idempotent success only when remote persisted fields already match', async () => {
         const local = buildTask({ id: 'A', dueDate: 10, lockVersion: 1 });
-        const remote = buildTask({ id: 'A', dueDate: 10, lockVersion: 2 });
+        const remote = buildTask({ id: 'A', dueDate: 10, parentId: undefined, lockVersion: 2 });
         const other = buildTask({ id: 'B', lockVersion: 1 });
         let attempts = 0;
         const updateTask = vi.fn().mockImplementation(async (task: Task) => {
@@ -570,6 +570,66 @@ describe('saveModifiedTasks', () => {
         expect(updateTask.mock.calls.filter(([task]) => task.id === 'A')).toHaveLength(1);
         expect(result.failures.has('A')).toBe(false);
         expect(result.savedTaskIds).toEqual(new Set(['A', 'B']));
+    });
+
+    it('settles a 409 from a complete canonical entity without a resync', async () => {
+        const local = buildTask({ id: 'A', startDate: 10, dueDate: 20, parentId: undefined, lockVersion: 1 });
+        const remote = buildTask({ id: 'A', startDate: 10, dueDate: 20, parentId: undefined, lockVersion: 2 });
+        const updateTask = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            error: 'stale lock',
+            entity: remote,
+            revision: 2
+        });
+        const fetchData = vi.fn().mockResolvedValue({ tasks: [] });
+
+        const result = await saveModifiedTasks(
+            [local], [], new Set(['A']), [], updateTask, fetchData
+        );
+
+        expect(fetchData).not.toHaveBeenCalled();
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toEqual(new Set(['A']));
+    });
+
+    it('publishes a complete canonical 409 mismatch as conflict without a resync', async () => {
+        const local = buildTask({ id: 'A', dueDate: 10, parentId: undefined, lockVersion: 1 });
+        const remote = buildTask({ id: 'A', dueDate: 12, parentId: undefined, lockVersion: 2 });
+        const updateTask = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            error: 'stale lock',
+            entity: remote,
+            revision: 2
+        });
+        const fetchData = vi.fn();
+        const onConflict = vi.fn();
+
+        const result = await saveModifiedTasks(
+            [local], [], new Set(['A']), [], updateTask, fetchData, undefined, undefined, onConflict
+        );
+
+        expect(fetchData).not.toHaveBeenCalled();
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock', remote, 2);
+    });
+
+    it('falls back to one resync when a 409 entity omits an owned field', async () => {
+        const local = buildTask({ id: 'A', dueDate: 10, parentId: undefined, lockVersion: 1 });
+        const remote = buildTask({ id: 'A', dueDate: 10, parentId: undefined, lockVersion: 2 });
+        const updateTask = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            error: 'stale lock',
+            entity: { id: 'A', dueDate: 10, lockVersion: 2 },
+            revision: 2
+        });
+        const fetchData = vi.fn().mockResolvedValue({ tasks: [remote] });
+
+        const result = await saveModifiedTasks(
+            [local], [], new Set(['A']), [], updateTask, fetchData
+        );
+
+        expect(fetchData).toHaveBeenCalledTimes(1);
+        expect(result.savedTaskIds).toEqual(new Set(['A']));
     });
 
     it('does not automatically retry after a conflict when remote persisted fields differ', async () => {
@@ -621,7 +681,7 @@ describe('saveModifiedTasks', () => {
         expect(result.savedTaskIds).toEqual(new Set());
         expect(result.unsentTaskIds).toEqual(new Set());
         expect(result.failures.get('A')).toBe('resync unavailable');
-        expect(onConflict).toHaveBeenCalledWith('A', 'resync unavailable');
+        expect(onConflict).toHaveBeenCalledWith('A', 'resync unavailable (remote unavailable)', undefined, undefined);
     });
 
     it('does not treat a conflict response outside the current scope as success', async () => {
@@ -649,7 +709,7 @@ describe('saveModifiedTasks', () => {
         expect(fetchData).toHaveBeenCalledTimes(1);
         expect(result.savedTaskIds).toEqual(new Set());
         expect(result.failures.get('A')).toBe('stale lock');
-        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock');
+        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock (remote unavailable)', undefined, undefined);
     });
 
     it('records multiple differing conflicts in one resync without retrying with newer lock versions', async () => {
@@ -684,8 +744,8 @@ describe('saveModifiedTasks', () => {
             ['B', 'B stale lock']
         ]));
         expect(result.savedTaskIds).toEqual(new Set());
-        expect(onConflict).toHaveBeenCalledWith('A', 'A stale lock');
-        expect(onConflict).toHaveBeenCalledWith('B', 'B stale lock');
+        expect(onConflict).toHaveBeenCalledWith('A', 'A stale lock', remoteA, 2);
+        expect(onConflict).toHaveBeenCalledWith('B', 'B stale lock', remoteB, 4);
     });
 
     it('blocks a successor after a not-found predecessor', async () => {

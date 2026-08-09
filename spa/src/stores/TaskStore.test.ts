@@ -2110,7 +2110,7 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(failures.get('task-1')).toBe('resync unavailable');
         expect(useTaskStore.getState().taskConflicts['task-1']).toMatchObject({
             taskId: 'task-1',
-            message: 'resync unavailable'
+            message: 'resync unavailable (remote unavailable)'
         });
         expect(useTaskStore.getState().modifiedTaskIds).toContain('task-1');
     });
@@ -2128,7 +2128,7 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(failures.get('task-1')).toBe('stale lock');
         expect(useTaskStore.getState().taskConflicts['task-1']).toMatchObject({
             taskId: 'task-1',
-            message: 'stale lock'
+            message: 'stale lock (remote unavailable)'
         });
         expect(useTaskStore.getState().modifiedTaskIds).toContain('task-1');
     });

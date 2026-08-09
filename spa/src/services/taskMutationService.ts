@@ -5,7 +5,7 @@ import { baselineProjectResourceKey, enqueueMutationOperation, relationResourceK
 import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
 import { parseDateOnly } from '../utils/dateOnly';
 
-type TaskFields = Record<string, unknown>;
+export type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
 
 const TASK_PATCH_MAX_RETRIES = 1;
@@ -50,10 +50,10 @@ const sameCanonicalValue = (field: string, expected: unknown, actual: unknown): 
     return Object.is(expected, actual);
 };
 
-const responseMatchesIntendedFields = (
+export const responseMatchesIntendedFields = (
     fields: TaskFields,
     entity: NonNullable<Awaited<ReturnType<typeof apiClient.updateTaskFields>>['entity']>
-): boolean => Object.entries(fields)
+): boolean => responseContainsIntendedFields(fields, entity) && Object.entries(fields)
     .filter(([field]) => field !== 'lock_version')
     .every(([field, expected]) => {
         const canonicalField = canonicalFieldName(field);
@@ -69,6 +69,29 @@ const responseMatchesIntendedFields = (
         }
         return sameCanonicalValue(field, expected, entity[canonicalField as keyof typeof entity]);
     });
+
+export const responseContainsIntendedFields = (
+    fields: TaskFields,
+    entity: NonNullable<Awaited<ReturnType<typeof apiClient.updateTaskFields>>['entity']>
+): boolean => Object.entries(fields)
+    .filter(([field]) => field !== 'lock_version')
+    .every(([field]) => {
+        const canonicalField = canonicalFieldName(field);
+        if (!Object.prototype.hasOwnProperty.call(entity, canonicalField)) return false;
+        if (field !== 'custom_field_values') return true;
+        const actual = entity[canonicalField as keyof typeof entity];
+        return actual !== null && typeof actual === 'object' && (
+            typeof fields[field] !== 'object' || Object.keys(fields[field] as object).every(key => (
+                Object.prototype.hasOwnProperty.call(actual, key)
+            ))
+        );
+    });
+
+export const taskMutationFields = (task: { startDate?: number; dueDate?: number; parentId?: string }): TaskFields => ({
+    start_date: task.startDate,
+    due_date: task.dueDate,
+    parent_issue_id: task.parentId ? Number(task.parentId) : null
+});
 
 const executeTaskPatch = async (
     taskId: string,

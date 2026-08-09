@@ -36,7 +36,7 @@ import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/b
 import { formatDateOnly, fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
-import { taskMutationService } from '../services/taskMutationService';
+import { taskMutationFields, taskMutationService, type TaskFields } from '../services/taskMutationService';
 import {
     applyLocalPatches,
     canApplyReadResponse,
@@ -2796,8 +2796,23 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
                 const snapshotGenerations = { ...snapshot.editGenerations };
                 const snapshotTaskIds = new Set(snapshot.modifiedTaskIds);
+                const snapshotMutationFields: Record<string, TaskFields> = {};
+                snapshotTaskIds.forEach((taskId) => {
+                    const task = snapshot.allTasks.find(candidate => candidate.id === taskId);
+                    const fields = (snapshot.localTaskPatches[taskId] ?? []).reduce<Partial<Task>>(
+                        (owned, patch) => ({ ...owned, ...patch.fields }), {}
+                    );
+                    if (task) {
+                        const allPersistedFields = taskMutationFields(task);
+                        const ownedFields: TaskFields = {};
+                        if (Object.prototype.hasOwnProperty.call(fields, 'startDate')) ownedFields.start_date = allPersistedFields.start_date;
+                        if (Object.prototype.hasOwnProperty.call(fields, 'dueDate')) ownedFields.due_date = allPersistedFields.due_date;
+                        if (Object.prototype.hasOwnProperty.call(fields, 'parentId')) ownedFields.parent_issue_id = allPersistedFields.parent_issue_id;
+                        snapshotMutationFields[taskId] = ownedFields;
+                    }
+                });
                 const terminalBarFailureTaskGenerations = new Map<string, number>();
-                const conflictMessages = new Map<string, { message: string; generation: number }>();
+                const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number }>();
                 const requiresResync = [...snapshotTaskIds].some(taskId => (
                     (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
                         ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => field in patch.fields)
@@ -2844,15 +2859,6 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     },
                     (taskId, result) => {
                         get().applyTaskMutationMetadata(taskId, result);
-                        if (result.status === 'conflict') {
-                            get().registerTaskConflict(
-                                taskId,
-                                result.error || (i18n.t('label_conflict') || 'Conflict'),
-                                snapshotGenerations[taskId],
-                                result.entity,
-                                result.revision ?? result.entity?.lockVersion
-                            );
-                        }
                         if (result.status === 'ok') {
                             get().settleBarOperationTaskThrough(taskId, snapshotGenerations[taskId] ?? 0);
                         } else if (result.status === 'validation_error' || result.status === 'forbidden' || result.status === 'not_found') {
@@ -2866,17 +2872,20 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         }
                         if (result.status === 'not_found') {
                             get().markTaskTombstone(taskId, 'server');
-                            get().registerTaskConflict(
-                                taskId,
-                                result.error || (i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists'),
-                                snapshotGenerations[taskId]
-                            );
                         }
                     },
-                    (taskId, message) => {
+                    (taskId, message, remoteEntity, remoteRevision) => {
+                        if (remoteEntity) {
+                            get().applyTaskMutationMetadata(taskId, {
+                                entity: remoteEntity,
+                                revision: remoteRevision ?? remoteEntity.lockVersion
+                            });
+                        }
                         conflictMessages.set(taskId, {
                             message,
-                            generation: snapshotGenerations[taskId] ?? 0
+                            generation: snapshotGenerations[taskId] ?? 0,
+                            remoteEntity,
+                            remoteRevision
                         });
                     },
                     (taskId) => {
@@ -2889,7 +2898,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                                 terminalBarFailureTaskGenerations.get(failedTaskId) === failedGeneration
                             ))
                         ));
-                    }
+                    },
+                    snapshotGenerations,
+                    snapshotMutationFields
                 );
                 const { failures, savedTaskIds } = saveResult;
 
@@ -2914,7 +2925,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     return { modifiedTaskIds, localTaskPatches };
                 });
 
-                if (saveResult.batchStatus !== 'preflight_failure' && (requiresResync || conflictMessages.size > 0)) {
+                if (saveResult.batchStatus !== 'preflight_failure' && requiresResync) {
                     try {
                         await get().refreshData();
                     } catch (error) {
@@ -2928,8 +2939,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 if (conflictMessages.size > 0) {
                     set((state) => {
                         const taskConflicts = { ...state.taskConflicts };
-                        conflictMessages.forEach(({ message, generation }, taskId) => {
-                            taskConflicts[taskId] = { taskId, message, detectedAt: Date.now(), generation };
+                        conflictMessages.forEach(({ message, generation, remoteEntity, remoteRevision }, taskId) => {
+                            taskConflicts[taskId] = { taskId, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision };
                         });
                         return { taskConflicts };
                     });
