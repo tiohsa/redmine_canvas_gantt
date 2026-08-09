@@ -147,6 +147,30 @@ describe('saveModifiedTasks', () => {
         expect(getPendingMutationQueueSize()).toBe(0);
     });
 
+    it('serializes typed semantic resources independently from numeric entity ids', async () => {
+        const relation = enqueueMutationOperation(
+            ['10'],
+            async context => ({ status: 'ok' as const, operationId: context!.operationId, resourceKeys: context!.resourceKeys }),
+            undefined,
+            ['relation:10']
+        );
+        const task = enqueueMutationOperation(
+            ['10'],
+            async context => ({ status: 'ok' as const, operationId: context!.operationId, resourceKeys: context!.resourceKeys }),
+            undefined,
+            ['task:10']
+        );
+
+        const relationResult = await relation;
+        const taskResult = await task;
+        expect(relationResult).toMatchObject({ resourceKeys: ['relation:10'] });
+        expect(taskResult).toMatchObject({ resourceKeys: ['task:10'] });
+        const records = getMutationOperationRecords().filter(record =>
+            [relationResult, taskResult].some(result => record.operationId === result.operationId)
+        );
+        expect(records.map(record => record.resourceKeys)).toEqual([['relation:10'], ['task:10']]);
+    });
+
     it.each([
         { label: 'empty', entityIds: [] as unknown as string[] },
         { label: 'null', entityIds: [null] as unknown as string[] },

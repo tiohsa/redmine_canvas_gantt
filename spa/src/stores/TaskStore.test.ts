@@ -1745,19 +1745,19 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.modifiedTaskIds.has('task-1')).toBe(false);
     });
 
-    it('keeps a tombstone when conflict resolution has no remote task', async () => {
+    it('keeps unresolved conflict when no remote task is available', async () => {
         useTaskStore.getState().setTasks([buildTask({ id: 'task-1', subject: 'local' })]);
         useTaskStore.getState().registerTaskConflict('task-1', 'Task no longer exists');
 
         await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
 
         const state = useTaskStore.getState();
-        expect(state.allTasks).toEqual([]);
-        expect(state.taskTombstones['task-1']?.source).toBe('server');
-        expect(state.taskConflicts['task-1']).toBeUndefined();
+        expect(state.allTasks).toHaveLength(1);
+        expect(state.taskTombstones['task-1']).toBeUndefined();
+        expect(state.taskConflicts['task-1']).toBeDefined();
     });
 
-    it('clears all task operation ownership when remote resolution adopts a tombstone', async () => {
+    it('preserves task ownership when remote state is unavailable', async () => {
         const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
         useTaskStore.getState().setTasks([localTask]);
 
@@ -1773,13 +1773,13 @@ describe('TaskStore asynchronous state ownership', () => {
         await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
 
         const state = useTaskStore.getState();
-        expect(state.allTasks).toEqual([]);
-        expect(state.localTaskPatches['task-1']).toBeUndefined();
-        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
-        expect(state.barOperations).toEqual({});
+        expect(state.allTasks).toHaveLength(1);
+        expect(state.localTaskPatches['task-1']).toBeDefined();
+        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+        expect(state.barOperations).toHaveProperty(firstOperationId);
     });
 
-    it('clears the active operation when remote resolution adopts a tombstone', async () => {
+    it('keeps the active operation when remote state is unavailable', async () => {
         useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: TUESDAY })]);
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
         useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
@@ -1789,8 +1789,8 @@ describe('TaskStore asynchronous state ownership', () => {
         await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
 
         const state = useTaskStore.getState();
-        expect(state.barOperations).toEqual({});
-        expect(state.activeBarOperationId).toBeNull();
+        expect(state.barOperations).toHaveProperty(operationId);
+        expect(state.activeBarOperationId).toBe(operationId);
     });
 
     it('applies deleted task metadata through the shared task transition', () => {

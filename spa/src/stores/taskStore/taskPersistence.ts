@@ -45,6 +45,12 @@ const activeMutationOperations = new Map<string, MutationOperationRecord>();
 const completedMutationOperations = new Map<string, MutationOperationRecord>();
 const MAX_COMPLETED_MUTATIONS = 128;
 export const MAX_TASK_WRITE_CONCURRENCY = 8;
+let activeMutationSlots = 0;
+const mutationSlotWaiters: Array<() => void> = [];
+
+export const taskResourceKey = (taskId: string): string => `task:${taskId}`;
+export const relationResourceKey = (relationId: string): string => `relation:${relationId}`;
+export const baselineProjectResourceKey = (projectId: string | number): string => `baseline:project:${projectId}`;
 
 export const mutationLifecycleMetrics = {
     started: 0,
@@ -62,6 +68,20 @@ export const resetMutationLifecycleMetrics = () => {
     mutationLifecycleMetrics.active = 0;
     mutationLifecycleMetrics.maxActive = 0;
     mutationLifecycleMetrics.maxPendingKeys = 0;
+};
+
+const acquireMutationSlot = async (): Promise<void> => {
+    if (activeMutationSlots < MAX_TASK_WRITE_CONCURRENCY) {
+        activeMutationSlots += 1;
+        return;
+    }
+    await new Promise<void>(resolve => mutationSlotWaiters.push(resolve));
+    activeMutationSlots += 1;
+};
+
+const releaseMutationSlot = () => {
+    activeMutationSlots = Math.max(0, activeMutationSlots - 1);
+    mutationSlotWaiters.shift()?.();
 };
 
 export type MutationOperationStatus = 'queued' | 'running' | 'succeeded' | 'conflict' | 'failed' | 'cancelled';
@@ -82,6 +102,7 @@ export const getPendingMutationQueueSize = (): number => taskWriteQueues.size;
 export type MutationOperationContext = {
     operationId: string;
     entityIds: string[];
+    resourceKeys: string[];
     generation: number;
     startedAt: number;
 };
@@ -105,18 +126,22 @@ const normalizeMutationEntityIds = (entityIds: string[]): string[] => {
 export const enqueueMutationOperation = async <T>(
     entityIds: string[],
     operation: (context?: MutationOperationContext) => Promise<T>,
-    lifecycle?: MutationLifecycle<T>
+    lifecycle?: MutationLifecycle<T>,
+    resourceKeys: string[] = entityIds
 ): Promise<T> => {
     const keys = normalizeMutationEntityIds(entityIds);
+    const normalizedResourceKeys = normalizeMutationEntityIds(resourceKeys);
     const context: MutationOperationContext = {
         operationId: `mutation:${++mutationSequence}`,
         entityIds: keys,
+        resourceKeys: normalizedResourceKeys,
         generation: mutationSequence,
         startedAt: Date.now()
     };
     activeMutationOperations.set(context.operationId, { ...context, status: 'queued' });
-    const previous = keys.map(key => taskWriteQueues.get(key) ?? Promise.resolve());
+    const previous = normalizedResourceKeys.map(key => taskWriteQueues.get(key) ?? Promise.resolve());
     const run = async () => {
+        await acquireMutationSlot();
         activeMutationOperations.set(context.operationId, { ...context, status: 'running' });
         mutationLifecycleMetrics.started += 1;
         mutationLifecycleMetrics.active += 1;
@@ -146,11 +171,12 @@ export const enqueueMutationOperation = async <T>(
             throw error;
         } finally {
             mutationLifecycleMetrics.active = Math.max(0, mutationLifecycleMetrics.active - 1);
+            releaseMutationSlot();
         }
     };
     const queued = Promise.all(previous).then(run, run);
     const marker = queued.then(() => undefined, () => undefined);
-    keys.forEach(key => taskWriteQueues.set(key, marker));
+    normalizedResourceKeys.forEach(key => taskWriteQueues.set(key, marker));
     mutationLifecycleMetrics.maxPendingKeys = Math.max(
         mutationLifecycleMetrics.maxPendingKeys,
         taskWriteQueues.size
@@ -159,7 +185,7 @@ export const enqueueMutationOperation = async <T>(
     try {
         return await queued;
     } finally {
-        keys.forEach(key => {
+        normalizedResourceKeys.forEach(key => {
             if (taskWriteQueues.get(key) === marker) taskWriteQueues.delete(key);
         });
     }
@@ -191,7 +217,7 @@ export const enqueueTaskWrite = async <T>(
     operation: (context?: MutationOperationContext) => Promise<T>,
     lifecycle?: MutationLifecycle<T>
 ): Promise<T> => (
-    enqueueMutationOperation([taskId], operation, lifecycle)
+    enqueueMutationOperation([taskId], operation, lifecycle, [taskResourceKey(taskId)])
 );
 
 export const createTaskLayoutSnapshot = (state: TaskLayoutSnapshot): TaskLayoutSnapshot => ({

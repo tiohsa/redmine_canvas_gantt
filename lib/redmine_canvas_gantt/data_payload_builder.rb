@@ -27,12 +27,22 @@ module RedmineCanvasGantt
 
     def build_tasks(issues)
       issues.each_with_index.map do |issue, idx|
-        {
+        build_task_state(issue).merge(
+          display_order: idx,
+          editable: @current_user.allowed_to?(:edit_issues, issue.project) && issue.editable?
+        )
+      end
+    end
+
+    # Mutation responses must describe the persisted Issue only.  In
+    # particular, display_order and other collection/layout values belong to
+    # the current query and are not canonical entity state.
+    def build_task_state(issue)
+      {
           id: issue.id,
           subject: issue.subject,
           project_id: issue.project_id,
           project_name: issue.project.name,
-          display_order: idx,
           start_date: issue.start_date,
           due_date: issue.due_date,
           ratio_done: issue.done_ratio,
@@ -42,7 +52,6 @@ module RedmineCanvasGantt
           assigned_to_name: issue.assigned_to&.name,
           parent_id: issue.parent_id,
           lock_version: issue.lock_version,
-          editable: @current_user.allowed_to?(:edit_issues, issue.project) && issue.editable?,
           tracker_id: issue.tracker_id,
           tracker_name: issue.tracker&.name,
           fixed_version_id: issue.fixed_version_id,
@@ -59,8 +68,7 @@ module RedmineCanvasGantt
           spent_hours: issue.spent_hours,
           fixed_version_name: issue.fixed_version&.name,
           custom_field_values: @custom_field_extractor.build_task_custom_field_values(issue)
-        }
-      end
+      }
     end
 
     def build_relations(issues)

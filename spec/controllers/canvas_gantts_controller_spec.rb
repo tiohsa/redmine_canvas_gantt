@@ -815,6 +815,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
       end
       allow(Issue).to receive(:visible).and_return(issue_scope)
       allow(issue_scope).to receive(:find).with('10').and_return(issue)
+      allow(issue_scope).to receive(:find_by).and_return(nil)
+      allow(controller).to receive(:data_payload_builder).and_return(double(build_task_state: { id: 10 }))
       allow(controller).to receive(:ensure_issue_in_scope).and_return(true)
       allow(controller).to receive(:ensure_issue_editable).and_return(true)
       allow(controller).to receive(:original_project_move_values).and_return({})
@@ -896,7 +898,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     let(:current_user) { instance_double(User, id: 7, logged?: true, login: 'tester', language: 'en') }
     let(:issue_scope) { double('IssueScope') }
     let(:issue_project) { instance_double(Project, id: 1) }
-    let(:issue) { instance_double(Issue, id: 10, parent_id: nil, project: issue_project, deletable?: true) }
+    let(:issue) { instance_double(Issue, id: 10, project_id: 1, parent_id: nil, project: issue_project, deletable?: true) }
 
     before do
       allow(User).to receive(:current).and_return(current_user)
@@ -907,6 +909,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(Issue).to receive(:visible).and_return(issue_scope)
       allow(issue_scope).to receive(:find).with('10').and_return(issue)
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[10])
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1], issues: [] })
     end
 
     it 'deletes an issue and returns ok for an authorized session' do
@@ -934,13 +937,14 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(JSON.parse(response.body)).to eq('error' => 'Permission denied')
     end
 
-    it 'returns not found when the issue is outside the current view scope' do
+    it 'does not use current view membership as mutation authorization' do
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[])
+      allow(current_user).to receive(:allowed_to?).with(:delete_issues, issue_project).and_return(true)
+      allow(issue).to receive(:destroy)
 
       delete :destroy_task, params: { project_id: 'demo', id: '10' }, format: :json
 
-      expect(response).to have_http_status(:not_found)
-      expect(JSON.parse(response.body)).to eq('error' => 'Issue not found in this project')
+      expect(response).to have_http_status(:ok)
     end
   end
 
@@ -972,6 +976,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       end
       allow(Issue).to receive(:visible).and_return(issue_scope)
       allow(issue_scope).to receive(:find).with('99').and_return(parent_issue)
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [2], issues: [] })
       allow(controller).to receive(:ensure_issue_in_scope).and_return(true)
     end
 
@@ -1007,6 +1012,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
     it 'returns not found when parent is visible only as a context row outside operation scope' do
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[99, 100])
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [], issues: [] })
 
       post :bulk_create_subtasks,
            params: {
@@ -1147,6 +1153,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
       end
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2, 3], issues: [] })
       allow(controller).to receive(:current_view_scope).and_return({ issues: [] })
       allow(IssueRelation).to receive(:find).with('77').and_return(relation)
       allow(relation).to receive(:id).and_return(77)
@@ -1310,6 +1317,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
       end
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2, 3], issues: [] })
       allow(controller).to receive(:current_view_scope).and_return({ issues: [] })
       allow(Issue).to receive(:visible).and_return(issue_scope)
       allow(issue_scope).to receive(:find).with('10').and_return(issue_from)
@@ -1420,6 +1428,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
       end
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2, 3], issues: [] })
       allow(IssueRelation).to receive(:find).with('77').and_return(relation)
       allow(relation).to receive(:issue_from).and_return(issue_from)
       allow(relation).to receive(:issue_to).and_return(issue_to)

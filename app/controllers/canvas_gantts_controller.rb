@@ -514,6 +514,8 @@ class CanvasGanttsController < ApplicationController
       render json: mutation_response(
         status: 'ok',
         completeness: 'partial',
+        entity: data_payload_builder.build_task_state(issue),
+        revision: issue.lock_version,
         invalidated_entity_ids: [issue.id, previous_parent_id, issue.parent_id]
       ).merge(
         lock_version: issue.lock_version,
@@ -525,7 +527,13 @@ class CanvasGanttsController < ApplicationController
       render json: { errors: issue.errors.full_messages }, status: :unprocessable_entity
     end
   rescue ActiveRecord::StaleObjectError
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_conflict_reload) }, status: :conflict
+    remote_issue = Issue.visible.find_by(id: params[:id])
+    render json: mutation_response(
+      status: 'conflict',
+      completeness: 'partial',
+      entity: remote_issue && data_payload_builder.build_task_state(remote_issue),
+      revision: remote_issue&.lock_version
+    ).merge(error: canvas_gantt_l(:error_canvas_gantt_conflict_reload)), status: :conflict
   rescue ActiveRecord::RecordNotFound
     render json: { error: canvas_gantt_l(:error_canvas_gantt_task_not_found) }, status: :not_found
   end
@@ -822,10 +830,12 @@ class CanvasGanttsController < ApplicationController
   # Mutation responses retain the legacy top-level fields while exposing the
   # lifecycle metadata needed by newer clients. All fields are additive so
   # existing Redmine integrations can continue to ignore them.
-  def mutation_response(status:, completeness:, invalidated_entity_ids: [], deleted_entity_ids: [])
+  def mutation_response(status:, completeness:, entity: nil, revision: nil, invalidated_entity_ids: [], deleted_entity_ids: [])
     {
       status: status,
       completeness: completeness,
+      **(entity ? { entity: entity } : {}),
+      **(revision ? { revision: revision } : {}),
       invalidated_entity_ids: Array(invalidated_entity_ids).compact.map(&:to_i).uniq,
       **(deleted_entity_ids.empty? ? {} : { deleted_entity_ids: Array(deleted_entity_ids).compact.map(&:to_i).uniq })
     }
@@ -872,7 +882,7 @@ class CanvasGanttsController < ApplicationController
   end
 
   def ensure_issue_in_scope(issue)
-    return true if current_view_issue_ids.include?(issue.id)
+    return true if mutation_scope_issue?(issue)
 
     render json: { error: canvas_gantt_l(:error_canvas_gantt_issue_not_found_in_project) }, status: :not_found
     false
@@ -961,7 +971,7 @@ class CanvasGanttsController < ApplicationController
       return false
     end
 
-    unless current_view_issue_ids.include?(issue_from.id) && current_view_issue_ids.include?(issue_to.id)
+    unless mutation_scope_issue?(issue_from) && mutation_scope_issue?(issue_to)
       render json: { error: canvas_gantt_l(:error_canvas_gantt_relation_not_found_in_project) }, status: :not_found
       return false
     end
@@ -1019,7 +1029,7 @@ class CanvasGanttsController < ApplicationController
       issue_to: issue_to,
       relation_type: relation_type,
       delay: delay,
-      existing_relations: build_relations(current_view_scope[:issues]),
+      existing_relations: build_relations(mutation_scope_issues),
       candidate_relation: build_candidate_relation(
         relation_id: relation_id,
         issue_from: issue_from,
@@ -1032,6 +1042,28 @@ class CanvasGanttsController < ApplicationController
         render json: { errors: [canvas_gantt_l(message_key)] }, status: :unprocessable_entity
       }
     )
+  end
+
+  def mutation_scope_issue?(issue)
+    return false unless issue
+
+    scope_project_ids = current_view_scope[:scope_project_ids]
+    return current_view_issue_ids.include?(issue.id) if scope_project_ids.blank?
+
+    # The endpoint already loaded the record through Issue.visible.  Scope
+    # authorization therefore only needs the operation project boundary; a
+    # second visible query would both waste a query and make the policy depend
+    # on the current filtered collection.
+    scope_project_ids.include?(issue.project_id)
+  end
+
+  def mutation_scope_issues
+    return Array(current_view_scope[:issues]) if current_view_scope[:scope_project_ids].blank?
+
+    @mutation_scope_issues ||= Issue.visible
+      .where(project_id: current_view_scope[:scope_project_ids])
+      .includes(ISSUE_INCLUDES)
+      .to_a
   end
 
   def save_relation_change(relation:, issue_from:, issue_to:, relation_id:, replacing_relation_id: nil)
@@ -1219,7 +1251,7 @@ class CanvasGanttsController < ApplicationController
     operation_issue_ids = requested_operation_issue_ids
     return true if operation_issue_ids.blank?
 
-    authorized_operation_issue_ids = operation_issue_ids & current_view_issue_ids
+    authorized_operation_issue_ids = operation_issue_ids & mutation_scope_issues.map(&:id).to_set
     return true if authorized_operation_issue_ids.include?(issue.id)
 
     render json: { error: canvas_gantt_l(:error_canvas_gantt_issue_not_found_in_project) }, status: :not_found

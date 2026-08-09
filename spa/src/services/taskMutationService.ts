@@ -1,7 +1,7 @@
 import type { Relation } from '../types';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
-import { enqueueMutationOperation, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
+import { baselineProjectResourceKey, enqueueMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
 
 type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
@@ -22,6 +22,7 @@ export const taskMutationService = {
         return enqueueMutationOperation(
             [`baseline:${scope}`],
             (context) => apiClient.saveBaseline(normalizedPayload, context?.operationId)
+            , undefined, [baselineProjectResourceKey(window.RedmineCanvasGantt?.projectId ?? 'unknown')]
         );
     },
 
@@ -36,29 +37,32 @@ export const taskMutationService = {
             typeof fields === 'function' ? fields() : fields,
             context?.operationId
         ),
-        lifecycle
+        lifecycle,
+        [taskResourceKey(taskId)]
     ),
 
     createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
-        enqueueMutationOperation([fromId, toId], (context) => apiClient.createRelation(fromId, toId, type, delay, context?.operationId))
+        enqueueMutationOperation([fromId, toId], (context) => apiClient.createRelation(fromId, toId, type, delay, context?.operationId), undefined, [taskResourceKey(fromId), taskResourceKey(toId)])
     ),
 
-    updateRelation: (relationId: string, type: string, delay?: number): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
-        enqueueMutationOperation([relationId], (context) => apiClient.updateRelation(relationId, type, delay, context?.operationId))
+    updateRelation: (relationId: string, type: string, delay?: number, endpointIds: string[] = []): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
+        enqueueMutationOperation([relationId, ...endpointIds], (context) => apiClient.updateRelation(relationId, type, delay, context?.operationId), undefined, [relationResourceKey(relationId), ...endpointIds.map(taskResourceKey)])
     ),
 
-    deleteRelation: (relationId: string): Promise<MutationMetadata & { status: 'ok' }> => (
-        enqueueMutationOperation([relationId], (context) => apiClient.deleteRelation(relationId, context?.operationId))
+    deleteRelation: (relationId: string, endpointIds: string[] = []): Promise<MutationMetadata & { status: 'ok' }> => (
+        enqueueMutationOperation([relationId, ...endpointIds], (context) => apiClient.deleteRelation(relationId, context?.operationId), undefined, [relationResourceKey(relationId), ...endpointIds.map(taskResourceKey)])
     ),
 
     deleteTask: (taskId: string): Promise<MutationMetadata & { status: 'ok' }> => (
-        enqueueMutationOperation([taskId], (context) => apiClient.deleteTask(taskId, context?.operationId))
+        enqueueMutationOperation([taskId], (context) => apiClient.deleteTask(taskId, context?.operationId), undefined, [taskResourceKey(taskId)])
     ),
 
     bulkCreateSubtasks: (payload: Parameters<typeof apiClient.bulkCreateSubtasks>[0]) => (
         enqueueMutationOperation(
             [payload.parentId, ...(payload.operationIssueIds ?? [])],
-            (context) => apiClient.bulkCreateSubtasks(payload, context?.operationId)
+            (context) => apiClient.bulkCreateSubtasks(payload, context?.operationId),
+            undefined,
+            [taskResourceKey(payload.parentId), ...(payload.operationIssueIds ?? []).map(taskResourceKey)]
         )
     )
 };

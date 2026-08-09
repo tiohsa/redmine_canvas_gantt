@@ -80,6 +80,8 @@ export interface MutationMetadata {
     completeness?: 'complete' | 'partial';
     invalidatedEntityIds?: string[];
     deletedEntityIds?: string[];
+    entity?: Task;
+    revision?: number;
 }
 
 interface BaselineSaveResult extends MutationMetadata {
@@ -107,6 +109,8 @@ export class ApiMutationError extends Error {
 
 interface UpdateTaskResult extends MutationMetadata {
     status: MutationStatus;
+    entity?: Task;
+    revision?: number;
     lockVersion?: number;
     taskId?: string;
     parentId?: string;
@@ -221,6 +225,69 @@ const parseMutationMetadata = (value: unknown): Pick<UpdateTaskResult, 'complete
         .filter(id => typeof id === 'number' || typeof id === 'string')
         .map(String);
     return metadata;
+};
+
+const parseMutationEntity = (value: unknown, fallback?: Task): Task | undefined => {
+    const record = asRecord(value);
+    if (!record) return undefined;
+    const id = record.id ?? fallback?.id;
+    if (id === undefined || id === null) return undefined;
+    const parseDate = (candidate: unknown, previous?: number): number | undefined => {
+        if (typeof candidate === 'string') return parseDateOnly(candidate) ?? undefined;
+        return previous;
+    };
+    return {
+        ...fallback,
+        id: String(id),
+        subject: typeof record.subject === 'string' ? record.subject : (fallback?.subject ?? ''),
+        projectId: record.project_id !== undefined ? String(record.project_id) : fallback?.projectId,
+        projectName: typeof record.project_name === 'string' ? record.project_name : fallback?.projectName,
+        startDate: parseDate(record.start_date, fallback?.startDate),
+        dueDate: parseDate(record.due_date, fallback?.dueDate),
+        ratioDone: typeof record.ratio_done === 'number' ? record.ratio_done : (fallback?.ratioDone ?? 0),
+        statusId: typeof record.status_id === 'number' ? record.status_id : (fallback?.statusId ?? 0),
+        statusName: typeof record.status_name === 'string' ? record.status_name : fallback?.statusName,
+        assignedToId: record.assigned_to_id === null ? null : (typeof record.assigned_to_id === 'number' ? record.assigned_to_id : fallback?.assignedToId),
+        assignedToName: record.assigned_to_name === null ? null : (typeof record.assigned_to_name === 'string' ? record.assigned_to_name : fallback?.assignedToName),
+        parentId: record.parent_id === null ? undefined : (record.parent_id !== undefined ? String(record.parent_id) : fallback?.parentId),
+        lockVersion: typeof record.lock_version === 'number' ? record.lock_version : (fallback?.lockVersion ?? 0),
+        editable: fallback?.editable ?? false,
+        trackerId: typeof record.tracker_id === 'number' ? record.tracker_id : fallback?.trackerId,
+        trackerName: typeof record.tracker_name === 'string' ? record.tracker_name : fallback?.trackerName,
+        fixedVersionId: record.fixed_version_id === null ? undefined : (record.fixed_version_id !== undefined ? String(record.fixed_version_id) : fallback?.fixedVersionId),
+        priorityId: typeof record.priority_id === 'number' ? record.priority_id : fallback?.priorityId,
+        priorityName: typeof record.priority_name === 'string' ? record.priority_name : fallback?.priorityName,
+        priorityPosition: typeof record.priority_position === 'number' ? record.priority_position : fallback?.priorityPosition,
+        authorId: typeof record.author_id === 'number' ? record.author_id : fallback?.authorId,
+        authorName: typeof record.author_name === 'string' ? record.author_name : fallback?.authorName,
+        categoryId: typeof record.category_id === 'number' ? record.category_id : fallback?.categoryId,
+        categoryName: typeof record.category_name === 'string' ? record.category_name : fallback?.categoryName,
+        estimatedHours: typeof record.estimated_hours === 'number' ? record.estimated_hours : fallback?.estimatedHours,
+        createdOn: typeof record.created_on === 'string' ? record.created_on : fallback?.createdOn,
+        updatedOn: typeof record.updated_on === 'string' ? record.updated_on : fallback?.updatedOn,
+        spentHours: typeof record.spent_hours === 'number' ? record.spent_hours : fallback?.spentHours,
+        fixedVersionName: typeof record.fixed_version_name === 'string' ? record.fixed_version_name : fallback?.fixedVersionName,
+        customFieldValues: asRecord(record.custom_field_values) as Task['customFieldValues'] ?? fallback?.customFieldValues,
+        rowIndex: fallback?.rowIndex ?? 0,
+        hasChildren: fallback?.hasChildren ?? false
+    };
+};
+
+const parseMutationTaskResult = async (response: Response, fallback?: Task): Promise<UpdateTaskResult> => {
+    const data = asRecord(await response.json().catch(() => ({}))) ?? {};
+    const entity = parseMutationEntity(data.entity, fallback);
+    const revision = typeof data.revision === 'number' ? data.revision : entity?.lockVersion;
+    return {
+        status: typeof data.status === 'string' ? data.status as MutationStatus : 'ok',
+        ...parseMutationMetadata(data),
+        ...(entity ? { entity } : {}),
+        ...(revision !== undefined ? { revision } : {}),
+        lockVersion: typeof data.lock_version === 'number' ? data.lock_version : entity?.lockVersion,
+        taskId: data.task_id ? String(data.task_id) : fallback?.id,
+        parentId: data.parent_id === null ? undefined : (data.parent_id ? String(data.parent_id) : entity?.parentId),
+        siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined,
+        error: typeof data.error === 'string' ? data.error : undefined
+    };
 };
 
 const parseEditOption = (value: unknown): EditOption | null => {
@@ -868,7 +935,7 @@ export const apiClient = {
         });
 
         if (response.status === 409) {
-            return { status: 'conflict', error: 'This task was updated by another user. Please reload.' };
+            return parseMutationTaskResult(response, task);
         }
 
         if (!response.ok) {
@@ -876,15 +943,7 @@ export const apiClient = {
             return { status: error.status, error: error.message };
         }
 
-        const data = await response.json();
-        return {
-            status: 'ok',
-            ...parseMutationMetadata(data),
-            lockVersion: data.lock_version,
-            taskId: data.task_id ? String(data.task_id) : String(task.id),
-            parentId: data.parent_id ? String(data.parent_id) : undefined,
-            siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined
-        };
+        return parseMutationTaskResult(response, task);
     },
 
     updateTaskFields: async (taskId: string, fields: Record<string, unknown>, operationId?: string): Promise<UpdateTaskResult> => {
@@ -898,7 +957,7 @@ export const apiClient = {
         });
 
         if (response.status === 409) {
-            return { status: 'conflict', error: 'This task was updated by another user. Please reload.' };
+            return parseMutationTaskResult(response, { id: taskId, subject: '', lockVersion: 0, ratioDone: 0, statusId: 0, editable: false, rowIndex: 0, hasChildren: false });
         }
 
         if (!response.ok) {
@@ -906,15 +965,7 @@ export const apiClient = {
             return { status: error.status, error: error.message };
         }
 
-        const data = await response.json();
-        return {
-            status: 'ok',
-            ...parseMutationMetadata(data),
-            lockVersion: data.lock_version,
-            taskId: data.task_id ? String(data.task_id) : String(taskId),
-            parentId: data.parent_id ? String(data.parent_id) : undefined,
-            siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined
-        };
+        return parseMutationTaskResult(response, { id: taskId, subject: '', lockVersion: 0, ratioDone: 0, statusId: 0, editable: false, rowIndex: 0, hasChildren: false });
     },
 
     createRelation: async (fromId: string, toId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata & { status: 'ok' }> => {

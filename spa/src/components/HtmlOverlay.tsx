@@ -255,7 +255,9 @@ export const HtmlOverlay: React.FC = () => {
     }, [addRelation, clearRelationSelection]);
 
     const handleUpdateRelation = React.useCallback(async (relationId: string, rawType: string, delay?: number) => {
-        const updatedRelation = await taskMutationService.updateRelation(relationId, rawType, delay);
+        const currentRelation = useTaskStore.getState().relations.find(relation => relation.id === relationId);
+        const endpointIds = currentRelation ? [currentRelation.from, currentRelation.to] : [];
+        const updatedRelation = await taskMutationService.updateRelation(relationId, rawType, delay, endpointIds);
         replaceRelation(toRelationState(updatedRelation));
         useTaskStore.getState().refreshForMutationMetadata(updatedRelation);
         clearRelationSelection();
@@ -263,7 +265,9 @@ export const HtmlOverlay: React.FC = () => {
     }, [clearRelationSelection, replaceRelation]);
 
     const handleRemoveRelation = React.useCallback(async (relationId: string) => {
-        const metadata = await taskMutationService.deleteRelation(relationId);
+        const currentRelation = useTaskStore.getState().relations.find(relation => relation.id === relationId);
+        const endpointIds = currentRelation ? [currentRelation.from, currentRelation.to] : [];
+        const metadata = await taskMutationService.deleteRelation(relationId, endpointIds);
         removeRelation(relationId);
         if (metadata) useTaskStore.getState().refreshForMutationMetadata(metadata);
         clearRelationSelection();

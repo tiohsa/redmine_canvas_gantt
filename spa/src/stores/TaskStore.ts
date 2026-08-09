@@ -43,6 +43,7 @@ import {
     createReadContext,
     createServerSnapshot,
     replaceServerSnapshot,
+    mergeServerEntity,
     type DerivedInvalidation,
     type LocalPatch,
     type EntityTombstone,
@@ -79,6 +80,8 @@ export type TaskConflictRecord = {
     message: string;
     detectedAt: number;
     generation?: number;
+    remoteEntity?: Task;
+    remoteRevision?: number;
 };
 
 type BarOperationRecord = {
@@ -383,7 +386,7 @@ interface TaskState {
     removeTask: (id: string) => void;
     markTaskTombstone: (id: string, source?: EntityTombstone['source'], operationId?: string) => void;
     clearTaskTombstone: (id: string) => void;
-    registerTaskConflict: (id: string, message: string, generation?: number) => void;
+    registerTaskConflict: (id: string, message: string, generation?: number, remoteEntity?: Task, remoteRevision?: number) => void;
     resolveTaskConflict: (id: string, resolution: 'remote' | 'local' | 'dismiss') => Promise<void>;
     updateViewport: (updates: Partial<Viewport>) => void;
     setRowHeight: (height: number) => void;
@@ -985,11 +988,28 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
     }
 
     const modifiedTaskIds = new Set(state.modifiedTaskIds);
-    dependentUpdates.updates.forEach((_, taskId) => modifiedTaskIds.add(taskId));
+    const editGenerations = { ...state.editGenerations };
+    const localTaskPatches = { ...state.localTaskPatches };
+    dependentUpdates.updates.forEach((fields, taskId) => {
+        const meaningfulFields = Object.fromEntries(
+            Object.entries(fields).filter(([key]) => key !== 'lockVersion' && key !== 'id')
+        ) as Partial<Task>;
+        if (Object.keys(meaningfulFields).length === 0) return;
+        const generation = (editGenerations[taskId] ?? 0) + 1;
+        editGenerations[taskId] = generation;
+        modifiedTaskIds.add(taskId);
+        const operationId = `relation-cascade:${relation.id || 'new'}:${taskId}:${generation}`;
+        localTaskPatches[taskId] = [
+            ...(localTaskPatches[taskId] ?? []).filter(patch => patch.operationId !== operationId),
+            { entityId: taskId, fields: meaningfulFields, generation, operationId }
+        ];
+    });
 
     return {
         nextTasks,
         modifiedTaskIds,
+        editGenerations,
+        localTaskPatches,
         derived: buildDerivedTaskState(state, { relations: nextRelations, allTasks: nextTasks })
     };
 };
@@ -1370,13 +1390,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (exists) return state;
         invalidateDataRequests();
         const nextRelations = [...state.relations, relation];
-        const { nextTasks, modifiedTaskIds, derived } = buildRelationChange(state, relation, nextRelations);
+        const { nextTasks, modifiedTaskIds, editGenerations, localTaskPatches, derived } = buildRelationChange(state, relation, nextRelations);
         return {
             allTasks: nextTasks,
             relations: nextRelations,
             draftRelation: null,
             ...toDerivedTaskStatePatch(derived),
-            modifiedTaskIds
+            modifiedTaskIds,
+            editGenerations,
+            localTaskPatches
         };
     }),
     replaceRelation: (relation) => set((state) => {
@@ -1386,24 +1408,33 @@ export const useTaskStore = create<TaskState>((set, get) => {
             existingIndex === -1
                 ? [...state.relations, relation]
                 : state.relations.map((current) => current.id === relation.id ? relation : current);
-        const { nextTasks, modifiedTaskIds, derived } = buildRelationChange(state, relation, nextRelations);
+        const { nextTasks, modifiedTaskIds, editGenerations, localTaskPatches, derived } = buildRelationChange(state, relation, nextRelations);
         return {
             allTasks: nextTasks,
             relations: nextRelations,
             draftRelation: null,
             ...toDerivedTaskStatePatch(derived),
-            modifiedTaskIds
+            modifiedTaskIds,
+            editGenerations,
+            localTaskPatches
         };
     }),
     removeRelation: (relationId) => set((state) => {
         const nextRelations = state.relations.filter(r => r.id !== relationId);
         if (nextRelations.length === state.relations.length) return state;
         invalidateDataRequests();
-        const derived = buildDerivedTaskState(state, { relations: nextRelations });
+        const relation = state.relations.find(current => current.id === relationId);
+        const relationChange = relation
+            ? buildRelationChange(state, relation, nextRelations)
+            : { nextTasks: state.allTasks, modifiedTaskIds: state.modifiedTaskIds, editGenerations: state.editGenerations, localTaskPatches: state.localTaskPatches, derived: buildDerivedTaskState(state, { relations: nextRelations }) };
         return {
+            allTasks: relationChange.nextTasks,
             relations: nextRelations,
             selectedRelationId: state.selectedRelationId === relationId ? null : state.selectedRelationId,
-            ...toDerivedTaskStatePatch(derived)
+            ...toDerivedTaskStatePatch(relationChange.derived),
+            modifiedTaskIds: relationChange.modifiedTaskIds,
+            editGenerations: relationChange.editGenerations,
+            localTaskPatches: relationChange.localTaskPatches
         };
     }),
     selectTask: (id) => set({
@@ -1508,7 +1539,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             validatePersistedResult: (result) => result.parentId === targetTaskId,
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure,
-            onConflict: (taskId, message, operationGeneration) => get().registerTaskConflict(taskId, message, operationGeneration),
+            onConflict: (taskId, message, operationGeneration, remoteEntity, remoteRevision) => get().registerTaskConflict(taskId, message, operationGeneration, remoteEntity, remoteRevision),
             onNotFound: (taskId, _operationGeneration, operationId) => get().markTaskTombstone(taskId, 'server', operationId),
             onMutationMetadata: (taskId, metadata) => get().applyTaskMutationMetadata(taskId, metadata)
         });
@@ -1557,7 +1588,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             validatePersistedResult: (result) => result.parentId === undefined,
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure,
-            onConflict: (taskId, message, operationGeneration) => get().registerTaskConflict(taskId, message, operationGeneration),
+            onConflict: (taskId, message, operationGeneration, remoteEntity, remoteRevision) => get().registerTaskConflict(taskId, message, operationGeneration, remoteEntity, remoteRevision),
             onNotFound: (taskId, _operationGeneration, operationId) => get().markTaskTombstone(taskId, 'server', operationId),
             onMutationMetadata: (taskId, metadata) => get().applyTaskMutationMetadata(taskId, metadata)
         });
@@ -1989,8 +2020,25 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (invalidatedIds.size > 0 || deletedIds.size > 0) invalidateDataRequests();
 
         set((state) => {
-            if (!deletedIds.has(taskId)) return state;
-            return terminalTaskDeletionPatch(state, taskId, 'server');
+            if (deletedIds.has(taskId)) {
+                return terminalTaskDeletionPatch(state, taskId, 'server');
+            }
+            if (!metadata.entity) return state;
+            const serverTaskSnapshot = mergeServerEntity(
+                state.serverTaskSnapshot,
+                metadata.entity,
+                metadata.completeness ?? 'partial',
+                metadata.revision ?? metadata.entity.lockVersion
+            );
+            const currentTask = state.allTasks.find(task => task.id === taskId);
+            const mergedTask = currentTask
+                ? applyLocalPatches(metadata.entity, state.localTaskPatches[taskId] ?? [])
+                : metadata.entity;
+            const allTasks = currentTask
+                ? state.allTasks.map(task => task.id === taskId ? { ...task, ...mergedTask } : task)
+                : state.allTasks;
+            const derived = buildDerivedTaskState(state, { allTasks });
+            return { serverTaskSnapshot, allTasks, ...toDerivedTaskStatePatch(derived) };
         });
 
         if (needsRefresh) {
@@ -2034,10 +2082,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return { taskTombstones };
     }),
 
-    registerTaskConflict: (id, message, generation = get().editGenerations[id]) => set((state) => ({
+    registerTaskConflict: (id, message, generation = get().editGenerations[id], remoteEntity, remoteRevision) => set((state) => ({
         taskConflicts: {
             ...state.taskConflicts,
-            [id]: { taskId: id, message, detectedAt: Date.now(), generation }
+            [id]: { taskId: id, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision }
         }
     })),
 
@@ -2048,7 +2096,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         if (resolution === 'local') {
             const beforeRetry = get();
-            const conflictGeneration = beforeRetry.taskConflicts[id]?.generation;
+            const conflictRecord = beforeRetry.taskConflicts[id];
+            const conflictGeneration = conflictRecord?.generation;
             const retryGeneration = beforeRetry.editGenerations[id] ?? conflictGeneration ?? 0;
             const retryFields = (beforeRetry.localTaskPatches[id] ?? [])
                 .filter(patch => patch.generation <= retryGeneration)
@@ -2065,22 +2114,29 @@ export const useTaskStore = create<TaskState>((set, get) => {
             });
             if (canRetryFieldsDirectly) {
                 try {
-                    const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: get().selectedStatusIds } });
-                    const remoteTask = resyncData.tasks.find(task => task.id === id);
+                    let remoteTask = conflictRecord?.remoteEntity;
+                    let resyncData: Awaited<ReturnType<typeof fetchMutationResyncData>> | undefined;
+                    if (!remoteTask) {
+                        resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: get().selectedStatusIds } });
+                        remoteTask = resyncData.tasks.find(task => task.id === id);
+                    }
                     if (!remoteTask) {
                         get().registerTaskConflict(
                             id,
-                            i18n.t('error_canvas_gantt_task_not_found') || 'Task no longer exists',
-                            retryGeneration
+                            conflictRecord?.message || (i18n.t('label_conflict') || 'Conflict'),
+                            retryGeneration,
+                            undefined,
+                            conflictRecord?.remoteRevision
                         );
                         return;
                     }
-                    get().applyApiData(resyncData);
+                    if (resyncData) get().applyApiData(resyncData);
+                    else get().applyTaskMutationMetadata(id, { entity: remoteTask, revision: conflictRecord?.remoteRevision ?? remoteTask.lockVersion });
                     const result = await taskMutationService.updateTaskFields(id, () => {
                         const latestTask = get().allTasks.find(task => task.id === id) ?? retryTask;
                         return {
                             ...buildTaskPatchFieldsPayload(latestTask, retryFields),
-                            lock_version: latestTask.lockVersion
+                            lock_version: conflictRecord?.remoteRevision ?? remoteTask!.lockVersion
                         };
                     });
                     get().applyTaskMutationMetadata(id, result);
@@ -2099,6 +2155,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     }
                     if (result.status === 'not_found') {
                         get().markTaskTombstone(id, 'server');
+                    }
+                    if (result.status === 'conflict') {
+                        get().registerTaskConflict(id, result.error || (i18n.t('label_conflict') || 'Conflict'), retryGeneration, result.entity, result.revision ?? result.entity?.lockVersion);
                     }
                     get().registerTaskConflict(
                         id,
@@ -2128,18 +2187,18 @@ export const useTaskStore = create<TaskState>((set, get) => {
         set((state) => {
             const recordedConflictGeneration = state.taskConflicts[id]?.generation;
             const conflictGeneration = recordedConflictGeneration ?? state.editGenerations[id] ?? 0;
-            const remoteTask = state.serverTaskSnapshot.entitiesById[id];
+            const conflictRecord = state.taskConflicts[id];
+            const remoteTask = conflictRecord?.remoteEntity ?? state.serverTaskSnapshot.entitiesById[id];
+            if (!remoteTask) return state;
             const laterPatches = remoteTask && recordedConflictGeneration !== undefined
                 ? (state.localTaskPatches[id] ?? []).filter(patch => patch.generation > conflictGeneration)
                 : [];
             const resolvedTask = remoteTask && laterPatches.length > 0
                 ? applyLocalPatches(remoteTask, laterPatches)
                 : remoteTask;
-            const allTasks = remoteTask
-                ? state.allTasks.some(task => task.id === id)
-                    ? state.allTasks.map(task => task.id === id ? resolvedTask : task)
-                    : [...state.allTasks, resolvedTask]
-                : state.allTasks.filter(task => task.id !== id);
+            const allTasks = state.allTasks.some(task => task.id === id)
+                ? state.allTasks.map(task => task.id === id ? resolvedTask : task)
+                : [...state.allTasks, resolvedTask];
             const derived = buildDerivedTaskState(state, { allTasks });
             const localTaskPatches = { ...state.localTaskPatches };
             if (laterPatches.length > 0) {
@@ -2154,11 +2213,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 modifiedTaskIds.delete(id);
             }
             const taskTombstones = { ...state.taskTombstones };
-            if (remoteTask) {
-                delete taskTombstones[id];
-            } else {
-                taskTombstones[id] = { entityId: id, deletedAt: Date.now(), source: 'server' };
-            }
+            delete taskTombstones[id];
             const taskConflicts = { ...state.taskConflicts };
             delete taskConflicts[id];
             const settlement = settleBarOperationTaskOwnership(
@@ -2172,6 +2227,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return {
                 allTasks,
                 ...toDerivedTaskStatePatch(derived),
+                serverTaskSnapshot: mergeServerEntity(
+                    state.serverTaskSnapshot,
+                    remoteTask,
+                    'complete',
+                    conflictRecord?.remoteRevision ?? remoteTask.lockVersion
+                ),
                 localTaskPatches,
                 modifiedTaskIds,
                 taskTombstones,
@@ -2746,6 +2807,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     },
                     (taskId, result) => {
                         get().applyTaskMutationMetadata(taskId, result);
+                        if (result.status === 'conflict') {
+                            get().registerTaskConflict(
+                                taskId,
+                                result.error || (i18n.t('label_conflict') || 'Conflict'),
+                                snapshotGenerations[taskId],
+                                result.entity,
+                                result.revision ?? result.entity?.lockVersion
+                            );
+                        }
                         if (result.status === 'ok') {
                             get().settleBarOperationTaskThrough(taskId, snapshotGenerations[taskId] ?? 0);
                         } else if (result.status === 'validation_error' || result.status === 'forbidden' || result.status === 'not_found') {
