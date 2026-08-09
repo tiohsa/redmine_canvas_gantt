@@ -124,6 +124,20 @@ const loadCanvasPage = async (page: Page, redmineBase: string, projectIdentifier
   await expect(page.getByText('Loading Canvas Gantt...')).toHaveCount(0);
 };
 
+const enableAutoSave = async (page: Page) => {
+  await page.getByTestId('display-settings-menu-button').click();
+  const autoSave = page.getByLabel('Auto Save');
+  if (!(await autoSave.isChecked())) await autoSave.check({ force: true });
+  await expect(autoSave).toBeChecked();
+};
+
+const disableAutoSave = async (page: Page) => {
+  await page.getByTestId('display-settings-menu-button').click();
+  const autoSave = page.getByLabel('Auto Save');
+  if (await autoSave.isChecked()) await autoSave.uncheck({ force: true });
+  await expect(autoSave).not.toBeChecked();
+};
+
 const fetchRestIssue = async (page: Page, issueId: number): Promise<{
   subject: string;
   startDate: string | null;
@@ -369,6 +383,7 @@ test('sidebar inline status edit surfaces a real conflict without overwriting th
   });
 
   await loadCanvasPage(page, redmineBase, 'ecookbook', '?sort=id:desc');
+  await enableAutoSave(page);
 
   const statusCell = page.getByTestId(`cell-${issueId}-status`);
   await expect(statusCell).toBeVisible();
@@ -413,6 +428,7 @@ test('sidebar inline status edit keep-local retry persists the local status afte
   });
 
   await loadCanvasPage(page, redmineBase, 'ecookbook', '?sort=id:desc');
+  await enableAutoSave(page);
   page.on('request', (request) => {
     if (request.method() !== 'PATCH' || !request.url().includes(`/tasks/${issueId}.json`)) return;
     const body = request.postDataJSON() as { task?: Record<string, unknown> } | null;
@@ -464,6 +480,52 @@ test('sidebar inline status edit keep-local retry persists the local status afte
   const afterKeepLocal = await fetchRestIssue(page, issueId);
   expect(afterKeepLocal.subject).toBe(remoteSubject);
   expect(afterKeepLocal.statusId).toBe(Number(nextStatus));
+});
+
+test('Auto Save OFF defers the inline mutation until the manual Save action', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, 'ecookbook');
+
+  const issueId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas Gantt manual save')
+  });
+
+  await loadCanvasPage(page, redmineBase, 'ecookbook', '?sort=id:desc');
+  await disableAutoSave(page);
+
+  const before = await fetchRestIssue(page, issueId);
+  const pluginPatchStatuses: number[] = [];
+  page.on('response', (response) => {
+    if (response.request().method() === 'PATCH' && response.url().includes(`/tasks/${issueId}.json`)) {
+      pluginPatchStatuses.push(response.status());
+    }
+  });
+
+  const statusCell = page.getByTestId(`cell-${issueId}-status`);
+  await expect(statusCell).toBeVisible();
+  await statusCell.dblclick();
+  const statusSelect = statusCell.locator('select');
+  await expect(statusSelect).toBeVisible();
+  const nextStatus = await statusSelect.evaluate((select) => {
+    const current = (select as HTMLSelectElement).value;
+    const option = Array.from((select as HTMLSelectElement).options).find((candidate) => candidate.value !== current);
+    return option?.value ?? '';
+  });
+  expect(nextStatus).not.toBe('');
+  await statusSelect.selectOption(nextStatus);
+
+  const saveButton = page.getByTitle('Save changes');
+  await expect(saveButton).toBeVisible();
+  expect(pluginPatchStatuses).toHaveLength(0);
+  const beforeManualSave = await fetchRestIssue(page, issueId);
+  expect(beforeManualSave.statusId).toBe(before.statusId);
+
+  await saveButton.click();
+  await expect.poll(() => pluginPatchStatuses.length).toBeGreaterThan(0);
+  expect(pluginPatchStatuses).toContain(200);
+  const afterManualSave = await fetchRestIssue(page, issueId);
+  expect(afterManualSave.statusId).toBe(Number(nextStatus));
 });
 
 test('plugin task mutation returns not_found for an issue outside the current Redmine scope', async ({ page, baseURL }) => {

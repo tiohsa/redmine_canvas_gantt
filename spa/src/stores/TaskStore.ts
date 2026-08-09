@@ -36,6 +36,7 @@ import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/b
 import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
+import { classifyMutationSourceDisposition } from '../api/mutationOutcome';
 import type { MutationRemoteAvailability } from '../api/mutationOutcome';
 import { buildTaskMutationDelta, BULK_TASK_FIELDS, PERSISTABLE_TASK_FIELDS, taskMutationFields, taskMutationService, type TaskFields } from '../services/taskMutationService';
 import {
@@ -2163,8 +2164,17 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         get().settleBarOperationTaskThrough(id, maxRetryGeneration);
                         return;
                     }
-                    if (result.status === 'not_found') {
+                    const sourceDisposition = classifyMutationSourceDisposition(result);
+                    if (sourceDisposition === 'target_missing') {
                         get().markTaskTombstone(id, 'server');
+                        return;
+                    }
+                    if (sourceDisposition === 'reference_missing' || sourceDisposition === 'source_preserved') {
+                        useUIStore.getState().addNotification(
+                            result.error || (i18n.t('label_failed_to_save') || 'Failed to save'),
+                            'error'
+                        );
+                        return;
                     }
                     if (result.status === 'conflict') {
                         get().registerTaskConflict(id, result.error || (i18n.t('label_conflict') || 'Conflict'), retryGeneration, result.entity, result.revision ?? result.entity?.lockVersion);
@@ -2782,6 +2792,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const snapshotGenerations = { ...snapshot.editGenerations };
                 const snapshotTaskIds = new Set(snapshot.modifiedTaskIds);
                 const snapshotMutationFields: Record<string, TaskFields> = {};
+                const snapshotMutationScheduling: Record<string, boolean> = {};
                 const unsupportedMutationFailures = new Map<string, string>();
                 snapshotTaskIds.forEach((taskId) => {
                     if (snapshot.taskConflicts[taskId]) {
@@ -2807,16 +2818,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             );
                         } else {
                             snapshotMutationFields[taskId] = delta.fields;
+                            snapshotMutationScheduling[taskId] = delta.affectsScheduling;
                         }
                     }
                 });
                 const terminalBarFailureTaskGenerations = new Map<string, number>();
                 const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number; remoteAvailability: MutationRemoteAvailability }>();
-                const hasScheduleMutation = [...snapshotTaskIds].some(taskId => (
-                    (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
-                        BULK_TASK_FIELDS.some(field => field in patch.fields)
-                    ))
-                ));
+                const hasScheduleMutation = Object.values(snapshotMutationScheduling).some(Boolean);
                 invalidateDataRequests();
                 const saveResult = await saveModifiedTasks(
                     snapshot.allTasks,
@@ -2855,9 +2863,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     },
                     (taskId, result) => {
                         get().applyTaskMutationMetadata(taskId, result);
+                        const sourceDisposition = classifyMutationSourceDisposition(result);
                         if (result.status === 'ok') {
                             get().settleBarOperationTaskThrough(taskId, snapshotGenerations[taskId] ?? 0);
-                        } else if (result.status === 'validation_error' || result.status === 'forbidden' || result.status === 'not_found') {
+                        } else if (result.status === 'validation_error' || result.status === 'forbidden' || sourceDisposition !== 'not_applicable') {
                             const operationGeneration = snapshotGenerations[taskId] ?? 0;
                             const hasBarOperation = Object.values(get().barOperations).some((operation) => (
                                 operation.entityGenerations[taskId] === operationGeneration
@@ -2866,7 +2875,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                                 terminalBarFailureTaskGenerations.set(taskId, operationGeneration);
                             }
                         }
-                        if (result.status === 'not_found' && (!result.failure?.resourceRole || result.failure.resourceRole === 'target')) {
+                        if (classifyMutationSourceDisposition(result) === 'target_missing') {
                             get().markTaskTombstone(taskId, 'server');
                         }
                     },
@@ -2898,7 +2907,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     },
                     snapshotGenerations,
                     snapshotMutationFields,
-                    unsupportedMutationFailures
+                    unsupportedMutationFailures,
+                    snapshotMutationScheduling
                 );
                 const { failures, savedTaskIds } = saveResult;
 

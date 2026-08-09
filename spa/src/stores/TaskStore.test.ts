@@ -1678,6 +1678,37 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(useTaskStore.getState().barOperations).toEqual({});
     });
 
+    it('preserves the source task and local intent when Keep Local retry loses a reference', async () => {
+        useUIStore.setState(useUIStore.getInitialState(), true);
+        const localTask = buildTask({ id: 'task-1', parentId: undefined, lockVersion: 1 });
+        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().updateTask('task-1', { parentId: 'missing-parent' });
+        const conflictGeneration = useTaskStore.getState().editGenerations['task-1'];
+        useTaskStore.getState().registerTaskConflict(
+            'task-1',
+            'Conflict',
+            conflictGeneration,
+            { ...localTask, lockVersion: 2 },
+            2
+        );
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
+            status: 'not_found',
+            error: 'Parent task no longer exists',
+            failure: { kind: 'not_found', resourceRole: 'reference', resourceType: 'parent_task' }
+        });
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'local');
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === 'task-1')).toBeDefined();
+        expect(state.taskTombstones['task-1']).toBeUndefined();
+        expect(state.serverTaskSnapshot.entitiesById['task-1']).toBeDefined();
+        expect(state.localTaskPatches['task-1']).toBeDefined();
+        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+        expect(state.taskConflicts['task-1']).toBeUndefined();
+        expect(useUIStore.getState().notifications.some(notification => notification.message.includes('Parent task no longer exists'))).toBe(true);
+    });
+
     it('retries inline conflict resolution with the local field payload and current lock version', async () => {
         vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 3 });
         const localTask = buildTask({ id: 'task-1', statusId: 1, statusName: 'New', lockVersion: 1 });

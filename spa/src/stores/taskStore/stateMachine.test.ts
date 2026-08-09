@@ -105,10 +105,16 @@ const applyMutationTransition = (machine: TransitionMachine, input: TransitionIn
         machine.retryCounts.set(operationId, Math.min(1, retries + 1));
         if (retries < 1) machine.queuedOperationIds.add(operationId);
     } else if (outcome.status === 'not_found') {
-        machine.patches = machine.patches.filter((patch) => patch.entityId !== entityId);
-        machine.snapshot = removeEntityFromSnapshot(machine.snapshot, entityId);
-        machine.tombstones.add(entityId);
-        machine.conflicts.delete(entityId);
+        const failure = input.response && typeof input.response === 'object'
+            ? (input.response as { failure?: { resource_role?: string } }).failure
+            : undefined;
+        const resourceRole = failure?.resource_role;
+        if (resourceRole === undefined || resourceRole === 'target') {
+            machine.patches = machine.patches.filter((patch) => patch.entityId !== entityId);
+            machine.snapshot = removeEntityFromSnapshot(machine.snapshot, entityId);
+            machine.tombstones.add(entityId);
+            machine.conflicts.delete(entityId);
+        }
     } else if (input.rollbackTerminal) {
         machine.patches = commitOperationPatches(machine.patches, operationId);
         machine.conflicts.delete(entityId);
@@ -141,12 +147,26 @@ describe('state lifecycle reference model', () => {
             expected: { committed: false, rollback: true, tombstone: false, conflict: false, retry: false, dirty: false }
         },
         {
-            label: 'not_found',
+            label: 'legacy not_found',
             response: { status: 'not_found', error: 'gone' },
             rollbackTerminal: false,
             remoteMatchesLocal: false,
             expected: { committed: false, rollback: false, tombstone: true, conflict: false, retry: false, dirty: false }
         },
+        ...(['target', 'reference', 'relation', 'scope'] as const).map((resourceRole) => ({
+            label: `not_found ${resourceRole}`,
+            response: { status: 'not_found', error: 'gone', failure: { kind: 'not_found', resource_role: resourceRole } },
+            rollbackTerminal: false,
+            remoteMatchesLocal: false,
+            expected: {
+                committed: false,
+                rollback: false,
+                tombstone: resourceRole === 'target',
+                conflict: false,
+                retry: false,
+                dirty: resourceRole !== 'target'
+            }
+        })),
         {
             label: 'conflict same',
             response: { status: 'conflict', error: 'stale' },

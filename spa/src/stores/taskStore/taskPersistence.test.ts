@@ -21,6 +21,10 @@ const dueDateIntent = (tasks: Task[]): Record<string, TaskFields> => Object.from
     tasks.map(task => [task.id, { due_date: task.dueDate }])
 );
 
+const schedulingIntent = (taskIds: Array<string | Task>): Record<string, boolean> => Object.fromEntries(
+    taskIds.map(task => [typeof task === 'string' ? task : task.id, true])
+);
+
 describe('saveModifiedTasks', () => {
     it('fails a modified task with no explicit mutation intent before sending a request', async () => {
         const updateTask = vi.fn();
@@ -228,7 +232,7 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks)
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks), undefined, schedulingIntent(tasks)
         );
 
         expect(result.failures).toEqual(new Map());
@@ -257,7 +261,7 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks)
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks), undefined, schedulingIntent(tasks)
         );
 
         await vi.waitFor(() => expect(updateTask).toHaveBeenCalledTimes(8));
@@ -286,7 +290,7 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks: [buildTask({ id: 'A' })] }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent([buildTask({ id: 'A' })])
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent([buildTask({ id: 'A' })]), undefined, schedulingIntent(['A'])
         );
 
         expect(updateTask).toHaveBeenCalledTimes(2);
@@ -318,12 +322,114 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks)
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks), undefined, schedulingIntent(tasks.map(task => task.id))
         );
 
         expect(result.failures).toEqual(new Map());
         expect(result.savedTaskIds).toEqual(new Set(['A', 'B', 'C']));
         expect(savedIds).toEqual(['A', 'B', 'C']);
+    });
+
+    it.each([
+        { label: 'ordinary -> ordinary', scheduling: { A: false, B: false } },
+        { label: 'schedule -> ordinary', scheduling: { A: true, B: false } },
+        { label: 'ordinary -> schedule', scheduling: { A: false, B: true } }
+    ])('does not block $label after an unrelated predecessor failure', async ({ scheduling }) => {
+        const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
+        const updateTask = vi.fn().mockImplementation(async (task: Task) => (
+            task.id === 'A'
+                ? { status: 'validation_error' as const, error: 'invalid A' }
+                : { status: 'ok' as const, lockVersion: 2 }
+        ));
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [{ id: 'AB', from: 'A', to: 'B', type: 'precedes' }],
+            new Set(['A', 'B']),
+            [],
+            updateTask,
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, undefined, undefined, undefined,
+            { A: { subject: 'A' }, B: { status_id: 2 } },
+            undefined,
+            scheduling
+        );
+
+        expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A', 'B']);
+        expect(result.savedTaskIds).toEqual(new Set(['B']));
+        expect(result.failures.get('A')).toBe('invalid A');
+        expect(result.failures.has('B')).toBe(false);
+    });
+
+    it('blocks a schedule successor after a schedule predecessor failure', async () => {
+        const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
+        const updateTask = vi.fn().mockImplementation(async (task: Task) => (
+            task.id === 'A'
+                ? { status: 'validation_error' as const, error: 'invalid A' }
+                : { status: 'ok' as const, lockVersion: 2 }
+        ));
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [{ id: 'AB', from: 'A', to: 'B', type: 'precedes' }],
+            new Set(['A', 'B']),
+            [],
+            updateTask,
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, undefined, undefined, undefined,
+            { A: { due_date: 3 }, B: { start_date: 4 } },
+            undefined,
+            { A: true, B: true }
+        );
+
+        expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A']);
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.failures.get('B')).toContain('predecessor A');
+    });
+
+    it('keeps mixed schedule successor atomic while applying schedule dependency', async () => {
+        const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
+        const updateTask = vi.fn().mockResolvedValue({ status: 'validation_error' as const, error: 'invalid A' });
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [{ id: 'AB', from: 'A', to: 'B', type: 'precedes' }],
+            new Set(['A', 'B']),
+            [],
+            updateTask,
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, undefined, undefined, undefined,
+            { A: { due_date: 3 }, B: { subject: 'B', start_date: 4 } },
+            undefined,
+            { A: true, B: true }
+        );
+
+        expect(updateTask).toHaveBeenCalledTimes(1);
+        expect(result.failures.get('B')).toContain('predecessor A');
+    });
+
+    it('does not preflight a cycle when all modified intents are ordinary', async () => {
+        const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
+        const updateTask = vi.fn().mockResolvedValue({ status: 'ok' as const, lockVersion: 2 });
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [
+                { id: 'AB', from: 'A', to: 'B', type: 'precedes' },
+                { id: 'BA', from: 'B', to: 'A', type: 'precedes' }
+            ],
+            new Set(['A', 'B']),
+            [],
+            updateTask,
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, undefined, undefined, undefined,
+            { A: { subject: 'A' }, B: { status_id: 2 } },
+            undefined,
+            { A: false, B: false }
+        );
+
+        expect(updateTask).toHaveBeenCalledTimes(2);
+        expect(result.batchStatus).toBe('completed');
     });
 
     it('uses the shared predecessor direction for follows relations', async () => {
@@ -347,7 +453,7 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks)
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks), undefined, schedulingIntent(tasks.map(task => task.id))
         );
 
         expect(result.failures).toEqual(new Map());
@@ -377,7 +483,7 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks)
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks), undefined, schedulingIntent(tasks.map(task => task.id))
         );
 
         expect(result.failures).toEqual(new Map());
@@ -409,7 +515,7 @@ describe('saveModifiedTasks', () => {
             vi.fn().mockResolvedValue({ tasks }),
             undefined,
             onTaskResult,
-            undefined, undefined, undefined, dueDateIntent(tasks)
+            undefined, undefined, undefined, dueDateIntent(tasks), undefined, schedulingIntent(tasks.map(task => task.id))
         );
 
         expect(updateTask).not.toHaveBeenCalled();
@@ -439,7 +545,7 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks)
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks), undefined, schedulingIntent(tasks.map(task => task.id))
         );
 
         expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A']);
@@ -465,7 +571,7 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks)
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks), undefined, schedulingIntent(tasks.map(task => task.id))
         );
 
         expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A', 'A']);
@@ -493,7 +599,7 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks)
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks), undefined, schedulingIntent(tasks.map(task => task.id))
         );
 
         expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A', 'B']);
@@ -528,7 +634,7 @@ describe('saveModifiedTasks', () => {
             },
             undefined,
             () => terminalFailure,
-            {}, dueDateIntent(tasks)
+            {}, dueDateIntent(tasks), undefined, schedulingIntent(tasks.map(task => task.id))
         );
 
         expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A']);
@@ -561,7 +667,7 @@ describe('saveModifiedTasks', () => {
             undefined,
             undefined,
             (taskId) => taskId === 'B',
-            {}, dueDateIntent(tasks)
+            {}, dueDateIntent(tasks), undefined, schedulingIntent(tasks.map(task => task.id))
         );
 
         expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A', 'C']);
@@ -598,7 +704,7 @@ describe('saveModifiedTasks', () => {
             new Set(['A', 'B']),
             [],
             updateTask,
-            fetchData, undefined, undefined, undefined, undefined, undefined, dueDateIntent([local, other])
+            fetchData, undefined, undefined, undefined, undefined, undefined, dueDateIntent([local, other]), undefined, schedulingIntent(['A', 'B'])
         );
 
         expect(updateTask.mock.calls.filter(([task]) => task.id === 'A')).toHaveLength(1);
@@ -642,7 +748,7 @@ describe('saveModifiedTasks', () => {
 
         const result = await saveModifiedTasks(
             [local], [], new Set(['A']), [], updateTask, fetchData, undefined, undefined, onConflict,
-            undefined, undefined, dueDateIntent([local])
+            undefined, undefined, dueDateIntent([local]), undefined, schedulingIntent(['A'])
         );
 
         expect(fetchData).not.toHaveBeenCalled();
@@ -685,7 +791,7 @@ describe('saveModifiedTasks', () => {
         const result = await saveModifiedTasks(
             [local], [], new Set(['A']), [], updateTask,
             vi.fn().mockResolvedValue({ tasks: [remote] }), onTaskSaved,
-            undefined, undefined, undefined, undefined, dueDateIntent([local])
+            undefined, undefined, undefined, undefined, dueDateIntent([local]), undefined, schedulingIntent(['A'])
         );
 
         expect(result.savedTaskIds).toEqual(new Set(['A']));
@@ -733,7 +839,7 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks: [remote] }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent([local])
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent([local]), undefined, schedulingIntent(['A'])
         );
 
         expect(updateTask).toHaveBeenCalledTimes(1);
@@ -824,7 +930,7 @@ describe('saveModifiedTasks', () => {
             undefined,
             undefined,
             onConflict,
-            undefined, undefined, dueDateIntent([localA, localB])
+            undefined, undefined, dueDateIntent([localA, localB]), undefined, schedulingIntent(['A', 'B'])
         );
 
         expect(fetchData).toHaveBeenCalledTimes(1);
@@ -853,7 +959,7 @@ describe('saveModifiedTasks', () => {
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks }),
-            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks)
+            undefined, undefined, undefined, undefined, undefined, dueDateIntent(tasks), undefined, schedulingIntent(tasks.map(task => task.id))
         );
 
         expect(updateTask.mock.calls.map(([task]) => task.id)).toEqual(['A']);

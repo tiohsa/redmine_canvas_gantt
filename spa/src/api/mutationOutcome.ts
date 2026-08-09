@@ -12,6 +12,8 @@ export type MutationFailure = {
     remoteAvailability?: MutationRemoteAvailability;
 };
 
+export type MutationSourceDisposition = 'target_missing' | 'reference_missing' | 'source_preserved' | 'not_applicable';
+
 export type MutationOutcome = {
     kind: MutationOutcomeKind;
     status?: MutationStatusValue | 'error' | 'protocol_error';
@@ -28,16 +30,20 @@ const parseMutationFailure = (value: unknown): MutationFailure | undefined => {
     const record = value as Record<string, unknown>;
     const kind = record.kind;
     if (typeof kind !== 'string' || !isMutationStatus(kind)) return undefined;
-    const role = record.resource_role;
-    const remoteAvailability = record.remote_availability;
+    const role = record.resource_role ?? record.resourceRole;
+    const resourceType = record.resource_type ?? record.resourceType;
+    const resourceId = record.resource_id ?? record.resourceId;
+    const remoteAvailability = record.remote_availability ?? record.remoteAvailability;
     return {
         kind,
         ...(role === 'target' || role === 'reference' || role === 'relation' || role === 'scope'
             ? { resourceRole: role }
             : {}),
-        ...(typeof record.resource_type === 'string' ? { resourceType: record.resource_type } : {}),
-        ...(record.resource_id !== undefined && record.resource_id !== null
-            ? { resourceId: String(record.resource_id) }
+        ...(typeof resourceType === 'string'
+            ? { resourceType }
+            : {}),
+        ...(resourceId !== undefined && resourceId !== null
+            ? { resourceId: String(resourceId) }
             : {}),
         ...(remoteAvailability === 'known' || remoteAvailability === 'needs_refresh' || remoteAvailability === 'unavailable' || remoteAvailability === 'unknown'
             ? { remoteAvailability }
@@ -107,9 +113,20 @@ export const classifyMutationError = (error: unknown): MutationOutcome => {
     };
 };
 
-export const isTargetTaskNotFound = (value: unknown): boolean => {
+export const classifyMutationSourceDisposition = (value: unknown): MutationSourceDisposition => {
     const outcome = classifyMutationResult(value);
-    return outcome.status === 'not_found' &&
-        (outcome.failure?.resourceRole === undefined || outcome.failure.resourceRole === 'target') &&
-        (outcome.failure?.resourceType === undefined || outcome.failure.resourceType === 'task');
+    if (outcome.status !== 'not_found') return 'not_applicable';
+
+    const role = outcome.failure?.resourceRole;
+    if (role === 'reference') return 'reference_missing';
+    if (role === 'target' || role === undefined) {
+        if (outcome.failure?.resourceType === undefined || outcome.failure.resourceType === 'task') {
+            return 'target_missing';
+        }
+    }
+    return 'source_preserved';
+};
+
+export const isTargetTaskNotFound = (value: unknown): boolean => {
+    return classifyMutationSourceDisposition(value) === 'target_missing';
 };

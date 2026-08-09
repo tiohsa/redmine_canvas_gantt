@@ -63,7 +63,8 @@ describe('lifecycle resource gates', () => {
             new Set(localTasks.map((task) => task.id)),
             [],
             updateTask,
-            fetchData, undefined, undefined, undefined, undefined, undefined, dueDateIntent(localTasks)
+            fetchData, undefined, undefined, undefined, undefined, undefined, dueDateIntent(localTasks), undefined,
+            Object.fromEntries(localTasks.map(task => [task.id, true]))
         );
 
         expect(updateTask).toHaveBeenCalledTimes(1000);

@@ -5,7 +5,7 @@ import type { LayoutState } from './types';
 import type { TaskLayoutSnapshot } from './types';
 import type { MutationMetadata, MutationStatus } from '../../api/client';
 import type { LocalPatch, ServerSnapshot } from './stateContract';
-import { classifyMutationError, classifyMutationResult } from '../../api/mutationOutcome';
+import { classifyMutationError, classifyMutationResult, classifyMutationSourceDisposition } from '../../api/mutationOutcome';
 
 type UpdateTaskFieldsResult = MutationMetadata & {
     status: MutationStatus;
@@ -114,14 +114,15 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
                 );
                 return;
             }
-            if (completedResult.status === 'not_found') {
-                if (completedResult.failure?.resourceRole === 'reference') {
+            const sourceDisposition = classifyMutationSourceDisposition(completedResult);
+            if (sourceDisposition !== 'not_applicable') {
+                if (sourceDisposition === 'target_missing') {
+                    onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
+                } else {
                     if (ownsOperation(getState(), sourceBefore, operationGeneration)) {
                         rollbackOperation?.(operationGeneration, sourceBefore);
                         if (!rollbackOperation) restoreSnapshot(snapshot);
                     }
-                } else {
-                    onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
                 }
                 return;
             }
@@ -133,18 +134,19 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
         },
         onError: (error, context) => {
             const errorOutcome = classifyMutationError(error);
-            if (errorOutcome.status === 'not_found') {
-                if (errorOutcome.failure?.resourceRole === 'reference') {
+            const sourceDisposition = classifyMutationSourceDisposition(error);
+            if (sourceDisposition !== 'not_applicable') {
+                if (sourceDisposition === 'target_missing') {
+                    onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
+                } else {
                     if (ownsOperation(getState(), sourceBefore, operationGeneration)) {
                         rollbackOperation?.(operationGeneration, sourceBefore);
                         if (!rollbackOperation) restoreSnapshot(snapshot);
                     }
-                } else {
-                    onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
                 }
                 return;
             }
-            if (classifyMutationError(error).kind === 'transient') return;
+            if (errorOutcome.kind === 'transient') return;
             if (ownsOperation(getState(), sourceBefore, operationGeneration)) {
                 rollbackOperation?.(operationGeneration, sourceBefore);
                 if (!rollbackOperation) restoreSnapshot(snapshot);

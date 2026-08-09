@@ -2,7 +2,7 @@ import type { Task } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
 import { taskMutationService } from './taskMutationService';
-import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
+import { classifyMutationError, classifyMutationResult, classifyMutationSourceDisposition } from '../api/mutationOutcome';
 import { formatDateOnly } from '../utils/dateOnly';
 import { hasLocalPatchOwnership } from '../stores/taskStore/stateContract';
 import { useUIStore } from '../stores/UIStore';
@@ -69,9 +69,7 @@ export class InlineEditService {
                             );
                             return;
                         }
-                        if (completedResult.status === 'not_found' &&
-                            (!completedResult.failure?.resourceRole || completedResult.failure.resourceRole === 'target') &&
-                            ownsOperation()) {
+                        if (classifyMutationSourceDisposition(completedResult) === 'target_missing' && ownsOperation()) {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');
                             return;
                         }
@@ -82,9 +80,7 @@ export class InlineEditService {
                     },
                     onError: (error) => {
                         const outcome = classifyMutationError(error);
-                        if (outcome.status === 'not_found' &&
-                            (!outcome.failure?.resourceRole || outcome.failure.resourceRole === 'target') &&
-                            ownsOperation()) {
+                        if (classifyMutationSourceDisposition(error) === 'target_missing' && ownsOperation()) {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');
                             return;
                         }

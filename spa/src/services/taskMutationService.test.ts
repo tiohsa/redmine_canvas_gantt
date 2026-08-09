@@ -4,7 +4,12 @@ import {
     enqueueMutationOperation,
     getMutationOperationRecords
 } from '../stores/taskStore/taskPersistence';
-import { PERSISTABLE_TASK_FIELDS, taskMutationFields, taskMutationService } from './taskMutationService';
+import {
+    PERSISTABLE_TASK_FIELDS,
+    taskMutationAffectsScheduling,
+    taskMutationFields,
+    taskMutationService
+} from './taskMutationService';
 
 describe('taskMutationService mutation boundary', () => {
     afterEach(() => {
@@ -47,6 +52,15 @@ describe('taskMutationService mutation boundary', () => {
             author_id: 9,
             custom_field_values: { '10': 'value' }
         });
+    });
+
+    it.each([
+        { fields: ['subject'], expected: false },
+        { fields: ['statusId', 'priorityId'], expected: false },
+        { fields: ['dueDate'], expected: true },
+        { fields: ['subject', 'startDate'], expected: true }
+    ])('classifies $fields as scheduling=$expected from canonical fields', ({ fields, expected }) => {
+        expect(taskMutationAffectsScheduling(fields)).toBe(expected);
     });
 
     it('keeps non-bulk status results single-shot while recording the common outcome', async () => {

@@ -34,6 +34,7 @@ export type MutationIntent = {
     taskId: string;
     generation: number;
     fields: TaskFields;
+    affectsScheduling: boolean;
 };
 
 const hasPersistableIntentFields = (fields: TaskFields): boolean => Object.keys(fields).length > 0;
@@ -271,7 +272,8 @@ export const saveModifiedTasks = async (
     shouldAbortRemaining?: (taskId: string) => boolean,
     mutationGenerations: Record<string, number> = {},
     mutationFields: Record<string, TaskFields> = {},
-    preflightFailures: Map<string, string> = new Map()
+    preflightFailures: Map<string, string> = new Map(),
+    mutationScheduling: Record<string, boolean> = {}
 ): Promise<SaveModifiedTasksResult> => {
     const mutableTaskById = new Map(tasks.map(task => [task.id, { ...task }]));
     const depthCache = new Map<string, number>();
@@ -291,12 +293,15 @@ export const saveModifiedTasks = async (
     };
     const modifiedIdSet = new Set(Array.from(modifiedTaskIds));
     const modifiedTasks = tasks.filter(task => modifiedIdSet.has(task.id));
-    const dependencyOrder = new Map(modifiedTasks.map(task => [task.id, 0]));
-    const dependencyIndegree = new Map(modifiedTasks.map(task => [task.id, 0]));
+    const schedulingTaskIds = new Set(modifiedTasks
+        .filter(task => mutationScheduling[task.id] === true)
+        .map(task => task.id));
+    const dependencyOrder = new Map([...schedulingTaskIds].map(taskId => [taskId, 0]));
+    const dependencyIndegree = new Map([...schedulingTaskIds].map(taskId => [taskId, 0]));
     const dependencyOutgoing = new Map<string, string[]>();
     const dependencyPredecessors = new Map<string, Set<string>>();
     const dependencyEdges = buildSchedulingEdges(relations).filter(({ predecessorId, successorId }) => (
-        dependencyOrder.has(predecessorId) && dependencyOrder.has(successorId)
+        schedulingTaskIds.has(predecessorId) && schedulingTaskIds.has(successorId)
     ));
 
     dependencyEdges.forEach(({ predecessorId, successorId }) => {
@@ -310,9 +315,8 @@ export const saveModifiedTasks = async (
     });
 
     const rankIndegree = new Map(dependencyIndegree);
-    const readyTaskIds = modifiedTasks
-        .filter(task => rankIndegree.get(task.id) === 0)
-        .map(task => task.id);
+    const readyTaskIds = [...schedulingTaskIds]
+        .filter(taskId => rankIndegree.get(taskId) === 0);
     for (let queueIndex = 0; queueIndex < readyTaskIds.length; queueIndex += 1) {
         const predecessorId = readyTaskIds[queueIndex];
         const predecessorOrder = dependencyOrder.get(predecessorId) ?? 0;
@@ -522,7 +526,8 @@ export const saveModifiedTasks = async (
             const intent: MutationIntent = {
                 taskId,
                 generation: mutationGenerations[taskId] ?? 0,
-                fields: mutationFields[taskId]!
+                fields: mutationFields[taskId]!,
+                affectsScheduling: mutationScheduling[taskId] === true
             };
             if (!hasPersistableIntentFields(intent.fields)) {
                 pendingTaskIds.delete(taskId);

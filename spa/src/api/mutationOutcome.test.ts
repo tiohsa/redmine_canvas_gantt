@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    classifyMutationSourceDisposition,
     classifyMutationError,
     classifyMutationResult,
     classifyMutationStatus,
@@ -45,6 +46,23 @@ describe('mutation outcome classification', () => {
                 resourceType: 'parent_task'
             }
         });
+    });
+
+    it.each([
+        { label: 'legacy role-less task', response: { status: 'not_found' }, expected: 'target_missing' },
+        { label: 'target task', response: { status: 'not_found', failure: { kind: 'not_found', resource_role: 'target', resource_type: 'task' } }, expected: 'target_missing' },
+        { label: 'reference', response: { status: 'not_found', failure: { kind: 'not_found', resource_role: 'reference', resource_type: 'parent_task' } }, expected: 'reference_missing' },
+        { label: 'relation', response: { status: 'not_found', failure: { kind: 'not_found', resource_role: 'relation', resource_type: 'relation' } }, expected: 'source_preserved' },
+        { label: 'scope', response: { status: 'not_found', failure: { kind: 'not_found', resource_role: 'scope', resource_type: 'task' } }, expected: 'source_preserved' }
+    ] as const)('classifies $label source disposition without relying on HTTP status alone', ({ response, expected }) => {
+        expect(classifyMutationSourceDisposition(response)).toBe(expected);
+    });
+
+    it('accepts normalized camelCase failure metadata from the API client', () => {
+        expect(classifyMutationSourceDisposition({
+            status: 'not_found',
+            failure: { kind: 'not_found', resourceRole: 'reference', resourceType: 'parent_task' }
+        })).toBe('reference_missing');
     });
 
     it('treats resolved mutation results with failed rows as terminal domain failures', () => {

@@ -32,6 +32,12 @@ export type BulkTaskMutationDelta = {
     taskId: string;
     generation: number;
     fields: TaskFields;
+    affectsScheduling: boolean;
+};
+
+export const taskMutationAffectsScheduling = (changedFields: Iterable<string>): boolean => {
+    const changed = new Set(changedFields);
+    return BULK_TASK_FIELDS.some(field => changed.has(field));
 };
 
 const TASK_PATCH_MAX_RETRIES = 1;
@@ -167,11 +173,15 @@ export const buildTaskMutationDelta = (
     generation: number,
     task: Parameters<typeof taskMutationFields>[0],
     changedFields: Iterable<string>
-): BulkTaskMutationDelta => ({
-    taskId,
-    generation,
-    fields: taskMutationFields(task, changedFields)
-});
+): BulkTaskMutationDelta => {
+    const changed = [...changedFields];
+    return {
+        taskId,
+        generation,
+        fields: taskMutationFields(task, changed),
+        affectsScheduling: taskMutationAffectsScheduling(changed)
+    };
+};
 
 export const buildBulkTaskMutationDelta = (
     taskId: string,
