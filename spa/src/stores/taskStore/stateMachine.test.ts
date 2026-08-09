@@ -217,6 +217,31 @@ describe('state lifecycle reference model', () => {
         );
     });
 
+    it('keeps a scope failure non-destructive when a later server snapshot contains the task again', () => {
+        const machine = createMachine();
+        beginLocalEdit(machine, 'operation-1', { subject: 'local' });
+
+        applyMutationTransition(machine, {
+            entityId: '1',
+            operationId: 'operation-1',
+            response: {
+                status: 'not_found',
+                error: 'outside Canvas scope',
+                failure: { kind: 'not_found', resource_role: 'scope', resource_type: 'task' }
+            }
+        });
+
+        expect(machine.tombstones.has('1')).toBe(false);
+        expect(machine.snapshot.entitiesById['1']).toBeDefined();
+        expect(machine.patches).toHaveLength(1);
+
+        const refreshedTask = { id: '1', subject: 'server after scope', startDate: 3, dueDate: 4, lockVersion: 2 };
+        machine.snapshot = replaceServerSnapshot(machine.snapshot, [refreshedTask]);
+
+        expect(machine.tombstones.has('1')).toBe(false);
+        expect(machine.snapshot.entitiesById['1']).toEqual(refreshedTask);
+    });
+
     it('keeps retries bounded to one transient retry without committing or rolling back local patches', () => {
         const machine = createMachine();
         beginLocalEdit(machine, 'operation-1', { subject: 'local' });

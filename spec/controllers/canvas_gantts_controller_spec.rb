@@ -778,6 +778,16 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(JSON.parse(response.body).dig('task', 'id')).to eq(42)
     end
 
+    it 'returns scope not_found when edit_meta receives a visible issue outside the Canvas scope' do
+      allow(controller).to receive(:ensure_issue_in_scope).and_call_original
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1] })
+
+      get :edit_meta, params: { project_id: 'demo', id: '42' }, format: :json
+
+      expect(response).to have_http_status(:not_found)
+      expect(JSON.parse(response.body).dig('failure', 'resource_role')).to eq('scope')
+    end
+
     it 'returns destination-project options when target_project_id is authorized' do
       destination_tracker = instance_double(Tracker, id: 7, name: 'Destination tracker')
       destination_project = instance_double(
@@ -849,6 +859,39 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(body).not_to have_key('editable')
     end
 
+    it 'returns scope not_found when a visible target is outside the Canvas mutation scope' do
+      allow(controller).to receive(:ensure_issue_in_scope).and_call_original
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [2] })
+
+      patch :update, params: { project_id: 'demo', id: '10', task: { subject: 'Out of scope', lock_version: 1 } }, format: :json
+
+      expect(response).to have_http_status(:not_found)
+      expect(JSON.parse(response.body)).to include(
+        'status' => 'not_found',
+        'failure' => include(
+          'kind' => 'not_found',
+          'resource_role' => 'scope',
+          'resource_type' => 'task'
+        )
+      )
+    end
+
+    it 'keeps missing visible targets classified as target not_found' do
+      allow(issue_scope).to receive(:find).with('10').and_raise(ActiveRecord::RecordNotFound)
+
+      patch :update, params: { project_id: 'demo', id: '10', task: { subject: 'Missing', lock_version: 1 } }, format: :json
+
+      expect(response).to have_http_status(:not_found)
+      expect(JSON.parse(response.body)).to include(
+        'status' => 'not_found',
+        'failure' => include(
+          'kind' => 'not_found',
+          'resource_role' => 'target',
+          'resource_type' => 'task'
+        )
+      )
+    end
+
     it 'returns unprocessable entity when setting itself as parent' do
       allow(issue_scope).to receive(:find).and_return(issue)
 
@@ -884,6 +927,28 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body)['status']).to eq('ok')
+    end
+  end
+
+  describe '#ensure_issue_in_operation_scope' do
+    let(:issue) { instance_double(Issue, id: 10) }
+
+    before do
+      allow(controller).to receive(:requested_operation_issue_ids).and_return(Set[10])
+      allow(controller).to receive(:mutation_scope_issues).and_return([])
+    end
+
+    it 'classifies operation scope rejection as scope not_found by default' do
+      expect(controller).to receive(:render) do |json:, status:|
+        expect(status).to eq(:not_found)
+        expect(json[:failure]).to include(
+          kind: 'not_found',
+          resource_role: 'scope',
+          resource_type: 'task'
+        )
+      end
+
+      expect(controller.send(:ensure_issue_in_operation_scope, issue)).to be(false)
     end
   end
 
@@ -949,6 +1014,18 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:forbidden)
       expect(JSON.parse(response.body)).to eq('error' => 'Permission denied')
+    end
+
+    it 'returns scope not_found and does not delete a visible issue outside the Canvas scope' do
+      allow(controller).to receive(:ensure_issue_in_scope).and_call_original
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [2] })
+      allow(issue).to receive(:destroy)
+
+      delete :destroy_task, params: { project_id: 'demo', id: '10' }, format: :json
+
+      expect(response).to have_http_status(:not_found)
+      expect(JSON.parse(response.body).dig('failure', 'resource_role')).to eq('scope')
+      expect(issue).not_to have_received(:destroy)
     end
 
     it 'does not use current view membership as mutation authorization' do

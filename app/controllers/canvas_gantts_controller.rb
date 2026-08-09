@@ -944,7 +944,7 @@ class CanvasGanttsController < ApplicationController
     query.visibility.to_i == 2
   end
 
-  def ensure_issue_in_scope(issue, resource_role: 'target', resource_type: 'task')
+  def ensure_issue_in_scope(issue, resource_role: 'scope', resource_type: 'task')
     return true if mutation_scope_issue?(issue)
 
     render json: mutation_failure_response(
@@ -1337,7 +1337,7 @@ class CanvasGanttsController < ApplicationController
     target_project
   end
 
-  def ensure_issue_in_operation_scope(issue, resource_role: 'target', resource_type: 'task')
+  def ensure_issue_in_operation_scope(issue, resource_role: 'scope', resource_type: 'task')
     operation_issue_ids = requested_operation_issue_ids
     return true if operation_issue_ids.blank?
 

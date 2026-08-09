@@ -528,7 +528,7 @@ test('Auto Save OFF defers the inline mutation until the manual Save action', as
   expect(afterManualSave.statusId).toBe(Number(nextStatus));
 });
 
-test('plugin task mutation returns not_found for an issue outside the current Redmine scope', async ({ page, baseURL }) => {
+test('plugin task mutation returns target not_found for a missing issue', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   await adminLogin(redmineBase, page);
   await ensureCanvasGanttModuleEnabled(redmineBase, page, 'ecookbook');
@@ -542,8 +542,50 @@ test('plugin task mutation returns not_found for an issue outside the current Re
 
   expect(result.status).toBe(404);
   expect(result.payload).toEqual(expect.objectContaining({
-    error: expect.any(String)
+    status: 'not_found',
+    failure: expect.objectContaining({
+      kind: 'not_found',
+      resource_role: 'target',
+      resource_type: 'task'
+    })
   }));
+});
+
+test('plugin task mutation returns scope not_found for a visible issue outside Canvas scope', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, 'ecookbook');
+
+  const outOfScopeIdentifier = `canvas-scope-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const outOfScopeProjectId = await ensureProject(page, outOfScopeIdentifier, uniqueName('Canvas Gantt out-of-scope project'));
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, outOfScopeIdentifier);
+  const issueId = await createIssue(page, outOfScopeIdentifier, {
+    subject: uniqueName('Canvas Gantt out-of-scope issue')
+  });
+
+  await loadCanvasPage(page, redmineBase, 'ecookbook');
+  const before = await fetchRestIssue(page, issueId);
+  expect(before.projectId).toBe(outOfScopeProjectId);
+
+  const result = await patchIssueThroughPlugin(page, issueId, {
+    subject: `${before.subject} rejected`,
+    lock_version: 1
+  });
+
+  expect(result.status).toBe(404);
+  expect(result.payload).toEqual(expect.objectContaining({
+    status: 'not_found',
+    failure: expect.objectContaining({
+      kind: 'not_found',
+      resource_role: 'scope',
+      resource_type: 'task'
+    })
+  }));
+
+  await expect(fetchRestIssue(page, issueId)).resolves.toMatchObject({
+    subject: before.subject,
+    projectId: outOfScopeProjectId
+  });
 });
 
 test('plugin task mutation rejects a non-working-day interval that would invert dates', async ({ page, baseURL }) => {
