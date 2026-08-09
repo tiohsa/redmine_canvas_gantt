@@ -784,7 +784,6 @@ const buildParentMoveOptimisticPatch = (state: ParentMoveStoreState, nextAllTask
         const generation = editGenerations[sourceTaskId] ?? 0;
         const fields: Partial<Task> = {};
         if (sourceBefore.parentId !== sourceAfter.parentId) fields.parentId = sourceAfter.parentId;
-        if (sourceBefore.displayOrder !== sourceAfter.displayOrder) fields.displayOrder = sourceAfter.displayOrder;
         localTaskPatches[sourceTaskId] = [
             ...(localTaskPatches[sourceTaskId] ?? []),
             { entityId: sourceTaskId, fields, generation, operationId: `parent-move:${sourceTaskId}:${generation}` }
@@ -1488,6 +1487,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const target = taskById.get(targetTaskId);
         if (!source || !target) return false;
         if (!source.editable) return false;
+        if (source.parentId === targetTaskId) return false;
         if (source.projectId && target.projectId && source.projectId !== target.projectId) return false;
         if (isDescendantTask(taskById, sourceTaskId, targetTaskId)) return false;
         return true;
@@ -2800,10 +2800,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const unsupportedMutationFailures = new Map<string, string>();
                 snapshotTaskIds.forEach((taskId) => {
                     if (snapshot.taskConflicts[taskId]) {
-                        unsupportedMutationFailures.set(
-                            taskId,
-                            'Unresolved task conflict must be resolved before Bulk Save.'
-                        );
+                        unsupportedMutationFailures.set(taskId, i18n.t('label_unresolved_task_conflict') || 'Resolve the task conflict before saving.');
                         return;
                     }
                     const task = snapshot.allTasks.find(candidate => candidate.id === taskId);
@@ -2811,14 +2808,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         (owned, patch) => ({ ...owned, ...patch.fields }), {}
                     );
                     if (task) {
-                        // A few compatibility callers can mark a task dirty
-                        // without materializing a LocalPatch. Preserve the
-                        // historical schedule save behavior for that legacy
-                        // state; real LocalPatch snapshots must provide an
-                        // explicit non-empty Bulk delta.
-                        const changedFields = Object.keys(fields).length === 0 && (snapshot.localTaskPatches[taskId] ?? []).length === 0
-                            ? [...BULK_TASK_FIELDS]
-                            : Object.keys(fields);
+                        const changedFields = Object.keys(fields);
                         const bulkFields = changedFields.filter(field => BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
                         const unsupportedFields = changedFields.filter(field => field !== 'displayOrder' && !BULK_TASK_FIELDS.includes(field as typeof BULK_TASK_FIELDS[number]));
                         const delta = buildBulkTaskMutationDelta(
@@ -2831,8 +2821,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             unsupportedMutationFailures.set(
                                 taskId,
                                 unsupportedFields.length > 0
-                                    ? 'Unresolved non-bulk mutation must be resolved before Bulk Save.'
-                                    : 'No Bulk-supported mutation fields are present.'
+                                    ? (i18n.t('label_unresolved_non_bulk_mutation') || 'Resolve unsupported changes before saving.')
+                                    : (i18n.t('label_no_bulk_supported_mutation_fields') || 'No saveable task changes are available.')
                             );
                         } else {
                             snapshotMutationFields[taskId] = delta.fields;
@@ -2843,7 +2833,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number }>();
                 const hasScheduleMutation = [...snapshotTaskIds].some(taskId => (
                     (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
-                        ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => field in patch.fields)
+                        BULK_TASK_FIELDS.some(field => field in patch.fields)
                     ))
                 ));
                 invalidateDataRequests();
@@ -2866,8 +2856,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                                 ? {
                                     startDate: savedTask.startDate,
                                     dueDate: savedTask.dueDate,
-                                    parentId: savedTask.parentId,
-                                    displayOrder: savedTask.displayOrder
+                                    parentId: savedTask.parentId
                                 }
                                 : {};
                             return {
@@ -2938,7 +2927,6 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     const localTaskPatches = { ...state.localTaskPatches };
                     snapshotTaskIds.forEach((taskId) => {
                         if (!savedTaskIds.has(taskId)) return;
-                        const currentGeneration = state.editGenerations[taskId] ?? 0;
                         const savedGeneration = snapshotGenerations[taskId] ?? 0;
                         const remainingPatches = (localTaskPatches[taskId] ?? [])
                             .filter(patch => {
@@ -2952,10 +2940,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             });
                         if (remainingPatches.length > 0) {
                             localTaskPatches[taskId] = remainingPatches;
+                            modifiedTaskIds.add(taskId);
                         } else {
                             delete localTaskPatches[taskId];
-                        }
-                        if (currentGeneration === savedGeneration) {
                             modifiedTaskIds.delete(taskId);
                         }
                     });
@@ -2964,7 +2951,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
                 const requiresResync = saveResult.savedTaskIds.size > 0 && [...saveResult.savedTaskIds].some(taskId => (
                     (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
-                        ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => field in patch.fields)
+                        BULK_TASK_FIELDS.some(field => field in patch.fields)
                     ))
                 ));
                 if (saveResult.batchStatus !== 'preflight_failure' && hasScheduleMutation && requiresResync) {

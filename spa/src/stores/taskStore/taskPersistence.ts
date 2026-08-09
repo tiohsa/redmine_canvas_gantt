@@ -519,7 +519,7 @@ export const saveModifiedTasks = async (
             if (!hasBulkIntentFields(intent.fields)) {
                 pendingTaskIds.delete(taskId);
                 terminalFailureTaskIds.add(taskId);
-                failures.set(taskId, 'No Bulk-supported mutation fields are present.');
+                failures.set(taskId, i18n.t('label_no_bulk_supported_mutation_fields') || 'No saveable task changes are available.');
                 continue;
             }
             if (outcome === 'success') {

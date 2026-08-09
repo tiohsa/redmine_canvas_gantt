@@ -2086,7 +2086,7 @@ describe('TaskStore asynchronous state ownership', () => {
         const state = useTaskStore.getState();
 
         expect(apiClient.updateTask).not.toHaveBeenCalled();
-        expect(failures.get('mixed-task')).toContain('non-bulk');
+        expect(failures.get('mixed-task')).toContain('unsupported changes');
         expect(state.modifiedTaskIds.has('mixed-task')).toBe(true);
         expect(state.localTaskPatches['mixed-task']).toHaveLength(2);
     });
@@ -2755,6 +2755,55 @@ describe('TaskStore saveChanges ordering', () => {
         expect(updatedIds).toEqual(['parent', 'child']);
     });
 
+    it('keeps dirty ownership when a later save leaves a displayOrder-only patch', async () => {
+        const task = buildTask({ id: 'task-1', dueDate: 2, displayOrder: 1 });
+        const { setTasks } = useTaskStore.getState();
+        setTasks([task]);
+        useTaskStore.setState({
+            allTasks: [{ ...task, dueDate: 8 }],
+            localTaskPatches: {
+                'task-1': [
+                    {
+                        entityId: 'task-1',
+                        fields: { displayOrder: 5 },
+                        generation: 1,
+                        operationId: 'parent-move:task-1:1'
+                    },
+                    {
+                        entityId: 'task-1',
+                        fields: { dueDate: 8 },
+                        generation: 2,
+                        operationId: 'edit:task-1:2'
+                    }
+                ]
+            },
+            modifiedTaskIds: new Set(['task-1']),
+            editGenerations: { 'task-1': 2 }
+        });
+
+        await useTaskStore.getState().saveChanges();
+
+        const state = useTaskStore.getState();
+        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+        expect(state.localTaskPatches['task-1']).toEqual([
+            expect.objectContaining({ fields: { displayOrder: 5 }, generation: 1 })
+        ]);
+        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+    });
+
+    it('does not silently save a dirty task without a LocalPatch', async () => {
+        const task = buildTask({ id: 'task-1', dueDate: 2 });
+        const { setTasks } = useTaskStore.getState();
+        setTasks([task]);
+        useTaskStore.setState({ modifiedTaskIds: new Set(['task-1']) });
+
+        const failures = await useTaskStore.getState().saveChanges();
+
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        expect(failures.get('task-1')).toContain('No saveable task changes');
+        expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
+    });
+
     it('saveChanges updates ancestors before descendant in deep hierarchy', async () => {
         const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
 
@@ -2967,6 +3016,21 @@ describe('TaskStore saveChanges ordering', () => {
         ]);
         useTaskStore.setState({
             modifiedTaskIds: new Set(['18', '19']),
+            editGenerations: { '18': 1, '19': 1 },
+            localTaskPatches: {
+                '18': [{
+                    entityId: '18',
+                    fields: { startDate: FRIDAY, dueDate: Date.UTC(2026, 0, 12) },
+                    generation: 1,
+                    operationId: 'edit:18:1'
+                }],
+                '19': [{
+                    entityId: '19',
+                    fields: { startDate: Date.UTC(2026, 0, 14), dueDate: Date.UTC(2026, 0, 15) },
+                    generation: 1,
+                    operationId: 'edit:19:1'
+                }]
+            },
             allTasks: [
                 buildTask({ id: '18', startDate: FRIDAY, dueDate: Date.UTC(2026, 0, 12), lockVersion: 1 }),
                 buildTask({ id: '19', startDate: Date.UTC(2026, 0, 14), dueDate: Date.UTC(2026, 0, 15), lockVersion: 1 })
@@ -3099,7 +3163,29 @@ describe('TaskStore drag parent updates', () => {
         expect(result.siblingPosition).toBe('tail');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBeUndefined();
         expect(useTaskStore.getState().modifiedTaskIds.has('child')).toBe(true);
+        expect(useTaskStore.getState().localTaskPatches.child).toEqual([
+            expect.objectContaining({ fields: { parentId: undefined } })
+        ]);
         expect(vi.mocked(apiClient.updateTaskFields)).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('rejects a same-parent drop without mutation when autoSave is %s', async (autoSave) => {
+        useTaskStore.setState({ autoSave });
+        useTaskStore.getState().setTasks([
+            buildTask({ id: 'parent', projectId: 'p1', displayOrder: 0 }),
+            buildTask({ id: 'child', parentId: 'parent', projectId: 'p1', displayOrder: 1 })
+        ]);
+        const before = useTaskStore.getState();
+
+        const result = await useTaskStore.getState().moveTaskAsChild('child', 'parent');
+
+        const after = useTaskStore.getState();
+        expect(result.status).toBe('error');
+        expect(after.allTasks).toEqual(before.allTasks);
+        expect(after.editGenerations).toEqual(before.editGenerations);
+        expect(after.localTaskPatches).toEqual(before.localTaskPatches);
+        expect(after.modifiedTaskIds).toEqual(before.modifiedTaskIds);
+        expect(apiClient.updateTaskFields).not.toHaveBeenCalled();
     });
 
     it('moveTaskToRoot sends parent_issue_id null when autoSave is ON', async () => {

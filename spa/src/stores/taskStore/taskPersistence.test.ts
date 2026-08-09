@@ -675,7 +675,7 @@ describe('saveModifiedTasks', () => {
         );
 
         expect(result.savedTaskIds).toEqual(new Set());
-        expect(result.failures.get('A')).toContain('No Bulk-supported');
+        expect(result.failures.get('A')).toContain('No saveable task changes');
     });
 
     it('does not automatically retry after a conflict when remote persisted fields differ', async () => {
