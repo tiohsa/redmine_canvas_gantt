@@ -1,4 +1,4 @@
-import type { LayoutRow, MoveTaskAsChildResult, Task } from '../../types';
+import type { LayoutRow, MoveTaskAsChildResult, PersistedTaskState, Task } from '../../types';
 import { buildMoveTaskResult, createTaskLayoutSnapshot, type MutationLifecycle } from './taskPersistence';
 import { i18n } from '../../utils/i18n';
 import type { LayoutState } from './types';
@@ -33,6 +33,7 @@ type ParentMoveCallbacks = {
     getState: () => ParentMoveState;
     setState: (patch: ParentMovePatch) => void;
     restoreSnapshot: (snapshot: TaskLayoutSnapshot) => void;
+    rollbackOperation?: (operationGeneration: number, sourceBefore: Task) => void;
     buildNextOrder: (allTasks: Task[], sourceBefore: Task) => number;
     buildNextAllTasks: (allTasks: Task[], sourceTaskId: string, nextOrder: number) => Task[];
     buildOptimisticPatch: (state: ParentMoveState, nextAllTasks: Task[]) => ParentMovePatch;
@@ -46,7 +47,7 @@ type ParentMoveCallbacks = {
     validatePersistedResult: (result: UpdateTaskFieldsResult, expectedParentId: string | undefined) => boolean;
     missingSourceResult: MoveTaskAsChildResult;
     failedResult: (error?: string) => MoveTaskAsChildResult;
-    onConflict?: (taskId: string, message: string, operationGeneration: number, remoteEntity?: Task, remoteRevision?: number) => void;
+    onConflict?: (taskId: string, message: string, operationGeneration: number, remoteEntity?: PersistedTaskState, remoteRevision?: number) => void;
     onNotFound?: (taskId: string, operationGeneration: number, operationId?: string) => void;
     onMutationMetadata?: (taskId: string, metadata: MutationMetadata) => void;
 };
@@ -58,6 +59,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
         getState,
         setState,
         restoreSnapshot,
+        rollbackOperation,
         buildNextOrder,
         buildNextAllTasks,
         buildOptimisticPatch,
@@ -117,14 +119,20 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
                 onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
                 return;
             }
-            if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
+            if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) {
+                rollbackOperation?.(operationGeneration, sourceBefore);
+                if (!rollbackOperation) restoreSnapshot(snapshot);
+            }
         },
         onError: (error, context) => {
             if (classifyMutationError(error).status === 'not_found') {
                 onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
                 return;
             }
-            if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) restoreSnapshot(snapshot);
+            if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) {
+                rollbackOperation?.(operationGeneration, sourceBefore);
+                if (!rollbackOperation) restoreSnapshot(snapshot);
+            }
         }
     };
     try {

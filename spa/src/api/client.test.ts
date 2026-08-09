@@ -657,4 +657,66 @@ describe('mutation error classification', () => {
             client_operation_id: 'mutation:42'
         });
     });
+
+    it('classifies a malformed HTTP 409 as conflict without manufacturing view state', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 409,
+            statusText: 'Conflict',
+            json: async () => ({})
+        }) as unknown as typeof fetch);
+
+        const result = await apiClient.updateTaskFields('42', { subject: 'draft' });
+
+        expect(result.status).toBe('conflict');
+        expect(result.entity).toBeUndefined();
+    });
+
+    it('keeps mutation entities persisted-only', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                status: 'ok',
+                entity: { id: 42, subject: 'Saved', lock_version: 4 }
+            })
+        }) as unknown as typeof fetch);
+
+        const result = await apiClient.updateTaskFields('42', { subject: 'Saved' });
+
+        expect(result.entity).toEqual({ id: '42', subject: 'Saved', lockVersion: 4 });
+        expect(result.entity).not.toHaveProperty('editable');
+        expect(result.entity).not.toHaveProperty('rowIndex');
+        expect(result.entity).not.toHaveProperty('hasChildren');
+    });
+
+    it('rejects unknown mutation status strings as protocol errors', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: 'future_status' })
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.updateTaskFields('42', { subject: 'draft' })).resolves.toMatchObject({
+            status: 'protocol_error'
+        });
+    });
 });

@@ -59,7 +59,9 @@ export class InlineEditService {
                             useTaskStore.getState().registerTaskConflict(
                                 taskId,
                                 completedResult.error || (i18n.t('label_conflict') || 'Conflict'),
-                                operationGeneration
+                                operationGeneration,
+                                completedResult.entity,
+                                completedResult.revision ?? completedResult.entity?.lockVersion
                             );
                         } else if (completedResult.status === 'not_found' && isCurrentOperation()) {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FilterOptions, Task, Relation, DraftRelation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus, SavedQuery } from '../types';
+import type { FilterOptions, Task, PersistedTaskState, Relation, DraftRelation, Viewport, ViewMode, ZoomLevel, LayoutRow, Version, TaskStatus, SavedQuery } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { TaskLogicService } from '../services/TaskLogicService';
 import { loadPreferences, saveDisplayPreferences } from '../utils/preferences';
@@ -80,7 +80,7 @@ export type TaskConflictRecord = {
     message: string;
     detectedAt: number;
     generation?: number;
-    remoteEntity?: Task;
+    remoteEntity?: PersistedTaskState;
     remoteRevision?: number;
 };
 
@@ -386,7 +386,7 @@ interface TaskState {
     removeTask: (id: string) => void;
     markTaskTombstone: (id: string, source?: EntityTombstone['source'], operationId?: string) => void;
     clearTaskTombstone: (id: string) => void;
-    registerTaskConflict: (id: string, message: string, generation?: number, remoteEntity?: Task, remoteRevision?: number) => void;
+    registerTaskConflict: (id: string, message: string, generation?: number, remoteEntity?: PersistedTaskState, remoteRevision?: number) => void;
     resolveTaskConflict: (id: string, resolution: 'remote' | 'local' | 'dismiss') => Promise<void>;
     updateViewport: (updates: Partial<Viewport>) => void;
     setRowHeight: (height: number) => void;
@@ -1516,6 +1516,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     tasks: snapshot.tasks.map((task) => task.id === sourceTaskId ? { ...task, lockVersion } : task)
                 };
             }),
+            rollbackOperation: (operationGeneration, sourceBefore) => get().rollbackTaskOperation(
+                sourceTaskId,
+                operationGeneration,
+                { parentId: sourceBefore.parentId, displayOrder: sourceBefore.displayOrder }
+            ),
             buildNextOrder: (allTasks) => tailDisplayOrderForParent(allTasks, targetTaskId, sourceTaskId),
             buildNextAllTasks: (allTasks, movingTaskId, nextOrder) => allTasks.map((task) => (
                 task.id === movingTaskId
@@ -1565,6 +1570,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     tasks: snapshot.tasks.map((task) => task.id === sourceTaskId ? { ...task, lockVersion } : task)
                 };
             }),
+            rollbackOperation: (operationGeneration, sourceBefore) => get().rollbackTaskOperation(
+                sourceTaskId,
+                operationGeneration,
+                { parentId: sourceBefore.parentId, displayOrder: sourceBefore.displayOrder }
+            ),
             buildNextOrder: (allTasks, sourceBefore) => tailDisplayOrderForRoot(allTasks, sourceBefore),
             buildNextAllTasks: (allTasks, movingTaskId, nextOrder) => allTasks.map((task) => (
                 task.id === movingTaskId
@@ -2024,19 +2034,28 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 return terminalTaskDeletionPatch(state, taskId, 'server');
             }
             if (!metadata.entity) return state;
+            const currentTask = state.allTasks.find(task => task.id === taskId);
+            const currentServerTask = state.serverTaskSnapshot.entitiesById[taskId] ?? currentTask;
+            // Mutation entities contain persisted fields only. Build the internal
+            // compatibility snapshot from the existing server/view entity so a
+            // partial response can never manufacture view defaults.
+            const persistedServerTask = currentServerTask
+                ? { ...currentServerTask, ...metadata.entity } as Task
+                : undefined;
+            if (!persistedServerTask) return state;
             const serverTaskSnapshot = mergeServerEntity(
                 state.serverTaskSnapshot,
-                metadata.entity,
+                persistedServerTask,
                 metadata.completeness ?? 'partial',
-                metadata.revision ?? metadata.entity.lockVersion
+                metadata.revision ?? metadata.entity.lockVersion ?? 0
             );
-            const currentTask = state.allTasks.find(task => task.id === taskId);
-            const mergedTask = currentTask
-                ? applyLocalPatches(metadata.entity, state.localTaskPatches[taskId] ?? [])
-                : metadata.entity;
+            const mergedTask = applyLocalPatches(
+                persistedServerTask,
+                state.localTaskPatches[taskId] ?? []
+            );
             const allTasks = currentTask
                 ? state.allTasks.map(task => task.id === taskId ? { ...task, ...mergedTask } : task)
-                : state.allTasks;
+                : [...state.allTasks, mergedTask];
             const derived = buildDerivedTaskState(state, { allTasks });
             return { serverTaskSnapshot, allTasks, ...toDerivedTaskStatePatch(derived) };
         });
@@ -2103,9 +2122,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 .filter(patch => patch.generation <= retryGeneration)
                 .reduce<Partial<Task>>((fields, patch) => ({ ...fields, ...patch.fields }), {});
             const retryTask = beforeRetry.allTasks.find(task => task.id === id);
+            const maxRetryGeneration = Math.max(
+                retryGeneration,
+                ...(beforeRetry.localTaskPatches[id] ?? []).map(patch => patch.generation)
+            );
             const retryFieldNames = Object.keys(retryFields);
-            const hasInlineOnlyRetryFields = retryFieldNames.some(field => !['startDate', 'dueDate', 'parentId', 'displayOrder'].includes(field));
-            const canRetryFieldsDirectly = retryTask && hasInlineOnlyRetryFields && Object.keys(buildTaskPatchFieldsPayload(retryTask, retryFields)).length > 0;
+            const hasPersistedRetryFields = retryFieldNames.some(field => field !== 'displayOrder');
+            const canRetryFieldsDirectly = retryTask && hasPersistedRetryFields && Object.keys(buildTaskPatchFieldsPayload(retryTask, retryFields)).length > 0;
             set((state) => {
                 if (!state.taskConflicts[id]) return state;
                 const taskConflicts = { ...state.taskConflicts };
@@ -2143,14 +2166,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     if (result.status === 'ok') {
                         const committedGenerations = [...new Set((get().localTaskPatches[id] ?? [])
                             .map(patch => patch.generation)
-                            .filter(generation => generation <= retryGeneration))];
+                            .filter(generation => generation <= maxRetryGeneration))];
                         committedGenerations.forEach((generation) => {
                             get().commitTaskOperation(id, generation, result.lockVersion);
                         });
                         if (committedGenerations.length === 0 && typeof result.lockVersion === 'number') {
                             get().setTaskLockVersion(id, result.lockVersion);
                         }
-                        get().settleBarOperationTaskThrough(id, retryGeneration);
+                        get().settleBarOperationTaskThrough(id, maxRetryGeneration);
                         return;
                     }
                     if (result.status === 'not_found') {
@@ -2158,6 +2181,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     }
                     if (result.status === 'conflict') {
                         get().registerTaskConflict(id, result.error || (i18n.t('label_conflict') || 'Conflict'), retryGeneration, result.entity, result.revision ?? result.entity?.lockVersion);
+                        return;
                     }
                     get().registerTaskConflict(
                         id,
@@ -2188,8 +2212,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
             const recordedConflictGeneration = state.taskConflicts[id]?.generation;
             const conflictGeneration = recordedConflictGeneration ?? state.editGenerations[id] ?? 0;
             const conflictRecord = state.taskConflicts[id];
-            const remoteTask = conflictRecord?.remoteEntity ?? state.serverTaskSnapshot.entitiesById[id];
-            if (!remoteTask) return state;
+                    const remoteEntity = conflictRecord?.remoteEntity;
+                    const currentTask = state.allTasks.find(task => task.id === id)
+                        ?? state.serverTaskSnapshot.entitiesById[id];
+                    // Remote resolution is valid only when the conflict carried
+                    // fresh server state. An older snapshot is not evidence.
+                    const remoteTask = remoteEntity && currentTask
+                        ? { ...currentTask, ...remoteEntity }
+                        : undefined;
+                    if (!remoteTask) return state;
             const laterPatches = remoteTask && recordedConflictGeneration !== undefined
                 ? (state.localTaskPatches[id] ?? []).filter(patch => patch.generation > conflictGeneration)
                 : [];

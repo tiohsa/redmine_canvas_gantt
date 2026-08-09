@@ -828,11 +828,25 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(issue).to receive(:safe_attributes=)
       allow(issue).to receive(:save).and_raise(ActiveRecord::StaleObjectError.new(issue, 'update'))
       allow(controller).to receive(:load_parent_issue).and_return(nil)
+      remote_issue = instance_double(Issue, id: 10, lock_version: 4)
+      allow(issue_scope).to receive(:find_by).and_return(remote_issue)
+      allow(controller).to receive(:data_payload_builder).and_return(
+        double(build_task_state: { id: 10, subject: 'Remote', lock_version: 4 })
+      )
 
       patch :update, params: { project_id: 'demo', id: '10', task: { subject: 'Updated', lock_version: 1 } }, format: :json
 
       expect(response).to have_http_status(:conflict)
-      expect(JSON.parse(response.body)['error']).to include('Conflict')
+      body = JSON.parse(response.body)
+      expect(body['status']).to eq('conflict')
+      expect(body['completeness']).to eq('partial')
+      expect(body['entity']).to include('id' => 10, 'lock_version' => 4)
+      expect(body['revision']).to eq(4)
+      expect(body['entity']).not_to have_key('display_order')
+      expect(body['entity']).not_to have_key('editable')
+      expect(body['error']).to include('Conflict')
+      expect(body).not_to have_key('display_order')
+      expect(body).not_to have_key('editable')
     end
 
     it 'returns unprocessable entity when setting itself as parent' do

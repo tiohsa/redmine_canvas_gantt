@@ -40,6 +40,12 @@ export interface Task {
     isLastChild?: boolean;
 }
 
+/** Fields persisted by Redmine and safe to store as mutation canonical state. */
+export type PersistedTaskState = Pick<Task, 'id'> & Partial<Omit<Task,
+    'displayOrder' | 'editable' | 'rowIndex' | 'hasChildren' | 'indentLevel' |
+    'treeLevelGuides' | 'isLastChild' | 'isContextOnly'
+>>;
+
 export interface Relation {
     id: string;
     from: string;

@@ -31,19 +31,33 @@ describe('taskMutationService mutation boundary', () => {
         );
 
         expect(result.status).toBe('transient_error');
-        expect(updateTaskFields).toHaveBeenCalledTimes(1);
+        expect(updateTaskFields).toHaveBeenCalledTimes(2);
         expect(getMutationOperationRecords().find(record => record.operationId === operationId)?.outcome)
             .toBe('transient');
         expect(onSuccess).not.toHaveBeenCalled();
     });
 
-    it('does not retry a thrown non-bulk mutation error', async () => {
+    it('bounds retries for a thrown non-bulk mutation error', async () => {
         const error = new ApiMutationError('transient_error', 'temporary failure', 503);
         const updateTaskFields = vi.spyOn(apiClient, 'updateTaskFields').mockRejectedValue(error);
 
         await expect(taskMutationService.updateTaskFields('nonbulk-error-task', { subject: 'draft' }))
             .rejects.toBe(error);
-        expect(updateTaskFields).toHaveBeenCalledTimes(1);
+        expect(updateTaskFields).toHaveBeenCalledTimes(2);
+    });
+
+    it('settles a response-loss retry as success when the fresh entity matches the intended fields', async () => {
+        vi.spyOn(apiClient, 'updateTaskFields')
+            .mockRejectedValueOnce(new ApiMutationError('transient_error', 'response lost', 503))
+            .mockResolvedValueOnce({
+                status: 'conflict',
+                entity: { id: 'reconciled-task', subject: 'draft', lockVersion: 8 },
+                revision: 8
+            });
+
+        const result = await taskMutationService.updateTaskFields('reconciled-task', { subject: 'draft' });
+
+        expect(result).toMatchObject({ status: 'ok', revision: 8 });
     });
 
     it('records permission failures from baseline mutations as terminal outcomes', async () => {

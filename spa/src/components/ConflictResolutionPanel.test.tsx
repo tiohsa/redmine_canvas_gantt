@@ -57,7 +57,7 @@ describe('ConflictResolutionPanel', () => {
                 '1': [{ entityId: '1', fields: { subject: 'Local' }, generation: 1, operationId: 'edit:1:1' }]
             },
             modifiedTaskIds: new Set(['1']),
-            taskConflicts: { '1': { taskId: '1', message: 'Conflict', detectedAt: 1 } }
+            taskConflicts: { '1': { taskId: '1', message: 'Conflict', detectedAt: 1, remoteEntity: task('Remote', 2), remoteRevision: 2 } }
         });
 
         render(<ConflictResolutionPanel />);

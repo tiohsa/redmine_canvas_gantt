@@ -2,9 +2,73 @@ import type { Relation } from '../types';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
 import { baselineProjectResourceKey, enqueueMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
+import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
 
 type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
+
+const TASK_PATCH_MAX_RETRIES = 1;
+
+const canonicalFieldName = (field: string): string => ({
+    start_date: 'startDate',
+    due_date: 'dueDate',
+    parent_issue_id: 'parentId',
+    done_ratio: 'ratioDone',
+    status_id: 'statusId',
+    assigned_to_id: 'assignedToId',
+    priority_id: 'priorityId',
+    category_id: 'categoryId',
+    estimated_hours: 'estimatedHours',
+    project_id: 'projectId',
+    tracker_id: 'trackerId',
+    fixed_version_id: 'fixedVersionId',
+    custom_field_values: 'customFieldValues'
+}[field] ?? field);
+
+const sameCanonicalValue = (field: string, expected: unknown, actual: unknown): boolean => {
+    if (field === 'parent_issue_id' || field.endsWith('_id')) {
+        const expectedValue = expected === null || expected === '' || expected === undefined ? null : String(expected);
+        const actualValue = actual === null || actual === '' || actual === undefined ? null : String(actual);
+        return expectedValue === actualValue;
+    }
+    return Object.is(expected, actual);
+};
+
+const responseMatchesIntendedFields = (
+    fields: TaskFields,
+    entity: NonNullable<Awaited<ReturnType<typeof apiClient.updateTaskFields>>['entity']>
+): boolean => Object.entries(fields)
+    .filter(([field]) => field !== 'lock_version')
+    .every(([field, expected]) => sameCanonicalValue(field, expected, entity[canonicalFieldName(field) as keyof typeof entity]));
+
+const executeTaskPatch = async (
+    taskId: string,
+    fields: TaskFieldsFactory,
+    operationId?: string
+): Promise<Awaited<ReturnType<typeof apiClient.updateTaskFields>>> => {
+    let attempt = 0;
+    while (true) {
+        const attemptFields = typeof fields === 'function' ? fields() : fields;
+        try {
+            const result = await apiClient.updateTaskFields(
+                taskId,
+                attemptFields,
+                operationId
+            );
+            if (attempt > 0 && result.status === 'conflict' && result.entity && responseMatchesIntendedFields(attemptFields, result.entity)) {
+                return { ...result, status: 'ok' };
+            }
+            if (classifyMutationResult(result).kind !== 'transient' || attempt >= TASK_PATCH_MAX_RETRIES) {
+                return result;
+            }
+        } catch (error) {
+            if (classifyMutationError(error).kind !== 'transient' || attempt >= TASK_PATCH_MAX_RETRIES) {
+                throw error;
+            }
+        }
+        attempt += 1;
+    }
+};
 
 /**
  * Single frontend boundary for mutations that are not part of the bulk Task
@@ -32,11 +96,7 @@ export const taskMutationService = {
         lifecycle?: MutationLifecycle<Awaited<ReturnType<typeof apiClient.updateTaskFields>>>
     ) => enqueueMutationOperation(
         [taskId],
-        (context) => apiClient.updateTaskFields(
-            taskId,
-            typeof fields === 'function' ? fields() : fields,
-            context?.operationId
-        ),
+        (context) => executeTaskPatch(taskId, fields, context?.operationId),
         lifecycle,
         [taskResourceKey(taskId)]
     ),

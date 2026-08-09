@@ -1,4 +1,4 @@
-export type MutationStatusValue = 'ok' | 'error' | 'validation_error' | 'conflict' | 'forbidden' | 'not_found' | 'transient_error';
+export type MutationStatusValue = 'ok' | 'error' | 'validation_error' | 'conflict' | 'forbidden' | 'not_found' | 'transient_error' | 'protocol_error';
 
 export type MutationOutcomeKind = 'success' | 'transient' | 'conflict' | 'terminal';
 
@@ -9,7 +9,7 @@ export type MutationOutcome = {
 };
 
 const isMutationStatus = (value: string): value is MutationStatusValue | 'error' => (
-    ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error'].includes(value)
+    ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error', 'protocol_error'].includes(value)
 );
 
 /**
@@ -21,6 +21,7 @@ export const classifyMutationStatus = (status: MutationStatusValue | 'error'): M
     if (status === 'ok') return 'success';
     if (status === 'transient_error' || status === 'error') return 'transient';
     if (status === 'conflict') return 'conflict';
+    if (status === 'protocol_error') return 'terminal';
     return 'terminal';
 };
 

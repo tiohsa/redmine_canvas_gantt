@@ -176,6 +176,7 @@ describe('InlineEditService', () => {
         const firstSave = deferred<{ status: 'error'; error: string }>();
         vi.mocked(apiClient.updateTaskFields)
             .mockReturnValueOnce(firstSave.promise)
+            .mockResolvedValueOnce({ status: 'error', error: 'First edit failed' })
             .mockResolvedValueOnce({ status: 'ok', lockVersion: 5 });
         const initialTask = buildTask();
         useTaskStore.setState({
@@ -255,7 +256,9 @@ describe('InlineEditService', () => {
         });
         vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
             status: 'conflict',
-            error: 'The task changed on the server.'
+            error: 'The task changed on the server.',
+            entity: { id: 'task-1', subject: 'Remote edit', lockVersion: 4 },
+            revision: 4
         });
 
         await expect(
@@ -271,7 +274,9 @@ describe('InlineEditService', () => {
         expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
         expect(useTaskStore.getState().taskConflicts['task-1']).toMatchObject({
             message: 'The task changed on the server.',
-            generation: 1
+            generation: 1,
+            remoteEntity: { id: 'task-1', subject: 'Remote edit', lockVersion: 4 },
+            remoteRevision: 4
         });
     });
 });
