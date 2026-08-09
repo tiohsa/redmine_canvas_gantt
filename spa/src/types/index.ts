@@ -41,9 +41,13 @@ export interface Task {
 }
 
 /** Fields persisted by Redmine and safe to store as mutation canonical state. */
-export type PersistedTaskState = Pick<Task, 'id'> & Partial<Omit<Task,
-    'displayOrder' | 'editable' | 'rowIndex' | 'hasChildren' | 'indentLevel' |
-    'treeLevelGuides' | 'isLastChild' | 'isContextOnly'
+export type PersistedTaskState = Pick<Task, 'id'> & Partial<Pick<Task,
+    'subject' | 'projectId' | 'projectName' | 'startDate' | 'dueDate' |
+    'ratioDone' | 'statusId' | 'assignedToId' | 'assignedToName' | 'parentId' |
+    'lockVersion' | 'trackerId' | 'trackerName' | 'fixedVersionId' |
+    'priorityId' | 'priorityName' | 'priorityPosition' | 'authorId' | 'authorName' |
+    'categoryId' | 'categoryName' | 'estimatedHours' | 'createdOn' | 'updatedOn' |
+    'statusName' | 'spentHours' | 'fixedVersionName' | 'customFieldValues'
 >>;
 
 export interface Relation {

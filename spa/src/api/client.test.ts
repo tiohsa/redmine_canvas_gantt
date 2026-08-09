@@ -702,6 +702,39 @@ describe('mutation error classification', () => {
         expect(result.entity).not.toHaveProperty('hasChildren');
     });
 
+    it('preserves explicit nullable clears while keeping omitted fields absent', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                status: 'ok',
+                entity: {
+                    id: 42,
+                    due_date: null,
+                    parent_id: null,
+                    category_id: null,
+                    estimated_hours: null,
+                    fixed_version_id: null
+                }
+            })
+        }) as unknown as typeof fetch);
+
+        const result = await apiClient.updateTaskFields('42', { due_date: null });
+
+        expect(result.entity).toHaveProperty('dueDate', undefined);
+        expect(result.entity).toHaveProperty('parentId', undefined);
+        expect(result.entity).toHaveProperty('categoryId', undefined);
+        expect(result.entity).toHaveProperty('estimatedHours', undefined);
+        expect(result.entity).toHaveProperty('fixedVersionId', undefined);
+        expect(result.entity).not.toHaveProperty('startDate');
+    });
+
     it('rejects unknown mutation status strings as protocol errors', async () => {
         window.RedmineCanvasGantt = {
             projectId: 1,

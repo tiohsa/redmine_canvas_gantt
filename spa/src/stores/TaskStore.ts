@@ -778,6 +778,7 @@ const buildParentMoveOptimisticPatch = (state: ParentMoveStoreState, nextAllTask
     const sourceBefore = sourceTaskId ? state.allTasks.find(task => task.id === sourceTaskId) : undefined;
     const sourceAfter = sourceTaskId ? nextAllTasks.find(task => task.id === sourceTaskId) : undefined;
     const localTaskPatches = { ...state.localTaskPatches };
+    const modifiedTaskIds = new Set(state.modifiedTaskIds);
     if (sourceTaskId && sourceBefore && sourceAfter) {
         const generation = editGenerations[sourceTaskId] ?? 0;
         const fields: Partial<Task> = {};
@@ -787,6 +788,7 @@ const buildParentMoveOptimisticPatch = (state: ParentMoveStoreState, nextAllTask
             ...(localTaskPatches[sourceTaskId] ?? []),
             { entityId: sourceTaskId, fields, generation, operationId: `parent-move:${sourceTaskId}:${generation}` }
         ];
+        modifiedTaskIds.add(sourceTaskId);
     }
     return {
         allTasks: nextAllTasks,
@@ -794,7 +796,8 @@ const buildParentMoveOptimisticPatch = (state: ParentMoveStoreState, nextAllTask
         layoutRows: layout.layoutRows,
         rowCount: layout.rowCount,
         editGenerations,
-        localTaskPatches
+        localTaskPatches,
+        modifiedTaskIds
     };
 };
 

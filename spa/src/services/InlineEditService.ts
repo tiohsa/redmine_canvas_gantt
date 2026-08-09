@@ -63,9 +63,14 @@ export class InlineEditService {
                                 completedResult.entity,
                                 completedResult.revision ?? completedResult.entity?.lockVersion
                             );
-                        } else if (completedResult.status === 'not_found' && isCurrentOperation()) {
+                            return;
+                        }
+                        if (completedResult.status === 'not_found' && isCurrentOperation()) {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');
-                        } else if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
+                            return;
+                        }
+                        if (classifyMutationError(completedResult).kind === 'transient') return;
+                        if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
                             useTaskStore.getState().rollbackTaskOperation(taskId, operationGeneration, rollbackTaskUpdates);
                         }
                     },
@@ -74,6 +79,7 @@ export class InlineEditService {
                             useTaskStore.getState().markTaskTombstone(taskId, 'server');
                             return;
                         }
+                        if (classifyMutationError(error).kind === 'transient') return;
                         if (isCurrentOperation() && Object.keys(rollbackTaskUpdates).length > 0) {
                             useTaskStore.getState().rollbackTaskOperation(taskId, operationGeneration, rollbackTaskUpdates);
                         }

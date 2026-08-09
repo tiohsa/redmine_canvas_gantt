@@ -60,6 +60,66 @@ describe('taskMutationService mutation boundary', () => {
         expect(result).toMatchObject({ status: 'ok', revision: 8 });
     });
 
+    it('compares response-loss dates and explicit clears semantically', async () => {
+        vi.spyOn(apiClient, 'updateTaskFields')
+            .mockRejectedValueOnce(new ApiMutationError('transient_error', 'response lost', 503))
+            .mockResolvedValueOnce({
+                status: 'conflict',
+                entity: {
+                    id: 'date-task',
+                    startDate: Date.UTC(2026, 7, 10),
+                    dueDate: undefined,
+                    lockVersion: 3
+                },
+                revision: 3
+            });
+
+        const result = await taskMutationService.updateTaskFields('date-task', {
+            start_date: '2026-08-10',
+            due_date: null
+        });
+
+        expect(result.status).toBe('ok');
+    });
+
+    it('compares only intended custom field keys', async () => {
+        vi.spyOn(apiClient, 'updateTaskFields')
+            .mockRejectedValueOnce(new ApiMutationError('transient_error', 'response lost', 503))
+            .mockResolvedValueOnce({
+                status: 'conflict',
+                entity: {
+                    id: 'custom-task',
+                    customFieldValues: { '1': 'draft', '2': 'remote-only' },
+                    lockVersion: 3
+                },
+                revision: 3
+            });
+
+        const result = await taskMutationService.updateTaskFields('custom-task', {
+            custom_field_values: { '1': 'draft' }
+        });
+
+        expect(result.status).toBe('ok');
+    });
+
+    it('compares response-loss ID clears semantically', async () => {
+        vi.spyOn(apiClient, 'updateTaskFields')
+            .mockRejectedValueOnce(new ApiMutationError('transient_error', 'response lost', 503))
+            .mockResolvedValueOnce({
+                status: 'conflict',
+                entity: { id: 'id-task', parentId: undefined, fixedVersionId: undefined, categoryId: undefined, lockVersion: 3 },
+                revision: 3
+            });
+
+        const result = await taskMutationService.updateTaskFields('id-task', {
+            parent_issue_id: null,
+            fixed_version_id: null,
+            category_id: null
+        });
+
+        expect(result.status).toBe('ok');
+    });
+
     it('records permission failures from baseline mutations as terminal outcomes', async () => {
         const error = new ApiMutationError('forbidden', 'permission denied', 403);
         vi.spyOn(apiClient, 'saveBaseline').mockRejectedValue(error);

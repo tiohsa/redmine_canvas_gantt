@@ -233,35 +233,45 @@ const parseMutationEntity = (value: unknown): PersistedTaskState | undefined => 
     if (!record) return undefined;
     const id = record.id;
     if (id === undefined || id === null) return undefined;
-    const parseDate = (candidate: unknown, previous?: number): number | undefined => {
+    const has = (key: string): boolean => Object.prototype.hasOwnProperty.call(record, key);
+    const parseDate = (key: string): number | undefined => {
+        const candidate = record[key];
         if (typeof candidate === 'string') return parseDateOnly(candidate) ?? undefined;
-        return previous;
+        return undefined;
+    };
+    const parseNullableNumber = (key: string): number | undefined => {
+        const candidate = record[key];
+        return typeof candidate === 'number' ? candidate : undefined;
+    };
+    const parseNullableId = (key: string): string | undefined => {
+        const candidate = record[key];
+        return candidate === null ? undefined : candidate === undefined ? undefined : String(candidate);
     };
     const entity: PersistedTaskState = {
         id: String(id),
         ...(typeof record.subject === 'string' ? { subject: record.subject } : {}),
-        ...(record.project_id !== undefined ? { projectId: String(record.project_id) } : {}),
+        ...(has('project_id') ? { projectId: parseNullableId('project_id') } : {}),
         ...(typeof record.project_name === 'string' ? { projectName: record.project_name } : {}),
-        ...(parseDate(record.start_date) !== undefined ? { startDate: parseDate(record.start_date) } : {}),
-        ...(parseDate(record.due_date) !== undefined ? { dueDate: parseDate(record.due_date) } : {}),
+        ...(has('start_date') ? { startDate: parseDate('start_date') } : {}),
+        ...(has('due_date') ? { dueDate: parseDate('due_date') } : {}),
         ...(typeof record.ratio_done === 'number' ? { ratioDone: record.ratio_done } : {}),
         ...(typeof record.status_id === 'number' ? { statusId: record.status_id } : {}),
         ...(typeof record.status_name === 'string' ? { statusName: record.status_name } : {}),
         ...(record.assigned_to_id === null || typeof record.assigned_to_id === 'number' ? { assignedToId: record.assigned_to_id } : {}),
         ...(record.assigned_to_name === null || typeof record.assigned_to_name === 'string' ? { assignedToName: record.assigned_to_name } : {}),
-        ...(record.parent_id === null ? { parentId: undefined } : record.parent_id !== undefined ? { parentId: String(record.parent_id) } : {}),
+        ...(has('parent_id') ? { parentId: parseNullableId('parent_id') } : {}),
         ...(typeof record.lock_version === 'number' ? { lockVersion: record.lock_version } : {}),
-        ...(typeof record.tracker_id === 'number' ? { trackerId: record.tracker_id } : {}),
+        ...(has('tracker_id') ? { trackerId: parseNullableNumber('tracker_id') } : {}),
         ...(typeof record.tracker_name === 'string' ? { trackerName: record.tracker_name } : {}),
-        ...(record.fixed_version_id === null ? { fixedVersionId: undefined } : record.fixed_version_id !== undefined ? { fixedVersionId: String(record.fixed_version_id) } : {}),
-        ...(typeof record.priority_id === 'number' ? { priorityId: record.priority_id } : {}),
+        ...(has('fixed_version_id') ? { fixedVersionId: parseNullableId('fixed_version_id') } : {}),
+        ...(has('priority_id') ? { priorityId: parseNullableNumber('priority_id') } : {}),
         ...(typeof record.priority_name === 'string' ? { priorityName: record.priority_name } : {}),
         ...(typeof record.priority_position === 'number' ? { priorityPosition: record.priority_position } : {}),
-        ...(typeof record.author_id === 'number' ? { authorId: record.author_id } : {}),
+        ...(has('author_id') ? { authorId: parseNullableNumber('author_id') } : {}),
         ...(typeof record.author_name === 'string' ? { authorName: record.author_name } : {}),
-        ...(typeof record.category_id === 'number' ? { categoryId: record.category_id } : {}),
+        ...(has('category_id') ? { categoryId: parseNullableNumber('category_id') } : {}),
         ...(typeof record.category_name === 'string' ? { categoryName: record.category_name } : {}),
-        ...(typeof record.estimated_hours === 'number' ? { estimatedHours: record.estimated_hours } : {}),
+        ...(has('estimated_hours') ? { estimatedHours: parseNullableNumber('estimated_hours') } : {}),
         ...(typeof record.created_on === 'string' ? { createdOn: record.created_on } : {}),
         ...(typeof record.updated_on === 'string' ? { updatedOn: record.updated_on } : {}),
         ...(typeof record.spent_hours === 'number' ? { spentHours: record.spent_hours } : {}),

@@ -1834,6 +1834,22 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.barOperations).toEqual({});
     });
 
+    it('merges explicit nullable clears without replacing view state', () => {
+        const task = buildTask({ id: 'task-1', dueDate: TUESDAY, editable: true, rowIndex: 7, hasChildren: true });
+        useTaskStore.getState().setTasks([task]);
+
+        useTaskStore.getState().applyTaskMutationMetadata('task-1', {
+            completeness: 'partial',
+            entity: { id: 'task-1', dueDate: undefined }
+        });
+
+        const updated = useTaskStore.getState().allTasks[0];
+        expect(updated).toHaveProperty('dueDate', undefined);
+        expect(updated?.editable).toBe(true);
+        expect(updated?.rowIndex).toBe(7);
+        expect(updated?.hasChildren).toBe(true);
+    });
+
     it('clears deleted task ownership while preserving linked task ownership', () => {
         useTaskStore.getState().setTasks([
             buildTask({ id: 'task-a', dueDate: MONDAY }),
@@ -3131,7 +3147,7 @@ describe('TaskStore drag parent updates', () => {
         expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.lockVersion).toBe(3);
     });
 
-    it('moveTaskAsChild rolls back when API request fails', async () => {
+    it('keeps the optimistic parent move when the API request is transient', async () => {
         const { setTasks, moveTaskAsChild } = useTaskStore.getState();
 
         useTaskStore.setState({ autoSave: true });
@@ -3145,8 +3161,10 @@ describe('TaskStore drag parent updates', () => {
         const result = await moveTaskAsChild('10', '11');
 
         expect(result.status).toBe('error');
-        expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.parentId).toBeUndefined();
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.parentId).toBe('11');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === '10')?.lockVersion).toBe(2);
+        expect(useTaskStore.getState().modifiedTaskIds.has('10')).toBe(true);
+        expect(useTaskStore.getState().localTaskPatches['10']).toBeDefined();
     });
 
     it('moveTaskToRoot rolls back when API response still has parentId', async () => {
@@ -3246,7 +3264,7 @@ describe('TaskStore drag parent updates', () => {
 
         expect((await firstMove).status).toBe('ok');
         expect((await secondMove).status).toBe('error');
-        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBe('parent-1');
+        expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBe('parent-2');
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.lockVersion).toBe(3);
     });
 
@@ -3270,6 +3288,11 @@ describe('TaskStore drag parent updates', () => {
         request.resolve({ status: 'conflict', error: 'stale parent move' });
         expect((await move).status).toBe('conflict');
 
-        expect(useTaskStore.getState().taskConflicts.child?.generation).toBe(parentMoveGeneration);
+        const state = useTaskStore.getState();
+        expect(state.taskConflicts.child?.generation).toBe(parentMoveGeneration);
+        expect(state.modifiedTaskIds.has('child')).toBe(true);
+        expect(state.localTaskPatches.child).toEqual(expect.arrayContaining([
+            expect.objectContaining({ generation: parentMoveGeneration })
+        ]));
     });
 });

@@ -3,6 +3,7 @@ import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
 import { baselineProjectResourceKey, enqueueMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
 import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
+import { parseDateOnly } from '../utils/dateOnly';
 
 type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
@@ -26,11 +27,26 @@ const canonicalFieldName = (field: string): string => ({
 }[field] ?? field);
 
 const sameCanonicalValue = (field: string, expected: unknown, actual: unknown): boolean => {
+    if (field === 'start_date' || field === 'due_date') {
+        const expectedValue = expected === null || expected === '' || expected === undefined
+            ? null
+            : typeof expected === 'string' ? parseDateOnly(expected) : expected;
+        const actualValue = actual === undefined || actual === null ? null : actual;
+        return expectedValue === actualValue;
+    }
+    if (field === 'custom_field_values') {
+        if (!expected || typeof expected !== 'object' || !actual || typeof actual !== 'object') return expected === actual;
+        return Object.entries(expected as Record<string, unknown>).every(([key, value]) => (
+            Object.is(value, (actual as Record<string, unknown>)[key])
+        ));
+    }
     if (field === 'parent_issue_id' || field.endsWith('_id')) {
         const expectedValue = expected === null || expected === '' || expected === undefined ? null : String(expected);
         const actualValue = actual === null || actual === '' || actual === undefined ? null : String(actual);
         return expectedValue === actualValue;
     }
+    if (expected === null || expected === '' || expected === undefined) return actual === null || actual === undefined || actual === '';
+    if (typeof expected === 'number' && typeof actual === 'string') return expected === Number(actual);
     return Object.is(expected, actual);
 };
 

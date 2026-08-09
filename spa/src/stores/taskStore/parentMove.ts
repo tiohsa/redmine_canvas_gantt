@@ -5,7 +5,7 @@ import type { LayoutState } from './types';
 import type { TaskLayoutSnapshot } from './types';
 import type { MutationMetadata, MutationStatus } from '../../api/client';
 import type { LocalPatch, ServerSnapshot } from './stateContract';
-import { classifyMutationError } from '../../api/mutationOutcome';
+import { classifyMutationError, classifyMutationResult } from '../../api/mutationOutcome';
 
 type UpdateTaskFieldsResult = MutationMetadata & {
     status: MutationStatus;
@@ -89,9 +89,6 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
     setState(buildOptimisticPatch(beforeState, nextAllTasks));
 
     if (!beforeState.autoSave) {
-        const nextModified = new Set(beforeState.modifiedTaskIds);
-        nextModified.add(sourceTaskId);
-        setState({ modifiedTaskIds: nextModified });
         return buildMoveTaskResult('ok', {
             lockVersion: sourceBefore.lockVersion,
             parentId: expectedParentId
@@ -115,10 +112,13 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
                     completedResult.entity,
                     completedResult.revision ?? completedResult.entity?.lockVersion
                 );
-            } else if (completedResult.status === 'not_found') {
+                return;
+            }
+            if (completedResult.status === 'not_found') {
                 onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
                 return;
             }
+            if (classifyMutationResult(completedResult).kind === 'transient') return;
             if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) {
                 rollbackOperation?.(operationGeneration, sourceBefore);
                 if (!rollbackOperation) restoreSnapshot(snapshot);
@@ -129,6 +129,7 @@ export const runParentMove = async (callbacks: ParentMoveCallbacks): Promise<Mov
                 onNotFound?.(sourceTaskId, operationGeneration, context.operationId);
                 return;
             }
+            if (classifyMutationError(error).kind === 'transient') return;
             if (isCurrentOperation(getState(), sourceBefore, operationGeneration)) {
                 rollbackOperation?.(operationGeneration, sourceBefore);
                 if (!rollbackOperation) restoreSnapshot(snapshot);

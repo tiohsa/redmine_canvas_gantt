@@ -124,7 +124,7 @@ describe('InlineEditService', () => {
         });
 
         vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
-            status: 'error',
+            status: 'validation_error',
             error: 'Validation failed'
         });
 
@@ -278,5 +278,26 @@ describe('InlineEditService', () => {
             remoteEntity: { id: 'task-1', subject: 'Remote edit', lockVersion: 4 },
             remoteRevision: 4
         });
+    });
+
+    it('keeps the optimistic edit dirty when transient retries are exhausted', async () => {
+        const initialTask = buildTask();
+        useTaskStore.setState({ allTasks: [initialTask], tasks: [initialTask] });
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
+            status: 'transient_error',
+            error: 'temporary outage'
+        });
+
+        await expect(InlineEditService.saveTaskFields({
+            taskId: 'task-1',
+            optimisticTaskUpdates: { subject: 'Local edit' },
+            rollbackTaskUpdates: { subject: 'Original subject' },
+            fields: { subject: 'Local edit' }
+        })).rejects.toThrow('temporary outage');
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks[0]?.subject).toBe('Local edit');
+        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+        expect(state.localTaskPatches['task-1']).toBeDefined();
     });
 });
