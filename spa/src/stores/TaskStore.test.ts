@@ -2868,6 +2868,36 @@ describe('TaskStore saveChanges ordering', () => {
         expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(true);
     });
 
+    it('keeps a dirty local patch when manual save receives a scope not_found', async () => {
+        const task = buildTask({ id: 'task-1', subject: 'Before', lockVersion: 3 });
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+        setTasks([task]);
+        updateTask('task-1', { subject: 'After' });
+        vi.mocked(apiClient.updateTask).mockResolvedValueOnce({
+            status: 'not_found',
+            error: 'Task is outside the Canvas scope',
+            failure: { kind: 'not_found', resourceRole: 'scope', resourceType: 'task' }
+        });
+
+        const failures = await saveChanges();
+
+        const state = useTaskStore.getState();
+        expect(failures.get('task-1')).toBe('Task is outside the Canvas scope');
+        expect(state.allTasks).toEqual([expect.objectContaining({ id: 'task-1', subject: 'After' })]);
+        expect(state.taskTombstones['task-1']).toBeUndefined();
+        expect(state.localTaskPatches['task-1']).toEqual([
+            expect.objectContaining({
+                entityId: 'task-1',
+                fields: expect.objectContaining({ subject: 'After' })
+            })
+        ]);
+        expect(state.modifiedTaskIds.has('task-1')).toBe(true);
+        expect(addNotification).toHaveBeenCalledWith(
+            expect.stringContaining('Task is outside the Canvas scope'),
+            'error'
+        );
+    });
+
     it('saveChanges updates ancestors before descendant in deep hierarchy', async () => {
         const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
 

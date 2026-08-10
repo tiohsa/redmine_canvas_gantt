@@ -196,6 +196,36 @@ describe('InlineEditService', () => {
         expect(useUIStore.getState().notifications[0]?.message).toBe('Task no longer exists');
     });
 
+    it('rolls back a scope not_found without tombstoning the source task', async () => {
+        const initialTask = buildTask();
+        useTaskStore.setState({
+            allTasks: [initialTask],
+            tasks: [initialTask]
+        });
+
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValueOnce({
+            status: 'not_found',
+            error: 'Task is outside the Canvas scope',
+            failure: { kind: 'not_found', resourceRole: 'scope', resourceType: 'task' }
+        });
+
+        await expect(
+            InlineEditService.saveTaskFields({
+                taskId: 'task-1',
+                optimisticTaskUpdates: { subject: 'Local edit' },
+                rollbackTaskUpdates: { subject: initialTask.subject },
+                fields: { subject: 'Local edit' }
+            })
+        ).rejects.toThrow('Task is outside the Canvas scope');
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks).toEqual([initialTask]);
+        expect(state.taskTombstones['task-1']).toBeUndefined();
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+        expect(state.localTaskPatches['task-1']).toBeUndefined();
+        expect(useUIStore.getState().notifications[0]?.message).toBe('Task is outside the Canvas scope');
+    });
+
     it('does not let an earlier failure roll back a newer inline edit', async () => {
         const firstSave = deferred<{ status: 'validation_error'; error: string }>();
         vi.mocked(apiClient.updateTaskFields)
