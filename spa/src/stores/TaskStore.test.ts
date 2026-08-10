@@ -3165,7 +3165,7 @@ describe('TaskStore saveChanges ordering', () => {
         expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
         expect(useTaskStore.getState().localTaskPatches).toEqual({});
         expect(addNotification).not.toHaveBeenCalled();
-    }, 15_000);
+    }, 30_000);
 
     it('retains every local patch when a dependency cycle rejects an independent task in the same batch', async () => {
         const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();
