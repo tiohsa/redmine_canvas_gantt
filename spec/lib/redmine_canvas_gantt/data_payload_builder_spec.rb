@@ -67,7 +67,7 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
       ]
 
       payload = builder.build(
-        project: instance_double(Project, id: 1, name: 'Root'),
+        project: instance_double(Project, id: 1, name: 'Root', start_date: nil, due_date: nil),
         permissions: {},
         project_ids: [1, 2],
         issues: [],
