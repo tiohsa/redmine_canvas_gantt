@@ -6,25 +6,21 @@ A fast, low-risk, Canvas-based Gantt chart plugin for Redmine 6.0, 6.1, and 7.0.
 
 ## Why this plugin?
 
-- Your Redmine Gantt becomes slow with many issues
-- You want drag-and-drop scheduling inside Redmine
-- You want to try a Gantt plugin without database migration
-- You are using Redmine 6.0, 6.1, or 7.0 and need a modern maintained plugin
+Built for Redmine projects that need **faster Gantt rendering**,
+**interactive scheduling**, and a **low-risk installation without database migrations**.
 
 ## Key benefits
 
-- Fast Canvas rendering
-- Drag, resize, dependency editing
-- Inline issue editing
-- No database migration
-- Easy uninstall
-- Redmine 6.0 compatibility; Redmine 6.1 and 7.0 full support
+**Performance** — Fast Canvas rendering with smooth scrolling and zooming
+**Editing** — Drag, resize, dependency editing, and inline issue editing
+**Operations** — No database migration and easy uninstall
+**Compatibility** — Redmine 6.0 compatibility; Redmine 6.1 and 7.0 full support
 
 Listed on Redmine Plugins Directory:
 https://www.redmine.org/plugins/redmine_canvas_gantt
 
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main\&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tiohsa/redmine_canvas_gantt)](https://github.com/tiohsa/redmine_canvas_gantt/releases)
 [![Redmine](https://img.shields.io/badge/Redmine-6.0%20%7C%206.1%20%7C%207.0-red)](#requirements)
 [![Ruby](https://img.shields.io/badge/Ruby-See%20Redmine%20requirements-cc342d)](#requirements)

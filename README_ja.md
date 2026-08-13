@@ -2,17 +2,30 @@
 
 # Redmine Canvas Gantt
 
-Redmine 向けの高性能 Canvas ガントチャートプラグイン。
+Redmine 向けの高速・低リスクな Canvas ベースのガントチャートプラグイン。
 
-Listed on Redmine Plugins Directory:
+## このプラグインを選ぶ理由
+
+チケット数が多い Redmine でも快適に扱える、
+**高速描画・直感的なスケジュール編集・DB マイグレーション不要**
+を重視したガントチャートです。
+
+## 主なメリット
+
+**高速描画** — Canvas による滑らかなスクロールとズーム
+**直接編集** — ドラッグ、リサイズ、依存関係、インライン編集
+**導入・運用** — DB マイグレーション不要で、アンインストールも容易
+**互換性** — Redmine 6.0 互換対応、Redmine 6.1 / 7.0 フルサポート
+
+Redmine Plugins Directory に掲載されています:
 https://www.redmine.org/plugins/redmine_canvas_gantt
 
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main\&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tiohsa/redmine_canvas_gantt)](https://github.com/tiohsa/redmine_canvas_gantt/releases)
-[![Redmine](https://img.shields.io/badge/Redmine-6.0%20%7C%206.1%20%7C%207.0-red)](#requirements)
-[![Ruby](https://img.shields.io/badge/Ruby-Redmine公式要件に準拠-cc342d)](#requirements)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#requirements)
+[![Redmine](https://img.shields.io/badge/Redmine-6.0%20%7C%206.1%20%7C%207.0-red)](#必要環境)
+[![Ruby](https://img.shields.io/badge/Ruby-Redmine公式要件に準拠-cc342d)](#必要環境)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#必要環境)
 
 [English README](README.md) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
 
@@ -22,11 +35,9 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 
 ## 概要
 
-Redmine Canvas Gantt は、タイムラインを HTML5 Canvas で描画しつつ左側のチケット一覧を編集可能に保つ、Redmine 向けのガントチャートプラグインです。標準の Redmine ガントが見づらい、または重くなりやすいプロジェクト向けに設計されています。
+Redmine Canvas Gantt は、タイムラインを HTML5 Canvas で描画しながら、左側のチケット一覧を直接編集できる Redmine 向けガントチャートプラグインです。標準の Redmine ガントが見づらくなったり、チケット数の増加によって操作が重くなったりするプロジェクト向けに設計されています。
 
-ベースライン snapshot はブラウザや専用テーブルではなく、Redmine の設定領域
-（`Setting.plugin_redmine_canvas_gantt`）に保存されます。プロジェクトごとに 1 件だけ
-保持され、新しく保存すると前の snapshot を置き換えます。
+ベースラインスナップショットは、ブラウザや専用テーブルではなく Redmine の設定領域（`Setting.plugin_redmine_canvas_gantt`）に保存されます。プロジェクトごとに1件だけ保持され、新しく保存すると以前のスナップショットを置き換えます。
 
 ## 主な特徴
 
