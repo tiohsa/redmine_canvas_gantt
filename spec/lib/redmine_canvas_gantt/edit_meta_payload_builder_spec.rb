@@ -72,6 +72,12 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
         fixed_version_id: 6,
         lock_version: 9
       )
+      expect(payload[:capability_context]).to eq(
+        task_id: 10,
+        project_id: 1,
+        tracker_id: 5,
+        status_id: 12
+      )
       expect(payload[:options][:statuses]).to eq([{ id: 1, name: 'Open' }, { id: 2, name: 'In Progress' }])
       expect(payload[:options][:assignees]).to eq([{ id: 7, name: 'Alice' }])
       expect(payload[:options][:custom_fields]).to eq([{ id: 99 }])

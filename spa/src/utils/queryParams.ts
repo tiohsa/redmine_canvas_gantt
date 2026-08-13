@@ -14,6 +14,7 @@ export interface ResolvedQueryState {
     selectedAssigneeIds?: (number | null)[];
     selectedProjectIds?: string[];
     selectedVersionIds?: string[];
+    selectedTrackerIds?: number[];
     memberProjectsOnly?: boolean;
     sortConfig?: BusinessQueryState['sortConfig'];
     groupBy?: 'project' | 'assignee' | null;
@@ -28,6 +29,7 @@ export interface QueryUrlStateSource {
     selectedProjectIds: string[];
     projectSelectionExplicit?: boolean;
     selectedVersionIds: string[];
+    selectedTrackerIds?: number[];
     memberProjectsOnly: boolean;
     sortConfig: BusinessQueryState['sortConfig'];
     groupByProject: boolean;
@@ -74,6 +76,10 @@ const CONTROLLED_KEYS = [
     'fixed_version_ids',
     'fixed_version_id[]',
     'fixed_version_id',
+    'tracker_ids[]',
+    'tracker_ids',
+    'tracker_id[]',
+    'tracker_id',
     'member_projects_only',
     'group_by',
     'sort',
@@ -103,6 +109,9 @@ export const normalizeResolvedQueryState = (state?: Partial<ResolvedQueryState>)
     if (state.selectedAssigneeIds?.length) normalized.selectedAssigneeIds = [...state.selectedAssigneeIds];
     if (Array.isArray(state.canvasProjectIds)) normalized.canvasProjectIds = [...state.canvasProjectIds];
     if (state.selectedVersionIds?.length) normalized.selectedVersionIds = [...state.selectedVersionIds];
+    if (state.selectedTrackerIds?.length || (Array.isArray(state.selectedTrackerIds) && hasPersistedQueryId)) {
+        normalized.selectedTrackerIds = [...(state.selectedTrackerIds ?? [])];
+    }
     if (state.sortConfig?.key && !isDefaultSort(state.sortConfig)) {
         normalized.sortConfig = { ...state.sortConfig };
     }
@@ -126,6 +135,7 @@ export const hasSharedQueryStateInUrl = (search: string = window.location.search
     if (hasValueForAnyParam(params, ['assigned_to_ids[]', 'assigned_to_ids', 'assigned_to_id[]', 'assigned_to_id'])) return true;
     if (hasValueForAnyParam(params, ['canvas_project_ids[]', 'canvas_project_ids', 'project_ids[]', 'project_ids'])) return true;
     if (hasValueForAnyParam(params, ['fixed_version_ids[]', 'fixed_version_ids', 'fixed_version_id[]', 'fixed_version_id'])) return true;
+    if (hasValueForAnyParam(params, ['tracker_ids[]', 'tracker_ids', 'tracker_id[]', 'tracker_id'])) return true;
     if (hasValueForAnyParam(params, ['c[]', 'c'])) return true;
 
     const standardFields = params.getAll('f[]').concat(params.getAll('f'));
@@ -138,6 +148,7 @@ export const toResolvedQueryStateFromStore = (state: QueryUrlStateSource): Resol
     selectedAssigneeIds: state.selectedAssigneeIds,
     ...(state.projectSelectionExplicit === true ? { canvasProjectIds: state.selectedProjectIds } : {}),
     selectedVersionIds: state.selectedVersionIds,
+    ...(state.selectedTrackerIds !== undefined ? { selectedTrackerIds: state.selectedTrackerIds } : {}),
     memberProjectsOnly: state.memberProjectsOnly,
     sortConfig: state.sortConfig ?? undefined,
     groupBy: state.groupByProject ? 'project' : (state.groupByAssignee ? 'assignee' : null),
@@ -159,6 +170,9 @@ export const readIssueQueryParamsFromUrl = (search: string = window.location.sea
         selectedAssigneeIds: standardState.selectedAssigneeIds ?? canvasState.selectedAssigneeIds,
         canvasProjectIds: standardState.canvasProjectIds ?? canvasState.canvasProjectIds,
         selectedVersionIds: standardState.selectedVersionIds ?? canvasState.selectedVersionIds,
+        ...(standardState.selectedTrackerIds !== undefined || canvasState.selectedTrackerIds !== undefined
+            ? { selectedTrackerIds: standardState.selectedTrackerIds ?? canvasState.selectedTrackerIds }
+            : {}),
         memberProjectsOnly: undefined,
         sortConfig: canvasState.sortConfig,
         groupBy: groupBy === 'assigned_to' || groupBy === 'assignee' ? 'assignee' : (groupBy === 'project' ? 'project' : null),
@@ -262,6 +276,9 @@ export const parseResolvedQueryState = (value: unknown): ResolvedQueryState | un
                 return normalized.match(/^-?\d+$/) ? [normalized] : [];
             })))
             : undefined,
+        ...(Array.isArray(record.selected_tracker_ids)
+            ? { selectedTrackerIds: record.selected_tracker_ids.map((entry) => Number(entry)).filter(Number.isFinite) }
+            : {}),
         memberProjectsOnly: typeof record.member_projects_only === 'boolean' ? record.member_projects_only : undefined,
         sortConfig: sortRecord && sortRecord.key
             ? { key: String(sortRecord.key), direction: sortRecord.direction === 'desc' ? 'desc' : 'asc' }

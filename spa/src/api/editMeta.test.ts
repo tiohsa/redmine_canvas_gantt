@@ -193,6 +193,37 @@ describe('apiClient.fetchEditMeta', () => {
         );
     });
 
+    it('sends and parses the full effective capability context', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key'
+        };
+
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                capability_context: { task_id: 10, project_id: 3, tracker_id: 4, status_id: 5 },
+                task: { id: 10, subject: 'S', assigned_to_id: null, status_id: 1, done_ratio: 0, due_date: null, lock_version: 3, project_id: 1, tracker_id: 2 },
+                editable: { subject: true, assigned_to_id: true, status_id: true, done_ratio: true, due_date: true, start_date: true, priority_id: true, category_id: true, estimated_hours: true, project_id: true, tracker_id: true, fixed_version_id: true, custom_field_values: false },
+                options: { statuses: [], assignees: [], priorities: [], categories: [], projects: [], trackers: [], versions: [], custom_fields: [] },
+                custom_field_values: {}
+            })
+        });
+
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        const meta = await apiClient.fetchEditMeta('10', 3, 4, 5);
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            expect.stringContaining('target_project_id=3&target_tracker_id=4&target_status_id=5'),
+            expect.any(Object)
+        );
+        expect(meta.capabilityContext).toEqual({ taskId: '10', projectId: 3, trackerId: 4, statusId: 5 });
+    });
+
     it.each([
         [{ status_id: null }, 'status_id'],
         [{ status_id: '' }, 'status_id'],

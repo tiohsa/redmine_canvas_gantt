@@ -32,6 +32,7 @@ import {
     selectSavedQuery,
     setAssigneeOverride,
     setStatusOverride,
+    setTrackerOverride,
     setVersionOverride
 } from '../query/queryState';
 import type { QueryContext, QueryOverrides } from '../query/types';
@@ -226,6 +227,7 @@ interface TaskState {
     selectedProjectIds: string[];
     projectSelectionExplicit: boolean;
     selectedVersionIds: string[];
+    selectedTrackerIds: number[];
     memberProjectsOnly: boolean;
 
     sortConfig: SortConfig;
@@ -308,6 +310,7 @@ interface TaskState {
     setSelectedAssigneeIds: (ids: (number | null)[]) => void;
     setSelectedProjectIds: (ids: string[]) => void;
     setSelectedVersionIds: (ids: string[]) => void;
+    setSelectedTrackerIds: (ids: number[]) => void;
     setMemberProjectsOnly: (enabled: boolean) => Promise<void>;
     scrollToTask: (taskId: string) => void;
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
@@ -361,6 +364,9 @@ const standaloneOverridesFromState = (state: TaskState): QueryOverrides => ({
         : { mode: 'all' },
     version: state.selectedVersionIds.length > 0
         ? { mode: 'subset', values: [...state.selectedVersionIds] }
+        : { mode: 'all' },
+    tracker: state.selectedTrackerIds.length > 0
+        ? { mode: 'subset', values: [...state.selectedTrackerIds] }
         : { mode: 'all' }
 });
 
@@ -384,6 +390,7 @@ const resolveLayoutState = (state: LayoutState, overrides: Partial<LayoutState> 
     versionExpansion: overrides.versionExpansion ?? state.versionExpansion,
     taskExpansion: overrides.taskExpansion ?? state.taskExpansion,
     selectedVersionIds: overrides.selectedVersionIds ?? state.selectedVersionIds,
+    selectedTrackerIds: overrides.selectedTrackerIds ?? state.selectedTrackerIds,
     selectedProjectIds: overrides.selectedProjectIds ?? state.selectedProjectIds,
     sortConfig: overrides.sortConfig ?? state.sortConfig,
     customFields: overrides.customFields ?? state.customFields,
@@ -401,6 +408,7 @@ const buildLayoutFromState = (state: LayoutState, overrides: Partial<LayoutState
         layoutState.selectedAssigneeIds,
         layoutState.selectedProjectIds,
         layoutState.selectedVersionIds,
+        layoutState.selectedTrackerIds,
         layoutState.showSubprojects,
         layoutState.currentProjectId
     );
@@ -607,6 +615,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
         selectedAssigneeIds: queryState.selectedAssigneeIds,
         selectedProjectIds: queryState.selectedProjectIds,
         selectedVersionIds: queryState.selectedVersionIds,
+        selectedTrackerIds: queryState.selectedTrackerIds,
         projectExpansion,
         versionExpansion,
         taskExpansion
@@ -619,6 +628,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
         selectedProjectIds: queryState.selectedProjectIds,
         projectSelectionExplicit: state.projectSelectionExplicit || nextResolved.canvasProjectIds !== undefined,
         selectedVersionIds: queryState.selectedVersionIds,
+        selectedTrackerIds: queryState.selectedTrackerIds,
         memberProjectsOnly: queryState.memberProjectsOnly,
         sortConfig,
         groupByProject: queryState.groupByProject,
@@ -936,9 +946,10 @@ const matchesTaskFilters = (task: Task, state: TaskState): boolean => {
     const hasAssigneeFilter = state.selectedAssigneeIds.length > 0;
     const hasProjectFilter = state.selectedProjectIds.length > 0;
     const hasVersionFilter = state.selectedVersionIds.length > 0;
+    const hasTrackerFilter = state.selectedTrackerIds.length > 0;
     const hasSubprojectFilter = !state.showSubprojects && state.currentProjectId !== null && !hasProjectFilter;
 
-    if (!hasTextFilter && !hasAssigneeFilter && !hasProjectFilter && !hasVersionFilter && !hasSubprojectFilter) {
+    if (!hasTextFilter && !hasAssigneeFilter && !hasProjectFilter && !hasVersionFilter && !hasTrackerFilter && !hasSubprojectFilter) {
         return true;
     }
 
@@ -952,6 +963,7 @@ const matchesTaskFilters = (task: Task, state: TaskState): boolean => {
             (state.selectedVersionIds.includes('_none') && !task.fixedVersionId) ||
             (task.fixedVersionId !== undefined && state.selectedVersionIds.includes(task.fixedVersionId))
         )) &&
+        (!hasTrackerFilter || (task.trackerId !== undefined && state.selectedTrackerIds.includes(task.trackerId))) &&
         (!hasSubprojectFilter || task.projectId === state.currentProjectId)
     );
 };
@@ -1094,6 +1106,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     selectedProjectIds: [],
     projectSelectionExplicit: false,
     selectedVersionIds: [],
+    selectedTrackerIds: [],
     memberProjectsOnly: preferences.memberProjectsOnly ?? false,
     sortConfig: { key: 'startDate', direction: 'asc' },
     customScales: preferences.customScales ?? {},
@@ -1196,6 +1209,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const selectedAssigneeIds = queryState.selectedAssigneeIds;
         const selectedProjectIds = queryState.selectedProjectIds;
         const selectedVersionIds = queryState.selectedVersionIds;
+        const selectedTrackerIds = queryState.selectedTrackerIds;
         const memberProjectsOnly = queryState.memberProjectsOnly;
         const activeQueryId = queryState.queryId;
         const layout = buildLayoutFromState(state, {
@@ -1205,7 +1219,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
             sortConfig,
             selectedAssigneeIds,
             selectedProjectIds,
-            selectedVersionIds
+            selectedVersionIds,
+            selectedTrackerIds
         });
 
         const nextState = {
@@ -1218,6 +1233,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 || resolved?.selectedProjectIds !== undefined
                 || state.projectSelectionExplicit,
             selectedVersionIds,
+            selectedTrackerIds,
             groupByProject,
             groupByAssignee,
             showSubprojects,
@@ -2406,6 +2422,23 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const nextState = {
             ...queryContextPatch(queryContext),
             selectedVersionIds: ids,
+            tasks: layout.tasks,
+            layoutRows: layout.layoutRows,
+            rowCount: layout.rowCount
+        };
+        syncSharedQueryState({ ...state, ...nextState });
+        queueRefreshData(get().refreshData);
+        return nextState;
+    }),
+    setSelectedTrackerIds: (ids) => set((state) => {
+        invalidateDataRequests();
+        const layout = buildLayoutFromState(state, { selectedTrackerIds: ids });
+        const queryContext = setTrackerOverride(state.queryContext, ids.length > 0
+            ? { mode: 'subset', values: ids }
+            : { mode: 'all' });
+        const nextState = {
+            ...queryContextPatch(queryContext),
+            selectedTrackerIds: ids,
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount

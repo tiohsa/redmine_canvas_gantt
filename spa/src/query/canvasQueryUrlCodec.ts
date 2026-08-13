@@ -71,6 +71,10 @@ const parseVersionList = (params: URLSearchParams): string[] | undefined => {
     });
 };
 
+const parseTrackerList = (params: URLSearchParams): number[] | undefined => (
+    parseIntegerList(params, ['tracker_ids[]', 'tracker_ids', 'tracker_id[]', 'tracker_id'])
+);
+
 export const parseCanvasQueryState = (params: URLSearchParams): Partial<ResolvedQueryState> => {
     const groupBy = params.get('group_by');
     return {
@@ -78,6 +82,7 @@ export const parseCanvasQueryState = (params: URLSearchParams): Partial<Resolved
         selectedAssigneeIds: parseAssigneeList(params),
         canvasProjectIds: parseProjectList(params),
         selectedVersionIds: parseVersionList(params),
+        selectedTrackerIds: parseTrackerList(params),
         memberProjectsOnly: undefined,
         sortConfig: parseSortConfig(params.get('sort')),
         groupBy: groupBy === 'assigned_to' || groupBy === 'assignee' ? 'assignee' : (groupBy === 'project' ? 'project' : null),
@@ -98,6 +103,7 @@ export const serializeCanvasQueryParams = (
     const params = new URLSearchParams();
     const hasPersistedQueryId = isPersistedQueryId(state.queryId);
     const hasExplicitStatusSelection = Array.isArray(state.selectedStatusIds);
+    const hasExplicitTrackerSelection = Array.isArray(state.selectedTrackerIds);
     const selectedProjectIds = state.canvasProjectIds ?? state.selectedProjectIds ?? [];
 
     if (options.queryContext) {
@@ -109,6 +115,12 @@ export const serializeCanvasQueryParams = (
         } else if (hasPersistedQueryId && hasExplicitStatusSelection) {
             params.set('set_filter', '1');
             appendStandardFilter(params, 'status_id', '*');
+        }
+        if (state.selectedTrackerIds && state.selectedTrackerIds.length > 0) {
+            state.selectedTrackerIds.forEach((id) => params.append('tracker_ids[]', String(id)));
+        } else if (hasPersistedQueryId && hasExplicitTrackerSelection) {
+            params.set('set_filter', '1');
+            appendStandardFilter(params, 'tracker_id', '*');
         }
         state.selectedAssigneeIds?.forEach((id) => params.append('assigned_to_ids[]', id === null ? 'none' : String(id)));
         state.selectedVersionIds?.forEach((id) => params.append('fixed_version_ids[]', id === '_none' ? 'none' : id));

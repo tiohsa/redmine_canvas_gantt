@@ -181,6 +181,7 @@ class CanvasGanttsController < ApplicationController
     label_project_candidates_load_failed: :label_project_candidates_load_failed,
     label_member_projects_only: :label_member_projects_only,
     label_selected_projects_outside_candidates: :label_selected_projects_outside_candidates,
+    label_selected_trackers_outside_candidates: :label_selected_trackers_outside_candidates,
     label_relation_add_failed: :label_relation_add_failed,
     error_canvas_gantt_business_calendar_invalid: :error_canvas_gantt_business_calendar_invalid,
     label_dependency_edit_mode: :label_dependency_edit_mode,
@@ -286,6 +287,7 @@ class CanvasGanttsController < ApplicationController
     help_desc_columns: :help_desc_columns,
     help_desc_assignee_filter: :help_desc_assignee_filter,
     help_desc_project_filter: :help_desc_project_filter,
+    help_desc_tracker_filter: :help_desc_tracker_filter,
     help_desc_version_filter: :help_desc_version_filter,
     help_desc_status_filter: :help_desc_status_filter,
     help_desc_task_bar_dates: :help_desc_task_bar_dates,
@@ -403,6 +405,7 @@ class CanvasGanttsController < ApplicationController
         issues: resolved_query[:issues],
         filter_option_projects: filter_option_projects(project_ids, member_projects_only: member_projects_only),
         filter_option_issues: filter_option_issues(project_ids),
+        filter_option_trackers: filter_option_trackers(project_ids),
         initial_state: resolved_query[:initial_state],
         query_context: resolved_query[:query_context],
         warnings: resolved_query[:warnings] + baseline_load.warnings,
@@ -465,13 +468,15 @@ class CanvasGanttsController < ApplicationController
     return unless ensure_issue_in_scope(issue)
 
     editable = User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?
-    field_editable = build_field_editable(issue, editable)
-    custom_fields, custom_field_values = custom_field_extractor.extract_custom_fields(
-      issue,
-      inline_custom_fields_enabled? && field_editable[:custom_field_values]
-    )
     options_project = edit_meta_options_project(issue)
     return unless options_project
+
+    capability_issue = edit_meta_capability_issue(issue, options_project)
+    field_editable = build_field_editable(capability_issue, editable)
+    custom_fields, custom_field_values = custom_field_extractor.extract_custom_fields(
+      capability_issue,
+      inline_custom_fields_enabled? && field_editable[:custom_field_values]
+    )
 
     render json: edit_meta_payload_builder.build(
       issue: issue,
@@ -480,7 +485,9 @@ class CanvasGanttsController < ApplicationController
       custom_field_values: custom_field_values,
       permissions: @permissions,
       project_scope_ids: current_view_scope[:scope_project_ids],
-      options_project: options_project
+      options_project: options_project,
+      capability_issue: capability_issue,
+      capability_context: edit_meta_capability_context(issue, capability_issue)
     )
   rescue ActiveRecord::RecordNotFound
     render json: mutation_failure_response(
@@ -866,7 +873,24 @@ class CanvasGanttsController < ApplicationController
   end
 
   def filter_option_issues(project_ids)
-    Issue.visible.where(project_id: project_ids).select(:id, :assigned_to_id, :project_id).includes(:assigned_to).to_a
+    Issue.visible.where(project_id: project_ids)
+      .select(:id, :assigned_to_id, :project_id)
+      .includes(:assigned_to)
+      .to_a
+  end
+
+  # Keep tracker candidates independent from the filtered task collection and
+  # avoid materializing every visible Issue.  Issue.visible remains the
+  # permission boundary; the distinct projection is O(project-tracker
+  # memberships) and the tracker name is fetched in the same query.
+  def filter_option_trackers(project_ids)
+    Issue.visible
+      .where(project_id: project_ids)
+      .where.not(tracker_id: nil)
+      .joins(:tracker)
+      .distinct
+      .pluck(:tracker_id, :project_id, 'trackers.name')
+      .map { |tracker_id, project_id, name| { id: tracker_id, project_id: project_id, name: name } }
   end
 
   def render_internal_error(error)
@@ -1335,6 +1359,69 @@ class CanvasGanttsController < ApplicationController
     end
 
     target_project
+  end
+
+  # Build an unsaved Issue copy for capability calculation.  Redmine's own
+  # project/tracker/status setters and workflow methods are the source of truth
+  # for draft previews; the persisted Issue is never changed or saved here.
+  def edit_meta_capability_issue(issue, options_project)
+    return issue unless edit_meta_preview_requested?
+    return issue unless issue.is_a?(Issue)
+
+    preview = issue.dup
+    preview.project = options_project if options_project && preview.project != options_project
+
+    allowed_trackers = begin
+      Array(preview.allowed_target_trackers(User.current))
+    rescue StandardError
+      Array(options_project&.trackers)
+    end
+    requested_tracker_id = edit_meta_context_integer(:target_tracker_id)
+    requested_tracker = allowed_trackers.find { |tracker| tracker.id.to_i == requested_tracker_id } if requested_tracker_id
+    if requested_tracker
+      preview.tracker = requested_tracker
+    elsif allowed_trackers.present? && !allowed_trackers.any? { |tracker| tracker.id.to_i == preview.tracker_id.to_i }
+      preview.tracker = allowed_trackers.first
+    end
+
+    requested_status_id = edit_meta_context_integer(:target_status_id)
+    if requested_status_id
+      allowed_status = Array(preview.new_statuses_allowed_to(User.current)).find do |status|
+        status.id.to_i == requested_status_id
+      end
+      preview.status = allowed_status if allowed_status
+    end
+
+    # Treat the preview values as the effective persisted baseline before
+    # asking Redmine for the next workflow transitions.  This prevents
+    # `status_id_was`/`tracker_id_was` from reintroducing the old draft state.
+    preview.clear_changes_information
+    preview
+  rescue StandardError
+    # A preview is additive and must not make the existing read endpoint fail
+    # when a Redmine version exposes a slightly different model API.
+    issue
+  end
+
+  def edit_meta_preview_requested?
+    %i[target_project_id target_tracker_id target_status_id].any? do |key|
+      params[key].present?
+    end
+  end
+
+  def edit_meta_context_integer(key)
+    value = params[key].presence
+    parsed = Integer(value, exception: false)
+    parsed if parsed&.positive?
+  end
+
+  def edit_meta_capability_context(issue, capability_issue)
+    {
+      task_id: issue.id,
+      project_id: capability_issue.project_id,
+      tracker_id: capability_issue.tracker_id,
+      status_id: capability_issue.status_id
+    }
   end
 
   def ensure_issue_in_operation_scope(issue, resource_role: 'scope', resource_type: 'task')

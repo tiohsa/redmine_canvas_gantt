@@ -3,6 +3,7 @@ import type {
     QueryContext,
     QueryOverrides,
     StatusFilterOverride,
+    TrackerFilterOverride,
     VersionFilterOverride
 } from './types';
 
@@ -38,6 +39,11 @@ export const setVersionOverride = (
     override: VersionFilterOverride
 ): QueryContext => setOverride(queryContext, 'version', override);
 
+export const setTrackerOverride = (
+    queryContext: QueryContext,
+    override: TrackerFilterOverride
+): QueryContext => setOverride(queryContext, 'tracker', override);
+
 export const isQueryModified = (queryContext: QueryContext): boolean =>
     Object.keys(queryContext.overrides).length > 0;
 
@@ -63,7 +69,8 @@ const setOverride = <K extends OverrideKey>(
 const cloneOverrides = (overrides: QueryOverrides): QueryOverrides => ({
     ...(overrides.status ? { status: cloneOverride(overrides.status) } : {}),
     ...(overrides.assignee ? { assignee: cloneOverride(overrides.assignee) } : {}),
-    ...(overrides.version ? { version: cloneOverride(overrides.version) } : {})
+    ...(overrides.version ? { version: cloneOverride(overrides.version) } : {}),
+    ...(overrides.tracker ? { tracker: cloneOverride(overrides.tracker) } : {})
 });
 
 const cloneOverride = <TOverride extends QueryOverrides[OverrideKey]>(

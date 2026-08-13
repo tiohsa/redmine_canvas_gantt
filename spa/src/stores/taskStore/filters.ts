@@ -6,6 +6,7 @@ export const applyFilters = (
     selectedAssigneeIds: (number | null)[],
     selectedProjectIds: string[],
     selectedVersionIds: string[],
+    selectedTrackerIds: number[],
     showSubprojects: boolean = true,
     currentProjectId: string | null = null
 ) => {
@@ -14,6 +15,7 @@ export const applyFilters = (
     const hasAssigneeFilter = selectedAssigneeIds.length > 0;
     const hasProjectFilter = selectedProjectIds.length > 0;
     const hasVersionFilter = selectedVersionIds.length > 0;
+    const hasTrackerFilter = selectedTrackerIds.length > 0;
     const hasSubprojectFilter = !showSubprojects && currentProjectId !== null && !hasProjectFilter;
 
     const markContext = (task: Task, isContextOnly: boolean): Task => {
@@ -21,7 +23,7 @@ export const applyFilters = (
         return { ...task, isContextOnly };
     };
 
-    if (!hasTextFilter && !hasAssigneeFilter && !hasProjectFilter && !hasVersionFilter && !hasSubprojectFilter) {
+    if (!hasTextFilter && !hasAssigneeFilter && !hasProjectFilter && !hasVersionFilter && !hasTrackerFilter && !hasSubprojectFilter) {
         return tasks.map(task => markContext(task, false));
     }
 
@@ -34,8 +36,9 @@ export const applyFilters = (
             (selectedVersionIds.includes('_none') && !t.fixedVersionId) ||
             (t.fixedVersionId && selectedVersionIds.includes(t.fixedVersionId))
         );
+        const matchesTracker = !hasTrackerFilter || (t.trackerId !== undefined && selectedTrackerIds.includes(t.trackerId));
         const matchesSubproject = !hasSubprojectFilter || t.projectId === currentProjectId;
-        return matchesText && matchesAssignee && matchesProject && matchesVersion && matchesSubproject;
+        return matchesText && matchesAssignee && matchesProject && matchesVersion && matchesTracker && matchesSubproject;
     });
 
     if (matched.length === 0) return [];

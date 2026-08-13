@@ -6,6 +6,7 @@ import {
     selectSavedQuery,
     setAssigneeOverride,
     setStatusOverride,
+    setTrackerOverride,
     setVersionOverride
 } from './queryState';
 import type { QueryContext, QueryOverrides } from './types';
@@ -66,6 +67,21 @@ describe('query state contract transitions', () => {
             overrides: {
                 assignee: { mode: 'subset', values: [7, null] },
                 version: { mode: 'all' }
+            }
+        });
+    });
+
+    it('sets tracker overrides without changing other dimension selections', () => {
+        const context = setTrackerOverride(
+            setStatusOverride(selectSavedQuery(12), { mode: 'subset', values: [3] }),
+            { mode: 'subset', values: [7, 9] }
+        );
+
+        expect(context).toEqual({
+            baseQueryId: 12,
+            overrides: {
+                status: { mode: 'subset', values: [3] },
+                tracker: { mode: 'subset', values: [7, 9] }
             }
         });
     });

@@ -53,6 +53,10 @@ export const parseRedmineQueryState = (params: URLSearchParams): Partial<Resolve
                 }
                 if (operator === '*') state.selectedVersionIds = [];
                 break;
+            case 'tracker_id':
+                if (operator === '=') state.selectedTrackerIds = parseIntegerTokens(values);
+                if (operator === '*') state.selectedTrackerIds = [];
+                break;
             case 'project_id':
                 if (operator === '=') state.canvasProjectIds = parseStringTokens(values);
                 break;

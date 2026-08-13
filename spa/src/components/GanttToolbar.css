@@ -31,6 +31,10 @@
     order: 11;
 }
 
+.gantt-toolbar-left > .gantt-toolbar-tracker-filter {
+    order: 9;
+}
+
 /* Keep the version filter immediately to the left of the assignee filter. */
 .gantt-toolbar-left > .gantt-toolbar-version-filter {
     order: 10;
@@ -41,7 +45,7 @@
 }
 
 .gantt-toolbar-left > .gantt-toolbar-status-filter {
-    order: 11;
+    order: 12;
 }
 
 .gantt-toolbar-left > :nth-child(11) {

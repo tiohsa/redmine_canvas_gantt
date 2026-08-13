@@ -61,6 +61,8 @@ describe('UiSidebar Blur-to-Save', () => {
             dueDate: parseDateOnly('2025-01-05')!,
             ratioDone: 0,
             statusId: 1,
+            projectId: '1',
+            trackerId: 1,
             lockVersion: 1,
             editable: true,
             rowIndex: 0,
