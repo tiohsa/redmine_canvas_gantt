@@ -16,7 +16,8 @@ describe('QueryContext URL and storage codecs', () => {
             overrides: {
                 status: { mode: 'all' },
                 assignee: { mode: 'all' },
-                version: { mode: 'all' }
+                version: { mode: 'all' },
+                tracker: { mode: 'all' }
             }
         };
         const params = buildQueryParamsFromQueryContext(context);
@@ -30,7 +31,8 @@ describe('QueryContext URL and storage codecs', () => {
             overrides: {
                 status: { mode: 'subset', values: [1, 2] },
                 assignee: { mode: 'subset', values: [7, null] },
-                version: { mode: 'subset', values: ['4', '_none'] }
+                version: { mode: 'subset', values: ['4', '_none'] },
+                tracker: { mode: 'subset', values: [3, 8] }
             }
         };
         const params = buildQueryParamsFromQueryContext(context);
@@ -38,6 +40,18 @@ describe('QueryContext URL and storage codecs', () => {
 
         expect(parsed).toEqual(context);
         expect(parsed.overrides).not.toHaveProperty('project');
+    });
+
+    it('round-trips tracker subset overrides through tracker URL parameters', () => {
+        const context: QueryContext = {
+            baseQueryId: 42,
+            overrides: { tracker: { mode: 'subset', values: [3, 8] } }
+        };
+
+        const params = buildQueryParamsFromQueryContext(context);
+
+        expect(params.getAll('tracker_ids[]')).toEqual(['3', '8']);
+        expect(parseQueryContextFromUrl(`?${params.toString()}`)).toEqual(context);
     });
 
     it('does not convert project URL input into a Query override', () => {
@@ -50,7 +64,8 @@ describe('QueryContext URL and storage codecs', () => {
             queryId: 100,
             selectedStatusIds: [],
             selectedAssigneeIds: [null],
-            selectedVersionIds: ['_none']
+            selectedVersionIds: ['_none'],
+            selectedTrackerIds: [3, 8]
         });
         expect(deserializeQueryContext(serializeQueryContext(context))).toEqual(context);
     });

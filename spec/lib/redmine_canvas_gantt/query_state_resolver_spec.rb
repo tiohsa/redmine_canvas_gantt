@@ -162,6 +162,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       selected_assignee_ids: [7, nil],
       selected_project_ids: ['1', '2'],
       selected_version_ids: ['11'],
+      selected_tracker_ids: [3],
       member_projects_only: false,
       show_subprojects: true,
       sort_config: { key: 'startDate', direction: 'desc' },
@@ -174,10 +175,118 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
         status: { mode: 'subset', values: [1, 2] },
         assignee: { mode: 'subset', values: [7, nil] },
         project: { mode: 'subset', values: ['9'] },
-        version: { mode: 'subset', values: ['11'] }
+        version: { mode: 'subset', values: ['11'] },
+        tracker: { mode: 'subset', values: [3] }
       }
     )
-    expect(result[:warnings]).to include('Ignored unsupported field tracker_id')
+    expect(result[:warnings]).not_to include('Ignored unsupported field tracker_id')
+  end
+
+  it 'applies tracker all standard filter without adding a tracker scope' do
+    params = ActionController::Parameters.new(
+      set_filter: '1',
+      f: ['tracker_id'],
+      op: { 'tracker_id' => '*' }
+    )
+
+    resolver = described_class.new(
+      project: project,
+      params: params,
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    )
+
+    result = resolver.resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state][:selected_tracker_ids]).to eq([])
+    expect(result[:query_context][:explicit_overrides]).to include(tracker: { mode: 'all' })
+  end
+
+  it 'preserves an unsupported saved-query tracker operator' do
+    query = instance_double(
+      IssueQuery,
+      id: 103,
+      visible?: true,
+      filters: { 'tracker_id' => { operator: '!', values: ['3'] } },
+      sort_criteria: nil,
+      group_by: nil
+    )
+    working_query = instance_double(
+      IssueQuery,
+      filters: query.filters,
+      sort_criteria: nil,
+      group_by: nil,
+      issue_ids: [31]
+    )
+
+    allow(IssueQuery).to receive(:find_by).with(id: '103').and_return(query)
+    allow(query).to receive(:dup).and_return(working_query)
+    expect(working_query).to receive(:filters=).with(query.filters)
+    allow(working_query).to receive(:column_names).and_return([])
+
+    result = described_class.new(
+      project: project,
+      params: ActionController::Parameters.new(query_id: '103'),
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    ).resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state][:selected_tracker_ids]).to eq([])
+    expect(result[:query_context][:explicit_overrides]).not_to have_key(:tracker)
+  end
+
+  it 'inherits tracker selections from a saved query' do
+    query = instance_double(
+      IssueQuery,
+      id: 104,
+      visible?: true,
+      filters: { 'tracker_id' => { operator: '=', values: %w[3 4] } },
+      sort_criteria: nil,
+      group_by: nil
+    )
+    working_query = instance_double(
+      IssueQuery,
+      filters: query.filters,
+      sort_criteria: nil,
+      group_by: nil,
+      issue_ids: [32, 33]
+    )
+
+    allow(IssueQuery).to receive(:find_by).with(id: '104').and_return(query)
+    allow(query).to receive(:dup).and_return(working_query)
+    allow(working_query).to receive(:filters=)
+    allow(working_query).to receive(:column_names).and_return([])
+
+    result = described_class.new(
+      project: project,
+      params: ActionController::Parameters.new(query_id: '104'),
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    ).resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state][:selected_tracker_ids]).to eq([3, 4])
+    expect(result[:query_context][:explicit_overrides]).to eq({})
+  end
+
+  it 'filters issues at the database scope for a Canvas tracker selection' do
+    filtered_scope = double('FilteredScope')
+    expect(issue_scope).to receive(:where).with(project_id: [1, 2]).and_return(issue_scope)
+    expect(issue_scope).to receive(:where).with(tracker_id: [3, 4]).and_return(filtered_scope)
+    allow(filtered_scope).to receive(:includes).with(*issue_includes).and_return(filtered_scope)
+    allow(filtered_scope).to receive(:to_a).and_return([])
+
+    result = described_class.new(
+      project: project,
+      params: ActionController::Parameters.new(tracker_ids: ['3', '4']),
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes
+    ).resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state][:selected_tracker_ids]).to eq([3, 4])
   end
 
   it 'keeps standard subproject filters in the Redmine query without changing Canvas state' do

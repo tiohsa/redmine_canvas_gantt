@@ -22,9 +22,9 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
       root_project = instance_double(Project, id: 1, name: 'Root')
       alice = instance_double(User, name: 'Alice')
       bob = instance_double(User, name: 'Bob')
-      issue_a = instance_double(Issue, assigned_to_id: 7, assigned_to: alice, project_id: 1)
-      issue_b = instance_double(Issue, assigned_to_id: 8, assigned_to: bob, project_id: 2)
-      issue_c = instance_double(Issue, assigned_to_id: nil, assigned_to: nil, project_id: 2)
+      issue_a = instance_double(Issue, assigned_to_id: 7, assigned_to: alice, project_id: 1, tracker_id: nil, tracker: nil)
+      issue_b = instance_double(Issue, assigned_to_id: 8, assigned_to: bob, project_id: 2, tracker_id: nil, tracker: nil)
+      issue_c = instance_double(Issue, assigned_to_id: nil, assigned_to: nil, project_id: 2, tracker_id: nil, tracker: nil)
 
       payload = builder.build(
         project: project,
@@ -45,9 +45,41 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
           { id: nil, name: nil, project_ids: ['2'] },
           { id: 7, name: 'Alice', project_ids: ['1'] },
           { id: 8, name: 'Bob', project_ids: ['2'] }
-        ]
+        ],
+        trackers: []
       )
       expect(payload[:businessCalendar]).to eq(status: 'ok', revision: 'revision')
+    end
+
+    it 'builds tracker candidates from the unfiltered candidate membership set' do
+      custom_field_extractor = instance_double(
+        RedmineCanvasGantt::CustomFieldExtractor,
+        build_project_custom_fields: []
+      )
+      builder = described_class.new(custom_field_extractor: custom_field_extractor, current_user: instance_double(User))
+      allow(Version).to receive_message_chain(:visible, :where).and_return([])
+      allow(IssueStatus).to receive(:sorted).and_return([])
+
+      candidates = [
+        { id: 3, name: 'Bug', project_id: 1 },
+        { id: 4, name: 'Feature', project_id: 2 },
+        { id: 3, name: 'Bug', project_id: 2 }
+      ]
+
+      payload = builder.build(
+        project: instance_double(Project, id: 1, name: 'Root', start_date: nil, due_date: nil),
+        permissions: {},
+        project_ids: [1, 2],
+        issues: [],
+        filter_option_projects: [],
+        filter_option_issues: [],
+        filter_option_trackers: candidates
+      )
+
+      expect(payload[:filter_options][:trackers]).to eq([
+        { id: 3, name: 'Bug', project_ids: %w[1 2] },
+        { id: 4, name: 'Feature', project_ids: ['2'] }
+      ])
     end
   end
 

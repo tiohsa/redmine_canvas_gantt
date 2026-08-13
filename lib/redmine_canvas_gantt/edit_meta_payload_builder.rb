@@ -7,8 +7,9 @@ module RedmineCanvasGantt
       @version_class = version_class
     end
 
-    def build(issue:, editable:, custom_fields:, custom_field_values:, permissions:, project_scope_ids:, options_project: nil)
+    def build(issue:, editable:, custom_fields:, custom_field_values:, permissions:, project_scope_ids:, options_project: nil, capability_issue: issue, capability_context: nil)
       project_for_options = options_project || issue.project
+      capability_issue ||= issue
 
       {
         task: {
@@ -27,16 +28,22 @@ module RedmineCanvasGantt
           fixed_version_id: issue.fixed_version_id,
           lock_version: issue.lock_version
         },
+        capability_context: capability_context || {
+          task_id: issue.id,
+          project_id: capability_issue.project_id,
+          tracker_id: capability_issue.tracker_id,
+          status_id: capability_issue.status_id
+        },
         editable: editable,
         options: {
-          statuses: statuses_for(issue),
-          assignees: assignables_for(issue, project_for_options),
+          statuses: statuses_for(capability_issue),
+          assignees: assignables_for(capability_issue, project_for_options),
           priorities: @issue_priority_class.active.sort_by(&:position).map do |priority|
             { id: priority.id, name: priority.name, position: priority.position }
           end,
           categories: project_for_options.issue_categories.map { |category| { id: category.id, name: category.name } },
           projects: project_options_for(project_scope_ids),
-          trackers: project_for_options.trackers.map { |tracker| { id: tracker.id, name: tracker.name } },
+          trackers: trackers_for(capability_issue, project_for_options),
           versions: @version_class.visible.where(project_id: project_for_options.id).map { |version| { id: version.id, name: version.name } },
           custom_fields: custom_fields
         },
@@ -61,6 +68,22 @@ module RedmineCanvasGantt
       users.to_a
         .sort_by { |user| user.name.to_s.downcase }
         .map { |user| { id: user.id, name: user.name } }
+    end
+
+    def trackers_for(issue, project_for_options)
+      trackers = begin
+        if defined?(Issue) && issue.is_a?(Issue) && issue.respond_to?(:allowed_target_trackers)
+          Array(issue.allowed_target_trackers(@current_user))
+        else
+          Array(project_for_options.trackers)
+        end
+      rescue StandardError
+        Array(project_for_options.trackers)
+      end
+
+      trackers
+        .uniq { |tracker| tracker.id }
+        .map { |tracker| { id: tracker.id, name: tracker.name } }
     end
 
     def project_options_for(project_scope_ids)

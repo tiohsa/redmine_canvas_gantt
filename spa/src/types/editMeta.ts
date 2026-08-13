@@ -31,7 +31,15 @@ export interface CustomFieldMeta {
     possibleValues?: string[] | null;
 }
 
+export interface EditMetaCapabilityContext {
+    taskId: string;
+    projectId: number;
+    trackerId: number;
+    statusId: number;
+}
+
 export interface TaskEditMeta {
+    capabilityContext?: EditMetaCapabilityContext;
     task: {
         id: string;
         subject: string;

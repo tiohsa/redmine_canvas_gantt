@@ -8,6 +8,7 @@ module RedmineCanvasGantt
       selected_assignee_ids: [],
       selected_project_ids: [],
       selected_version_ids: [],
+      selected_tracker_ids: [],
       member_projects_only: false,
       sort_config: { key: 'startDate', direction: 'asc' },
       group_by_project: true,
@@ -55,8 +56,8 @@ module RedmineCanvasGantt
       'updatedOn' => 'updated_on'
     }.freeze
     QUERY_COLUMN_TO_CANVAS = CANVAS_COLUMN_TO_QUERY.invert.freeze
-    URL_OVERRIDE_FILTERS = %w[status_id assigned_to_id fixed_version_id].freeze
-    STANDARD_FILTER_FIELDS = %w[status_id assigned_to_id project_id fixed_version_id subproject_id].freeze
+    URL_OVERRIDE_FILTERS = %w[status_id assigned_to_id fixed_version_id tracker_id].freeze
+    STANDARD_FILTER_FIELDS = %w[status_id assigned_to_id project_id fixed_version_id tracker_id subproject_id].freeze
     LIST_SPLIT_PATTERN = /[|,]/
     NONE_MARKERS = %w[_none none].freeze
     STANDARD_FILTER_OPERATORS = {
@@ -64,6 +65,7 @@ module RedmineCanvasGantt
       'assigned_to_id' => %w[= * !*],
       'project_id' => %w[= *],
       'fixed_version_id' => %w[= *],
+      'tracker_id' => %w[= *],
       'subproject_id' => %w[* !*]
     }.freeze
 
@@ -149,6 +151,9 @@ module RedmineCanvasGantt
       standard_filter_override('fixed_version_id') do |operator, values|
         overrides[:version] = version_override_for(operator, values)
       end
+      standard_filter_override('tracker_id') do |operator, values|
+        overrides[:tracker] = tracker_override_for(operator, values)
+      end
 
       if url_filter_values('status_id').present?
         overrides[:status] = subset_override(parse_integer_list(url_filter_values('status_id')))
@@ -158,6 +163,9 @@ module RedmineCanvasGantt
       end
       if url_filter_values('fixed_version_id').present?
         overrides[:version] = subset_override(parse_version_list(url_filter_values('fixed_version_id')))
+      end
+      if url_filter_values('tracker_id').present?
+        overrides[:tracker] = subset_override(parse_integer_list(url_filter_values('tracker_id')))
       end
 
       overrides.compact
@@ -211,6 +219,15 @@ module RedmineCanvasGantt
       case operator
       when '='
         subset_override(parse_version_list(values))
+      when '*'
+        { mode: 'all' }
+      end
+    end
+
+    def tracker_override_for(operator, values)
+      case operator
+      when '='
+        subset_override(parse_integer_list(values))
       when '*'
         { mode: 'all' }
       end
@@ -271,6 +288,7 @@ module RedmineCanvasGantt
         selected_status_ids: extract_filter_ids(filters['status_id']),
         selected_assignee_ids: extract_filter_ids(filters['assigned_to_id'], allow_none: true),
         selected_version_ids: extract_filter_ids(filters['fixed_version_id'], allow_none: true).map { |id| id.nil? ? '_none' : id.to_s },
+        selected_tracker_ids: extract_filter_ids(filters['tracker_id']),
         sort_config: extract_sort_config(query) || DEFAULT_STATE[:sort_config].deep_dup,
         group_by_project: query.group_by.to_s == 'project',
         group_by_assignee: query.group_by.to_s == 'assigned_to'
@@ -347,6 +365,7 @@ module RedmineCanvasGantt
       apply_status_override!(state)
       apply_assignee_override!(state)
       apply_version_override!(state)
+      apply_tracker_override!(state)
       apply_project_override!(state)
       apply_show_subprojects_override!(state)
       apply_member_projects_only_override!(state)
@@ -381,6 +400,11 @@ module RedmineCanvasGantt
     def apply_version_override!(state)
       version_ids = parse_version_list(url_filter_values('fixed_version_id'))
       state[:selected_version_ids] = version_ids if version_ids.present?
+    end
+
+    def apply_tracker_override!(state)
+      tracker_ids = parse_integer_list(url_filter_values('tracker_id'))
+      state[:selected_tracker_ids] = tracker_ids if tracker_ids.present?
     end
 
     def apply_project_override!(state)
@@ -440,6 +464,8 @@ module RedmineCanvasGantt
           @redmine_project_ids = operator == '=' ? parse_string_list(values) : nil
         when 'fixed_version_id'
           state[:selected_version_ids] = (operator == '*' ? [] : parse_version_list(values))
+        when 'tracker_id'
+          state[:selected_tracker_ids] = (operator == '*' ? [] : parse_integer_list(values))
         end
       end
 
@@ -496,6 +522,7 @@ module RedmineCanvasGantt
       scope = scope.where(status_id: state[:selected_status_ids]) if state[:selected_status_ids].present?
       scope = apply_version_filter(scope, state[:selected_version_ids]) if state[:selected_version_ids].present?
       scope = apply_assignee_filter(scope, state[:selected_assignee_ids]) if state[:selected_assignee_ids].present?
+      scope = scope.where(tracker_id: state[:selected_tracker_ids]) if state[:selected_tracker_ids].present?
       scope.includes(*@issue_includes)
     end
 

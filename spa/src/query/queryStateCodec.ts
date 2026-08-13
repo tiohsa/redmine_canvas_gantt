@@ -5,6 +5,7 @@ import type {
     QueryOverrides,
     SharedViewState,
     StatusFilterOverride,
+    TrackerFilterOverride,
     VersionFilterOverride
 } from './types';
 import { isPersistedQueryId } from './queryIdCodec';
@@ -92,6 +93,16 @@ const normalizeVersionOverride = (override: unknown): VersionFilterOverride | un
     return values ? { mode: 'subset', values } : undefined;
 };
 
+const normalizeTrackerOverride = (override: unknown): TrackerFilterOverride | undefined => {
+    const record = isRecord(override) ? override : null;
+    if (!record) return undefined;
+    if (record.mode === 'inherit') return { mode: 'inherit' };
+    if (record.mode === 'all') return { mode: 'all' };
+    if (record.mode !== 'subset') return undefined;
+    const values = parseNumberArray(record.values);
+    return values ? { mode: 'subset', values } : undefined;
+};
+
 export const normalizeQueryContext = (value: unknown): QueryContext => {
     const record = isRecord(value) ? value : {};
     const rawQueryId = record.baseQueryId ?? record.query_id;
@@ -104,13 +115,15 @@ export const normalizeQueryContext = (value: unknown): QueryContext => {
     const status = normalizeStatusOverride(overridesRecord.status);
     const assignee = normalizeAssigneeOverride(overridesRecord.assignee);
     const version = normalizeVersionOverride(overridesRecord.version);
+    const tracker = normalizeTrackerOverride(overridesRecord.tracker);
 
     return {
         baseQueryId: isPersistedQueryId(queryId) ? queryId : null,
         overrides: {
             ...(status && status.mode !== 'inherit' ? { status } : {}),
             ...(assignee && assignee.mode !== 'inherit' ? { assignee } : {}),
-            ...(version && version.mode !== 'inherit' ? { version } : {})
+            ...(version && version.mode !== 'inherit' ? { version } : {}),
+            ...(tracker && tracker.mode !== 'inherit' ? { tracker } : {})
         }
     };
 };
@@ -151,6 +164,11 @@ export const resolvedStateToQueryContext = (state?: Partial<ResolvedQueryState>)
             ? { mode: 'subset', values: [...state.selectedVersionIds] }
             : { mode: 'all' };
     }
+    if (Array.isArray(state?.selectedTrackerIds)) {
+        overrides.tracker = state.selectedTrackerIds.length > 0
+            ? { mode: 'subset', values: [...state.selectedTrackerIds] }
+            : { mode: 'all' };
+    }
 
     return {
         baseQueryId: state?.queryId && isPersistedQueryId(state.queryId) ? state.queryId : null,
@@ -173,6 +191,9 @@ export const queryContextToResolvedState = (queryContext?: QueryContext): Resolv
     }
     if (overrides.version) {
         state.selectedVersionIds = overrides.version.mode === 'subset' ? [...overrides.version.values] : [];
+    }
+    if (overrides.tracker) {
+        state.selectedTrackerIds = overrides.tracker.mode === 'subset' ? [...overrides.tracker.values] : [];
     }
 
     return state;
@@ -227,6 +248,9 @@ const normalizeForSharedProjectState = (state: Partial<ResolvedQueryState>): Par
     if (state.selectedAssigneeIds?.length) normalized.selectedAssigneeIds = [...state.selectedAssigneeIds];
     if (Array.isArray(state.canvasProjectIds)) normalized.canvasProjectIds = [...state.canvasProjectIds];
     if (state.selectedVersionIds?.length) normalized.selectedVersionIds = [...state.selectedVersionIds];
+    if (Array.isArray(state.selectedTrackerIds) && (state.selectedTrackerIds.length > 0 || hasPersistedQueryId)) {
+        normalized.selectedTrackerIds = [...state.selectedTrackerIds];
+    }
     if (state.groupBy === 'project' && hasPersistedQueryId) normalized.groupBy = 'project';
     if (state.groupBy === 'assignee') normalized.groupBy = 'assignee';
     if (state.groupBy === null) normalized.groupBy = null;
@@ -272,7 +296,8 @@ export const cloneProjectState = (state: SharedQueryProjectStateV3): SharedQuery
         overrides: {
             ...(state.queryContext.overrides.status ? { status: cloneOverride(state.queryContext.overrides.status) } : {}),
             ...(state.queryContext.overrides.assignee ? { assignee: cloneOverride(state.queryContext.overrides.assignee) } : {}),
-            ...(state.queryContext.overrides.version ? { version: cloneOverride(state.queryContext.overrides.version) } : {})
+            ...(state.queryContext.overrides.version ? { version: cloneOverride(state.queryContext.overrides.version) } : {}),
+            ...(state.queryContext.overrides.tracker ? { tracker: cloneOverride(state.queryContext.overrides.tracker) } : {})
         }
     },
     sharedViewState: {
@@ -331,6 +356,11 @@ const parseVersionList = (params: URLSearchParams): string[] | undefined => {
         if (value === '_none' || value === 'none' || value === '!' || value === '!*') return ['_none'];
         return /^-?\d+$/.test(value) ? [value] : [];
     });
+};
+
+const parseTrackerList = (params: URLSearchParams): number[] | undefined => {
+    const values = parseIntegerList(params, ['tracker_ids[]', 'tracker_ids', 'tracker_id[]', 'tracker_id']);
+    return values;
 };
 
 const parseRedmineFilters = (params: URLSearchParams): Record<string, { operator: string; values: string[] }> => {
@@ -408,6 +438,21 @@ export const parseQueryContextFromUrl = (search: string = window.location.search
         }
     }
 
+    // 4. Tracker Filter
+    const trackerValues = parseTrackerList(params);
+    if (trackerValues !== undefined) {
+        overrides.tracker = trackerValues.length > 0
+            ? { mode: 'subset', values: trackerValues }
+            : { mode: 'all' };
+    } else if (hasSetFilter && filters.tracker_id) {
+        const { operator, values } = filters.tracker_id;
+        if (operator === '=') {
+            overrides.tracker = { mode: 'subset', values: parseIntegerTokens(values) };
+        } else if (operator === '*') {
+            overrides.tracker = { mode: 'all' };
+        }
+    }
+
     return {
         baseQueryId,
         overrides
@@ -420,7 +465,7 @@ export const buildQueryParamsFromQueryContext = (context: QueryContext): URLSear
         params.set('query_id', String(context.baseQueryId));
     }
 
-    const { status, assignee, version } = context.overrides;
+    const { status, assignee, version, tracker } = context.overrides;
 
     // 1. Status
     if (status) {
@@ -457,6 +502,19 @@ export const buildQueryParamsFromQueryContext = (context: QueryContext): URLSear
                 params.set('set_filter', '1');
                 params.append('f[]', 'fixed_version_id');
                 params.set('op[fixed_version_id]', '*');
+            }
+        }
+    }
+
+    // 4. Tracker
+    if (tracker) {
+        if (tracker.mode === 'subset') {
+            tracker.values.forEach(id => params.append('tracker_ids[]', String(id)));
+        } else if (tracker.mode === 'all') {
+            if (context.baseQueryId) {
+                params.set('set_filter', '1');
+                params.append('f[]', 'tracker_id');
+                params.set('op[tracker_id]', '*');
             }
         }
     }

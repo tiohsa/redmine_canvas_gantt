@@ -102,9 +102,17 @@ export interface FilterAssigneeOption {
     projectIds: string[];
 }
 
+export interface FilterTrackerOption {
+    id: number;
+    name: string;
+    projectIds: string[];
+}
+
 export interface FilterOptions {
     projects: FilterProjectOption[];
     assignees: FilterAssigneeOption[];
+    /** Optional for payloads from older plugin versions. */
+    trackers?: FilterTrackerOption[];
 }
 
 export interface TaskStatus {
@@ -119,6 +127,7 @@ export interface BusinessQueryState {
     selectedAssigneeIds: (number | null)[];
     selectedProjectIds: string[];
     selectedVersionIds: string[];
+    selectedTrackerIds: number[];
     memberProjectsOnly: boolean;
     sortConfig: { key: string; direction: 'asc' | 'desc' } | null;
     groupByProject: boolean;

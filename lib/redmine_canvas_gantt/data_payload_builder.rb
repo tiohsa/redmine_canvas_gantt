@@ -7,13 +7,17 @@ module RedmineCanvasGantt
       @current_user = current_user
     end
 
-    def build(project:, permissions:, project_ids:, issues:, filter_option_projects:, filter_option_issues:, initial_state: nil, query_context: nil, warnings: [], baseline: nil, business_calendar: nil)
+    def build(project:, permissions:, project_ids:, issues:, filter_option_projects:, filter_option_issues:, filter_option_trackers: nil, initial_state: nil, query_context: nil, warnings: [], baseline: nil, business_calendar: nil)
       {
         tasks: build_tasks(issues),
         custom_fields: @custom_field_extractor.build_project_custom_fields(project_ids, issues),
         relations: build_relations(issues),
         versions: build_versions(project_ids),
-        filter_options: build_filter_options(projects: filter_option_projects, issues: filter_option_issues),
+        filter_options: build_filter_options(
+          projects: filter_option_projects,
+          issues: filter_option_issues,
+          trackers: filter_option_trackers || []
+        ),
         statuses: build_statuses,
         project: build_project_payload(project),
         permissions: permissions,
@@ -94,10 +98,11 @@ module RedmineCanvasGantt
       end
     end
 
-    def build_filter_options(projects:, issues:)
+    def build_filter_options(projects:, issues:, trackers:)
       {
         projects: build_project_options(projects),
-        assignees: build_assignee_options(issues)
+        assignees: build_assignee_options(issues),
+        trackers: build_tracker_options(trackers)
       }
     end
 
@@ -134,6 +139,45 @@ module RedmineCanvasGantt
 
     def build_statuses
       IssueStatus.sorted.map { |status| { id: status.id, name: status.name, is_closed: status.is_closed? } }
+    end
+
+    # Tracker candidates are intentionally built from the unfiltered,
+    # permission-scoped candidate issue relation.  A selected tracker must not
+    # make the other tracker options disappear from the toolbar.
+    def build_tracker_options(candidates)
+      grouped = {}
+
+      candidates.each do |candidate|
+        tracker_id, project_id, tracker_name = tracker_candidate_values(candidate)
+        next if tracker_id.blank?
+
+        grouped[tracker_id] ||= {
+          id: tracker_id,
+          name: tracker_name.to_s,
+          project_ids: Set.new
+        }
+        grouped[tracker_id][:name] = tracker_name if grouped[tracker_id][:name].blank? && tracker_name.present?
+        grouped[tracker_id][:project_ids] << project_id.to_s if project_id.present?
+      end
+
+      grouped.values.map do |entry|
+        {
+          id: entry[:id],
+          name: entry[:name],
+          project_ids: entry[:project_ids].to_a.sort
+        }
+      end.sort_by { |entry| entry[:name].to_s.downcase }
+    end
+
+    def tracker_candidate_values(candidate)
+      if candidate.is_a?(Hash)
+        [candidate[:id] || candidate['id'], candidate[:project_id] || candidate['project_id'], candidate[:name] || candidate['name']]
+      else
+        return [nil, nil, nil] unless candidate.respond_to?(:tracker_id)
+
+        tracker = candidate.respond_to?(:tracker) ? candidate.tracker : nil
+        [candidate.tracker_id, candidate.project_id, tracker&.name]
+      end
     end
 
     def build_project_payload(project)

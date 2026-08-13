@@ -177,6 +177,7 @@ describe('explicit query columns', () => {
             selectedAssigneeIds: [],
             selectedProjectIds: [],
             selectedVersionIds: [],
+            selectedTrackerIds: [],
             memberProjectsOnly: false,
             sortConfig: null,
             groupByProject: false,
@@ -393,6 +394,7 @@ describe('toBusinessQueryState', () => {
             selectedAssigneeIds: [],
             selectedProjectIds: [],
             selectedVersionIds: [],
+            selectedTrackerIds: [],
             memberProjectsOnly: false,
             sortConfig: null,
             groupByProject: true,
@@ -560,6 +562,13 @@ describe('query parameter round-trips for special selections', () => {
         expect(params.getAll('status_ids[]')).toEqual([]);
     });
 
+    it('round-trips tracker selections through Canvas URL parameters', () => {
+        const params = buildIssueQueryParams({ selectedTrackerIds: [3, 8] });
+
+        expect(params.getAll('tracker_ids[]')).toEqual(['3', '8']);
+        expect(readIssueQueryParamsFromUrl(`?${params.toString()}`).selectedTrackerIds).toEqual([3, 8]);
+    });
+
     it('keeps selected statuses as Canvas query params for saved queries', () => {
         const params = buildIssueQueryParams({
             queryId: 42,
@@ -721,5 +730,17 @@ describe('serializeRedmineIssueQueryParams', () => {
         });
 
         expect(params.get('group_by')).toBeNull();
+    });
+
+    it('exports tracker subsets to the Redmine Query Editor', () => {
+        const { params, notices } = serializeRedmineIssueQueryParams({
+            selectedTrackerIds: [3, 8]
+        });
+
+        expect(notices).toEqual([]);
+        expect(params.get('set_filter')).toBe('1');
+        expect(params.getAll('f[]')).toContain('tracker_id');
+        expect(params.get('op[tracker_id]')).toBe('=');
+        expect(params.getAll('v[tracker_id][]')).toEqual(['3', '8']);
     });
 });

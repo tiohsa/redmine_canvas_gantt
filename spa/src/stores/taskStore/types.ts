@@ -17,6 +17,7 @@ export type LayoutState = {
     versionExpansion: Record<string, boolean>;
     taskExpansion: Record<string, boolean>;
     selectedVersionIds: string[];
+    selectedTrackerIds: number[];
     selectedProjectIds: string[];
     sortConfig: SortConfig;
     filterText: string;

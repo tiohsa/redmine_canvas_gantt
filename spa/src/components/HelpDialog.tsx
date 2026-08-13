@@ -347,6 +347,11 @@ export const HelpDialog: React.FC = () => {
                     description: t('help_desc_project_filter', 'Filter tasks by project, or group tasks by their parent project.')
                 },
                 {
+                    icon: filterIcon,
+                    title: t('field_tracker', 'Tracker'),
+                    description: t('help_desc_tracker_filter', 'Filter tasks by one or more issue trackers. Tracker and status filters remain independent.')
+                },
+                {
                     icon: versionIcon,
                     title: t('label_version_filter', 'Filter by version'),
                     description: t('help_desc_version_filter', 'Filter tasks by target version, or toggle the visibility of version group headers.')

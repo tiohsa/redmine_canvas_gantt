@@ -3,13 +3,15 @@ import type { Task } from '../../types';
 import type { InlineEditSettings, TaskEditMeta } from '../../types/editMeta';
 import { InlineEditService } from '../../services/InlineEditService';
 import { useUIStore } from '../../stores/UIStore';
+import { useTaskStore } from '../../stores/TaskStore';
 import { customFieldIdFromColumnKey, customFieldEditField, customFieldIdFromEditField, isCustomFieldColumnKey } from './sidebarColumns';
 import { formatDateOnly } from '../../utils/dateOnly';
+import type { FetchEditMetaOptions } from '../../stores/EditMetaStore';
 
 type Params = {
     settings: InlineEditSettings;
     editMetaByTaskId: Record<string, TaskEditMeta>;
-    fetchEditMeta: (taskId: string, options?: { targetProjectId?: number; force?: boolean }) => Promise<TaskEditMeta>;
+    fetchEditMeta: (taskId: string, options?: FetchEditMetaOptions) => Promise<TaskEditMeta>;
     selectTask: (taskId: string) => void;
     setActiveInlineEdit: (value: { taskId: string; field: string; source?: 'cell' | 'panel' } | null) => void;
 };
@@ -21,6 +23,15 @@ export const useSidebarInlineEdit = ({
     selectTask,
     setActiveInlineEdit
 }: Params) => {
+    const metaMatchesTaskContext = React.useCallback((meta: TaskEditMeta | undefined, task: Task) => {
+        const context = meta?.capabilityContext;
+        if (!context) return true;
+        return context.taskId === task.id &&
+            context.projectId === Number(task.projectId) &&
+            context.trackerId === task.trackerId &&
+            context.statusId === task.statusId;
+    }, []);
+
     const isInlineEditEnabled = React.useCallback((key: keyof InlineEditSettings, defaultValue: boolean) => {
         const value = settings[key];
         if (value === undefined) return defaultValue;
@@ -79,7 +90,8 @@ export const useSidebarInlineEdit = ({
         const customFieldId = customFieldIdFromEditField(field);
         if (customFieldId) {
             if (!isInlineEditEnabled('inline_edit_custom_fields', true)) return false;
-            const meta = providedMeta || editMetaByTaskId[task.id];
+            const candidateMeta = providedMeta || editMetaByTaskId[task.id];
+            const meta = metaMatchesTaskContext(candidateMeta, task) ? candidateMeta : undefined;
             if (!meta) return true;
             if (!meta.editable.customFieldValues) return false;
             return meta.options.customFields.some((cf) => String(cf.id) === customFieldId);
@@ -87,7 +99,8 @@ export const useSidebarInlineEdit = ({
 
 
 
-        const meta = providedMeta || editMetaByTaskId[task.id];
+        const candidateMeta = providedMeta || editMetaByTaskId[task.id];
+        const meta = metaMatchesTaskContext(candidateMeta, task) ? candidateMeta : undefined;
         if (field === 'startDate' || field === 'dueDate') {
             const mappedField = field === 'startDate' ? 'start_date' : 'due_date';
             if (meta?.editable) {
@@ -110,17 +123,18 @@ export const useSidebarInlineEdit = ({
         }
 
         return ['priorityId', 'authorId', 'categoryId', 'estimatedHours', 'projectId', 'trackerId', 'fixedVersionId'].includes(field);
-    }, [editMetaByTaskId, isInlineEditEnabled]);
+    }, [editMetaByTaskId, isInlineEditEnabled, metaMatchesTaskContext]);
 
     const ensureEditMeta = React.useCallback(async (taskId: string): Promise<TaskEditMeta | null> => {
-        const cached = editMetaByTaskId[taskId];
-        if (cached) return cached;
         try {
+            // The store validates the cache against the current effective Task
+            // context, including local patches.  Do not short-circuit here or
+            // Auto-save OFF edits would keep using old Workflow metadata.
             return await fetchEditMeta(taskId);
         } catch {
             return null;
         }
-    }, [editMetaByTaskId, fetchEditMeta]);
+    }, [fetchEditMeta]);
 
     const startCellEdit = React.useCallback(async (task: Task, field: string) => {
         if (!shouldEnableField(field, task)) return;
@@ -143,11 +157,13 @@ export const useSidebarInlineEdit = ({
         if (requiresMeta || needsCustomFieldMeta) {
             const meta = await ensureEditMeta(task.id);
             if (!meta) return;
-            if (!shouldEnableField(field, task, meta)) return;
+            const latestTask = useTaskStore.getState().allTasks.find((candidate) => candidate.id === task.id);
+            if (!latestTask || !metaMatchesTaskContext(meta, latestTask)) return;
+            if (!shouldEnableField(field, latestTask, meta)) return;
         }
 
         setActiveInlineEdit({ taskId: task.id, field, source: 'cell' });
-    }, [ensureEditMeta, selectTask, setActiveInlineEdit, shouldEnableField]);
+    }, [ensureEditMeta, metaMatchesTaskContext, selectTask, setActiveInlineEdit, shouldEnableField]);
 
     const save = React.useCallback(async (params: Parameters<typeof InlineEditService.saveTaskFields>[0]) => {
         await InlineEditService.saveTaskFields(params);

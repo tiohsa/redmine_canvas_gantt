@@ -2,6 +2,7 @@ import type {
     FilterAssigneeOption,
     FilterOptions,
     FilterProjectOption,
+    FilterTrackerOption,
     Relation,
     Project,
     SavedQuery,
@@ -10,7 +11,7 @@ import type {
     Version,
     TaskStatus
 } from '../types';
-import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption } from '../types/editMeta';
+import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption, EditMetaCapabilityContext } from '../types/editMeta';
 import type { BaselineSaveScope, BaselineSnapshot, BaselineTaskState } from '../types/baseline';
 import { buildIssueQueryParams, parseResolvedQueryState, type ResolvedQueryState } from '../utils/queryParams';
 import { normalizeQueryContext } from '../query/queryStateCodec';
@@ -481,6 +482,27 @@ const parseFilterAssigneeOption = (value: unknown): FilterAssigneeOption | null 
     };
 };
 
+const parseFilterTrackerOption = (value: unknown): FilterTrackerOption | null => {
+    const record = asRecord(value);
+    if (!record) return null;
+
+    const id = record.id;
+    const name = record.name;
+    const projectIdsRaw = Array.isArray(record.project_ids) ? record.project_ids : [];
+    if ((typeof id !== 'number' && typeof id !== 'string') || typeof name !== 'string') return null;
+
+    const numericId = Number(id);
+    if (!Number.isInteger(numericId) || numericId <= 0) return null;
+
+    return {
+        id: numericId,
+        name,
+        projectIds: projectIdsRaw
+            .filter((projectId): projectId is string | number => typeof projectId === 'string' || typeof projectId === 'number')
+            .map((projectId) => String(projectId))
+    };
+};
+
 const deriveFilterOptionsFromTasks = (tasks: Task[]): FilterOptions => {
     const projects = new Map<string, string>();
     const assignees = new Map<number | null, { name: string | null; projectIds: Set<string> }>();
@@ -521,13 +543,17 @@ const parseFilterOptions = (value: unknown, tasks: Task[]): FilterOptions => {
 
     const projectsRaw = Array.isArray(record.projects) ? record.projects : [];
     const assigneesRaw = Array.isArray(record.assignees) ? record.assignees : [];
+    const hasTrackers = Object.prototype.hasOwnProperty.call(record, 'trackers');
+    const trackersRaw = Array.isArray(record.trackers) ? record.trackers : [];
 
     const projects = projectsRaw.map(parseFilterProjectOption).filter((entry): entry is FilterProjectOption => entry !== null);
     const assignees = assigneesRaw.map(parseFilterAssigneeOption).filter((entry): entry is FilterAssigneeOption => entry !== null);
+    const trackers = trackersRaw.map(parseFilterTrackerOption).filter((entry): entry is FilterTrackerOption => entry !== null);
 
     return {
         projects: projects.length > 0 ? projects : fallback.projects,
-        assignees: assignees.length > 0 ? assignees : fallback.assignees
+        assignees: assignees.length > 0 ? assignees : fallback.assignees,
+        ...(hasTrackers ? { trackers } : {})
     };
 };
 
@@ -822,10 +848,12 @@ export const apiClient = {
         };
     },
 
-    fetchEditMeta: async (taskId: string, targetProjectId?: number): Promise<TaskEditMeta> => {
+    fetchEditMeta: async (taskId: string, targetProjectId?: number, targetTrackerId?: number, targetStatusId?: number): Promise<TaskEditMeta> => {
         const config = getConfig();
         const query = new URLSearchParams(buildViewContextQuery(config));
         if (targetProjectId !== undefined) query.set('target_project_id', String(targetProjectId));
+        if (targetTrackerId !== undefined) query.set('target_tracker_id', String(targetTrackerId));
+        if (targetStatusId !== undefined) query.set('target_status_id', String(targetStatusId));
         const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${taskId}/edit_meta.json?${query}`, {
             headers: buildJsonHeaders(config)
         });
@@ -863,6 +891,21 @@ export const apiClient = {
         if (taskIdValue === undefined || subjectValue === undefined || statusIdValue === undefined || doneRatioValue === undefined || lockVersionValue === undefined) {
             throw new Error('Invalid response');
         }
+
+        const capabilityContextRaw = asRecord(root.capability_context);
+        const capabilityContext: EditMetaCapabilityContext = capabilityContextRaw
+            ? {
+                taskId: String(capabilityContextRaw.task_id ?? taskIdValue),
+                projectId: parseRequiredPositiveNumber(capabilityContextRaw.project_id, 'capability_context.project_id'),
+                trackerId: parseRequiredPositiveNumber(capabilityContextRaw.tracker_id, 'capability_context.tracker_id'),
+                statusId: parseRequiredPositiveNumber(capabilityContextRaw.status_id, 'capability_context.status_id')
+            }
+            : {
+                taskId: String(taskIdValue),
+                projectId: parseRequiredPositiveNumber(projectIdValue, 'project_id'),
+                trackerId: parseRequiredPositiveNumber(trackerIdValue, 'tracker_id'),
+                statusId: parseRequiredPositiveNumber(statusIdValue, 'status_id')
+            };
 
         const editableSubject = editable.subject;
         const editableAssignedToId = editable.assigned_to_id;
@@ -907,6 +950,7 @@ export const apiClient = {
         });
 
         return {
+            capabilityContext,
             task: {
                 id: String(taskIdValue),
                 subject: String(subjectValue),

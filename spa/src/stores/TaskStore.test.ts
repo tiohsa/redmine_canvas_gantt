@@ -359,6 +359,32 @@ describe('TaskStore assignee filter', () => {
     });
 });
 
+describe('TaskStore tracker filter', () => {
+    beforeEach(() => {
+        window.localStorage.clear();
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([]));
+    });
+
+    it('filters tasks by tracker and preserves the other selections', () => {
+        const { setTasks, setSelectedTrackerIds } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'bug', trackerId: 3 }),
+            buildTask({ id: 'feature', trackerId: 8 }),
+            buildTask({ id: 'unknown', trackerId: undefined })
+        ]);
+        useTaskStore.setState({ selectedStatusIds: [2] });
+
+        setSelectedTrackerIds([3]);
+
+        expect(useTaskStore.getState().tasks.map((task) => task.id)).toEqual(['bug']);
+        expect(useTaskStore.getState().selectedStatusIds).toEqual([2]);
+        expect(useTaskStore.getState().queryContext.overrides).toEqual({
+            tracker: { mode: 'subset', values: [3] }
+        });
+    });
+});
+
 describe('TaskStore shared query persistence', () => {
     beforeEach(() => {
         window.localStorage.clear();

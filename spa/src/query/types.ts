@@ -19,10 +19,16 @@ export type VersionFilterOverride =
     | AllFilterOverride
     | SubsetFilterOverride<string>;
 
+export type TrackerFilterOverride =
+    | InheritFilterOverride
+    | AllFilterOverride
+    | SubsetFilterOverride<number>;
+
 export interface QueryOverrides {
     status?: StatusFilterOverride;
     assignee?: AssigneeFilterOverride;
     version?: VersionFilterOverride;
+    tracker?: TrackerFilterOverride;
 }
 
 export interface QueryContext {

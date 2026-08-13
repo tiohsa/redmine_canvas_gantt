@@ -125,9 +125,10 @@ describe('GanttToolbar shortcuts', () => {
             'Query',
             'Cols',
             'Workload',
-            'Assignee',
             'Proj.',
+            'Tracker',
             'Ver.',
+            'Assignee',
             'Status',
             'Settings',
             'Link'
@@ -1849,6 +1850,47 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByText('Version 1')).toBeInTheDocument();
         expect(screen.getByText('Version 2')).toBeInTheDocument();
         expect(screen.queryByText('Version 3')).not.toBeInTheDocument();
+    });
+
+    it('scopes tracker candidates by projects without dropping a selected out-of-scope tracker', () => {
+        useTaskStore.setState({
+            filterText: '',
+            allTasks: [] as never,
+            filterOptions: {
+                projects: [
+                    { id: 'p1', name: 'Alpha' },
+                    { id: 'p2', name: 'Beta' }
+                ],
+                assignees: [],
+                trackers: [
+                    { id: 10, name: 'Bug', projectIds: ['p1'] },
+                    { id: 20, name: 'Feature', projectIds: ['p2'] },
+                    { id: 30, name: 'Support', projectIds: ['p2'] }
+                ]
+            },
+            versions: [],
+            selectedAssigneeIds: [],
+            selectedProjectIds: ['p1'],
+            selectedVersionIds: [],
+            selectedTrackerIds: [20],
+            selectedStatusIds: [1],
+            taskStatuses: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTestId('tracker-filter-menu-button'));
+        expect(screen.getByText('Bug')).toBeInTheDocument();
+        expect(screen.getByText('Feature')).toBeInTheDocument();
+        expect(screen.queryByText('Support')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Feature')).toBeChecked();
+
+        fireEvent.click(screen.getByLabelText('Bug'));
+
+        expect(useTaskStore.getState().selectedTrackerIds).toEqual([20, 10]);
+        expect(useTaskStore.getState().selectedStatusIds).toEqual([1]);
     });
 
     it('toggles the project select-all checkbox between all projects and no explicit project selection after refresh', async () => {

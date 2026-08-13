@@ -7,6 +7,7 @@ export const toBusinessQueryState = (state: Partial<ResolvedQueryState> = {}): B
     selectedAssigneeIds: state.selectedAssigneeIds ?? [],
     selectedProjectIds: state.canvasProjectIds ?? state.selectedProjectIds ?? [],
     selectedVersionIds: state.selectedVersionIds ?? [],
+    selectedTrackerIds: state.selectedTrackerIds ?? [],
     memberProjectsOnly: state.memberProjectsOnly ?? false,
     sortConfig: state.sortConfig ?? null,
     groupByProject: state.groupBy === 'project',

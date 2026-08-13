@@ -29,6 +29,9 @@ export const serializeRedmineIssueQueryParams = (
                 : [],
             selectedVersionIds: options.queryContext.overrides.version?.mode === 'subset'
                 ? options.queryContext.overrides.version.values
+                : [],
+            selectedTrackerIds: options.queryContext.overrides.tracker?.mode === 'subset'
+                ? options.queryContext.overrides.tracker.values
                 : []
         }
         : businessState;
@@ -38,7 +41,7 @@ export const serializeRedmineIssueQueryParams = (
     if (options.queryContext) {
         const contextParams = buildQueryParamsFromQueryContext(options.queryContext);
         contextParams.forEach((value, key) => {
-            if (!['status_ids[]', 'assigned_to_ids[]', 'fixed_version_ids[]'].includes(key)) params.append(key, value);
+            if (!['status_ids[]', 'assigned_to_ids[]', 'fixed_version_ids[]', 'tracker_ids[]'].includes(key)) params.append(key, value);
         });
     } else if (isPersistedQueryId(businessState.queryId)) {
         params.set('query_id', String(businessState.queryId));
@@ -78,6 +81,11 @@ export const serializeRedmineIssueQueryParams = (
             appendStandardFilter(params, 'fixed_version_id', '=', numericVersionIds);
             hasStandardFilters = true;
         }
+    }
+
+    if (queryContextFilterState.selectedTrackerIds.length > 0) {
+        appendStandardFilter(params, 'tracker_id', '=', queryContextFilterState.selectedTrackerIds.map(String));
+        hasStandardFilters = true;
     }
 
     if (state.showSubprojects === false) {

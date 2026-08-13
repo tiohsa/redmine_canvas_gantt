@@ -46,7 +46,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, groupByAssignee, setGroupByAssignee,
         filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
-        selectedProjectIds, projectSelectionExplicit, setSelectedProjectIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
+        selectedProjectIds, projectSelectionExplicit, setSelectedProjectIds, selectedTrackerIds, setSelectedTrackerIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
         taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
         modifiedTaskIds, saveChanges, discardChanges, autoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
         applySavedQuery: applySavedQueryFromStore,
@@ -84,6 +84,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         filterMenuRef,
         assigneeMenuRef,
         projectMenuRef,
+        trackerMenuRef,
         versionMenuRef,
         statusMenuRef,
     displaySettingsMenuRef,
@@ -126,6 +127,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const showColumnMenu = isMenuOpen('column');
     const showAssigneeMenu = isMenuOpen('assignee');
     const showProjectMenu = isMenuOpen('project');
+    const showTrackerMenu = isMenuOpen('tracker');
     const showVersionMenu = isMenuOpen('version');
     const showStatusMenu = isMenuOpen('status');
 const showDisplaySettingsMenu = isMenuOpen('displaySettings');
@@ -433,6 +435,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
 
     const assigneeOptions = filterOptions.assignees.length > 0 ? filterOptions.assignees : fallbackAssignees;
     const projectScopeOptions = filterOptions.projects.length > 0 ? filterOptions.projects : fallbackProjects;
+    const trackerOptions = React.useMemo(() => filterOptions.trackers ?? [], [filterOptions.trackers]);
 
     const projects = React.useMemo(() => (
         [...(projectFilterLoading ? [] : filterOptions.projects)].sort((a, b) => a.name.localeCompare(b.name))
@@ -482,6 +485,26 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         setSelectedProjectIds(toggleAllSelectionValues(isAllProjectsSelected, projects.map(p => p.id)));
     };
 
+    const trackers = React.useMemo(() => {
+        const selectedTrackerIdSet = new Set(selectedTrackerIds);
+        return trackerOptions
+            .filter((tracker) => (
+                selectedTrackerIdSet.has(tracker.id) ||
+                tracker.projectIds.some((projectId) => scopedProjectIds.has(projectId))
+            ))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [scopedProjectIds, selectedTrackerIds, trackerOptions]);
+
+    const toggleTracker = (id: number) => {
+        setSelectedTrackerIds(toggleSelectionValue(selectedTrackerIds, id));
+    };
+
+    const isAllTrackersSelected = trackers.length > 0 && trackers.every((tracker) => selectedTrackerIds.includes(tracker.id));
+
+    const toggleAllTrackers = () => {
+        setSelectedTrackerIds(toggleAllSelectionValues(isAllTrackersSelected, trackers.map((tracker) => tracker.id)));
+    };
+
     const handleMemberProjectsOnlyToggle = async (enabled: boolean) => {
         setProjectFilterError(null);
         setProjectFilterLoading(true);
@@ -499,6 +522,8 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const projectOptionIds = React.useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
     const hasSelectedProjectsOutsideCandidates = memberProjectsOnly
         && selectedProjectIds.some((selectedProjectId) => !projectOptionIds.has(selectedProjectId));
+    const trackerOptionIds = React.useMemo(() => new Set(trackers.map((tracker) => tracker.id)), [trackers]);
+    const hasSelectedTrackersOutsideCandidates = selectedTrackerIds.some((selectedTrackerId) => !trackerOptionIds.has(selectedTrackerId));
 
     const versionsList = React.useMemo(() => (
         versions
@@ -704,7 +729,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
                         )}
                     </button>
-                    
+
                     {showQueryMenu && (
                         <div
                             data-testid="query-menu"
@@ -1035,100 +1060,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     )}
                 </div>
 
-                <div ref={assigneeMenuRef} className="gantt-toolbar-assignee-filter" style={{ position: 'relative' }}>
-                    <button
-                    onClick={() => toggleMenu('assignee')}
-                    title={i18n.t('field_assigned_to') || 'Assignee Filter'}
-                    className="gantt-toolbar-labeled-button"
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                padding: '0',
-                                borderRadius: '6px',
-                                border: `1px solid ${designTokens.controlBorder}`,
-                                backgroundColor: (selectedAssigneeIds.length > 0 || groupByAssignee) ? designTokens.controlActiveBg : designTokens.controlBg,
-                                color: (selectedAssigneeIds.length > 0 || groupByAssignee) ? designTokens.controlActiveFg : designTokens.controlFg,
-                                cursor: 'pointer',
-                                height: '32px',
-                                width: '32px',
-                                position: 'relative'
-                            }}
-                    >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                        <circle cx="12" cy="7" r="4" />
-                    </svg>
-                    <span className="gantt-toolbar-button-label">{i18n.t('label_assigned_to_short') || 'Assignee'}</span>
-                        {(selectedAssigneeIds.length > 0 || groupByAssignee) && (
-                            <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
-                        )}
-                    </button>
-                    
-                    {showAssigneeMenu && (
-                        <div
-                            style={{
-                                position: 'absolute',
-                                top: '100%',
-                                left: 0,
-                                marginTop: '4px',
-                                background: designTokens.controlBg,
-                                border: `1px solid ${designTokens.controlBorder}`,
-                                borderRadius: '8px',
-                                boxShadow: designTokens.menuShadow,
-                                padding: '12px',
-                                zIndex: 20,
-                                minWidth: '200px',
-                                maxHeight: '300px',
-                                overflowY: 'auto'
-                            }}
-                        >
-                            <div style={{ fontWeight: 600, marginBottom: '8px', color: designTokens.controlFg }}>{i18n.t('field_assigned_to') || 'Assignee'}</div>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: designTokens.controlFg, cursor: 'pointer', borderBottom: `1px solid ${designTokens.borderSubtle}`, marginBottom: '8px' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={isAllAssigneesSelected}
-                                    onChange={toggleAllAssignees}
-                                />
-                                <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
-                            </label>
-                            {assignees.map(assignee => (
-                                <label key={assignee.id ?? 'none'} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedAssigneeIds.includes(assignee.id)}
-                                        onChange={() => toggleAssignee(assignee.id)}
-                                    />
-                                    {assignee.name}
-                                </label>
-                            ))}
-                            <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: '8px', paddingTop: '8px' }}>
-                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={groupByAssignee}
-                                        onChange={() => setGroupByAssignee(!groupByAssignee)}
-                                    />
-                                    {i18n.t('label_group_by_assignee') || 'Group by Assignee'}
-                                </label>
-                            </div>
-                            <button
-                                onClick={() => setSelectedAssigneeIds([])}
-                                style={{
-                                    marginTop: '8px',
-                                    border: 'none',
-                                    background: 'transparent',
-                                    color: designTokens.controlActiveFg,
-                                    cursor: 'pointer',
-                                    padding: 0
-                                }}
-                            >
-                                {i18n.t('label_clear_filter') || 'Clear'}
-                            </button>
-                        </div>
-                    )}
-                </div>
-
                 <div ref={projectMenuRef} className="gantt-toolbar-project-filter" style={{ position: 'relative' }}>
                     <button
                         onClick={() => toggleMenu('project')}
@@ -1247,6 +1178,99 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     )}
                 </div>
 
+                <div ref={trackerMenuRef} className="gantt-toolbar-tracker-filter" style={{ position: 'relative' }}>
+                    <button
+                        onClick={() => toggleMenu('tracker')}
+                        title={i18n.t('field_tracker') || 'Filter by tracker'}
+                        data-testid="tracker-filter-menu-button"
+                        className="gantt-toolbar-labeled-button"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '0',
+                            borderRadius: '6px',
+                            border: `1px solid ${designTokens.controlBorder}`,
+                            backgroundColor: selectedTrackerIds.length > 0 ? designTokens.controlActiveBg : designTokens.controlBg,
+                            color: selectedTrackerIds.length > 0 ? designTokens.controlActiveFg : designTokens.controlFg,
+                            cursor: 'pointer',
+                            height: '32px',
+                            width: '32px',
+                            position: 'relative'
+                        }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M20 7h-9" />
+                            <path d="M14 17H5" />
+                            <circle cx="17" cy="7" r="3" />
+                            <circle cx="7" cy="17" r="3" />
+                        </svg>
+                        <span className="gantt-toolbar-button-label">{i18n.t('field_tracker') || 'Tracker'}</span>
+                        {selectedTrackerIds.length > 0 && (
+                            <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
+                        )}
+                    </button>
+
+                    {showTrackerMenu && (
+                        <div
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                background: designTokens.controlBg,
+                                border: `1px solid ${designTokens.controlBorder}`,
+                                borderRadius: '8px',
+                                boxShadow: designTokens.menuShadow,
+                                padding: '12px',
+                                zIndex: 20,
+                                minWidth: '200px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}
+                        >
+                            <div style={{ fontWeight: 600, marginBottom: '8px', color: designTokens.controlFg }}>{i18n.t('field_tracker') || 'Tracker'}</div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: designTokens.controlFg, cursor: 'pointer', borderBottom: `1px solid ${designTokens.borderSubtle}`, marginBottom: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={isAllTrackersSelected}
+                                    onChange={toggleAllTrackers}
+                                    aria-label={i18n.t('label_all_select') || 'All'}
+                                />
+                                <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'All'}</span>
+                            </label>
+                            {hasSelectedTrackersOutsideCandidates && (
+                                <div style={{ fontSize: '12px', color: designTokens.textMuted, marginBottom: '8px' }}>
+                                    {i18n.t('label_selected_trackers_outside_candidates') || 'Some selected trackers are hidden from the current candidate list.'}
+                                </div>
+                            )}
+                            {trackers.map((tracker) => (
+                                <label key={tracker.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedTrackerIds.includes(tracker.id)}
+                                        onChange={() => toggleTracker(tracker.id)}
+                                    />
+                                    {tracker.name}
+                                </label>
+                            ))}
+                            <button
+                                onClick={() => setSelectedTrackerIds([])}
+                                style={{
+                                    marginTop: '8px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: designTokens.controlActiveFg,
+                                    cursor: 'pointer',
+                                    padding: 0
+                                }}
+                            >
+                                {i18n.t('label_clear_filter') || 'Clear'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
                 <div ref={versionMenuRef} className="gantt-toolbar-version-filter" style={{ position: 'relative' }}>
                     <button
                     onClick={() => toggleMenu('version')}
@@ -1334,6 +1358,100 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             </div>
                             <button
                                 onClick={() => setSelectedVersionIds([])}
+                                style={{
+                                    marginTop: '8px',
+                                    border: 'none',
+                                    background: 'transparent',
+                                    color: designTokens.controlActiveFg,
+                                    cursor: 'pointer',
+                                    padding: 0
+                                }}
+                            >
+                                {i18n.t('label_clear_filter') || 'Clear'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                <div ref={assigneeMenuRef} className="gantt-toolbar-assignee-filter" style={{ position: 'relative' }}>
+                    <button
+                    onClick={() => toggleMenu('assignee')}
+                    title={i18n.t('field_assigned_to') || 'Assignee Filter'}
+                    className="gantt-toolbar-labeled-button"
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '0',
+                                borderRadius: '6px',
+                                border: `1px solid ${designTokens.controlBorder}`,
+                                backgroundColor: (selectedAssigneeIds.length > 0 || groupByAssignee) ? designTokens.controlActiveBg : designTokens.controlBg,
+                                color: (selectedAssigneeIds.length > 0 || groupByAssignee) ? designTokens.controlActiveFg : designTokens.controlFg,
+                                cursor: 'pointer',
+                                height: '32px',
+                                width: '32px',
+                                position: 'relative'
+                            }}
+                    >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                        <circle cx="12" cy="7" r="4" />
+                    </svg>
+                    <span className="gantt-toolbar-button-label">{i18n.t('label_assigned_to_short') || 'Assignee'}</span>
+                        {(selectedAssigneeIds.length > 0 || groupByAssignee) && (
+                            <div style={{ position: 'absolute', top: 4, right: 4, width: 6, height: 6, backgroundColor: designTokens.controlActiveFg, borderRadius: '50%' }} />
+                        )}
+                    </button>
+
+                    {showAssigneeMenu && (
+                        <div
+                            style={{
+                                position: 'absolute',
+                                top: '100%',
+                                left: 0,
+                                marginTop: '4px',
+                                background: designTokens.controlBg,
+                                border: `1px solid ${designTokens.controlBorder}`,
+                                borderRadius: '8px',
+                                boxShadow: designTokens.menuShadow,
+                                padding: '12px',
+                                zIndex: 20,
+                                minWidth: '200px',
+                                maxHeight: '300px',
+                                overflowY: 'auto'
+                            }}
+                        >
+                            <div style={{ fontWeight: 600, marginBottom: '8px', color: designTokens.controlFg }}>{i18n.t('field_assigned_to') || 'Assignee'}</div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 0', color: designTokens.controlFg, cursor: 'pointer', borderBottom: `1px solid ${designTokens.borderSubtle}`, marginBottom: '8px' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={isAllAssigneesSelected}
+                                    onChange={toggleAllAssignees}
+                                />
+                                <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
+                            </label>
+                            {assignees.map(assignee => (
+                                <label key={assignee.id ?? 'none'} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedAssigneeIds.includes(assignee.id)}
+                                        onChange={() => toggleAssignee(assignee.id)}
+                                    />
+                                    {assignee.name}
+                                </label>
+                            ))}
+                            <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: '8px', paddingTop: '8px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={groupByAssignee}
+                                        onChange={() => setGroupByAssignee(!groupByAssignee)}
+                                    />
+                                    {i18n.t('label_group_by_assignee') || 'Group by Assignee'}
+                                </label>
+                            </div>
+                            <button
+                                onClick={() => setSelectedAssigneeIds([])}
                                 style={{
                                     marginTop: '8px',
                                     border: 'none',

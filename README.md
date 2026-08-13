@@ -48,7 +48,7 @@ Baseline snapshots are stored in Redmine's plugin settings (`Setting.plugin_redm
 - Bulk child task creation from multiple subject lines
 - Baseline snapshots for visual comparison, saved for either the current filtered view or the whole project
 - Saved queries, Redmine query editing, and round-tripping back to the issue list with supported filters
-- Filters by subject text, project, assignee, status, and target version
+- Filters by subject text, project, tracker, target version, assignee, and status; tracker filters round-trip through saved and Redmine queries
 - Grouping by project or assignee; target-version headers are a display toggle, not a grouping mode
 - Workload pane, export to PNG or CSV, full screen mode, and toolbar controls for zoom, row height, and font size
 - Display settings stored per project or shared across all projects in the same browser profile (not across Redmine users)

@@ -6,6 +6,7 @@ export type ToolbarMenuKey =
     | 'filter'
     | 'assignee'
     | 'project'
+    | 'tracker'
     | 'version'
     | 'status'
     | 'displaySettings'
@@ -25,6 +26,7 @@ export const useToolbarMenuState = () => {
     const filterRef = React.useRef<HTMLDivElement>(null);
     const assigneeRef = React.useRef<HTMLDivElement>(null);
     const projectRef = React.useRef<HTMLDivElement>(null);
+    const trackerRef = React.useRef<HTMLDivElement>(null);
     const versionRef = React.useRef<HTMLDivElement>(null);
     const statusRef = React.useRef<HTMLDivElement>(null);
     const displaySettingsRef = React.useRef<HTMLDivElement>(null);
@@ -40,6 +42,7 @@ export const useToolbarMenuState = () => {
         filter: filterRef,
         assignee: assigneeRef,
         project: projectRef,
+        tracker: trackerRef,
         version: versionRef,
         status: statusRef,
         displaySettings: displaySettingsRef,
@@ -90,6 +93,7 @@ export const useToolbarMenuState = () => {
         filterMenuRef: filterRef,
         assigneeMenuRef: assigneeRef,
         projectMenuRef: projectRef,
+        trackerMenuRef: trackerRef,
         versionMenuRef: versionRef,
         statusMenuRef: statusRef,
         displaySettingsMenuRef: displaySettingsRef,

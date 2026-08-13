@@ -124,18 +124,50 @@ const loadCanvasPage = async (page: Page, redmineBase: string, projectIdentifier
   await expect(page.getByText('Loading Canvas Gantt...')).toHaveCount(0);
 };
 
+const openDisplaySettings = async (page: Page) => {
+  const menu = page.getByTestId('display-settings-menu');
+
+  if (!(await menu.isVisible().catch(() => false))) {
+    await page.getByTestId('display-settings-menu-button').click();
+  }
+
+  await expect(menu).toBeVisible();
+};
+
+const closeDisplaySettings = async (page: Page) => {
+  const menu = page.getByTestId('display-settings-menu');
+
+  if (await menu.isVisible().catch(() => false)) {
+    await page.getByTestId('display-settings-menu-button').click();
+  }
+
+  await expect(menu).toHaveCount(0);
+};
+
 const enableAutoSave = async (page: Page) => {
-  await page.getByTestId('display-settings-menu-button').click();
+  await openDisplaySettings(page);
+
   const autoSave = page.getByLabel('Auto Save');
-  if (!(await autoSave.isChecked())) await autoSave.check({ force: true });
+  if (!(await autoSave.isChecked())) {
+    await autoSave.check({ force: true });
+  }
+
   await expect(autoSave).toBeChecked();
+
+  await closeDisplaySettings(page);
 };
 
 const disableAutoSave = async (page: Page) => {
-  await page.getByTestId('display-settings-menu-button').click();
+  await openDisplaySettings(page);
+
   const autoSave = page.getByLabel('Auto Save');
-  if (await autoSave.isChecked()) await autoSave.uncheck({ force: true });
+  if (await autoSave.isChecked()) {
+    await autoSave.uncheck({ force: true });
+  }
+
   await expect(autoSave).not.toBeChecked();
+
+  await closeDisplaySettings(page);
 };
 
 const fetchRestIssue = async (page: Page, issueId: number): Promise<{
@@ -268,10 +300,7 @@ test('linked downstream shift does not publish a self-induced conflict', async (
   await page.getByTestId('relation-settings-menu-button').click();
   await page.getByTestId('auto-schedule-move-mode-select').selectOption('linked_downstream_shift');
   await page.getByTestId('relation-settings-menu').getByRole('button', { name: /save/i }).click();
-  await page.getByTestId('display-settings-menu-button').click();
-  const autoSave = page.getByLabel('Auto Save');
-  if (!(await autoSave.isChecked())) await autoSave.check({ force: true });
-  await expect(autoSave).toBeChecked();
+  await enableAutoSave(page);
 
   const originRow = page.getByTestId(`task-row-${originId}`);
   const mutationStatuses: number[] = [];
