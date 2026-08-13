@@ -19,6 +19,14 @@ import { runParentMove } from './taskStore/parentMove';
 import { buildUniformExpansionMaps, initializeExpansionMaps } from './taskStore/expansion';
 import { syncSharedQueryState, type SharedQuerySyncState } from './taskStore/querySync';
 import {
+    beginBarOperation as beginBarOperationState,
+    buildBarOperationRollback,
+    captureBarOperationBaselines,
+    endBarOperation as endBarOperationState,
+    settleBarOperationTaskOwnership,
+    type BarOperationRecord
+} from './taskStore/barOperations';
+import {
     clearSavedQueryToStandalone,
     isQueryModified as getIsQueryModified,
     selectSavedQuery,
@@ -88,69 +96,6 @@ export type TaskConflictRecord = {
     remoteAvailability?: MutationRemoteAvailability;
 };
 
-type BarOperationRecord = {
-    operationId: string;
-    baselineAllTasks: Task[];
-    baselineGenerations: Record<string, number>;
-    entityGenerations: Record<string, number>;
-    completedTaskIds: string[];
-};
-
-type BarOperationSettlement =
-    | { mode: 'exact'; generation: number }
-    | { mode: 'through'; generation: number }
-    | { mode: 'all' };
-
-type BarOperationSettlementState = {
-    barOperations: Record<string, BarOperationRecord>;
-    activeBarOperationId: string | null;
-};
-
-const settleBarOperationTaskOwnership = (
-    operations: Record<string, BarOperationRecord>,
-    activeBarOperationId: string | null,
-    taskId: string,
-    settlement: BarOperationSettlement
-): BarOperationSettlementState => {
-    const matchingOperations = Object.entries(operations).filter(([, operation]) => (
-        (Object.prototype.hasOwnProperty.call(operation.entityGenerations, taskId) &&
-            (settlement.mode === 'all' ||
-                (settlement.mode === 'exact' && operation.entityGenerations[taskId] === settlement.generation) ||
-                (settlement.mode === 'through' && operation.entityGenerations[taskId] <= settlement.generation))) ||
-        (settlement.mode === 'all' && operation.baselineAllTasks.some(task => task.id === taskId))
-    ));
-    if (matchingOperations.length === 0) return { barOperations: operations, activeBarOperationId };
-
-    const barOperations = { ...operations };
-    matchingOperations.forEach(([operationId, operation]) => {
-        const entityGenerations = { ...operation.entityGenerations };
-        delete entityGenerations[taskId];
-        const baselineGenerations = { ...operation.baselineGenerations };
-        delete baselineGenerations[taskId];
-        const baselineAllTasks = operation.baselineAllTasks.filter(task => task.id !== taskId);
-        const completedTaskIds = operation.completedTaskIds.filter(completedTaskId => completedTaskId !== taskId);
-
-        if (Object.keys(entityGenerations).length === 0 && baselineAllTasks.length === 0) {
-            delete barOperations[operationId];
-        } else {
-            barOperations[operationId] = {
-                ...operation,
-                baselineAllTasks,
-                baselineGenerations,
-                entityGenerations,
-                completedTaskIds
-            };
-        }
-    });
-
-    return {
-        barOperations,
-        activeBarOperationId: activeBarOperationId !== null && matchingOperations.some(([operationId]) => operationId === activeBarOperationId)
-            ? null
-            : activeBarOperationId
-    };
-};
-
 const terminalTaskDeletionPatch = (
     state: TaskState,
     taskId: string,
@@ -191,30 +136,6 @@ const terminalTaskDeletionPatch = (
             [taskId]: { entityId: taskId, deletedAt: Date.now(), source }
         }
     };
-};
-
-const captureBarOperationBaselines = (
-    operations: Record<string, BarOperationRecord>,
-    tasks: Task[],
-    generations: Record<string, number>,
-    operationId: string | null,
-    entityIds: Iterable<string>
-): Record<string, BarOperationRecord> => {
-    const activeOperationId = operationId;
-    const operation = activeOperationId ? operations[activeOperationId] : undefined;
-    if (!activeOperationId || !operation) return operations;
-    const ids = new Set(entityIds);
-    const taskById = new Map(tasks.map(task => [task.id, task]));
-    const capturedIds = new Set(operation.baselineAllTasks.map(task => task.id));
-    const baselineAllTasks = [...operation.baselineAllTasks];
-    const baselineGenerations = { ...operation.baselineGenerations };
-    ids.forEach((taskId) => {
-        const task = taskById.get(taskId);
-        if (!task || capturedIds.has(taskId)) return;
-        baselineAllTasks.push({ ...task });
-        baselineGenerations[taskId] = baselineGenerations[taskId] ?? (generations[taskId] ?? 0);
-    });
-    return { ...operations, [activeOperationId]: { ...operation, baselineAllTasks, baselineGenerations } };
 };
 
 type InitialDataParams = {
@@ -1594,47 +1515,27 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
     beginBarOperation: (seedTaskId) => {
         const operationId = `bar:${++barOperationSequence}`;
-        const state = get();
-        const seedTask = seedTaskId ? state.allTasks.find(task => task.id === seedTaskId) : undefined;
-        set((state) => ({
-            barOperations: {
-                ...state.barOperations,
-                [operationId]: {
-                    operationId,
-                    baselineAllTasks: seedTask ? [{ ...seedTask }] : [],
-                    baselineGenerations: seedTask ? { [seedTask.id]: state.editGenerations[seedTask.id] ?? 0 } : {},
-                    entityGenerations: {},
-                    completedTaskIds: []
-                }
-            },
-            activeBarOperationId: operationId
-        }));
+        set((state) => beginBarOperationState(
+            state.barOperations,
+            state.allTasks,
+            state.editGenerations,
+            operationId,
+            seedTaskId
+        ));
         return operationId;
     },
 
     endBarOperation: (operationId) => set((state) => {
-        const operation = state.barOperations[operationId];
-        if (!operation) return state;
-        const entityGenerations = Object.fromEntries(
-            state.allTasks
-                .filter(task => (state.editGenerations[task.id] ?? 0) > (operation.baselineGenerations[task.id] ?? 0))
-                .map(task => [task.id, state.editGenerations[task.id]])
-        ) as Record<string, number>;
-        if (Object.keys(entityGenerations).length === 0) {
-            const barOperations = { ...state.barOperations };
-            delete barOperations[operationId];
-            return {
-                barOperations,
-                ...(state.activeBarOperationId === operationId ? { activeBarOperationId: null } : {})
-            };
-        }
-        return {
-            barOperations: {
-                ...state.barOperations,
-                [operationId]: { ...operation, entityGenerations }
-            },
-            ...(state.activeBarOperationId === operationId ? { activeBarOperationId: null } : {})
-        };
+        const transition = endBarOperationState(
+            state.barOperations,
+            state.activeBarOperationId,
+            state.allTasks,
+            state.editGenerations,
+            operationId
+        );
+        return transition.barOperations === state.barOperations && transition.activeBarOperationId === state.activeBarOperationId
+            ? state
+            : transition;
     }),
 
     completeBarOperationTask: (taskId, completedGeneration) => set((state) => {
@@ -1670,54 +1571,17 @@ export const useTaskStore = create<TaskState>((set, get) => {
     }),
 
     rollbackBarOperation: (operationId) => set((state) => {
-        const operation = state.barOperations[operationId];
-        if (!operation) return state;
-
-        const baselineById = new Map(operation.baselineAllTasks.map(task => [task.id, task]));
-        const rollbackIds = new Set(
-            Object.entries(operation.entityGenerations)
-                .filter(([taskId, generation]) => (
-                    (state.editGenerations[taskId] ?? 0) >= generation &&
-                    !operation.completedTaskIds.includes(taskId) &&
-                    (state.localTaskPatches[taskId] ?? []).some(patch => patch.generation === generation)
-                ))
-                .map(([taskId]) => taskId)
-        );
-        const allTasks = state.allTasks.map(task => {
-            const baseline = baselineById.get(task.id);
-            if (!rollbackIds.has(task.id) || !baseline) return task;
-            const operationGeneration = operation.entityGenerations[task.id];
-            const laterPatches = (state.localTaskPatches[task.id] ?? []).filter(
-                patch => patch.generation > operationGeneration
-            );
-            return applyLocalPatches(baseline, laterPatches);
-        });
-        const localTaskPatches = { ...state.localTaskPatches };
-        const modifiedTaskIds = new Set(state.modifiedTaskIds);
-        rollbackIds.forEach((taskId) => {
-            localTaskPatches[taskId] = (localTaskPatches[taskId] ?? []).filter(
-                patch => patch.generation !== operation.entityGenerations[taskId]
-            );
-            if (localTaskPatches[taskId].length === 0) {
-                delete localTaskPatches[taskId];
-                modifiedTaskIds.delete(taskId);
-            }
-        });
-        const schedulingSummary = buildDerivedSchedulingSummary(allTasks, state.relations);
+        const rollback = buildBarOperationRollback(state, operationId);
+        if (!rollback) return state;
+        const schedulingSummary = buildDerivedSchedulingSummary(rollback.allTasks, state.relations);
         const derived = buildDerivedTaskState(state, {
-            allTasks,
+            allTasks: rollback.allTasks,
             derivedInvalidation: 'critical_path',
             schedulingSummary
         });
-        const barOperations = { ...state.barOperations };
-        delete barOperations[operationId];
         return {
-            allTasks,
+            ...rollback,
             ...toDerivedTaskStatePatch(derived),
-            modifiedTaskIds,
-            localTaskPatches,
-            barOperations,
-            ...(state.activeBarOperationId === operationId ? { activeBarOperationId: null } : {})
         };
     }),
 
