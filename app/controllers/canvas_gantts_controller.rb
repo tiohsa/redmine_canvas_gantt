@@ -486,16 +486,12 @@ class CanvasGanttsController < ApplicationController
     issue = Issue.visible.find(params[:id])
     return unless ensure_issue_in_scope(issue)
     return unless ensure_issue_editable(issue)
-    parent_issue = load_parent_issue(issue, params.dig(:task, :parent_issue_id))
-    return unless parent_issue != :invalid
     previous_parent_id = issue.parent_id
 
     task_attributes = permitted_task_params
-    if task_attributes.key?(:start_date) || task_attributes.key?(:due_date)
-      calendar_project = task_date_calendar_project(issue, task_attributes)
-      return unless normalize_task_date_attributes!(task_attributes, issue, project: calendar_project)
-    end
     intent = draft_task_intent.merge(task_attributes.to_h.symbolize_keys)
+    intent = preprocess_draft_intent(issue, intent)
+    return if performed?
     evaluation = issue_draft_evaluator.evaluate(issue: issue, intent: intent)
     unless evaluation.valid?
       return render_draft_evaluation_failure(evaluation, issue)
@@ -990,7 +986,46 @@ class CanvasGanttsController < ApplicationController
     params.require(:task).permit(*(TASK_PERMITTED_ATTRIBUTES + [{ custom_field_values: {} }]))
   end
 
-  def normalize_task_date_attributes!(task_attributes, issue, project: issue.project)
+  def preprocess_draft_intent(issue, intent)
+    normalized_intent = intent.to_h.symbolize_keys
+    mode = normalized_intent.delete(:date_update_mode)
+    calendar_project = nil
+    needs_authorized_target_context = normalized_intent.key?(:parent_issue_id) ||
+                                      normalized_intent.key?(:start_date) ||
+                                      normalized_intent.key?(:due_date)
+
+    if normalized_intent.key?(:project_id) && needs_authorized_target_context
+      target_project_id = Integer(normalized_intent[:project_id], exception: false)
+      return normalized_intent unless target_project_id
+
+      if target_project_id != issue.project_id
+        calendar_project = task_date_calendar_project(issue, normalized_intent)
+        # Keep the evaluator's established permission/invalid-target error contract,
+        # but do not inspect parent or calendar state for an unauthorized target.
+        return normalized_intent unless calendar_project
+      end
+    end
+
+    if normalized_intent.key?(:parent_issue_id)
+      load_parent_issue(issue, normalized_intent[:parent_issue_id])
+      return normalized_intent if performed?
+    end
+
+    return normalized_intent unless normalized_intent.key?(:start_date) || normalized_intent.key?(:due_date)
+
+    calendar_project ||= issue.project
+
+    return normalized_intent unless normalize_task_date_attributes!(
+      normalized_intent,
+      issue,
+      project: calendar_project,
+      mode: parse_date_update_mode(mode)
+    )
+
+    normalized_intent
+  end
+
+  def normalize_task_date_attributes!(task_attributes, issue, project: issue.project, mode: requested_date_update_mode)
     return true unless task_attributes.key?(:start_date) || task_attributes.key?(:due_date)
 
     start_value = task_attributes.key?(:start_date) ? task_attributes[:start_date] : issue.start_date
@@ -1000,7 +1035,7 @@ class CanvasGanttsController < ApplicationController
       due_date: due_value,
       changed_fields: task_attributes.slice(:start_date, :due_date).keys,
       project: project,
-      mode: requested_date_update_mode
+      mode: mode
     )
     unless normalized[:valid]
       render json: { errors: [canvas_gantt_l(:error_canvas_gantt_invalid_dates)] }, status: :unprocessable_entity
@@ -1017,7 +1052,11 @@ class CanvasGanttsController < ApplicationController
   end
 
   def requested_date_update_mode
-    raw_mode = params.dig(:task, :date_update_mode).to_s
+    parse_date_update_mode(params.dig(:task, :date_update_mode))
+  end
+
+  def parse_date_update_mode(value)
+    raw_mode = value.to_s
     %w[move resize_start resize_due direct_edit project_move legacy_unspecified].include?(raw_mode) ? raw_mode.to_sym : :legacy_unspecified
   end
 
@@ -1026,9 +1065,12 @@ class CanvasGanttsController < ApplicationController
     target_project_id = Integer(raw_project_id, exception: false)
     return issue.project unless target_project_id && target_project_id != issue.project_id
 
-    Project.visible.find(target_project_id)
-  rescue ActiveRecord::RecordNotFound
-    issue.project
+    target = Project.visible.find_by(id: target_project_id)
+    return nil unless target
+    return nil unless current_view_scope[:scope_project_ids].map(&:to_i).include?(target.id.to_i)
+    return nil unless User.current.allowed_to?(:add_issues, target)
+
+    target
   end
 
   def relation_params
@@ -1328,6 +1370,8 @@ class CanvasGanttsController < ApplicationController
 
     persisted_task = edit_meta_payload_builder.task_payload(issue)
     if intent.present?
+      intent = preprocess_draft_intent(issue, intent)
+      return if performed?
       evaluation = issue_draft_evaluator.evaluate(issue: issue, intent: intent)
     end
     if evaluation
@@ -1383,7 +1427,7 @@ class CanvasGanttsController < ApplicationController
   end
 
   def draft_task_intent
-    raw_task_intent.except(:date_update_mode)
+    raw_task_intent
   end
 
   def edit_meta_context_integer(key)

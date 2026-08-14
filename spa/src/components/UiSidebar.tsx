@@ -23,7 +23,7 @@ import { TrackerIcon } from './sidebar/trackerIcon';
 import { designTokens, fontFamilies } from '../styles/designTokens';
 import { formatDate } from '../utils/dateUtils';
 import { parseDateOnly } from '../utils/dateOnly';
-import { materializedTaskUpdates } from '../stores/taskStore/draftIntent';
+import { buildProjectMutationIntent, materializedTaskUpdates } from '../stores/taskStore/draftIntent';
 const NOTIFICATION_COLUMN_KEY = 'notification';
 
 type CanvasGanttSettings = InlineEditSettings & {
@@ -1313,19 +1313,17 @@ export const UiSidebar: React.FC = () => {
                                                                     const nextName = taskMeta.options.projects?.find(s => s.id === next)?.name;
                                                                     const materialized = preview.draftContract?.materialized ?? {};
                                                                     const materializedUpdates = materializedTaskUpdates(materialized, task);
+                                                                    const materializedFixedVersionCleared = Object.prototype.hasOwnProperty.call(materialized, 'fixed_version_id') &&
+                                                                        (materialized.fixed_version_id === null || materialized.fixed_version_id === '');
+                                                                    const materializedCategoryCleared = Object.prototype.hasOwnProperty.call(materialized, 'category_id') &&
+                                                                        (materialized.category_id === null || materialized.category_id === '');
                                                                     const trackerName = materializedUpdates.trackerId === undefined
                                                                         ? task.trackerName
                                                                         : preview.options.trackers.find(option => option.id === materializedUpdates.trackerId)?.name;
                                                                     const statusName = materializedUpdates.statusId === undefined
                                                                         ? task.statusName
                                                                         : preview.options.statuses.find(option => option.id === materializedUpdates.statusId)?.name;
-                                                                    const mutationFields: Record<string, unknown> = {
-                                                                        ...materialized,
-                                                                        project_id: next,
-                                                                        fixed_version_id: null,
-                                                                        category_id: null
-                                                                    };
-                                                                    delete mutationFields.lock_version;
+                                                                    const mutationFields = buildProjectMutationIntent(next);
                                                                     try {
                                                                         await save({
                                                                             taskId: task.id,
@@ -1335,10 +1333,8 @@ export const UiSidebar: React.FC = () => {
                                                                                 projectName: nextName,
                                                                                 trackerName,
                                                                                 statusName,
-                                                                                fixedVersionId: undefined,
-                                                                                fixedVersionName: undefined,
-                                                                                categoryId: undefined,
-                                                                                categoryName: undefined
+                                                                                fixedVersionName: materializedFixedVersionCleared ? undefined : task.fixedVersionName,
+                                                                                categoryName: materializedCategoryCleared ? undefined : task.categoryName
                                                                             },
                                                                             rollbackTaskUpdates: {
                                                                                 projectId: task.projectId,

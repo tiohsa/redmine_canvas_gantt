@@ -16,10 +16,10 @@ type RawTask = {
   editable: boolean;
   display_order: number;
   parent_id?: number;
-  fixed_version_id?: number;
-  fixed_version_name?: string;
-  category_id?: number;
-  category_name?: string;
+  fixed_version_id?: number | null;
+  fixed_version_name?: string | null;
+  category_id?: number | null;
+  category_name?: string | null;
   tracker_id?: number;
   tracker_name?: string;
   priority_id?: number;
@@ -402,6 +402,7 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
       const task = data.tasks.find((entry) => String(entry.id) === taskId);
       const fields = (body as { task?: Record<string, unknown> }).task ?? {};
       if (task) {
+        const previousProjectId = task.project_id;
         if (typeof fields.subject === 'string') task.subject = fields.subject;
         if (typeof fields.status_id === 'number') task.status_id = fields.status_id;
         if (typeof fields.done_ratio === 'number') task.ratio_done = fields.done_ratio;
@@ -409,6 +410,18 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
           task.project_id = fields.project_id;
           const project = options?.editProjects?.find(candidate => candidate.id === fields.project_id);
           if (project) task.project_name = project.name;
+
+          if (fields.project_id !== previousProjectId) {
+            const targetTrackers = options?.editOptionsByProject?.[String(task.project_id)]?.trackers ?? options?.editTrackers ?? [];
+            if (fields.tracker_id === undefined && targetTrackers.length > 0 && !targetTrackers.some(candidate => candidate.id === task.tracker_id)) {
+              task.tracker_id = targetTrackers[0].id;
+              task.tracker_name = targetTrackers[0].name;
+            }
+            task.fixed_version_id = null;
+            task.fixed_version_name = null;
+            task.category_id = null;
+            task.category_name = null;
+          }
         }
         if (typeof fields.tracker_id === 'number') {
           task.tracker_id = fields.tracker_id;
@@ -417,12 +430,12 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
           if (tracker) task.tracker_name = tracker.name;
         }
         if (fields.fixed_version_id === null) {
-          delete task.fixed_version_id;
-          delete task.fixed_version_name;
+          task.fixed_version_id = null;
+          task.fixed_version_name = null;
         }
         if (fields.category_id === null) {
-          delete task.category_id;
-          delete task.category_name;
+          task.category_id = null;
+          task.category_name = null;
         }
         task.lock_version += 1;
       }

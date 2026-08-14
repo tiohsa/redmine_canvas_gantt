@@ -5,6 +5,11 @@ import { applyLocalPatches, type LocalPatch, type ServerSnapshot } from './state
 
 const persistableFields = new Set<string>(PERSISTABLE_TASK_FIELDS);
 
+/** Project selection is the only explicit intent produced by the selector.
+ * Server materialized policy fields are display-only and must not be resent.
+ */
+export const buildProjectMutationIntent = (projectId: number): TaskFields => ({ project_id: projectId });
+
 export const buildTaskDraftIntent = (
     taskId: string,
     snapshot: ServerSnapshot<Task>,

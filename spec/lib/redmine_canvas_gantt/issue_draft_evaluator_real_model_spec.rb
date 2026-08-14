@@ -155,6 +155,106 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator, type: :model do
     )
   end
 
+  it 'evaluates destination-only editable fields after Project and Tracker changes' do
+    source_project = issue.project
+    destination_project = Project.find(2)
+    source_tracker = Tracker.find(1)
+    destination_tracker = Tracker.find(2)
+    role = Member.find_by!(user_id: current_user.id, project_id: source_project.id).roles.first
+    destination_member = Member.find_or_create_by!(user_id: current_user.id, project_id: destination_project.id)
+    destination_member.roles << role unless destination_member.roles.include?(role)
+    source_project.trackers = [source_tracker]
+    destination_project.trackers = [destination_tracker]
+    source_tracker_bits = source_tracker.fields_bits
+    destination_tracker_bits = destination_tracker.fields_bits
+
+    begin
+      source_tracker.core_fields = source_tracker.core_fields - ['estimated_hours']
+      destination_tracker.core_fields = destination_tracker.core_fields | ['estimated_hours']
+      source_tracker.save!
+      destination_tracker.save!
+      issue.update_columns(
+        project_id: source_project.id,
+        tracker_id: source_tracker.id,
+        estimated_hours: 1
+      )
+      issue.reload
+
+      result = described_class.new(
+        current_user: current_user,
+        project_scope_ids: [source_project.id, destination_project.id]
+      ).evaluate(
+        issue: issue,
+        intent: {
+          project_id: destination_project.id,
+          tracker_id: destination_tracker.id,
+          estimated_hours: 4,
+          lock_version: issue.lock_version
+        }
+      )
+
+      expect(result).to be_valid
+      expect(result.issue).to have_attributes(
+        project_id: destination_project.id,
+        tracker_id: destination_tracker.id,
+        estimated_hours: 4.0
+      )
+    ensure
+      source_tracker.update_columns(fields_bits: source_tracker_bits)
+      destination_tracker.update_columns(fields_bits: destination_tracker_bits)
+      source_tracker.reload
+      destination_tracker.reload
+    end
+  end
+
+  it 'matches Redmine single-apply Project plus previous Category behavior' do
+    source_project = issue.project
+    destination_project = Project.find(2)
+    source_tracker = Tracker.find(1)
+    role = Member.find_by!(user_id: current_user.id, project_id: source_project.id).roles.first
+    destination_member = Member.find_or_create_by!(user_id: current_user.id, project_id: destination_project.id)
+    destination_member.roles << role unless destination_member.roles.include?(role)
+    source_project.trackers = [source_tracker]
+    destination_project.trackers = [source_tracker]
+    source_category = IssueCategory.create!(project: source_project, name: 'Canvas source category')
+    issue.update_columns(project_id: source_project.id, tracker_id: source_tracker.id, category_id: source_category.id)
+    issue.reload
+
+    direct_issue = Issue.find(issue.id)
+    direct_issue.init_journal(current_user)
+    direct_issue.safe_attributes = {
+      project_id: destination_project.id,
+      category_id: source_category.id
+    }.stringify_keys
+
+    evaluated_issue = Issue.find(issue.id)
+    result = described_class.new(
+      current_user: current_user,
+      project_scope_ids: [source_project.id, destination_project.id]
+    ).evaluate(
+      issue: evaluated_issue,
+      intent: {
+        project_id: destination_project.id,
+        category_id: source_category.id,
+        lock_version: evaluated_issue.lock_version
+      }
+    )
+
+    expect(result.issue).to have_attributes(
+      project_id: direct_issue.project_id,
+      category_id: direct_issue.category_id
+    )
+    if direct_issue.category_id != source_category.id
+      expect(result.violations).to include(include(field: 'category_id', code: 'not_accepted'))
+    else
+      expect(result.violations).not_to include(include(field: 'category_id', code: 'not_accepted'))
+    end
+    expect(Issue.find(issue.id)).to have_attributes(
+      project_id: source_project.id,
+      category_id: source_category.id
+    )
+  end
+
   it 'keeps a previous assignee outside destination candidates on a project-only move' do
     source_project = issue.project
     destination_project = Project.find(2)

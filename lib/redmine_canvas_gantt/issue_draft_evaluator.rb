@@ -56,30 +56,28 @@ module RedmineCanvasGantt
         return build_result(issue, base_revision, user_intent, {}, {}, [], violations)
       end
 
-      violations.concat(unsafe_field_violations(issue, user_intent))
       safe_user_intent = user_intent.reject do |field, _value|
         field != :lock_version && violations.any? { |entry| entry[:field] == field.to_s }
       end
 
-      project_violation = validate_target_project(issue, safe_user_intent)
+      target_project = target_project_for(issue, safe_user_intent)
+      project_violation = validate_target_project(issue, safe_user_intent, target_project)
       violations << project_violation if project_violation
-
-      if safe_user_intent.key?(:project_id) && project_violation.nil?
-        issue.safe_attributes = { project_id: safe_user_intent[:project_id] }.stringify_keys
-      end
+      safe_user_intent = safe_user_intent.except(:project_id) if project_violation
 
       policy = @project_move_policy.apply(
         issue: issue,
         user_intent: safe_user_intent,
-        before_values: before_values
+        before_values: before_values,
+        target_project: target_project
       )
       violations.concat(policy.violations)
 
-      remaining_intent = safe_user_intent.except(:project_id)
-      effective_attributes = policy.attributes.merge(remaining_intent)
+      effective_attributes = policy.attributes.merge(safe_user_intent)
       issue.safe_attributes = effective_attributes.stringify_keys if effective_attributes.present?
 
       violations.concat(acceptance_violations(issue, safe_user_intent))
+      violations.concat(policy_acceptance_violations(issue, policy))
       issue.valid?
       violations.concat(model_violations(issue))
       violations.uniq! { |entry| [entry[:field], entry[:code], entry[:message]] }
@@ -129,23 +127,14 @@ module RedmineCanvasGantt
       end
     end
 
-    def unsafe_field_violations(issue, intent)
-      intent.each_with_object([]) do |(field, _value), result|
-        next if field == :lock_version
-        next if issue.safe_attribute?(field.to_s)
-
-        result << violation(field, 'unsafe_field', 'The requested field cannot be edited.')
-      end
-    end
-
-    def validate_target_project(issue, intent)
+    def validate_target_project(issue, intent, target_project = nil)
       return nil unless intent.key?(:project_id)
 
       target_id = integer_id(intent[:project_id])
       return violation('project_id', 'invalid_target', 'The target project is invalid.') unless target_id
       return nil if target_id == issue.project_id.to_i
 
-      target = @project_class.visible.find_by(id: target_id)
+      target = target_project || @project_class.visible.find_by(id: target_id)
       return violation('project_id', 'invalid_target', 'The target project is invalid.') unless target
       unless @project_scope_ids.include?(target_id) && @current_user.allowed_to?(:add_issues, target)
         return violation('project_id', 'permission_denied', 'Permission denied.')
@@ -154,12 +143,30 @@ module RedmineCanvasGantt
       nil
     end
 
+    def target_project_for(issue, intent)
+      return issue.project unless intent.key?(:project_id)
+
+      target_id = integer_id(intent[:project_id])
+      return issue.project if target_id.nil? || target_id == issue.project_id.to_i
+
+      @project_class.visible.find_by(id: target_id)
+    end
+
     def acceptance_violations(issue, intent)
       intent.each_with_object([]) do |(field, requested), result|
         next if field == :lock_version
         next if accepted_value?(issue, field, requested)
 
         result << violation(field, 'not_accepted', 'The requested value was not accepted.')
+      end
+    end
+
+    def policy_acceptance_violations(issue, policy)
+      policy.mandatory_fields.each_with_object([]) do |field, result|
+        requested = policy.attributes[field]
+        next if accepted_value?(issue, field, requested)
+
+        result << violation(field, 'policy_not_accepted', 'The project move policy value was not accepted.')
       end
     end
 
@@ -272,7 +279,7 @@ module RedmineCanvasGantt
     end
 
     def issue_attribute(field)
-      field == :parent_issue_id ? :parent_id : field
+      field
     end
 
     def normalize_scalar(value)

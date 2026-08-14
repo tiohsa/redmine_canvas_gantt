@@ -93,6 +93,86 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe '#preprocess_draft_intent' do
+    it 'validates a requested parent through the shared preview and mutation preprocessing' do
+      issue = instance_double(Issue, project: project, project_id: project.id)
+      parent = instance_double(Issue, id: 11)
+      allow(controller).to receive(:performed?).and_return(false)
+      expect(controller).to receive(:load_parent_issue).with(issue, '11').and_return(parent)
+
+      expect(controller.send(:preprocess_draft_intent, issue, parent_issue_id: '11')).to eq(
+        parent_issue_id: '11'
+      )
+    end
+
+    it 'normalizes Preview dates with the same transport mode as PATCH' do
+      resolver = instance_double(RedmineCanvasGantt::ProjectCalendarResolver)
+      allow(controller).to receive(:business_calendar_resolver).and_return(resolver)
+      allow(resolver).to receive(:normalize_date_interval)
+        .with(
+          start_date: '2027-01-04',
+          due_date: '2027-01-04',
+          changed_fields: %i[start_date due_date],
+          project: project,
+          mode: :project_move
+        ).and_return(valid: true, start_date: Date.new(2027, 1, 5), due_date: Date.new(2027, 1, 5))
+
+      issue = instance_double(
+        Issue,
+        project: project,
+        project_id: project.id,
+        start_date: Date.new(2027, 1, 4),
+        due_date: Date.new(2027, 1, 4)
+      )
+      intent = {
+        start_date: '2027-01-04',
+        due_date: '2027-01-04',
+        date_update_mode: 'project_move'
+      }
+
+      expect(controller.send(:preprocess_draft_intent, issue, intent)).to eq(
+        start_date: Date.new(2027, 1, 5),
+        due_date: Date.new(2027, 1, 5)
+      )
+    end
+
+    it 'does not resolve or normalize a destination calendar before scope authorization' do
+      target = instance_double(Project, id: 2)
+      resolver = instance_double(RedmineCanvasGantt::ProjectCalendarResolver)
+      allow(controller).to receive(:business_calendar_resolver).and_return(resolver)
+      allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [project.id])
+      allow(Project).to receive_message_chain(:visible, :find_by).with(id: 2).and_return(target)
+      allow(User.current).to receive(:allowed_to?).with(:add_issues, target).and_return(true)
+      expect(resolver).not_to receive(:normalize_date_interval)
+
+      issue = instance_double(Issue, project: project, project_id: project.id, start_date: nil, due_date: nil)
+      result = controller.send(
+        :preprocess_draft_intent,
+        issue,
+        project_id: 2, start_date: '2027-01-04', date_update_mode: 'project_move'
+      )
+
+      expect(result).to eq(project_id: 2, start_date: '2027-01-04')
+    end
+
+    it 'does not inspect a parent before destination project authorization' do
+      target = instance_double(Project, id: 2)
+      allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [project.id])
+      allow(Project).to receive_message_chain(:visible, :find_by).with(id: 2).and_return(target)
+      allow(User.current).to receive(:allowed_to?).with(:add_issues, target).and_return(true)
+      expect(controller).not_to receive(:load_parent_issue)
+
+      issue = instance_double(Issue, project: project, project_id: project.id)
+      result = controller.send(
+        :preprocess_draft_intent,
+        issue,
+        project_id: 2, parent_issue_id: 11, start_date: '2027-01-04', date_update_mode: 'project_move'
+      )
+
+      expect(result).to eq(project_id: 2, parent_issue_id: 11, start_date: '2027-01-04')
+    end
+  end
+
   describe '#safe_build_asset_path' do
     around do |example|
       Dir.mktmpdir do |dir|

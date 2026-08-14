@@ -9,10 +9,10 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator do
   class FakeDraftIssue
     attr_accessor :project, :tracker, :status_id, :fixed_version_id, :category_id, :lock_version,
                   :subject, :assigned_to_id, :done_ratio, :due_date, :start_date, :priority_id,
-                  :estimated_hours, :parent_id
+                  :estimated_hours, :parent_id, :parent_issue_id
     attr_reader :id, :safe_attribute_assignments, :journal_user
 
-    def initialize(project:, tracker:, allowed_trackers:, status_id: 1, lock_version: 3)
+    def initialize(project:, tracker:, allowed_trackers:, status_id: 1, lock_version: 3, destination_safe_fields: [])
       @id = 10
       @project = project
       @tracker = tracker
@@ -24,6 +24,7 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator do
       @changes = {}
       @custom_field_values_by_id = { '5' => 'persisted' }
       @safe_attribute_assignments = []
+      @destination_safe_fields = destination_safe_fields
     end
 
     def new_record?
@@ -43,7 +44,10 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator do
     end
 
     def safe_attribute?(field)
-      field != 'author_id'
+      return false if field == 'author_id'
+      return @destination_safe_fields.include?(field) if @project.id == 1 && @tracker.id == 4
+
+      true
     end
 
     def safe_attributes=(attributes)
@@ -63,8 +67,10 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator do
           self.tracker = target
         end
       end
+      self.estimated_hours = attributes[:estimated_hours].to_f if attributes.key?(:estimated_hours)
       self.status_id = attributes[:status_id].to_i if attributes.key?(:status_id) && attributes[:status_id].to_i == 2
       self.lock_version = attributes[:lock_version].to_i if attributes.key?(:lock_version)
+      self.parent_issue_id = attributes[:parent_issue_id].to_i if attributes.key?(:parent_issue_id)
       self.fixed_version_id = nil if attributes.key?(:fixed_version_id) && attributes[:fixed_version_id].blank?
       self.category_id = nil if attributes.key?(:category_id) && attributes[:category_id].blank?
       if attributes.key?(:custom_field_values)
@@ -201,6 +207,57 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator do
     expect(issue).to have_attributes(project_id: 2, tracker_id: 7, new_record?: false)
   end
 
+  it 'applies Project and its previous Category in one Redmine safe-attribute evaluation' do
+    issue = FakeDraftIssue.new(
+      project: source_project,
+      tracker: source_tracker,
+      allowed_trackers: [target_tracker]
+    )
+    issue.category_id = 11
+
+    result = evaluator.evaluate(
+      issue: issue,
+      intent: { project_id: 2, category_id: 11, lock_version: 3 }
+    )
+
+    expect(issue.safe_attribute_assignments.size).to eq(1)
+    expect(result.violations).not_to include(include(field: 'project_id', code: 'not_accepted'))
+  end
+
+  it 'accepts and materializes Redmine parent_issue_id virtual state' do
+    issue = FakeDraftIssue.new(
+      project: source_project,
+      tracker: source_tracker,
+      allowed_trackers: [target_tracker]
+    )
+
+    result = evaluator.evaluate(
+      issue: issue,
+      intent: { project_id: 2, tracker_id: 7, parent_issue_id: 11, lock_version: 3 }
+    )
+
+    expect(result).to be_valid
+    expect(result.materialized).to include(project_id: 2, parent_issue_id: 11)
+  end
+
+  it 'evaluates a field using the destination tracker instead of source safe attributes' do
+    issue = FakeDraftIssue.new(
+      project: source_project,
+      tracker: source_tracker,
+      allowed_trackers: [target_tracker],
+      destination_safe_fields: ['estimated_hours']
+    )
+
+    result = evaluator.evaluate(
+      issue: issue,
+      intent: { project_id: 2, tracker_id: 7, estimated_hours: 4, lock_version: 3 }
+    )
+
+    expect(result.violations).not_to include(include(field: 'estimated_hours', code: 'unsafe_field'))
+    expect(result).to be_valid
+    expect(issue.estimated_hours).to eq(4.0)
+  end
+
   it 'materializes an allowed tracker fallback as policy normalization' do
     issue = FakeDraftIssue.new(
       project: source_project,
@@ -215,6 +272,52 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator do
       include(field: 'tracker_id', to: 7, source: 'policy')
     )
     expect(result.draft_contract.to_json.bytesize).to be <= 8.kilobytes
+  end
+
+  it 'uses the destination Issue domain tracker candidates for policy fallback' do
+    domain_issue_class = Class.new(FakeDraftIssue) do
+      class << self
+        attr_accessor :domain_trackers, :domain_arguments
+
+        def allowed_target_trackers(*arguments)
+          self.domain_arguments = arguments
+          domain_trackers
+        end
+      end
+    end
+    domain_issue_class.projects = FakeDraftIssue.projects
+    issue = domain_issue_class.new(
+      project: source_project,
+      tracker: source_tracker,
+      allowed_trackers: [target_tracker]
+    )
+    domain_issue_class.domain_trackers = [target_tracker]
+
+    result = RedmineCanvasGantt::IssueDraftEvaluator.new(
+      current_user: user,
+      project_scope_ids: [1, 2],
+      project_class: project_class
+    ).evaluate(issue: issue, intent: { project_id: 2, lock_version: 3 })
+
+    expect(result).to be_valid
+    expect(domain_issue_class.domain_arguments).to eq([target_project, user, source_tracker.id])
+    expect(result.materialized).to include(tracker_id: target_tracker.id)
+  end
+
+  it 'treats Version and Category clears as Redmine canonical best-effort normalization' do
+    issue = FakeDraftIssue.new(
+      project: source_project,
+      tracker: source_tracker,
+      allowed_trackers: [target_tracker]
+    )
+    issue.fixed_version_id = 8
+    issue.category_id = 11
+
+    result = evaluator.evaluate(issue: issue, intent: { project_id: 2, lock_version: 3 })
+
+    expect(result).to be_valid
+    expect(result.violations).not_to include(include(code: 'policy_not_accepted'))
+    expect(result.materialized).to include(fixed_version_id: nil, category_id: nil)
   end
 
   it 'materializes only explicitly requested or changed custom field values' do

@@ -27,7 +27,7 @@ module RedmineCanvasGantt
             { id: priority.id, name: priority.name, position: priority.position }
           end,
           categories: project_for_options.issue_categories.map { |category| { id: category.id, name: category.name } },
-          projects: project_options_for(project_scope_ids),
+          projects: project_options_for(capability_issue, project_scope_ids),
           trackers: trackers_for(capability_issue, project_for_options),
           versions: versions_for(capability_issue),
           custom_fields: custom_fields
@@ -86,11 +86,43 @@ module RedmineCanvasGantt
       issue.assignable_versions.map { |version| { id: version.id, name: version.name } }
     end
 
-    def project_options_for(project_scope_ids)
+    def project_options_for(issue, project_scope_ids)
+      if issue_domain_candidate_method?(issue)
+        scoped_projects = @project_class.visible.active.where(id: Array(project_scope_ids).map(&:to_i))
+        domain_candidates = issue_domain_project_candidates(issue)
+        if domain_candidates
+          candidate_ids = domain_candidates.to_a.map { |candidate| candidate.respond_to?(:id) ? candidate.id : candidate }.map(&:to_i)
+          return scoped_projects.select { |project| candidate_ids.include?(project.id.to_i) }.map do |project|
+            { id: project.id, name: project.name }
+          end
+        end
+      end
+
       @project_class.allowed_to(:add_issues)
         .active
         .where(id: project_scope_ids)
         .map { |project| { id: project.id, name: project.name } }
+    end
+
+    def issue_domain_candidate_method?(issue)
+      issue.respond_to?(:allowed_target_projects) || issue.respond_to?(:allowed_target_project_ids)
+    end
+
+    def issue_domain_project_candidates(issue)
+      if issue.respond_to?(:allowed_target_projects)
+        return invoke_domain_candidates(issue, :allowed_target_projects)
+      end
+      if issue.respond_to?(:allowed_target_project_ids)
+        return invoke_domain_candidates(issue, :allowed_target_project_ids)
+      end
+
+      nil
+    end
+
+    def invoke_domain_candidates(issue, method_name)
+      issue.public_send(method_name, @current_user)
+    rescue ArgumentError
+      issue.public_send(method_name)
     end
   end
 end

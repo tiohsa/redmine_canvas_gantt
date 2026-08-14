@@ -2,6 +2,20 @@ require_relative '../../spec_helper'
 require_relative '../../../lib/redmine_canvas_gantt/edit_meta_payload_builder'
 
 RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
+  it 'intersects Issue domain project candidates with the Canvas scope' do
+    current_user = instance_double(User)
+    builder = described_class.new(current_user: current_user)
+    candidate = instance_double(Project, id: 20, name: 'Domain candidate')
+    issue = double('Issue domain candidate source')
+    allow(issue).to receive(:allowed_target_projects).with(current_user).and_return([candidate])
+    visible_scope = double(active: double(where: [candidate]))
+    allow(Project).to receive(:visible).and_return(visible_scope)
+
+    expect(builder.send(:project_options_for, issue, [20, 99])).to eq(
+      [{ id: 20, name: 'Domain candidate' }]
+    )
+  end
+
   describe '#build' do
     it 'builds the edit meta payload shape expected by the frontend' do
       current_user = instance_double(User)

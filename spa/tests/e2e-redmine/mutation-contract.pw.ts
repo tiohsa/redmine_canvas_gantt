@@ -70,7 +70,7 @@ const ensureProject = async (
 const createIssue = async (
   page: Page,
   projectIdentifier: string,
-  fields: { subject: string; startDate?: string; dueDate?: string; trackerId?: number; assignedToId?: number }
+  fields: { subject: string; startDate?: string; dueDate?: string; trackerId?: number; assignedToId?: number; parentId?: number }
 ): Promise<number> => {
   const result = await page.evaluate(async ({ projectIdentifier, fields, restAuthorization }) => {
     const response = await fetch('/issues.json', {
@@ -87,7 +87,8 @@ const createIssue = async (
           subject: fields.subject,
           start_date: fields.startDate,
           due_date: fields.dueDate,
-          assigned_to_id: fields.assignedToId
+          assigned_to_id: fields.assignedToId,
+          parent_issue_id: fields.parentId
         }
       })
     });
@@ -181,6 +182,8 @@ const fetchRestIssue = async (page: Page, issueId: number): Promise<{
   subject: string;
   startDate: string | null;
   dueDate: string | null;
+  lockVersion: number;
+  parentId: number | null;
   projectId: number;
   statusId: number;
   trackerId: number;
@@ -204,6 +207,8 @@ const fetchRestIssue = async (page: Page, issueId: number): Promise<{
       project?: { id?: number };
       status?: { id?: number };
       tracker?: { id?: number };
+      lock_version?: number;
+      parent?: { id?: number };
     };
   }).issue;
   expect(issue).toBeTruthy();
@@ -215,6 +220,8 @@ const fetchRestIssue = async (page: Page, issueId: number): Promise<{
     subject: issue!.subject ?? '',
     startDate: issue!.start_date ?? null,
     dueDate: issue!.due_date ?? null,
+    lockVersion: issue!.lock_version ?? 1,
+    parentId: issue!.parent?.id ?? null,
     projectId: issue!.project!.id!,
     statusId: issue!.status!.id!,
     trackerId: issue!.tracker!.id!
@@ -351,6 +358,59 @@ test('draft preview and mutation accept destination project, tracker, and status
     projectId: destinationProjectId,
     trackerId: 2,
     statusId: targetStatusId
+  });
+});
+
+test('project and parent changes share the same preview and mutation contract', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, 'ecookbook');
+
+  const destinationIdentifier = `draft-parent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const destinationProjectId = await ensureProject(
+    page,
+    destinationIdentifier,
+    uniqueName('Canvas Draft Parent Destination'),
+    'ecookbook',
+    [1, 2, 3]
+  );
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, destinationIdentifier);
+
+  const parentId = await createIssue(page, destinationIdentifier, {
+    subject: uniqueName('Canvas draft parent'),
+    trackerId: 1
+  });
+  const childId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas draft child'),
+    trackerId: 1
+  });
+
+  await loadCanvasPage(page, redmineBase);
+  const before = await fetchRestIssue(page, childId);
+  const intent = {
+    project_id: destinationProjectId,
+    tracker_id: 1,
+    parent_issue_id: parentId,
+    lock_version: before.lockVersion
+  };
+
+  const preview = await previewIssueThroughPlugin(page, childId, intent);
+  expect(preview.status).toBe(200);
+  expect(preview.payload).toEqual(expect.objectContaining({
+    draft_contract: expect.objectContaining({
+      materialized: expect.objectContaining({
+        project_id: destinationProjectId,
+        parent_issue_id: parentId
+      }),
+      violations: []
+    })
+  }));
+
+  const mutation = await patchIssueThroughPlugin(page, childId, intent);
+  expect(mutation.status).toBe(200);
+  await expect(fetchRestIssue(page, childId)).resolves.toMatchObject({
+    projectId: destinationProjectId,
+    parentId
   });
 });
 
@@ -703,8 +763,25 @@ test('plugin task mutation returns scope not_found for a visible issue outside C
   const before = await fetchRestIssue(page, issueId);
   expect(before.projectId).toBe(outOfScopeProjectId);
 
+  const preview = await previewIssueThroughPlugin(page, issueId, {
+    project_id: outOfScopeProjectId,
+    start_date: '2027-01-03',
+    due_date: '2027-01-03',
+    date_update_mode: 'project_move',
+    lock_version: before.lockVersion
+  });
+  expect(preview.status).toBe(404);
+  expect(preview.payload).toEqual(expect.objectContaining({
+    status: 'not_found',
+    failure: expect.objectContaining({ resource_role: 'scope' })
+  }));
+
   const result = await patchIssueThroughPlugin(page, issueId, {
     subject: `${before.subject} rejected`,
+    project_id: outOfScopeProjectId,
+    start_date: '2027-01-03',
+    due_date: '2027-01-03',
+    date_update_mode: 'project_move',
     lock_version: 1
   });
 
@@ -769,12 +846,33 @@ test('project move plus date update uses the destination project calendar', asyn
 
   await loadCanvasPage(page, redmineBase);
 
+  const before = await fetchRestIssue(page, issueId);
+  const preview = await previewIssueThroughPlugin(page, issueId, {
+    project_id: destinationProjectId,
+    start_date: '2027-07-04',
+    due_date: '2027-07-06',
+    date_update_mode: 'project_move',
+    lock_version: before.lockVersion
+  });
+
+  expect(preview.status).toBe(200);
+  expect(preview.payload).toEqual(expect.objectContaining({
+    draft_contract: expect.objectContaining({
+      materialized: expect.objectContaining({
+        project_id: destinationProjectId,
+        start_date: '2027-07-05',
+        due_date: '2027-07-06'
+      }),
+      violations: []
+    })
+  }));
+
   const moveResult = await patchIssueThroughPlugin(page, issueId, {
     project_id: destinationProjectId,
     start_date: '2027-07-04',
     due_date: '2027-07-06',
     date_update_mode: 'project_move',
-    lock_version: 1
+    lock_version: before.lockVersion
   });
 
   expect(moveResult.status).toBe(200);
@@ -783,4 +881,6 @@ test('project move plus date update uses the destination project calendar', asyn
   expect(after.projectId).toBe(destinationProjectId);
   expect(after.startDate).toBe('2027-07-05');
   expect(after.dueDate).toBe('2027-07-06');
+  expect(after.startDate).toBe((preview.payload as { draft_contract?: { materialized?: { start_date?: string } } }).draft_contract?.materialized?.start_date);
+  expect(after.dueDate).toBe((preview.payload as { draft_contract?: { materialized?: { due_date?: string } } }).draft_contract?.materialized?.due_date);
 });

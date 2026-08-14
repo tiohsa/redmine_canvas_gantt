@@ -94,7 +94,7 @@ test('does not offer projects outside the current view as move targets', async (
   expect(options).not.toContain('Outside project');
 });
 
-test('clears version and category when moving projects', async ({ page }) => {
+test('uses server materialization to clear version and category without resending policy fields', async ({ page }) => {
   const patchPayloads: unknown[] = [];
   await setupProjectMove(page, { onPatchTask: (payload) => patchPayloads.push(payload) });
 
@@ -102,9 +102,12 @@ test('clears version and category when moving projects', async ({ page }) => {
   await page.locator('[data-testid="task-row-601"] select').first().selectOption({ label: 'P2' });
 
   await expect.poll(() => patchPayloads.length).toBe(1);
-  const payload = patchPayloads[0] as { task?: { fixed_version_id?: unknown; category_id?: unknown } };
-  expect(payload.task?.fixed_version_id).toBeNull();
-  expect(payload.task?.category_id).toBeNull();
+  const payload = patchPayloads[0] as { task?: Record<string, unknown> };
+  expect(payload.task).toEqual(expect.objectContaining({ project_id: 3 }));
+  expect(payload.task).not.toHaveProperty('fixed_version_id');
+  expect(payload.task).not.toHaveProperty('category_id');
+  await expect(page.getByTestId('cell-601-version')).not.toContainText('P1 version');
+  await expect(page.getByTestId('cell-601-category')).not.toContainText('P1 category');
 });
 
 test('surfaces save failure when tracker or assignee is invalid for the target project', async ({ page }) => {

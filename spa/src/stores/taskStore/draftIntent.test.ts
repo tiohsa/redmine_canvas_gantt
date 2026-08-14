@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '../../types';
 import type { LocalPatch, ServerSnapshot } from './stateContract';
-import { buildTaskDraftIntent, materializedTaskUpdates } from './draftIntent';
+import { buildProjectMutationIntent, buildTaskDraftIntent, materializedTaskUpdates } from './draftIntent';
 
 const task = (overrides: Partial<Task> = {}): Task => ({
     id: '1',
@@ -69,6 +69,12 @@ describe('buildTaskDraftIntent', () => {
             status_id: 4,
             lock_version: 7
         });
+    });
+});
+
+describe('buildProjectMutationIntent', () => {
+    it('keeps server policy materialization out of the project UserIntent', () => {
+        expect(buildProjectMutationIntent(9)).toEqual({ project_id: 9 });
     });
 });
 
