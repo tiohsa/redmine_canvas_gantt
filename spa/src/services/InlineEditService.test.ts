@@ -64,6 +64,124 @@ describe('InlineEditService', () => {
         expect(state.localTaskPatches['task-1']).toHaveLength(1);
     });
 
+    it('stores project preview materialization as projection but saves only explicit project intent', async () => {
+        const initialTask = buildTask({
+            projectId: '1',
+            trackerId: 2,
+            statusId: 3,
+            fixedVersionId: '4',
+            categoryId: 5
+        });
+        useTaskStore.setState({
+            autoSave: false,
+            allTasks: [initialTask],
+            tasks: [initialTask],
+            serverTaskSnapshot: {
+                entitiesById: { [initialTask.id]: initialTask },
+                revisions: { [initialTask.id]: initialTask.lockVersion },
+                context: null
+            }
+        });
+
+        await InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: {
+                projectId: '9',
+                trackerId: 7,
+                statusId: 4,
+                fixedVersionId: undefined,
+                categoryId: undefined
+            },
+            rollbackTaskUpdates: {
+                projectId: initialTask.projectId,
+                trackerId: initialTask.trackerId,
+                statusId: initialTask.statusId,
+                fixedVersionId: initialTask.fixedVersionId,
+                categoryId: initialTask.categoryId
+            },
+            fields: { project_id: 9 }
+        });
+
+        const draft = useTaskStore.getState().localTaskPatches[initialTask.id]?.[0];
+        expect(draft?.projection).toEqual({
+            projectId: '9',
+            trackerId: 7,
+            statusId: 4,
+            fixedVersionId: undefined,
+            categoryId: undefined
+        });
+        expect(draft?.mutationIntent).toEqual({ projectId: '9' });
+
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+        await useTaskStore.getState().saveChanges();
+
+        expect(apiClient.updateTaskFields).toHaveBeenCalledWith(initialTask.id, {
+            project_id: '9',
+            lock_version: initialTask.lockVersion
+        }, expect.stringMatching(/^mutation:/));
+    });
+
+    it('keeps the logical project mutation payload identical with Auto Save ON and OFF', async () => {
+        const initialTask = buildTask({
+            projectId: '1',
+            trackerId: 2,
+            statusId: 3,
+            fixedVersionId: '4',
+            categoryId: 5
+        });
+        const projection = {
+            projectId: '9',
+            trackerId: 7,
+            statusId: 4,
+            fixedVersionId: undefined,
+            categoryId: undefined
+        };
+        const saveProjectPreview = async (autoSave: boolean) => {
+            useTaskStore.setState(useTaskStore.getInitialState(), true);
+            useTaskStore.setState({
+                autoSave,
+                allTasks: [initialTask],
+                tasks: [initialTask],
+                serverTaskSnapshot: {
+                    entitiesById: { [initialTask.id]: initialTask },
+                    revisions: { [initialTask.id]: initialTask.lockVersion },
+                    context: null
+                }
+            });
+            vi.clearAllMocks();
+            vi.mocked(apiClient.updateTask).mockImplementation(async (task, operationId, fields) => (
+                apiClient.updateTaskFields(task.id, { ...(fields ?? {}), lock_version: task.lockVersion }, operationId)
+            ));
+            vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+
+            await InlineEditService.saveTaskFields({
+                taskId: initialTask.id,
+                optimisticTaskUpdates: projection,
+                rollbackTaskUpdates: {
+                    projectId: initialTask.projectId,
+                    trackerId: initialTask.trackerId,
+                    statusId: initialTask.statusId,
+                    fixedVersionId: initialTask.fixedVersionId,
+                    categoryId: initialTask.categoryId
+                },
+                fields: { project_id: 9 }
+            });
+            if (!autoSave) await useTaskStore.getState().saveChanges();
+
+            return vi.mocked(apiClient.updateTaskFields).mock.calls[0]?.[1];
+        };
+
+        const autoSaveOnPayload = await saveProjectPreview(true);
+        const autoSaveOffPayload = await saveProjectPreview(false);
+        const logicalPayload = (payload: Record<string, unknown> | undefined) => ({
+            keys: Object.keys(payload ?? {}).filter((key) => key !== 'lock_version').sort(),
+            projectId: String(payload?.project_id)
+        });
+
+        expect(logicalPayload(autoSaveOnPayload)).toEqual(logicalPayload(autoSaveOffPayload));
+        expect(logicalPayload(autoSaveOffPayload)).toEqual({ keys: ['project_id'], projectId: '9' });
+    });
+
     it('applies optimistic update and stores returned lock version on success', async () => {
         const initialTask = buildTask();
         useTaskStore.setState({

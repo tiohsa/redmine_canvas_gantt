@@ -56,6 +56,7 @@ import {
     replaceServerSnapshot,
     mergeServerEntity,
     hasLocalPatchOwnership,
+    hasLocalMutationIntent,
     type DerivedInvalidation,
     type LocalPatch,
     type EntityTombstone,
@@ -155,7 +156,7 @@ let saveChangesOperation: Promise<Map<string, string>> | null = null;
 let barOperationSequence = 0;
 
 const buildTaskPatchFieldsPayload = (task: Task, fields: Partial<Task>): Record<string, unknown> => {
-    return taskMutationFields(task, Object.keys(fields));
+    return taskMutationFields({ ...task, ...fields }, Object.keys(fields));
 };
 
 export const readLifecycleMetrics = {
@@ -274,7 +275,7 @@ interface TaskState {
     clearRelationSelection: () => void;
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
-    updateTask: (id: string, updates: Partial<Task>) => void;
+    updateTask: (id: string, updates: Partial<Task>, mutationIntent?: Partial<Task>) => void;
     beginBarOperation: (seedTaskId?: string) => string;
     endBarOperation: (operationId: string) => void;
     rollbackBarOperation: (operationId: string) => void;
@@ -699,7 +700,13 @@ const buildParentMoveOptimisticPatch = (state: ParentMoveStoreState, nextAllTask
         const generation = editGenerations[sourceTaskId] ?? 0;
         localTaskPatches[sourceTaskId] = [
             ...(localTaskPatches[sourceTaskId] ?? []),
-            { entityId: sourceTaskId, fields, generation, operationId: `parent-move:${sourceTaskId}:${generation}` }
+            {
+                entityId: sourceTaskId,
+                projection: fields,
+                mutationIntent: fields,
+                generation,
+                operationId: `parent-move:${sourceTaskId}:${generation}`
+            }
         ];
         modifiedTaskIds.add(sourceTaskId);
     }
@@ -732,14 +739,14 @@ const buildParentMoveSuccessPatch = (state: ParentMoveStoreState, sourceBefore: 
         localTaskPatches[sourceTaskId] = (localTaskPatches[sourceTaskId] ?? []).filter(patch => patch.operationId !== operationId);
         if (localTaskPatches[sourceTaskId].length === 0) {
             delete localTaskPatches[sourceTaskId];
-            nextModified.delete(sourceTaskId);
         }
+        if (!hasLocalMutationIntent(localTaskPatches[sourceTaskId])) nextModified.delete(sourceTaskId);
     } else if (!currentSource || responseParentId === undefined || currentSource.parentId === responseParentId) {
         nextModified.delete(sourceTaskId);
     }
     const serverTask = state.serverTaskSnapshot.entitiesById[sourceTaskId] ?? sourceBefore;
     const nextServerTask = operationPatch
-        ? { ...serverTask, ...operationPatch.fields, lockVersion: Math.max(serverTask.lockVersion, result.lockVersion ?? serverTask.lockVersion) }
+        ? { ...serverTask, ...operationPatch.mutationIntent, lockVersion: Math.max(serverTask.lockVersion, result.lockVersion ?? serverTask.lockVersion) }
         : { ...serverTask, lockVersion: Math.max(serverTask.lockVersion, result.lockVersion ?? serverTask.lockVersion) };
 
     return {
@@ -917,7 +924,13 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
         const operationId = `relation-cascade:${relation.id || 'new'}:${taskId}:${generation}`;
         localTaskPatches[taskId] = [
             ...(localTaskPatches[taskId] ?? []).filter(patch => patch.operationId !== operationId),
-            { entityId: taskId, fields: meaningfulFields, generation, operationId }
+            {
+                entityId: taskId,
+                projection: meaningfulFields,
+                mutationIntent: meaningfulFields,
+                generation,
+                operationId
+            }
         ];
     });
 
@@ -1601,7 +1614,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         };
     }),
 
-    updateTask: (id, updates) => set((state) => {
+    updateTask: (id, updates, mutationIntent = updates) => set((state) => {
         const task = state.allTasks.find(t => t.id === id);
         if (!task) return state;
 
@@ -1613,6 +1626,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         invalidateDataRequests();
 
         const canonicalUpdates = normalizeTaskDateUpdates(task, updates);
+        const canonicalMutationIntent = normalizeTaskDateUpdates(task, mutationIntent);
         const updatedTask = { ...task, ...canonicalUpdates };
         TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
 
@@ -1675,27 +1689,29 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         // Add modified task IDs
         const newModifiedIds = new Set(state.modifiedTaskIds);
-        newModifiedIds.add(id);
-        pendingUpdates.forEach((_, key) => newModifiedIds.add(key));
         const nextEditGenerations = { ...state.editGenerations };
         [id, ...pendingUpdates.keys()].forEach((taskId) => {
             nextEditGenerations[taskId] = (nextEditGenerations[taskId] ?? 0) + 1;
         });
         const nextLocalTaskPatches = { ...state.localTaskPatches };
-        const patchFor = (taskId: string, fields: Partial<Task>) => {
-            const meaningfulFields = Object.fromEntries(
-                Object.entries(fields).filter(([key]) => key !== 'lockVersion' && key !== 'id')
+        const patchFor = (taskId: string, projectionFields: Partial<Task>, intentFields: Partial<Task>) => {
+            const projection = Object.fromEntries(
+                Object.entries(projectionFields).filter(([key]) => key !== 'lockVersion' && key !== 'id')
             ) as Partial<Task>;
-            if (Object.keys(meaningfulFields).length === 0) return;
+            const persistenceIntent = Object.fromEntries(
+                Object.entries(intentFields).filter(([key]) => key !== 'lockVersion' && key !== 'id')
+            ) as Partial<Task>;
+            if (Object.keys(projection).length === 0 && Object.keys(persistenceIntent).length === 0) return;
             const generation = nextEditGenerations[taskId] ?? 0;
             const operationId = `edit:${taskId}:${generation}`;
             nextLocalTaskPatches[taskId] = [
                 ...(nextLocalTaskPatches[taskId] ?? []).filter(patch => patch.operationId !== operationId),
-                { entityId: taskId, fields: meaningfulFields, generation, operationId }
+                { entityId: taskId, projection, mutationIntent: persistenceIntent, generation, operationId }
             ];
+            if (Object.keys(persistenceIntent).length > 0) newModifiedIds.add(taskId);
         };
-        patchFor(id, canonicalUpdates);
-        pendingUpdates.forEach((fields, taskId) => patchFor(taskId, fields));
+        patchFor(id, canonicalUpdates, canonicalMutationIntent);
+        pendingUpdates.forEach((fields, taskId) => patchFor(taskId, fields, fields));
 
         const changedFields = new Set([...Object.keys(canonicalUpdates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
         const requiresLayout = ['projectId', 'assignedToId', 'fixedVersionId'].some(field => changedFields.has(field));
@@ -1817,7 +1833,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         localTaskPatches[id] = (localTaskPatches[id] ?? []).filter(patch => patch.generation !== operationGeneration);
         if (localTaskPatches[id].length === 0) delete localTaskPatches[id];
         const modifiedTaskIds = new Set(state.modifiedTaskIds);
-        if (!localTaskPatches[id]) modifiedTaskIds.delete(id);
+        if (!hasLocalMutationIntent(localTaskPatches[id])) modifiedTaskIds.delete(id);
         const taskConflicts = { ...state.taskConflicts };
         delete taskConflicts[id];
         const serverTask = state.serverTaskSnapshot.entitiesById[id] ?? currentTask;
@@ -1863,7 +1879,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             delete localTaskPatches[id];
         }
         const modifiedTaskIds = new Set(state.modifiedTaskIds);
-        if (laterPatches.length > 0) {
+        if (hasLocalMutationIntent(laterPatches)) {
             modifiedTaskIds.add(id);
         } else {
             modifiedTaskIds.delete(id);
@@ -1981,7 +1997,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             const retryGeneration = beforeRetry.editGenerations[id] ?? conflictGeneration ?? 0;
             const retryFields = (beforeRetry.localTaskPatches[id] ?? [])
                 .filter(patch => patch.generation <= retryGeneration)
-                .reduce<Partial<Task>>((fields, patch) => ({ ...fields, ...patch.fields }), {});
+                .reduce<Partial<Task>>((fields, patch) => ({ ...fields, ...patch.mutationIntent }), {});
             const retryTask = beforeRetry.allTasks.find(task => task.id === id);
             const maxRetryGeneration = Math.max(
                 retryGeneration,
@@ -2117,7 +2133,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             if (laterPatches.length > 0) localTaskPatches[id] = laterPatches;
             else delete localTaskPatches[id];
             const modifiedTaskIds = new Set(state.modifiedTaskIds);
-            if (laterPatches.length > 0) modifiedTaskIds.add(id);
+            if (hasLocalMutationIntent(laterPatches)) modifiedTaskIds.add(id);
             else modifiedTaskIds.delete(id);
             const taskTombstones = { ...state.taskTombstones };
             delete taskTombstones[id];
@@ -2691,14 +2707,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     }
                     const task = snapshot.allTasks.find(candidate => candidate.id === taskId);
                     const fields = (snapshot.localTaskPatches[taskId] ?? []).reduce<Partial<Task>>(
-                        (owned, patch) => ({ ...owned, ...patch.fields }), {}
+                        (owned, patch) => ({ ...owned, ...patch.mutationIntent }), {}
                     );
                     if (task) {
                         const changedFields = Object.keys(fields).filter(field => PERSISTABLE_TASK_FIELDS.includes(field as typeof PERSISTABLE_TASK_FIELDS[number]));
+                        const intendedTask = { ...task, ...fields };
                         const delta = buildTaskMutationDelta(
                             taskId,
                             snapshotGenerations[taskId] ?? 0,
-                            task,
+                            intendedTask,
                             changedFields
                         );
                         if (Object.keys(delta.fields).length === 0) {
@@ -2819,9 +2836,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             });
                         if (remainingPatches.length > 0) {
                             localTaskPatches[taskId] = remainingPatches;
-                            modifiedTaskIds.add(taskId);
                         } else {
                             delete localTaskPatches[taskId];
+                        }
+                        if (hasLocalMutationIntent(remainingPatches)) {
+                            modifiedTaskIds.add(taskId);
+                        } else {
                             modifiedTaskIds.delete(taskId);
                         }
                     });
@@ -2830,7 +2850,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
                 const requiresResync = saveResult.savedTaskIds.size > 0 && [...saveResult.savedTaskIds].some(taskId => (
                     (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
-                        BULK_TASK_FIELDS.some(field => field in patch.fields)
+                        BULK_TASK_FIELDS.some(field => field in patch.mutationIntent)
                     ))
                 ));
                 if (saveResult.batchStatus !== 'preflight_failure' && hasScheduleMutation && requiresResync) {

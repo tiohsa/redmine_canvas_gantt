@@ -1,7 +1,7 @@
 import type { Task } from '../../types';
 import { PERSISTABLE_TASK_FIELDS, taskMutationFields, type TaskFields } from '../../services/taskMutationService';
 import { parseDateOnly } from '../../utils/dateOnly';
-import { applyLocalPatches, type LocalPatch, type ServerSnapshot } from './stateContract';
+import type { LocalPatch, ServerSnapshot } from './stateContract';
 
 const persistableFields = new Set<string>(PERSISTABLE_TASK_FIELDS);
 
@@ -19,16 +19,16 @@ export const buildTaskDraftIntent = (
     if (!serverTask || patches.length === 0) return null;
 
     const changedFields = new Set<string>();
-    patches.forEach((patch) => {
-        Object.keys(patch.fields).forEach((field) => {
+    const intendedTask = patches.reduce<Task>((current, patch) => {
+        Object.keys(patch.mutationIntent).forEach((field) => {
             if (persistableFields.has(field)) changedFields.add(field);
         });
-    });
+        return { ...current, ...patch.mutationIntent };
+    }, serverTask);
     if (changedFields.size === 0) return null;
 
-    const materializedTask = applyLocalPatches(serverTask, patches);
     return {
-        ...taskMutationFields(materializedTask, changedFields),
+        ...taskMutationFields(intendedTask, changedFields),
         lock_version: snapshot.revisions[taskId] ?? serverTask.lockVersion
     };
 };

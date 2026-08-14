@@ -7,7 +7,7 @@ module RedmineCanvasGantt
       @version_class = version_class
     end
 
-    def build(issue:, editable:, custom_fields:, custom_field_values:, permissions:, project_scope_ids:, options_project: nil, capability_issue: issue, capability_context: nil, persisted_task: nil, draft_contract: nil)
+    def build(issue:, editable:, custom_fields:, custom_field_values:, permissions:, project_scope_ids:, options_project: nil, capability_issue: issue, capability_context: nil, persisted_task: nil, draft_contract: nil, project_options: nil)
       capability_issue ||= issue
       project_for_options = capability_issue.project || options_project || issue.project
 
@@ -27,7 +27,7 @@ module RedmineCanvasGantt
             { id: priority.id, name: priority.name, position: priority.position }
           end,
           categories: project_for_options.issue_categories.map { |category| { id: category.id, name: category.name } },
-          projects: project_options_for(capability_issue, project_scope_ids),
+          projects: project_options || project_options_for(issue, project_scope_ids),
           trackers: trackers_for(capability_issue, project_for_options),
           versions: versions_for(capability_issue),
           custom_fields: custom_fields
@@ -37,6 +37,10 @@ module RedmineCanvasGantt
       }
       payload[:draft_contract] = draft_contract if draft_contract
       payload
+    end
+
+    def resolved_project_options(issue:, project_scope_ids:)
+      project_options_for(issue, project_scope_ids)
     end
 
     def task_payload(issue)
@@ -121,8 +125,6 @@ module RedmineCanvasGantt
 
     def invoke_domain_candidates(issue, method_name)
       issue.public_send(method_name, @current_user)
-    rescue ArgumentError
-      issue.public_send(method_name)
     end
   end
 end

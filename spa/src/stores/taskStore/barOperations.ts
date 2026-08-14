@@ -1,5 +1,5 @@
 import type { Task } from '../../types';
-import { applyLocalPatches, type LocalPatch } from './stateContract';
+import { applyLocalPatches, hasLocalMutationIntent, type LocalPatch } from './stateContract';
 
 export type BarOperationRecord = {
     operationId: string;
@@ -185,6 +185,8 @@ export const buildBarOperationRollback = (
         );
         if (localTaskPatches[taskId].length === 0) {
             delete localTaskPatches[taskId];
+        }
+        if (!hasLocalMutationIntent(localTaskPatches[taskId])) {
             modifiedTaskIds.delete(taskId);
         }
     });

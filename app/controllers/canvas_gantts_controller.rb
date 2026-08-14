@@ -490,6 +490,10 @@ class CanvasGanttsController < ApplicationController
 
     task_attributes = permitted_task_params
     intent = draft_task_intent.merge(task_attributes.to_h.symbolize_keys)
+    if stale_draft_revision?(issue, intent)
+      render_stale_revision_conflict(issue)
+      return
+    end
     intent = preprocess_draft_intent(issue, intent)
     return if performed?
     evaluation = issue_draft_evaluator.evaluate(issue: issue, intent: intent)
@@ -1369,10 +1373,19 @@ class CanvasGanttsController < ApplicationController
     return unless ensure_issue_editable(issue) if require_editable
 
     persisted_task = edit_meta_payload_builder.task_payload(issue)
+    persisted_project_options = nil
     if intent.present?
-      intent = preprocess_draft_intent(issue, intent)
-      return if performed?
-      evaluation = issue_draft_evaluator.evaluate(issue: issue, intent: intent)
+      if stale_draft_revision?(issue, intent)
+        evaluation = stale_draft_evaluation(issue, intent)
+      else
+        persisted_project_options = edit_meta_payload_builder.resolved_project_options(
+          issue: issue,
+          project_scope_ids: current_view_scope[:scope_project_ids]
+        )
+        intent = preprocess_draft_intent(issue, intent)
+        return if performed?
+        evaluation = issue_draft_evaluator.evaluate(issue: issue, intent: intent)
+      end
     end
     if evaluation
       permission_violation = evaluation.violations.find { |entry| entry[:code] == 'permission_denied' }
@@ -1380,17 +1393,12 @@ class CanvasGanttsController < ApplicationController
         render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
         return
       end
-      stale_violation = evaluation.violations.find { |entry| entry[:code] == 'stale_revision' }
-      if stale_violation
-        render json: mutation_response(
-          status: 'conflict',
-          completeness: 'partial',
-          entity: data_payload_builder.build_task_state(issue),
-          revision: issue.lock_version
-        ).merge(error: canvas_gantt_l(:error_canvas_gantt_conflict_reload)), status: :conflict
-        return
-      end
     end
+
+    persisted_project_options ||= edit_meta_payload_builder.resolved_project_options(
+      issue: issue,
+      project_scope_ids: current_view_scope[:scope_project_ids]
+    )
 
     capability_issue = evaluation&.issue || issue
     editable = User.current.allowed_to?(:edit_issues, capability_issue.project) && capability_issue.editable?
@@ -1408,6 +1416,7 @@ class CanvasGanttsController < ApplicationController
       custom_field_values: custom_field_values,
       permissions: @permissions,
       project_scope_ids: current_view_scope[:scope_project_ids],
+      project_options: persisted_project_options,
       capability_issue: capability_issue,
       capability_context: edit_meta_capability_context(issue, capability_issue),
       draft_contract: evaluation&.draft_contract
@@ -1461,12 +1470,7 @@ class CanvasGanttsController < ApplicationController
       return
     end
     if evaluation.violations.any? { |entry| entry[:code] == 'stale_revision' }
-      render json: mutation_response(
-        status: 'conflict',
-        completeness: 'partial',
-        entity: data_payload_builder.build_task_state(issue),
-        revision: issue.lock_version
-      ).merge(error: canvas_gantt_l(:error_canvas_gantt_conflict_reload)), status: :conflict
+      render_stale_revision_conflict(issue)
       return
     end
 
@@ -1475,6 +1479,38 @@ class CanvasGanttsController < ApplicationController
       errors: evaluation.violations.map { |entry| entry[:message] },
       draft_contract: evaluation.draft_contract
     }, status: :unprocessable_entity
+  end
+
+  def stale_draft_revision?(issue, intent)
+    normalized_intent = intent.to_h.symbolize_keys
+    normalized_intent.key?(:lock_version) && normalized_intent[:lock_version].to_i != issue.lock_version.to_i
+  end
+
+  def stale_draft_evaluation(issue, intent)
+    raw_intent = intent.to_h.symbolize_keys
+    violation = {
+      field: 'lock_version',
+      code: 'stale_revision',
+      message: 'The issue was updated by another request.'
+    }
+    RedmineCanvasGantt::IssueDraftEvaluator::Result.new(
+      issue: issue,
+      base_revision: issue.lock_version.to_i,
+      user_intent: raw_intent.slice(*RedmineCanvasGantt::IssueDraftEvaluator::INTENT_FIELDS),
+      policy_intent: {},
+      materialized: {},
+      normalizations: [],
+      violations: [violation]
+    )
+  end
+
+  def render_stale_revision_conflict(issue)
+    render json: mutation_response(
+      status: 'conflict',
+      completeness: 'partial',
+      entity: data_payload_builder.build_task_state(issue),
+      revision: issue.lock_version
+    ).merge(error: canvas_gantt_l(:error_canvas_gantt_conflict_reload)), status: :conflict
   end
 
   def ensure_issue_in_operation_scope(issue, resource_role: 'scope', resource_type: 'task')

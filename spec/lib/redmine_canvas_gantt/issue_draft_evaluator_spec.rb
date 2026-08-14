@@ -304,6 +304,34 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator do
     expect(result.materialized).to include(tracker_id: target_tracker.id)
   end
 
+  it 'does not retry an allowed tracker domain ArgumentError with a different signature' do
+    domain_issue_class = Class.new(FakeDraftIssue) do
+      class << self
+        attr_accessor :domain_calls
+
+        def allowed_target_trackers(*arguments)
+          self.domain_calls = Array(domain_calls) + [arguments]
+          raise ArgumentError, 'domain failure'
+        end
+      end
+    end
+    domain_issue_class.projects = FakeDraftIssue.projects
+    issue = domain_issue_class.new(
+      project: source_project,
+      tracker: source_tracker,
+      allowed_trackers: [target_tracker]
+    )
+
+    expect {
+      RedmineCanvasGantt::IssueDraftEvaluator.new(
+        current_user: user,
+        project_scope_ids: [1, 2],
+        project_class: project_class
+      ).evaluate(issue: issue, intent: { project_id: 2, lock_version: 3 })
+    }.to raise_error(ArgumentError, 'domain failure')
+    expect(domain_issue_class.domain_calls).to eq([[target_project, user, source_tracker.id]])
+  end
+
   it 'treats Version and Category clears as Redmine canonical best-effort normalization' do
     issue = FakeDraftIssue.new(
       project: source_project,

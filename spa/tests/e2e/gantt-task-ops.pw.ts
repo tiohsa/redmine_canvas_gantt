@@ -39,6 +39,7 @@ test('edits status inline', async ({ page }) => {
   const patchPayloads: unknown[] = [];
   await setupMockApp(page, {
     preferences: {
+      autoSave: true,
       visibleColumns: ['id', 'subject', 'status'],
       sidebarWidth: 700,
     },
@@ -60,6 +61,7 @@ test('saves inline number editor on blur', async ({ page }) => {
   const patchPayloads: unknown[] = [];
   await setupMockApp(page, {
     preferences: {
+      autoSave: true,
       visibleColumns: ['id', 'subject', 'ratioDone'],
       sidebarWidth: 700,
     },
@@ -112,6 +114,7 @@ test('edits a non-descendant member project task inline', async ({ page }) => {
       initial_state: { memberProjectsOnly: true },
     },
     preferences: {
+      autoSave: true,
       visibleColumns: ['id', 'subject', 'status', 'ratioDone'],
       sidebarWidth: 700,
     },

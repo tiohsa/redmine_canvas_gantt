@@ -110,6 +110,43 @@ test('uses server materialization to clear version and category without resendin
   await expect(page.getByTestId('cell-601-category')).not.toContainText('P1 category');
 });
 
+test('keeps Auto Save OFF project projection out of follow-up intent and manual save payload', async ({ page }) => {
+  const patchPayloads: unknown[] = [];
+  await setupProjectMove(page, {
+    preferences: {
+      autoSave: false,
+      visibleColumns: ['id', 'subject', 'project', 'tracker', 'assignee', 'version', 'category'],
+    },
+    editOptionsByProject: {
+      '3': {
+        trackers: [
+          { id: 3, name: 'P2 projected tracker' },
+          { id: 4, name: 'P2 explicit tracker' },
+        ],
+      },
+    },
+    onPatchTask: (payload) => patchPayloads.push(payload),
+  });
+
+  await page.getByTestId('cell-601-project').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
+  await page.locator('[data-testid="task-row-601"] select').first().selectOption({ label: 'P2' });
+
+  await expect(page.getByTestId('cell-601-project')).toContainText('P2');
+  await expect(page.getByTestId('cell-601-tracker')).toContainText('P2 projected tracker');
+  expect(patchPayloads).toHaveLength(0);
+
+  await page.getByTestId('cell-601-tracker').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
+  await page.locator('[data-testid="task-row-601"] select').first().selectOption({ label: 'P2 explicit tracker' });
+  await page.getByTitle('Save changes').click();
+
+  await expect.poll(() => patchPayloads.length).toBe(1);
+  const payload = patchPayloads[0] as { task?: Record<string, unknown> };
+  expect(payload.task).toEqual(expect.objectContaining({ project_id: '3', tracker_id: 4 }));
+  expect(payload.task).not.toHaveProperty('status_id');
+  expect(payload.task).not.toHaveProperty('fixed_version_id');
+  expect(payload.task).not.toHaveProperty('category_id');
+});
+
 test('surfaces save failure when tracker or assignee is invalid for the target project', async ({ page }) => {
   const patchPayloads: unknown[] = [];
   await setupProjectMove(page, {

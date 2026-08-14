@@ -111,8 +111,8 @@ describe('bar operation lifecycle', () => {
             editGenerations: { '1': 2 },
             localTaskPatches: {
                 '1': [
-                    { entityId: '1', operationId: 'edit:1:1', generation: 1, fields: { dueDate: 5 } },
-                    { entityId: '1', operationId: 'edit:1:2', generation: 2, fields: { subject: 'later edit' } }
+                    { entityId: '1', operationId: 'edit:1:1', generation: 1, projection: { dueDate: 5 }, mutationIntent: { dueDate: 5 } },
+                    { entityId: '1', operationId: 'edit:1:2', generation: 2, projection: { subject: 'later edit' }, mutationIntent: { subject: 'later edit' } }
                 ]
             },
             modifiedTaskIds: new Set(['1']),

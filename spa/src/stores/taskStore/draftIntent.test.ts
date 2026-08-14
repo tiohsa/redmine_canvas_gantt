@@ -24,11 +24,60 @@ const snapshot = (entity: Task): ServerSnapshot<Task> => ({
 });
 
 describe('buildTaskDraftIntent', () => {
+    it('builds persistence intent without promoting server projection fields', () => {
+        const entity = task();
+        const patches = [{
+            entityId: entity.id,
+            projection: {
+                projectId: '9',
+                trackerId: 7,
+                statusId: 4,
+                fixedVersionId: undefined,
+                categoryId: undefined
+            },
+            mutationIntent: { projectId: '9' },
+            generation: 1,
+            operationId: 'edit:1:1'
+        }] as LocalPatch<Task>[];
+
+        expect(buildTaskDraftIntent(entity.id, snapshot(entity), patches)).toEqual({
+            project_id: '9',
+            lock_version: 7
+        });
+    });
+
+    it('merges only explicit follow-up intent across preview generations', () => {
+        const entity = task();
+        const patches = [
+            {
+                entityId: entity.id,
+                projection: { projectId: '9', trackerId: 7, statusId: 4 },
+                mutationIntent: { projectId: '9' },
+                generation: 1,
+                operationId: 'edit:1:1'
+            },
+            {
+                entityId: entity.id,
+                projection: { trackerId: 8, statusId: 5 },
+                mutationIntent: { trackerId: 8 },
+                generation: 2,
+                operationId: 'edit:1:2'
+            }
+        ] as LocalPatch<Task>[];
+
+        expect(buildTaskDraftIntent(entity.id, snapshot(entity), patches)).toEqual({
+            project_id: '9',
+            tracker_id: 8,
+            lock_version: 7
+        });
+    });
+
     it('keeps field presence instead of sending all effective task values', () => {
         const entity = task();
         const patches: LocalPatch<Task>[] = [{
             entityId: entity.id,
-            fields: { projectId: '9' },
+            projection: { projectId: '9' },
+            mutationIntent: { projectId: '9' },
             generation: 1,
             operationId: 'edit:1:1'
         }];
@@ -43,7 +92,8 @@ describe('buildTaskDraftIntent', () => {
         const entity = task();
         const explicitCurrent: LocalPatch<Task>[] = [{
             entityId: entity.id,
-            fields: { trackerId: 2 },
+            projection: { trackerId: 2 },
+            mutationIntent: { trackerId: 2 },
             generation: 1,
             operationId: 'edit:1:1'
         }];
@@ -58,9 +108,9 @@ describe('buildTaskDraftIntent', () => {
     it('aggregates project, tracker, and status generations into one manual-save intent', () => {
         const entity = task();
         const patches: LocalPatch<Task>[] = [
-            { entityId: entity.id, fields: { projectId: '9' }, generation: 1, operationId: 'edit:1:1' },
-            { entityId: entity.id, fields: { trackerId: 7 }, generation: 2, operationId: 'edit:1:2' },
-            { entityId: entity.id, fields: { statusId: 4 }, generation: 3, operationId: 'edit:1:3' }
+            { entityId: entity.id, projection: { projectId: '9' }, mutationIntent: { projectId: '9' }, generation: 1, operationId: 'edit:1:1' },
+            { entityId: entity.id, projection: { trackerId: 7 }, mutationIntent: { trackerId: 7 }, generation: 2, operationId: 'edit:1:2' },
+            { entityId: entity.id, projection: { statusId: 4 }, mutationIntent: { statusId: 4 }, generation: 3, operationId: 'edit:1:3' }
         ];
 
         expect(buildTaskDraftIntent(entity.id, snapshot(entity), patches)).toEqual({

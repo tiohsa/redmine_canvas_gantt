@@ -7,6 +7,13 @@ import { useTaskStore } from './TaskStore';
 
 let editMetaGeneration = 0;
 
+export class StaleEditMetaResponseError extends Error {
+    constructor() {
+        super('Edit metadata response is stale.');
+        this.name = 'StaleEditMetaResponseError';
+    }
+}
+
 export interface FetchEditMetaOptions {
     targetProjectId?: number;
     targetTrackerId?: number;
@@ -121,7 +128,9 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
                     undefined,
                     draftIntent ?? undefined
                 );
-                if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) return meta;
+                if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) {
+                    throw new StaleEditMetaResponseError();
+                }
                 set((state) => ({
                     metaByTaskId: { ...state.metaByTaskId, [taskId]: meta },
                     contextKeyByTaskId: { ...state.contextKeyByTaskId, [taskId]: key },

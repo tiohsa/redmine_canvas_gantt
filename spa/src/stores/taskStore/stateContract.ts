@@ -26,7 +26,8 @@ export type ServerSnapshot<T extends { id: string }> = {
 
 export type LocalPatch<T extends { id: string }> = {
     entityId: string;
-    fields: Partial<T>;
+    projection: Partial<T>;
+    mutationIntent: Partial<T>;
     generation: number;
     operationId: string;
 };
@@ -41,6 +42,14 @@ export const hasLocalPatchOwnership = <T extends { id: string }>(
     patch.generation === generation &&
     (operationId === undefined || patch.operationId === operationId)
 ));
+
+export const hasMutationIntent = <T extends { id: string }>(patch: LocalPatch<T>): boolean => (
+    Object.keys(patch.mutationIntent).length > 0
+);
+
+export const hasLocalMutationIntent = <T extends { id: string }>(patches: Array<LocalPatch<T>> | undefined): boolean => (
+    (patches ?? []).some(hasMutationIntent)
+);
 
 export type EntityTombstone = {
     entityId: string;
@@ -166,7 +175,7 @@ export const mergeServerEntity = <T extends { id: string }>(
 export const applyLocalPatches = <T extends { id: string }>(
     entity: T,
     patches: Array<LocalPatch<T>>
-): T => patches.reduce((current, patch) => ({ ...current, ...patch.fields }), entity);
+): T => patches.reduce((current, patch) => ({ ...current, ...patch.projection }), entity);
 
 export const mergeSnapshotWithPatches = <T extends { id: string }>(
     snapshot: ServerSnapshot<T>,

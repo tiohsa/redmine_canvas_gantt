@@ -15,6 +15,24 @@ import {
 type Entity = { id: string; subject: string; startDate?: number; lockVersion: number };
 
 describe('state lifecycle contract', () => {
+    it('applies display projection without applying a divergent persistence intent', () => {
+        const entity = { id: '1', subject: 'server', startDate: 1, lockVersion: 1 };
+        const patches = [{
+            entityId: '1',
+            projection: { subject: 'server normalized', startDate: 2 },
+            mutationIntent: { subject: 'user intended' },
+            generation: 1,
+            operationId: 'op-1'
+        }] as LocalPatch<typeof entity>[];
+
+        expect(applyLocalPatches(entity, patches)).toEqual({
+            id: '1',
+            subject: 'server normalized',
+            startDate: 2,
+            lockVersion: 1
+        });
+    });
+
     it('rejects a response from an older or different read context', () => {
         const first = createReadContext({ generation: 1, projectId: '1', query: { status: [1] }, scope: { subprojects: true }, purpose: 'refresh' });
         const second = createReadContext({ generation: 2, projectId: '1', query: { status: [2] }, scope: { subprojects: true }, purpose: 'refresh' });
@@ -41,8 +59,8 @@ describe('state lifecycle contract', () => {
 
     it('commits only the completed operation and classifies derived work by fields', () => {
         const patches: Array<LocalPatch<Entity>> = [
-            { entityId: '1', fields: { subject: 'a' }, generation: 1, operationId: 'op-1' },
-            { entityId: '1', fields: { startDate: 2 }, generation: 2, operationId: 'op-2' }
+            { entityId: '1', projection: { subject: 'a' }, mutationIntent: { subject: 'a' }, generation: 1, operationId: 'op-1' },
+            { entityId: '1', projection: { startDate: 2 }, mutationIntent: { startDate: 2 }, generation: 2, operationId: 'op-2' }
         ];
         expect(commitOperationPatches(patches, 'op-1')).toHaveLength(1);
         expect(applyLocalPatches<Entity>({ id: '1', subject: 'old', lockVersion: 1 }, patches)).toMatchObject({ subject: 'a', startDate: 2 });
@@ -52,8 +70,8 @@ describe('state lifecycle contract', () => {
 
     it('identifies ownership by task and generation without requiring the latest generation', () => {
         const patches: Array<LocalPatch<Entity>> = [
-            { entityId: '1', fields: { subject: 'a' }, generation: 1, operationId: 'edit:1:1' },
-            { entityId: '1', fields: { subject: 'b' }, generation: 2, operationId: 'edit:1:2' }
+            { entityId: '1', projection: { subject: 'a' }, mutationIntent: { subject: 'a' }, generation: 1, operationId: 'edit:1:1' },
+            { entityId: '1', projection: { subject: 'b' }, mutationIntent: { subject: 'b' }, generation: 2, operationId: 'edit:1:2' }
         ];
 
         expect(hasLocalPatchOwnership(patches, '1', 1)).toBe(true);

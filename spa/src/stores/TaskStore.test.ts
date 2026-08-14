@@ -120,6 +120,49 @@ describe('TaskStore canonical mutation reconciliation', () => {
             .toBe('later intent');
         expect(useTaskStore.getState().localTaskPatches[original.id]).toHaveLength(1);
     });
+
+    it('keeps a projection-only local change out of modified task ownership', () => {
+        const original = buildTask({ id: 'projection-only', subject: 'persisted', statusId: 1 });
+        useTaskStore.getState().setTasks([original]);
+
+        useTaskStore.getState().updateTask(
+            original.id,
+            { subject: 'server projection', statusId: 2 },
+            {}
+        );
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === original.id)).toMatchObject({
+            subject: 'server projection',
+            statusId: 2
+        });
+        expect(state.localTaskPatches[original.id]).toEqual([
+            expect.objectContaining({
+                projection: { subject: 'server projection', statusId: 2 },
+                mutationIntent: {}
+            })
+        ]);
+        expect(state.modifiedTaskIds.has(original.id)).toBe(false);
+    });
+
+    it('manual save serializes the intended value when projection differs', async () => {
+        const original = buildTask({ id: 'divergent-intent', subject: 'persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(
+            original.id,
+            { subject: 'server projection' },
+            { subject: 'explicit intended value' }
+        );
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 2 });
+
+        await useTaskStore.getState().saveChanges();
+
+        expect(apiClient.updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: original.id, subject: 'server projection' }),
+            expect.any(String),
+            { subject: 'explicit intended value' }
+        );
+    });
 });
 
 describe('TaskStore bar operation rollback', () => {
@@ -1705,7 +1748,11 @@ describe('TaskStore asynchronous state ownership', () => {
             subject: 'later local edit'
         });
         expect(state.localTaskPatches['task-1']).toEqual([
-            expect.objectContaining({ generation: laterGeneration, fields: { subject: 'later local edit' } })
+            expect.objectContaining({
+                generation: laterGeneration,
+                projection: { subject: 'later local edit' },
+                mutationIntent: { subject: 'later local edit' }
+            })
         ]);
         expect(state.modifiedTaskIds.has('task-1')).toBe(true);
         expect(state.barOperations[firstOperationId]).toBeUndefined();
@@ -1801,6 +1848,58 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.localTaskPatches['task-1']).toBeUndefined();
         expect(state.modifiedTaskIds.has('task-1')).toBe(false);
         expect(state.allTasks.find(task => task.id === 'task-1')?.lockVersion).toBe(3);
+    });
+
+    it('retries only persistence intent and excludes preview projection fields', async () => {
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 3 });
+        const localTask = buildTask({
+            id: 'task-1',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            lockVersion: 1
+        });
+        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().updateTask(
+            localTask.id,
+            { projectId: '2', trackerId: 7, statusId: 4 },
+            { projectId: '2' }
+        );
+        useTaskStore.getState().registerTaskConflict(localTask.id, 'Conflict');
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...localTask, subject: 'remote subject', lockVersion: 2 }
+        ]));
+
+        await useTaskStore.getState().resolveTaskConflict(localTask.id, 'local');
+
+        expect(apiClient.updateTaskFields).toHaveBeenCalledWith(
+            localTask.id,
+            { project_id: '2', lock_version: 2 },
+            expect.any(String)
+        );
+    });
+
+    it('retries the intended value when the conflict projection differs', async () => {
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 3 });
+        const localTask = buildTask({ id: 'task-1', subject: 'persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().updateTask(
+            localTask.id,
+            { subject: 'server projection' },
+            { subject: 'explicit intended value' }
+        );
+        useTaskStore.getState().registerTaskConflict(localTask.id, 'Conflict');
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...localTask, subject: 'remote subject', lockVersion: 2 }
+        ]));
+
+        await useTaskStore.getState().resolveTaskConflict(localTask.id, 'local');
+
+        expect(apiClient.updateTaskFields).toHaveBeenCalledWith(
+            localTask.id,
+            { subject: 'explicit intended value', lock_version: 2 },
+            expect.any(String)
+        );
     });
 
     it('settles the conflicted operation without removing a later operation after local retry', async () => {
@@ -2086,7 +2185,8 @@ describe('TaskStore asynchronous state ownership', () => {
             lockVersion: 2
         });
         expect(afterFirstSave.localTaskPatches['task-1']).toHaveLength(1);
-        expect(afterFirstSave.localTaskPatches['task-1'][0].fields).toEqual({ subject: 'later intent' });
+        expect(afterFirstSave.localTaskPatches['task-1'][0].projection).toEqual({ subject: 'later intent' });
+        expect(afterFirstSave.localTaskPatches['task-1'][0].mutationIntent).toEqual({ subject: 'later intent' });
 
         secondSave.resolve({ status: 'ok', lockVersion: 3 });
         await saving;
@@ -3019,13 +3119,15 @@ describe('TaskStore saveChanges ordering', () => {
                 'task-1': [
                     {
                         entityId: 'task-1',
-                        fields: { displayOrder: 5 },
+                        projection: { displayOrder: 5 },
+                        mutationIntent: {},
                         generation: 1,
                         operationId: 'parent-move:task-1:1'
                     },
                     {
                         entityId: 'task-1',
-                        fields: { dueDate: 8 },
+                        projection: { dueDate: 8 },
+                        mutationIntent: { dueDate: 8 },
                         generation: 2,
                         operationId: 'edit:task-1:2'
                     }
@@ -3083,7 +3185,8 @@ describe('TaskStore saveChanges ordering', () => {
         expect(state.localTaskPatches['task-1']).toEqual([
             expect.objectContaining({
                 entityId: 'task-1',
-                fields: expect.objectContaining({ subject: 'After' })
+                projection: expect.objectContaining({ subject: 'After' }),
+                mutationIntent: expect.objectContaining({ subject: 'After' })
             })
         ]);
         expect(state.modifiedTaskIds.has('task-1')).toBe(true);
@@ -3309,13 +3412,15 @@ describe('TaskStore saveChanges ordering', () => {
             localTaskPatches: {
                 '18': [{
                     entityId: '18',
-                    fields: { startDate: FRIDAY, dueDate: Date.UTC(2026, 0, 12) },
+                    projection: { startDate: FRIDAY, dueDate: Date.UTC(2026, 0, 12) },
+                    mutationIntent: { startDate: FRIDAY, dueDate: Date.UTC(2026, 0, 12) },
                     generation: 1,
                     operationId: 'edit:18:1'
                 }],
                 '19': [{
                     entityId: '19',
-                    fields: { startDate: Date.UTC(2026, 0, 14), dueDate: Date.UTC(2026, 0, 15) },
+                    projection: { startDate: Date.UTC(2026, 0, 14), dueDate: Date.UTC(2026, 0, 15) },
+                    mutationIntent: { startDate: Date.UTC(2026, 0, 14), dueDate: Date.UTC(2026, 0, 15) },
                     generation: 1,
                     operationId: 'edit:19:1'
                 }]
@@ -3453,7 +3558,10 @@ describe('TaskStore drag parent updates', () => {
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBeUndefined();
         expect(useTaskStore.getState().modifiedTaskIds.has('child')).toBe(true);
         expect(useTaskStore.getState().localTaskPatches.child).toEqual([
-            expect.objectContaining({ fields: { parentId: undefined } })
+            expect.objectContaining({
+                projection: { parentId: undefined },
+                mutationIntent: { parentId: undefined }
+            })
         ]);
         expect(vi.mocked(apiClient.updateTaskFields)).not.toHaveBeenCalled();
     });

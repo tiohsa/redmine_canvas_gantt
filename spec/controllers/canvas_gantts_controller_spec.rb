@@ -811,6 +811,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(current_user).to receive(:allowed_to?).with(:edit_issues, issue_project).and_return(true)
       allow(controller).to receive(:edit_meta_payload_builder).and_return(edit_meta_payload_builder)
       allow(edit_meta_payload_builder).to receive(:task_payload).with(issue).and_return({ id: issue.id })
+      allow(edit_meta_payload_builder).to receive(:resolved_project_options).and_return([])
       allow(edit_meta_payload_builder).to receive(:build) do |issue:, capability_issue:, draft_contract: nil, **|
         payload = {
           task: { id: issue.id },
@@ -965,6 +966,23 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(body.dig('draft_contract', 'materialized')).to eq('project_id' => 1, 'tracker_id' => 7)
     end
 
+    it 'returns a stale preview violation before parent or calendar preprocessing' do
+      expect(controller).not_to receive(:preprocess_draft_intent)
+
+      post :edit_meta_preview,
+           params: {
+             project_id: 'demo',
+             id: '42',
+             task: { parent_issue_id: '42', due_date: 'invalid', lock_version: '0' }
+           },
+           format: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).dig('draft_contract', 'violations')).to include(
+        include('field' => 'lock_version', 'code' => 'stale_revision')
+      )
+    end
+
     it 'returns preview domain violations in the additive draft contract' do
       contract = {
         base_revision: 1,
@@ -1016,6 +1034,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         id: 10,
         parent_id: nil,
         project_id: 1,
+        lock_version: 1,
         editable?: true
       )
     end
@@ -1058,6 +1077,26 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(body['error']).to include('Conflict')
       expect(body).not_to have_key('display_order')
       expect(body).not_to have_key('editable')
+    end
+
+    it 'returns conflict for a stale revision before date preprocessing' do
+      expect(controller).not_to receive(:preprocess_draft_intent)
+
+      patch :update,
+            params: { project_id: 'demo', id: '10', task: { due_date: 'invalid', lock_version: 0 } },
+            format: :json
+
+      expect(response).to have_http_status(:conflict)
+    end
+
+    it 'returns conflict for a stale revision before parent preprocessing' do
+      expect(controller).not_to receive(:preprocess_draft_intent)
+
+      patch :update,
+            params: { project_id: 'demo', id: '10', task: { parent_issue_id: '10', lock_version: 0 } },
+            format: :json
+
+      expect(response).to have_http_status(:conflict)
     end
 
     it 'returns scope not_found when a visible target is outside the Canvas mutation scope' do
@@ -1121,7 +1160,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(issue).to receive(:init_journal)
       allow(issue).to receive(:safe_attributes=)
       allow(issue).to receive(:save).and_return(true)
-      allow(issue).to receive(:lock_version).and_return(2)
+      allow(issue).to receive(:lock_version).and_return(1, 2)
       allow(controller).to receive(:load_parent_issue).and_return(nil)
 
       patch :update, params: { project_id: 'demo', id: '10', task: { subject: 'Updated', lock_version: 1 } }, format: :json

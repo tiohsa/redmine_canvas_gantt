@@ -63,15 +63,11 @@ module RedmineCanvasGantt
 
     def allowed_trackers_for(issue, target_project, current_tracker_id)
       if target_project && issue.class.respond_to?(:allowed_target_trackers)
-        begin
-          return issue.class.allowed_target_trackers(
-            target_project,
-            @current_user,
-            current_tracker_id
-          ).to_a
-        rescue ArgumentError
-          return issue.class.allowed_target_trackers(target_project, @current_user).to_a
-        end
+        return issue.class.allowed_target_trackers(
+          target_project,
+          @current_user,
+          current_tracker_id
+        ).to_a
       end
 
       issue.allowed_target_trackers(@current_user).to_a

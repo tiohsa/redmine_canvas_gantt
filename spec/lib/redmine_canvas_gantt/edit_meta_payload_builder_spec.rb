@@ -16,6 +16,42 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
     )
   end
 
+  it 'does not reinterpret a runtime ArgumentError as an older candidate signature' do
+    current_user = instance_double(User)
+    builder = described_class.new(current_user: current_user)
+    issue = double('Issue domain candidate source')
+    expect(issue).to receive(:allowed_target_projects).with(current_user).and_raise(ArgumentError, 'domain failure')
+    expect(issue).not_to receive(:allowed_target_projects).with(no_args)
+    visible_scope = double(active: double(where: []))
+    allow(Project).to receive(:visible).and_return(visible_scope)
+
+    expect {
+      builder.send(:project_options_for, issue, [20])
+    }.to raise_error(ArgumentError, 'domain failure')
+  end
+
+  it 'preserves persisted source and destination project candidates after a draft move' do
+    current_user = instance_double(User)
+    builder = described_class.new(current_user: current_user)
+    source_project = instance_double(Project, id: 10, name: 'Source without add_issues')
+    destination_project = instance_double(Project, id: 20, name: 'Destination')
+    persisted_source_issue = double('Persisted source issue')
+    draft_destination_issue = double('Effective draft issue')
+    allow(persisted_source_issue).to receive(:allowed_target_projects).with(current_user).and_return(
+      [source_project, destination_project]
+    )
+    expect(draft_destination_issue).not_to receive(:allowed_target_projects)
+    visible_scope = double(active: double(where: [source_project, destination_project]))
+    allow(Project).to receive(:visible).and_return(visible_scope)
+
+    expect(
+      builder.resolved_project_options(issue: persisted_source_issue, project_scope_ids: [10, 20])
+    ).to eq([
+      { id: 10, name: 'Source without add_issues' },
+      { id: 20, name: 'Destination' }
+    ])
+  end
+
   describe '#build' do
     it 'builds the edit meta payload shape expected by the frontend' do
       current_user = instance_double(User)

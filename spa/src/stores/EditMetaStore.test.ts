@@ -182,7 +182,7 @@ describe('EditMetaStore', () => {
         expect(apiClient.fetchEditMeta).toHaveBeenLastCalledWith('1', undefined, undefined, undefined, undefined);
     });
 
-    it('does not let an older metadata response overwrite a newer context', async () => {
+    it('rejects an older metadata response so its caller cannot continue a mutation', async () => {
         let resolveOlder!: (value: TaskEditMeta) => void;
         const older = new Promise<TaskEditMeta>(resolve => { resolveOlder = resolve; });
         const newer = { ...metaFixture, task: { ...metaFixture.task, projectId: 3 } };
@@ -194,7 +194,7 @@ describe('EditMetaStore', () => {
         const second = useEditMetaStore.getState().fetchEditMeta('1', { targetProjectId: 3, force: true });
         await second;
         resolveOlder(metaFixture);
-        await first;
+        await expect(first).rejects.toMatchObject({ name: 'StaleEditMetaResponseError' });
 
         expect(useEditMetaStore.getState().metaByTaskId['1']?.task.projectId).toBe(3);
         expect(useEditMetaStore.getState().latestReadContextByTaskId['1']?.purpose).toBe('edit_meta');
