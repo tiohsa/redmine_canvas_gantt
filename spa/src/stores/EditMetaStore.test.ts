@@ -4,6 +4,7 @@ import { apiClient } from '../api/client';
 import type { TaskEditMeta } from '../types/editMeta';
 import { useTaskStore } from './TaskStore';
 import type { Task } from '../types';
+import { createServerSnapshot } from './taskStore/stateContract';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -59,7 +60,7 @@ const metaFixture: TaskEditMeta = {
 describe('EditMetaStore', () => {
     beforeEach(() => {
         useEditMetaStore.setState(useEditMetaStore.getInitialState(), true);
-        useTaskStore.setState({ allTasks: [] });
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
         vi.clearAllMocks();
     });
 
@@ -76,11 +77,19 @@ describe('EditMetaStore', () => {
     it('sends the current effective Task context for draft capability preview', async () => {
         const draftTask = {
             id: '1',
-            projectId: '3',
+            subject: 'Task',
+            projectId: '1',
             trackerId: 4,
-            statusId: 5
+            statusId: 5,
+            ratioDone: 0,
+            lockVersion: 7,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
         } as Task;
-        useTaskStore.setState({ allTasks: [draftTask] });
+        useTaskStore.getState().setTasks([draftTask]);
+        useTaskStore.setState({ serverTaskSnapshot: createServerSnapshot([draftTask]) });
+        useTaskStore.getState().updateTask('1', { projectId: '3' });
         vi.mocked(apiClient.fetchEditMeta).mockResolvedValue({
             ...metaFixture,
             capabilityContext: { taskId: '1', projectId: 3, trackerId: 4, statusId: 5 }
@@ -88,12 +97,22 @@ describe('EditMetaStore', () => {
 
         await useEditMetaStore.getState().fetchEditMeta('1');
 
-        expect(apiClient.fetchEditMeta).toHaveBeenCalledWith('1', 3, 4, 5);
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledWith(
+            '1',
+            undefined,
+            undefined,
+            undefined,
+            { project_id: '3', lock_version: 7 }
+        );
     });
 
     it('invalidates the current snapshot when a local tracker/status context changes', async () => {
-        const draftTask = { id: '1', projectId: '1', trackerId: 1, statusId: 1 } as Task;
-        useTaskStore.setState({ allTasks: [draftTask] });
+        const draftTask = {
+            id: '1', subject: 'Task', projectId: '1', trackerId: 1, statusId: 1,
+            ratioDone: 0, lockVersion: 1, editable: true, rowIndex: 0, hasChildren: false
+        } as Task;
+        useTaskStore.getState().setTasks([draftTask]);
+        useTaskStore.setState({ serverTaskSnapshot: createServerSnapshot([draftTask]) });
         const nextMeta = {
             ...metaFixture,
             capabilityContext: { taskId: '1', projectId: 1, trackerId: 2, statusId: 3 }
@@ -104,11 +123,14 @@ describe('EditMetaStore', () => {
         }).mockResolvedValueOnce(nextMeta);
 
         await useEditMetaStore.getState().fetchEditMeta('1');
-        useTaskStore.setState({ allTasks: [{ ...draftTask, trackerId: 2, statusId: 3 }] });
+        useTaskStore.getState().updateTask('1', { trackerId: 2, statusId: 3 });
         await useEditMetaStore.getState().fetchEditMeta('1');
 
         expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(2);
-        expect(apiClient.fetchEditMeta).toHaveBeenLastCalledWith('1', 1, 2, 3);
+        expect(apiClient.fetchEditMeta).toHaveBeenLastCalledWith(
+            '1', undefined, undefined, undefined,
+            { tracker_id: 2, status_id: 3, lock_version: 1 }
+        );
         expect(useEditMetaStore.getState().metaByTaskId['1']).toBe(nextMeta);
     });
 
@@ -138,7 +160,9 @@ describe('EditMetaStore', () => {
 
         expect(result.options.trackers).toEqual([{ id: 3, name: 'Destination tracker' }]);
         expect(useEditMetaStore.getState().metaByTaskId['1']?.options.trackers).toEqual([{ id: 3, name: 'Destination tracker' }]);
-        expect(apiClient.fetchEditMeta).toHaveBeenLastCalledWith('1', 3, 1, 1);
+        expect(apiClient.fetchEditMeta).toHaveBeenLastCalledWith(
+            '1', undefined, undefined, undefined, { project_id: 3 }
+        );
     });
 
     it('does not reuse destination metadata after returning to the source context', async () => {
@@ -155,7 +179,7 @@ describe('EditMetaStore', () => {
 
         expect(restored).toBe(source);
         expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(3);
-        expect(apiClient.fetchEditMeta).toHaveBeenLastCalledWith('1', 1, 1, 1);
+        expect(apiClient.fetchEditMeta).toHaveBeenLastCalledWith('1', undefined, undefined, undefined, undefined);
     });
 
     it('does not let an older metadata response overwrite a newer context', async () => {
@@ -173,14 +197,32 @@ describe('EditMetaStore', () => {
         await first;
 
         expect(useEditMetaStore.getState().metaByTaskId['1']?.task.projectId).toBe(3);
-        expect(useEditMetaStore.getState().activeReadContext?.purpose).toBe('edit_meta');
+        expect(useEditMetaStore.getState().latestReadContextByTaskId['1']?.purpose).toBe('edit_meta');
+    });
+
+    it('does not let task B make task A response stale', async () => {
+        let resolveTaskA!: (value: TaskEditMeta) => void;
+        let resolveTaskB!: (value: TaskEditMeta) => void;
+        vi.mocked(apiClient.fetchEditMeta)
+            .mockReturnValueOnce(new Promise(resolve => { resolveTaskA = resolve; }))
+            .mockReturnValueOnce(new Promise(resolve => { resolveTaskB = resolve; }));
+
+        const taskA = useEditMetaStore.getState().fetchEditMeta('1', { force: true });
+        const taskB = useEditMetaStore.getState().fetchEditMeta('2', { force: true });
+        resolveTaskB({ ...metaFixture, task: { ...metaFixture.task, id: '2' } });
+        await taskB;
+        resolveTaskA(metaFixture);
+        await taskA;
+
+        expect(useEditMetaStore.getState().metaByTaskId['1']?.task.id).toBe('1');
+        expect(useEditMetaStore.getState().metaByTaskId['2']?.task.id).toBe('2');
     });
 
     it('stores error when fetchEditMeta fails and clearError resets it', async () => {
         vi.mocked(apiClient.fetchEditMeta).mockRejectedValue(new Error('Network down'));
 
         await expect(useEditMetaStore.getState().fetchEditMeta('1')).rejects.toThrow('Network down');
-        expect(useEditMetaStore.getState().loadingTaskId).toBeNull();
+        expect(useEditMetaStore.getState().loadingByTaskId['1']).toBeUndefined();
         expect(useEditMetaStore.getState().error).toBe('Network down');
 
         useEditMetaStore.getState().clearError();

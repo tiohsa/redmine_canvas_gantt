@@ -80,6 +80,48 @@ describe('TaskStore viewport clamping', () => {
     });
 });
 
+describe('TaskStore canonical mutation reconciliation', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('keeps the server canonical value after settling the committed generation', () => {
+        const original = buildTask({ id: 'canonical-task', subject: 'persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { subject: 'local intent' });
+        const generation = useTaskStore.getState().editGenerations[original.id];
+
+        useTaskStore.getState().applyTaskMutationMetadata(original.id, {
+            completeness: 'partial',
+            entity: { id: original.id, subject: 'server normalized', lockVersion: 2 },
+            revision: 2
+        });
+        useTaskStore.getState().commitTaskOperation(original.id, generation, 2);
+
+        expect(useTaskStore.getState().allTasks.find(task => task.id === original.id)?.subject)
+            .toBe('server normalized');
+    });
+
+    it('reapplies only a later local generation over the server canonical value', () => {
+        const original = buildTask({ id: 'pending-task', subject: 'persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { subject: 'first intent' });
+        const committedGeneration = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().updateTask(original.id, { subject: 'later intent' });
+
+        useTaskStore.getState().applyTaskMutationMetadata(original.id, {
+            completeness: 'partial',
+            entity: { id: original.id, subject: 'server normalized', lockVersion: 2 },
+            revision: 2
+        });
+        useTaskStore.getState().commitTaskOperation(original.id, committedGeneration, 2);
+
+        expect(useTaskStore.getState().allTasks.find(task => task.id === original.id)?.subject)
+            .toBe('later intent');
+        expect(useTaskStore.getState().localTaskPatches[original.id]).toHaveLength(1);
+    });
+});
+
 describe('TaskStore bar operation rollback', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -1979,6 +2021,133 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.dueDate)).toEqual([5, 8]);
         expect(state.allTasks.find(task => task.id === 'task-1')?.dueDate).toBe(8);
         expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it('keeps canonical manual-save fields while reapplying only a later generation', async () => {
+        const firstSave = deferred<{
+            status: 'ok';
+            lockVersion: number;
+            completeness: 'partial';
+            entity: Partial<Task> & { id: string };
+            revision: number;
+        }>();
+        const secondSave = deferred<{ status: 'ok'; lockVersion: number }>();
+        let saveCount = 0;
+        vi.mocked(apiClient.updateTask).mockImplementation(async () => {
+            saveCount += 1;
+            return saveCount === 1 ? firstSave.promise : secondSave.promise;
+        });
+        useTaskStore.getState().setTasks([buildTask({
+            id: 'task-1',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            subject: 'persisted',
+            lockVersion: 1
+        })]);
+        useTaskStore.getState().updateTask('task-1', {
+            projectId: '2',
+            trackerId: 2,
+            statusId: 2
+        });
+
+        const saving = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(1));
+        useTaskStore.getState().updateTask('task-1', { subject: 'later intent' });
+        firstSave.resolve({
+            status: 'ok',
+            lockVersion: 2,
+            completeness: 'partial',
+            entity: {
+                id: 'task-1',
+                projectId: '3',
+                trackerId: 3,
+                statusId: 3,
+                subject: 'server normalized',
+                lockVersion: 2
+            },
+            revision: 2
+        });
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(2));
+
+        const afterFirstSave = useTaskStore.getState();
+        expect(afterFirstSave.allTasks.find(task => task.id === 'task-1')).toMatchObject({
+            projectId: '3',
+            trackerId: 3,
+            statusId: 3,
+            subject: 'later intent',
+            lockVersion: 2
+        });
+        expect(afterFirstSave.serverTaskSnapshot.entitiesById['task-1']).toMatchObject({
+            projectId: '3',
+            trackerId: 3,
+            statusId: 3,
+            subject: 'server normalized',
+            lockVersion: 2
+        });
+        expect(afterFirstSave.localTaskPatches['task-1']).toHaveLength(1);
+        expect(afterFirstSave.localTaskPatches['task-1'][0].fields).toEqual({ subject: 'later intent' });
+
+        secondSave.resolve({ status: 'ok', lockVersion: 3 });
+        await saving;
+    });
+
+    it('aggregates project, tracker, and status edits into one manual-save PATCH', async () => {
+        const original = buildTask({
+            id: 'task-1',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            lockVersion: 1
+        });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask('task-1', { projectId: '2' });
+        useTaskStore.getState().updateTask('task-1', { trackerId: 2 });
+        useTaskStore.getState().updateTask('task-1', { statusId: 2 });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 2,
+            completeness: 'partial',
+            entity: { id: 'task-1', projectId: '2', trackerId: 2, statusId: 2, lockVersion: 2 },
+            revision: 2
+        });
+
+        const failures = await useTaskStore.getState().saveChanges();
+
+        expect(failures).toEqual(new Map());
+        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+        expect(apiClient.updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'task-1', projectId: '2', trackerId: 2, statusId: 2 }),
+            expect.any(String),
+            { project_id: '2', tracker_id: 2, status_id: 2 }
+        );
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
+    });
+
+    it('discards a pending project, tracker, and status edit sequence without mutation', async () => {
+        const original = buildTask({
+            id: 'task-1',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            lockVersion: 1
+        });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask('task-1', { projectId: '2' });
+        useTaskStore.getState().updateTask('task-1', { trackerId: 2 });
+        useTaskStore.getState().updateTask('task-1', { statusId: 2 });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([original]));
+
+        await useTaskStore.getState().discardChanges();
+
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().allTasks.find(task => task.id === 'task-1')).toMatchObject({
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1
+        });
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
+        expect(useTaskStore.getState().localTaskPatches).toEqual({});
     });
 
     it('keeps an edit made while a conflict refresh is in flight dirty for explicit resolution', async () => {

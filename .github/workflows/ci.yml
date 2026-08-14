@@ -189,6 +189,37 @@ jobs:
           path: spa/bench/results/benchmark-results.json
           if-no-files-found: ignore
 
+  project-move-mock-e2e:
+    name: Project move mock E2E
+    needs:
+      - build
+      - lint
+      - test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: spa
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: npm
+          cache-dependency-path: spa/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Project move mock suite
+        run: npx playwright test tests/e2e/gantt-project-move.pw.ts
+
   e2e-redmine-compat:
     name: Redmine ${{ matrix.label }} compatibility
     needs:

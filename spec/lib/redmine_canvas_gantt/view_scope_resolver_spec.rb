@@ -13,6 +13,19 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
     allow(RedmineCanvasGantt::QueryStateResolver).to receive(:new).and_return(query_state_resolver)
   end
 
+  it 'resolves the operation project boundary without loading Issues' do
+    expect(RedmineCanvasGantt::QueryStateResolver).not_to receive(:new)
+
+    result = described_class.new(
+      project: project,
+      params: ActionController::Parameters.new(project_ids: ['2']),
+      current_user: current_user,
+      issue_includes: []
+    ).project_scope_ids
+
+    expect(result).to eq([2])
+  end
+
   it 'uses descendant project ids when member-project mode is off' do
     allow(query_state_resolver).to receive(:resolve).with(project_ids: [1, 2]).and_return(
       issues: [issue_a],

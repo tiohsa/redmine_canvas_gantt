@@ -24,7 +24,6 @@ export const PERSISTABLE_TASK_FIELDS = [
     'projectId',
     'trackerId',
     'fixedVersionId',
-    'authorId',
     'customFieldValues'
 ] as const;
 export type PersistableTaskField = typeof PERSISTABLE_TASK_FIELDS[number];
@@ -143,7 +142,6 @@ export const taskMutationFields = (
         projectId?: string;
         trackerId?: number;
         fixedVersionId?: string;
-        authorId?: number;
         customFieldValues?: Record<string, string | null>;
     },
     changedFields: Iterable<string> = PERSISTABLE_TASK_FIELDS
@@ -163,7 +161,6 @@ export const taskMutationFields = (
     if (changed.has('projectId')) fields.project_id = blankableId(task.projectId);
     if (changed.has('trackerId')) fields.tracker_id = blankableId(task.trackerId);
     if (changed.has('fixedVersionId')) fields.fixed_version_id = blankableId(task.fixedVersionId);
-    if (changed.has('authorId')) fields.author_id = blankableId(task.authorId);
     if (changed.has('customFieldValues')) fields.custom_field_values = task.customFieldValues ?? {};
     return fields;
 };

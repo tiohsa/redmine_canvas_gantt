@@ -22,8 +22,14 @@ const ensureCanvasGanttModuleEnabled = async (redmineBase: string, page: Page, p
   }
 };
 
-const ensureProject = async (page: Page, identifier: string, name: string, parentIdentifier?: string): Promise<number> => {
-  const result = await page.evaluate(async ({ identifier, name, parentIdentifier, restAuthorization }) => {
+const ensureProject = async (
+  page: Page,
+  identifier: string,
+  name: string,
+  parentIdentifier?: string,
+  trackerIds: number[] = [1, 2, 3]
+): Promise<number> => {
+  const result = await page.evaluate(async ({ identifier, name, parentIdentifier, trackerIds, restAuthorization }) => {
     const headers = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
@@ -48,12 +54,12 @@ const ensureProject = async (page: Page, identifier: string, name: string, paren
           identifier,
           parent_id: (parentPayload as { project?: { id?: number } }).project?.id,
           enabled_module_names: ['issue_tracking', 'canvas_gantt'],
-          tracker_ids: [1, 2, 3]
+          tracker_ids: trackerIds
         }
       })
     });
     return { status: response.status, payload: await response.json().catch(() => ({})) };
-  }, { identifier, name, parentIdentifier, restAuthorization });
+  }, { identifier, name, parentIdentifier, trackerIds, restAuthorization });
 
   expect([200, 201]).toContain(result.status);
   const projectId = (result.payload as { project?: { id?: number } }).project?.id;
@@ -64,7 +70,7 @@ const ensureProject = async (page: Page, identifier: string, name: string, paren
 const createIssue = async (
   page: Page,
   projectIdentifier: string,
-  fields: { subject: string; startDate?: string; dueDate?: string }
+  fields: { subject: string; startDate?: string; dueDate?: string; trackerId?: number; assignedToId?: number }
 ): Promise<number> => {
   const result = await page.evaluate(async ({ projectIdentifier, fields, restAuthorization }) => {
     const response = await fetch('/issues.json', {
@@ -77,10 +83,11 @@ const createIssue = async (
       body: JSON.stringify({
         issue: {
           project_id: projectIdentifier,
-          tracker_id: 1,
+          tracker_id: fields.trackerId ?? 1,
           subject: fields.subject,
           start_date: fields.startDate,
-          due_date: fields.dueDate
+          due_date: fields.dueDate,
+          assigned_to_id: fields.assignedToId
         }
       })
     });
@@ -176,6 +183,7 @@ const fetchRestIssue = async (page: Page, issueId: number): Promise<{
   dueDate: string | null;
   projectId: number;
   statusId: number;
+  trackerId: number;
 }> => {
   const result = await page.evaluate(async ({ issueId, restAuthorization }) => {
     const response = await fetch(`/issues/${issueId}.json`, {
@@ -195,18 +203,21 @@ const fetchRestIssue = async (page: Page, issueId: number): Promise<{
       due_date?: string;
       project?: { id?: number };
       status?: { id?: number };
+      tracker?: { id?: number };
     };
   }).issue;
   expect(issue).toBeTruthy();
   expect(issue?.project?.id).toEqual(expect.any(Number));
   expect(issue?.status?.id).toEqual(expect.any(Number));
+  expect(issue?.tracker?.id).toEqual(expect.any(Number));
 
   return {
     subject: issue!.subject ?? '',
     startDate: issue!.start_date ?? null,
     dueDate: issue!.due_date ?? null,
     projectId: issue!.project!.id!,
-    statusId: issue!.status!.id!
+    statusId: issue!.status!.id!,
+    trackerId: issue!.tracker!.id!
   };
 };
 
@@ -246,6 +257,102 @@ const patchIssueThroughPlugin = async (
   });
   return { status: response.status, payload: await response.json().catch(() => ({})) };
 }, { issueId, task });
+
+const previewIssueThroughPlugin = async (
+  page: Page,
+  issueId: number,
+  task: Record<string, unknown>
+): Promise<{ status: number; payload: unknown }> => page.evaluate(async ({ issueId, task }) => {
+  const config = (window as Window & {
+    RedmineCanvasGantt: CanvasConfig;
+  }).RedmineCanvasGantt;
+  const response = await fetch(`${config.apiBase}/tasks/${issueId}/edit_meta/preview.json`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': config.authToken,
+      Accept: 'application/json'
+    },
+    body: JSON.stringify({ task })
+  });
+  return { status: response.status, payload: await response.json().catch(() => ({})) };
+}, { issueId, task });
+
+test('draft preview and mutation accept destination project, tracker, and status as one intent', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, 'ecookbook');
+
+  const destinationIdentifier = `draft-move-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const destinationProjectId = await ensureProject(
+    page,
+    destinationIdentifier,
+    uniqueName('Canvas Draft Destination'),
+    'ecookbook',
+    [2, 3]
+  );
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, destinationIdentifier);
+
+  const issueId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas draft project tracker'),
+    trackerId: 1,
+    assignedToId: 1
+  });
+  await loadCanvasPage(page, redmineBase);
+  const persistedIssue = await fetchRestIssue(page, issueId);
+
+  const preview = await previewIssueThroughPlugin(page, issueId, {
+    project_id: destinationProjectId,
+    tracker_id: 2,
+    lock_version: 1
+  });
+
+  expect(preview.status).toBe(200);
+  expect(preview.payload).toEqual(expect.objectContaining({
+    task: expect.not.objectContaining({ project_id: destinationProjectId }),
+    draft_contract: expect.objectContaining({
+      materialized: expect.objectContaining({ project_id: destinationProjectId, tracker_id: 2 }),
+      violations: []
+    })
+  }));
+  const targetStatusId = (preview.payload as {
+    options?: { statuses?: Array<{ id?: number }> };
+  }).options?.statuses?.find(status => status.id !== persistedIssue.statusId)?.id;
+  expect(targetStatusId).toEqual(expect.any(Number));
+  if (targetStatusId === undefined) throw new Error('Destination tracker has no alternate workflow status');
+
+  const statusPreview = await previewIssueThroughPlugin(page, issueId, {
+    project_id: destinationProjectId,
+    tracker_id: 2,
+    status_id: targetStatusId,
+    lock_version: 1
+  });
+  expect(statusPreview.status).toBe(200);
+  expect(statusPreview.payload).toEqual(expect.objectContaining({
+    draft_contract: expect.objectContaining({
+      materialized: expect.objectContaining({
+        project_id: destinationProjectId,
+        tracker_id: 2,
+        status_id: targetStatusId
+      }),
+      violations: []
+    })
+  }));
+
+  const mutation = await patchIssueThroughPlugin(page, issueId, {
+    project_id: destinationProjectId,
+    tracker_id: 2,
+    status_id: targetStatusId,
+    lock_version: 1
+  });
+
+  expect(mutation.status).toBe(200);
+  await expect(fetchRestIssue(page, issueId)).resolves.toMatchObject({
+    projectId: destinationProjectId,
+    trackerId: 2,
+    statusId: targetStatusId
+  });
+});
 
 test('real Redmine optimistic-lock conflict is terminal for the stale plugin mutation', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';

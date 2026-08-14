@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { TaskEditMeta } from '../types/editMeta';
 import { canApplyReadResponse, createReadContext, type ReadContext } from './taskStore/stateContract';
+import { buildTaskDraftIntent } from './taskStore/draftIntent';
 import { apiClient } from '../api/client';
 import { useTaskStore } from './TaskStore';
 
@@ -13,25 +14,6 @@ export interface FetchEditMetaOptions {
     force?: boolean;
 }
 
-type RequestedContext = {
-    taskId: string;
-    projectId?: number;
-    trackerId?: number;
-    statusId?: number;
-};
-
-type WireContext = RequestedContext & {
-    targetProjectId?: number;
-    targetTrackerId?: number;
-    targetStatusId?: number;
-};
-
-type EffectiveContext = {
-    projectId?: number;
-    trackerId?: number;
-    statusId?: number;
-};
-
 const editMetaInFlight = new Map<string, Promise<TaskEditMeta>>();
 
 const positiveInteger = (value: unknown): number | undefined => {
@@ -39,141 +21,121 @@ const positiveInteger = (value: unknown): number | undefined => {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 };
 
-const taskContext = (taskId: string): { projectId?: number; trackerId?: number; statusId?: number } => {
-    const task = useTaskStore.getState().allTasks.find((candidate) => candidate.id === taskId);
-    return {
-        projectId: positiveInteger(task?.projectId),
-        trackerId: positiveInteger(task?.trackerId),
-        statusId: positiveInteger(task?.statusId)
-    };
+const draftIntentFor = (taskId: string, options?: FetchEditMetaOptions): Record<string, unknown> | null => {
+    const taskState = useTaskStore.getState();
+    const patches = taskState.localTaskPatches[taskId] ?? [];
+    const fromPatches = buildTaskDraftIntent(taskId, taskState.serverTaskSnapshot, patches);
+    const intent: Record<string, unknown> = { ...(fromPatches ?? {}) };
+
+    const projectId = positiveInteger(options?.targetProjectId);
+    const trackerId = positiveInteger(options?.targetTrackerId);
+    const statusId = positiveInteger(options?.targetStatusId);
+    if (projectId !== undefined) intent.project_id = projectId;
+    if (trackerId !== undefined) intent.tracker_id = trackerId;
+    if (statusId !== undefined) intent.status_id = statusId;
+
+    const intentFields = Object.keys(intent).filter(field => field !== 'lock_version');
+    if (intentFields.length === 0) return null;
+    if (!Object.prototype.hasOwnProperty.call(intent, 'lock_version')) {
+        const revision = taskState.serverTaskSnapshot.revisions[taskId];
+        if (revision !== undefined) intent.lock_version = revision;
+    }
+    return intent;
 };
 
-const resolveRequestContext = (taskId: string, options?: FetchEditMetaOptions, remembered?: EffectiveContext): { requested: RequestedContext; wire: WireContext } => {
-    const current = taskContext(taskId);
-    const effective = {
-        projectId: current.projectId ?? remembered?.projectId,
-        trackerId: current.trackerId ?? remembered?.trackerId,
-        statusId: current.statusId ?? remembered?.statusId
-    };
-    const targetProjectId = positiveInteger(options?.targetProjectId);
-    const targetTrackerId = positiveInteger(options?.targetTrackerId);
-    const targetStatusId = positiveInteger(options?.targetStatusId);
-    const hasExplicitTarget = targetProjectId !== undefined || targetTrackerId !== undefined || targetStatusId !== undefined;
-
-    // Always send the currently effective local Task values to the server when
-    // available.  This is what makes Auto-save OFF a real draft preview rather
-    // than a read of the persisted Issue.  Requested fields remain separate so
-    // a project-only preview may be normalized to that project's tracker/status.
-    const wire: WireContext = {
-        taskId,
-        targetProjectId: targetProjectId ?? effective.projectId,
-        targetTrackerId: targetTrackerId ?? effective.trackerId,
-        targetStatusId: targetStatusId ?? effective.statusId
-    };
-
-    const requested: RequestedContext = {
-        taskId,
-        projectId: targetProjectId ?? effective.projectId,
-        trackerId: targetTrackerId ?? (hasExplicitTarget ? undefined : effective.trackerId),
-        statusId: targetStatusId ?? (hasExplicitTarget ? undefined : effective.statusId)
-    };
-
-    return { requested, wire };
+const stableIntentSignature = (intent: Record<string, unknown> | null): string => {
+    if (!intent) return '{}';
+    return JSON.stringify(Object.fromEntries(Object.entries(intent).sort(([left], [right]) => left.localeCompare(right))));
 };
 
-const capabilityContextFor = (meta: TaskEditMeta) => meta.capabilityContext ?? {
-    taskId: meta.task.id,
-    projectId: meta.task.projectId,
-    trackerId: meta.task.trackerId,
-    statusId: meta.task.statusId
-};
+const contextKey = (taskId: string, intent: Record<string, unknown> | null): string => (
+    `${taskId}:${stableIntentSignature(intent)}`
+);
 
-const matchesRequestedContext = (meta: TaskEditMeta, requested: RequestedContext): boolean => {
-    const context = capabilityContextFor(meta);
-    return context.taskId === requested.taskId &&
-        (requested.projectId === undefined || context.projectId === requested.projectId) &&
-        (requested.trackerId === undefined || context.trackerId === requested.trackerId) &&
-        (requested.statusId === undefined || context.statusId === requested.statusId);
+const cachedMetaMatchesPersistedTask = (taskId: string, meta: TaskEditMeta): boolean => {
+    const context = meta.capabilityContext;
+    if (!context) return meta.task.id === taskId;
+    const taskState = useTaskStore.getState();
+    const task = taskState.serverTaskSnapshot.entitiesById[taskId]
+        ?? taskState.allTasks.find(candidate => candidate.id === taskId);
+    if (!task) return context.taskId === taskId;
+    return context.taskId === taskId &&
+        (task.projectId === undefined || context.projectId === Number(task.projectId)) &&
+        (task.trackerId === undefined || context.trackerId === task.trackerId) &&
+        context.statusId === task.statusId;
 };
-
-const contextKey = (context: WireContext): string => [
-    context.taskId,
-    context.targetProjectId ?? '*',
-    context.targetTrackerId ?? '*',
-    context.targetStatusId ?? '*'
-].join(':');
 
 interface EditMetaState {
     metaByTaskId: Record<string, TaskEditMeta>;
-    defaultContextByTaskId: Record<string, EffectiveContext>;
-    loadingTaskId: string | null;
+    contextKeyByTaskId: Record<string, string>;
+    loadingByTaskId: Record<string, boolean>;
+    latestReadContextByTaskId: Record<string, ReadContext>;
+    errorByTaskId: Record<string, string>;
     error: string | null;
-    activeReadContext: ReadContext | null;
     fetchEditMeta: (taskId: string, options?: FetchEditMetaOptions) => Promise<TaskEditMeta>;
     setCustomFieldValue: (taskId: string, customFieldId: number, value: string | null) => void;
-    clearError: () => void;
+    clearError: (taskId?: string) => void;
 }
 
 export const useEditMetaStore = create<EditMetaState>((set, get) => ({
     metaByTaskId: {},
-    defaultContextByTaskId: {},
-    loadingTaskId: null,
+    contextKeyByTaskId: {},
+    loadingByTaskId: {},
+    latestReadContextByTaskId: {},
+    errorByTaskId: {},
     error: null,
-    activeReadContext: null,
 
     fetchEditMeta: async (taskId: string, options) => {
-        const { requested, wire } = resolveRequestContext(taskId, options, get().defaultContextByTaskId[taskId]);
+        const draftIntent = draftIntentFor(taskId, options);
+        const key = contextKey(taskId, draftIntent);
         const cached = get().metaByTaskId[taskId];
-        if (cached && !options?.force && matchesRequestedContext(cached, requested)) return cached;
+        const cachedKey = get().contextKeyByTaskId[taskId];
+        if (cached && !options?.force && (
+            cachedKey === key || (!draftIntent && cachedKey === undefined && cachedMetaMatchesPersistedTask(taskId, cached))
+        )) return cached;
 
-        const key = contextKey(wire);
         const existing = editMetaInFlight.get(key);
         if (existing) return existing;
 
         const context = createReadContext({
             generation: ++editMetaGeneration,
-            projectId: wire.targetProjectId?.toString() ?? null,
-            query: {
-                taskId,
-                targetProjectId: wire.targetProjectId,
-                targetTrackerId: wire.targetTrackerId,
-                targetStatusId: wire.targetStatusId
-            },
+            projectId: null,
+            query: { taskId, draftIntent },
             scope: { taskId },
             purpose: 'edit_meta',
             mergePolicy: 'replace'
         });
-        set({ loadingTaskId: taskId, error: null, activeReadContext: context });
+        set((state) => ({
+            latestReadContextByTaskId: { ...state.latestReadContextByTaskId, [taskId]: context },
+            loadingByTaskId: { ...state.loadingByTaskId, [taskId]: true },
+            error: null,
+            errorByTaskId: Object.fromEntries(Object.entries(state.errorByTaskId).filter(([id]) => id !== taskId))
+        }));
 
         const request = async (): Promise<TaskEditMeta> => {
             try {
-                let meta: TaskEditMeta;
-                if (wire.targetStatusId !== undefined) {
-                    meta = await apiClient.fetchEditMeta(taskId, wire.targetProjectId, wire.targetTrackerId, wire.targetStatusId);
-                } else if (wire.targetTrackerId !== undefined) {
-                    meta = await apiClient.fetchEditMeta(taskId, wire.targetProjectId, wire.targetTrackerId);
-                } else if (wire.targetProjectId !== undefined) {
-                    meta = await apiClient.fetchEditMeta(taskId, wire.targetProjectId);
-                } else {
-                    meta = await apiClient.fetchEditMeta(taskId);
-                }
-                if (!canApplyReadResponse(get().activeReadContext, context)) return meta;
+                const meta = await apiClient.fetchEditMeta(
+                    taskId,
+                    undefined,
+                    undefined,
+                    undefined,
+                    draftIntent ?? undefined
+                );
+                if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) return meta;
                 set((state) => ({
-                    // Keep one current capability snapshot per task.  A
-                    // destination preview must not become the source cache.
                     metaByTaskId: { ...state.metaByTaskId, [taskId]: meta },
-                    defaultContextByTaskId: options && (options.targetProjectId !== undefined || options.targetTrackerId !== undefined || options.targetStatusId !== undefined)
-                        ? state.defaultContextByTaskId
-                        : { ...state.defaultContextByTaskId, [taskId]: capabilityContextFor(meta) },
-                    loadingTaskId: null,
-                    error: null,
-                    activeReadContext: context
+                    contextKeyByTaskId: { ...state.contextKeyByTaskId, [taskId]: key },
+                    loadingByTaskId: Object.fromEntries(Object.entries(state.loadingByTaskId).filter(([id]) => id !== taskId))
                 }));
                 return meta;
             } catch (err) {
-                if (!canApplyReadResponse(get().activeReadContext, context)) throw err;
+                if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) throw err;
                 const message = err instanceof Error ? err.message : 'Failed to load edit meta';
-                set({ loadingTaskId: null, error: message });
+                set((state) => ({
+                    error: message,
+                    errorByTaskId: { ...state.errorByTaskId, [taskId]: message },
+                    loadingByTaskId: Object.fromEntries(Object.entries(state.loadingByTaskId).filter(([id]) => id !== taskId))
+                }));
                 throw err;
             }
         };
@@ -202,5 +164,10 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
         };
     }),
 
-    clearError: () => set({ error: null })
+    clearError: (taskId) => set((state) => ({
+        error: null,
+        errorByTaskId: taskId
+            ? Object.fromEntries(Object.entries(state.errorByTaskId).filter(([id]) => id !== taskId))
+            : {}
+    }))
 }));

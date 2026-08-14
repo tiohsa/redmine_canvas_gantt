@@ -38,13 +38,12 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
 
       allow(issue).to receive(:new_statuses_allowed_to).with(current_user).and_return([status])
       allow(issue).to receive(:assignable_users).and_return([assignable_user])
+      allow(issue).to receive(:allowed_target_trackers).with(current_user).and_return([tracker])
+      allow(issue).to receive(:assignable_versions).and_return([instance_double(Version, id: 6, name: 'v1')])
 
       allow(IssuePriority).to receive(:active).and_return([priority])
       project_scope = double(active: double(where: [visible_project]))
       allow(Project).to receive(:allowed_to).with(:add_issues).and_return(project_scope)
-      version_scope = double(where: [instance_double(Version, id: 6, name: 'v1')])
-      allow(Version).to receive(:visible).and_return(version_scope)
-
       payload = builder.build(
         issue: issue,
         editable: { subject: true },
@@ -124,11 +123,24 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
 
       allow(issue).to receive(:new_statuses_allowed_to).with(current_user).and_return([])
       allow(issue).to receive(:assignable_users).and_return([])
+      allow(issue).to receive(:allowed_target_trackers).with(current_user).and_return([])
+      allow(issue).to receive(:assignable_versions).and_return([])
       allow(IssuePriority).to receive(:active).and_return([])
       project_scope = double(active: double(where: []))
       allow(Project).to receive(:allowed_to).with(:add_issues).and_return(project_scope)
-      version_scope = double(where: [instance_double(Version, id: 30, name: 'Destination version')])
-      allow(Version).to receive(:visible).and_return(version_scope)
+      capability_issue = instance_double(
+        Issue,
+        project: destination_project,
+        project_id: 3,
+        tracker_id: 30,
+        status_id: 1,
+        status: status,
+        assigned_to: nil,
+        new_statuses_allowed_to: [],
+        assignable_users: [destination_assignee],
+        allowed_target_trackers: [destination_tracker],
+        assignable_versions: [instance_double(Version, id: 30, name: 'Destination version')]
+      )
 
       payload = builder.build(
         issue: issue,
@@ -137,14 +149,13 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
         custom_field_values: {},
         permissions: { editable: true, viewable: true },
         project_scope_ids: [3],
-        options_project: destination_project
+        capability_issue: capability_issue
       )
 
       expect(payload[:options][:trackers]).to eq([{ id: 30, name: 'Destination tracker' }])
       expect(payload[:options][:assignees]).to eq([{ id: 20, name: 'Destination assignee' }])
       expect(payload[:options][:categories]).to eq([{ id: 40, name: 'Destination category' }])
       expect(payload[:options][:versions]).to eq([{ id: 30, name: 'Destination version' }])
-      expect(Version.visible).to have_received(:where).with(project_id: 3)
     end
 
     it 'keeps the current assignee in issue-project options even when no longer assignable' do
@@ -178,12 +189,11 @@ RSpec.describe RedmineCanvasGantt::EditMetaPayloadBuilder do
 
       allow(issue).to receive(:new_statuses_allowed_to).with(current_user).and_return([])
       allow(issue).to receive(:assignable_users).and_return([assignable_user])
+      allow(issue).to receive(:allowed_target_trackers).with(current_user).and_return([])
+      allow(issue).to receive(:assignable_versions).and_return([])
       allow(IssuePriority).to receive(:active).and_return([])
       project_scope = double(active: double(where: []))
       allow(Project).to receive(:allowed_to).with(:add_issues).and_return(project_scope)
-      version_scope = double(where: [])
-      allow(Version).to receive(:visible).and_return(version_scope)
-
       payload = builder.build(
         issue: issue,
         editable: { assigned_to_id: true },

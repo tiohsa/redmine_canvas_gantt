@@ -75,7 +75,7 @@ export const useSidebarInlineEdit = ({
         if (columnKey === 'dueDate') return 'dueDate';
         if (columnKey === 'startDate') return 'startDate';
         if (columnKey === 'priority') return 'priorityId';
-        if (columnKey === 'author') return 'authorId';
+        if (columnKey === 'author') return null;
         if (columnKey === 'category') return 'categoryId';
         if (columnKey === 'estimatedHours') return 'estimatedHours';
         if (columnKey === 'project') return 'projectId';
@@ -122,7 +122,7 @@ export const useSidebarInlineEdit = ({
             if (editableMap[field] === false) return false;
         }
 
-        return ['priorityId', 'authorId', 'categoryId', 'estimatedHours', 'projectId', 'trackerId', 'fixedVersionId'].includes(field);
+        return ['priorityId', 'categoryId', 'estimatedHours', 'projectId', 'trackerId', 'fixedVersionId'].includes(field);
     }, [editMetaByTaskId, isInlineEditEnabled, metaMatchesTaskContext]);
 
     const ensureEditMeta = React.useCallback(async (taskId: string): Promise<TaskEditMeta | null> => {
@@ -148,7 +148,7 @@ export const useSidebarInlineEdit = ({
         selectTask(task.id);
 
         const requiresMeta = [
-            'assignedToId', 'statusId', 'priorityId', 'authorId',
+            'assignedToId', 'statusId', 'priorityId',
             'categoryId', 'projectId', 'trackerId', 'fixedVersionId',
             'startDate', 'dueDate'
         ].includes(field);

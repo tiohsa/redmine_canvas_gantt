@@ -23,6 +23,7 @@ import { TrackerIcon } from './sidebar/trackerIcon';
 import { designTokens, fontFamilies } from '../styles/designTokens';
 import { formatDate } from '../utils/dateUtils';
 import { parseDateOnly } from '../utils/dateOnly';
+import { materializedTaskUpdates } from '../stores/taskStore/draftIntent';
 const NOTIFICATION_COLUMN_KEY = 'notification';
 
 type CanvasGanttSettings = InlineEditSettings & {
@@ -616,9 +617,9 @@ export const UiSidebar: React.FC = () => {
             key: 'author',
             title: tr('field_author'),
             width: columnWidths['author'] ?? 100,
-            render: (t: Task) => renderEditableCell(t, 'authorId', (
+            render: (t: Task) => (
                 <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.authorName || '-'}</span>
-            ))
+            )
         },
         {
             key: 'category',
@@ -1247,29 +1248,6 @@ export const UiSidebar: React.FC = () => {
                                                         );
                                                     }
 
-                                                    if (field === 'authorId') {
-                                                        const taskMeta = editMetaByTaskId[task.id];
-                                                        if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-                                                        return (
-                                                            <SelectEditor
-                                                                value={task.authorId ?? null}
-                                                                options={taskMeta.options.assignees}
-                                                                controlHeight={inlineControlHeight}
-                                                                onCancel={close}
-                                                                onCommit={async (next) => {
-                                                                    const nextName = meta.options.assignees.find(s => s.id === next)?.name;
-                                                                    await save({
-                                                                        taskId: task.id,
-                                                                        optimisticTaskUpdates: { authorId: next ?? undefined, authorName: nextName },
-                                                                        rollbackTaskUpdates: { authorId: task.authorId, authorName: task.authorName },
-                                                                        fields: { author_id: next }
-                                                                    });
-                                                                    close();
-                                                                }}
-                                                            />
-                                                        );
-                                                    }
-
                                                     if (field === 'categoryId') {
                                                         const taskMeta = editMetaByTaskId[task.id];
                                                         if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
@@ -1324,14 +1302,39 @@ export const UiSidebar: React.FC = () => {
                                                                 onCancel={close}
                                                                 onCommit={async (next) => {
                                                                     if (next === null) return;
-                                                                    await fetchEditMeta(task.id, { targetProjectId: next, force: true });
+                                                                    const preview = await fetchEditMeta(task.id, { targetProjectId: next, force: true });
+                                                                    if (preview.draftContract?.violations.length) {
+                                                                        useUIStore.getState().addNotification(
+                                                                            preview.draftContract.violations[0]?.message || tr('label_failed_to_save'),
+                                                                            'error'
+                                                                        );
+                                                                        return;
+                                                                    }
                                                                     const nextName = taskMeta.options.projects?.find(s => s.id === next)?.name;
+                                                                    const materialized = preview.draftContract?.materialized ?? {};
+                                                                    const materializedUpdates = materializedTaskUpdates(materialized, task);
+                                                                    const trackerName = materializedUpdates.trackerId === undefined
+                                                                        ? task.trackerName
+                                                                        : preview.options.trackers.find(option => option.id === materializedUpdates.trackerId)?.name;
+                                                                    const statusName = materializedUpdates.statusId === undefined
+                                                                        ? task.statusName
+                                                                        : preview.options.statuses.find(option => option.id === materializedUpdates.statusId)?.name;
+                                                                    const mutationFields: Record<string, unknown> = {
+                                                                        ...materialized,
+                                                                        project_id: next,
+                                                                        fixed_version_id: null,
+                                                                        category_id: null
+                                                                    };
+                                                                    delete mutationFields.lock_version;
                                                                     try {
                                                                         await save({
                                                                             taskId: task.id,
                                                                             optimisticTaskUpdates: {
+                                                                                ...materializedUpdates,
                                                                                 projectId: next !== null ? String(next) : undefined,
                                                                                 projectName: nextName,
+                                                                                trackerName,
+                                                                                statusName,
                                                                                 fixedVersionId: undefined,
                                                                                 fixedVersionName: undefined,
                                                                                 categoryId: undefined,
@@ -1345,7 +1348,7 @@ export const UiSidebar: React.FC = () => {
                                                                                 categoryId: task.categoryId,
                                                                                 categoryName: task.categoryName
                                                                             },
-                                                                            fields: { project_id: next, fixed_version_id: null, category_id: null }
+                                                                            fields: mutationFields
                                                                         });
                                                                         close();
                                                                     } catch (error) {

@@ -191,6 +191,21 @@ const createEditMeta = (taskId: string, data: MockData) => {
   };
 };
 
+const includePersistedAssignee = (
+  meta: ReturnType<typeof createEditMeta>,
+  data: MockData,
+  taskId: string,
+) => {
+  const persistedTask = data.tasks.find(task => String(task.id) === taskId);
+  if (persistedTask?.assigned_to_id == null || !persistedTask.assigned_to_name) return;
+  if (meta.options.assignees.some(option => option.id === persistedTask.assigned_to_id)) return;
+
+  meta.options.assignees = [
+    ...meta.options.assignees,
+    { id: persistedTask.assigned_to_id, name: persistedTask.assigned_to_name },
+  ];
+};
+
 const cloneData = (data: MockData): MockData => JSON.parse(JSON.stringify(data)) as MockData;
 
 const parseSelectedIds = (url: URL, key: string): string[] =>
@@ -302,6 +317,58 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
     });
   });
 
+  await page.route('**/canvas_gantt/tasks/*/edit_meta/preview.json**', async (route) => {
+    const url = new URL(route.request().url());
+    const taskId = url.pathname.match(/tasks\/(\d+)\/edit_meta\/preview\.json$/)?.[1] ?? '101';
+    const meta = createEditMeta(taskId, data);
+    const body = route.request().postDataJSON() as { task?: Record<string, unknown> };
+    const intent = body.task ?? {};
+    const targetProjectId = String(intent.project_id ?? meta.task.project_id);
+    const projectOptions = options?.editOptionsByProject?.[targetProjectId];
+    meta.options.projects = options?.editProjects ?? meta.options.projects;
+    meta.options.trackers = projectOptions?.trackers ?? options?.editTrackers ?? meta.options.trackers;
+    meta.options.categories = projectOptions?.categories ?? options?.editCategories ?? meta.options.categories;
+    meta.options.versions = projectOptions?.versions ?? options?.editVersions ?? meta.options.versions;
+    meta.options.assignees = projectOptions?.assignees ?? options?.editAssignees ?? meta.options.assignees;
+    includePersistedAssignee(meta, data, taskId);
+
+    const materialized: Record<string, unknown> = Object.fromEntries(
+      Object.entries(intent).filter(([field]) => field !== 'lock_version'),
+    );
+    const projectChanged = Number(targetProjectId) !== Number(meta.task.project_id);
+    if (projectChanged && materialized.tracker_id === undefined && meta.options.trackers[0]) {
+      materialized.tracker_id = meta.options.trackers[0].id;
+    }
+    if (projectChanged) {
+      materialized.fixed_version_id = null;
+      materialized.category_id = null;
+    }
+    const responseMeta = meta as typeof meta & { capability_context: Record<string, number> };
+    responseMeta.capability_context = {
+      task_id: Number(taskId),
+      project_id: Number(materialized.project_id ?? meta.task.project_id),
+      tracker_id: Number(materialized.tracker_id ?? meta.task.tracker_id),
+      status_id: Number(materialized.status_id ?? meta.task.status_id),
+    };
+    const normalizations = materialized.tracker_id !== undefined && intent.tracker_id === undefined
+      ? [{ field: 'tracker_id', from: meta.task.tracker_id, to: materialized.tracker_id, source: 'policy' }]
+      : [];
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...responseMeta,
+        draft_contract: {
+          base_revision: Number(intent.lock_version ?? meta.task.lock_version),
+          materialized,
+          normalizations,
+          violations: [],
+        },
+      }),
+    });
+  });
+
   await page.route('**/canvas_gantt/tasks/*/edit_meta.json**', async (route) => {
     const url = new URL(route.request().url());
     const taskId = url.pathname.match(/tasks\/(\d+)\/edit_meta\.json$/)?.[1] ?? '101';
@@ -313,6 +380,7 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
     meta.options.categories = projectOptions?.categories ?? options?.editCategories ?? meta.options.categories;
     meta.options.versions = projectOptions?.versions ?? options?.editVersions ?? meta.options.versions;
     meta.options.assignees = projectOptions?.assignees ?? options?.editAssignees ?? meta.options.assignees;
+    includePersistedAssignee(meta, data, taskId);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -337,7 +405,17 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
         if (typeof fields.subject === 'string') task.subject = fields.subject;
         if (typeof fields.status_id === 'number') task.status_id = fields.status_id;
         if (typeof fields.done_ratio === 'number') task.ratio_done = fields.done_ratio;
-        if (typeof fields.project_id === 'number') task.project_id = fields.project_id;
+        if (typeof fields.project_id === 'number') {
+          task.project_id = fields.project_id;
+          const project = options?.editProjects?.find(candidate => candidate.id === fields.project_id);
+          if (project) task.project_name = project.name;
+        }
+        if (typeof fields.tracker_id === 'number') {
+          task.tracker_id = fields.tracker_id;
+          const projectTrackers = options?.editOptionsByProject?.[String(task.project_id)]?.trackers;
+          const tracker = (projectTrackers ?? options?.editTrackers)?.find(candidate => candidate.id === fields.tracker_id);
+          if (tracker) task.tracker_name = tracker.name;
+        }
         if (fields.fixed_version_id === null) {
           delete task.fixed_version_id;
           delete task.fixed_version_name;
@@ -349,7 +427,18 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
         task.lock_version += 1;
       }
 
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ lock_version: task?.lock_version ?? 2, task_id: taskId }) });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          completeness: 'partial',
+          entity: task,
+          revision: task?.lock_version ?? 2,
+          lock_version: task?.lock_version ?? 2,
+          task_id: taskId,
+        }),
+      });
       return;
     }
 

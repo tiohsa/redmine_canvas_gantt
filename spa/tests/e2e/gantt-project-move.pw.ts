@@ -45,7 +45,10 @@ const setupProjectMove = async (
 ) => {
   await setupMockApp(page, {
     mockData: projectMoveData,
-    preferences: { visibleColumns: ['id', 'subject', 'project', 'tracker', 'assignee', 'version', 'category'] },
+    preferences: {
+      autoSave: true,
+      visibleColumns: ['id', 'subject', 'project', 'tracker', 'assignee', 'version', 'category'],
+    },
     editProjects: [
       { id: 2, name: 'P1' },
       { id: 3, name: 'P2' },
@@ -139,35 +142,51 @@ test('refreshes project-dependent inline edit options after moving projects', as
 
   await page.getByTestId('cell-601-project').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
   await page.locator('[data-testid="task-row-601"] select').first().selectOption({ label: 'P2' });
+  await expect(page.getByTestId('cell-601-project')).toContainText('P2');
+  await expect(page.locator('[data-testid="task-row-601"] select')).toHaveCount(0);
 
   await page.getByTestId('cell-601-tracker').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
-  let options = await page.locator('[data-testid="task-row-601"] select').first().locator('option').evaluateAll((entries) => (
+  let select = page.locator('[data-testid="task-row-601"] select').first();
+  await select.waitFor({ state: 'visible' });
+  let options = await select.locator('option').evaluateAll((entries) => (
     entries.map((entry) => entry.textContent ?? '')
   ));
   expect(options).toContain('P2 tracker');
   expect(options).not.toContain('P1 tracker');
-  await page.keyboard.press('Escape');
+  await select.focus();
+  await select.blur();
+  await expect(page.locator('[data-testid="task-row-601"] select')).toHaveCount(0);
 
   await page.getByTestId('cell-601-version').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
-  options = await page.locator('[data-testid="task-row-601"] select').first().locator('option').evaluateAll((entries) => (
+  select = page.locator('[data-testid="task-row-601"] select').first();
+  await select.waitFor({ state: 'visible' });
+  options = await select.locator('option').evaluateAll((entries) => (
     entries.map((entry) => entry.textContent ?? '')
   ));
   expect(options).toContain('P2 version');
   expect(options).not.toContain('P1 version');
-  await page.keyboard.press('Escape');
+  await select.focus();
+  await select.blur();
+  await expect(page.locator('[data-testid="task-row-601"] select')).toHaveCount(0);
 
   await page.getByTestId('cell-601-category').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
-  options = await page.locator('[data-testid="task-row-601"] select').first().locator('option').evaluateAll((entries) => (
+  select = page.locator('[data-testid="task-row-601"] select').first();
+  await select.waitFor({ state: 'visible' });
+  options = await select.locator('option').evaluateAll((entries) => (
     entries.map((entry) => entry.textContent ?? '')
   ));
   expect(options).toContain('P2 category');
   expect(options).not.toContain('P1 category');
-  await page.keyboard.press('Escape');
+  await select.focus();
+  await select.blur();
+  await expect(page.locator('[data-testid="task-row-601"] select')).toHaveCount(0);
 
   await page.getByTestId('cell-601-assignee').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
-  options = await page.locator('[data-testid="task-row-601"] select').first().locator('option').evaluateAll((entries) => (
+  select = page.locator('[data-testid="task-row-601"] select').first();
+  await select.waitFor({ state: 'visible' });
+  options = await select.locator('option').evaluateAll((entries) => (
     entries.map((entry) => entry.textContent ?? '')
   ));
   expect(options).toContain('P2 assignee');
-  expect(options).not.toContain('P1 assignee');
+  expect(options).toContain('Jane Doe');
 });

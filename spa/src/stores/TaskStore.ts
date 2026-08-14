@@ -1813,15 +1813,6 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (!currentTask) return state;
         const operationPatches = (state.localTaskPatches[id] ?? []).filter(patch => patch.generation === operationGeneration);
         if (operationPatches.length === 0) return state;
-        const committedFields = operationPatches.reduce<Partial<Task>>(
-            (fields, patch) => ({ ...fields, ...patch.fields }),
-            {}
-        );
-        const committedTask = {
-            ...(state.serverTaskSnapshot.entitiesById[id] ?? currentTask),
-            ...committedFields,
-            lockVersion: Math.max(currentTask.lockVersion, lockVersion ?? currentTask.lockVersion)
-        };
         const localTaskPatches = { ...state.localTaskPatches };
         localTaskPatches[id] = (localTaskPatches[id] ?? []).filter(patch => patch.generation !== operationGeneration);
         if (localTaskPatches[id].length === 0) delete localTaskPatches[id];
@@ -1829,24 +1820,26 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (!localTaskPatches[id]) modifiedTaskIds.delete(id);
         const taskConflicts = { ...state.taskConflicts };
         delete taskConflicts[id];
-        const allTasks = state.allTasks.map(task => task.id === id
-            ? { ...task, lockVersion: committedTask.lockVersion }
-            : task);
-        const tasks = state.tasks.map(task => task.id === id
-            ? { ...task, lockVersion: committedTask.lockVersion }
-            : task);
+        const serverTask = state.serverTaskSnapshot.entitiesById[id] ?? currentTask;
+        const canonicalTask = {
+            ...serverTask,
+            lockVersion: Math.max(serverTask.lockVersion, lockVersion ?? serverTask.lockVersion)
+        };
+        const settledTask = applyLocalPatches(canonicalTask, localTaskPatches[id] ?? []);
+        const allTasks = state.allTasks.map(task => task.id === id ? settledTask : task);
+        const derived = buildDerivedTaskState(state, { allTasks });
         return {
             allTasks,
-            tasks,
+            ...toDerivedTaskStatePatch(derived),
             modifiedTaskIds,
             localTaskPatches,
             taskConflicts,
             serverTaskSnapshot: {
                 ...state.serverTaskSnapshot,
-                entitiesById: { ...state.serverTaskSnapshot.entitiesById, [id]: committedTask },
+                entitiesById: { ...state.serverTaskSnapshot.entitiesById, [id]: canonicalTask },
                 revisions: {
                     ...state.serverTaskSnapshot.revisions,
-                    [id]: Math.max(state.serverTaskSnapshot.revisions[id] ?? 0, committedTask.lockVersion)
+                    [id]: Math.max(state.serverTaskSnapshot.revisions[id] ?? 0, canonicalTask.lockVersion)
                 }
             }
         };
@@ -2733,25 +2726,29 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     (taskId, lockVersion) => {
                         if (typeof lockVersion !== 'number') return;
                         set((state) => {
-                            const savedTask = snapshot.allTasks.find((task) => task.id === taskId);
+                            const currentTask = state.allTasks.find((task) => task.id === taskId);
+                            const currentServerTask = state.serverTaskSnapshot.entitiesById[taskId] ?? currentTask;
+                            if (!currentServerTask) return state;
+                            const savedGeneration = snapshotGenerations[taskId] ?? 0;
+                            const laterPatches = (state.localTaskPatches[taskId] ?? [])
+                                .filter(patch => patch.generation > savedGeneration);
+                            const canonicalTask = {
+                                ...currentServerTask,
+                                lockVersion: Math.max(currentServerTask.lockVersion, lockVersion)
+                            };
+                            const settledTask = applyLocalPatches(canonicalTask, laterPatches);
                             const allTasks = state.allTasks.map((task) => (
-                                task.id === taskId ? { ...task, lockVersion: Math.max(task.lockVersion, lockVersion) } : task
+                                task.id === taskId ? settledTask : task
                             ));
-                            const currentServerTask = state.serverTaskSnapshot.entitiesById[taskId] ?? savedTask;
-                            const persistedFields: Partial<Task> = savedTask
-                                ? (snapshot.localTaskPatches[taskId] ?? [])
-                                    .filter(patch => patch.generation <= (snapshotGenerations[taskId] ?? 0))
-                                    .reduce<Partial<Task>>((fields, patch) => ({ ...fields, ...patch.fields }), {})
-                                : {};
+                            const derived = buildDerivedTaskState(state, { allTasks });
                             return {
                                 allTasks,
+                                ...toDerivedTaskStatePatch(derived),
                                 serverTaskSnapshot: {
                                     ...state.serverTaskSnapshot,
                                     entitiesById: {
                                         ...state.serverTaskSnapshot.entitiesById,
-                                        ...(currentServerTask
-                                            ? { [taskId]: { ...currentServerTask, ...persistedFields, lockVersion: Math.max(currentServerTask.lockVersion, lockVersion) } }
-                                            : {})
+                                        [taskId]: canonicalTask
                                     },
                                     revisions: { ...state.serverTaskSnapshot.revisions, [taskId]: Math.max(state.serverTaskSnapshot.revisions[taskId] ?? 0, lockVersion) }
                                 }

@@ -1,0 +1,55 @@
+module RedmineCanvasGantt
+  class ProjectMovePolicy
+    Result = Struct.new(:attributes, :violations, :policy_fields, keyword_init: true)
+
+    def initialize(current_user:)
+      @current_user = current_user
+    end
+
+    def apply(issue:, user_intent:, before_values:)
+      return empty_result unless user_intent.key?(:project_id)
+      return empty_result if before_values[:project_id].to_i == issue.project_id.to_i
+
+      attributes = {}
+      violations = []
+      policy_fields = []
+
+      unless user_intent.key?(:tracker_id)
+        allowed_trackers = issue.allowed_target_trackers(@current_user).to_a
+        persisted_tracker_allowed = allowed_trackers.any? do |tracker|
+          tracker.id.to_i == before_values[:tracker_id].to_i
+        end
+        unless persisted_tracker_allowed
+          fallback = allowed_trackers.first
+          if fallback
+            attributes[:tracker_id] = fallback.id
+            policy_fields << :tracker_id
+          else
+            violations << {
+              field: 'tracker_id',
+              code: 'no_allowed_tracker',
+              message: 'No tracker is available in the target project.'
+            }
+          end
+        end
+      end
+
+      if before_values[:fixed_version_id].present? && !user_intent.key?(:fixed_version_id)
+        attributes[:fixed_version_id] = ''
+        policy_fields << :fixed_version_id
+      end
+      if before_values[:category_id].present? && !user_intent.key?(:category_id)
+        attributes[:category_id] = ''
+        policy_fields << :category_id
+      end
+
+      Result.new(attributes: attributes, violations: violations, policy_fields: policy_fields)
+    end
+
+    private
+
+    def empty_result
+      Result.new(attributes: {}, violations: [], policy_fields: [])
+    end
+  end
+end

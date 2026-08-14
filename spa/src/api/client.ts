@@ -11,7 +11,7 @@ import type {
     Version,
     TaskStatus
 } from '../types';
-import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption, EditMetaCapabilityContext } from '../types/editMeta';
+import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption, EditMetaCapabilityContext, DraftContract } from '../types/editMeta';
 import type { BaselineSaveScope, BaselineSnapshot, BaselineTaskState } from '../types/baseline';
 import { buildIssueQueryParams, parseResolvedQueryState, type ResolvedQueryState } from '../utils/queryParams';
 import { normalizeQueryContext } from '../query/queryStateCodec';
@@ -848,15 +848,22 @@ export const apiClient = {
         };
     },
 
-    fetchEditMeta: async (taskId: string, targetProjectId?: number, targetTrackerId?: number, targetStatusId?: number): Promise<TaskEditMeta> => {
+    fetchEditMeta: async (taskId: string, targetProjectId?: number, targetTrackerId?: number, targetStatusId?: number, draftIntent?: Record<string, unknown>): Promise<TaskEditMeta> => {
         const config = getConfig();
         const query = new URLSearchParams(buildViewContextQuery(config));
         if (targetProjectId !== undefined) query.set('target_project_id', String(targetProjectId));
         if (targetTrackerId !== undefined) query.set('target_tracker_id', String(targetTrackerId));
         if (targetStatusId !== undefined) query.set('target_status_id', String(targetStatusId));
-        const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${taskId}/edit_meta.json?${query}`, {
-            headers: buildJsonHeaders(config)
-        });
+        const response = await sessionFetch(
+            `${getGlobalApiBase(config)}/tasks/${taskId}/edit_meta${draftIntent ? '/preview' : ''}.json?${query}`,
+            draftIntent
+                ? {
+                    method: 'POST',
+                    headers: buildJsonHeaders(config, true),
+                    body: JSON.stringify({ task: draftIntent })
+                }
+                : { headers: buildJsonHeaders(config) }
+        );
 
         if (!response.ok) {
             throw new Error(await parseErrorMessage(response));
@@ -870,6 +877,7 @@ export const apiClient = {
         const editable = asRecord(root.editable);
         const options = asRecord(root.options);
         const customFieldValuesRecord = asRecord(root.custom_field_values) ?? {};
+        const draftContractRaw = asRecord(root.draft_contract);
 
         if (!task || !editable || !options) throw new Error('Invalid response');
 
@@ -949,8 +957,22 @@ export const apiClient = {
             else if (value === null) customFieldValues[key] = null;
         });
 
+        const draftContract: DraftContract | undefined = draftContractRaw
+            ? {
+                baseRevision: parseRequiredNonNegativeInteger(draftContractRaw.base_revision, 'draft_contract.base_revision'),
+                materialized: asRecord(draftContractRaw.materialized) ?? {},
+                normalizations: Array.isArray(draftContractRaw.normalizations)
+                    ? draftContractRaw.normalizations.filter((value): value is DraftContract['normalizations'][number] => Boolean(asRecord(value)))
+                    : [],
+                violations: Array.isArray(draftContractRaw.violations)
+                    ? draftContractRaw.violations.filter((value): value is DraftContract['violations'][number] => Boolean(asRecord(value)))
+                    : []
+            }
+            : undefined;
+
         return {
             capabilityContext,
+            ...(draftContract ? { draftContract } : {}),
             task: {
                 id: String(taskIdValue),
                 subject: String(subjectValue),
