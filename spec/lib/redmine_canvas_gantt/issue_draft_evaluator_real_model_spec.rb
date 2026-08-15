@@ -194,6 +194,66 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator, type: :model do
     )
   end
 
+  it 'matches same-version native Redmine semantics for an explicit project and tracker move' do
+    source_project = issue.project
+    destination_project = Project.find(2)
+    source_tracker = Tracker.find(1)
+    destination_tracker = Tracker.find(2)
+    previous_assignee = User.find(3)
+    role = Member.find_by!(user_id: current_user.id, project_id: source_project.id).roles.first
+    destination_member = Member.find_or_create_by!(user_id: current_user.id, project_id: destination_project.id)
+    destination_member.roles << role unless destination_member.roles.include?(role)
+    source_project.trackers = [source_tracker]
+    destination_project.trackers = [destination_tracker]
+    issue.update_columns(
+      project_id: source_project.id,
+      tracker_id: source_tracker.id,
+      assigned_to_id: previous_assignee.id
+    )
+    issue.reload
+
+    requested_attributes = {
+      project_id: destination_project.id,
+      tracker_id: destination_tracker.id
+    }
+    native_issue = Issue.find(issue.id)
+    native_issue.init_journal(current_user)
+    native_issue.safe_attributes = requested_attributes.stringify_keys
+    native_issue.valid?
+    native_state = described_class::MATERIALIZED_FIELDS.to_h do |field|
+      [field, native_issue.public_send(field)]
+    end
+    native_errors = native_issue.errors.map do |error|
+      [error.attribute.to_s, error.full_message]
+    end
+
+    evaluated_issue = Issue.find(issue.id)
+    result = described_class.new(
+      current_user: current_user,
+      project_scope_ids: [source_project.id, destination_project.id]
+    ).evaluate(
+      issue: evaluated_issue,
+      intent: requested_attributes.merge(lock_version: evaluated_issue.lock_version)
+    )
+
+    evaluated_state = described_class::MATERIALIZED_FIELDS.to_h do |field|
+      [field, result.issue.public_send(field)]
+    end
+    evaluated_errors = result.issue.errors.map do |error|
+      [error.attribute.to_s, error.full_message]
+    end
+
+    expect(result.valid?).to eq(native_issue.errors.empty?)
+    expect(evaluated_state).to eq(native_state)
+    expect(evaluated_errors).to eq(native_errors)
+    expect(result.materialized.slice(*requested_attributes.keys)).to eq(native_state.slice(*requested_attributes.keys))
+    expect(Issue.find(issue.id)).to have_attributes(
+      project_id: source_project.id,
+      tracker_id: source_tracker.id,
+      assigned_to_id: previous_assignee.id
+    )
+  end
+
   it 'evaluates destination-only editable fields after Project and Tracker changes' do
     source_project = issue.project
     destination_project = Project.find(2)
