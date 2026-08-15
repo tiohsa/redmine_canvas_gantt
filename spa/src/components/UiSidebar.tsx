@@ -23,7 +23,8 @@ import { TrackerIcon } from './sidebar/trackerIcon';
 import { designTokens, fontFamilies } from '../styles/designTokens';
 import { formatDate } from '../utils/dateUtils';
 import { parseDateOnly } from '../utils/dateOnly';
-import { buildProjectMutationIntent, materializedTaskUpdates } from '../stores/taskStore/draftIntent';
+import { ContextPreviewViolationError, previewContextChange } from '../services/contextPreview';
+import { StaleEditMetaResponseError } from '../stores/EditMetaStore';
 const NOTIFICATION_COLUMN_KEY = 'notification';
 
 type CanvasGanttSettings = InlineEditSettings & {
@@ -1302,52 +1303,26 @@ export const UiSidebar: React.FC = () => {
                                                                 onCancel={close}
                                                                 onCommit={async (next) => {
                                                                     if (next === null) return;
-                                                                    const preview = await fetchEditMeta(task.id, { targetProjectId: next, force: true });
-                                                                    if (preview.draftContract?.violations.length) {
-                                                                        useUIStore.getState().addNotification(
-                                                                            preview.draftContract.violations[0]?.message || tr('label_failed_to_save'),
-                                                                            'error'
-                                                                        );
-                                                                        return;
-                                                                    }
-                                                                    const nextName = taskMeta.options.projects?.find(s => s.id === next)?.name;
-                                                                    const materialized = preview.draftContract?.materialized ?? {};
-                                                                    const materializedUpdates = materializedTaskUpdates(materialized, task);
-                                                                    const materializedFixedVersionCleared = Object.prototype.hasOwnProperty.call(materialized, 'fixed_version_id') &&
-                                                                        (materialized.fixed_version_id === null || materialized.fixed_version_id === '');
-                                                                    const materializedCategoryCleared = Object.prototype.hasOwnProperty.call(materialized, 'category_id') &&
-                                                                        (materialized.category_id === null || materialized.category_id === '');
-                                                                    const trackerName = materializedUpdates.trackerId === undefined
-                                                                        ? task.trackerName
-                                                                        : preview.options.trackers.find(option => option.id === materializedUpdates.trackerId)?.name;
-                                                                    const statusName = materializedUpdates.statusId === undefined
-                                                                        ? task.statusName
-                                                                        : preview.options.statuses.find(option => option.id === materializedUpdates.statusId)?.name;
-                                                                    const mutationFields = buildProjectMutationIntent(next);
                                                                     try {
+                                                                        const preview = await previewContextChange({
+                                                                            task,
+                                                                            kind: 'project',
+                                                                            targetId: next,
+                                                                            fetchEditMeta
+                                                                        });
                                                                         await save({
                                                                             taskId: task.id,
-                                                                            optimisticTaskUpdates: {
-                                                                                ...materializedUpdates,
-                                                                                projectId: next !== null ? String(next) : undefined,
-                                                                                projectName: nextName,
-                                                                                trackerName,
-                                                                                statusName,
-                                                                                fixedVersionName: materializedFixedVersionCleared ? undefined : task.fixedVersionName,
-                                                                                categoryName: materializedCategoryCleared ? undefined : task.categoryName
-                                                                            },
-                                                                            rollbackTaskUpdates: {
-                                                                                projectId: task.projectId,
-                                                                                projectName: task.projectName,
-                                                                                fixedVersionId: task.fixedVersionId,
-                                                                                fixedVersionName: task.fixedVersionName,
-                                                                                categoryId: task.categoryId,
-                                                                                categoryName: task.categoryName
-                                                                            },
-                                                                            fields: mutationFields
+                                                                            optimisticTaskUpdates: preview.projection,
+                                                                            rollbackTaskUpdates: preview.rollbackTaskUpdates,
+                                                                            fields: preview.mutationIntent
                                                                         });
                                                                         close();
                                                                     } catch (error) {
+                                                                        if (error instanceof ContextPreviewViolationError) {
+                                                                            useUIStore.getState().addNotification(error.message || tr('label_failed_to_save'), 'error');
+                                                                            return;
+                                                                        }
+                                                                        if (error instanceof StaleEditMetaResponseError) return;
                                                                         if (task.projectId) {
                                                                             await fetchEditMeta(task.id, { targetProjectId: Number(task.projectId), force: true });
                                                                         }
@@ -1369,14 +1344,31 @@ export const UiSidebar: React.FC = () => {
                                                                 onCancel={close}
                                                                 onCommit={async (next) => {
                                                                     if (next === null) return;
-                                                                    const nextName = meta.options.trackers?.find(s => s.id === next)?.name;
-                                                                    await save({
-                                                                        taskId: task.id,
-                                                                        optimisticTaskUpdates: { trackerId: next, trackerName: nextName },
-                                                                        rollbackTaskUpdates: { trackerId: task.trackerId, trackerName: task.trackerName },
-                                                                        fields: { tracker_id: next }
-                                                                    });
-                                                                    close();
+                                                                    try {
+                                                                        const preview = await previewContextChange({
+                                                                            task,
+                                                                            kind: 'tracker',
+                                                                            targetId: next,
+                                                                            fetchEditMeta
+                                                                        });
+                                                                        await save({
+                                                                            taskId: task.id,
+                                                                            optimisticTaskUpdates: preview.projection,
+                                                                            rollbackTaskUpdates: preview.rollbackTaskUpdates,
+                                                                            fields: preview.mutationIntent
+                                                                        });
+                                                                        close();
+                                                                    } catch (error) {
+                                                                        if (error instanceof ContextPreviewViolationError) {
+                                                                            useUIStore.getState().addNotification(error.message || tr('label_failed_to_save'), 'error');
+                                                                            return;
+                                                                        }
+                                                                        if (error instanceof StaleEditMetaResponseError) return;
+                                                                        if (task.trackerId) {
+                                                                            await fetchEditMeta(task.id, { targetTrackerId: task.trackerId, force: true });
+                                                                        }
+                                                                        throw error;
+                                                                    }
                                                                 }}
                                                             />
                                                         );

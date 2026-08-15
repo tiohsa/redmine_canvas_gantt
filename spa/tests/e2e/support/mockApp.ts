@@ -59,6 +59,7 @@ type SetupOptions = {
   editCategories?: Array<{ id: number; name: string }>;
   editVersions?: Array<{ id: number; name: string }>;
   editAssignees?: Array<{ id: number; name: string }>;
+  editStatusByTracker?: Record<string, { id: number; name: string }>;
   editOptionsByProject?: Record<string, {
     trackers?: Array<{ id: number; name: string }>;
     categories?: Array<{ id: number; name: string }>;
@@ -327,12 +328,17 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
     const body = route.request().postDataJSON() as { task?: Record<string, unknown> };
     const intent = body.task ?? {};
     const targetProjectId = String(intent.project_id ?? meta.task.project_id);
+    const targetTrackerId = String(intent.tracker_id ?? meta.task.tracker_id);
     const projectOptions = options?.editOptionsByProject?.[targetProjectId];
     meta.options.projects = options?.editProjects ?? meta.options.projects;
     meta.options.trackers = projectOptions?.trackers ?? options?.editTrackers ?? meta.options.trackers;
     meta.options.categories = projectOptions?.categories ?? options?.editCategories ?? meta.options.categories;
     meta.options.versions = projectOptions?.versions ?? options?.editVersions ?? meta.options.versions;
     meta.options.assignees = projectOptions?.assignees ?? options?.editAssignees ?? meta.options.assignees;
+    const trackerStatus = options?.editStatusByTracker?.[targetTrackerId];
+    if (trackerStatus && !meta.options.statuses.some(status => status.id === trackerStatus.id)) {
+      meta.options.statuses = [...meta.options.statuses, trackerStatus];
+    }
     includePersistedAssignee(meta, data, taskId);
 
     const materialized: Record<string, unknown> = Object.fromEntries(
@@ -345,6 +351,14 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
     if (projectChanged) {
       materialized.fixed_version_id = null;
       materialized.category_id = null;
+    }
+    if (
+      trackerStatus &&
+      intent.tracker_id !== undefined &&
+      intent.status_id === undefined &&
+      Number(targetTrackerId) !== Number(meta.task.tracker_id)
+    ) {
+      materialized.status_id = trackerStatus.id;
     }
     const responseMeta = meta as typeof meta & { capability_context: Record<string, number> };
     responseMeta.capability_context = {
@@ -427,10 +441,16 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
           }
         }
         if (typeof fields.tracker_id === 'number') {
+          const previousTrackerId = task.tracker_id;
           task.tracker_id = fields.tracker_id;
           const projectTrackers = options?.editOptionsByProject?.[String(task.project_id)]?.trackers;
           const tracker = (projectTrackers ?? options?.editTrackers)?.find(candidate => candidate.id === fields.tracker_id);
           if (tracker) task.tracker_name = tracker.name;
+          const trackerStatus = options?.editStatusByTracker?.[String(fields.tracker_id)];
+          if (trackerStatus && fields.status_id === undefined && previousTrackerId !== fields.tracker_id) {
+            task.status_id = trackerStatus.id;
+            task.status_name = trackerStatus.name;
+          }
         }
         if (fields.fixed_version_id === null) {
           task.fixed_version_id = null;

@@ -134,6 +134,39 @@ describe('EditMetaStore', () => {
         expect(useEditMetaStore.getState().metaByTaskId['1']).toBe(nextMeta);
     });
 
+    it('sends an explicit Tracker target through the Draft Preview contract', async () => {
+        const persistedTask = {
+            id: '1',
+            subject: 'Task',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            ratioDone: 0,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        } as Task;
+        useTaskStore.setState({ serverTaskSnapshot: createServerSnapshot([persistedTask]) });
+        vi.mocked(apiClient.fetchEditMeta).mockResolvedValue({
+            ...metaFixture,
+            capabilityContext: { taskId: '1', projectId: 1, trackerId: 2, statusId: 3 },
+            draftContract: {
+                baseRevision: 1,
+                materialized: { tracker_id: 2, status_id: 3 },
+                normalizations: [{ field: 'status_id', from: 1, to: 3, source: 'redmine' }],
+                violations: []
+            }
+        });
+
+        await useEditMetaStore.getState().fetchEditMeta('1', { targetTrackerId: 2, force: true });
+
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledWith(
+            '1', undefined, undefined, undefined,
+            { tracker_id: 2, lock_version: 1 }
+        );
+    });
+
     it('single-flights simultaneous requests for the same capability context', async () => {
         let resolveRequest!: (meta: TaskEditMeta) => void;
         vi.mocked(apiClient.fetchEditMeta).mockReturnValue(new Promise<TaskEditMeta>((resolve) => {
@@ -198,6 +231,26 @@ describe('EditMetaStore', () => {
 
         expect(useEditMetaStore.getState().metaByTaskId['1']?.task.projectId).toBe(3);
         expect(useEditMetaStore.getState().latestReadContextByTaskId['1']?.purpose).toBe('edit_meta');
+    });
+
+    it('rejects a stale Tracker Preview without replacing the newest capability context', async () => {
+        let resolveOlder!: (value: TaskEditMeta) => void;
+        const older = new Promise<TaskEditMeta>(resolve => { resolveOlder = resolve; });
+        const newer = {
+            ...metaFixture,
+            capabilityContext: { taskId: '1', projectId: 1, trackerId: 3, statusId: 4 }
+        };
+        vi.mocked(apiClient.fetchEditMeta)
+            .mockReturnValueOnce(older)
+            .mockResolvedValueOnce(newer);
+
+        const first = useEditMetaStore.getState().fetchEditMeta('1', { targetTrackerId: 2, force: true });
+        const second = useEditMetaStore.getState().fetchEditMeta('1', { targetTrackerId: 3, force: true });
+        await second;
+        resolveOlder({ ...metaFixture, capabilityContext: { taskId: '1', projectId: 1, trackerId: 2, statusId: 3 } });
+
+        await expect(first).rejects.toMatchObject({ name: 'StaleEditMetaResponseError' });
+        expect(useEditMetaStore.getState().metaByTaskId['1']).toBe(newer);
     });
 
     it('does not let task B make task A response stale', async () => {

@@ -57,6 +57,45 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator, type: :model do
     expect(result.violations).to include(include(field: 'tracker_id', code: 'not_accepted'))
   end
 
+  it 'materializes the Redmine default Status when a Tracker change invalidates the current Status' do
+    source_project = issue.project
+    source_tracker = Tracker.find(1)
+    source_status = IssueStatus.find(1)
+    target_status = IssueStatus.find(2)
+    target_tracker = Tracker.create!(
+      name: 'Canvas tracker status norm',
+      default_status: target_status
+    )
+    source_project.trackers = [source_tracker, target_tracker]
+    issue.update_columns(
+      project_id: source_project.id,
+      tracker_id: source_tracker.id,
+      status_id: source_status.id
+    )
+    issue.reload
+
+    result = described_class.new(
+      current_user: current_user,
+      project_scope_ids: [source_project.id]
+    ).evaluate(
+      issue: issue,
+      intent: { tracker_id: target_tracker.id, lock_version: issue.lock_version }
+    )
+
+    expect(result).to be_valid
+    expect(result.user_intent).to include(tracker_id: target_tracker.id)
+    expect(result.materialized).to include(tracker_id: target_tracker.id)
+    expect(result.issue.tracker_id).to eq(target_tracker.id)
+    expect(result.issue.status_id).to eq(target_status.id)
+    expect(result.normalizations).to include(
+      include(field: 'status_id', from: source_status.id, to: target_status.id, source: 'redmine')
+    )
+    expect(Issue.find(issue.id)).to have_attributes(
+      tracker_id: source_tracker.id,
+      status_id: source_status.id
+    )
+  end
+
   it 'rejects a status that the current workflow silently ignores' do
     result = evaluator.evaluate(
       issue: issue,

@@ -182,6 +182,144 @@ describe('InlineEditService', () => {
         expect(logicalPayload(autoSaveOffPayload)).toEqual({ keys: ['project_id'], projectId: '9' });
     });
 
+    it('stores Tracker Preview Status normalization as projection but sends only tracker intent', async () => {
+        const initialTask = buildTask({
+            projectId: '1',
+            trackerId: 1,
+            trackerName: 'Tracker A',
+            statusId: 1,
+            statusName: 'S1'
+        });
+        useTaskStore.setState({
+            autoSave: false,
+            allTasks: [initialTask],
+            tasks: [initialTask],
+            serverTaskSnapshot: {
+                entitiesById: { [initialTask.id]: initialTask },
+                revisions: { [initialTask.id]: initialTask.lockVersion },
+                context: null
+            }
+        });
+
+        await InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: {
+                trackerId: 2,
+                trackerName: 'Tracker B',
+                statusId: 2,
+                statusName: 'S2'
+            },
+            rollbackTaskUpdates: {
+                trackerId: initialTask.trackerId,
+                trackerName: initialTask.trackerName,
+                statusId: initialTask.statusId,
+                statusName: initialTask.statusName
+            },
+            fields: { tracker_id: 2 }
+        });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks[0]).toMatchObject({ trackerId: 2, trackerName: 'Tracker B', statusId: 2, statusName: 'S2' });
+        expect(state.localTaskPatches[initialTask.id]?.[0]).toMatchObject({
+            projection: { trackerId: 2, trackerName: 'Tracker B', statusId: 2, statusName: 'S2' },
+            mutationIntent: { trackerId: 2 }
+        });
+
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+        await useTaskStore.getState().saveChanges();
+        expect(apiClient.updateTaskFields).toHaveBeenCalledWith(initialTask.id, {
+            tracker_id: 2,
+            lock_version: initialTask.lockVersion
+        }, expect.stringMatching(/^mutation:/));
+    });
+
+    it('keeps Tracker Preview logical payload identical with Auto Save ON and OFF', async () => {
+        const initialTask = buildTask({ trackerId: 1, statusId: 1 });
+        const saveTrackerPreview = async (autoSave: boolean) => {
+            useTaskStore.setState(useTaskStore.getInitialState(), true);
+            useTaskStore.setState({
+                autoSave,
+                allTasks: [initialTask],
+                tasks: [initialTask],
+                serverTaskSnapshot: {
+                    entitiesById: { [initialTask.id]: initialTask },
+                    revisions: { [initialTask.id]: initialTask.lockVersion },
+                    context: null
+                }
+            });
+            vi.clearAllMocks();
+            vi.mocked(apiClient.updateTask).mockImplementation(async (task, operationId, fields) => (
+                apiClient.updateTaskFields(task.id, { ...(fields ?? {}), lock_version: task.lockVersion }, operationId)
+            ));
+            vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+
+            await InlineEditService.saveTaskFields({
+                taskId: initialTask.id,
+                optimisticTaskUpdates: { trackerId: 2, statusId: 2 },
+                rollbackTaskUpdates: { trackerId: initialTask.trackerId, statusId: initialTask.statusId },
+                fields: { tracker_id: 2 }
+            });
+            if (!autoSave) await useTaskStore.getState().saveChanges();
+            return vi.mocked(apiClient.updateTaskFields).mock.calls[0]?.[1];
+        };
+
+        const autoSaveOnPayload = await saveTrackerPreview(true);
+        const autoSaveOffPayload = await saveTrackerPreview(false);
+        const logicalPayload = (payload: Record<string, unknown> | undefined) => ({
+            keys: Object.keys(payload ?? {}).filter((key) => key !== 'lock_version').sort(),
+            trackerId: String(payload?.tracker_id)
+        });
+
+        expect(logicalPayload(autoSaveOnPayload)).toEqual(logicalPayload(autoSaveOffPayload));
+        expect(logicalPayload(autoSaveOffPayload)).toEqual({ keys: ['tracker_id'], trackerId: '2' });
+    });
+
+    it('adds an explicit Status intent after Tracker Preview without sending projection-only fields', async () => {
+        const initialTask = buildTask({
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            lockVersion: 3
+        });
+        useTaskStore.setState({
+            autoSave: false,
+            allTasks: [initialTask],
+            tasks: [initialTask],
+            serverTaskSnapshot: {
+                entitiesById: { [initialTask.id]: initialTask },
+                revisions: { [initialTask.id]: initialTask.lockVersion },
+                context: null
+            }
+        });
+
+        await InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: { trackerId: 2, statusId: 2 },
+            rollbackTaskUpdates: { trackerId: initialTask.trackerId, statusId: initialTask.statusId },
+            fields: { tracker_id: 2 }
+        });
+        await InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: { statusId: 3 },
+            rollbackTaskUpdates: { statusId: 2 },
+            fields: { status_id: 3 }
+        });
+
+        expect(useTaskStore.getState().localTaskPatches[initialTask.id]?.map(patch => patch.mutationIntent)).toEqual([
+            { trackerId: 2 },
+            { statusId: 3 }
+        ]);
+
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 5 });
+        await useTaskStore.getState().saveChanges();
+
+        expect(apiClient.updateTaskFields).toHaveBeenCalledWith(initialTask.id, {
+            tracker_id: 2,
+            status_id: 3,
+            lock_version: initialTask.lockVersion
+        }, expect.stringMatching(/^mutation:/));
+    });
+
     it('applies optimistic update and stores returned lock version on success', async () => {
         const initialTask = buildTask();
         useTaskStore.setState({

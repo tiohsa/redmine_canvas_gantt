@@ -145,6 +145,47 @@ describe('TaskStore canonical mutation reconciliation', () => {
         expect(state.modifiedTaskIds.has(original.id)).toBe(false);
     });
 
+    it('rolls back failed Tracker Preview materialization while preserving a later generation', () => {
+        const original = buildTask({
+            id: 'tracker-preview',
+            trackerId: 1,
+            trackerName: 'Tracker A',
+            statusId: 1,
+            statusName: 'S1',
+            lockVersion: 1
+        });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.setState({
+            serverTaskSnapshot: {
+                entitiesById: { [original.id]: original },
+                revisions: { [original.id]: original.lockVersion },
+                context: null
+            }
+        });
+        useTaskStore.getState().updateTask(
+            original.id,
+            { trackerId: 2, trackerName: 'Tracker B', statusId: 2, statusName: 'S2' },
+            { trackerId: 2 }
+        );
+        const failedGeneration = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().updateTask(original.id, { subject: 'later local edit' });
+
+        useTaskStore.getState().rollbackTaskOperation(original.id, failedGeneration);
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === original.id)).toMatchObject({
+            trackerId: 1,
+            trackerName: 'Tracker A',
+            statusId: 1,
+            statusName: 'S1',
+            subject: 'later local edit'
+        });
+        expect(state.localTaskPatches[original.id]).toEqual([
+            expect.objectContaining({ generation: failedGeneration + 1, mutationIntent: { subject: 'later local edit' } })
+        ]);
+        expect(state.modifiedTaskIds.has(original.id)).toBe(true);
+    });
+
     it('manual save serializes the intended value when projection differs', async () => {
         const original = buildTask({ id: 'divergent-intent', subject: 'persisted', lockVersion: 1 });
         useTaskStore.getState().setTasks([original]);
@@ -2754,6 +2795,36 @@ describe('TaskStore scheduling state and relation-driven recalculation', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
         useUIStore.setState(useUIStore.getInitialState(), true);
+    });
+
+    it('does not schedule related dates for context-only edits', () => {
+        const { setTasks, setRelations, updateTask } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'parent', startDate: MONDAY, dueDate: TUESDAY, trackerId: 1 }),
+            buildTask({ id: 'child', parentId: 'parent', startDate: MONDAY, dueDate: TUESDAY, trackerId: 1 })
+        ]);
+        setRelations([
+            { id: 'r1', from: 'parent', to: 'child', type: 'precedes' }
+        ]);
+
+        updateTask('parent', { trackerId: 2 }, { trackerId: 2 });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find((task) => task.id === 'parent')).toMatchObject({
+            trackerId: 2,
+            startDate: MONDAY,
+            dueDate: TUESDAY
+        });
+        expect(state.allTasks.find((task) => task.id === 'child')).toMatchObject({
+            startDate: MONDAY,
+            dueDate: TUESDAY
+        });
+        expect(state.localTaskPatches).toEqual({
+            parent: [expect.objectContaining({
+                projection: { trackerId: 2 },
+                mutationIntent: { trackerId: 2 }
+            })]
+        });
     });
 
     it('addRelation recalculates downstream tasks and marks them modified', () => {

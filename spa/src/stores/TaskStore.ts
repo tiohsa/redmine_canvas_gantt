@@ -1632,8 +1632,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         let currentTasks = state.allTasks.map(t => t.id === id ? updatedTask : t);
         const pendingUpdates = new Map<string, Partial<Task>>();
+        const isContextChange = hasOwnField(canonicalUpdates, 'projectId') || hasOwnField(canonicalUpdates, 'trackerId');
 
-        if (hasOwnField(canonicalUpdates, 'startDate') || hasOwnField(canonicalUpdates, 'dueDate')) {
+        if (!isContextChange && (hasOwnField(canonicalUpdates, 'startDate') || hasOwnField(canonicalUpdates, 'dueDate'))) {
             const depResult = TaskLogicService.checkDependencies(
                 state.allTasks,
                 state.relations,
@@ -1658,6 +1659,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             });
         }
 
+        if (!isContextChange) {
             const cascadingUpdates = resolveCascadingScheduleUpdates(
                 currentTasks,
                 state.relations,
@@ -1670,6 +1672,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             }
             currentTasks = cascadingUpdates.tasks;
             cascadingUpdates.updates.forEach((patch, taskId) => pendingUpdates.set(taskId, patch));
+        }
 
         const finalTasks = state.allTasks.map(t => {
             if (t.id === id) return updatedTask;
@@ -1715,13 +1718,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         const changedFields = new Set([...Object.keys(canonicalUpdates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
         const requiresLayout = ['projectId', 'assignedToId', 'fixedVersionId'].some(field => changedFields.has(field));
-        const requiresScheduling = ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => changedFields.has(field));
-        const derivedInvalidation: DerivedInvalidation = requiresScheduling
+        const hasSchedulingChanges = ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => changedFields.has(field));
+        const derivedInvalidation: DerivedInvalidation = hasSchedulingChanges
             ? 'critical_path'
             : requiresLayout
                 ? 'layout'
                 : 'none';
-        const nextSchedulingSummary = requiresScheduling
+        const nextSchedulingSummary = hasSchedulingChanges
             ? buildDerivedSchedulingSummary(finalTasks, state.relations)
             : {
                 schedulingStates: state.schedulingStates,
@@ -1758,7 +1761,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             };
         }
 
-        if (!requiresLayout && !requiresScheduling) {
+        if (!requiresLayout && !hasSchedulingChanges) {
             const nextViewTasks = state.tasks.map(viewTask => {
                 const updated = finalTasks.find(task => task.id === viewTask.id);
                 return updated ? {

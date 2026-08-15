@@ -5,10 +5,22 @@ import type { LocalPatch, ServerSnapshot } from './stateContract';
 
 const persistableFields = new Set<string>(PERSISTABLE_TASK_FIELDS);
 
-/** Project selection is the only explicit intent produced by the selector.
+/** Context-changing selectors emit only the field explicitly selected by the user.
  * Server materialized policy fields are display-only and must not be resent.
  */
-export const buildProjectMutationIntent = (projectId: number): TaskFields => ({ project_id: projectId });
+export type ContextChangeKind = 'project' | 'tracker';
+
+export const buildContextMutationIntent = (kind: ContextChangeKind, id: number): TaskFields => ({
+    [kind === 'project' ? 'project_id' : 'tracker_id']: id
+});
+
+export const buildProjectMutationIntent = (projectId: number): TaskFields => (
+    buildContextMutationIntent('project', projectId)
+);
+
+export const buildTrackerMutationIntent = (trackerId: number): TaskFields => (
+    buildContextMutationIntent('tracker', trackerId)
+);
 
 export const buildTaskDraftIntent = (
     taskId: string,
