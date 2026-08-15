@@ -37,6 +37,26 @@ export type MutationIntent = {
     affectsScheduling: boolean;
 };
 
+export type ScheduleMutationRequest = {
+    taskId: string;
+    baseRevision: number;
+    fields: Pick<TaskFields, 'start_date' | 'due_date'>;
+    /** Internal test/reconciliation context; never serialized by the API client. */
+    task?: Task;
+    mutationFields?: TaskFields;
+};
+
+export type ScheduleMutationResponse = {
+    status: MutationStatus | 'error';
+    entities?: PersistedTaskState[];
+    revisions?: Record<string, number>;
+    errors?: string[];
+};
+
+export type ScheduleMutationExecutor = (
+    changes: ScheduleMutationRequest[]
+) => Promise<ScheduleMutationResponse>;
+
 const hasPersistableIntentFields = (fields: TaskFields): boolean => Object.keys(fields).length > 0;
 
 type FetchDataResult = {
@@ -51,6 +71,7 @@ type FetchDataParams = {
 
 const taskWriteQueues = new Map<string, Promise<void>>();
 let mutationSequence = 0;
+let scheduleOperationQueue: Promise<void> = Promise.resolve();
 const activeMutationOperations = new Map<string, MutationOperationRecord>();
 const completedMutationOperations = new Map<string, MutationOperationRecord>();
 const MAX_COMPLETED_MUTATIONS = 128;
@@ -230,6 +251,21 @@ export const enqueueTaskWrite = async <T>(
     enqueueMutationOperation([taskId], operation, lifecycle, [taskResourceKey(taskId)])
 );
 
+/** Schedule plans are one client-level causal stream, even when their task
+ * sets do not overlap. Generic inline mutations retain their existing
+ * per-resource concurrency policy. */
+export const enqueueScheduleMutationOperation = async <T>(
+    entityIds: string[],
+    operation: (context?: MutationOperationContext) => Promise<T>,
+    resourceKeys: string[] = entityIds
+): Promise<T> => {
+    const queued = scheduleOperationQueue.then(
+        () => enqueueMutationOperation(entityIds, operation, undefined, resourceKeys)
+    );
+    scheduleOperationQueue = queued.then(() => undefined, () => undefined);
+    return queued;
+};
+
 export const createTaskLayoutSnapshot = (state: TaskLayoutSnapshot): TaskLayoutSnapshot => ({
     allTasks: state.allTasks.map((task) => ({ ...task })),
     tasks: state.tasks.map((task) => ({ ...task })),
@@ -273,7 +309,9 @@ export const saveModifiedTasks = async (
     mutationGenerations: Record<string, number> = {},
     mutationFields: Record<string, TaskFields> = {},
     preflightFailures: Map<string, string> = new Map(),
-    mutationScheduling: Record<string, boolean> = {}
+    mutationScheduling: Record<string, boolean> = {},
+    scheduleMutation?: ScheduleMutationExecutor,
+    baseRevisions: Record<string, number> = {}
 ): Promise<SaveModifiedTasksResult> => {
     const mutableTaskById = new Map(tasks.map(task => [task.id, { ...task }]));
     const depthCache = new Map<string, number>();
@@ -296,6 +334,116 @@ export const saveModifiedTasks = async (
     const schedulingTaskIds = new Set(modifiedTasks
         .filter(task => mutationScheduling[task.id] === true)
         .map(task => task.id));
+    const scheduleSavedTaskIds = new Set<string>();
+    const scheduleFailures = new Map<string, string>();
+    const scheduleConflictEntities = new Map<string, PersistedTaskState | undefined>();
+    const scheduleConflictRevisions = new Map<string, number | undefined>();
+    let scheduleOperationAttempted = false;
+    let scheduleOperationConflict = false;
+    if (schedulingTaskIds.size > 0 && scheduleMutation) {
+        scheduleOperationAttempted = true;
+        const scheduleChanges = [...schedulingTaskIds].sort().map(taskId => ({
+            taskId,
+            baseRevision: baseRevisions[taskId] ?? mutableTaskById.get(taskId)?.lockVersion ?? 0,
+            fields: mutationFields[taskId] as Pick<TaskFields, 'start_date' | 'due_date'>,
+            task: mutableTaskById.get(taskId),
+            mutationFields: mutationFields[taskId]
+        }));
+        let scheduleResult: ScheduleMutationResponse = {
+            status: 'transient_error',
+            errors: ['Schedule mutation did not return a result.']
+        };
+        try {
+            scheduleResult = await scheduleMutation(scheduleChanges);
+        } catch (error) {
+            const transportMessage = error instanceof Error ? error.message : String(error);
+            let resyncedTasks: Task[] | undefined;
+            try {
+                resyncedTasks = (await fetchData({ query: { selectedStatusIds } })).tasks;
+            } catch (resyncError) {
+                const resyncMessage = resyncError instanceof Error ? resyncError.message : transportMessage;
+                scheduleResult = { status: 'transient_error', errors: [resyncMessage] };
+            }
+
+            if (resyncedTasks) {
+                const resyncedById = new Map(resyncedTasks.map(task => [task.id, task]));
+                const canonicalChanges = scheduleChanges.map(change => ({
+                    change,
+                    task: resyncedById.get(change.taskId)
+                }));
+                const allOwnedFieldsMatch = canonicalChanges.every(({ change, task }) => (
+                    Boolean(task && responseMatchesIntendedFields(
+                        change.mutationFields ?? change.fields,
+                        task as unknown as PersistedTaskState
+                    ))
+                ));
+
+                if (allOwnedFieldsMatch) {
+                    scheduleResult = {
+                        status: 'ok',
+                        entities: canonicalChanges
+                            .map(({ task }) => task as unknown as PersistedTaskState)
+                            .filter((task): task is PersistedTaskState => Boolean(task)),
+                        revisions: Object.fromEntries(canonicalChanges
+                            .filter(({ task }) => task)
+                            .map(({ task }) => [task!.id, task!.lockVersion]))
+                    };
+                } else {
+                    const baseRevisionsUnchanged = canonicalChanges.every(({ change, task }) => (
+                        Boolean(task && task.lockVersion === change.baseRevision)
+                    ));
+
+                    if (baseRevisionsUnchanged) {
+                        try {
+                            scheduleResult = await scheduleMutation(scheduleChanges.map(change => ({
+                                ...change,
+                                baseRevision: resyncedById.get(change.taskId)?.lockVersion ?? change.baseRevision
+                            })));
+                        } catch (retryError) {
+                            const retryMessage = retryError instanceof Error ? retryError.message : transportMessage;
+                            scheduleResult = { status: 'transient_error', errors: [retryMessage] };
+                        }
+                    } else {
+                        scheduleResult = {
+                            status: 'conflict',
+                            errors: ['The schedule mutation outcome is unknown.'],
+                            entities: canonicalChanges
+                                .map(({ task }) => task as unknown as PersistedTaskState)
+                                .filter((task): task is PersistedTaskState => Boolean(task)),
+                            revisions: Object.fromEntries(canonicalChanges
+                                .filter(({ task }) => task)
+                                .map(({ task }) => [task!.id, task!.lockVersion]))
+                        };
+                    }
+                }
+            }
+        }
+        const entitiesById = new Map((scheduleResult.entities ?? []).map(entity => [entity.id, entity]));
+        if (scheduleResult.status === 'ok') {
+            (scheduleResult.entities ?? []).forEach(entity => {
+                const revision = scheduleResult.revisions?.[entity.id] ?? entity.lockVersion;
+                onTaskResult?.(entity.id, { status: 'ok', entity, revision, lockVersion: revision });
+            });
+            schedulingTaskIds.forEach(taskId => {
+                const entity = entitiesById.get(taskId);
+                const revision = scheduleResult.revisions?.[taskId] ?? entity?.lockVersion;
+                scheduleSavedTaskIds.add(taskId);
+                onTaskSaved?.(taskId, revision);
+            });
+        } else {
+            scheduleOperationConflict = scheduleResult.status === 'conflict';
+            const message = scheduleResult.errors?.[0] || (scheduleResult.status === 'conflict' ? 'Conflict' : 'Failed to save schedule');
+            schedulingTaskIds.forEach(taskId => {
+                scheduleFailures.set(taskId, message);
+                scheduleConflictEntities.set(taskId, entitiesById.get(taskId));
+                scheduleConflictRevisions.set(taskId, scheduleResult.revisions?.[taskId] ?? entitiesById.get(taskId)?.lockVersion);
+                onTaskResult?.(taskId, { status: scheduleResult.status, error: message });
+            });
+        }
+        // A schedule operation owns its whole plan. The legacy per-task loop
+        // must never send those same date fields as independent PATCHes.
+        schedulingTaskIds.forEach(taskId => modifiedIdSet.delete(taskId));
+    }
     const dependencyOrder = new Map([...schedulingTaskIds].map(taskId => [taskId, 0]));
     const dependencyIndegree = new Map([...schedulingTaskIds].map(taskId => [taskId, 0]));
     const dependencyOutgoing = new Map<string, string[]>();
@@ -333,7 +481,7 @@ export const saveModifiedTasks = async (
     const cyclicTaskIds = detectSchedulingCycleTaskIds(dependencyEdges);
 
     const tasksToUpdate = tasks
-        .filter(t => modifiedTaskIds.has(t.id))
+        .filter(t => modifiedIdSet.has(t.id))
         .sort((a, b) => {
             // Persist predecessors before their modified successors so that
             // server-side dependency validation observes the updated dates.
@@ -345,8 +493,8 @@ export const saveModifiedTasks = async (
             return calcDepth(a.id) - calcDepth(b.id);
         });
 
-    const failures = new Map<string, string>();
-    const savedTaskIds = new Set<string>();
+    const failures = new Map(scheduleFailures);
+    const savedTaskIds = new Set(scheduleSavedTaskIds);
     const unsentTaskIds = new Set(modifiedIdSet);
     const abortedTaskIds = new Set<string>();
     const cycleMessage = i18n.t('label_scheduling_state_cyclic') || 'This task participates in a dependency cycle.';
@@ -371,6 +519,18 @@ export const saveModifiedTasks = async (
     const settledTaskIds = new Set<string>();
     const blockedTaskIds = new Set<string>();
     const terminalFailureTaskIds = new Set<string>();
+    if (scheduleOperationAttempted) schedulingTaskIds.forEach(taskId => {
+        if (scheduleSavedTaskIds.has(taskId)) return;
+        terminalFailureTaskIds.add(taskId);
+        if (scheduleOperationConflict) {
+            onConflict?.(
+                taskId,
+                scheduleFailures.get(taskId)!,
+                scheduleConflictEntities.get(taskId),
+                scheduleConflictRevisions.get(taskId)
+            );
+        }
+    });
     const attemptCounts = new Map<string, number>();
     const conflictMessages = new Map<string, string>();
     const conflictCandidates = new Map<string, { intent: MutationIntent; message: string; entity?: PersistedTaskState; revision?: number }>();

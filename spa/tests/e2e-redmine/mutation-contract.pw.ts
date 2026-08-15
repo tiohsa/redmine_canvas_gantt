@@ -472,7 +472,7 @@ test('linked downstream shift does not publish a self-induced conflict', async (
   const originRow = page.getByTestId(`task-row-${originId}`);
   const mutationStatuses: number[] = [];
   page.on('response', (response) => {
-    if (response.request().method() === 'PATCH' && response.url().includes('/tasks/')) {
+    if (response.request().method() === 'POST' && response.url().includes('/schedule_mutation')) {
       mutationStatuses.push(response.status());
     }
   });

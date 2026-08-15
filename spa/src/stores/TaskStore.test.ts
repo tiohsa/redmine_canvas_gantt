@@ -16,6 +16,7 @@ vi.mock('../api/client', () => ({
     }
 }));
 
+
 const MONDAY = Date.UTC(2026, 0, 5);
 const TUESDAY = Date.UTC(2026, 0, 6);
 const WEDNESDAY = Date.UTC(2026, 0, 7);

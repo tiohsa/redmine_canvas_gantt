@@ -42,7 +42,7 @@ import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/businessCalendar';
-import { fromLocalDate, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
+import { fromLocalDate, parseDateOnly, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
 import { classifyMutationSourceDisposition } from '../api/mutationOutcome';
@@ -2728,7 +2728,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             );
                         } else {
                             snapshotMutationFields[taskId] = delta.fields;
-                            snapshotMutationScheduling[taskId] = delta.affectsScheduling;
+                            snapshotMutationScheduling[taskId] = Object.prototype.hasOwnProperty.call(delta.fields, 'start_date') ||
+                                Object.prototype.hasOwnProperty.call(delta.fields, 'due_date');
                         }
                     }
                 });
@@ -2822,7 +2823,16 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     snapshotGenerations,
                     snapshotMutationFields,
                     unsupportedMutationFailures,
-                    snapshotMutationScheduling
+                    snapshotMutationScheduling,
+                    typeof apiClient.scheduleMutation === 'function' ? (changes) => taskMutationService.scheduleMutation(changes.map(change => ({
+                        taskId: change.taskId,
+                        baseRevision: change.baseRevision,
+                        task: change.task,
+                        mutationFields: change.mutationFields,
+                        ...(Object.prototype.hasOwnProperty.call(change.fields, 'start_date') ? { startDate: parseDateOnly(change.fields.start_date as string | null) } : {}),
+                        ...(Object.prototype.hasOwnProperty.call(change.fields, 'due_date') ? { dueDate: parseDateOnly(change.fields.due_date as string | null) } : {})
+                    }))) : undefined,
+                    snapshot.serverTaskSnapshot.revisions
                 );
                 const { failures, savedTaskIds } = saveResult;
 

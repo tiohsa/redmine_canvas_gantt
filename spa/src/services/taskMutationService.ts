@@ -1,7 +1,7 @@
 import type { Relation } from '../types';
 import { apiClient } from '../api/client';
-import type { MutationMetadata } from '../api/client';
-import { baselineProjectResourceKey, enqueueMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
+import type { MutationMetadata, ScheduleMutationChange } from '../api/client';
+import { baselineProjectResourceKey, enqueueMutationOperation, enqueueScheduleMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
 import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 
@@ -248,6 +248,14 @@ export const taskMutationService = {
         lifecycle,
         [taskResourceKey(taskId)]
     ),
+
+    scheduleMutation: (
+        changes: ScheduleMutationChange[]
+    ) => enqueueScheduleMutationOperation(
+            changes.map(change => change.taskId),
+            (context) => apiClient.scheduleMutation(changes, context?.operationId ?? `schedule:${Date.now()}`),
+            changes.map(change => taskResourceKey(change.taskId))
+        ),
 
     createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
         enqueueMutationOperation([fromId, toId], (context) => apiClient.createRelation(fromId, toId, type, delay, context?.operationId), undefined, [taskResourceKey(fromId), taskResourceKey(toId)])

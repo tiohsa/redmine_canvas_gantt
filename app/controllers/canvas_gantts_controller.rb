@@ -540,6 +540,42 @@ class CanvasGanttsController < ApplicationController
     ), status: :not_found
   end
 
+  # POST /projects/:project_id/canvas_gantt/schedule_mutation.json
+  def schedule_mutation
+    operation_id = params[:operation_id].to_s
+    if operation_id.blank?
+      render json: { error: 'operation_id is required' }, status: :unprocessable_entity
+      return
+    end
+
+    result = schedule_mutation_coordinator.call(
+      operation_id: operation_id,
+      base_revisions: params[:base_revisions] || {},
+      changes: params[:changes] || []
+    )
+    response = {
+      status: result.status.to_s,
+      operation_id: operation_id,
+      completeness: result.status == :ok ? 'complete' : 'partial',
+      entities: result.entities,
+      revisions: result.revisions,
+      invalidated_entity_ids: result.invalidated_entity_ids,
+      **(result.errors.present? ? { errors: result.errors } : {}),
+      **(result.conflict ? { conflict: result.conflict } : {})
+    }
+    render json: response, status: {
+      ok: :ok,
+      conflict: :conflict,
+      validation_error: :unprocessable_entity,
+      forbidden: :forbidden,
+      not_found: :not_found
+    }.fetch(result.status, :internal_server_error)
+  rescue ActionController::ParameterMissing, ArgumentError => error
+    render json: { status: 'validation_error', error: error.message }, status: :unprocessable_entity
+  rescue => error
+    render_internal_error(error)
+  end
+
   # DELETE /canvas_gantt/tasks/:id.json
   def destroy_task
     issue = Issue.visible.find(params[:id])
@@ -1322,6 +1358,14 @@ class CanvasGanttsController < ApplicationController
     RedmineCanvasGantt::IssueDraftEvaluator.new(
       current_user: User.current,
       project_scope_ids: current_view_scope[:scope_project_ids]
+    )
+  end
+
+  def schedule_mutation_coordinator
+    RedmineCanvasGantt::ScheduleMutationCoordinator.new(
+      current_user: User.current,
+      project_scope_ids: current_view_scope[:scope_project_ids],
+      payload_builder: data_payload_builder
     )
   end
 

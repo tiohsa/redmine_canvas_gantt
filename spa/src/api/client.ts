@@ -87,6 +87,28 @@ export interface MutationMetadata {
     failure?: MutationFailure;
 }
 
+export type ScheduleMutationChange = {
+    taskId: string;
+    baseRevision: number;
+    startDate?: number | null;
+    dueDate?: number | null;
+    task?: unknown;
+    mutationFields?: Record<string, unknown>;
+};
+
+export type ScheduleMutationResult = MutationMetadata & {
+    status: MutationStatus;
+    operationId: string;
+    entities: PersistedTaskState[];
+    revisions: Record<string, number>;
+    errors?: string[];
+    conflict?: {
+        taskId?: number;
+        expectedRevision?: number;
+        actualRevision?: number;
+    };
+};
+
 interface BaselineSaveResult extends MutationMetadata {
     status: 'ok' | 'error';
     baseline: BaselineSnapshot | null;
@@ -326,6 +348,33 @@ const parseMutationTaskResult = async (response: Response): Promise<UpdateTaskRe
         parentId: data.parent_id === null ? undefined : (data.parent_id ? String(data.parent_id) : entity?.parentId),
         siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined,
         error: typeof data.error === 'string' ? data.error : undefined
+    };
+};
+
+const parseScheduleMutationResult = async (response: Response): Promise<ScheduleMutationResult> => {
+    const data = asRecord(await response.json().catch(() => ({}))) ?? {};
+    const rawEntities = Array.isArray(data.entities) ? data.entities : [];
+    const entities = rawEntities.map(parseMutationEntity).filter((entity): entity is PersistedTaskState => Boolean(entity));
+    const rawRevisions = asRecord(data.revisions) ?? {};
+    const revisions = Object.entries(rawRevisions).reduce<Record<string, number>>((result, [id, revision]) => {
+        if (typeof revision === 'number') result[String(id)] = revision;
+        return result;
+    }, {});
+    const rawStatus = data.status;
+    const status: MutationStatus = response.status === 409
+        ? 'conflict'
+        : typeof rawStatus === 'string' && ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error'].includes(rawStatus)
+            ? rawStatus as MutationStatus
+            : response.ok ? 'ok' : mutationStatusForHttp(response.status);
+    const errors = Array.isArray(data.errors) ? data.errors.filter((error): error is string => typeof error === 'string') : undefined;
+    return {
+        status,
+        operationId: typeof data.operation_id === 'string' ? data.operation_id : '',
+        entities,
+        revisions,
+        ...(errors && errors.length > 0 ? { errors } : {}),
+        ...(data.conflict && typeof data.conflict === 'object' ? { conflict: data.conflict as ScheduleMutationResult['conflict'] } : {}),
+        ...parseMutationMetadata(data)
     };
 };
 
@@ -1077,6 +1126,25 @@ export const apiClient = {
         }
 
         return parseMutationTaskResult(response);
+    },
+
+    scheduleMutation: async (changes: ScheduleMutationChange[], operationId: string): Promise<ScheduleMutationResult> => {
+        const config = getConfig();
+        const query = buildViewContextQuery(config);
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/schedule_mutation.json?${query}`, {
+            method: 'POST',
+            headers: buildJsonHeaders(config, true),
+            body: JSON.stringify({
+                operation_id: operationId,
+                base_revisions: Object.fromEntries(changes.map(change => [change.taskId, change.baseRevision])),
+                changes: changes.map(({ taskId, startDate, dueDate }) => ({
+                    task_id: taskId,
+                    ...(startDate !== undefined ? { start_date: formatDateOnly(startDate) } : {}),
+                    ...(dueDate !== undefined ? { due_date: formatDateOnly(dueDate) } : {})
+                }))
+            })
+        });
+        return parseScheduleMutationResult(response);
     },
 
     createRelation: async (fromId: string, toId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata & { status: 'ok' }> => {
