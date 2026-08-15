@@ -15,6 +15,10 @@ export type ContextPreviewParams = {
     kind: ContextChangeKind;
     targetId: number;
     fetchEditMeta: FetchEditMeta;
+    freshness?: {
+        generation: number;
+        currentGeneration: () => number;
+    };
 };
 
 export type ContextPreviewResult = {
@@ -33,6 +37,13 @@ export class ContextPreviewViolationError extends Error {
         super(violation.message);
         this.name = 'ContextPreviewViolationError';
         this.violation = violation;
+    }
+}
+
+export class StaleContextPreviewError extends Error {
+    constructor() {
+        super('stale context preview');
+        this.name = 'StaleContextPreviewError';
     }
 }
 
@@ -121,12 +132,16 @@ export const previewContextChange = async ({
     task,
     kind,
     targetId,
-    fetchEditMeta
+    fetchEditMeta,
+    freshness
 }: ContextPreviewParams): Promise<ContextPreviewResult> => {
     const options = kind === 'project'
         ? { targetProjectId: targetId, force: true }
         : { targetTrackerId: targetId, force: true };
     const meta = await fetchEditMeta(task.id, options);
+    if (freshness && freshness.currentGeneration() !== freshness.generation) {
+        throw new StaleContextPreviewError();
+    }
     const violation = meta.draftContract?.violations[0];
     if (violation) throw new ContextPreviewViolationError(violation);
 

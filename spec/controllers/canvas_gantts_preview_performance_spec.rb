@@ -16,6 +16,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     role = Member.find_by!(user_id: current_user.id, project_id: project.id).roles.first
     role.permissions = (role.permissions + %i[view_issues view_canvas_gantt edit_issues add_issues]).uniq
     role.save!
+    session[:tk] = current_user.generate_session_token
   end
 
   def sql_query_count

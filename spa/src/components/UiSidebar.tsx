@@ -23,7 +23,7 @@ import { TrackerIcon } from './sidebar/trackerIcon';
 import { designTokens, fontFamilies } from '../styles/designTokens';
 import { formatDate } from '../utils/dateUtils';
 import { parseDateOnly } from '../utils/dateOnly';
-import { ContextPreviewViolationError, previewContextChange } from '../services/contextPreview';
+import { ContextPreviewViolationError, previewContextChange, StaleContextPreviewError } from '../services/contextPreview';
 import { StaleEditMetaResponseError } from '../stores/EditMetaStore';
 const NOTIFICATION_COLUMN_KEY = 'notification';
 
@@ -208,6 +208,7 @@ export const UiSidebar: React.FC = () => {
         getEditField,
         shouldEnableField,
         startCellEdit,
+        closeInlineEdit,
         save
     } = useSidebarInlineEdit({
         settings,
@@ -1063,7 +1064,7 @@ export const UiSidebar: React.FC = () => {
                                                     );
                                                     if (!isEditing) return (col.render ? col.render(task) : renderFallbackCellValue(task, col.key));
 
-                                                    const close = () => setActiveInlineEdit(null);
+                                                    const close = () => closeInlineEdit(activeInlineEdit?.sessionId);
 
                                                     if (field === 'subject') {
                                                         return (
@@ -1304,11 +1305,16 @@ export const UiSidebar: React.FC = () => {
                                                                 onCommit={async (next) => {
                                                                     if (next === null) return;
                                                                     try {
+                                                                        const requestGeneration = useTaskStore.getState().editGenerations[task.id] ?? 0;
                                                                         const preview = await previewContextChange({
                                                                             task,
                                                                             kind: 'project',
                                                                             targetId: next,
-                                                                            fetchEditMeta
+                                                                            fetchEditMeta,
+                                                                            freshness: {
+                                                                                generation: requestGeneration,
+                                                                                currentGeneration: () => useTaskStore.getState().editGenerations[task.id] ?? 0
+                                                                            }
                                                                         });
                                                                         await save({
                                                                             taskId: task.id,
@@ -1322,7 +1328,7 @@ export const UiSidebar: React.FC = () => {
                                                                             useUIStore.getState().addNotification(error.message || tr('label_failed_to_save'), 'error');
                                                                             return;
                                                                         }
-                                                                        if (error instanceof StaleEditMetaResponseError) return;
+                                                                        if (error instanceof StaleEditMetaResponseError || error instanceof StaleContextPreviewError) return;
                                                                         if (task.projectId) {
                                                                             await fetchEditMeta(task.id, { targetProjectId: Number(task.projectId), force: true });
                                                                         }
@@ -1345,11 +1351,16 @@ export const UiSidebar: React.FC = () => {
                                                                 onCommit={async (next) => {
                                                                     if (next === null) return;
                                                                     try {
+                                                                        const requestGeneration = useTaskStore.getState().editGenerations[task.id] ?? 0;
                                                                         const preview = await previewContextChange({
                                                                             task,
                                                                             kind: 'tracker',
                                                                             targetId: next,
-                                                                            fetchEditMeta
+                                                                            fetchEditMeta,
+                                                                            freshness: {
+                                                                                generation: requestGeneration,
+                                                                                currentGeneration: () => useTaskStore.getState().editGenerations[task.id] ?? 0
+                                                                            }
                                                                         });
                                                                         await save({
                                                                             taskId: task.id,
@@ -1363,7 +1374,7 @@ export const UiSidebar: React.FC = () => {
                                                                             useUIStore.getState().addNotification(error.message || tr('label_failed_to_save'), 'error');
                                                                             return;
                                                                         }
-                                                                        if (error instanceof StaleEditMetaResponseError) return;
+                                                                        if (error instanceof StaleEditMetaResponseError || error instanceof StaleContextPreviewError) return;
                                                                         if (task.trackerId) {
                                                                             await fetchEditMeta(task.id, { targetTrackerId: task.trackerId, force: true });
                                                                         }

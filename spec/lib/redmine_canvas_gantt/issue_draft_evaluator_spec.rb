@@ -332,7 +332,7 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator do
     expect(domain_issue_class.domain_calls).to eq([[target_project, user, source_tracker.id]])
   end
 
-  it 'treats Version and Category clears as Redmine canonical best-effort normalization' do
+  it 'does not own Version and Category project-move normalization' do
     issue = FakeDraftIssue.new(
       project: source_project,
       tracker: source_tracker,
@@ -345,7 +345,9 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator do
 
     expect(result).to be_valid
     expect(result.violations).not_to include(include(code: 'policy_not_accepted'))
-    expect(result.materialized).to include(fixed_version_id: nil, category_id: nil)
+    expect(result.policy_intent).not_to have_key(:fixed_version_id)
+    expect(result.policy_intent).not_to have_key(:category_id)
+    expect(result.issue).to have_attributes(fixed_version_id: 8, category_id: 11)
   end
 
   it 'materializes only explicitly requested or changed custom field values' do

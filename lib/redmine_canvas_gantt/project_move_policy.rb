@@ -38,15 +38,6 @@ module RedmineCanvasGantt
         end
       end
 
-      if before_values[:fixed_version_id].present? && !user_intent.key?(:fixed_version_id)
-        attributes[:fixed_version_id] = ''
-        policy_fields << :fixed_version_id
-      end
-      if before_values[:category_id].present? && !user_intent.key?(:category_id)
-        attributes[:category_id] = ''
-        policy_fields << :category_id
-      end
-
       Result.new(
         attributes: attributes,
         violations: violations,

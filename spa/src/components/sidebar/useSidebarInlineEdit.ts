@@ -2,7 +2,7 @@ import React from 'react';
 import type { Task } from '../../types';
 import type { InlineEditSettings, TaskEditMeta } from '../../types/editMeta';
 import { InlineEditService } from '../../services/InlineEditService';
-import { useUIStore } from '../../stores/UIStore';
+import { useUIStore, type ActiveInlineEdit } from '../../stores/UIStore';
 import { useTaskStore } from '../../stores/TaskStore';
 import { customFieldIdFromColumnKey, customFieldEditField, customFieldIdFromEditField, isCustomFieldColumnKey } from './sidebarColumns';
 import { formatDateOnly } from '../../utils/dateOnly';
@@ -13,8 +13,12 @@ type Params = {
     editMetaByTaskId: Record<string, TaskEditMeta>;
     fetchEditMeta: (taskId: string, options?: FetchEditMetaOptions) => Promise<TaskEditMeta>;
     selectTask: (taskId: string) => void;
-    setActiveInlineEdit: (value: { taskId: string; field: string; source?: 'cell' | 'panel' } | null) => void;
+    setActiveInlineEdit: (value: ActiveInlineEdit | null, ownerSessionId?: string) => void;
 };
+
+let nextInlineEditSessionId = 0;
+
+const createInlineEditSessionId = () => `inline-edit-${++nextInlineEditSessionId}`;
 
 export const useSidebarInlineEdit = ({
     settings,
@@ -23,6 +27,8 @@ export const useSidebarInlineEdit = ({
     selectTask,
     setActiveInlineEdit
 }: Params) => {
+    const latestSessionIdRef = React.useRef<string | null>(null);
+
     const metaMatchesTaskContext = React.useCallback((meta: TaskEditMeta | undefined, task: Task) => {
         const context = meta?.capabilityContext;
         if (!context) return true;
@@ -145,6 +151,9 @@ export const useSidebarInlineEdit = ({
             return;
         }
 
+        const sessionId = createInlineEditSessionId();
+        latestSessionIdRef.current = sessionId;
+
         selectTask(task.id);
 
         const requiresMeta = [
@@ -162,8 +171,19 @@ export const useSidebarInlineEdit = ({
             if (!shouldEnableField(field, latestTask, meta)) return;
         }
 
-        setActiveInlineEdit({ taskId: task.id, field, source: 'cell' });
+        if (latestSessionIdRef.current !== sessionId) return;
+        setActiveInlineEdit({ taskId: task.id, field, source: 'cell', sessionId });
     }, [ensureEditMeta, metaMatchesTaskContext, selectTask, setActiveInlineEdit, shouldEnableField]);
+
+    const closeInlineEdit = React.useCallback((sessionId?: string) => {
+        const activeEdit = useUIStore.getState().activeInlineEdit;
+        if (sessionId !== undefined && activeEdit?.sessionId !== sessionId) return;
+
+        setActiveInlineEdit(null, sessionId);
+        if (sessionId === undefined || latestSessionIdRef.current === sessionId) {
+            latestSessionIdRef.current = null;
+        }
+    }, [setActiveInlineEdit]);
 
     const save = React.useCallback(async (params: Parameters<typeof InlineEditService.saveTaskFields>[0]) => {
         await InlineEditService.saveTaskFields(params);
@@ -177,6 +197,7 @@ export const useSidebarInlineEdit = ({
         shouldEnableField,
         ensureEditMeta,
         startCellEdit,
+        closeInlineEdit,
         save
     };
 };

@@ -3529,14 +3529,89 @@ describe('TaskStore saveChanges ordering', () => {
             updateTask(task.id, { dueDate: TUESDAY + DAY * ((index % 5) + 1) });
         });
 
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => ({
+            status: 'ok',
+            lockVersion: 2,
+            completeness: 'partial',
+            entity: { id: task.id, dueDate: task.dueDate, lockVersion: 2 },
+            revision: 2
+        }));
+        resetDerivedRecalculationCounters();
         const failures = await saveChanges();
 
         expect(failures).toEqual(new Map());
         expect(vi.mocked(apiClient.updateTask)).toHaveBeenCalledTimes(1000);
+        expect(derivedRecalculationCounters.scheduling).toBe(2);
+        expect(derivedRecalculationCounters.criticalPath).toBe(2);
+        expect(derivedRecalculationCounters.layout).toBe(2);
         expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
         expect(useTaskStore.getState().localTaskPatches).toEqual({});
         expect(addNotification).not.toHaveBeenCalled();
     }, 30_000);
+
+    it('deletes every task named by canonical mutation metadata without deleting the source task', async () => {
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'source-task', subject: 'Before', lockVersion: 1 }),
+            buildTask({ id: 'deleted-task', subject: 'Removed', lockVersion: 1 })
+        ]);
+        updateTask('source-task', { subject: 'Local source' });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 2,
+            completeness: 'partial',
+            entity: { id: 'source-task', subject: 'Canonical source', lockVersion: 2 },
+            revision: 2,
+            deletedEntityIds: ['deleted-task']
+        });
+        resetDerivedRecalculationCounters();
+
+        await saveChanges();
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks).toEqual([expect.objectContaining({ id: 'source-task', subject: 'Canonical source' })]);
+        expect(state.taskTombstones['source-task']).toBeUndefined();
+        expect(state.taskTombstones['deleted-task']).toMatchObject({
+            entityId: 'deleted-task',
+            source: 'server'
+        });
+        expect(derivedRecalculationCounters.scheduling).toBe(1);
+        expect(derivedRecalculationCounters.criticalPath).toBe(1);
+        expect(derivedRecalculationCounters.layout).toBe(1);
+    });
+
+    it('batches target-missing tombstone settlement with other task saves', async () => {
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'missing-task', subject: 'Gone', lockVersion: 1 }),
+            buildTask({ id: 'surviving-task', subject: 'Before', lockVersion: 1 })
+        ]);
+        updateTask('missing-task', { subject: 'Gone locally' });
+        updateTask('surviving-task', { subject: 'Survives' });
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => task.id === 'missing-task'
+            ? {
+                status: 'not_found',
+                error: 'Task was deleted',
+                failure: { kind: 'not_found', resourceRole: 'target', resourceType: 'task' }
+            }
+            : { status: 'ok', lockVersion: 2 });
+        resetDerivedRecalculationCounters();
+
+        const failures = await saveChanges();
+
+        const state = useTaskStore.getState();
+        expect(failures.get('missing-task')).toBe('Task was deleted');
+        expect(state.allTasks).toEqual([expect.objectContaining({ id: 'surviving-task', subject: 'Survives' })]);
+        expect(state.taskTombstones['missing-task']).toMatchObject({
+            entityId: 'missing-task',
+            source: 'server'
+        });
+        expect(state.modifiedTaskIds).toEqual(new Set());
+        expect(state.localTaskPatches).toEqual({});
+        expect(derivedRecalculationCounters.scheduling).toBe(1);
+        expect(derivedRecalculationCounters.criticalPath).toBe(1);
+        expect(derivedRecalculationCounters.layout).toBe(1);
+    });
 
     it('retains every local patch when a dependency cycle rejects an independent task in the same batch', async () => {
         const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();

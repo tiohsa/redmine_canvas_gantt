@@ -1506,8 +1506,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
     let(:relation) { instance_double(IssueRelation, id: 77, issue_from_id: 10, issue_to_id: 11, save: true) }
     let(:project_from) { instance_double(Project, id: 1) }
     let(:project_to) { instance_double(Project, id: 2) }
-    let(:issue_from) { instance_double(Issue, id: 10, project_id: 1, project: project_from, editable?: true) }
-    let(:issue_to) { instance_double(Issue, id: 11, project_id: 2, project: project_to, editable?: true) }
+    let(:issue_from) { instance_double(Issue, id: 10, project_id: 1, project: project_from, editable?: true, relations: []) }
+    let(:issue_to) { instance_double(Issue, id: 11, project_id: 2, project: project_to, editable?: true, relations: []) }
 
     before do
       allow(User).to receive(:current).and_return(current_user)
@@ -1682,8 +1682,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
     let(:current_user) { instance_double(User, id: 7, logged?: true, login: 'tester', language: 'en') }
     let(:issue_scope) { double('IssueScope') }
     let(:issue_project) { instance_double(Project, id: 1) }
-    let(:issue_from) { instance_double(Issue, id: 10, project_id: 1, project: issue_project, editable?: true, due_date: Date.new(2026, 1, 2), start_date: Date.new(2026, 1, 1)) }
-    let(:issue_to) { instance_double(Issue, id: 11, project_id: 1, project: issue_project, editable?: true, due_date: Date.new(2026, 1, 8), start_date: Date.new(2026, 1, 7)) }
+    let(:issue_from) { instance_double(Issue, id: 10, project_id: 1, project: issue_project, editable?: true, due_date: Date.new(2026, 1, 2), start_date: Date.new(2026, 1, 1), relations: []) }
+    let(:issue_to) { instance_double(Issue, id: 11, project_id: 1, project: issue_project, editable?: true, due_date: Date.new(2026, 1, 8), start_date: Date.new(2026, 1, 7), relations: []) }
     let(:relation) { instance_double(IssueRelation, id: 88, issue_from_id: 10, issue_to_id: 11, relation_type: 'precedes', delay: 2, save: true) }
 
     before do

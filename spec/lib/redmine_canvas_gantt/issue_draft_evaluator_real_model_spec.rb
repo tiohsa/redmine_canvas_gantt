@@ -294,6 +294,153 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator, type: :model do
     )
   end
 
+  it 'preserves a shared fixed Version when Project moves without Version intent' do
+    source_project = issue.project
+    destination_project = Project.find(2)
+    shared_tracker = Tracker.find(1)
+    role = Member.find_by!(user_id: current_user.id, project_id: source_project.id).roles.first
+    destination_member = Member.find_or_create_by!(user_id: current_user.id, project_id: destination_project.id)
+    destination_member.roles << role unless destination_member.roles.include?(role)
+    source_project.trackers = [shared_tracker]
+    destination_project.trackers = [shared_tracker]
+    shared_version = Version.create!(project: source_project, name: 'Canvas project move shared version', sharing: 'system')
+    issue.update_columns(
+      project_id: source_project.id,
+      tracker_id: shared_tracker.id,
+      fixed_version_id: shared_version.id,
+      category_id: nil
+    )
+    issue.reload
+
+    result = described_class.new(
+      current_user: current_user,
+      project_scope_ids: [source_project.id, destination_project.id]
+    ).evaluate(
+      issue: issue,
+      intent: { project_id: destination_project.id, lock_version: issue.lock_version }
+    )
+
+    expect(result).to be_valid
+    expect(result.issue.fixed_version_id).to eq(shared_version.id)
+    expect(result.normalizations).not_to include(include(field: 'fixed_version_id'))
+    expect(Issue.find(issue.id)).to have_attributes(
+      project_id: source_project.id,
+      fixed_version_id: shared_version.id
+    )
+  end
+
+  it 'clears an incompatible fixed Version through Redmine normalization' do
+    source_project = issue.project
+    destination_project = Project.find(2)
+    shared_tracker = Tracker.find(1)
+    role = Member.find_by!(user_id: current_user.id, project_id: source_project.id).roles.first
+    destination_member = Member.find_or_create_by!(user_id: current_user.id, project_id: destination_project.id)
+    destination_member.roles << role unless destination_member.roles.include?(role)
+    source_project.trackers = [shared_tracker]
+    destination_project.trackers = [shared_tracker]
+    incompatible_version = Version.create!(project: source_project, name: 'Canvas project move incompatible version')
+    issue.update_columns(
+      project_id: source_project.id,
+      tracker_id: shared_tracker.id,
+      fixed_version_id: incompatible_version.id,
+      category_id: nil
+    )
+    issue.reload
+
+    result = described_class.new(
+      current_user: current_user,
+      project_scope_ids: [source_project.id, destination_project.id]
+    ).evaluate(
+      issue: issue,
+      intent: { project_id: destination_project.id, lock_version: issue.lock_version }
+    )
+
+    expect(result).to be_valid
+    expect(result.issue.fixed_version_id).to be_nil
+    expect(result.normalizations).to include(
+      include(field: 'fixed_version_id', from: incompatible_version.id, to: nil, source: 'redmine')
+    )
+    expect(Issue.find(issue.id)).to have_attributes(
+      project_id: source_project.id,
+      fixed_version_id: incompatible_version.id
+    )
+  end
+
+  it 'reassigns a same-name Category through Redmine normalization' do
+    source_project = issue.project
+    destination_project = Project.find(2)
+    shared_tracker = Tracker.find(1)
+    role = Member.find_by!(user_id: current_user.id, project_id: source_project.id).roles.first
+    destination_member = Member.find_or_create_by!(user_id: current_user.id, project_id: destination_project.id)
+    destination_member.roles << role unless destination_member.roles.include?(role)
+    source_project.trackers = [shared_tracker]
+    destination_project.trackers = [shared_tracker]
+    source_category = IssueCategory.create!(project: source_project, name: 'Canvas project move same-name category')
+    destination_category = IssueCategory.create!(project: destination_project, name: source_category.name)
+    issue.update_columns(
+      project_id: source_project.id,
+      tracker_id: shared_tracker.id,
+      category_id: source_category.id,
+      fixed_version_id: nil
+    )
+    issue.reload
+
+    result = described_class.new(
+      current_user: current_user,
+      project_scope_ids: [source_project.id, destination_project.id]
+    ).evaluate(
+      issue: issue,
+      intent: { project_id: destination_project.id, lock_version: issue.lock_version }
+    )
+
+    expect(result).to be_valid
+    expect(result.issue.category_id).to eq(destination_category.id)
+    expect(result.normalizations).to include(
+      include(field: 'category_id', from: source_category.id, to: destination_category.id, source: 'redmine')
+    )
+    expect(Issue.find(issue.id)).to have_attributes(
+      project_id: source_project.id,
+      category_id: source_category.id
+    )
+  end
+
+  it 'clears a Category without a same-name destination through Redmine normalization' do
+    source_project = issue.project
+    destination_project = Project.find(2)
+    shared_tracker = Tracker.find(1)
+    role = Member.find_by!(user_id: current_user.id, project_id: source_project.id).roles.first
+    destination_member = Member.find_or_create_by!(user_id: current_user.id, project_id: destination_project.id)
+    destination_member.roles << role unless destination_member.roles.include?(role)
+    source_project.trackers = [shared_tracker]
+    destination_project.trackers = [shared_tracker]
+    source_category = IssueCategory.create!(project: source_project, name: 'Canvas project move missing category')
+    issue.update_columns(
+      project_id: source_project.id,
+      tracker_id: shared_tracker.id,
+      category_id: source_category.id,
+      fixed_version_id: nil
+    )
+    issue.reload
+
+    result = described_class.new(
+      current_user: current_user,
+      project_scope_ids: [source_project.id, destination_project.id]
+    ).evaluate(
+      issue: issue,
+      intent: { project_id: destination_project.id, lock_version: issue.lock_version }
+    )
+
+    expect(result).to be_valid
+    expect(result.issue.category_id).to be_nil
+    expect(result.normalizations).to include(
+      include(field: 'category_id', from: source_category.id, to: nil, source: 'redmine')
+    )
+    expect(Issue.find(issue.id)).to have_attributes(
+      project_id: source_project.id,
+      category_id: source_category.id
+    )
+  end
+
   it 'keeps a previous assignee outside destination candidates on a project-only move' do
     source_project = issue.project
     destination_project = Project.find(2)

@@ -4,6 +4,15 @@ import type { TaskEditMeta } from '../types/editMeta';
 import { previewContextChange } from './contextPreview';
 import { buildTaskDraftIntent, buildTrackerMutationIntent } from '../stores/taskStore/draftIntent';
 import type { LocalPatch, ServerSnapshot } from '../stores/taskStore/stateContract';
+import { useTaskStore } from '../stores/TaskStore';
+
+const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+        resolve = res;
+    });
+    return { promise, resolve };
+};
 
 const task = (overrides: Partial<Task> = {}): Task => ({
     id: '1',
@@ -156,6 +165,42 @@ describe('previewContextChange', () => {
         });
         expect(result.mutationIntent).toEqual({ project_id: 9 });
         expect(result.rollbackTaskUpdates).toMatchObject({ fixedVersionId: '4', categoryId: 5 });
+    });
+
+    it('rejects a preview response when the task generation changed after request start', async () => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        const original = task();
+        useTaskStore.getState().setTasks([original]);
+        const response = deferred<TaskEditMeta>();
+        const requestGeneration = useTaskStore.getState().editGenerations[original.id] ?? 0;
+
+        const preview = previewContextChange({
+            task: original,
+            kind: 'project',
+            targetId: 9,
+            fetchEditMeta: vi.fn(() => response.promise),
+            freshness: {
+                generation: requestGeneration,
+                currentGeneration: () => useTaskStore.getState().editGenerations[original.id] ?? 0
+            }
+        });
+
+        useTaskStore.getState().updateTask(original.id, { statusId: 9, statusName: 'Newer local status' });
+        response.resolve(meta({
+            draftContract: {
+                baseRevision: 4,
+                materialized: { project_id: 9, tracker_id: 7, status_id: 4 },
+                normalizations: [],
+                violations: []
+            }
+        }));
+
+        await expect(preview).rejects.toThrow('stale context preview');
+        expect(useTaskStore.getState().allTasks.find((candidate) => candidate.id === original.id)).toMatchObject({
+            projectId: '1',
+            statusId: 9,
+            statusName: 'Newer local status'
+        });
     });
 });
 
