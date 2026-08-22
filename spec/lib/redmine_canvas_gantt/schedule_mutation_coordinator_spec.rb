@@ -352,4 +352,161 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(q100).to be > 0
     expect(q200).to be <= (q100 * 2.5)
   end
+
+  it 'preserves observable state across relation and multi-level derived hierarchy callbacks' do
+    previous_value = Setting.parent_issue_dates
+    Setting.parent_issue_dates = 'derived'
+
+    grandparent = build_schedule_issue(
+      'Mixed graph grandparent',
+      start_date: nil,
+      due_date: nil
+    )
+    parent = build_schedule_issue(
+      'Mixed graph parent',
+      start_date: nil,
+      due_date: nil,
+      parent: grandparent
+    )
+    leaf = build_schedule_issue(
+      'Mixed graph leaf',
+      start_date: Date.new(2027, 1, 5),
+      due_date: Date.new(2027, 1, 6),
+      parent: parent
+    )
+    successor = build_schedule_issue(
+      'Mixed graph planned successor',
+      start_date: Date.new(2027, 1, 10),
+      due_date: Date.new(2027, 1, 11)
+    )
+    predecessor = build_schedule_issue(
+      'Mixed graph planned predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    IssueRelation.create!(
+      issue_from: predecessor,
+      issue_to: grandparent,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    IssueRelation.create!(
+      issue_from: leaf,
+      issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    [grandparent, parent, leaf, successor, predecessor].each(&:reload)
+
+    original_leaf_dates = [leaf.start_date, leaf.due_date]
+    result = coordinator.call(
+      operation_id: 'schedule:mixed-relation-derived-causality',
+      base_revisions: [successor, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
+      changes: [
+        { task_id: successor.id, start_date: '2027-11-20', due_date: '2027-11-21' },
+        { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
+      ]
+    )
+
+    expect(result.status).to eq(:ok)
+    expect(predecessor.reload.start_date).to eq(Date.new(2027, 11, 1))
+    expect(predecessor.due_date).to eq(Date.new(2027, 11, 2))
+    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 20))
+    expect(successor.due_date).to eq(Date.new(2027, 11, 21))
+
+    leaf.reload
+    parent.reload
+    grandparent.reload
+    expect([leaf.start_date, leaf.due_date]).not_to eq(original_leaf_dates)
+    expect([parent.start_date, parent.due_date]).to eq([leaf.start_date, leaf.due_date])
+    expect([grandparent.start_date, grandparent.due_date]).to eq([leaf.start_date, leaf.due_date])
+
+    callback_ids = [grandparent.id, parent.id, leaf.id]
+    expect(result.entities.map { |entity| entity[:id] }).to include(predecessor.id, successor.id, *callback_ids)
+    expect(result.revisions.keys).to include(predecessor.id, successor.id, *callback_ids)
+    result.entities.each do |entity|
+      issue = Issue.find(entity[:id])
+      expect(entity[:start_date]).to eq(issue.start_date&.iso8601)
+      expect(entity[:due_date]).to eq(issue.due_date&.iso8601)
+      expect(entity[:lock_version]).to eq(issue.lock_version)
+      expect(result.revisions.fetch(issue.id)).to eq(issue.lock_version)
+    end
+  ensure
+    Setting.parent_issue_dates = previous_value if previous_value
+  end
+
+  it 'keeps deep derived-hierarchy callback discovery and full mutation query growth linear' do
+    previous_value = Setting.parent_issue_dates
+    Setting.parent_issue_dates = 'derived'
+
+    build_chain = lambda do |depth, prefix|
+      root = build_schedule_issue(
+        "#{prefix} root",
+        start_date: Date.new(2027, 1, 1),
+        due_date: Date.new(2027, 1, 2)
+      )
+      cursor = root
+      (depth - 1).times do |index|
+        cursor = build_schedule_issue(
+          "#{prefix} node #{index + 1}",
+          start_date: Date.new(2027, 1, 1),
+          due_date: Date.new(2027, 1, 2),
+          parent: cursor
+        )
+      end
+      root
+    end
+
+    measure = lambda do |depth, prefix|
+      root = build_chain.call(depth, prefix)
+      predecessor = build_schedule_issue(
+        "#{prefix} predecessor",
+        start_date: Date.new(2027, 1, 1),
+        due_date: Date.new(2027, 1, 2)
+      )
+      IssueRelation.create!(
+        issue_from: predecessor,
+        issue_to: root,
+        relation_type: IssueRelation::TYPE_PRECEDES,
+        delay: 0
+      )
+      predecessor.reload
+
+      scope = nil
+      scope_queries = sql_query_count do
+        scope = coordinator.send(:resolve_callback_scope, [predecessor.id])
+      end
+      expect(scope[:ids].size).to eq(depth + 1)
+      # A chain of N hierarchy nodes has N downward reschedule edges and N
+      # upward/save edges, including the relation seed, i.e. exactly 2N.
+      expect(scope[:event_edges].size).to eq(depth * 2)
+
+      result = nil
+      mutation_queries = sql_query_count do
+        Issue.transaction do
+          result = coordinator.call(
+            operation_id: "schedule:deep-query-scale-#{depth}",
+            base_revisions: { predecessor.id => predecessor.lock_version },
+            changes: [{ task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }]
+          )
+          raise ActiveRecord::Rollback
+        end
+      end
+      expect(result.status).to eq(:ok), result.inspect
+
+      [scope_queries, mutation_queries, scope[:ids].size, scope[:event_edges].size]
+    end
+
+    sq40, mq40, issues40, edges40 = measure.call(40, 'Deep 40')
+    sq80, mq80, issues80, edges80 = measure.call(80, 'Deep 80')
+
+    expect(sq40).to be > 0
+    expect(mq40).to be > 0
+    expect(sq80).to be <= (sq40 * 2.75)
+    expect(mq80).to be <= (mq40 * 2.75)
+    expect(issues80).to eq((issues40 * 2) - 1)
+    expect(edges80).to eq(edges40 * 2)
+  ensure
+    Setting.parent_issue_dates = previous_value if previous_value
+  end
 end
