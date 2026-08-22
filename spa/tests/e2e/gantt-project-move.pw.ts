@@ -45,7 +45,10 @@ const setupProjectMove = async (
 ) => {
   await setupMockApp(page, {
     mockData: projectMoveData,
-    preferences: { visibleColumns: ['id', 'subject', 'project', 'tracker', 'assignee', 'version', 'category'] },
+    preferences: {
+      autoSave: true,
+      visibleColumns: ['id', 'subject', 'project', 'tracker', 'assignee', 'version', 'category'],
+    },
     editProjects: [
       { id: 2, name: 'P1' },
       { id: 3, name: 'P2' },
@@ -91,7 +94,7 @@ test('does not offer projects outside the current view as move targets', async (
   expect(options).not.toContain('Outside project');
 });
 
-test('clears version and category when moving projects', async ({ page }) => {
+test('uses server materialization to clear version and category without resending policy fields', async ({ page }) => {
   const patchPayloads: unknown[] = [];
   await setupProjectMove(page, { onPatchTask: (payload) => patchPayloads.push(payload) });
 
@@ -99,9 +102,49 @@ test('clears version and category when moving projects', async ({ page }) => {
   await page.locator('[data-testid="task-row-601"] select').first().selectOption({ label: 'P2' });
 
   await expect.poll(() => patchPayloads.length).toBe(1);
-  const payload = patchPayloads[0] as { task?: { fixed_version_id?: unknown; category_id?: unknown } };
-  expect(payload.task?.fixed_version_id).toBeNull();
-  expect(payload.task?.category_id).toBeNull();
+  const payload = patchPayloads[0] as { task?: Record<string, unknown> };
+  expect(payload.task).toEqual(expect.objectContaining({ project_id: 3 }));
+  expect(payload.task).not.toHaveProperty('fixed_version_id');
+  expect(payload.task).not.toHaveProperty('category_id');
+  await expect(page.getByTestId('cell-601-version')).not.toContainText('P1 version');
+  await expect(page.getByTestId('cell-601-category')).not.toContainText('P1 category');
+});
+
+test('keeps Auto Save OFF project projection out of follow-up intent and manual save payload', async ({ page }) => {
+  const patchPayloads: unknown[] = [];
+  await setupProjectMove(page, {
+    preferences: {
+      autoSave: false,
+      visibleColumns: ['id', 'subject', 'project', 'tracker', 'assignee', 'version', 'category'],
+    },
+    editOptionsByProject: {
+      '3': {
+        trackers: [
+          { id: 3, name: 'P2 projected tracker' },
+          { id: 4, name: 'P2 explicit tracker' },
+        ],
+      },
+    },
+    onPatchTask: (payload) => patchPayloads.push(payload),
+  });
+
+  await page.getByTestId('cell-601-project').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
+  await page.locator('[data-testid="task-row-601"] select').first().selectOption({ label: 'P2' });
+
+  await expect(page.getByTestId('cell-601-project')).toContainText('P2');
+  await expect(page.getByTestId('cell-601-tracker')).toContainText('P2 projected tracker');
+  expect(patchPayloads).toHaveLength(0);
+
+  await page.getByTestId('cell-601-tracker').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
+  await page.locator('[data-testid="task-row-601"] select').first().selectOption({ label: 'P2 explicit tracker' });
+  await page.getByTitle('Save changes').click();
+
+  await expect.poll(() => patchPayloads.length).toBe(1);
+  const payload = patchPayloads[0] as { task?: Record<string, unknown> };
+  expect(payload.task).toEqual(expect.objectContaining({ project_id: '3', tracker_id: 4 }));
+  expect(payload.task).not.toHaveProperty('status_id');
+  expect(payload.task).not.toHaveProperty('fixed_version_id');
+  expect(payload.task).not.toHaveProperty('category_id');
 });
 
 test('surfaces save failure when tracker or assignee is invalid for the target project', async ({ page }) => {
@@ -139,35 +182,51 @@ test('refreshes project-dependent inline edit options after moving projects', as
 
   await page.getByTestId('cell-601-project').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
   await page.locator('[data-testid="task-row-601"] select').first().selectOption({ label: 'P2' });
+  await expect(page.getByTestId('cell-601-project')).toContainText('P2');
+  await expect(page.locator('[data-testid="task-row-601"] select')).toHaveCount(0);
 
   await page.getByTestId('cell-601-tracker').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
-  let options = await page.locator('[data-testid="task-row-601"] select').first().locator('option').evaluateAll((entries) => (
+  let select = page.locator('[data-testid="task-row-601"] select').first();
+  await select.waitFor({ state: 'visible' });
+  let options = await select.locator('option').evaluateAll((entries) => (
     entries.map((entry) => entry.textContent ?? '')
   ));
   expect(options).toContain('P2 tracker');
   expect(options).not.toContain('P1 tracker');
-  await page.keyboard.press('Escape');
+  await select.focus();
+  await select.blur();
+  await expect(page.locator('[data-testid="task-row-601"] select')).toHaveCount(0);
 
   await page.getByTestId('cell-601-version').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
-  options = await page.locator('[data-testid="task-row-601"] select').first().locator('option').evaluateAll((entries) => (
+  select = page.locator('[data-testid="task-row-601"] select').first();
+  await select.waitFor({ state: 'visible' });
+  options = await select.locator('option').evaluateAll((entries) => (
     entries.map((entry) => entry.textContent ?? '')
   ));
   expect(options).toContain('P2 version');
   expect(options).not.toContain('P1 version');
-  await page.keyboard.press('Escape');
+  await select.focus();
+  await select.blur();
+  await expect(page.locator('[data-testid="task-row-601"] select')).toHaveCount(0);
 
   await page.getByTestId('cell-601-category').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
-  options = await page.locator('[data-testid="task-row-601"] select').first().locator('option').evaluateAll((entries) => (
+  select = page.locator('[data-testid="task-row-601"] select').first();
+  await select.waitFor({ state: 'visible' });
+  options = await select.locator('option').evaluateAll((entries) => (
     entries.map((entry) => entry.textContent ?? '')
   ));
   expect(options).toContain('P2 category');
   expect(options).not.toContain('P1 category');
-  await page.keyboard.press('Escape');
+  await select.focus();
+  await select.blur();
+  await expect(page.locator('[data-testid="task-row-601"] select')).toHaveCount(0);
 
   await page.getByTestId('cell-601-assignee').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
-  options = await page.locator('[data-testid="task-row-601"] select').first().locator('option').evaluateAll((entries) => (
+  select = page.locator('[data-testid="task-row-601"] select').first();
+  await select.waitFor({ state: 'visible' });
+  options = await select.locator('option').evaluateAll((entries) => (
     entries.map((entry) => entry.textContent ?? '')
   ));
   expect(options).toContain('P2 assignee');
-  expect(options).not.toContain('P1 assignee');
+  expect(options).toContain('Jane Doe');
 });

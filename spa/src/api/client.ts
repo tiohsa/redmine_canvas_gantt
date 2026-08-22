@@ -11,7 +11,7 @@ import type {
     Version,
     TaskStatus
 } from '../types';
-import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption, EditMetaCapabilityContext } from '../types/editMeta';
+import type { TaskEditMeta, InlineEditSettings, CustomFieldMeta, EditOption, EditMetaCapabilityContext, DraftContract } from '../types/editMeta';
 import type { BaselineSaveScope, BaselineSnapshot, BaselineTaskState } from '../types/baseline';
 import { buildIssueQueryParams, parseResolvedQueryState, type ResolvedQueryState } from '../utils/queryParams';
 import { normalizeQueryContext } from '../query/queryStateCodec';
@@ -86,6 +86,28 @@ export interface MutationMetadata {
     revision?: number;
     failure?: MutationFailure;
 }
+
+export type ScheduleMutationChange = {
+    taskId: string;
+    baseRevision: number;
+    startDate?: number | null;
+    dueDate?: number | null;
+    task?: unknown;
+    mutationFields?: Record<string, unknown>;
+};
+
+export type ScheduleMutationResult = MutationMetadata & {
+    status: MutationStatus;
+    operationId: string;
+    entities: PersistedTaskState[];
+    revisions: Record<string, number>;
+    errors?: string[];
+    conflict?: {
+        taskId?: string;
+        expectedRevision?: number;
+        actualRevision?: number;
+    };
+};
 
 interface BaselineSaveResult extends MutationMetadata {
     status: 'ok' | 'error';
@@ -326,6 +348,43 @@ const parseMutationTaskResult = async (response: Response): Promise<UpdateTaskRe
         parentId: data.parent_id === null ? undefined : (data.parent_id ? String(data.parent_id) : entity?.parentId),
         siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined,
         error: typeof data.error === 'string' ? data.error : undefined
+    };
+};
+
+const parseScheduleMutationResult = async (response: Response): Promise<ScheduleMutationResult> => {
+    const data = asRecord(await response.json().catch(() => ({}))) ?? {};
+    const rawEntities = Array.isArray(data.entities) ? data.entities : [];
+    const entities = rawEntities.map(parseMutationEntity).filter((entity): entity is PersistedTaskState => Boolean(entity));
+    const rawRevisions = asRecord(data.revisions) ?? {};
+    const revisions = Object.entries(rawRevisions).reduce<Record<string, number>>((result, [id, revision]) => {
+        if (typeof revision === 'number') result[String(id)] = revision;
+        return result;
+    }, {});
+    const rawStatus = data.status;
+    const status: MutationStatus = response.status === 409
+        ? 'conflict'
+        : typeof rawStatus === 'string' && ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error'].includes(rawStatus)
+            ? rawStatus as MutationStatus
+            : response.ok ? 'ok' : mutationStatusForHttp(response.status);
+    const errors = Array.isArray(data.errors) ? data.errors.filter((error): error is string => typeof error === 'string') : undefined;
+    const rawConflict = asRecord(data.conflict);
+    const conflictTaskId = rawConflict?.task_id ?? rawConflict?.taskId;
+    return {
+        status,
+        operationId: typeof data.operation_id === 'string' ? data.operation_id : '',
+        entities,
+        revisions,
+        ...(errors && errors.length > 0 ? { errors } : {}),
+        ...(rawConflict ? {
+            conflict: {
+                ...(conflictTaskId !== undefined ? { taskId: String(conflictTaskId) } : {}),
+                ...(typeof rawConflict.expected_revision === 'number' ? { expectedRevision: rawConflict.expected_revision } : {}),
+                ...(typeof rawConflict.expectedRevision === 'number' ? { expectedRevision: rawConflict.expectedRevision } : {}),
+                ...(typeof rawConflict.actual_revision === 'number' ? { actualRevision: rawConflict.actual_revision } : {}),
+                ...(typeof rawConflict.actualRevision === 'number' ? { actualRevision: rawConflict.actualRevision } : {})
+            }
+        } : {}),
+        ...parseMutationMetadata(data)
     };
 };
 
@@ -848,15 +907,22 @@ export const apiClient = {
         };
     },
 
-    fetchEditMeta: async (taskId: string, targetProjectId?: number, targetTrackerId?: number, targetStatusId?: number): Promise<TaskEditMeta> => {
+    fetchEditMeta: async (taskId: string, targetProjectId?: number, targetTrackerId?: number, targetStatusId?: number, draftIntent?: Record<string, unknown>): Promise<TaskEditMeta> => {
         const config = getConfig();
         const query = new URLSearchParams(buildViewContextQuery(config));
         if (targetProjectId !== undefined) query.set('target_project_id', String(targetProjectId));
         if (targetTrackerId !== undefined) query.set('target_tracker_id', String(targetTrackerId));
         if (targetStatusId !== undefined) query.set('target_status_id', String(targetStatusId));
-        const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${taskId}/edit_meta.json?${query}`, {
-            headers: buildJsonHeaders(config)
-        });
+        const response = await sessionFetch(
+            `${getGlobalApiBase(config)}/tasks/${taskId}/edit_meta${draftIntent ? '/preview' : ''}.json?${query}`,
+            draftIntent
+                ? {
+                    method: 'POST',
+                    headers: buildJsonHeaders(config, true),
+                    body: JSON.stringify({ task: draftIntent })
+                }
+                : { headers: buildJsonHeaders(config) }
+        );
 
         if (!response.ok) {
             throw new Error(await parseErrorMessage(response));
@@ -870,6 +936,7 @@ export const apiClient = {
         const editable = asRecord(root.editable);
         const options = asRecord(root.options);
         const customFieldValuesRecord = asRecord(root.custom_field_values) ?? {};
+        const draftContractRaw = asRecord(root.draft_contract);
 
         if (!task || !editable || !options) throw new Error('Invalid response');
 
@@ -949,8 +1016,22 @@ export const apiClient = {
             else if (value === null) customFieldValues[key] = null;
         });
 
+        const draftContract: DraftContract | undefined = draftContractRaw
+            ? {
+                baseRevision: parseRequiredNonNegativeInteger(draftContractRaw.base_revision, 'draft_contract.base_revision'),
+                materialized: asRecord(draftContractRaw.materialized) ?? {},
+                normalizations: Array.isArray(draftContractRaw.normalizations)
+                    ? draftContractRaw.normalizations.filter((value): value is DraftContract['normalizations'][number] => Boolean(asRecord(value)))
+                    : [],
+                violations: Array.isArray(draftContractRaw.violations)
+                    ? draftContractRaw.violations.filter((value): value is DraftContract['violations'][number] => Boolean(asRecord(value)))
+                    : []
+            }
+            : undefined;
+
         return {
             capabilityContext,
+            ...(draftContract ? { draftContract } : {}),
             task: {
                 id: String(taskIdValue),
                 subject: String(subjectValue),
@@ -1055,6 +1136,25 @@ export const apiClient = {
         }
 
         return parseMutationTaskResult(response);
+    },
+
+    scheduleMutation: async (changes: ScheduleMutationChange[], operationId: string): Promise<ScheduleMutationResult> => {
+        const config = getConfig();
+        const query = buildViewContextQuery(config);
+        const response = await sessionFetch(`${getGlobalApiBase(config)}/schedule_mutation.json?${query}`, {
+            method: 'POST',
+            headers: buildJsonHeaders(config, true),
+            body: JSON.stringify({
+                operation_id: operationId,
+                base_revisions: Object.fromEntries(changes.map(change => [change.taskId, change.baseRevision])),
+                changes: changes.map(({ taskId, startDate, dueDate }) => ({
+                    task_id: taskId,
+                    ...(startDate !== undefined ? { start_date: formatDateOnly(startDate) } : {}),
+                    ...(dueDate !== undefined ? { due_date: formatDateOnly(dueDate) } : {})
+                }))
+            })
+        });
+        return parseScheduleMutationResult(response);
     },
 
     createRelation: async (fromId: string, toId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata & { status: 'ok' }> => {

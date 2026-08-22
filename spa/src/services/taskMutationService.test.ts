@@ -31,7 +31,6 @@ describe('taskMutationService mutation boundary', () => {
             projectId: '5',
             trackerId: 6,
             fixedVersionId: '8',
-            authorId: 9,
             customFieldValues: { '10': 'value' }
         }, PERSISTABLE_TASK_FIELDS);
 
@@ -49,9 +48,9 @@ describe('taskMutationService mutation boundary', () => {
             project_id: '5',
             tracker_id: 6,
             fixed_version_id: '8',
-            author_id: 9,
             custom_field_values: { '10': 'value' }
         });
+        expect(fields).not.toHaveProperty('author_id');
     });
 
     it.each([

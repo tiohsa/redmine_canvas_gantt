@@ -26,6 +26,13 @@ interface Notification {
     type: NotificationType;
 }
 
+export type ActiveInlineEdit = {
+    taskId: string;
+    field: string;
+    source?: 'cell' | 'panel';
+    sessionId?: string;
+};
+
 interface UIState {
     notifications: Notification[];
     showProgressLine: boolean;
@@ -41,7 +48,7 @@ interface UIState {
     sidebarWidth: number;
     leftPaneVisible: boolean;
     rightPaneVisible: boolean;
-    activeInlineEdit: { taskId: string; field: string; source?: 'cell' | 'panel' } | null;
+    activeInlineEdit: ActiveInlineEdit | null;
     isFullScreen: boolean;
     issueDialogUrl: string | null;
     queryDialogUrl: string | null;
@@ -81,7 +88,7 @@ interface UIState {
     resetColumns: () => void;
     setColumnWidth: (key: string, width: number) => void;
     setSidebarWidth: (width: number) => void;
-    setActiveInlineEdit: (value: { taskId: string; field: string; source?: 'cell' | 'panel' } | null) => void;
+    setActiveInlineEdit: (value: ActiveInlineEdit | null, ownerSessionId?: string) => void;
     setFullScreen: (value: boolean) => void;
     toggleFullScreen: () => void;
     openIssueDialog: (url: string) => void;
@@ -298,7 +305,16 @@ export const useUIStore = create<UIState>((set, get) => ({
     },
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),
     setSidebarWidth: (width) => set(() => ({ sidebarWidth: width })),
-    setActiveInlineEdit: (value) => set(() => ({ activeInlineEdit: value })),
+    setActiveInlineEdit: (value, ownerSessionId) => set((state) => {
+        if (
+            value === null &&
+            ownerSessionId !== undefined &&
+            state.activeInlineEdit?.sessionId !== ownerSessionId
+        ) {
+            return {};
+        }
+        return { activeInlineEdit: value };
+    }),
     setFullScreen: (value) => set(() => ({ isFullScreen: value })),
     toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen })),
     openIssueDialog: (url) => set(() => ({ issueDialogUrl: buildRedmineUrl(url) })),

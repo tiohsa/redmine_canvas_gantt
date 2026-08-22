@@ -12,7 +12,16 @@ import {
     type ServerSnapshot
 } from './stateContract';
 
-type Entity = { id: string; subject: string; startDate?: number; dueDate?: number; lockVersion: number };
+type Entity = {
+    id: string;
+    subject: string;
+    projectId?: string;
+    trackerId?: number;
+    statusId?: number;
+    startDate?: number;
+    dueDate?: number;
+    lockVersion: number;
+};
 
 type TransitionMachine = {
     snapshot: ServerSnapshot<Entity>;
@@ -51,19 +60,31 @@ const createMachine = (): TransitionMachine => ({
     completedOperationIds: new Set()
 });
 
-const beginLocalEdit = (machine: TransitionMachine, operationId: string, fields: Partial<Entity>) => {
+const beginLocalChange = (
+    machine: TransitionMachine,
+    operationId: string,
+    projection: Partial<Entity>,
+    mutationIntent: Partial<Entity> = projection
+) => {
     machine.patches.push({
         entityId: '1',
-        fields,
+        projection,
+        mutationIntent,
         generation: Number(operationId.replace(/\D/g, '')) || 1,
         operationId
     });
-    machine.dirtyEntityIds.add('1');
+    if (Object.keys(mutationIntent).length > 0) machine.dirtyEntityIds.add('1');
     machine.queuedOperationIds.add(operationId);
 };
 
+const beginLocalEdit = (machine: TransitionMachine, operationId: string, fields: Partial<Entity>) => {
+    beginLocalChange(machine, operationId, fields);
+};
+
 const syncDirtyFromPatches = (machine: TransitionMachine, entityId: string) => {
-    if (machine.patches.some((patch) => patch.entityId === entityId)) {
+    if (machine.patches.some((patch) => (
+        patch.entityId === entityId && Object.keys(patch.mutationIntent).length > 0
+    ))) {
         machine.dirtyEntityIds.add(entityId);
     } else {
         machine.dirtyEntityIds.delete(entityId);
@@ -124,6 +145,267 @@ const applyMutationTransition = (machine: TransitionMachine, input: TransitionIn
 };
 
 describe('state lifecycle reference model', () => {
+    it('preserves projection and persistence intent through the specified draft/save/conflict lifecycle', () => {
+        const machine = createMachine();
+
+        beginLocalChange(
+            machine,
+            'operation-1',
+            { projectId: '2', trackerId: 7, statusId: 4 },
+            { projectId: '2' }
+        );
+        beginLocalChange(
+            machine,
+            'operation-2',
+            { trackerId: 8, statusId: 5 },
+            { trackerId: 8 }
+        );
+        beginLocalChange(
+            machine,
+            'operation-3',
+            { statusId: 6 },
+            { statusId: 6 }
+        );
+
+        expect(applyLocalPatches(machine.snapshot.entitiesById['1'], machine.patches)).toMatchObject({
+            projectId: '2',
+            trackerId: 8,
+            statusId: 6
+        });
+        const manualSaveIntent = machine.patches.reduce<Partial<Entity>>(
+            (intent, patch) => ({ ...intent, ...patch.mutationIntent }),
+            {}
+        );
+        expect(manualSaveIntent).toEqual({ projectId: '2', trackerId: 8, statusId: 6 });
+
+        machine.conflicts.add('1');
+        expect(machine.patches).toHaveLength(3);
+        const retryIntent = machine.patches.reduce<Partial<Entity>>(
+            (intent, patch) => ({ ...intent, ...patch.mutationIntent }),
+            {}
+        );
+        expect(retryIntent).toEqual(manualSaveIntent);
+
+        const remote = {
+            ...machine.snapshot.entitiesById['1'],
+            ...retryIntent,
+            subject: 'remote canonical',
+            lockVersion: 2
+        };
+        machine.snapshot = mergeServerEntity(machine.snapshot, remote, 'complete', remote.lockVersion);
+        machine.patches = machine.patches.filter((patch) => patch.generation > 3);
+        machine.conflicts.delete('1');
+        syncDirtyFromPatches(machine, '1');
+        expect(machine.dirtyEntityIds.has('1')).toBe(false);
+
+        beginLocalEdit(machine, 'operation-4', { subject: 'later local edit' });
+        expect(applyLocalPatches(machine.snapshot.entitiesById['1'], machine.patches).subject).toBe('later local edit');
+        machine.patches = commitOperationPatches(machine.patches, 'operation-4');
+        syncDirtyFromPatches(machine, '1');
+
+        expect(applyLocalPatches(machine.snapshot.entitiesById['1'], machine.patches)).toEqual(remote);
+        expect(machine.dirtyEntityIds.has('1')).toBe(false);
+        expect(machine.conflicts.has('1')).toBe(false);
+    });
+
+    it('walks the context-changing lifecycle from Load through conflict retry and a later edit', () => {
+        const machine = createMachine();
+        const loadedTask = {
+            id: '1',
+            subject: 'initial',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            lockVersion: 1
+        } satisfies Entity;
+        machine.snapshot = createServerSnapshot([loadedTask]);
+
+        let capabilityContext = {
+            taskId: '1',
+            projectId: 1,
+            trackerId: 1,
+            statusId: 1
+        };
+        let latestGeneration = 0;
+
+        const expectLifecycleState = (expected: {
+            snapshot: Partial<Entity>;
+            projection: Partial<Entity>;
+            intent: Partial<Entity>;
+            capability: typeof capabilityContext;
+            generation: number;
+            dirty: boolean;
+        }) => {
+            const snapshotTask = machine.snapshot.entitiesById['1'];
+            const projection = applyLocalPatches(snapshotTask, machine.patches);
+            const intent = machine.patches.reduce<Partial<Entity>>(
+                (fields, patch) => ({ ...fields, ...patch.mutationIntent }),
+                {}
+            );
+
+            expect(snapshotTask).toMatchObject(expected.snapshot);
+            expect(projection).toMatchObject(expected.projection);
+            expect(intent).toEqual(expected.intent);
+            expect(capabilityContext).toEqual(expected.capability);
+            expect(latestGeneration).toBe(expected.generation);
+            expect(machine.dirtyEntityIds.has('1')).toBe(expected.dirty);
+        };
+
+        // Load
+        expectLifecycleState({
+            snapshot: loadedTask,
+            projection: loadedTask,
+            intent: {},
+            capability: capabilityContext,
+            generation: 0,
+            dirty: false
+        });
+
+        // Project Preview: the fallback Tracker/Status is projection-only.
+        beginLocalChange(
+            machine,
+            'operation-1',
+            { projectId: '2', trackerId: 7, statusId: 2 },
+            { projectId: '2' }
+        );
+        latestGeneration = 1;
+        capabilityContext = { taskId: '1', projectId: 2, trackerId: 7, statusId: 2 };
+        expectLifecycleState({
+            snapshot: loadedTask,
+            projection: { projectId: '2', trackerId: 7, statusId: 2 },
+            intent: { projectId: '2' },
+            capability: capabilityContext,
+            generation: 1,
+            dirty: true
+        });
+
+        // Tracker Preview: a second server materialization remains projection-only.
+        beginLocalChange(
+            machine,
+            'operation-2',
+            { trackerId: 8, statusId: 3 },
+            { trackerId: 8 }
+        );
+        latestGeneration = 2;
+        capabilityContext = { taskId: '1', projectId: 2, trackerId: 8, statusId: 3 };
+        expectLifecycleState({
+            snapshot: loadedTask,
+            projection: { projectId: '2', trackerId: 8, statusId: 3 },
+            intent: { projectId: '2', trackerId: 8 },
+            capability: capabilityContext,
+            generation: 2,
+            dirty: true
+        });
+
+        // Explicit Status edit is the only new intent in this generation.
+        beginLocalChange(machine, 'operation-3', { statusId: 4 }, { statusId: 4 });
+        latestGeneration = 3;
+        capabilityContext = { taskId: '1', projectId: 2, trackerId: 8, statusId: 4 };
+        expectLifecycleState({
+            snapshot: loadedTask,
+            projection: { projectId: '2', trackerId: 8, statusId: 4 },
+            intent: { projectId: '2', trackerId: 8, statusId: 4 },
+            capability: capabilityContext,
+            generation: 3,
+            dirty: true
+        });
+
+        // Manual Save owns all three generations but serializes explicit intent only.
+        const manualSaveOperationId = 'manual-save';
+        machine.patches = machine.patches.map(patch => ({ ...patch, operationId: manualSaveOperationId }));
+        machine.queuedOperationIds.add(manualSaveOperationId);
+        const manualSavePayload = machine.patches.reduce<Partial<Entity>>(
+            (fields, patch) => ({ ...fields, ...patch.mutationIntent }),
+            {}
+        );
+        expect(manualSavePayload).toEqual({ projectId: '2', trackerId: 8, statusId: 4 });
+        expectLifecycleState({
+            snapshot: loadedTask,
+            projection: { projectId: '2', trackerId: 8, statusId: 4 },
+            intent: manualSavePayload,
+            capability: capabilityContext,
+            generation: 3,
+            dirty: true
+        });
+
+        // Conflict keeps the projection, intent, generation, and dirty ownership.
+        applyMutationTransition(machine, {
+            entityId: '1',
+            operationId: manualSaveOperationId,
+            response: { status: 'conflict', error: 'stale revision' }
+        });
+        expect(machine.conflicts.has('1')).toBe(true);
+        expectLifecycleState({
+            snapshot: loadedTask,
+            projection: { projectId: '2', trackerId: 8, statusId: 4 },
+            intent: manualSavePayload,
+            capability: capabilityContext,
+            generation: 3,
+            dirty: true
+        });
+
+        // Keep Local adopts the fresh remote canonical baseline before retrying.
+        const remoteCanonical = { ...loadedTask, subject: 'remote canonical', lockVersion: 2 };
+        machine.snapshot = mergeServerEntity(machine.snapshot, remoteCanonical, 'complete', remoteCanonical.lockVersion);
+        machine.conflicts.delete('1');
+        const retryOperationId = 'manual-save-retry';
+        machine.patches = machine.patches.map(patch => ({ ...patch, operationId: retryOperationId }));
+        machine.queuedOperationIds.add(retryOperationId);
+        expectLifecycleState({
+            snapshot: remoteCanonical,
+            projection: { subject: 'remote canonical', projectId: '2', trackerId: 8, statusId: 4 },
+            intent: manualSavePayload,
+            capability: capabilityContext,
+            generation: 3,
+            dirty: true
+        });
+
+        // Remote canonical success settles all owned generations.
+        applyMutationTransition(machine, {
+            entityId: '1',
+            operationId: retryOperationId,
+            response: {
+                status: 'ok',
+                entity: {
+                    ...remoteCanonical,
+                    ...manualSavePayload,
+                    lockVersion: 3
+                }
+            }
+        });
+        expectLifecycleState({
+            snapshot: { subject: 'remote canonical', projectId: '2', trackerId: 8, statusId: 4, lockVersion: 3 },
+            projection: { subject: 'remote canonical', projectId: '2', trackerId: 8, statusId: 4 },
+            intent: {},
+            capability: capabilityContext,
+            generation: 3,
+            dirty: false
+        });
+
+        // A later edit starts a new generation on top of the remote canonical state.
+        beginLocalEdit(machine, 'operation-4', { subject: 'later local edit' });
+        latestGeneration = 4;
+        expectLifecycleState({
+            snapshot: { subject: 'remote canonical', projectId: '2', trackerId: 8, statusId: 4, lockVersion: 3 },
+            projection: { subject: 'later local edit', projectId: '2', trackerId: 8, statusId: 4 },
+            intent: { subject: 'later local edit' },
+            capability: capabilityContext,
+            generation: 4,
+            dirty: true
+        });
+    });
+
+    it('does not infer dirty ownership from a projection-only local change', () => {
+        const machine = createMachine();
+
+        beginLocalChange(machine, 'operation-1', { statusId: 4 }, {});
+        syncDirtyFromPatches(machine, '1');
+
+        expect(machine.patches).toHaveLength(1);
+        expect(applyLocalPatches(machine.snapshot.entitiesById['1'], machine.patches).statusId).toBe(4);
+        expect(machine.dirtyEntityIds.has('1')).toBe(false);
+    });
+
     it.each([
         {
             label: 'ok',
@@ -307,7 +589,8 @@ describe('state lifecycle reference model', () => {
                     patches = patches.filter((patch) => patch.entityId !== '1' || patch.generation < generation - 2);
                     patches.push({
                         entityId: '1',
-                        fields: { subject: `local-${seed}-${step}` },
+                        projection: { subject: `local-${seed}-${step}` },
+                        mutationIntent: { subject: `local-${seed}-${step}` },
                         generation,
                         operationId: `operation-${seed}-${step}`
                     });

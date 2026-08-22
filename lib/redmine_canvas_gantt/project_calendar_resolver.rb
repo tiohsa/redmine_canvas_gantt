@@ -2,22 +2,23 @@ require_relative 'business_calendar_repository'
 
 module RedmineCanvasGantt
   class ProjectCalendarResolver
-    def initialize(repository: BusinessCalendarRepository.instance, fallback_non_working_week_days: nil)
+    def initialize(repository: BusinessCalendarRepository.instance, fallback_non_working_week_days: nil, snapshot: nil)
       @repository = repository
+      @snapshot = snapshot
       @fallback_non_working_week_days = normalize_fallback_week_days(
         fallback_non_working_week_days || Setting.non_working_week_days
       )
     end
 
     def status
-      @repository.snapshot.status
+      current_snapshot.status
     end
 
     def configuration_error?
       status == 'error'
     end
 
-    def calendar_id_for(project, snapshot: @repository.snapshot)
+    def calendar_id_for(project, snapshot: current_snapshot)
       project_and_ancestors(project).each do |candidate|
         identifier = candidate.respond_to?(:identifier) ? candidate.identifier.to_s : ''
         assigned = snapshot.project_calendars[identifier]
@@ -26,7 +27,7 @@ module RedmineCanvasGantt
       snapshot.default_calendar_id
     end
 
-    def calendar_for(project, snapshot: @repository.snapshot)
+    def calendar_for(project, snapshot: current_snapshot)
       return nil if snapshot.default_calendar_id.nil? && snapshot.project_calendars.empty?
 
       id = calendar_id_for(project, snapshot: snapshot)
@@ -44,6 +45,17 @@ module RedmineCanvasGantt
 
     def working_day?(date, project:)
       day_info(date, project: project).fetch(:type) == 'working'
+    end
+
+    # Matches Redmine::Utils::DateCalculation#working_days: count working
+    # dates in [from, to), using the project-specific calendar for every date.
+    def working_days(from, to, project:)
+      start_date = from.to_date
+      end_date = to.to_date
+      days = (end_date - start_date).to_i
+      return 0 unless days.positive?
+
+      (0...days).count { |offset| working_day?(start_date + offset, project: project) }
     end
 
     def normalize_working_date(date, direction:, project:)
@@ -91,7 +103,7 @@ module RedmineCanvasGantt
     end
 
     def payload(projects:)
-      snapshot = @repository.snapshot
+      snapshot = current_snapshot
       project_calendar_ids = Array(projects).each_with_object({}) do |project, result|
         calendar_id = calendar_id_for(project, snapshot: snapshot)
         result[project.id.to_s] = calendar_id if calendar_id
@@ -111,6 +123,10 @@ module RedmineCanvasGantt
     end
 
     private
+
+    def current_snapshot
+      @snapshot || @repository.snapshot
+    end
 
     def project_and_ancestors(project)
       ancestors = project.respond_to?(:ancestors) ? project.ancestors.to_a.reverse : []

@@ -129,6 +129,33 @@ describe('UiSidebar', () => {
         expect(screen.getByTestId('task-id-123')).toHaveTextContent('123');
     });
 
+    it('renders the author as read-only metadata', () => {
+        const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['author']);
+        useUIStore.setState({ visibleColumns: ['author'], columnSettings });
+        useTaskStore.setState({
+            viewport: { startDate: 0, scrollX: 0, scrollY: 0, scale: 1, width: 800, height: 600, rowHeight: 32 },
+            groupByProject: false
+        });
+        useTaskStore.getState().setTasks([{
+            id: 'author-task',
+            subject: 'Authored task',
+            authorId: 9,
+            authorName: 'Original Author',
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        }]);
+
+        render(<UiSidebar />);
+
+        const cell = screen.getByTestId('cell-author-task-author');
+        expect(cell).toHaveTextContent('Original Author');
+        expect(cell.querySelector('.task-cell-editable')).toBeNull();
+    });
+
     it('renders the subject tracker icon from the trackerId map', () => {
         const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['subject']);
         useUIStore.setState({ visibleColumns: ['subject'], columnSettings });
@@ -820,7 +847,7 @@ describe('UiSidebar', () => {
                     customFieldValues: {}
                 }
             },
-            loadingTaskId: null,
+            loadingByTaskId: {},
             error: null
         });
 
@@ -975,7 +1002,7 @@ describe('UiSidebar', () => {
                     customFieldValues: {}
                 }
             },
-            loadingTaskId: null,
+            loadingByTaskId: {},
             error: null
         });
 
@@ -1087,7 +1114,7 @@ describe('UiSidebar', () => {
                     customFieldValues: {}
                 }
             },
-            loadingTaskId: null,
+            loadingByTaskId: {},
             error: null
         });
 
@@ -1219,7 +1246,7 @@ describe('UiSidebar', () => {
                     customFieldValues: {}
                 }
             },
-            loadingTaskId: null,
+            loadingByTaskId: {},
             error: null
         });
 
@@ -1651,7 +1678,7 @@ describe('UiSidebar', () => {
                     customFieldValues: { [String(customFieldId)]: 'A-001' }
                 }
             },
-            loadingTaskId: null,
+            loadingByTaskId: {},
             error: null
         });
 
@@ -1732,7 +1759,7 @@ describe('UiSidebar', () => {
                     customFieldValues: { [String(customFieldId)]: 'A-001' }
                 }
             },
-            loadingTaskId: null,
+            loadingByTaskId: {},
             error: null
         });
 
@@ -1840,7 +1867,7 @@ describe('UiSidebar', () => {
                     customFieldValues: {}
                 }
             },
-            loadingTaskId: null,
+            loadingByTaskId: {},
             error: null
         });
 
@@ -1945,7 +1972,7 @@ describe('UiSidebar', () => {
                     customFieldValues: {}
                 }
             },
-            loadingTaskId: null,
+            loadingByTaskId: {},
             error: null
         });
 

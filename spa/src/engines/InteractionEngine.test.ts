@@ -12,6 +12,7 @@ import { configureBusinessCalendar } from '../utils/businessCalendar';
 vi.mock('../api/client', () => ({
     apiClient: {
         updateTask: vi.fn(),
+        scheduleMutation: vi.fn(),
         fetchData: vi.fn()
     }
 }));
@@ -91,6 +92,7 @@ const seedTasks = (tasks: Task[], overrides: Partial<ReturnType<typeof useTaskSt
 
 beforeEach(() => {
     vi.mocked(apiClient.updateTask).mockReset();
+    vi.mocked(apiClient.scheduleMutation).mockReset();
     vi.mocked(apiClient.fetchData).mockReset();
     useUIStore.setState({ isSidebarResizing: false });
 });
@@ -225,9 +227,10 @@ describe('InteractionEngine task updates', () => {
         });
 
         let persistedTask: Task | undefined;
-        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
-            if (task.id === task1.id) persistedTask = { ...task, lockVersion: 1 };
-            return { status: 'ok', lockVersion: 1 };
+        vi.mocked(apiClient.scheduleMutation).mockImplementation(async (changes) => {
+            const change = changes.find(candidate => candidate.taskId === task1.id);
+            if (change) persistedTask = { ...(change.task as Task), lockVersion: 1 };
+            return { status: 'ok', operationId: 'test', entities: [], revisions: { [task1.id]: 1 } };
         });
         vi.mocked(apiClient.fetchData).mockImplementation(async () => ({
             tasks: [persistedTask ?? task1, task2],
@@ -246,7 +249,7 @@ describe('InteractionEngine task updates', () => {
         window.dispatchEvent(new MouseEvent('mousemove', { clientX: bounds.x + 11, clientY: bounds.y + 1, bubbles: true }));
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
 
-        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalled());
+        await vi.waitFor(() => expect(apiClient.scheduleMutation).toHaveBeenCalled());
         await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalled());
         expect(persistedTask).toBeDefined();
         const reloadedTask = useTaskStore.getState().allTasks.find((task) => task.id === task1.id);
@@ -325,9 +328,12 @@ describe('InteractionEngine task updates', () => {
     it('restores the original bar position after an auto-save validation failure', async () => {
         const task = baseTask({ id: 'rejected-task', startDate: 0, dueDate: 10 });
         seedTasks([task], { autoSave: true });
-        vi.mocked(apiClient.updateTask).mockResolvedValue({
+        vi.mocked(apiClient.scheduleMutation).mockResolvedValue({
             status: 'validation_error',
-            error: 'Invalid task dates'
+            operationId: 'test',
+            entities: [],
+            revisions: {},
+            errors: ['Invalid task dates']
         });
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [task],
@@ -356,7 +362,7 @@ describe('InteractionEngine task updates', () => {
         }));
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
 
-        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalled());
+        await vi.waitFor(() => expect(apiClient.scheduleMutation).toHaveBeenCalled());
         expect(useTaskStore.getState().allTasks[0]).toMatchObject(task);
         expect(useTaskStore.getState().modifiedTaskIds).not.toContain(task.id);
 

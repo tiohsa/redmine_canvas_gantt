@@ -6,6 +6,7 @@ import { classifyMutationError, classifyMutationResult, classifyMutationSourceDi
 import { formatDateOnly } from '../utils/dateOnly';
 import { hasLocalPatchOwnership } from '../stores/taskStore/stateContract';
 import { useUIStore } from '../stores/UIStore';
+import { materializedTaskUpdates } from '../stores/taskStore/draftIntent';
 
 export class InlineEditService {
     static async saveTaskFields(params: {
@@ -20,7 +21,7 @@ export class InlineEditService {
         if (!current) throw new Error(i18n.t('label_task_not_found') || 'Task not found');
 
         if (Object.keys(optimisticTaskUpdates).length > 0) {
-            updateTask(taskId, optimisticTaskUpdates);
+            updateTask(taskId, optimisticTaskUpdates, materializedTaskUpdates(fields));
         }
         if (!autoSave) return;
 
