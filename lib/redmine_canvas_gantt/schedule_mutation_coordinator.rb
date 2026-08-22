@@ -18,6 +18,8 @@ module RedmineCanvasGantt
     )
 
     SCHEDULE_FIELDS = %i[start_date due_date].freeze
+    SAVE_EVENT = :save
+    RESCHEDULE_EVENT = :reschedule
 
     def initialize(current_user:, project_scope_ids:, payload_builder:, evaluator: nil)
       @current_user = current_user
@@ -70,7 +72,7 @@ module RedmineCanvasGantt
           raise ActiveRecord::Rollback
         end
 
-        apply_order = causal_apply_order(ids, callback_scope[:apply_edges])
+        apply_order = causal_apply_order(ids, callback_scope[:event_edges])
         unless apply_order
           transaction_result = failure('Schedule dependency graph cannot be ordered safely')
           raise ActiveRecord::Rollback
@@ -166,84 +168,179 @@ module RedmineCanvasGantt
       end
     end
 
-    # Resolve the finite set of Issues that Redmine callbacks can reach from
-    # the explicit plan. Relation callbacks travel through stored `precedes`
-    # edges, while Issue#update_parent_attributes travels to each ancestor.
-    # A derived parent can additionally reschedule descendants, so those
-    # descendants are included in the lock/reconciliation closure without
-    # being treated as explicit apply dependencies.
+    # Resolve the finite callback graph reachable from explicit Canvas saves.
+    #
+    # Redmine has two materially different callback states:
+    # - save(issue): after_save can reschedule successors and recalculate parent
+    # - reschedule(issue): a leaf/independent-date issue is saved, while a
+    #   derived parent propagates the reschedule down to its descendants
+    #
+    # Keeping those states separate avoids collapsing the upward
+    # child->parent recomputation and downward derived-parent reschedule into a
+    # false issue-level cycle. Direct-child propagation is a conservative,
+    # linear representation of Issue#reschedule_on!'s leaf propagation.
     def resolve_callback_scope(seed_ids)
-      visited = seed_ids.to_set
+      visited_events = Set.new
+      issue_ids = Set.new
       apply_edges = Set.new
-      frontier = seed_ids
+      event_edges = Set.new
+      issue_cache = {}
+      frontier = seed_ids.map { |id| schedule_event(SAVE_EVENT, id) }
 
       until frontier.empty?
-        issues = Issue.where(id: frontier).order(:id).to_a
-        relation_rows = IssueRelation
-          .where(issue_from_id: frontier, relation_type: IssueRelation::TYPE_PRECEDES)
-          .order(:issue_from_id, :issue_to_id)
-          .pluck(:issue_from_id, :issue_to_id)
-        next_ids = []
+        current_events = frontier.uniq.reject { |event| visited_events.include?(event) }
+        break if current_events.empty?
 
-        relation_rows.each do |from_id, to_id|
-          from_id = from_id.to_i
-          to_id = to_id.to_i
-          apply_edges.add([from_id, to_id])
-          next_ids << to_id unless visited.include?(to_id)
+        current_events.each { |event| visited_events.add(event) }
+        current_ids = current_events.map { |event| event[1] }.uniq
+        missing_ids = current_ids.reject { |id| issue_cache.key?(id) }
+        Issue.where(id: missing_ids).order(:id).each do |issue|
+          issue_cache[issue.id.to_i] = issue
         end
 
-        issues.each do |issue|
-          if issue.parent_id
-            parent_id = issue.parent_id.to_i
-            apply_edges.add([issue.id.to_i, parent_id])
-            next_ids << parent_id unless visited.include?(parent_id)
+        current_ids.each { |id| issue_ids.add(id) if issue_cache.key?(id) }
+        next_events = []
+
+        save_ids = current_events.filter_map do |kind, id|
+          id if kind == SAVE_EVENT && issue_cache.key?(id)
+        end
+        if save_ids.any?
+          relation_rows = IssueRelation
+            .where(issue_from_id: save_ids, relation_type: IssueRelation::TYPE_PRECEDES)
+            .order(:issue_from_id, :issue_to_id)
+            .pluck(:issue_from_id, :issue_to_id)
+
+          relation_rows.each do |from_id, to_id|
+            from_id = from_id.to_i
+            to_id = to_id.to_i
+            apply_edges.add([from_id, to_id])
+            from_event = schedule_event(SAVE_EVENT, from_id)
+            to_event = schedule_event(RESCHEDULE_EVENT, to_id)
+            event_edges.add([from_event, to_event])
+            next_events << to_event
           end
 
-          next unless issue.respond_to?(:dates_derived?) && issue.dates_derived?
-          next if issue.leaf?
+          save_ids.each do |id|
+            issue = issue_cache[id]
+            next unless issue
 
-          descendant_ids = Issue
-            .where(root_id: issue.root_id, lft: issue.lft..issue.rgt)
-            .where.not(id: issue.id)
-            .pluck(:id)
-          next_ids.concat(descendant_ids.map(&:to_i).reject { |id| visited.include?(id) })
+            if issue.parent_id
+              parent_id = issue.parent_id.to_i
+              apply_edges.add([issue.id.to_i, parent_id])
+              from_event = schedule_event(SAVE_EVENT, issue.id)
+              to_event = schedule_event(SAVE_EVENT, parent_id)
+              event_edges.add([from_event, to_event])
+              next_events << to_event
+            end
+          end
         end
 
-        new_ids = next_ids.uniq.reject { |id| visited.include?(id) }
-        new_ids.each { |id| visited.add(id) }
-        frontier = new_ids
+        reschedule_ids = current_events.filter_map do |kind, id|
+          id if kind == RESCHEDULE_EVENT && issue_cache.key?(id)
+        end
+        derived_parent_ids = []
+        reschedule_ids.each do |id|
+          issue = issue_cache[id]
+          next unless issue
+
+          if issue.respond_to?(:dates_derived?) && issue.dates_derived? && !issue.leaf?
+            derived_parent_ids << id
+          else
+            from_event = schedule_event(RESCHEDULE_EVENT, id)
+            to_event = schedule_event(SAVE_EVENT, id)
+            event_edges.add([from_event, to_event])
+            next_events << to_event
+          end
+        end
+
+        if derived_parent_ids.any?
+          child_rows = Issue
+            .where(parent_id: derived_parent_ids)
+            .order(:parent_id, :id)
+            .pluck(:parent_id, :id)
+
+          child_rows.each do |parent_id, child_id|
+            parent_id = parent_id.to_i
+            child_id = child_id.to_i
+            from_event = schedule_event(RESCHEDULE_EVENT, parent_id)
+            to_event = schedule_event(RESCHEDULE_EVENT, child_id)
+            event_edges.add([from_event, to_event])
+            next_events << to_event
+          end
+        end
+
+        frontier = next_events.reject { |event| visited_events.include?(event) }
       end
 
-      { ids: visited, apply_edges: apply_edges }
+      { ids: issue_ids, apply_edges: apply_edges, event_edges: event_edges }
     end
 
-    def causal_apply_order(planned_ids, edges)
+    def schedule_event(kind, issue_id)
+      [kind, issue_id.to_i]
+    end
+
+    # Topologically order only callback events that are reachable from the
+    # explicit Canvas saves, then project that event order back to planned
+    # Issue saves. A callback-only intermediary therefore preserves transitive
+    # causality without forcing unrelated callback states into the plan.
+    def causal_apply_order(planned_ids, event_edges)
       planned_id_set = planned_ids.to_set
       outgoing = Hash.new { |hash, key| hash[key] = Set.new }
-      indegree = planned_ids.to_h { |id| [id, 0] }
 
-      edges.each do |from_id, to_id|
-        next unless planned_id_set.include?(from_id) && planned_id_set.include?(to_id)
-        next if outgoing[from_id].include?(to_id)
-
-        outgoing[from_id].add(to_id)
-        indegree[to_id] += 1
+      event_edges.each do |from_event, to_event|
+        outgoing[from_event].add(to_event)
       end
 
-      ready = indegree.filter_map { |id, degree| id if degree.zero? }.sort
-      order = []
-      ready_index = 0
-      while ready_index < ready.length
-        id = ready[ready_index]
-        ready_index += 1
-        order << id
-        outgoing[id].each do |successor_id|
-          indegree[successor_id] -= 1
-          ready << successor_id if indegree[successor_id].zero?
+      start_events = planned_ids.map { |id| schedule_event(SAVE_EVENT, id) }
+      reachable = Set.new
+      stack = start_events.reverse
+      until stack.empty?
+        event = stack.pop
+        next if reachable.include?(event)
+
+        reachable.add(event)
+        outgoing[event].to_a.sort_by { |successor| event_sort_key(successor) }.reverse_each do |successor|
+          stack << successor
         end
       end
 
-      order.length == planned_ids.length ? order : nil
+      indegree = reachable.to_h { |event| [event, 0] }
+      reachable.each do |from_event|
+        outgoing[from_event].each do |to_event|
+          next unless reachable.include?(to_event)
+
+          indegree[to_event] += 1
+        end
+      end
+
+      ready = indegree.filter_map { |event, degree| event if degree.zero? }
+        .sort_by { |event| event_sort_key(event) }
+      event_order = []
+      ready_index = 0
+      while ready_index < ready.length
+        event = ready[ready_index]
+        ready_index += 1
+        event_order << event
+
+        outgoing[event].to_a.sort_by { |successor| event_sort_key(successor) }.each do |successor|
+          next unless indegree.key?(successor)
+
+          indegree[successor] -= 1
+          ready << successor if indegree[successor].zero?
+        end
+      end
+
+      return nil unless event_order.length == reachable.length
+
+      planned_order = event_order.filter_map do |kind, id|
+        id if kind == SAVE_EVENT && planned_id_set.include?(id)
+      end
+      planned_order.length == planned_ids.length ? planned_order : nil
+    end
+
+    def event_sort_key(event)
+      kind, id = event
+      [id.to_i, kind == SAVE_EVENT ? 0 : 1]
     end
 
     def normalize_revisions(revisions)

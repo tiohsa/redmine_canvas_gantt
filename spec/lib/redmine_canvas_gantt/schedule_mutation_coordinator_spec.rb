@@ -107,6 +107,103 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(predecessor.due_date).to eq(Date.new(2027, 11, 2))
   end
 
+  it 'preserves planned causality through a callback-only relation intermediary' do
+    successor = build_schedule_issue(
+      'Callback-only successor',
+      start_date: Date.new(2027, 1, 5),
+      due_date: Date.new(2027, 1, 6)
+    )
+    intermediary = build_schedule_issue(
+      'Callback-only intermediary',
+      start_date: Date.new(2027, 1, 3),
+      due_date: Date.new(2027, 1, 4)
+    )
+    predecessor = build_schedule_issue(
+      'Callback-only predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    IssueRelation.create!(
+      issue_from: predecessor,
+      issue_to: intermediary,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    IssueRelation.create!(
+      issue_from: intermediary,
+      issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    [successor, intermediary, predecessor].each(&:reload)
+
+    result = coordinator.call(
+      operation_id: 'schedule:callback-only-relation-causality',
+      base_revisions: [successor, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
+      changes: [
+        { task_id: successor.id, start_date: '2027-11-20', due_date: '2027-11-21' },
+        { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
+      ]
+    )
+
+    expect(result.status).to eq(:ok)
+    expect(predecessor.reload.start_date).to eq(Date.new(2027, 11, 1))
+    expect(predecessor.due_date).to eq(Date.new(2027, 11, 2))
+    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 20))
+    expect(successor.due_date).to eq(Date.new(2027, 11, 21))
+  end
+
+  it 'orders an explicit leaf intent after a callback-only derived-parent reschedule' do
+    previous_value = Setting.parent_issue_dates
+    Setting.parent_issue_dates = 'derived'
+
+    derived_parent = build_schedule_issue(
+      'Callback-only derived parent',
+      start_date: nil,
+      due_date: nil
+    )
+    planned_leaf = build_schedule_issue(
+      'Callback-only derived leaf',
+      start_date: Date.new(2027, 1, 5),
+      due_date: Date.new(2027, 1, 6),
+      parent: derived_parent
+    )
+    predecessor = build_schedule_issue(
+      'Derived-parent predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    IssueRelation.create!(
+      issue_from: predecessor,
+      issue_to: derived_parent,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    [derived_parent, planned_leaf, predecessor].each(&:reload)
+
+    scope = coordinator.send(:resolve_callback_scope, [predecessor.id, planned_leaf.id])
+    expect(scope[:event_edges]).to include(
+      [[:save, predecessor.id], [:reschedule, derived_parent.id]],
+      [[:reschedule, derived_parent.id], [:reschedule, planned_leaf.id]],
+      [[:reschedule, planned_leaf.id], [:save, planned_leaf.id]]
+    )
+
+    result = coordinator.call(
+      operation_id: 'schedule:derived-parent-callback-causality',
+      base_revisions: [planned_leaf, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
+      changes: [
+        { task_id: planned_leaf.id, start_date: '2027-11-20', due_date: '2027-11-21' },
+        { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
+      ]
+    )
+
+    expect(result.status).to eq(:ok)
+    expect(planned_leaf.reload.start_date).to eq(Date.new(2027, 11, 20))
+    expect(planned_leaf.due_date).to eq(Date.new(2027, 11, 21))
+  ensure
+    Setting.parent_issue_dates = previous_value if previous_value
+  end
+
   it 'returns the complete multi-hop relation callback closure' do
     issue_a = build_schedule_issue(
       'Closure A',
@@ -130,6 +227,12 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
 
     expect(scope[:ids]).to include(issue_a.id, issue_b.id, issue_c.id)
     expect(scope[:apply_edges]).to include([issue_a.id, issue_b.id], [issue_b.id, issue_c.id])
+    expect(scope[:event_edges]).to include(
+      [[:save, issue_a.id], [:reschedule, issue_b.id]],
+      [[:reschedule, issue_b.id], [:save, issue_b.id]],
+      [[:save, issue_b.id], [:reschedule, issue_c.id]],
+      [[:reschedule, issue_c.id], [:save, issue_c.id]]
+    )
 
     result = coordinator.call(
       operation_id: 'schedule:relation-causality',
