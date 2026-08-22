@@ -561,7 +561,8 @@ class CanvasGanttsController < ApplicationController
       revisions: result.revisions,
       invalidated_entity_ids: result.invalidated_entity_ids,
       **(result.errors.present? ? { errors: result.errors } : {}),
-      **(result.conflict ? { conflict: result.conflict } : {})
+      **(result.conflict ? { conflict: result.conflict } : {}),
+      **(result.failure ? { failure: result.failure } : {})
     }
     render json: response, status: {
       ok: :ok,
@@ -1268,7 +1269,10 @@ class CanvasGanttsController < ApplicationController
   end
 
   def render_relation_save_result(relation)
-    if relation.save
+    saved = RedmineCanvasGantt::ScheduleCalendarContext.with(resolver: business_calendar_resolver) do
+      relation.save
+    end
+    if saved
       render json: mutation_response(
         status: 'ok',
         completeness: 'complete',

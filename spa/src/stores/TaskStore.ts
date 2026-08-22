@@ -2760,6 +2760,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         const deletedEntityIds = result.deletedEntityIds ?? [];
                         const sourceDisposition = classifyMutationSourceDisposition(result);
                         const targetMissing = sourceDisposition === 'target_missing';
+                        const operationScopeConflict = result.status === 'conflict' && result.failure?.resourceRole === 'scope';
+                        if (operationScopeConflict) {
+                            // A topology conflict has no stale task owner. It
+                            // refreshes the remote scope while leaving every
+                            // local schedule intent unresolved for a later
+                            // explicit retry.
+                            invalidateDataRequests();
+                            mutationMetadataNeedsRefresh = true;
+                        }
                         if (invalidatedEntityIds.length > 0 || deletedEntityIds.length > 0) {
                             invalidateDataRequests();
                             if (invalidatedEntityIds.some((id) => id !== taskId)) {

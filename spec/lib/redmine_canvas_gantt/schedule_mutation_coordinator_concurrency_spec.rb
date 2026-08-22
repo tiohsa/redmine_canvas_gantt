@@ -191,14 +191,13 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
       start_date: Date.new(2027, 1, 1),
       due_date: Date.new(2027, 1, 2)
     )
-    callback_baseline = schedule_state(successor)
-
-    result, = run_barrier_schedule(
+    result, callback_baseline = run_barrier_schedule(
       predecessor,
       start_date: '2027-11-01',
       due_date: '2027-11-02'
     ) do
       create_committed_precedes(predecessor.reload, successor.reload)
+      schedule_state(successor)
     end
 
     expect_no_incomplete_success(result, successor, callback_baseline)
@@ -216,14 +215,61 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
       due_date: Date.new(2027, 1, 2)
     )
     relation = create_committed_precedes(predecessor, successor)
-    callback_baseline = schedule_state(successor)
-
-    result, = run_barrier_schedule(
+    result, callback_baseline = run_barrier_schedule(
       predecessor,
       start_date: '2027-11-01',
       due_date: '2027-11-02'
     ) do
       relation.reload.destroy!
+      schedule_state(successor)
+    end
+
+    expect_no_incomplete_success(result, successor, callback_baseline)
+  end
+
+  it 'does not return an incomplete success when a relation delay changes after callback-scope resolution' do
+    successor = build_committed_issue(
+      'Barrier relation-delay successor',
+      start_date: Date.new(2027, 1, 10),
+      due_date: Date.new(2027, 1, 11)
+    )
+    predecessor = build_committed_issue(
+      'Barrier relation-delay predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    relation = create_committed_precedes(predecessor, successor)
+    result, callback_baseline = run_barrier_schedule(
+      predecessor,
+      start_date: '2027-11-01',
+      due_date: '2027-11-02'
+    ) do
+      relation.reload.update!(delay: 1)
+      schedule_state(successor)
+    end
+
+    expect_no_incomplete_success(result, successor, callback_baseline)
+  end
+
+  it 'does not return an incomplete success when a relation type changes after callback-scope resolution' do
+    successor = build_committed_issue(
+      'Barrier relation-type successor',
+      start_date: Date.new(2027, 1, 10),
+      due_date: Date.new(2027, 1, 11)
+    )
+    predecessor = build_committed_issue(
+      'Barrier relation-type predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    relation = create_committed_precedes(predecessor, successor)
+    result, callback_baseline = run_barrier_schedule(
+      predecessor,
+      start_date: '2027-11-01',
+      due_date: '2027-11-02'
+    ) do
+      relation.reload.update!(relation_type: IssueRelation::TYPE_RELATES)
+      schedule_state(successor)
     end
 
     expect_no_incomplete_success(result, successor, callback_baseline)
@@ -256,17 +302,140 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     )
     create_committed_precedes(predecessor, derived_root)
     [derived_root, incoming_leaf, predecessor].each(&:reload)
-    callback_baseline = schedule_state(incoming_leaf)
-
-    result, = run_barrier_schedule(
+    result, callback_baseline = run_barrier_schedule(
       predecessor,
       start_date: '2027-11-01',
       due_date: '2027-11-02'
     ) do
       incoming_leaf.reload.update!(parent: derived_root.reload)
+      schedule_state(incoming_leaf)
     end
 
     expect_no_incomplete_success(result, incoming_leaf, callback_baseline)
+  ensure
+    Setting.parent_issue_dates = @original_parent_issue_dates if @original_parent_issue_dates
+    Setting.clear_cache if Setting.respond_to?(:clear_cache)
+  end
+
+  it 'does not return an incomplete success when a callback-only leaf leaves a derived branch' do
+    Setting.parent_issue_dates = 'derived'
+    Setting.clear_cache if Setting.respond_to?(:clear_cache)
+
+    derived_root = build_committed_issue(
+      'Barrier reparent-out root',
+      start_date: nil,
+      due_date: nil
+    )
+    build_committed_issue(
+      'Barrier reparent-out existing leaf',
+      start_date: Date.new(2027, 1, 5),
+      due_date: Date.new(2027, 1, 6),
+      parent: derived_root
+    )
+    outgoing_leaf = build_committed_issue(
+      'Barrier reparent-out leaf',
+      start_date: Date.new(2027, 1, 10),
+      due_date: Date.new(2027, 1, 11),
+      parent: derived_root
+    )
+    predecessor = build_committed_issue(
+      'Barrier reparent-out predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    create_committed_precedes(predecessor, derived_root)
+    [derived_root, outgoing_leaf, predecessor].each(&:reload)
+    result, callback_baseline = run_barrier_schedule(
+      predecessor,
+      start_date: '2027-11-01',
+      due_date: '2027-11-02'
+    ) do
+      outgoing_leaf.reload.update!(parent: nil)
+      schedule_state(outgoing_leaf)
+    end
+
+    expect_no_incomplete_success(result, outgoing_leaf, callback_baseline)
+  ensure
+    Setting.parent_issue_dates = @original_parent_issue_dates if @original_parent_issue_dates
+    Setting.clear_cache if Setting.respond_to?(:clear_cache)
+  end
+
+  it 'does not return an incomplete success when a callback-only child is added after callback-scope resolution' do
+    Setting.parent_issue_dates = 'derived'
+    Setting.clear_cache if Setting.respond_to?(:clear_cache)
+
+    derived_root = build_committed_issue(
+      'Barrier child-add root',
+      start_date: nil,
+      due_date: nil
+    )
+    build_committed_issue(
+      'Barrier child-add existing leaf',
+      start_date: Date.new(2027, 1, 5),
+      due_date: Date.new(2027, 1, 6),
+      parent: derived_root
+    )
+    predecessor = build_committed_issue(
+      'Barrier child-add predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    create_committed_precedes(predecessor, derived_root)
+    [derived_root, predecessor].each(&:reload)
+    result, callback_baseline = run_barrier_schedule(
+      predecessor,
+      start_date: '2027-11-01',
+      due_date: '2027-11-02'
+    ) do
+      added_leaf = build_committed_issue(
+        'Barrier child-add incoming leaf',
+        start_date: Date.new(2027, 1, 10),
+        due_date: Date.new(2027, 1, 11),
+        parent: derived_root.reload
+      )
+      schedule_state(added_leaf)
+    end
+
+    added_leaf = Issue.where(subject: 'Barrier child-add incoming leaf').order(id: :desc).first
+    expect(added_leaf).not_to be_nil
+    expect_no_incomplete_success(result, added_leaf, callback_baseline)
+  ensure
+    Setting.parent_issue_dates = @original_parent_issue_dates if @original_parent_issue_dates
+    Setting.clear_cache if Setting.respond_to?(:clear_cache)
+  end
+
+  it 'does not return an incomplete success when a callback-only child is deleted after callback-scope resolution' do
+    Setting.parent_issue_dates = 'derived'
+    Setting.clear_cache if Setting.respond_to?(:clear_cache)
+
+    derived_root = build_committed_issue(
+      'Barrier child-delete root',
+      start_date: nil,
+      due_date: nil
+    )
+    deleted_leaf = build_committed_issue(
+      'Barrier child-delete leaf',
+      start_date: Date.new(2027, 1, 5),
+      due_date: Date.new(2027, 1, 6),
+      parent: derived_root
+    )
+    predecessor = build_committed_issue(
+      'Barrier child-delete predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    create_committed_precedes(predecessor, derived_root)
+    [derived_root, deleted_leaf, predecessor].each(&:reload)
+    result, callback_baseline = run_barrier_schedule(
+      predecessor,
+      start_date: '2027-11-01',
+      due_date: '2027-11-02'
+    ) do
+      deleted_leaf.reload.destroy!
+      schedule_state(derived_root)
+    end
+
+    expect_no_incomplete_success(result, derived_root, callback_baseline)
   ensure
     Setting.parent_issue_dates = @original_parent_issue_dates if @original_parent_issue_dates
     Setting.clear_cache if Setting.respond_to?(:clear_cache)

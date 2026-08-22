@@ -12,7 +12,7 @@ import {
     classifyMutationResult,
     classifyMutationStatus
 } from '../../api/mutationOutcome';
-import type { MutationOutcomeKind } from '../../api/mutationOutcome';
+import type { MutationFailure, MutationOutcomeKind } from '../../api/mutationOutcome';
 import {
     localTaskFieldForMutationField,
     partitionTaskMutationFields,
@@ -58,6 +58,7 @@ export type ScheduleMutationResponse = {
     entities?: PersistedTaskState[];
     revisions?: Record<string, number>;
     errors?: string[];
+    failure?: MutationFailure;
     conflict?: {
         taskId?: string | number;
         task_id?: string | number;
@@ -480,7 +481,11 @@ export const saveModifiedTasks = async (
                     scheduleConflictEntities.set(taskId, entitiesById.get(taskId));
                     scheduleConflictRevisions.set(taskId, scheduleResult.revisions?.[taskId] ?? entitiesById.get(taskId)?.lockVersion);
                 }
-                onTaskResult?.(taskId, { status: scheduleResult.status, error: message });
+                onTaskResult?.(taskId, {
+                    status: scheduleResult.status,
+                    error: message,
+                    ...(scheduleResult.failure ? { failure: scheduleResult.failure } : {})
+                });
             });
         }
         // The Schedule endpoint owns only start/due. Keep a mixed task in the

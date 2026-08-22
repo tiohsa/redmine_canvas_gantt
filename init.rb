@@ -48,7 +48,19 @@ require_dependency Rails.root.join(
   'plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt',
   'schedule_mutation_coordinator'
 ).to_s
+require_dependency Rails.root.join(
+  'plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt',
+  'issue_schedule_calendar_patch'
+).to_s
 
 unless CanvasGanttsController < RedmineCanvasGantt::CanvasGanttsControllerPatch
   CanvasGanttsController.prepend(RedmineCanvasGantt::CanvasGanttsControllerPatch)
+end
+
+unless Issue.ancestors.include?(RedmineCanvasGantt::IssueScheduleCalendarPatch)
+  Issue.prepend(RedmineCanvasGantt::IssueScheduleCalendarPatch)
+end
+
+unless IssueRelation.ancestors.include?(RedmineCanvasGantt::IssueRelationScheduleCalendarPatch)
+  IssueRelation.prepend(RedmineCanvasGantt::IssueRelationScheduleCalendarPatch)
 end

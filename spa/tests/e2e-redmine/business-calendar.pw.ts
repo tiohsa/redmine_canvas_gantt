@@ -44,13 +44,17 @@ const createIssue = async (
 
 const fetchRestSchedule = async (page: Page, issueId: number) => {
   const result = await page.evaluate(async ({ issueId, restAuthorization }) => {
+    const config = (window as Window & { RedmineCanvasGantt: CanvasConfig }).RedmineCanvasGantt;
     const response = await fetch(`/issues/${issueId}.json`, {
       headers: {
         Accept: 'application/json',
         Authorization: restAuthorization
       }
     });
-    return { status: response.status, payload: await response.json().catch(() => ({})) };
+    const payload = await response.json().catch(() => ({}));
+    const dataResponse = await fetch(`${config.apiBase}/data.json`);
+    const dataPayload = await dataResponse.json().catch(() => ({}));
+    return { status: response.status, payload, dataPayload };
   }, { issueId, restAuthorization });
 
   expect(result.status).toBe(200);
@@ -61,11 +65,14 @@ const fetchRestSchedule = async (page: Page, issueId: number) => {
       lock_version?: number;
     };
   }).issue;
+  const task = (result.dataPayload as {
+    tasks?: Array<{ id?: number; lock_version?: number }>;
+  }).tasks?.find((entry) => entry.id === issueId);
   expect(issue).toBeTruthy();
   return {
     startDate: issue?.start_date ?? null,
     dueDate: issue?.due_date ?? null,
-    lockVersion: issue?.lock_version ?? 1
+    lockVersion: task?.lock_version ?? issue?.lock_version ?? 1
   };
 };
 

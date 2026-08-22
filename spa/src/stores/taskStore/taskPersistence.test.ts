@@ -112,6 +112,44 @@ describe('saveModifiedTasks', () => {
         ]));
     });
 
+    it('keeps topology conflicts at operation scope without publishing stale task conflicts', async () => {
+        const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
+        const onConflict = vi.fn();
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            errors: ['The schedule topology changed while the operation was running.'],
+            failure: {
+                kind: 'conflict' as const,
+                resourceRole: 'scope' as const,
+                resourceType: 'schedule_scope',
+                remoteAvailability: 'needs_refresh' as const
+            }
+        });
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [],
+            new Set(['A', 'B']),
+            [],
+            vi.fn(),
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, onConflict, undefined, undefined,
+            { A: { due_date: 11 }, B: { due_date: 21 } },
+            undefined,
+            { A: true, B: true },
+            scheduleMutation,
+            { A: 1, B: 1 }
+        );
+
+        expect(onConflict).not.toHaveBeenCalled();
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.settledFieldsByTask).toEqual(new Map());
+        expect(result.failures).toEqual(new Map([
+            ['A', 'The schedule topology changed while the operation was running.'],
+            ['B', 'The schedule topology changed while the operation was running.']
+        ]));
+    });
+
     it('sends one schedule operation for a multi-task date plan', async () => {
         const tasks = [buildTask({ id: 'A', startDate: 10, dueDate: 11 }), buildTask({ id: 'B', startDate: 20, dueDate: 21 })];
         const updateTask = vi.fn();

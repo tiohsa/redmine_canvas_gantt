@@ -255,6 +255,49 @@ describe('TaskStore canonical mutation reconciliation', () => {
             delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
         }
     });
+
+    it('keeps local schedule intent without creating task conflicts on a topology conflict', async () => {
+        const tasks = [
+            buildTask({ id: 'topology-A', dueDate: TUESDAY, lockVersion: 1 }),
+            buildTask({ id: 'topology-B', dueDate: TUESDAY, lockVersion: 1 })
+        ];
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            errors: ['The schedule topology changed while the operation was running.'],
+            failure: {
+                kind: 'conflict' as const,
+                resourceRole: 'scope' as const,
+                resourceType: 'schedule_scope',
+                remoteAvailability: 'needs_refresh' as const
+            }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData(tasks));
+
+        try {
+            useTaskStore.getState().setTasks(tasks);
+            useTaskStore.getState().updateTask('topology-A', { dueDate: WEDNESDAY });
+            useTaskStore.getState().updateTask('topology-B', { dueDate: WEDNESDAY });
+
+            const failures = await useTaskStore.getState().saveChanges();
+            const state = useTaskStore.getState();
+
+            expect(failures).toEqual(new Map([
+                ['topology-A', 'The schedule topology changed while the operation was running.'],
+                ['topology-B', 'The schedule topology changed while the operation was running.']
+            ]));
+            expect(state.modifiedTaskIds).toEqual(new Set(['topology-A', 'topology-B']));
+            expect(state.localTaskPatches['topology-A']).toHaveLength(1);
+            expect(state.localTaskPatches['topology-B']).toHaveLength(1);
+            expect(state.taskConflicts).toEqual({});
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
 });
 
 describe('TaskStore bar operation rollback', () => {

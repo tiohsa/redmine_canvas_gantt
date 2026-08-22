@@ -298,6 +298,44 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       .to eq(original_dates)
   end
 
+  it 'returns an operation-level conflict after the bounded topology retry budget' do
+    klass = Class.new(described_class) do
+      attr_reader :scope_calls
+
+      private
+
+      def resolve_callback_scope(seed_ids)
+        @scope_calls = @scope_calls.to_i + 1
+        super.merge(signature: [@scope_calls])
+      end
+    end
+    planned_issue = planned_issues.first
+    coordinator = klass.new(
+      current_user: current_user,
+      project_scope_ids: [planned_issue.project_id],
+      payload_builder: payload_builder
+    )
+
+    result = coordinator.call(
+      operation_id: 'schedule:topology-retry-exhausted',
+      base_revisions: { planned_issue.id => planned_issue.lock_version },
+      changes: [{ task_id: planned_issue.id, start_date: '2027-03-01', due_date: '2027-03-02' }]
+    )
+
+    expect(result.status).to eq(:conflict)
+    expect(result.entities).to eq([])
+    expect(result.revisions).to eq({})
+    expect(result.invalidated_entity_ids).to eq([])
+    expect(result.conflict).to be_nil
+    expect(result.failure).to eq(
+      kind: 'conflict',
+      resource_role: 'scope',
+      resource_type: 'schedule_scope',
+      remote_availability: 'needs_refresh'
+    )
+    expect(coordinator.scope_calls).to eq(described_class::MAX_ATTEMPTS * 2)
+  end
+
   it 'rolls back all planned writes when one schedule change is invalid' do
     expect(planned_issues.length).to eq(2)
     original = planned_issues.to_h { |issue| [issue.id, [issue.start_date, issue.due_date, issue.lock_version]] }
