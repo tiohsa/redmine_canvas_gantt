@@ -177,6 +177,36 @@ export const applyLocalPatches = <T extends { id: string }>(
     patches: Array<LocalPatch<T>>
 ): T => patches.reduce((current, patch) => ({ ...current, ...patch.projection }), entity);
 
+export const settleLocalPatchFields = <T extends { id: string }>(
+    patches: Array<LocalPatch<T>>,
+    settledGeneration: number,
+    settledFields: Iterable<string>
+): Array<LocalPatch<T>> => {
+    const settled = new Set(settledFields);
+    if (settled.size === 0) return patches;
+
+    return patches.reduce<Array<LocalPatch<T>>>((remaining, patch) => {
+        if (patch.generation > settledGeneration) {
+            remaining.push(patch);
+            return remaining;
+        }
+
+        const mutationFields = new Set(Object.keys(patch.mutationIntent));
+        const mutationIntent = Object.fromEntries(
+            Object.entries(patch.mutationIntent).filter(([field]) => !settled.has(field))
+        ) as Partial<T>;
+        const projection = Object.fromEntries(
+            Object.entries(patch.projection).filter(([field]) => (
+                mutationFields.has(field) && !settled.has(field)
+            ))
+        ) as Partial<T>;
+        if (Object.keys(projection).length > 0 || Object.keys(mutationIntent).length > 0) {
+            remaining.push({ ...patch, projection, mutationIntent });
+        }
+        return remaining;
+    }, []);
+};
+
 export const mergeSnapshotWithPatches = <T extends { id: string }>(
     snapshot: ServerSnapshot<T>,
     patches: Array<LocalPatch<T>>

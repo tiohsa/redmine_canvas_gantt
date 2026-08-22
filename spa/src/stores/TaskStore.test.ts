@@ -205,6 +205,56 @@ describe('TaskStore canonical mutation reconciliation', () => {
             { subject: 'explicit intended value' }
         );
     });
+
+    it('settles schedule-owned and residual fields independently in one manual save', async () => {
+        const original = buildTask({ id: 'mixed-fields', subject: 'persisted', dueDate: TUESDAY, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok',
+            entities: [{ id: original.id, dueDate: WEDNESDAY, lockVersion: 2 }],
+            revisions: { [original.id]: 2 }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 3,
+            entity: { id: original.id, subject: 'local subject', lockVersion: 3 }
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...original, dueDate: WEDNESDAY, subject: 'local subject', lockVersion: 3 }
+        ]));
+
+        try {
+            useTaskStore.getState().setTasks([original]);
+            useTaskStore.getState().updateTask(original.id, { dueDate: WEDNESDAY, subject: 'local subject' });
+
+            const failures = await useTaskStore.getState().saveChanges();
+
+            expect(failures).toEqual(new Map());
+            expect(scheduleMutation).toHaveBeenCalledTimes(1);
+            expect(scheduleMutation.mock.calls[0][0][0]).toMatchObject({
+                taskId: original.id,
+                dueDate: WEDNESDAY
+            });
+            expect(apiClient.updateTask).toHaveBeenCalledWith(
+                expect.objectContaining({ id: original.id, lockVersion: 2 }),
+                expect.any(String),
+                { subject: 'local subject' }
+            );
+            expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
+            expect(useTaskStore.getState().localTaskPatches[original.id]).toBeUndefined();
+            expect(useTaskStore.getState().allTasks[0]).toMatchObject({
+                dueDate: WEDNESDAY,
+                subject: 'local subject',
+                lockVersion: 3
+            });
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
 });
 
 describe('TaskStore bar operation rollback', () => {

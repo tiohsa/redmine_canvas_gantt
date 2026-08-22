@@ -50,6 +50,7 @@ import type { MutationRemoteAvailability } from '../api/mutationOutcome';
 import { buildTaskMutationDelta, BULK_TASK_FIELDS, PERSISTABLE_TASK_FIELDS, taskMutationFields, taskMutationService, type TaskFields } from '../services/taskMutationService';
 import {
     applyLocalPatches,
+    settleLocalPatchFields,
     canApplyReadResponse,
     createReadContext,
     createServerSnapshot,
@@ -2834,7 +2835,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     }))) : undefined,
                     snapshot.serverTaskSnapshot.revisions
                 );
-                const { failures, savedTaskIds } = saveResult;
+                const { failures, savedTaskIds, settledFieldsByTask } = saveResult;
 
                 if (savedLockVersions.size > 0 || mutationMetadataRecords.length > 0) {
                     set((state) => {
@@ -2897,7 +2898,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
                             const patches = state.localTaskPatches[taskId] ?? [];
                             const patchesToApply = savedLockVersions.has(taskId)
-                                ? patches.filter(patch => patch.generation > (snapshotGenerations[taskId] ?? 0))
+                                ? settleLocalPatchFields(
+                                    patches,
+                                    snapshotGenerations[taskId] ?? 0,
+                                    settledFieldsByTask.get(taskId) ?? []
+                                )
                                 : patches;
                             settledTaskById.set(taskId, applyLocalPatches(canonicalTask, patchesToApply));
                         });
@@ -2969,11 +2974,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     snapshotTaskIds.forEach((taskId) => {
                         if (!savedTaskIds.has(taskId)) return;
                         const savedGeneration = snapshotGenerations[taskId] ?? 0;
-                        const remainingPatches = (localTaskPatches[taskId] ?? [])
-                            .filter(patch => {
-                                if (patch.generation > savedGeneration) return true;
-                                return false;
-                            });
+                        const remainingPatches = settleLocalPatchFields(
+                            localTaskPatches[taskId] ?? [],
+                            savedGeneration,
+                            settledFieldsByTask.get(taskId) ?? []
+                        );
                         if (remainingPatches.length > 0) {
                             localTaskPatches[taskId] = remainingPatches;
                         } else {

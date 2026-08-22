@@ -678,6 +678,33 @@ describe('mutation error classification', () => {
         expect(result.entity).toBeUndefined();
     });
 
+    it('normalizes schedule conflict scope from the server contract', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 409,
+            statusText: 'Conflict',
+            json: async () => ({
+                status: 'conflict',
+                operation_id: 'schedule:1',
+                entities: [],
+                revisions: {},
+                conflict: { task_id: 42, expected_revision: 1, actual_revision: 2 }
+            })
+        }) as unknown as typeof fetch);
+
+        const result = await apiClient.scheduleMutation([
+            { taskId: '42', baseRevision: 1, dueDate: 11 }
+        ], 'schedule:1');
+
+        expect(result.conflict).toEqual({ taskId: '42', expectedRevision: 1, actualRevision: 2 });
+    });
+
     it('keeps mutation entities persisted-only', async () => {
         window.RedmineCanvasGantt = {
             projectId: 1,

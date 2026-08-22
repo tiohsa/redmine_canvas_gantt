@@ -103,7 +103,7 @@ export type ScheduleMutationResult = MutationMetadata & {
     revisions: Record<string, number>;
     errors?: string[];
     conflict?: {
-        taskId?: number;
+        taskId?: string;
         expectedRevision?: number;
         actualRevision?: number;
     };
@@ -367,13 +367,23 @@ const parseScheduleMutationResult = async (response: Response): Promise<Schedule
             ? rawStatus as MutationStatus
             : response.ok ? 'ok' : mutationStatusForHttp(response.status);
     const errors = Array.isArray(data.errors) ? data.errors.filter((error): error is string => typeof error === 'string') : undefined;
+    const rawConflict = asRecord(data.conflict);
+    const conflictTaskId = rawConflict?.task_id ?? rawConflict?.taskId;
     return {
         status,
         operationId: typeof data.operation_id === 'string' ? data.operation_id : '',
         entities,
         revisions,
         ...(errors && errors.length > 0 ? { errors } : {}),
-        ...(data.conflict && typeof data.conflict === 'object' ? { conflict: data.conflict as ScheduleMutationResult['conflict'] } : {}),
+        ...(rawConflict ? {
+            conflict: {
+                ...(conflictTaskId !== undefined ? { taskId: String(conflictTaskId) } : {}),
+                ...(typeof rawConflict.expected_revision === 'number' ? { expectedRevision: rawConflict.expected_revision } : {}),
+                ...(typeof rawConflict.expectedRevision === 'number' ? { expectedRevision: rawConflict.expectedRevision } : {}),
+                ...(typeof rawConflict.actual_revision === 'number' ? { actualRevision: rawConflict.actual_revision } : {}),
+                ...(typeof rawConflict.actualRevision === 'number' ? { actualRevision: rawConflict.actualRevision } : {})
+            }
+        } : {}),
         ...parseMutationMetadata(data)
     };
 };

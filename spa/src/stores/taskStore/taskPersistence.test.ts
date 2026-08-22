@@ -26,6 +26,92 @@ const schedulingIntent = (taskIds: Array<string | Task>): Record<string, boolean
 );
 
 describe('saveModifiedTasks', () => {
+    it('partitions mixed schedule and residual fields and hands canonical revisions to generic mutation', async () => {
+        const tasks = [
+            buildTask({ id: 'A', subject: 'old subject', dueDate: 11, lockVersion: 1 }),
+            buildTask({ id: 'B', subject: 'old B', lockVersion: 5 })
+        ];
+        const updateTask = vi.fn().mockImplementation(async (task: Task, _operationId?: string, fields?: TaskFields) => ({
+            status: 'ok' as const,
+            lockVersion: task.id === 'B' ? 7 : 3,
+            entity: { id: task.id, subject: fields?.subject, lockVersion: task.id === 'B' ? 7 : 3 }
+        }));
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok' as const,
+            entities: [
+                { id: 'A', dueDate: 11, lockVersion: 2 },
+                { id: 'B', subject: 'old B', lockVersion: 6 }
+            ],
+            revisions: { A: 2, B: 6 }
+        });
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [],
+            new Set(['A', 'B']),
+            [],
+            updateTask,
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, undefined, undefined, undefined,
+            { A: { due_date: 11, subject: 'New subject' }, B: { subject: 'New B' } },
+            undefined,
+            { A: true, B: false },
+            scheduleMutation,
+            { A: 1, B: 5 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledWith([
+            expect.objectContaining({ taskId: 'A', fields: { due_date: 11 } })
+        ]);
+        expect(updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'A', lockVersion: 2 }),
+            expect.any(String),
+            { subject: 'New subject' }
+        );
+        expect(updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'B', lockVersion: 6 }),
+            expect.any(String),
+            { subject: 'New B' }
+        );
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toEqual(new Set(['A', 'B']));
+        expect(result.settledFieldsByTask.get('A')).toEqual(new Set(['dueDate', 'subject']));
+    });
+
+    it('publishes only the stale schedule entity as an external conflict', async () => {
+        const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
+        const onConflict = vi.fn();
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            errors: ['stale A'],
+            entities: [{ id: 'A', dueDate: 12, lockVersion: 2 }],
+            revisions: { A: 2 },
+            conflict: { taskId: 'A', expectedRevision: 1, actualRevision: 2 }
+        });
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [],
+            new Set(['A', 'B']),
+            [],
+            vi.fn(),
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, onConflict, undefined, undefined,
+            { A: { due_date: 11 }, B: { due_date: 21 } },
+            undefined,
+            { A: true, B: true },
+            scheduleMutation,
+            { A: 1, B: 1 }
+        );
+
+        expect(onConflict).toHaveBeenCalledTimes(1);
+        expect(onConflict).toHaveBeenCalledWith('A', 'stale A', expect.objectContaining({ id: 'A' }), 2);
+        expect(result.failures).toEqual(new Map([
+            ['A', 'stale A'],
+            ['B', 'stale A']
+        ]));
+    });
+
     it('sends one schedule operation for a multi-task date plan', async () => {
         const tasks = [buildTask({ id: 'A', startDate: 10, dueDate: 11 }), buildTask({ id: 'B', startDate: 20, dueDate: 21 })];
         const updateTask = vi.fn();

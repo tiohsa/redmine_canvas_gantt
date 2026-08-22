@@ -29,6 +29,20 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
 
   before { User.current = current_user }
 
+  def build_schedule_issue(subject, start_date:, due_date:, parent: nil)
+    source = Issue.find(1)
+    Issue.create!(
+      project: source.project,
+      tracker: source.tracker,
+      status: source.status,
+      author: current_user,
+      subject: subject,
+      start_date: start_date,
+      due_date: due_date,
+      parent: parent
+    )
+  end
+
   def sql_query_count
     count = 0
     subscriber = lambda do |_name, _start, _finish, _id, payload|
@@ -55,6 +69,113 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(result.status).to eq(:ok)
     expect(result.entities.map { |entity| entity[:id] }).to include(*planned_issues.map(&:id))
     expect(planned_issues.map(&:id).map { |id| result.revisions.fetch(id) }).to all(be > 0)
+  end
+
+  it 'applies a reverse-id precedes plan in causal order before final reconciliation' do
+    successor = build_schedule_issue(
+      'Reverse ID successor',
+      start_date: Date.new(2027, 1, 2),
+      due_date: Date.new(2027, 1, 3)
+    )
+    predecessor = build_schedule_issue(
+      'Reverse ID predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 1)
+    )
+    IssueRelation.create!(
+      issue_from: predecessor,
+      issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    successor.reload
+    predecessor.reload
+
+    result = coordinator.call(
+      operation_id: 'schedule:reverse-id-causality',
+      base_revisions: [successor, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
+      changes: [
+        { task_id: successor.id, start_date: '2027-11-20', due_date: '2027-11-21' },
+        { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
+      ]
+    )
+
+    expect(result.status).to eq(:ok)
+    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 20))
+    expect(successor.due_date).to eq(Date.new(2027, 11, 21))
+    expect(predecessor.reload.start_date).to eq(Date.new(2027, 11, 1))
+    expect(predecessor.due_date).to eq(Date.new(2027, 11, 2))
+  end
+
+  it 'returns the complete multi-hop relation callback closure' do
+    issue_a = build_schedule_issue(
+      'Closure A',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    issue_b = build_schedule_issue(
+      'Closure B',
+      start_date: Date.new(2027, 1, 3),
+      due_date: Date.new(2027, 1, 4)
+    )
+    issue_c = build_schedule_issue(
+      'Closure C',
+      start_date: Date.new(2027, 1, 5),
+      due_date: Date.new(2027, 1, 6)
+    )
+    IssueRelation.create!(issue_from: issue_a, issue_to: issue_b, relation_type: IssueRelation::TYPE_PRECEDES, delay: 0)
+    IssueRelation.create!(issue_from: issue_b, issue_to: issue_c, relation_type: IssueRelation::TYPE_PRECEDES, delay: 0)
+
+    scope = coordinator.send(:resolve_callback_scope, [issue_a.id])
+
+    expect(scope[:ids]).to include(issue_a.id, issue_b.id, issue_c.id)
+    expect(scope[:apply_edges]).to include([issue_a.id, issue_b.id], [issue_b.id, issue_c.id])
+
+    result = coordinator.call(
+      operation_id: 'schedule:relation-causality',
+      base_revisions: { issue_a.id => issue_a.reload.lock_version },
+      changes: [{ task_id: issue_a.id, start_date: '2027-11-01', due_date: '2027-11-02' }]
+    )
+
+    expect(result.status).to eq(:ok)
+    expect(result.entities.map { |entity| entity[:id] }).to include(issue_a.id, issue_b.id, issue_c.id)
+    expect(result.revisions).to include(issue_a.id, issue_b.id, issue_c.id)
+  end
+
+  it 'returns ancestor callback entities for a derived parent hierarchy' do
+    previous_value = Setting.parent_issue_dates
+    Setting.parent_issue_dates = 'derived'
+
+    grandparent = build_schedule_issue(
+      'Derived grandparent',
+      start_date: nil,
+      due_date: nil
+    )
+    parent = build_schedule_issue(
+      'Derived parent',
+      start_date: nil,
+      due_date: nil,
+      parent: grandparent
+    )
+    child = build_schedule_issue(
+      'Derived child',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2),
+      parent: parent
+    )
+    [grandparent, parent, child].each(&:reload)
+
+    result = coordinator.call(
+      operation_id: 'schedule:ancestor-causality',
+      base_revisions: { child.id => child.lock_version },
+      changes: [{ task_id: child.id, start_date: '2027-12-01', due_date: '2027-12-02' }]
+    )
+
+    expect(result.status).to eq(:ok)
+    expect(result.entities.map { |entity| entity[:id] }).to include(grandparent.id, parent.id, child.id)
+    expect(result.revisions).to include(grandparent.id, parent.id, child.id)
+  ensure
+    Setting.parent_issue_dates = previous_value if previous_value
   end
 
   it 'rejects an external revision before writing any planned issue' do

@@ -13,7 +13,13 @@ import {
     classifyMutationStatus
 } from '../../api/mutationOutcome';
 import type { MutationOutcomeKind } from '../../api/mutationOutcome';
-import { responseContainsIntendedFields, responseMatchesIntendedFields, type TaskFields } from '../../services/taskMutationService';
+import {
+    localTaskFieldForMutationField,
+    partitionTaskMutationFields,
+    responseContainsIntendedFields,
+    responseMatchesIntendedFields,
+    type TaskFields
+} from '../../services/taskMutationService';
 
 export type UpdateTaskFieldsResult = MutationMetadata & {
     status: MutationStatus | 'error';
@@ -27,6 +33,7 @@ export type SaveModifiedTasksResult = {
     savedTaskIds: Set<string>;
     unsentTaskIds: Set<string>;
     abortedTaskIds: Set<string>;
+    settledFieldsByTask: Map<string, Set<string>>;
     batchStatus: 'completed' | 'partial_failure' | 'preflight_failure';
 };
 
@@ -51,6 +58,12 @@ export type ScheduleMutationResponse = {
     entities?: PersistedTaskState[];
     revisions?: Record<string, number>;
     errors?: string[];
+    conflict?: {
+        taskId?: string | number;
+        task_id?: string | number;
+        expectedRevision?: number;
+        actualRevision?: number;
+    };
 };
 
 export type ScheduleMutationExecutor = (
@@ -331,23 +344,34 @@ export const saveModifiedTasks = async (
     };
     const modifiedIdSet = new Set(Array.from(modifiedTaskIds));
     const modifiedTasks = tasks.filter(task => modifiedIdSet.has(task.id));
+    const mutationPartitions = new Map(modifiedTasks.map(task => [
+        task.id,
+        partitionTaskMutationFields(mutationFields[task.id] ?? {})
+    ]));
     const schedulingTaskIds = new Set(modifiedTasks
-        .filter(task => mutationScheduling[task.id] === true)
+        .filter(task => mutationScheduling[task.id] === true && Object.keys(mutationPartitions.get(task.id)?.scheduleFields ?? {}).length > 0)
         .map(task => task.id));
+    const residualMutationFields: Record<string, TaskFields> = { ...mutationFields };
     const scheduleSavedTaskIds = new Set<string>();
     const scheduleFailures = new Map<string, string>();
     const scheduleConflictEntities = new Map<string, PersistedTaskState | undefined>();
     const scheduleConflictRevisions = new Map<string, number | undefined>();
+    const scheduleConflictTaskIds = new Set<string>();
+    const settledFieldsByTask = new Map<string, Set<string>>();
+    const addSettledFields = (taskId: string, fields: Iterable<string>) => {
+        const current = settledFieldsByTask.get(taskId) ?? new Set<string>();
+        for (const field of fields) current.add(localTaskFieldForMutationField(field));
+        if (current.size > 0) settledFieldsByTask.set(taskId, current);
+    };
     let scheduleOperationAttempted = false;
-    let scheduleOperationConflict = false;
     if (schedulingTaskIds.size > 0 && scheduleMutation) {
         scheduleOperationAttempted = true;
         const scheduleChanges = [...schedulingTaskIds].sort().map(taskId => ({
             taskId,
             baseRevision: baseRevisions[taskId] ?? mutableTaskById.get(taskId)?.lockVersion ?? 0,
-            fields: mutationFields[taskId] as Pick<TaskFields, 'start_date' | 'due_date'>,
+            fields: mutationPartitions.get(taskId)!.scheduleFields,
             task: mutableTaskById.get(taskId),
-            mutationFields: mutationFields[taskId]
+            mutationFields: mutationPartitions.get(taskId)!.scheduleFields
         }));
         let scheduleResult: ScheduleMutationResponse = {
             status: 'transient_error',
@@ -423,26 +447,59 @@ export const saveModifiedTasks = async (
             (scheduleResult.entities ?? []).forEach(entity => {
                 const revision = scheduleResult.revisions?.[entity.id] ?? entity.lockVersion;
                 onTaskResult?.(entity.id, { status: 'ok', entity, revision, lockVersion: revision });
+                const currentTask = mutableTaskById.get(entity.id);
+                if (currentTask) {
+                    mutableTaskById.set(entity.id, {
+                        ...currentTask,
+                        ...entity,
+                        ...(typeof revision === 'number' ? { lockVersion: Math.max(currentTask.lockVersion, revision) } : {})
+                    });
+                }
             });
             schedulingTaskIds.forEach(taskId => {
                 const entity = entitiesById.get(taskId);
                 const revision = scheduleResult.revisions?.[taskId] ?? entity?.lockVersion;
                 scheduleSavedTaskIds.add(taskId);
+                addSettledFields(taskId, Object.keys(mutationPartitions.get(taskId)!.scheduleFields));
                 onTaskSaved?.(taskId, revision);
             });
         } else {
-            scheduleOperationConflict = scheduleResult.status === 'conflict';
             const message = scheduleResult.errors?.[0] || (scheduleResult.status === 'conflict' ? 'Conflict' : 'Failed to save schedule');
+            const conflictTaskId = scheduleResult.conflict?.taskId ?? scheduleResult.conflict?.task_id;
+            if (conflictTaskId !== undefined) {
+                scheduleConflictTaskIds.add(String(conflictTaskId));
+            } else if (scheduleResult.status === 'conflict' && schedulingTaskIds.size === 1) {
+                // A single-task unknown outcome still has an unambiguous
+                // entity scope. Multi-task unknown outcomes remain pending
+                // without pretending every task is externally stale.
+                scheduleConflictTaskIds.add([...schedulingTaskIds][0]);
+            }
             schedulingTaskIds.forEach(taskId => {
                 scheduleFailures.set(taskId, message);
-                scheduleConflictEntities.set(taskId, entitiesById.get(taskId));
-                scheduleConflictRevisions.set(taskId, scheduleResult.revisions?.[taskId] ?? entitiesById.get(taskId)?.lockVersion);
+                if (scheduleConflictTaskIds.has(taskId)) {
+                    scheduleConflictEntities.set(taskId, entitiesById.get(taskId));
+                    scheduleConflictRevisions.set(taskId, scheduleResult.revisions?.[taskId] ?? entitiesById.get(taskId)?.lockVersion);
+                }
                 onTaskResult?.(taskId, { status: scheduleResult.status, error: message });
             });
         }
-        // A schedule operation owns its whole plan. The legacy per-task loop
-        // must never send those same date fields as independent PATCHes.
-        schedulingTaskIds.forEach(taskId => modifiedIdSet.delete(taskId));
+        // The Schedule endpoint owns only start/due. Keep a mixed task in the
+        // generic loop with its residual fields, but never send the schedule
+        // fields again as an independent PATCH.
+        schedulingTaskIds.forEach(taskId => {
+            if (!scheduleSavedTaskIds.has(taskId)) {
+                delete residualMutationFields[taskId];
+                modifiedIdSet.delete(taskId);
+                return;
+            }
+            const residualFields = mutationPartitions.get(taskId)!.residualFields;
+            if (Object.keys(residualFields).length > 0) {
+                residualMutationFields[taskId] = residualFields;
+            } else {
+                delete residualMutationFields[taskId];
+                modifiedIdSet.delete(taskId);
+            }
+        });
     }
     const dependencyOrder = new Map([...schedulingTaskIds].map(taskId => [taskId, 0]));
     const dependencyIndegree = new Map([...schedulingTaskIds].map(taskId => [taskId, 0]));
@@ -511,6 +568,7 @@ export const saveModifiedTasks = async (
             savedTaskIds,
             unsentTaskIds,
             abortedTaskIds,
+            settledFieldsByTask,
             batchStatus: 'preflight_failure'
         };
     }
@@ -522,7 +580,7 @@ export const saveModifiedTasks = async (
     if (scheduleOperationAttempted) schedulingTaskIds.forEach(taskId => {
         if (scheduleSavedTaskIds.has(taskId)) return;
         terminalFailureTaskIds.add(taskId);
-        if (scheduleOperationConflict) {
+        if (scheduleConflictTaskIds.has(taskId)) {
             onConflict?.(
                 taskId,
                 scheduleFailures.get(taskId)!,
@@ -573,7 +631,7 @@ export const saveModifiedTasks = async (
 
     const effectivePreflightFailures = new Map(preflightFailures);
     modifiedIdSet.forEach((taskId) => {
-        const hasExplicitIntent = Object.prototype.hasOwnProperty.call(mutationFields, taskId) && mutationFields[taskId] !== undefined;
+        const hasExplicitIntent = Object.prototype.hasOwnProperty.call(residualMutationFields, taskId) && residualMutationFields[taskId] !== undefined;
         if (availableTaskIds.has(taskId) &&
             !hasExplicitIntent &&
             !effectivePreflightFailures.has(taskId)) {
@@ -636,7 +694,7 @@ export const saveModifiedTasks = async (
                     taskId,
                     (context) => {
                         unsentTaskIds.delete(taskId);
-                        const fields = mutationFields[taskId]!;
+                        const fields = residualMutationFields[taskId]!;
                         return updateTask(task, context?.operationId, fields);
                     },
                     {
@@ -644,6 +702,7 @@ export const saveModifiedTasks = async (
                             onTaskResult?.(taskId, savedResult);
                         },
                         onSuccess: (savedResult) => {
+                            addSettledFields(taskId, Object.keys(residualMutationFields[taskId] ?? {}));
                             onTaskSaved?.(taskId, savedResult.lockVersion);
                         }
                     }
@@ -686,8 +745,8 @@ export const saveModifiedTasks = async (
             const intent: MutationIntent = {
                 taskId,
                 generation: mutationGenerations[taskId] ?? 0,
-                fields: mutationFields[taskId]!,
-                affectsScheduling: mutationScheduling[taskId] === true
+                fields: residualMutationFields[taskId]!,
+                affectsScheduling: false
             };
             if (!hasPersistableIntentFields(intent.fields)) {
                 pendingTaskIds.delete(taskId);
@@ -727,6 +786,7 @@ export const saveModifiedTasks = async (
                         revision: candidate.revision,
                         lockVersion: candidate.revision
                     });
+                    addSettledFields(taskId, Object.keys(residualMutationFields[taskId] ?? {}));
                     onTaskSaved?.(taskId, candidate.revision);
                 } else {
                     failures.set(taskId, candidate.message);
@@ -795,6 +855,7 @@ export const saveModifiedTasks = async (
                         lockVersion: canonicalRemote.revision
                     });
                     onTaskSaved?.(taskId, canonicalRemote.revision);
+                    addSettledFields(taskId, Object.keys(residualMutationFields[taskId] ?? {}));
                     return;
                 }
 
@@ -819,6 +880,7 @@ export const saveModifiedTasks = async (
         savedTaskIds,
         unsentTaskIds,
         abortedTaskIds,
+        settledFieldsByTask,
         batchStatus: failures.size > 0 ? 'partial_failure' : 'completed'
     };
 };

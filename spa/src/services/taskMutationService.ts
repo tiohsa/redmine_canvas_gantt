@@ -9,6 +9,8 @@ export type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
 
 export const BULK_TASK_FIELDS = ['startDate', 'dueDate', 'parentId'] as const;
+export const SCHEDULE_TASK_FIELDS = ['startDate', 'dueDate'] as const;
+export const SCHEDULE_MUTATION_FIELDS = ['start_date', 'due_date'] as const;
 export type BulkTaskField = typeof BULK_TASK_FIELDS[number];
 export const PERSISTABLE_TASK_FIELDS = [
     'subject',
@@ -34,14 +36,14 @@ export type BulkTaskMutationDelta = {
     affectsScheduling: boolean;
 };
 
-export const taskMutationAffectsScheduling = (changedFields: Iterable<string>): boolean => {
-    const changed = new Set(changedFields);
-    return BULK_TASK_FIELDS.some(field => changed.has(field));
+export type ScheduleTaskField = typeof SCHEDULE_TASK_FIELDS[number];
+
+export type TaskMutationFieldPartition = {
+    scheduleFields: Pick<TaskFields, typeof SCHEDULE_MUTATION_FIELDS[number]>;
+    residualFields: TaskFields;
 };
 
-const TASK_PATCH_MAX_RETRIES = 1;
-
-const canonicalFieldName = (field: string): string => ({
+const localFieldByMutationField: Record<string, string> = {
     start_date: 'startDate',
     due_date: 'dueDate',
     parent_issue_id: 'parentId',
@@ -55,7 +57,36 @@ const canonicalFieldName = (field: string): string => ({
     tracker_id: 'trackerId',
     fixed_version_id: 'fixedVersionId',
     custom_field_values: 'customFieldValues'
-}[field] ?? field);
+};
+
+export const localTaskFieldForMutationField = (field: string): string => (
+    localFieldByMutationField[field] ?? field
+);
+
+export const partitionTaskMutationFields = (fields: TaskFields): TaskMutationFieldPartition => {
+    const scheduleFields: TaskFields = {};
+    const residualFields: TaskFields = {};
+    Object.entries(fields).forEach(([field, value]) => {
+        if ((SCHEDULE_MUTATION_FIELDS as readonly string[]).includes(field)) {
+            scheduleFields[field] = value;
+        } else {
+            residualFields[field] = value;
+        }
+    });
+    return {
+        scheduleFields: scheduleFields as Pick<TaskFields, typeof SCHEDULE_MUTATION_FIELDS[number]>,
+        residualFields
+    };
+};
+
+export const taskMutationAffectsScheduling = (changedFields: Iterable<string>): boolean => {
+    const changed = new Set(changedFields);
+    return SCHEDULE_TASK_FIELDS.some(field => changed.has(field));
+};
+
+const TASK_PATCH_MAX_RETRIES = 1;
+
+const canonicalFieldName = localTaskFieldForMutationField;
 
 const sameCanonicalValue = (field: string, expected: unknown, actual: unknown): boolean => {
     if (field === 'start_date' || field === 'due_date') {

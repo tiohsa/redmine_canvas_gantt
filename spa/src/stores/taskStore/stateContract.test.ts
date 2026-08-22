@@ -9,6 +9,7 @@ import {
     hasLocalPatchOwnership,
     mergeServerEntity,
     replaceServerSnapshot,
+    settleLocalPatchFields,
     type LocalPatch
 } from './stateContract';
 
@@ -78,5 +79,33 @@ describe('state lifecycle contract', () => {
         expect(hasLocalPatchOwnership(patches, '1', 1, 'edit:1:1')).toBe(true);
         expect(hasLocalPatchOwnership(patches, '1', 1, 'edit:1:2')).toBe(false);
         expect(hasLocalPatchOwnership(patches, '1', 3)).toBe(false);
+    });
+
+    it('settles only fields owned by the completed operation', () => {
+        const patches: Array<LocalPatch<Entity>> = [
+            {
+                entityId: '1',
+                projection: { subject: 'subject', startDate: 2 },
+                mutationIntent: { subject: 'subject', startDate: 2 },
+                generation: 1,
+                operationId: 'op-1'
+            },
+            {
+                entityId: '1',
+                projection: { subject: 'newer subject' },
+                mutationIntent: { subject: 'newer subject' },
+                generation: 2,
+                operationId: 'op-2'
+            }
+        ];
+
+        expect(settleLocalPatchFields(patches, 1, ['startDate'])).toEqual([
+            {
+                ...patches[0],
+                projection: { subject: 'subject' },
+                mutationIntent: { subject: 'subject' }
+            },
+            patches[1]
+        ]);
     });
 });
