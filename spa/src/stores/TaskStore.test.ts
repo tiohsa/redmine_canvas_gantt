@@ -7,6 +7,7 @@ import { useUIStore } from './UIStore';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import { loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
+import { createReadContext } from './taskStore/stateContract';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -974,13 +975,27 @@ describe('TaskStore API data application', () => {
     expect(uiState.columnsExplicitInQuery).toBe(true);
   });
 
-  it('applies query-owned columns and restores preferences when query columns disappear', () => {
+  it('restores preferences at a saved-query boundary when query columns disappear', () => {
     const preferenceState = useUIStore.getInitialState();
+    const initialLoadContext = createReadContext({
+      generation: 1,
+      projectId: 'p1',
+      query: { visibleColumns: ['status', 'subject'] },
+      scope: {},
+      purpose: 'initial_load'
+    });
+    const savedQueryContext = createReadContext({
+      generation: 2,
+      projectId: 'p1',
+      query: { queryId: 12 },
+      scope: {},
+      purpose: 'saved_query'
+    });
 
     useTaskStore.getState().applyApiData({
       ...buildApiData([]),
       initialState: { visibleColumns: ['status', 'subject'] }
-    });
+    }, initialLoadContext);
 
     let uiState = useUIStore.getState();
     expect(uiState.visibleColumns).toEqual(['status', 'subject']);
@@ -989,13 +1004,33 @@ describe('TaskStore API data application', () => {
     expect(uiState.columnStateSource).toBe('query');
     expect(uiState.columnsExplicitInQuery).toBe(true);
 
-    useTaskStore.getState().applyApiData({ ...buildApiData([]), initialState: {} });
+    useTaskStore.getState().applyApiData(
+      { ...buildApiData([]), initialState: {} },
+      savedQueryContext
+    );
 
     uiState = useUIStore.getState();
     expect(uiState.visibleColumns).toEqual(preferenceState.visibleColumns);
     expect(uiState.columnSettings).toEqual(preferenceState.columnSettings);
     expect(uiState.columnStateSource).toBe('preference');
     expect(uiState.columnsExplicitInQuery).toBe(false);
+  });
+
+  it('preserves query-owned columns when a regular refresh omits column state', async () => {
+    useUIStore.getState().applyQueryVisibleColumns(['id', 'subject']);
+    vi.mocked(apiClient.fetchData).mockResolvedValue({
+      ...buildApiData([]),
+      initialState: {}
+    });
+
+    await useTaskStore.getState().refreshData();
+
+    const uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(['id', 'subject']);
+    expect(uiState.columnSettings.filter((column) => column.visible).map((column) => column.key))
+      .toEqual(['id', 'subject']);
+    expect(uiState.columnStateSource).toBe('query');
+    expect(uiState.columnsExplicitInQuery).toBe(true);
   });
 
   it('applies explicit saved-query columns at the query boundary after a user change', async () => {
@@ -1030,6 +1065,25 @@ describe('TaskStore API data application', () => {
       .toEqual(['id', 'subject']);
     expect(uiState.columnStateSource).toBe('user');
     expect(uiState.columnsExplicitInQuery).toBe(true);
+  });
+
+  it('restores preferences when clearing query-owned saved-query columns', async () => {
+    const preferenceState = useUIStore.getInitialState();
+    useUIStore.getState().applyQueryVisibleColumns(['status', 'subject']);
+    useTaskStore.getState().restoreActiveQueryId(12);
+    vi.mocked(apiClient.fetchData).mockResolvedValue({
+      ...buildApiData([]),
+      initialState: {}
+    });
+
+    await useTaskStore.getState().clearSavedQuery();
+
+    const uiState = useUIStore.getState();
+    expect(useTaskStore.getState().activeQueryId).toBeNull();
+    expect(uiState.visibleColumns).toEqual(preferenceState.visibleColumns);
+    expect(uiState.columnSettings).toEqual(preferenceState.columnSettings);
+    expect(uiState.columnStateSource).toBe('preference');
+    expect(uiState.columnsExplicitInQuery).toBe(false);
   });
 
   it('refreshData applies API data with one TaskStore state update', async () => {

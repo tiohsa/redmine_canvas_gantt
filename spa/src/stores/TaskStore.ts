@@ -1050,6 +1050,20 @@ export const useTaskStore = create<TaskState>((set, get) => {
             if (inflightReads.get(readKey) === request) inflightReads.delete(readKey);
         }
     };
+    const refreshCurrentData = async (purpose: 'refresh' | 'saved_query'): Promise<void> => {
+        const state = get();
+        const query = toResolvedQueryStateFromStore(state);
+        const scope = { showSubprojects: state.showSubprojects, memberProjectsOnly: state.memberProjectsOnly };
+        const generation = ++dataRequestGeneration;
+        const context = createReadContext({
+            generation,
+            projectId: state.currentProjectId,
+            query,
+            scope,
+            purpose
+        });
+        await requestAndApplyData(() => apiClient.fetchData({ query, queryContext: state.queryContext }), context);
+    };
     const fetchMutationResyncData = async (params: { query?: { selectedStatusIds?: number[] } }): Promise<ApiData> => {
         const state = get();
         const generation = ++dataRequestGeneration;
@@ -1271,7 +1285,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const isQueryBoundary = readContext?.purpose === 'initial_load' || readContext?.purpose === 'saved_query';
         if (data.initialState?.visibleColumns?.length && (isQueryBoundary || useUIStore.getState().columnStateSource !== 'user')) {
             useUIStore.getState().applyQueryVisibleColumns(data.initialState.visibleColumns);
-        } else if (useUIStore.getState().columnStateSource === 'query') {
+        } else if (isQueryBoundary && useUIStore.getState().columnStateSource === 'query') {
             useUIStore.getState().restorePreferenceColumns();
         }
         const nextQuerySyncState = querySyncState as SharedQuerySyncState | null;
@@ -2589,20 +2603,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         syncSharedQueryState({ ...state, ...nextState });
         return nextState;
     }),
-    refreshData: async () => {
-        const state = get();
-        const query = toResolvedQueryStateFromStore(state);
-        const scope = { showSubprojects: state.showSubprojects, memberProjectsOnly: state.memberProjectsOnly };
-        const generation = ++dataRequestGeneration;
-        const context = createReadContext({
-            generation,
-            projectId: state.currentProjectId,
-            query,
-            scope,
-            purpose: 'refresh'
-        });
-        await requestAndApplyData(() => apiClient.fetchData({ query, queryContext: state.queryContext }), context);
-    },
+        refreshData: async () => refreshCurrentData('refresh'),
 
     loadInitialData: async (params) => {
         const generation = ++dataRequestGeneration;
@@ -2689,7 +2690,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const queryContext = clearSavedQueryToStandalone(standaloneOverridesFromState(state));
         set({ activeQueryId: null, ...queryContextPatch(queryContext) });
         syncSharedQueryState({ ...get(), activeQueryId: null });
-        await get().refreshData();
+        await refreshCurrentData('saved_query');
     },
 
     saveChanges: async () => {
