@@ -63,10 +63,14 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
   end
 
   def create_committed_precedes(issue_from, issue_to)
+    create_committed_relation(issue_from, issue_to, IssueRelation::TYPE_PRECEDES)
+  end
+
+  def create_committed_relation(issue_from, issue_to, relation_type)
     relation = IssueRelation.create!(
       issue_from: issue_from,
       issue_to: issue_to,
-      relation_type: IssueRelation::TYPE_PRECEDES,
+      relation_type: relation_type,
       delay: 0
     )
     @created_relation_ids << relation.id
@@ -101,6 +105,47 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
           @resume_scope.pop
         end
         scope
+      end
+    end
+  end
+
+  def post_write_barrier_coordinator_class
+    Class.new(described_class) do
+      def initialize(scope_ready:, resume_scope:, rollback_ready:, resume_rollback:, pause_each_attempt:, observe_rollback:, **kwargs)
+        @scope_ready = scope_ready
+        @resume_scope = resume_scope
+        @rollback_ready = rollback_ready
+        @resume_rollback = resume_rollback
+        @pause_each_attempt = pause_each_attempt
+        @observe_rollback = observe_rollback
+        @scope_calls = 0
+        @scope_paused = false
+        super(**kwargs)
+      end
+
+      attr_reader :scope_calls
+
+      private
+
+      def resolve_callback_scope(seed_ids)
+        call_index = @scope_calls
+        @scope_calls += 1
+
+        # A/B/C are the three scope resolutions in one attempt. Pause before
+        # C so the caller can commit a topology change after planned writes
+        # have run but before the coordinator performs its final comparison.
+        if @observe_rollback && call_index.positive? && (call_index % 3).zero?
+          @rollback_ready << true
+          @resume_rollback.pop
+        end
+
+        if (call_index % 3) == 2 && (@pause_each_attempt || !@scope_paused)
+          @scope_paused = true unless @pause_each_attempt
+          @scope_ready << true
+          @resume_scope.pop
+        end
+
+        super
       end
     end
   end
@@ -163,6 +208,90 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     worker&.join(1)
   end
 
+  def run_post_write_barrier_schedule(planned_issue, start_date:, due_date:, pause_each_attempt:, observe_rollback:)
+    skip 'deterministic READ COMMITTED barrier currently requires the MySQL/MariaDB CI adapter' unless mysql_family?
+
+    scope_ready = Queue.new
+    resume_scope = Queue.new
+    rollback_ready = Queue.new
+    resume_rollback = Queue.new
+    results = Queue.new
+    errors = Queue.new
+    project_id = planned_issue.project_id
+    planned_id = planned_issue.id
+    base_revision = planned_issue.reload.lock_version.to_i
+    klass = post_write_barrier_coordinator_class
+
+    worker = Thread.new do
+      Issue.connection_pool.with_connection do |connection|
+        begin
+          connection.execute('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED')
+          current_user = User.find(2)
+          User.current = current_user
+          coordinator = klass.new(
+            scope_ready: scope_ready,
+            resume_scope: resume_scope,
+            rollback_ready: rollback_ready,
+            resume_rollback: resume_rollback,
+            pause_each_attempt: pause_each_attempt,
+            observe_rollback: observe_rollback,
+            current_user: current_user,
+            project_scope_ids: [project_id],
+            payload_builder: ConcurrencyPayloadBuilder.new
+          )
+          results << coordinator.call(
+            operation_id: "schedule:post-write-barrier-#{planned_id}",
+            base_revisions: { planned_id => base_revision },
+            changes: [{ task_id: planned_id, start_date: start_date, due_date: due_date }]
+          )
+        rescue StandardError => error
+          errors << error
+          scope_ready << false
+          rollback_ready << false
+        ensure
+          User.current = nil
+          connection.execute('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ') rescue nil
+        end
+      end
+    end
+
+    wait_for_barrier = lambda do |queue, label|
+      signal = Timeout.timeout(15) { queue.pop }
+      raise errors.pop unless signal
+    rescue Timeout::Error
+      raise "Timed out waiting for #{label}"
+    end
+
+    topology_values = []
+    rollback_state = nil
+    if pause_each_attempt
+      3.times do |attempt|
+        wait_for_barrier.call(scope_ready, "B-to-C scope barrier attempt #{attempt + 1}")
+        topology_values << yield(attempt)
+        resume_scope << true
+      end
+    else
+      wait_for_barrier.call(scope_ready, 'B-to-C scope barrier')
+      topology_values << yield(0)
+      resume_scope << true
+      if observe_rollback
+        wait_for_barrier.call(rollback_ready, 'post-rollback observation barrier')
+        rollback_state = schedule_state(planned_issue)
+        resume_rollback << true
+      end
+    end
+
+    worker.join(15)
+    raise 'Schedule mutation post-write barrier worker did not finish' if worker.alive?
+    raise errors.pop unless errors.empty?
+
+    [results.pop, topology_values, rollback_state]
+  ensure
+    resume_scope << true if defined?(worker) && worker&.alive?
+    resume_rollback << true if defined?(worker) && worker&.alive?
+    worker&.join(1)
+  end
+
   def expect_no_incomplete_success(result, callback_issue, callback_baseline)
     expect([:ok, :conflict]).to include(result.status)
     return if result.status == :conflict
@@ -201,6 +330,78 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     end
 
     expect_no_incomplete_success(result, successor, callback_baseline)
+  end
+
+  it 'rolls back a planned write when topology drifts between B and C before retrying' do
+    planned = build_committed_issue(
+      'B-to-C rollback planned issue',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    successor = build_committed_issue(
+      'B-to-C rollback successor',
+      start_date: Date.new(2027, 1, 10),
+      due_date: Date.new(2027, 1, 11)
+    )
+    original_state = schedule_state(planned)
+
+    result, _topology_values, rollback_state = run_post_write_barrier_schedule(
+      planned,
+      start_date: '2027-11-01',
+      due_date: '2027-11-02',
+      pause_each_attempt: false,
+      observe_rollback: true
+    ) do
+      create_committed_precedes(planned.reload, successor.reload)
+      schedule_state(successor)
+    end
+
+    expect(rollback_state).to eq(original_state)
+    expect(result.status).to eq(:ok), result.inspect
+    final_state = schedule_state(planned)
+    expect(final_state[0, 2]).to eq([Date.new(2027, 11, 1), Date.new(2027, 11, 2)])
+    expect(final_state[2]).to be > original_state[2]
+  end
+
+  it 'returns a scope conflict and commits no planned write when B-to-C drifts on all attempts' do
+    planned = build_committed_issue(
+      'B-to-C exhaustion planned issue',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 2)
+    )
+    original_state = schedule_state(planned)
+
+    result, topology_values, _rollback_state = run_post_write_barrier_schedule(
+      planned,
+      start_date: '2027-12-01',
+      due_date: '2027-12-02',
+      pause_each_attempt: true,
+      observe_rollback: false
+    ) do |attempt|
+      successor = build_committed_issue(
+        "B-to-C exhaustion successor #{attempt}",
+        start_date: Date.new(2027, 1, 10 + attempt),
+        due_date: Date.new(2027, 1, 11 + attempt)
+      )
+      # A committed non-causal relation changes the topology signature on
+      # every attempt without expanding the locked callback scope. This keeps
+      # the test focused on B→C rollback rather than introducing a second
+      # callback lock race while exhausting the retry budget.
+      create_committed_relation(planned.reload, successor.reload, IssueRelation::TYPE_RELATES)
+      schedule_state(successor)
+    end
+
+    expect(topology_values.size).to eq(3)
+    expect(result.status).to eq(:conflict), result.inspect
+    expect(result.entities).to eq([])
+    expect(result.revisions).to eq({})
+    expect(result.failure).to eq(
+      kind: 'conflict',
+      resource_role: 'scope',
+      resource_type: 'schedule_scope',
+      remote_availability: 'needs_refresh'
+    )
+    expect(schedule_state(planned)).to eq(original_state)
   end
 
   it 'does not return an incomplete success when a precedes relation is deleted after callback-scope resolution' do

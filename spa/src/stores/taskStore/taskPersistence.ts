@@ -466,13 +466,18 @@ export const saveModifiedTasks = async (
             });
         } else {
             const message = scheduleResult.errors?.[0] || (scheduleResult.status === 'conflict' ? 'Conflict' : 'Failed to save schedule');
+            const isScopeConflict = scheduleResult.failure?.resourceRole === 'scope';
             const conflictTaskId = scheduleResult.conflict?.taskId ?? scheduleResult.conflict?.task_id;
-            if (conflictTaskId !== undefined) {
+            if (!isScopeConflict && conflictTaskId !== undefined) {
                 scheduleConflictTaskIds.add(String(conflictTaskId));
-            } else if (scheduleResult.status === 'conflict' && schedulingTaskIds.size === 1) {
+            } else if (!isScopeConflict &&
+                scheduleResult.status === 'conflict' &&
+                !scheduleResult.failure?.resourceRole &&
+                schedulingTaskIds.size === 1) {
                 // A single-task unknown outcome still has an unambiguous
-                // entity scope. Multi-task unknown outcomes remain pending
-                // without pretending every task is externally stale.
+                // entity scope. This legacy fallback is only valid when the
+                // response has no ownership metadata; a scope role is an
+                // operation conflict even when one task was scheduled.
                 scheduleConflictTaskIds.add([...schedulingTaskIds][0]);
             }
             schedulingTaskIds.forEach(taskId => {

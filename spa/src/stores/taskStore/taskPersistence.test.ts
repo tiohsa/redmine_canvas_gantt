@@ -150,6 +150,53 @@ describe('saveModifiedTasks', () => {
         ]));
     });
 
+    it('does not downgrade a single-task scope conflict into a task conflict', async () => {
+        const task = buildTask({ id: 'A', dueDate: 11, lockVersion: 1 });
+        const onConflict = vi.fn();
+        const onTaskResult = vi.fn();
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            errors: ['The schedule topology changed while the operation was running.'],
+            failure: {
+                kind: 'conflict' as const,
+                resourceRole: 'scope' as const,
+                resourceType: 'schedule_scope',
+                remoteAvailability: 'needs_refresh' as const
+            }
+        });
+
+        const result = await saveModifiedTasks(
+            [task],
+            [],
+            new Set(['A']),
+            [],
+            vi.fn(),
+            vi.fn().mockResolvedValue({ tasks: [task] }),
+            undefined,
+            onTaskResult,
+            onConflict,
+            undefined,
+            undefined,
+            { A: { due_date: 11 } },
+            undefined,
+            { A: true },
+            scheduleMutation,
+            { A: 1 }
+        );
+
+        expect(onConflict).not.toHaveBeenCalled();
+        expect(onTaskResult).toHaveBeenCalledWith('A', expect.objectContaining({
+            status: 'conflict',
+            failure: expect.objectContaining({ resourceRole: 'scope' })
+        }));
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.settledFieldsByTask).toEqual(new Map());
+        expect(result.unsentTaskIds).toEqual(new Set());
+        expect(result.failures).toEqual(new Map([
+            ['A', 'The schedule topology changed while the operation was running.']
+        ]));
+    });
+
     it('sends one schedule operation for a multi-task date plan', async () => {
         const tasks = [buildTask({ id: 'A', startDate: 10, dueDate: 11 }), buildTask({ id: 'B', startDate: 20, dueDate: 21 })];
         const updateTask = vi.fn();

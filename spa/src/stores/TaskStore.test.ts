@@ -298,6 +298,49 @@ describe('TaskStore canonical mutation reconciliation', () => {
             delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
         }
     });
+
+    it('refreshes and retains a local schedule intent for a single-task topology conflict', async () => {
+        const task = buildTask({ id: 'topology-single', dueDate: TUESDAY, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            errors: ['The schedule topology changed while the operation was running.'],
+            failure: {
+                kind: 'conflict' as const,
+                resourceRole: 'scope' as const,
+                resourceType: 'schedule_scope',
+                remoteAvailability: 'needs_refresh' as const
+            }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([task]));
+
+        try {
+            useTaskStore.getState().setTasks([task]);
+            useTaskStore.getState().updateTask(task.id, { dueDate: WEDNESDAY });
+
+            const failures = await useTaskStore.getState().saveChanges();
+            await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
+            const state = useTaskStore.getState();
+
+            expect(failures).toEqual(new Map([
+                [task.id, 'The schedule topology changed while the operation was running.']
+            ]));
+            expect(state.modifiedTaskIds).toEqual(new Set([task.id]));
+            expect(state.localTaskPatches[task.id]).toEqual([
+                expect.objectContaining({
+                    projection: expect.objectContaining({ dueDate: WEDNESDAY }),
+                    mutationIntent: expect.objectContaining({ dueDate: WEDNESDAY })
+                })
+            ]);
+            expect(state.taskConflicts).toEqual({});
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
 });
 
 describe('TaskStore bar operation rollback', () => {
