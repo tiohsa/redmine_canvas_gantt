@@ -516,6 +516,99 @@ test('linked downstream shift does not publish a self-induced conflict', async (
   });
 });
 
+test('linked downstream shift moves a valid dependency pair left through one schedule mutation', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, 'ecookbook');
+
+  const originId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas Gantt left linked origin')
+  });
+  const downstreamId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas Gantt left linked downstream')
+  });
+
+  await loadCanvasPage(page, redmineBase, 'ecookbook');
+  await createPrecedesRelation(page, originId, downstreamId);
+  await updateIssueThroughRedmineRest(page, originId, {
+    start_date: '2027-09-20',
+    due_date: '2027-09-22'
+  });
+  await loadCanvasPage(page, redmineBase, 'ecookbook', '?sort=id:desc');
+  const originBefore = await fetchRestIssue(page, originId);
+  const downstreamBefore = await fetchRestIssue(page, downstreamId);
+  expect(originBefore.startDate).not.toBeNull();
+  expect(downstreamBefore.startDate).not.toBeNull();
+
+  await page.getByTestId('relation-settings-menu-button').click();
+  await page.getByTestId('auto-schedule-move-mode-select').selectOption('linked_downstream_shift');
+  await page.getByTestId('relation-settings-menu').getByRole('button', { name: /save/i }).click();
+  await enableAutoSave(page);
+
+  const originRow = page.getByTestId(`task-row-${originId}`);
+  const mutationResponses: Array<Promise<{ status: number; requestBody: unknown; responseBody: unknown }>> = [];
+  page.on('response', (response) => {
+    if (response.request().method() === 'POST' && response.url().includes('/schedule_mutation')) {
+      mutationResponses.push((async () => ({
+        status: response.status(),
+        requestBody: response.request().postDataJSON(),
+        responseBody: await response.json()
+      }))());
+    }
+  });
+  await originRow.dispatchEvent('click');
+  await originRow.dispatchEvent('mousemove');
+  const startHandle = page.getByTestId(`task-resize-handle-start-${originId}`);
+  const endHandle = page.getByTestId(`task-resize-handle-end-${originId}`);
+  const startBox = await startHandle.boundingBox();
+  const endBox = await endHandle.boundingBox();
+  expect(startBox).not.toBeNull();
+  expect(endBox).not.toBeNull();
+  const x = ((startBox!.x + startBox!.width / 2) + (endBox!.x + endBox!.width / 2)) / 2;
+  const y = startBox!.y + startBox!.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 160, y, { steps: 10 });
+  await page.mouse.up();
+
+  await expect.poll(() => mutationResponses.length).toBeGreaterThan(0);
+  const mutationResponse = await mutationResponses[0];
+  expect(mutationResponse.status, JSON.stringify(mutationResponse)).toBe(200);
+  const mutationRequest = mutationResponse.requestBody as {
+    changes?: Array<{ task_id?: string }>;
+  };
+  expect(mutationRequest.changes?.map((change) => change.task_id)).toEqual(
+    expect.arrayContaining([String(originId), String(downstreamId)])
+  );
+  expect(mutationRequest.changes).toHaveLength(2);
+  await expect(page.getByTestId(`task-conflict-${originId}`)).toHaveCount(0);
+  await expect(page.getByTestId(`task-conflict-${downstreamId}`)).toHaveCount(0);
+  await expect.poll(async () => (await fetchRestIssue(page, originId)).startDate)
+    .not.toBe(originBefore.startDate);
+  await expect.poll(async () => (await fetchRestIssue(page, downstreamId)).startDate)
+    .not.toBe(downstreamBefore.startDate);
+
+  const originAfter = await fetchRestIssue(page, originId);
+  const downstreamAfter = await fetchRestIssue(page, downstreamId);
+  expect(originAfter.startDate! < originBefore.startDate!).toBe(true);
+  expect(downstreamAfter.startDate! < downstreamBefore.startDate!).toBe(true);
+  expect(downstreamAfter.startDate! > originAfter.dueDate!).toBe(true);
+
+  await page.reload();
+  await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
+  await expect(page.getByText('Loading Canvas Gantt...')).toHaveCount(0);
+  await expect(page.getByTestId(`task-conflict-${originId}`)).toHaveCount(0);
+  await expect(page.getByTestId(`task-conflict-${downstreamId}`)).toHaveCount(0);
+  await expect(fetchRestIssue(page, originId)).resolves.toMatchObject({
+    startDate: originAfter.startDate,
+    dueDate: originAfter.dueDate
+  });
+  await expect(fetchRestIssue(page, downstreamId)).resolves.toMatchObject({
+    startDate: downstreamAfter.startDate,
+    dueDate: downstreamAfter.dueDate
+  });
+});
+
 test('two independent Canvas sessions preserve the first saved remote edit after a real 409', async ({ browser, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   const setupContext = await browser.newContext();

@@ -103,24 +103,6 @@ module RedmineCanvasGantt
           calendar_resolver = calendar_resolver_for_attempt
 
           RedmineCanvasGantt::ScheduleCalendarContext.with(resolver: calendar_resolver) do
-            evaluations = planned_issues.to_h do |issue|
-              change = changes_by_id.fetch(issue.id.to_i)
-              intent = change.slice(*SCHEDULE_FIELDS)
-              [issue.id.to_i, evaluator.evaluate(issue: issue, intent: intent)]
-            end
-            invalid = evaluations.values.find { |evaluation| !evaluation.valid? }
-            if invalid
-              transaction_result = Result.new(
-                status: :validation_error,
-                operation_id: operation_id,
-                entities: [],
-                revisions: {},
-                invalidated_entity_ids: [],
-                errors: invalid.violations.map { |violation| violation[:message] }
-              )
-              raise ActiveRecord::Rollback
-            end
-
             # Locks are stable for deadlock avoidance, while applying the
             # explicit Canvas plan follows callback/dependency causality.
             # Reloading before each write lets a preceding callback's

@@ -197,36 +197,40 @@ describe('saveModifiedTasks', () => {
         ]));
     });
 
-    it('sends one schedule operation for a multi-task date plan', async () => {
-        const tasks = [buildTask({ id: 'A', startDate: 10, dueDate: 11 }), buildTask({ id: 'B', startDate: 20, dueDate: 21 })];
+    it('sends origin and downstream left-shift intents in one schedule operation', async () => {
+        const tasks = [
+            buildTask({ id: 'origin', startDate: 8, dueDate: 9 }),
+            buildTask({ id: 'downstream', startDate: 10, dueDate: 11 })
+        ];
         const updateTask = vi.fn();
         const scheduleMutation = vi.fn().mockResolvedValue({
             status: 'ok' as const,
             entities: tasks.map(task => ({ id: task.id, startDate: task.startDate, dueDate: task.dueDate, lockVersion: 2 })),
-            revisions: { A: 2, B: 2 }
+            revisions: { origin: 2, downstream: 2 }
         });
 
         const result = await saveModifiedTasks(
             tasks,
             [],
-            new Set(['A', 'B']),
+            new Set(['origin', 'downstream']),
             [],
             updateTask,
             vi.fn().mockResolvedValue({ tasks }),
             undefined, undefined, undefined, undefined, undefined,
             dueDateIntent(tasks), undefined, schedulingIntent(tasks),
             scheduleMutation,
-            { A: 1, B: 1 }
+            { origin: 1, downstream: 1 }
         );
 
         expect(scheduleMutation).toHaveBeenCalledTimes(1);
-        expect(scheduleMutation.mock.calls[0][0]).toEqual([
-            expect.objectContaining({ taskId: 'A', baseRevision: 1, fields: { due_date: 11 } }),
-            expect.objectContaining({ taskId: 'B', baseRevision: 1, fields: { due_date: 21 } })
-        ]);
+        expect(scheduleMutation.mock.calls[0][0]).toHaveLength(2);
+        expect(scheduleMutation.mock.calls[0][0]).toEqual(expect.arrayContaining([
+            expect.objectContaining({ taskId: 'origin', baseRevision: 1, fields: { due_date: 9 } }),
+            expect.objectContaining({ taskId: 'downstream', baseRevision: 1, fields: { due_date: 11 } })
+        ]));
         expect(updateTask).not.toHaveBeenCalled();
         expect(result.failures).toEqual(new Map());
-        expect(result.savedTaskIds).toEqual(new Set(['A', 'B']));
+        expect(result.savedTaskIds).toEqual(new Set(['origin', 'downstream']));
     });
 
     it('settles a schedule operation after response loss when the canonical plan is already applied', async () => {

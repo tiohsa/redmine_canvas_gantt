@@ -71,16 +71,128 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(planned_issues.map(&:id).map { |id| result.revisions.fetch(id) }).to all(be > 0)
   end
 
-  it 'applies a reverse-id precedes plan in causal order before final reconciliation' do
+  it 'moves a valid precedes pair left against the causally materialized predecessor' do
+    predecessor = build_schedule_issue(
+      'Left shift predecessor',
+      start_date: Date.new(2027, 9, 13),
+      due_date: Date.new(2027, 9, 14)
+    )
+    successor = build_schedule_issue(
+      'Left shift successor',
+      start_date: Date.new(2027, 9, 15),
+      due_date: Date.new(2027, 9, 16)
+    )
+    IssueRelation.create!(
+      issue_from: predecessor,
+      issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    predecessor.reload
+    successor.reload
+    evaluator = RedmineCanvasGantt::IssueDraftEvaluator.new(
+      current_user: current_user,
+      project_scope_ids: [predecessor.project_id]
+    )
+    allow(evaluator).to receive(:evaluate).and_call_original
+    causal_coordinator = described_class.new(
+      current_user: current_user,
+      project_scope_ids: [predecessor.project_id],
+      payload_builder: payload_builder,
+      evaluator: evaluator
+    )
+
+    result = causal_coordinator.call(
+      operation_id: 'schedule:valid-left-shift',
+      base_revisions: [predecessor, successor].to_h { |issue| [issue.id, issue.lock_version] },
+      changes: [
+        { task_id: predecessor.id, start_date: '2027-09-09', due_date: '2027-09-10' },
+        { task_id: successor.id, start_date: '2027-09-13', due_date: '2027-09-14' }
+      ]
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(predecessor.reload).to have_attributes(
+      start_date: Date.new(2027, 9, 9),
+      due_date: Date.new(2027, 9, 10)
+    )
+    expect(successor.reload).to have_attributes(
+      start_date: Date.new(2027, 9, 13),
+      due_date: Date.new(2027, 9, 14)
+    )
+    expect(evaluator).to have_received(:evaluate).twice
+  end
+
+  it 'preserves the same precedes constraint when moving a pair right' do
+    predecessor = build_schedule_issue(
+      'Right shift predecessor',
+      start_date: Date.new(2027, 9, 9),
+      due_date: Date.new(2027, 9, 10)
+    )
+    successor = build_schedule_issue(
+      'Right shift successor',
+      start_date: Date.new(2027, 9, 13),
+      due_date: Date.new(2027, 9, 14)
+    )
+    IssueRelation.create!(
+      issue_from: predecessor,
+      issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    predecessor.reload
+    successor.reload
+
+    result = coordinator.call(
+      operation_id: 'schedule:valid-right-shift',
+      base_revisions: [predecessor, successor].to_h { |issue| [issue.id, issue.lock_version] },
+      changes: [
+        { task_id: predecessor.id, start_date: '2027-09-13', due_date: '2027-09-14' },
+        { task_id: successor.id, start_date: '2027-09-15', due_date: '2027-09-16' }
+      ]
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(predecessor.reload.due_date).to eq(Date.new(2027, 9, 14))
+    expect(successor.reload.start_date).to eq(Date.new(2027, 9, 15))
+  end
+
+  it 'moves a valid three-issue precedes chain left in causal order' do
+    issue_a = build_schedule_issue('Left chain A', start_date: Date.new(2027, 9, 13), due_date: Date.new(2027, 9, 14))
+    issue_b = build_schedule_issue('Left chain B', start_date: Date.new(2027, 9, 15), due_date: Date.new(2027, 9, 16))
+    issue_c = build_schedule_issue('Left chain C', start_date: Date.new(2027, 9, 17), due_date: Date.new(2027, 9, 20))
+    IssueRelation.create!(issue_from: issue_a, issue_to: issue_b, relation_type: IssueRelation::TYPE_PRECEDES, delay: 0)
+    IssueRelation.create!(issue_from: issue_b, issue_to: issue_c, relation_type: IssueRelation::TYPE_PRECEDES, delay: 0)
+    issues = [issue_a, issue_b, issue_c].each(&:reload)
+
+    result = coordinator.call(
+      operation_id: 'schedule:valid-three-node-left-shift',
+      base_revisions: issues.to_h { |issue| [issue.id, issue.lock_version] },
+      changes: [
+        { task_id: issue_a.id, start_date: '2027-09-09', due_date: '2027-09-10' },
+        { task_id: issue_b.id, start_date: '2027-09-13', due_date: '2027-09-14' },
+        { task_id: issue_c.id, start_date: '2027-09-15', due_date: '2027-09-16' }
+      ]
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(issues.map { |issue| issue.reload.start_date }).to eq([
+      Date.new(2027, 9, 9),
+      Date.new(2027, 9, 13),
+      Date.new(2027, 9, 15)
+    ])
+  end
+
+  it 'applies a reverse-id left shift in causal order before final reconciliation' do
     successor = build_schedule_issue(
       'Reverse ID successor',
-      start_date: Date.new(2027, 1, 2),
-      due_date: Date.new(2027, 1, 3)
+      start_date: Date.new(2027, 9, 15),
+      due_date: Date.new(2027, 9, 16)
     )
     predecessor = build_schedule_issue(
       'Reverse ID predecessor',
-      start_date: Date.new(2027, 1, 1),
-      due_date: Date.new(2027, 1, 1)
+      start_date: Date.new(2027, 9, 13),
+      due_date: Date.new(2027, 9, 14)
     )
     IssueRelation.create!(
       issue_from: predecessor,
@@ -95,16 +207,48 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       operation_id: 'schedule:reverse-id-causality',
       base_revisions: [successor, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
       changes: [
-        { task_id: successor.id, start_date: '2027-11-20', due_date: '2027-11-21' },
-        { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
+        { task_id: successor.id, start_date: '2027-09-13', due_date: '2027-09-14' },
+        { task_id: predecessor.id, start_date: '2027-09-09', due_date: '2027-09-10' }
       ]
     )
 
-    expect(result.status).to eq(:ok)
-    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 20))
-    expect(successor.due_date).to eq(Date.new(2027, 11, 21))
-    expect(predecessor.reload.start_date).to eq(Date.new(2027, 11, 1))
-    expect(predecessor.due_date).to eq(Date.new(2027, 11, 2))
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(successor.reload.start_date).to eq(Date.new(2027, 9, 13))
+    expect(successor.due_date).to eq(Date.new(2027, 9, 14))
+    expect(predecessor.reload.start_date).to eq(Date.new(2027, 9, 9))
+    expect(predecessor.due_date).to eq(Date.new(2027, 9, 10))
+  end
+
+  it 'rejects a successor moved before an unchanged external predecessor' do
+    external_predecessor = build_schedule_issue(
+      'External predecessor',
+      start_date: Date.new(2027, 9, 13),
+      due_date: Date.new(2027, 9, 14)
+    )
+    successor = build_schedule_issue(
+      'Externally constrained successor',
+      start_date: Date.new(2027, 9, 15),
+      due_date: Date.new(2027, 9, 16)
+    )
+    IssueRelation.create!(
+      issue_from: external_predecessor,
+      issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    external_predecessor.reload
+    successor.reload
+    original = [successor.start_date, successor.due_date, successor.lock_version]
+
+    result = coordinator.call(
+      operation_id: 'schedule:invalid-external-predecessor',
+      base_revisions: { successor.id => successor.lock_version },
+      changes: [{ task_id: successor.id, start_date: '2027-09-13', due_date: '2027-09-14' }]
+    )
+
+    expect(result.status).to eq(:validation_error)
+    expect(result.errors.join(' ')).to include('preceding issues')
+    expect(successor.reload.attributes.values_at('start_date', 'due_date', 'lock_version')).to eq(original)
   end
 
   it 'preserves planned causality through a callback-only relation intermediary' do
@@ -298,6 +442,38 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       .to eq(original_dates)
   end
 
+  it 'rejects a later planned permission failure before evaluating or writing the first issue' do
+    first, second = planned_issues
+    original = planned_issues.to_h { |issue| [issue.id, [issue.start_date, issue.due_date, issue.lock_version]] }
+    evaluator = RedmineCanvasGantt::IssueDraftEvaluator.new(
+      current_user: current_user,
+      project_scope_ids: [first.project_id]
+    )
+    allow(evaluator).to receive(:evaluate).and_call_original
+    permission_coordinator = described_class.new(
+      current_user: current_user,
+      project_scope_ids: [first.project_id],
+      payload_builder: payload_builder,
+      evaluator: evaluator
+    )
+    allow(permission_coordinator).to receive(:editable?) { |issue| issue.id != second.id }
+
+    result = permission_coordinator.call(
+      operation_id: 'schedule:permission-precondition',
+      base_revisions: planned_issues.to_h { |issue| [issue.id, issue.lock_version] },
+      changes: planned_issues.map do |issue|
+        { task_id: issue.id, start_date: '2027-03-01', due_date: '2027-03-02' }
+      end
+    )
+
+    expect(result.status).to eq(:forbidden)
+    expect(result.errors).to include('Permission denied')
+    expect(evaluator).not_to have_received(:evaluate)
+    expect(Issue.where(id: planned_issues.map(&:id)).to_h do |issue|
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version]]
+    end).to eq(original)
+  end
+
   it 'returns an operation-level conflict after the bounded topology retry budget' do
     klass = Class.new(described_class) do
       attr_reader :scope_calls
@@ -336,21 +512,44 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(coordinator.scope_calls).to eq(described_class::MAX_ATTEMPTS * 2)
   end
 
-  it 'rolls back all planned writes when one schedule change is invalid' do
-    expect(planned_issues.length).to eq(2)
-    original = planned_issues.to_h { |issue| [issue.id, [issue.start_date, issue.due_date, issue.lock_version]] }
+  it 'rolls back earlier planned, relation callback, parent, lock-version, and journal writes when a later node is invalid' do
+    previous_value = Setting.parent_issue_dates
+    Setting.parent_issue_dates = 'derived'
+    parent = build_schedule_issue('Rollback derived parent', start_date: nil, due_date: nil)
+    issue_a = build_schedule_issue(
+      'Rollback A',
+      start_date: Date.new(2027, 9, 13),
+      due_date: Date.new(2027, 9, 14),
+      parent: parent
+    )
+    issue_b = build_schedule_issue('Rollback B', start_date: Date.new(2027, 9, 15), due_date: Date.new(2027, 9, 16))
+    issue_c = build_schedule_issue('Rollback C', start_date: Date.new(2027, 9, 17), due_date: Date.new(2027, 9, 20))
+    IssueRelation.create!(issue_from: issue_a, issue_to: issue_b, relation_type: IssueRelation::TYPE_PRECEDES, delay: 0)
+    IssueRelation.create!(issue_from: issue_b, issue_to: issue_c, relation_type: IssueRelation::TYPE_PRECEDES, delay: 0)
+    planned = [issue_a, issue_b, issue_c].each(&:reload)
+    observed = [parent, *planned].each(&:reload)
+    original = observed.to_h do |issue|
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version, issue.journals.count]]
+    end
+
     result = coordinator.call(
       operation_id: 'schedule:atomic-validation',
-      base_revisions: planned_issues.to_h { |issue| [issue.id, issue.lock_version] },
+      base_revisions: planned.to_h { |issue| [issue.id, issue.lock_version] },
       changes: [
-        { task_id: planned_issues[0].id, start_date: '2027-04-10', due_date: '2027-04-11' },
-        { task_id: planned_issues[1].id, start_date: 'invalid-date' }
+        { task_id: issue_a.id, start_date: '2027-10-01', due_date: '2027-10-04' },
+        { task_id: issue_b.id, start_date: '2027-10-05', due_date: '2027-10-06' },
+        { task_id: issue_c.id, start_date: '2027-10-07', due_date: '2027-10-06' }
       ]
     )
 
     expect(result.status).to eq(:validation_error)
-    expect(Issue.where(id: planned_issues.map(&:id)).to_h { |issue| [issue.id, [issue.start_date, issue.due_date, issue.lock_version]] })
+    expect(observed.to_h do |issue|
+      issue.reload
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version, issue.journals.count]]
+    end)
       .to eq(original)
+  ensure
+    Setting.parent_issue_dates = previous_value if previous_value
   end
 
   it 'keeps schedule coordinator query growth within the O(N) gate' do

@@ -386,6 +386,34 @@ describe('TaskLogicService.checkDependencies', () => {
             expect(updates.get('C')?.startDate).toBe(FRIDAY + DAY * 3);
         });
 
+        it('shifts all downstream successors left by the same negative working-day delta', () => {
+            const previousThursday = MONDAY - DAY * 4;
+            const previousFriday = MONDAY - DAY * 3;
+            const nextMonday = FRIDAY + DAY * 3;
+            const tasks = [
+                buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+                buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY }),
+                buildTask({ id: 'C', startDate: FRIDAY, dueDate: nextMonday })
+            ];
+            const relations: Relation[] = [
+                { id: 'r1', from: 'A', to: 'B', type: 'precedes' },
+                { id: 'r2', from: 'B', to: 'C', type: 'precedes' }
+            ];
+
+            const { updates, error } = TaskLogicService.checkDependencies(
+                tasks,
+                relations,
+                'A',
+                previousThursday,
+                previousFriday,
+                AutoScheduleMoveMode.LinkedDownstreamShift
+            );
+
+            expect(error).toBeUndefined();
+            expect(updates.get('B')).toMatchObject({ startDate: MONDAY, dueDate: TUESDAY });
+            expect(updates.get('C')).toMatchObject({ startDate: WEDNESDAY, dueDate: THURSDAY });
+        });
+
         it('rejects linked shift when an external predecessor would be violated', () => {
             const tasks = [
                 buildTask({ id: 'P', startDate: MONDAY, dueDate: FRIDAY }),
