@@ -9,7 +9,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
   # connection and turn the test back into a mock-only race simulation.
   self.use_transactional_tests = false
 
-  fixtures :projects, :users, :roles, :members, :member_roles,
+  fixtures :projects, :projects_trackers, :enabled_modules, :users, :roles, :members, :member_roles,
            :trackers, :issue_statuses, :workflows, :enumerations, :issues
 
   class ConcurrencyPayloadBuilder
@@ -27,7 +27,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     @created_issue_ids = []
     @created_relation_ids = []
     @original_parent_issue_dates = Setting.parent_issue_dates
-    User.current = User.find(2)
+    User.current = concurrency_user
     example.run
   ensure
     ids = Array(@created_issue_ids).uniq
@@ -52,7 +52,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
       project: source.project,
       tracker: source.tracker,
       status: source.status,
-      author: User.find(2),
+      author: concurrency_user,
       subject: subject,
       start_date: start_date,
       due_date: due_date,
@@ -82,6 +82,13 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     [issue.start_date, issue.due_date, issue.lock_version.to_i]
   end
 
+  def concurrency_user
+    # The concurrency contract is independent of role permissions. Use the
+    # fixture administrator so Issue.visible and editable? do not vary with
+    # Redmine's version-specific role fixture serialization.
+    User.find(1)
+  end
+
   def mysql_family?
     Issue.connection.adapter_name.to_s.match?(/mysql|trilogy/i)
   end
@@ -102,7 +109,21 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
   end
 
   def transaction_isolation_level(connection)
-    raw_isolation = connection.select_value('SELECT @@SESSION.tx_isolation')
+    raw_isolation = begin
+      connection.select_value('SELECT @@SESSION.transaction_isolation')
+    rescue ActiveRecord::StatementInvalid => error
+      raise unless unavailable_transaction_isolation_variable?(error)
+
+      connection.select_value('SELECT @@SESSION.tx_isolation')
+    end
+    normalize_transaction_isolation(raw_isolation)
+  end
+
+  def unavailable_transaction_isolation_variable?(error)
+    error.message.match?(/unknown system variable.*transaction_isolation/i)
+  end
+
+  def normalize_transaction_isolation(raw_isolation)
     normalized_isolation = raw_isolation.to_s.upcase.gsub(/[-_]/, ' ').split.join(' ')
     TRANSACTION_ISOLATION_LEVELS.fetch(normalized_isolation) do
       raise "Unsupported transaction isolation level: #{raw_isolation.inspect}"
@@ -208,7 +229,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
           # PostgreSQL-like race window deterministically for this test.
           with_read_committed_connection(connection) do |previous_isolation|
             original_isolation = previous_isolation
-            current_user = User.find(2)
+            current_user = concurrency_user
             User.current = current_user
             coordinator = klass.new(
               scope_ready: scope_ready,
@@ -274,7 +295,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
         begin
           with_read_committed_connection(connection) do |previous_isolation|
             original_isolation = previous_isolation
-            current_user = User.find(2)
+            current_user = concurrency_user
             User.current = current_user
             coordinator = klass.new(
               scope_ready: scope_ready,
@@ -318,7 +339,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     topology_values = []
     rollback_states = []
     if pause_each_attempt
-      3.times do |attempt|
+      described_class::MAX_ATTEMPTS.times do |attempt|
         wait_for_barrier.call(scope_ready, "B-to-C scope barrier attempt #{attempt + 1}")
         topology_values << yield(attempt)
         resume_scope << true
@@ -379,6 +400,58 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     Timeout.timeout(15) { worker.join }
     expect(errors.pop.message).to eq('forced worker failure')
     expect_worker_isolation_restored(isolation_states)
+  end
+
+  it 'uses the modern transaction isolation variable when it is available' do
+    connection = double('connection')
+    expect(connection).to receive(:select_value)
+      .with('SELECT @@SESSION.transaction_isolation')
+      .and_return('read-committed')
+    expect(connection).not_to receive(:select_value).with('SELECT @@SESSION.tx_isolation')
+
+    expect(transaction_isolation_level(connection)).to eq('READ COMMITTED')
+  end
+
+  it 'falls back to the legacy transaction isolation variable only when the modern variable is unavailable' do
+    connection = double('connection')
+    unavailable_error = ActiveRecord::StatementInvalid.new("Unknown system variable 'transaction_isolation'")
+    expect(connection).to receive(:select_value)
+      .with('SELECT @@SESSION.transaction_isolation')
+      .and_raise(unavailable_error)
+    expect(connection).to receive(:select_value)
+      .with('SELECT @@SESSION.tx_isolation')
+      .and_return('repeatable-read')
+
+    expect(transaction_isolation_level(connection)).to eq('REPEATABLE READ')
+  end
+
+  it 'propagates unexpected modern isolation lookup errors without using the legacy variable' do
+    connection = double('connection')
+    unexpected_error = ActiveRecord::StatementInvalid.new('Lost connection to MySQL server during query')
+    expect(connection).to receive(:select_value)
+      .with('SELECT @@SESSION.transaction_isolation')
+      .and_raise(unexpected_error)
+    expect(connection).not_to receive(:select_value).with('SELECT @@SESSION.tx_isolation')
+
+    expect { transaction_isolation_level(connection) }.to raise_error(unexpected_error)
+  end
+
+  it 'surfaces a failure while restoring the worker connection isolation' do
+    connection = double('connection')
+    allow(connection).to receive(:select_value)
+      .with('SELECT @@SESSION.transaction_isolation')
+      .and_return('repeatable-read')
+    expect(connection).to receive(:execute)
+      .with('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED')
+      .ordered
+    expect(connection).to receive(:execute)
+      .with('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+      .ordered
+      .and_raise('forced isolation restore failure')
+
+    expect do
+      with_read_committed_connection(connection) { nil }
+    end.to raise_error('forced isolation restore failure')
   end
 
   def expect_no_incomplete_success(result, callback_issue, callback_baseline)
@@ -464,7 +537,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
       due_date: Date.new(2027, 1, 11)
     )
     relation = create_committed_precedes(planned, successor)
-    relation_identity = [relation.issue_from_id, relation.issue_to_id, relation.relation_type]
+    relation_identity = [relation.id, relation.issue_from_id, relation.issue_to_id, relation.relation_type]
     expect(
       described_class.new(
         current_user: User.current,
@@ -483,13 +556,18 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
       observe_rollback: true
     ) do |attempt|
       delay = attempt + 1
+      successor_before_external_mutation = schedule_state(successor)
+
+      # This direct write is deliberately callback-free: it isolates the
+      # coordinator's B-to-C drift protocol from Redmine relation callbacks.
       expect(IssueRelation.where(id: relation.id).update_all(delay: delay)).to eq(1)
       relation.reload
       delay_values << relation.delay
-      expect([relation.issue_from_id, relation.issue_to_id, relation.relation_type]).to eq(relation_identity)
-      schedule_state(successor)
+      expect([relation.id, relation.issue_from_id, relation.issue_to_id, relation.relation_type]).to eq(relation_identity)
+      expect(schedule_state(successor)).to eq(successor_before_external_mutation)
     end
 
+    expect(described_class::MAX_ATTEMPTS).to eq(3)
     expect(delay_values).to eq([1, 2, 3])
     expect(topology_values.size).to eq(3)
     expect(rollback_states).to eq([original_state, original_state])
@@ -504,7 +582,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     )
     expect(schedule_state(planned)).to eq(original_state)
     expect(relation.reload.delay).to eq(3)
-    expect([relation.issue_from_id, relation.issue_to_id, relation.relation_type]).to eq(relation_identity)
+    expect([relation.id, relation.issue_from_id, relation.issue_to_id, relation.relation_type]).to eq(relation_identity)
   end
 
   it 'does not return an incomplete success when a precedes relation is deleted after callback-scope resolution' do
