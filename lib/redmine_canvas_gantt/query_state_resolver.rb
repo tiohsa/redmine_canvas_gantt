@@ -69,12 +69,13 @@ module RedmineCanvasGantt
       'subproject_id' => %w[* !*]
     }.freeze
 
-    def initialize(project:, params:, current_user:, issue_scope:, issue_includes:)
+    def initialize(project:, params:, current_user:, issue_scope:, issue_includes:, data_payload_budget: nil)
       @project = project
       @params = params
       @current_user = current_user
       @issue_scope = issue_scope
       @issue_includes = issue_includes
+      @data_payload_budget = data_payload_budget
       @warnings = []
     end
 
@@ -509,7 +510,15 @@ module RedmineCanvasGantt
         selected_project_ids: selected_project_ids,
         state: state
       )
-      issues = scope.to_a
+      issues = if @data_payload_budget
+                 @data_payload_budget.load_records(
+                   scope,
+                   resource: 'issues',
+                   limit: @data_payload_budget.issue_limit
+                 )
+               else
+                 scope.to_a
+               end
       issues = preserve_query_order(issues, base_issue_ids) if base_issue_ids
       sort_issues!(issues, state[:sort_config])
       issues

@@ -36,20 +36,18 @@ The application renders a Gantt chart that allows users to visualize tasks, depe
 
 ## Setup and Development
 
-This project uses `pnpm` for package management (inferred from `pnpm-lock.yaml`), but `npm` scripts are standard.
+This project uses npm. `package-lock.json` is the sole dependency lockfile.
 
 ### Prerequisites
 
 *   Node.js (Latest LTS recommended)
-*   pnpm (recommended) or npm
+*   npm
 
 ### Common Commands
 
 *   **Install Dependencies:**
     ```bash
-    pnpm install
-    # or
-    npm install
+    npm ci
     ```
 
 *   **Start Development Server:**

@@ -1,4 +1,5 @@
 require_relative '../../spec_helper'
+require_relative '../../../lib/redmine_canvas_gantt/data_payload_budget'
 
 RSpec.describe RedmineCanvasGantt::QueryStateResolver do
   let(:project) { instance_double(Project, id: 1) }
@@ -691,5 +692,31 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     expect(result[:initial_state]).to include(
       member_projects_only: true
     )
+  end
+
+  it 'uses the data budget before materializing the resolved issue scope' do
+    budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, issue_limit: 3)
+    resolver = described_class.new(
+      project: project,
+      params: ActionController::Parameters.new,
+      current_user: current_user,
+      issue_scope: issue_scope,
+      issue_includes: issue_includes,
+      data_payload_budget: budget
+    )
+    allow(resolver).to receive(:issues_scope_for).and_return(issue_scope)
+    expect(budget).to receive(:load_records)
+      .with(issue_scope, resource: 'issues', limit: 3)
+      .and_return([])
+
+    issues = resolver.send(
+      :load_issues,
+      base_issue_ids: nil,
+      project_ids: [1],
+      selected_project_ids: [],
+      state: { sort_config: nil }
+    )
+
+    expect(issues).to eq([])
   end
 end

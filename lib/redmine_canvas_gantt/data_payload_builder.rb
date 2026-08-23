@@ -2,16 +2,17 @@ require 'set'
 
 module RedmineCanvasGantt
   class DataPayloadBuilder
-    def initialize(custom_field_extractor:, current_user:)
+    def initialize(custom_field_extractor:, current_user:, data_payload_budget: nil)
       @custom_field_extractor = custom_field_extractor
       @current_user = current_user
+      @data_payload_budget = data_payload_budget
     end
 
-    def build(project:, permissions:, project_ids:, issues:, filter_option_projects:, filter_option_issues:, filter_option_trackers: nil, initial_state: nil, query_context: nil, warnings: [], baseline: nil, business_calendar: nil)
+    def build(project:, permissions:, project_ids:, issues:, filter_option_projects:, filter_option_issues:, filter_option_trackers: nil, initial_state: nil, query_context: nil, warnings: [], baseline: nil, business_calendar: nil, relations: nil)
       {
         tasks: build_tasks(issues),
         custom_fields: @custom_field_extractor.build_project_custom_fields(project_ids, issues),
-        relations: build_relations(issues),
+        relations: relations ? build_relations_from(relations) : build_relations(issues),
         versions: build_versions(project_ids),
         filter_options: build_filter_options(
           projects: filter_option_projects,
@@ -77,15 +78,30 @@ module RedmineCanvasGantt
 
     def build_relations(issues)
       visible_ids = issues.map(&:id).to_set
-      issues.flat_map(&:relations).uniq.filter do |relation|
+      visible_relations = issues.flat_map(&:relations).uniq.filter do |relation|
         visible_ids.include?(relation.issue_from_id) && visible_ids.include?(relation.issue_to_id)
-      end.map do |relation|
+      end
+      build_relations_from(visible_relations)
+    end
+
+    def build_relations_from(relations)
+      relations.map do |relation|
         serialize_relation(relation)
       end
     end
 
     def build_versions(project_ids)
-      Version.visible.where(project_id: project_ids).map do |version|
+      scope = Version.visible.where(project_id: project_ids)
+      versions = if @data_payload_budget
+                   @data_payload_budget.load_records(
+                     scope,
+                     resource: 'versions',
+                     limit: @data_payload_budget.collection_limit
+                   )
+                 else
+                   scope
+                 end
+      versions.map do |version|
         {
           id: version.id,
           name: version.name,

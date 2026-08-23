@@ -282,6 +282,8 @@ en:
     error_canvas_gantt_issue_not_found_in_project: "Issue not found in this project"
     error_canvas_gantt_subjects_non_empty_array: "subjects must be a non-empty array"
     error_canvas_gantt_parent_linkage_failed: "Parent linkage failed"
+    error_canvas_gantt_business_calendar_changed: "The business calendar changed. Reload Canvas Gantt and try again."
+    error_canvas_gantt_data_scope_too_large: "Canvas Gantt data exceeds the configured safety limit. Narrow the filters or ask an administrator to review the limit."
     error_canvas_gantt_conflict_reload: "Conflict: This task has been updated by another user. Please reload."
     error_canvas_gantt_task_cannot_be_child_of_itself: "A task cannot be a child of itself."
     error_canvas_gantt_cannot_move_under_own_descendant: "Cannot move a task under its own descendant."

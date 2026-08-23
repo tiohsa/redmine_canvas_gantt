@@ -3,10 +3,12 @@ import { apiClient } from './client';
 import { addCalendarDays, diffCalendarDays, formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { TaskLogicService } from '../services/TaskLogicService';
+import { configureBusinessCalendar } from '../utils/businessCalendar';
 
 describe('apiClient.fetchQueries', () => {
     afterEach(() => {
         vi.restoreAllMocks();
+        configureBusinessCalendar(null);
         delete window.RedmineCanvasGantt;
     });
 
@@ -703,6 +705,42 @@ describe('mutation error classification', () => {
         ], 'schedule:1');
 
         expect(result.conflict).toEqual({ taskId: '42', expectedRevision: 1, actualRevision: 2 });
+    });
+
+    it('sends the configured business calendar revision with mutations', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        configureBusinessCalendar({
+            status: 'ok',
+            revision: 'calendar-revision-2',
+            default_calendar_id: null,
+            project_calendar_ids: {},
+            calendars: {},
+            warnings: []
+        });
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                status: 'ok',
+                operation_id: 'schedule:calendar',
+                entities: [],
+                revisions: {}
+            })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.scheduleMutation([
+            { taskId: '42', baseRevision: 1, dueDate: 11 }
+        ], 'schedule:calendar');
+
+        const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+        expect(new Headers(request.headers).get('X-Redmine-Canvas-Gantt-Calendar-Revision'))
+            .toBe('calendar-revision-2');
     });
 
     it('keeps mutation entities persisted-only', async () => {

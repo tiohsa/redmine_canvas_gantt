@@ -18,7 +18,7 @@ import { normalizeQueryContext } from '../query/queryStateCodec';
 import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/baseline';
 import type { QueryContext } from '../query/types';
 import type { BusinessCalendarPayload } from '../types/businessCalendar';
-import { normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
+import { getBusinessCalendarPayload, normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { sessionFetch } from './sessionFetch';
 import type { MutationFailure, MutationStatusValue } from './mutationOutcome';
@@ -197,10 +197,16 @@ const buildViewContextQuery = (config: RedmineCanvasGanttConfig): string => {
     return params.toString();
 };
 
-const buildJsonHeaders = (config: RedmineCanvasGanttConfig, includeCsrf: boolean = false): HeadersInit => ({
-    'Content-Type': 'application/json',
-    ...(includeCsrf ? { 'X-CSRF-Token': config.authToken } : {})
-});
+const buildJsonHeaders = (config: RedmineCanvasGanttConfig, includeCsrf: boolean = false): HeadersInit => {
+    const calendarRevision = includeCsrf ? getBusinessCalendarPayload().revision : null;
+    return {
+        'Content-Type': 'application/json',
+        ...(includeCsrf ? { 'X-CSRF-Token': config.authToken } : {}),
+        ...(calendarRevision
+            ? { 'X-Redmine-Canvas-Gantt-Calendar-Revision': calendarRevision }
+            : {})
+    };
+};
 
 const parseErrorMessage = async (response: Response): Promise<string> => {
     const payload = await response.json().catch(() => ({} as UnknownRecord));

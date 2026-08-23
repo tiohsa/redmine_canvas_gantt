@@ -22,12 +22,12 @@ Redmine Canvas Gantt プラグイン向けの SPA フロントエンドです。
 ## 必要環境
 
 - Node.js（LTS 推奨）
-- npm または pnpm
+- npm
 
 ## クイックスタート
 
 ```bash
-npm install
+npm ci
 ```
 
 ```bash

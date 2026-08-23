@@ -250,6 +250,34 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(JSON.parse(response.body).fetch('error')).to include('request ID:')
     end
 
+    it 'returns 413 when a data collection exceeds its finite budget' do
+      resolver = instance_double(RedmineCanvasGantt::QueryStateResolver)
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(
+          :@permissions,
+          { editable: true, viewable: true, baseline_editable: true }
+        )
+      end
+      allow(controller).to receive(:descendant_project_ids).and_return([1])
+      allow(controller).to receive(:query_state_resolver).and_return(resolver)
+      allow(resolver).to receive(:resolve).and_raise(
+        RedmineCanvasGantt::DataPayloadBudget::Exceeded.new(
+          resource: 'issues',
+          limit: 10_000,
+          actual: 10_001
+        )
+      )
+
+      get :data, params: { project_id: 'demo' }, format: :json
+
+      expect(response).to have_http_status(413)
+      expect(JSON.parse(response.body)).to include(
+        'code' => 'canvas_gantt_payload_limit',
+        'resource' => 'issues',
+        'limit' => 10_000
+      )
+    end
+
     it 'returns data payload with expected top-level keys' do
       payload_builder = instance_double(RedmineCanvasGantt::DataPayloadBuilder)
       baseline_repository = instance_double(RedmineCanvasGantt::BaselineRepository)
@@ -274,7 +302,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:query_state_resolver).and_return(resolver)
       allow(controller).to receive(:baseline_repository).and_return(baseline_repository)
       allow(controller).to receive(:visible_baseline_snapshot).with(baseline_snapshot, [1, 2]).and_return(baseline_snapshot)
-      issue = double('Issue', project_id: 1)
+      issue = double('Issue', id: 10, project_id: 1)
       allow(resolver).to receive(:resolve).and_return({
         issues: [issue],
         initial_state: { query_id: 7 },
@@ -337,7 +365,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       resolver = instance_double(RedmineCanvasGantt::QueryStateResolver)
       filter_option_project = double('ProjectOption', id: 1, name: 'Demo')
       filter_option_issue = double('FilterOptionIssue')
-      issue = double('Issue', project_id: 1)
+      issue = double('Issue', id: 10, project_id: 1)
 
       allow(controller).to receive(:set_permissions) do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true, baseline_editable: true })
@@ -378,6 +406,48 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe '#data_relations' do
+    it 'loads only internal relations through the relation budget' do
+      budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, relation_limit: 2)
+      relation_scope = double('relation scope')
+      ordered_scope = double('ordered relation scope')
+      issues = [instance_double(Issue, id: 10), instance_double(Issue, id: 11)]
+      allow(controller).to receive(:data_payload_budget).and_return(budget)
+      expect(IssueRelation).to receive(:where)
+        .with(issue_from_id: [10, 11], issue_to_id: [10, 11])
+        .and_return(relation_scope)
+      expect(relation_scope).to receive(:order).with(:id).and_return(ordered_scope)
+      expect(budget).to receive(:load_records)
+        .with(ordered_scope, resource: 'relations', limit: 2)
+        .and_return([:relation])
+
+      expect(controller.send(:data_relations, issues)).to eq([:relation])
+    end
+  end
+
+  describe '#render_data_payload_limit' do
+    it 'returns a stable 413 contract without a partial payload' do
+      allow(controller).to receive(:canvas_gantt_l).and_return('Data is too large')
+      error = RedmineCanvasGantt::DataPayloadBudget::Exceeded.new(
+        resource: 'relations',
+        limit: 2,
+        actual: 3
+      )
+      controller.response = ActionDispatch::TestResponse.create
+      controller.instance_variable_set(:@_response_body, nil)
+
+      controller.send(:render_data_payload_limit, error)
+
+      expect(controller.response).to have_http_status(413)
+      expect(JSON.parse(controller.response.body)).to eq(
+        'error' => 'Data is too large',
+        'code' => 'canvas_gantt_payload_limit',
+        'resource' => 'relations',
+        'limit' => 2
+      )
+    end
+  end
+
   describe '#current_view_scope' do
     it 'builds only the operation project boundary without resolving the Issue collection' do
       user = instance_double(User)
@@ -411,6 +481,13 @@ RSpec.describe CanvasGanttsController, type: :controller do
     let(:member_project) { double('ProjectOption', id: 3) }
 
     before do
+      budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, collection_limit: 10_000)
+      allow(controller).to receive(:data_payload_budget).and_return(budget)
+      allow(budget).to receive(:load_records) do |scope, resource:, limit:|
+        expect(resource).to eq('projects')
+        expect(limit).to eq(10_000)
+        scope.to_a
+      end
       allow(Project).to receive(:visible).and_return(visible_scope)
       allow(visible_scope).to receive(:active).and_return(member_active_scope)
       allow(member_active_scope).to receive(:where).with(id: [1, 2]).and_return(tree_project_scope)
@@ -1996,5 +2073,41 @@ RSpec.describe CanvasGanttsController, type: :controller do
         'completeness' => 'complete'
       )
     end
+
+    it 'rejects a calendar-sensitive mutation when the client revision is stale' do
+      calendar_resolver = instance_double(
+        RedmineCanvasGantt::ProjectCalendarResolver,
+        revision: 'calendar-revision-2'
+      )
+      allow(controller).to receive(:business_calendar_resolver).and_return(calendar_resolver)
+      expect(controller).not_to receive(:schedule_mutation_coordinator)
+      request.headers['X-Redmine-Canvas-Gantt-Calendar-Revision'] = 'calendar-revision-1'
+
+      post :schedule_mutation,
+           params: {
+             project_id: 'demo',
+             operation_id: 'schedule:stale-calendar',
+             base_revisions: { '10' => 1 },
+             changes: [{ task_id: 10, due_date: '2027-01-05' }]
+           },
+           format: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(JSON.parse(response.body)).to include(
+        'status' => 'conflict',
+        'failure' => include(
+          'kind' => 'conflict',
+          'resource_role' => 'scope',
+          'resource_type' => 'business_calendar',
+          'resource_id' => 'calendar-revision-2',
+          'remote_availability' => 'needs_refresh'
+        ),
+        'conflict' => {
+          'expected_calendar_revision' => 'calendar-revision-1',
+          'actual_calendar_revision' => 'calendar-revision-2'
+        }
+      )
+    end
+
   end
 end

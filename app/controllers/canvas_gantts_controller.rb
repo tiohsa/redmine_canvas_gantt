@@ -1,6 +1,16 @@
 require 'set'
 
 class CanvasGanttsController < ApplicationController
+  BUSINESS_CALENDAR_REVISION_HEADER = 'HTTP_X_REDMINE_CANVAS_GANTT_CALENDAR_REVISION'.freeze
+  CALENDAR_SENSITIVE_MUTATION_ACTIONS = %i[
+    edit_meta_preview
+    update
+    schedule_mutation
+    bulk_create_subtasks
+    create_relation
+    update_relation
+  ].freeze
+
   CANVAS_GANTT_UI_SETTINGS = {
     'inline_edit_subject' => '1',
     'inline_edit_assigned_to' => '1',
@@ -330,6 +340,7 @@ class CanvasGanttsController < ApplicationController
     :relations_to, :relations_from, :status, :tracker, :assigned_to, :priority,
     :author, :category, :project, :fixed_version, { custom_values: :custom_field }
   ].freeze
+  DATA_ISSUE_INCLUDES = (ISSUE_INCLUDES - %i[relations_to relations_from]).freeze
   EDITABLE_FIELDS = %i[
     subject assigned_to_id status_id done_ratio due_date start_date priority_id
     category_id estimated_hours project_id tracker_id fixed_version_id custom_field_values
@@ -347,6 +358,7 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'custom_field_serializer').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'custom_field_extractor').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'data_payload_builder').to_s
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'data_payload_budget').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'constraint_graph').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'relation_params_normalizer').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'edit_meta_payload_builder').to_s
@@ -369,6 +381,8 @@ class CanvasGanttsController < ApplicationController
   # the feature gated by this permission. Individual Issue operations perform
   # their own standard Redmine authorization below.
   before_action :ensure_view_permission
+  before_action :ensure_business_calendar_revision,
+                only: CALENDAR_SENSITIVE_MUTATION_ACTIONS
   skip_forgery_protection only: [:asset]
   skip_before_action :resolve_canvas_project, :set_permissions, :ensure_view_permission, only: [:asset]
 
@@ -399,20 +413,31 @@ class CanvasGanttsController < ApplicationController
       baseline_load = baseline_repository.load(project_id: @project.id)
       member_projects_only = resolved_query[:initial_state].fetch(:member_projects_only, false)
 
-      render json: data_payload_builder.build(
+      relations = data_relations(resolved_query[:issues])
+      payload = data_payload_builder.build(
         project: @project,
         permissions: @permissions,
         project_ids: project_ids,
         issues: resolved_query[:issues],
-        filter_option_projects: filter_option_projects(project_ids, member_projects_only: member_projects_only),
+        relations: relations,
+        filter_option_projects: bounded_data_collection(
+          filter_option_projects(project_ids, member_projects_only: member_projects_only),
+          resource: 'projects'
+        ),
         filter_option_issues: filter_option_issues(project_ids),
-        filter_option_trackers: filter_option_trackers(project_ids),
+        filter_option_trackers: bounded_data_collection(
+          filter_option_trackers(project_ids),
+          resource: 'trackers'
+        ),
         initial_state: resolved_query[:initial_state],
         query_context: resolved_query[:query_context],
         warnings: resolved_query[:warnings] + baseline_load.warnings,
         baseline: visible_baseline_snapshot(baseline_load.snapshot, project_ids),
         business_calendar: business_calendar_resolver.payload(projects: business_calendar_projects(project_ids))
       )
+      render body: data_payload_budget.encode_json(payload), content_type: 'application/json'
+    rescue RedmineCanvasGantt::DataPayloadBudget::Exceeded => e
+      render_data_payload_limit(e)
     rescue => e
       render_internal_error(e)
     end
@@ -459,6 +484,8 @@ class CanvasGanttsController < ApplicationController
     )
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_entity
+  rescue RedmineCanvasGantt::DataPayloadBudget::Exceeded => e
+    render_data_payload_limit(e)
   rescue => e
     render_internal_error(e)
   end
@@ -829,7 +856,11 @@ class CanvasGanttsController < ApplicationController
   end
 
   def baseline_project_issues(project_ids)
-    Issue.visible.where(project_id: project_ids).select(:id, :start_date, :due_date).to_a
+    data_payload_budget.load_records(
+      Issue.visible.where(project_id: project_ids).select(:id, :start_date, :due_date),
+      resource: 'baseline_issues',
+      limit: data_payload_budget.issue_limit
+    )
   end
 
   def visible_baseline_snapshot(snapshot, project_ids)
@@ -867,33 +898,42 @@ class CanvasGanttsController < ApplicationController
       params: params,
       current_user: User.current,
       issue_scope: Issue.visible,
-      issue_includes: ISSUE_INCLUDES
+      issue_includes: DATA_ISSUE_INCLUDES,
+      data_payload_budget: data_payload_budget
     )
   end
 
   def filter_option_projects(project_ids, member_projects_only: false)
-    if member_projects_only
-      if User.current&.admin?
-        Project.visible.active.to_a
-      else
-        return [] if member_candidate_ids.empty?
+    scope = if member_projects_only
+              if User.current&.admin?
+                Project.visible.active
+              else
+                return [] if member_candidate_ids.empty?
 
-        Project.visible.active
-          .joins(:members)
-          .where(members: { user_id: member_candidate_ids })
-          .distinct
-          .to_a
-      end
-    else
-      Project.visible.active.where(id: candidate_project_ids(project_ids)).to_a
-    end
+                Project.visible.active
+                  .joins(:members)
+                  .where(members: { user_id: member_candidate_ids })
+                  .distinct
+              end
+            else
+              Project.visible.active.where(id: candidate_project_ids(project_ids))
+            end
+    data_payload_budget.load_records(
+      scope,
+      resource: 'projects',
+      limit: data_payload_budget.collection_limit
+    )
   end
 
   def filter_option_issues(project_ids)
-    Issue.visible.where(project_id: project_ids)
+    scope = Issue.visible.where(project_id: project_ids)
       .select(:id, :assigned_to_id, :project_id)
       .includes(:assigned_to)
-      .to_a
+    data_payload_budget.load_records(
+      scope,
+      resource: 'filter_issues',
+      limit: data_payload_budget.issue_limit
+    )
   end
 
   # Keep tracker candidates independent from the filtered task collection and
@@ -901,13 +941,15 @@ class CanvasGanttsController < ApplicationController
   # permission boundary; the distinct projection is O(project-tracker
   # memberships) and the tracker name is fetched in the same query.
   def filter_option_trackers(project_ids)
-    Issue.visible
+    rows = Issue.visible
       .where(project_id: project_ids)
       .where.not(tracker_id: nil)
       .joins(:tracker)
       .distinct
+      .limit(data_payload_budget.collection_limit + 1)
       .pluck(:tracker_id, :project_id, 'trackers.name')
-      .map { |tracker_id, project_id, name| { id: tracker_id, project_id: project_id, name: name } }
+    data_payload_budget.ensure_count!(rows, resource: 'trackers')
+    rows.map { |tracker_id, project_id, name| { id: tracker_id, project_id: project_id, name: name } }
   end
 
   def render_internal_error(error)
@@ -1339,8 +1381,42 @@ class CanvasGanttsController < ApplicationController
   def data_payload_builder
     @data_payload_builder ||= RedmineCanvasGantt::DataPayloadBuilder.new(
       custom_field_extractor: custom_field_extractor,
-      current_user: User.current
+      current_user: User.current,
+      data_payload_budget: data_payload_budget
     )
+  end
+
+  def data_payload_budget
+    @data_payload_budget ||= RedmineCanvasGantt::DataPayloadBudget.new
+  end
+
+  def data_relations(issues)
+    issue_ids = issues.map(&:id)
+    return [] if issue_ids.empty?
+
+    scope = IssueRelation.where(issue_from_id: issue_ids, issue_to_id: issue_ids).order(:id)
+    data_payload_budget.load_records(
+      scope,
+      resource: 'relations',
+      limit: data_payload_budget.relation_limit
+    )
+  end
+
+  def bounded_data_collection(records, resource:)
+    data_payload_budget.ensure_count!(
+      records,
+      resource: resource,
+      limit: data_payload_budget.collection_limit
+    )
+  end
+
+  def render_data_payload_limit(error)
+    render json: {
+      error: canvas_gantt_l(:error_canvas_gantt_data_scope_too_large),
+      code: 'canvas_gantt_payload_limit',
+      resource: error.resource,
+      limit: error.limit
+    }, status: 413
   end
 
   def relation_params_normalizer
@@ -1369,7 +1445,8 @@ class CanvasGanttsController < ApplicationController
     RedmineCanvasGantt::ScheduleMutationCoordinator.new(
       current_user: User.current,
       project_scope_ids: current_view_scope[:scope_project_ids],
-      payload_builder: data_payload_builder
+      payload_builder: data_payload_builder,
+      calendar_resolver: business_calendar_resolver
     )
   end
 
@@ -1386,8 +1463,34 @@ class CanvasGanttsController < ApplicationController
     )
   end
 
+  def ensure_business_calendar_revision
+    expected_revision = request.headers[BUSINESS_CALENDAR_REVISION_HEADER].presence
+    return if expected_revision.nil?
+
+    actual_revision = business_calendar_resolver.revision.to_s
+    return if expected_revision == actual_revision
+
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:error_canvas_gantt_business_calendar_changed),
+      kind: 'conflict',
+      resource_role: 'scope',
+      resource_type: 'business_calendar',
+      resource_id: actual_revision,
+      remote_availability: 'needs_refresh'
+    ).merge(
+      conflict: {
+        expected_calendar_revision: expected_revision,
+        actual_calendar_revision: actual_revision
+      }
+    ), status: :conflict
+  end
+
   def business_calendar_projects(project_ids)
-    Project.where(id: project_ids).to_a
+    data_payload_budget.load_records(
+      Project.where(id: project_ids),
+      resource: 'business_calendar_projects',
+      limit: data_payload_budget.collection_limit
+    )
   end
 
   def bulk_subtask_creator

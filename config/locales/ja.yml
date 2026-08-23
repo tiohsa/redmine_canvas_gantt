@@ -282,6 +282,8 @@ ja:
     error_canvas_gantt_issue_not_found_in_project: "このプロジェクトではチケットが見つかりません"
     error_canvas_gantt_subjects_non_empty_array: "subjects は空でない配列である必要があります"
     error_canvas_gantt_parent_linkage_failed: "親子リンクの設定に失敗しました"
+    error_canvas_gantt_business_calendar_changed: "営業日カレンダーが変更されました。Canvas Gantt を再読み込みして、もう一度お試しください。"
+    error_canvas_gantt_data_scope_too_large: "Canvas Gantt のデータが設定された安全上限を超えています。絞り込みを狭めるか、管理者に上限の確認を依頼してください。"
     error_canvas_gantt_conflict_reload: "別の更新と競合しました。再読み込みしてください"
     error_canvas_gantt_task_cannot_be_child_of_itself: "タスク自身を子にすることはできません"
     error_canvas_gantt_cannot_move_under_own_descendant: "自身の子孫タスクの配下へ移動することはできません"

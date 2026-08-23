@@ -5,6 +5,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+bun.lockb
 lerna-debug.log*
 
 node_modules
