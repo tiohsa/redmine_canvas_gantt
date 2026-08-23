@@ -951,13 +951,88 @@ describe('TaskStore version layout exclusivity', () => {
 });
 
 describe('TaskStore API data application', () => {
-    beforeEach(() => {
-        window.localStorage.clear();
-        useTaskStore.setState(useTaskStore.getInitialState(), true);
-        vi.mocked(apiClient.fetchData).mockReset();
+  beforeEach(() => {
+    window.localStorage.clear();
+    useTaskStore.setState(useTaskStore.getInitialState(), true);
+    useUIStore.setState(useUIStore.getInitialState(), true);
+    vi.mocked(apiClient.fetchData).mockReset();
+  });
+
+  it('preserves user-owned hidden columns when mutation refresh reapplies query initial state', () => {
+    useUIStore.getState().setVisibleColumns(['id', 'subject']);
+
+    useTaskStore.getState().applyApiData({
+      ...buildApiData([]),
+      initialState: { visibleColumns: ['id', 'subject', 'status'] }
     });
 
-    it('refreshData applies API data with one TaskStore state update', async () => {
+    const uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(['id', 'subject']);
+    expect(uiState.columnSettings.filter((column) => column.visible).map((column) => column.key))
+      .toEqual(['id', 'subject']);
+    expect(uiState.columnStateSource).toBe('user');
+    expect(uiState.columnsExplicitInQuery).toBe(true);
+  });
+
+  it('applies query-owned columns and restores preferences when query columns disappear', () => {
+    const preferenceState = useUIStore.getInitialState();
+
+    useTaskStore.getState().applyApiData({
+      ...buildApiData([]),
+      initialState: { visibleColumns: ['status', 'subject'] }
+    });
+
+    let uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(['status', 'subject']);
+    expect(uiState.columnSettings.filter((column) => column.visible).map((column) => column.key))
+      .toEqual(['status', 'subject']);
+    expect(uiState.columnStateSource).toBe('query');
+    expect(uiState.columnsExplicitInQuery).toBe(true);
+
+    useTaskStore.getState().applyApiData({ ...buildApiData([]), initialState: {} });
+
+    uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(preferenceState.visibleColumns);
+    expect(uiState.columnSettings).toEqual(preferenceState.columnSettings);
+    expect(uiState.columnStateSource).toBe('preference');
+    expect(uiState.columnsExplicitInQuery).toBe(false);
+  });
+
+  it('applies explicit saved-query columns at the query boundary after a user change', async () => {
+    useUIStore.getState().setVisibleColumns(['id', 'subject']);
+    vi.mocked(apiClient.fetchData).mockResolvedValue({
+      ...buildApiData([]),
+      initialState: { queryId: 12, visibleColumns: ['status'] }
+    });
+
+    await useTaskStore.getState().applySavedQuery(12);
+
+    const uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(['status']);
+    expect(uiState.columnSettings.filter((column) => column.visible).map((column) => column.key))
+      .toEqual(['status']);
+    expect(uiState.columnStateSource).toBe('query');
+    expect(uiState.columnsExplicitInQuery).toBe(true);
+  });
+
+  it('preserves user-owned columns when saved-query response omits column state', async () => {
+    useUIStore.getState().setVisibleColumns(['id', 'subject']);
+    vi.mocked(apiClient.fetchData).mockResolvedValue({
+      ...buildApiData([]),
+      initialState: { queryId: 12 }
+    });
+
+    await useTaskStore.getState().applySavedQuery(12);
+
+    const uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(['id', 'subject']);
+    expect(uiState.columnSettings.filter((column) => column.visible).map((column) => column.key))
+      .toEqual(['id', 'subject']);
+    expect(uiState.columnStateSource).toBe('user');
+    expect(uiState.columnsExplicitInQuery).toBe(true);
+  });
+
+  it('refreshData applies API data with one TaskStore state update', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [buildTask({ id: 't1', projectId: 'p1', projectName: 'Project 1' })],
             relations: [],

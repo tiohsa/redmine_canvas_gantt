@@ -1268,7 +1268,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
             querySyncState = result.querySyncState;
             return { ...result.patch, activeReadContext: readContext ?? activeReadContext };
         });
-        if (data.initialState?.visibleColumns?.length) {
+        const isQueryBoundary = readContext?.purpose === 'initial_load' || readContext?.purpose === 'saved_query';
+        if (data.initialState?.visibleColumns?.length && (isQueryBoundary || useUIStore.getState().columnStateSource !== 'user')) {
             useUIStore.getState().applyQueryVisibleColumns(data.initialState.visibleColumns);
         } else if (useUIStore.getState().columnStateSource === 'query') {
             useUIStore.getState().restorePreferenceColumns();
