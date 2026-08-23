@@ -86,6 +86,42 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     Issue.connection.adapter_name.to_s.match?(/mysql|trilogy/i)
   end
 
+  TRANSACTION_ISOLATION_LEVELS = {
+    'READ UNCOMMITTED' => 'READ UNCOMMITTED',
+    'READ COMMITTED' => 'READ COMMITTED',
+    'REPEATABLE READ' => 'REPEATABLE READ',
+    'SERIALIZABLE' => 'SERIALIZABLE'
+  }.freeze
+
+  def with_read_committed_connection(connection)
+    original_isolation = transaction_isolation_level(connection)
+    set_transaction_isolation(connection, 'READ COMMITTED')
+    yield original_isolation
+  ensure
+    set_transaction_isolation(connection, original_isolation) if original_isolation
+  end
+
+  def transaction_isolation_level(connection)
+    raw_isolation = connection.select_value('SELECT @@SESSION.tx_isolation')
+    normalized_isolation = raw_isolation.to_s.upcase.gsub(/[-_]/, ' ').split.join(' ')
+    TRANSACTION_ISOLATION_LEVELS.fetch(normalized_isolation) do
+      raise "Unsupported transaction isolation level: #{raw_isolation.inspect}"
+    end
+  end
+
+  def set_transaction_isolation(connection, isolation)
+    sql_isolation = TRANSACTION_ISOLATION_LEVELS.fetch(isolation) do
+      raise ArgumentError, "Unsupported transaction isolation level: #{isolation.inspect}"
+    end
+    connection.execute("SET SESSION TRANSACTION ISOLATION LEVEL #{sql_isolation}")
+  end
+
+  def expect_worker_isolation_restored(isolation_states)
+    original_isolation, restored_isolation = isolation_states.pop
+    expect(original_isolation).not_to be_nil
+    expect(restored_isolation).to eq(original_isolation)
+  end
+
   def barrier_coordinator_class
     Class.new(described_class) do
       def initialize(scope_ready:, resume_scope:, **kwargs)
@@ -157,6 +193,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     resume_scope = Queue.new
     results = Queue.new
     errors = Queue.new
+    isolation_states = Queue.new
     project_id = planned_issue.project_id
     planned_id = planned_issue.id
     base_revision = planned_issue.reload.lock_version.to_i
@@ -164,31 +201,38 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
 
     worker = Thread.new do
       Issue.connection_pool.with_connection do |connection|
+        original_isolation = nil
         begin
           # MariaDB CI normally uses REPEATABLE READ. READ COMMITTED makes the
           # topology change visible to later callback queries and exercises the
           # PostgreSQL-like race window deterministically for this test.
-          connection.execute('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED')
-          current_user = User.find(2)
-          User.current = current_user
-          coordinator = klass.new(
-            scope_ready: scope_ready,
-            resume_scope: resume_scope,
-            current_user: current_user,
-            project_scope_ids: [project_id],
-            payload_builder: ConcurrencyPayloadBuilder.new
-          )
-          results << coordinator.call(
-            operation_id: "schedule:barrier-#{planned_id}",
-            base_revisions: { planned_id => base_revision },
-            changes: [{ task_id: planned_id, start_date: start_date, due_date: due_date }]
-          )
+          with_read_committed_connection(connection) do |previous_isolation|
+            original_isolation = previous_isolation
+            current_user = User.find(2)
+            User.current = current_user
+            coordinator = klass.new(
+              scope_ready: scope_ready,
+              resume_scope: resume_scope,
+              current_user: current_user,
+              project_scope_ids: [project_id],
+              payload_builder: ConcurrencyPayloadBuilder.new
+            )
+            results << coordinator.call(
+              operation_id: "schedule:barrier-#{planned_id}",
+              base_revisions: { planned_id => base_revision },
+              changes: [{ task_id: planned_id, start_date: start_date, due_date: due_date }]
+            )
+          end
         rescue StandardError => error
           errors << error
           scope_ready << false
         ensure
           User.current = nil
-          connection.execute('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ') rescue nil
+          begin
+            isolation_states << [original_isolation, transaction_isolation_level(connection)]
+          rescue StandardError => error
+            errors << error
+          end
         end
       end
     end
@@ -201,6 +245,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     worker.join(15)
     raise 'Schedule mutation barrier worker did not finish' if worker.alive?
     raise errors.pop unless errors.empty?
+    expect_worker_isolation_restored(isolation_states)
 
     [results.pop, topology_value]
   ensure
@@ -217,6 +262,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     resume_rollback = Queue.new
     results = Queue.new
     errors = Queue.new
+    isolation_states = Queue.new
     project_id = planned_issue.project_id
     planned_id = planned_issue.id
     base_revision = planned_issue.reload.lock_version.to_i
@@ -224,33 +270,40 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
 
     worker = Thread.new do
       Issue.connection_pool.with_connection do |connection|
+        original_isolation = nil
         begin
-          connection.execute('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED')
-          current_user = User.find(2)
-          User.current = current_user
-          coordinator = klass.new(
-            scope_ready: scope_ready,
-            resume_scope: resume_scope,
-            rollback_ready: rollback_ready,
-            resume_rollback: resume_rollback,
-            pause_each_attempt: pause_each_attempt,
-            observe_rollback: observe_rollback,
-            current_user: current_user,
-            project_scope_ids: [project_id],
-            payload_builder: ConcurrencyPayloadBuilder.new
-          )
-          results << coordinator.call(
-            operation_id: "schedule:post-write-barrier-#{planned_id}",
-            base_revisions: { planned_id => base_revision },
-            changes: [{ task_id: planned_id, start_date: start_date, due_date: due_date }]
-          )
+          with_read_committed_connection(connection) do |previous_isolation|
+            original_isolation = previous_isolation
+            current_user = User.find(2)
+            User.current = current_user
+            coordinator = klass.new(
+              scope_ready: scope_ready,
+              resume_scope: resume_scope,
+              rollback_ready: rollback_ready,
+              resume_rollback: resume_rollback,
+              pause_each_attempt: pause_each_attempt,
+              observe_rollback: observe_rollback,
+              current_user: current_user,
+              project_scope_ids: [project_id],
+              payload_builder: ConcurrencyPayloadBuilder.new
+            )
+            results << coordinator.call(
+              operation_id: "schedule:post-write-barrier-#{planned_id}",
+              base_revisions: { planned_id => base_revision },
+              changes: [{ task_id: planned_id, start_date: start_date, due_date: due_date }]
+            )
+          end
         rescue StandardError => error
           errors << error
           scope_ready << false
           rollback_ready << false
         ensure
           User.current = nil
-          connection.execute('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ') rescue nil
+          begin
+            isolation_states << [original_isolation, transaction_isolation_level(connection)]
+          rescue StandardError => error
+            errors << error
+          end
         end
       end
     end
@@ -263,12 +316,17 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     end
 
     topology_values = []
-    rollback_state = nil
+    rollback_states = []
     if pause_each_attempt
       3.times do |attempt|
         wait_for_barrier.call(scope_ready, "B-to-C scope barrier attempt #{attempt + 1}")
         topology_values << yield(attempt)
         resume_scope << true
+        if observe_rollback && attempt < 2
+          wait_for_barrier.call(rollback_ready, "post-rollback observation barrier attempt #{attempt + 1}")
+          rollback_states << schedule_state(planned_issue)
+          resume_rollback << true
+        end
       end
     else
       wait_for_barrier.call(scope_ready, 'B-to-C scope barrier')
@@ -276,7 +334,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
       resume_scope << true
       if observe_rollback
         wait_for_barrier.call(rollback_ready, 'post-rollback observation barrier')
-        rollback_state = schedule_state(planned_issue)
+        rollback_states << schedule_state(planned_issue)
         resume_rollback << true
       end
     end
@@ -284,12 +342,43 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     worker.join(15)
     raise 'Schedule mutation post-write barrier worker did not finish' if worker.alive?
     raise errors.pop unless errors.empty?
+    expect_worker_isolation_restored(isolation_states)
 
-    [results.pop, topology_values, rollback_state]
+    [results.pop, topology_values, rollback_states]
   ensure
     resume_scope << true if defined?(worker) && worker&.alive?
     resume_rollback << true if defined?(worker) && worker&.alive?
     worker&.join(1)
+  end
+
+  it 'restores the worker connection isolation when the worker block raises' do
+    skip 'session isolation restoration currently requires the MySQL/MariaDB CI adapter' unless mysql_family?
+
+    errors = Queue.new
+    isolation_states = Queue.new
+    worker = Thread.new do
+      Issue.connection_pool.with_connection do |connection|
+        original_isolation = nil
+        begin
+          with_read_committed_connection(connection) do |previous_isolation|
+            original_isolation = previous_isolation
+            raise 'forced worker failure'
+          end
+        rescue StandardError => error
+          errors << error
+        ensure
+          begin
+            isolation_states << [original_isolation, transaction_isolation_level(connection)]
+          rescue StandardError => error
+            errors << error
+          end
+        end
+      end
+    end
+
+    Timeout.timeout(15) { worker.join }
+    expect(errors.pop.message).to eq('forced worker failure')
+    expect_worker_isolation_restored(isolation_states)
   end
 
   def expect_no_incomplete_success(result, callback_issue, callback_baseline)
@@ -345,7 +434,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
     )
     original_state = schedule_state(planned)
 
-    result, _topology_values, rollback_state = run_post_write_barrier_schedule(
+    result, _topology_values, rollback_states = run_post_write_barrier_schedule(
       planned,
       start_date: '2027-11-01',
       due_date: '2027-11-02',
@@ -356,7 +445,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
       schedule_state(successor)
     end
 
-    expect(rollback_state).to eq(original_state)
+    expect(rollback_states).to eq([original_state])
     expect(result.status).to eq(:ok), result.inspect
     final_state = schedule_state(planned)
     expect(final_state[0, 2]).to eq([Date.new(2027, 11, 1), Date.new(2027, 11, 2)])
@@ -369,29 +458,41 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
       start_date: Date.new(2027, 1, 1),
       due_date: Date.new(2027, 1, 2)
     )
+    successor = build_committed_issue(
+      'B-to-C exhaustion successor',
+      start_date: Date.new(2027, 1, 10),
+      due_date: Date.new(2027, 1, 11)
+    )
+    relation = create_committed_precedes(planned, successor)
+    relation_identity = [relation.issue_from_id, relation.issue_to_id, relation.relation_type]
+    expect(
+      described_class.new(
+        current_user: User.current,
+        project_scope_ids: [planned.project_id],
+        payload_builder: ConcurrencyPayloadBuilder.new
+      ).send(:resolve_callback_scope, [planned.id])[:ids]
+    ).to include(planned.id, successor.id)
     original_state = schedule_state(planned)
+    delay_values = []
 
-    result, topology_values, _rollback_state = run_post_write_barrier_schedule(
+    result, topology_values, rollback_states = run_post_write_barrier_schedule(
       planned,
       start_date: '2027-12-01',
       due_date: '2027-12-02',
       pause_each_attempt: true,
-      observe_rollback: false
+      observe_rollback: true
     ) do |attempt|
-      successor = build_committed_issue(
-        "B-to-C exhaustion successor #{attempt}",
-        start_date: Date.new(2027, 1, 10 + attempt),
-        due_date: Date.new(2027, 1, 11 + attempt)
-      )
-      # A committed non-causal relation changes the topology signature on
-      # every attempt without expanding the locked callback scope. This keeps
-      # the test focused on B→C rollback rather than introducing a second
-      # callback lock race while exhausting the retry budget.
-      create_committed_relation(planned.reload, successor.reload, IssueRelation::TYPE_RELATES)
+      delay = attempt + 1
+      expect(IssueRelation.where(id: relation.id).update_all(delay: delay)).to eq(1)
+      relation.reload
+      delay_values << relation.delay
+      expect([relation.issue_from_id, relation.issue_to_id, relation.relation_type]).to eq(relation_identity)
       schedule_state(successor)
     end
 
+    expect(delay_values).to eq([1, 2, 3])
     expect(topology_values.size).to eq(3)
+    expect(rollback_states).to eq([original_state, original_state])
     expect(result.status).to eq(:conflict), result.inspect
     expect(result.entities).to eq([])
     expect(result.revisions).to eq({})
@@ -402,6 +503,8 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, 'callback topolo
       remote_availability: 'needs_refresh'
     )
     expect(schedule_state(planned)).to eq(original_state)
+    expect(relation.reload.delay).to eq(3)
+    expect([relation.issue_from_id, relation.issue_to_id, relation.relation_type]).to eq(relation_identity)
   end
 
   it 'does not return an incomplete success when a precedes relation is deleted after callback-scope resolution' do
