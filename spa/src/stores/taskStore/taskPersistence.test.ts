@@ -26,6 +26,318 @@ const schedulingIntent = (taskIds: Array<string | Task>): Record<string, boolean
 );
 
 describe('saveModifiedTasks', () => {
+    it('partitions mixed schedule and residual fields and hands canonical revisions to generic mutation', async () => {
+        const tasks = [
+            buildTask({ id: 'A', subject: 'old subject', dueDate: 11, lockVersion: 1 }),
+            buildTask({ id: 'B', subject: 'old B', lockVersion: 5 })
+        ];
+        const updateTask = vi.fn().mockImplementation(async (task: Task, _operationId?: string, fields?: TaskFields) => ({
+            status: 'ok' as const,
+            lockVersion: task.id === 'B' ? 7 : 3,
+            entity: { id: task.id, subject: fields?.subject, lockVersion: task.id === 'B' ? 7 : 3 }
+        }));
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok' as const,
+            entities: [
+                { id: 'A', dueDate: 11, lockVersion: 2 },
+                { id: 'B', subject: 'old B', lockVersion: 6 }
+            ],
+            revisions: { A: 2, B: 6 }
+        });
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [],
+            new Set(['A', 'B']),
+            [],
+            updateTask,
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, undefined, undefined, undefined,
+            { A: { due_date: 11, subject: 'New subject' }, B: { subject: 'New B' } },
+            undefined,
+            { A: true, B: false },
+            scheduleMutation,
+            { A: 1, B: 5 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledWith([
+            expect.objectContaining({ taskId: 'A', fields: { due_date: 11 } })
+        ]);
+        expect(updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'A', lockVersion: 2 }),
+            expect.any(String),
+            { subject: 'New subject' }
+        );
+        expect(updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'B', lockVersion: 6 }),
+            expect.any(String),
+            { subject: 'New B' }
+        );
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toEqual(new Set(['A', 'B']));
+        expect(result.settledFieldsByTask.get('A')).toEqual(new Set(['dueDate', 'subject']));
+    });
+
+    it('publishes only the stale schedule entity as an external conflict', async () => {
+        const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
+        const onConflict = vi.fn();
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            errors: ['stale A'],
+            entities: [{ id: 'A', dueDate: 12, lockVersion: 2 }],
+            revisions: { A: 2 },
+            conflict: { taskId: 'A', expectedRevision: 1, actualRevision: 2 }
+        });
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [],
+            new Set(['A', 'B']),
+            [],
+            vi.fn(),
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, onConflict, undefined, undefined,
+            { A: { due_date: 11 }, B: { due_date: 21 } },
+            undefined,
+            { A: true, B: true },
+            scheduleMutation,
+            { A: 1, B: 1 }
+        );
+
+        expect(onConflict).toHaveBeenCalledTimes(1);
+        expect(onConflict).toHaveBeenCalledWith('A', 'stale A', expect.objectContaining({ id: 'A' }), 2);
+        expect(result.failures).toEqual(new Map([
+            ['A', 'stale A'],
+            ['B', 'stale A']
+        ]));
+    });
+
+    it('keeps topology conflicts at operation scope without publishing stale task conflicts', async () => {
+        const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
+        const onConflict = vi.fn();
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            errors: ['The schedule topology changed while the operation was running.'],
+            failure: {
+                kind: 'conflict' as const,
+                resourceRole: 'scope' as const,
+                resourceType: 'schedule_scope',
+                remoteAvailability: 'needs_refresh' as const
+            }
+        });
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [],
+            new Set(['A', 'B']),
+            [],
+            vi.fn(),
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, onConflict, undefined, undefined,
+            { A: { due_date: 11 }, B: { due_date: 21 } },
+            undefined,
+            { A: true, B: true },
+            scheduleMutation,
+            { A: 1, B: 1 }
+        );
+
+        expect(onConflict).not.toHaveBeenCalled();
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.settledFieldsByTask).toEqual(new Map());
+        expect(result.failures).toEqual(new Map([
+            ['A', 'The schedule topology changed while the operation was running.'],
+            ['B', 'The schedule topology changed while the operation was running.']
+        ]));
+    });
+
+    it('does not downgrade a single-task scope conflict into a task conflict', async () => {
+        const task = buildTask({ id: 'A', dueDate: 11, lockVersion: 1 });
+        const onConflict = vi.fn();
+        const onTaskResult = vi.fn();
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            errors: ['The schedule topology changed while the operation was running.'],
+            failure: {
+                kind: 'conflict' as const,
+                resourceRole: 'scope' as const,
+                resourceType: 'schedule_scope',
+                remoteAvailability: 'needs_refresh' as const
+            }
+        });
+
+        const result = await saveModifiedTasks(
+            [task],
+            [],
+            new Set(['A']),
+            [],
+            vi.fn(),
+            vi.fn().mockResolvedValue({ tasks: [task] }),
+            undefined,
+            onTaskResult,
+            onConflict,
+            undefined,
+            undefined,
+            { A: { due_date: 11 } },
+            undefined,
+            { A: true },
+            scheduleMutation,
+            { A: 1 }
+        );
+
+        expect(onConflict).not.toHaveBeenCalled();
+        expect(onTaskResult).toHaveBeenCalledWith('A', expect.objectContaining({
+            status: 'conflict',
+            failure: expect.objectContaining({ resourceRole: 'scope' })
+        }));
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.settledFieldsByTask).toEqual(new Map());
+        expect(result.unsentTaskIds).toEqual(new Set());
+        expect(result.failures).toEqual(new Map([
+            ['A', 'The schedule topology changed while the operation was running.']
+        ]));
+    });
+
+    it('sends origin and downstream left-shift intents in one schedule operation', async () => {
+        const tasks = [
+            buildTask({ id: 'origin', startDate: 8, dueDate: 9 }),
+            buildTask({ id: 'downstream', startDate: 10, dueDate: 11 })
+        ];
+        const updateTask = vi.fn();
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok' as const,
+            entities: tasks.map(task => ({ id: task.id, startDate: task.startDate, dueDate: task.dueDate, lockVersion: 2 })),
+            revisions: { origin: 2, downstream: 2 }
+        });
+
+        const result = await saveModifiedTasks(
+            tasks,
+            [],
+            new Set(['origin', 'downstream']),
+            [],
+            updateTask,
+            vi.fn().mockResolvedValue({ tasks }),
+            undefined, undefined, undefined, undefined, undefined,
+            dueDateIntent(tasks), undefined, schedulingIntent(tasks),
+            scheduleMutation,
+            { origin: 1, downstream: 1 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(1);
+        expect(scheduleMutation.mock.calls[0][0]).toHaveLength(2);
+        expect(scheduleMutation.mock.calls[0][0]).toEqual(expect.arrayContaining([
+            expect.objectContaining({ taskId: 'origin', baseRevision: 1, fields: { due_date: 9 } }),
+            expect.objectContaining({ taskId: 'downstream', baseRevision: 1, fields: { due_date: 11 } })
+        ]));
+        expect(updateTask).not.toHaveBeenCalled();
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toEqual(new Set(['origin', 'downstream']));
+    });
+
+    it('settles a schedule operation after response loss when the canonical plan is already applied', async () => {
+        const task = buildTask({ id: 'A', dueDate: 11, lockVersion: 2 });
+        const scheduleMutation = vi.fn().mockRejectedValue(new Error('response lost'));
+        const fetchData = vi.fn().mockResolvedValue({ tasks: [task] });
+
+        const result = await saveModifiedTasks(
+            [task], [], new Set(['A']), [], vi.fn(), fetchData,
+            undefined, undefined, undefined, undefined, undefined,
+            { A: { due_date: 11 } }, undefined, { A: true }, scheduleMutation, { A: 1 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(1);
+        expect(fetchData).toHaveBeenCalledTimes(1);
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toEqual(new Set(['A']));
+    });
+
+    it('retries one response-loss schedule operation from a fresh unchanged revision', async () => {
+        const task = buildTask({ id: 'A', dueDate: 11, lockVersion: 1 });
+        const baseTask = buildTask({ id: 'A', dueDate: 2, lockVersion: 1 });
+        const scheduleMutation = vi.fn()
+            .mockRejectedValueOnce(new Error('response lost'))
+            .mockResolvedValueOnce({ status: 'ok' as const, entities: [{ ...task, lockVersion: 2 }], revisions: { A: 2 } });
+        const fetchData = vi.fn().mockResolvedValue({ tasks: [baseTask] });
+
+        const result = await saveModifiedTasks(
+            [task], [], new Set(['A']), [], vi.fn(), fetchData,
+            undefined, undefined, undefined, undefined, undefined,
+            { A: { due_date: 11 } }, undefined, { A: true }, scheduleMutation, { A: 1 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(2);
+        expect(scheduleMutation.mock.calls[1][0]).toEqual([
+            expect.objectContaining({ taskId: 'A', baseRevision: 1 })
+        ]);
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toEqual(new Set(['A']));
+    });
+
+    it('keeps a response-loss schedule operation as conflict when fresh canonical fields differ', async () => {
+        const task = buildTask({ id: 'A', dueDate: 11, lockVersion: 1 });
+        const remote = buildTask({ id: 'A', dueDate: 12, lockVersion: 2 });
+        const scheduleMutation = vi.fn().mockRejectedValue(new Error('response lost'));
+        const onConflict = vi.fn();
+
+        const result = await saveModifiedTasks(
+            [task], [], new Set(['A']), [], vi.fn(),
+            vi.fn().mockResolvedValue({ tasks: [remote] }),
+            undefined, undefined, onConflict, undefined, undefined,
+            { A: { due_date: 11 } }, undefined, { A: true }, scheduleMutation, { A: 1 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(1);
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.failures.get('A')).toContain('unknown');
+        expect(onConflict).toHaveBeenCalledWith(
+            'A',
+            'The schedule mutation outcome is unknown.',
+            remote,
+            2
+        );
+    });
+
+    it.each([100, 200])('keeps one schedule request for a %s-task plan', async (count) => {
+        const tasks = Array.from({ length: count }, (_, index) => buildTask({
+            id: `task-${index}`,
+            dueDate: index + 11,
+            lockVersion: 1
+        }));
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok' as const,
+            entities: tasks.map(task => ({ ...task, lockVersion: 2 })),
+            revisions: Object.fromEntries(tasks.map(task => [task.id, 2]))
+        });
+
+        const result = await saveModifiedTasks(
+            tasks, [], new Set(tasks.map(task => task.id)), [], vi.fn(), vi.fn(),
+            undefined, undefined, undefined, undefined, undefined,
+            dueDateIntent(tasks), undefined, schedulingIntent(tasks), scheduleMutation,
+            Object.fromEntries(tasks.map(task => [task.id, 1]))
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(1);
+        expect(scheduleMutation.mock.calls[0][0]).toHaveLength(count);
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toHaveLength(count);
+    });
+
+    it('keeps local schedule ownership when the response-loss resync is unavailable', async () => {
+        const task = buildTask({ id: 'A', dueDate: 11, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockRejectedValue(new Error('connection lost'));
+        const fetchData = vi.fn().mockRejectedValue(new Error('resync unavailable'));
+
+        const result = await saveModifiedTasks(
+            [task], [], new Set(['A']), [], vi.fn(), fetchData,
+            undefined, undefined, undefined, undefined, undefined,
+            { A: { due_date: 11 } }, undefined, { A: true }, scheduleMutation, { A: 1 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(1);
+        expect(fetchData).toHaveBeenCalledTimes(1);
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.failures.get('A')).toBe('resync unavailable');
+    });
+
     it('fails a modified task with no explicit mutation intent before sending a request', async () => {
         const updateTask = vi.fn();
         const result = await saveModifiedTasks(

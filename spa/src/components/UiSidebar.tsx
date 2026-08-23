@@ -23,6 +23,8 @@ import { TrackerIcon } from './sidebar/trackerIcon';
 import { designTokens, fontFamilies } from '../styles/designTokens';
 import { formatDate } from '../utils/dateUtils';
 import { parseDateOnly } from '../utils/dateOnly';
+import { ContextPreviewViolationError, previewContextChange, StaleContextPreviewError } from '../services/contextPreview';
+import { StaleEditMetaResponseError } from '../stores/EditMetaStore';
 const NOTIFICATION_COLUMN_KEY = 'notification';
 
 type CanvasGanttSettings = InlineEditSettings & {
@@ -206,6 +208,7 @@ export const UiSidebar: React.FC = () => {
         getEditField,
         shouldEnableField,
         startCellEdit,
+        closeInlineEdit,
         save
     } = useSidebarInlineEdit({
         settings,
@@ -616,9 +619,9 @@ export const UiSidebar: React.FC = () => {
             key: 'author',
             title: tr('field_author'),
             width: columnWidths['author'] ?? 100,
-            render: (t: Task) => renderEditableCell(t, 'authorId', (
+            render: (t: Task) => (
                 <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.authorName || '-'}</span>
-            ))
+            )
         },
         {
             key: 'category',
@@ -1061,7 +1064,7 @@ export const UiSidebar: React.FC = () => {
                                                     );
                                                     if (!isEditing) return (col.render ? col.render(task) : renderFallbackCellValue(task, col.key));
 
-                                                    const close = () => setActiveInlineEdit(null);
+                                                    const close = () => closeInlineEdit(activeInlineEdit?.sessionId);
 
                                                     if (field === 'subject') {
                                                         return (
@@ -1247,29 +1250,6 @@ export const UiSidebar: React.FC = () => {
                                                         );
                                                     }
 
-                                                    if (field === 'authorId') {
-                                                        const taskMeta = editMetaByTaskId[task.id];
-                                                        if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
-                                                        return (
-                                                            <SelectEditor
-                                                                value={task.authorId ?? null}
-                                                                options={taskMeta.options.assignees}
-                                                                controlHeight={inlineControlHeight}
-                                                                onCancel={close}
-                                                                onCommit={async (next) => {
-                                                                    const nextName = meta.options.assignees.find(s => s.id === next)?.name;
-                                                                    await save({
-                                                                        taskId: task.id,
-                                                                        optimisticTaskUpdates: { authorId: next ?? undefined, authorName: nextName },
-                                                                        rollbackTaskUpdates: { authorId: task.authorId, authorName: task.authorName },
-                                                                        fields: { author_id: next }
-                                                                    });
-                                                                    close();
-                                                                }}
-                                                            />
-                                                        );
-                                                    }
-
                                                     if (field === 'categoryId') {
                                                         const taskMeta = editMetaByTaskId[task.id];
                                                         if (!taskMeta) return <span style={{ fontSize: `${mediumSmallFontSize}px`, color: sidebarLoadingText }}>{tr('label_loading')}</span>;
@@ -1324,31 +1304,31 @@ export const UiSidebar: React.FC = () => {
                                                                 onCancel={close}
                                                                 onCommit={async (next) => {
                                                                     if (next === null) return;
-                                                                    await fetchEditMeta(task.id, { targetProjectId: next, force: true });
-                                                                    const nextName = taskMeta.options.projects?.find(s => s.id === next)?.name;
                                                                     try {
+                                                                        const requestGeneration = useTaskStore.getState().editGenerations[task.id] ?? 0;
+                                                                        const preview = await previewContextChange({
+                                                                            task,
+                                                                            kind: 'project',
+                                                                            targetId: next,
+                                                                            fetchEditMeta,
+                                                                            freshness: {
+                                                                                generation: requestGeneration,
+                                                                                currentGeneration: () => useTaskStore.getState().editGenerations[task.id] ?? 0
+                                                                            }
+                                                                        });
                                                                         await save({
                                                                             taskId: task.id,
-                                                                            optimisticTaskUpdates: {
-                                                                                projectId: next !== null ? String(next) : undefined,
-                                                                                projectName: nextName,
-                                                                                fixedVersionId: undefined,
-                                                                                fixedVersionName: undefined,
-                                                                                categoryId: undefined,
-                                                                                categoryName: undefined
-                                                                            },
-                                                                            rollbackTaskUpdates: {
-                                                                                projectId: task.projectId,
-                                                                                projectName: task.projectName,
-                                                                                fixedVersionId: task.fixedVersionId,
-                                                                                fixedVersionName: task.fixedVersionName,
-                                                                                categoryId: task.categoryId,
-                                                                                categoryName: task.categoryName
-                                                                            },
-                                                                            fields: { project_id: next, fixed_version_id: null, category_id: null }
+                                                                            optimisticTaskUpdates: preview.projection,
+                                                                            rollbackTaskUpdates: preview.rollbackTaskUpdates,
+                                                                            fields: preview.mutationIntent
                                                                         });
                                                                         close();
                                                                     } catch (error) {
+                                                                        if (error instanceof ContextPreviewViolationError) {
+                                                                            useUIStore.getState().addNotification(error.message || tr('label_failed_to_save'), 'error');
+                                                                            return;
+                                                                        }
+                                                                        if (error instanceof StaleEditMetaResponseError || error instanceof StaleContextPreviewError) return;
                                                                         if (task.projectId) {
                                                                             await fetchEditMeta(task.id, { targetProjectId: Number(task.projectId), force: true });
                                                                         }
@@ -1370,14 +1350,36 @@ export const UiSidebar: React.FC = () => {
                                                                 onCancel={close}
                                                                 onCommit={async (next) => {
                                                                     if (next === null) return;
-                                                                    const nextName = meta.options.trackers?.find(s => s.id === next)?.name;
-                                                                    await save({
-                                                                        taskId: task.id,
-                                                                        optimisticTaskUpdates: { trackerId: next, trackerName: nextName },
-                                                                        rollbackTaskUpdates: { trackerId: task.trackerId, trackerName: task.trackerName },
-                                                                        fields: { tracker_id: next }
-                                                                    });
-                                                                    close();
+                                                                    try {
+                                                                        const requestGeneration = useTaskStore.getState().editGenerations[task.id] ?? 0;
+                                                                        const preview = await previewContextChange({
+                                                                            task,
+                                                                            kind: 'tracker',
+                                                                            targetId: next,
+                                                                            fetchEditMeta,
+                                                                            freshness: {
+                                                                                generation: requestGeneration,
+                                                                                currentGeneration: () => useTaskStore.getState().editGenerations[task.id] ?? 0
+                                                                            }
+                                                                        });
+                                                                        await save({
+                                                                            taskId: task.id,
+                                                                            optimisticTaskUpdates: preview.projection,
+                                                                            rollbackTaskUpdates: preview.rollbackTaskUpdates,
+                                                                            fields: preview.mutationIntent
+                                                                        });
+                                                                        close();
+                                                                    } catch (error) {
+                                                                        if (error instanceof ContextPreviewViolationError) {
+                                                                            useUIStore.getState().addNotification(error.message || tr('label_failed_to_save'), 'error');
+                                                                            return;
+                                                                        }
+                                                                        if (error instanceof StaleEditMetaResponseError || error instanceof StaleContextPreviewError) return;
+                                                                        if (task.trackerId) {
+                                                                            await fetchEditMeta(task.id, { targetTrackerId: task.trackerId, force: true });
+                                                                        }
+                                                                        throw error;
+                                                                    }
                                                                 }}
                                                             />
                                                         );

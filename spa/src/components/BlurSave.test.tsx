@@ -37,7 +37,7 @@ describe('UiSidebar Blur-to-Save', () => {
             visibleColumns: ['id', 'subject', 'status', 'startDate'],
             activeInlineEdit: null
         });
-        useEditMetaStore.setState({ metaByTaskId: {}, loadingTaskId: null, error: null });
+        useEditMetaStore.setState({ metaByTaskId: {}, loadingByTaskId: {}, error: null });
 
         useTaskStore.setState({
             autoSave: true,

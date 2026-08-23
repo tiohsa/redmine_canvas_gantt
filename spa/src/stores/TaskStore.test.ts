@@ -7,6 +7,7 @@ import { useUIStore } from './UIStore';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import { loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
+import { createReadContext } from './taskStore/stateContract';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -15,6 +16,7 @@ vi.mock('../api/client', () => ({
         updateTaskFields: vi.fn()
     }
 }));
+
 
 const MONDAY = Date.UTC(2026, 0, 5);
 const TUESDAY = Date.UTC(2026, 0, 6);
@@ -77,6 +79,268 @@ describe('TaskStore viewport clamping', () => {
 
         updateViewport({ scrollY: 5000 });
         expect(useTaskStore.getState().viewport.scrollY).toBe(maxScroll2);
+    });
+});
+
+describe('TaskStore canonical mutation reconciliation', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('keeps the server canonical value after settling the committed generation', () => {
+        const original = buildTask({ id: 'canonical-task', subject: 'persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { subject: 'local intent' });
+        const generation = useTaskStore.getState().editGenerations[original.id];
+
+        useTaskStore.getState().applyTaskMutationMetadata(original.id, {
+            completeness: 'partial',
+            entity: { id: original.id, subject: 'server normalized', lockVersion: 2 },
+            revision: 2
+        });
+        useTaskStore.getState().commitTaskOperation(original.id, generation, 2);
+
+        expect(useTaskStore.getState().allTasks.find(task => task.id === original.id)?.subject)
+            .toBe('server normalized');
+    });
+
+    it('reapplies only a later local generation over the server canonical value', () => {
+        const original = buildTask({ id: 'pending-task', subject: 'persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { subject: 'first intent' });
+        const committedGeneration = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().updateTask(original.id, { subject: 'later intent' });
+
+        useTaskStore.getState().applyTaskMutationMetadata(original.id, {
+            completeness: 'partial',
+            entity: { id: original.id, subject: 'server normalized', lockVersion: 2 },
+            revision: 2
+        });
+        useTaskStore.getState().commitTaskOperation(original.id, committedGeneration, 2);
+
+        expect(useTaskStore.getState().allTasks.find(task => task.id === original.id)?.subject)
+            .toBe('later intent');
+        expect(useTaskStore.getState().localTaskPatches[original.id]).toHaveLength(1);
+    });
+
+    it('keeps a projection-only local change out of modified task ownership', () => {
+        const original = buildTask({ id: 'projection-only', subject: 'persisted', statusId: 1 });
+        useTaskStore.getState().setTasks([original]);
+
+        useTaskStore.getState().updateTask(
+            original.id,
+            { subject: 'server projection', statusId: 2 },
+            {}
+        );
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === original.id)).toMatchObject({
+            subject: 'server projection',
+            statusId: 2
+        });
+        expect(state.localTaskPatches[original.id]).toEqual([
+            expect.objectContaining({
+                projection: { subject: 'server projection', statusId: 2 },
+                mutationIntent: {}
+            })
+        ]);
+        expect(state.modifiedTaskIds.has(original.id)).toBe(false);
+    });
+
+    it('rolls back failed Tracker Preview materialization while preserving a later generation', () => {
+        const original = buildTask({
+            id: 'tracker-preview',
+            trackerId: 1,
+            trackerName: 'Tracker A',
+            statusId: 1,
+            statusName: 'S1',
+            lockVersion: 1
+        });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.setState({
+            serverTaskSnapshot: {
+                entitiesById: { [original.id]: original },
+                revisions: { [original.id]: original.lockVersion },
+                context: null
+            }
+        });
+        useTaskStore.getState().updateTask(
+            original.id,
+            { trackerId: 2, trackerName: 'Tracker B', statusId: 2, statusName: 'S2' },
+            { trackerId: 2 }
+        );
+        const failedGeneration = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().updateTask(original.id, { subject: 'later local edit' });
+
+        useTaskStore.getState().rollbackTaskOperation(original.id, failedGeneration);
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === original.id)).toMatchObject({
+            trackerId: 1,
+            trackerName: 'Tracker A',
+            statusId: 1,
+            statusName: 'S1',
+            subject: 'later local edit'
+        });
+        expect(state.localTaskPatches[original.id]).toEqual([
+            expect.objectContaining({ generation: failedGeneration + 1, mutationIntent: { subject: 'later local edit' } })
+        ]);
+        expect(state.modifiedTaskIds.has(original.id)).toBe(true);
+    });
+
+    it('manual save serializes the intended value when projection differs', async () => {
+        const original = buildTask({ id: 'divergent-intent', subject: 'persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(
+            original.id,
+            { subject: 'server projection' },
+            { subject: 'explicit intended value' }
+        );
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 2 });
+
+        await useTaskStore.getState().saveChanges();
+
+        expect(apiClient.updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: original.id, subject: 'server projection' }),
+            expect.any(String),
+            { subject: 'explicit intended value' }
+        );
+    });
+
+    it('settles schedule-owned and residual fields independently in one manual save', async () => {
+        const original = buildTask({ id: 'mixed-fields', subject: 'persisted', dueDate: TUESDAY, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok',
+            entities: [{ id: original.id, dueDate: WEDNESDAY, lockVersion: 2 }],
+            revisions: { [original.id]: 2 }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 3,
+            entity: { id: original.id, subject: 'local subject', lockVersion: 3 }
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...original, dueDate: WEDNESDAY, subject: 'local subject', lockVersion: 3 }
+        ]));
+
+        try {
+            useTaskStore.getState().setTasks([original]);
+            useTaskStore.getState().updateTask(original.id, { dueDate: WEDNESDAY, subject: 'local subject' });
+
+            const failures = await useTaskStore.getState().saveChanges();
+
+            expect(failures).toEqual(new Map());
+            expect(scheduleMutation).toHaveBeenCalledTimes(1);
+            expect(scheduleMutation.mock.calls[0][0][0]).toMatchObject({
+                taskId: original.id,
+                dueDate: WEDNESDAY
+            });
+            expect(apiClient.updateTask).toHaveBeenCalledWith(
+                expect.objectContaining({ id: original.id, lockVersion: 2 }),
+                expect.any(String),
+                { subject: 'local subject' }
+            );
+            expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
+            expect(useTaskStore.getState().localTaskPatches[original.id]).toBeUndefined();
+            expect(useTaskStore.getState().allTasks[0]).toMatchObject({
+                dueDate: WEDNESDAY,
+                subject: 'local subject',
+                lockVersion: 3
+            });
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it('keeps local schedule intent without creating task conflicts on a topology conflict', async () => {
+        const tasks = [
+            buildTask({ id: 'topology-A', dueDate: TUESDAY, lockVersion: 1 }),
+            buildTask({ id: 'topology-B', dueDate: TUESDAY, lockVersion: 1 })
+        ];
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            errors: ['The schedule topology changed while the operation was running.'],
+            failure: {
+                kind: 'conflict' as const,
+                resourceRole: 'scope' as const,
+                resourceType: 'schedule_scope',
+                remoteAvailability: 'needs_refresh' as const
+            }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData(tasks));
+
+        try {
+            useTaskStore.getState().setTasks(tasks);
+            useTaskStore.getState().updateTask('topology-A', { dueDate: WEDNESDAY });
+            useTaskStore.getState().updateTask('topology-B', { dueDate: WEDNESDAY });
+
+            const failures = await useTaskStore.getState().saveChanges();
+            const state = useTaskStore.getState();
+
+            expect(failures).toEqual(new Map([
+                ['topology-A', 'The schedule topology changed while the operation was running.'],
+                ['topology-B', 'The schedule topology changed while the operation was running.']
+            ]));
+            expect(state.modifiedTaskIds).toEqual(new Set(['topology-A', 'topology-B']));
+            expect(state.localTaskPatches['topology-A']).toHaveLength(1);
+            expect(state.localTaskPatches['topology-B']).toHaveLength(1);
+            expect(state.taskConflicts).toEqual({});
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it('refreshes and retains a local schedule intent for a single-task topology conflict', async () => {
+        const task = buildTask({ id: 'topology-single', dueDate: TUESDAY, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const,
+            errors: ['The schedule topology changed while the operation was running.'],
+            failure: {
+                kind: 'conflict' as const,
+                resourceRole: 'scope' as const,
+                resourceType: 'schedule_scope',
+                remoteAvailability: 'needs_refresh' as const
+            }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([task]));
+
+        try {
+            useTaskStore.getState().setTasks([task]);
+            useTaskStore.getState().updateTask(task.id, { dueDate: WEDNESDAY });
+
+            const failures = await useTaskStore.getState().saveChanges();
+            await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
+            const state = useTaskStore.getState();
+
+            expect(failures).toEqual(new Map([
+                [task.id, 'The schedule topology changed while the operation was running.']
+            ]));
+            expect(state.modifiedTaskIds).toEqual(new Set([task.id]));
+            expect(state.localTaskPatches[task.id]).toEqual([
+                expect.objectContaining({
+                    projection: expect.objectContaining({ dueDate: WEDNESDAY }),
+                    mutationIntent: expect.objectContaining({ dueDate: WEDNESDAY })
+                })
+            ]);
+            expect(state.taskConflicts).toEqual({});
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
     });
 });
 
@@ -688,13 +952,141 @@ describe('TaskStore version layout exclusivity', () => {
 });
 
 describe('TaskStore API data application', () => {
-    beforeEach(() => {
-        window.localStorage.clear();
-        useTaskStore.setState(useTaskStore.getInitialState(), true);
-        vi.mocked(apiClient.fetchData).mockReset();
+  beforeEach(() => {
+    window.localStorage.clear();
+    useTaskStore.setState(useTaskStore.getInitialState(), true);
+    useUIStore.setState(useUIStore.getInitialState(), true);
+    vi.mocked(apiClient.fetchData).mockReset();
+  });
+
+  it('preserves user-owned hidden columns when mutation refresh reapplies query initial state', () => {
+    useUIStore.getState().setVisibleColumns(['id', 'subject']);
+
+    useTaskStore.getState().applyApiData({
+      ...buildApiData([]),
+      initialState: { visibleColumns: ['id', 'subject', 'status'] }
     });
 
-    it('refreshData applies API data with one TaskStore state update', async () => {
+    const uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(['id', 'subject']);
+    expect(uiState.columnSettings.filter((column) => column.visible).map((column) => column.key))
+      .toEqual(['id', 'subject']);
+    expect(uiState.columnStateSource).toBe('user');
+    expect(uiState.columnsExplicitInQuery).toBe(true);
+  });
+
+  it('restores preferences at a saved-query boundary when query columns disappear', () => {
+    const preferenceState = useUIStore.getInitialState();
+    const initialLoadContext = createReadContext({
+      generation: 1,
+      projectId: 'p1',
+      query: { visibleColumns: ['status', 'subject'] },
+      scope: {},
+      purpose: 'initial_load'
+    });
+    const savedQueryContext = createReadContext({
+      generation: 2,
+      projectId: 'p1',
+      query: { queryId: 12 },
+      scope: {},
+      purpose: 'saved_query'
+    });
+
+    useTaskStore.getState().applyApiData({
+      ...buildApiData([]),
+      initialState: { visibleColumns: ['status', 'subject'] }
+    }, initialLoadContext);
+
+    let uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(['status', 'subject']);
+    expect(uiState.columnSettings.filter((column) => column.visible).map((column) => column.key))
+      .toEqual(['status', 'subject']);
+    expect(uiState.columnStateSource).toBe('query');
+    expect(uiState.columnsExplicitInQuery).toBe(true);
+
+    useTaskStore.getState().applyApiData(
+      { ...buildApiData([]), initialState: {} },
+      savedQueryContext
+    );
+
+    uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(preferenceState.visibleColumns);
+    expect(uiState.columnSettings).toEqual(preferenceState.columnSettings);
+    expect(uiState.columnStateSource).toBe('preference');
+    expect(uiState.columnsExplicitInQuery).toBe(false);
+  });
+
+  it('preserves query-owned columns when a regular refresh omits column state', async () => {
+    useUIStore.getState().applyQueryVisibleColumns(['id', 'subject']);
+    vi.mocked(apiClient.fetchData).mockResolvedValue({
+      ...buildApiData([]),
+      initialState: {}
+    });
+
+    await useTaskStore.getState().refreshData();
+
+    const uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(['id', 'subject']);
+    expect(uiState.columnSettings.filter((column) => column.visible).map((column) => column.key))
+      .toEqual(['id', 'subject']);
+    expect(uiState.columnStateSource).toBe('query');
+    expect(uiState.columnsExplicitInQuery).toBe(true);
+  });
+
+  it('applies explicit saved-query columns at the query boundary after a user change', async () => {
+    useUIStore.getState().setVisibleColumns(['id', 'subject']);
+    vi.mocked(apiClient.fetchData).mockResolvedValue({
+      ...buildApiData([]),
+      initialState: { queryId: 12, visibleColumns: ['status'] }
+    });
+
+    await useTaskStore.getState().applySavedQuery(12);
+
+    const uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(['status']);
+    expect(uiState.columnSettings.filter((column) => column.visible).map((column) => column.key))
+      .toEqual(['status']);
+    expect(uiState.columnStateSource).toBe('query');
+    expect(uiState.columnsExplicitInQuery).toBe(true);
+  });
+
+  it('preserves user-owned columns when saved-query response omits column state', async () => {
+    useUIStore.getState().setVisibleColumns(['id', 'subject']);
+    vi.mocked(apiClient.fetchData).mockResolvedValue({
+      ...buildApiData([]),
+      initialState: { queryId: 12 }
+    });
+
+    await useTaskStore.getState().applySavedQuery(12);
+
+    const uiState = useUIStore.getState();
+    expect(uiState.visibleColumns).toEqual(['id', 'subject']);
+    expect(uiState.columnSettings.filter((column) => column.visible).map((column) => column.key))
+      .toEqual(['id', 'subject']);
+    expect(uiState.columnStateSource).toBe('user');
+    expect(uiState.columnsExplicitInQuery).toBe(true);
+  });
+
+  it('restores preferences when clearing query-owned saved-query columns', async () => {
+    const preferenceState = useUIStore.getInitialState();
+    useUIStore.getState().applyQueryVisibleColumns(['status', 'subject']);
+    useTaskStore.getState().restoreActiveQueryId(12);
+    vi.mocked(apiClient.fetchData).mockResolvedValue({
+      ...buildApiData([]),
+      initialState: {}
+    });
+
+    await useTaskStore.getState().clearSavedQuery();
+
+    const uiState = useUIStore.getState();
+    expect(useTaskStore.getState().activeQueryId).toBeNull();
+    expect(uiState.visibleColumns).toEqual(preferenceState.visibleColumns);
+    expect(uiState.columnSettings).toEqual(preferenceState.columnSettings);
+    expect(uiState.columnStateSource).toBe('preference');
+    expect(uiState.columnsExplicitInQuery).toBe(false);
+  });
+
+  it('refreshData applies API data with one TaskStore state update', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [buildTask({ id: 't1', projectId: 'p1', projectName: 'Project 1' })],
             relations: [],
@@ -1663,7 +2055,11 @@ describe('TaskStore asynchronous state ownership', () => {
             subject: 'later local edit'
         });
         expect(state.localTaskPatches['task-1']).toEqual([
-            expect.objectContaining({ generation: laterGeneration, fields: { subject: 'later local edit' } })
+            expect.objectContaining({
+                generation: laterGeneration,
+                projection: { subject: 'later local edit' },
+                mutationIntent: { subject: 'later local edit' }
+            })
         ]);
         expect(state.modifiedTaskIds.has('task-1')).toBe(true);
         expect(state.barOperations[firstOperationId]).toBeUndefined();
@@ -1759,6 +2155,58 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.localTaskPatches['task-1']).toBeUndefined();
         expect(state.modifiedTaskIds.has('task-1')).toBe(false);
         expect(state.allTasks.find(task => task.id === 'task-1')?.lockVersion).toBe(3);
+    });
+
+    it('retries only persistence intent and excludes preview projection fields', async () => {
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 3 });
+        const localTask = buildTask({
+            id: 'task-1',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            lockVersion: 1
+        });
+        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().updateTask(
+            localTask.id,
+            { projectId: '2', trackerId: 7, statusId: 4 },
+            { projectId: '2' }
+        );
+        useTaskStore.getState().registerTaskConflict(localTask.id, 'Conflict');
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...localTask, subject: 'remote subject', lockVersion: 2 }
+        ]));
+
+        await useTaskStore.getState().resolveTaskConflict(localTask.id, 'local');
+
+        expect(apiClient.updateTaskFields).toHaveBeenCalledWith(
+            localTask.id,
+            { project_id: '2', lock_version: 2 },
+            expect.any(String)
+        );
+    });
+
+    it('retries the intended value when the conflict projection differs', async () => {
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 3 });
+        const localTask = buildTask({ id: 'task-1', subject: 'persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().updateTask(
+            localTask.id,
+            { subject: 'server projection' },
+            { subject: 'explicit intended value' }
+        );
+        useTaskStore.getState().registerTaskConflict(localTask.id, 'Conflict');
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...localTask, subject: 'remote subject', lockVersion: 2 }
+        ]));
+
+        await useTaskStore.getState().resolveTaskConflict(localTask.id, 'local');
+
+        expect(apiClient.updateTaskFields).toHaveBeenCalledWith(
+            localTask.id,
+            { subject: 'explicit intended value', lock_version: 2 },
+            expect.any(String)
+        );
     });
 
     it('settles the conflicted operation without removing a later operation after local retry', async () => {
@@ -1979,6 +2427,134 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(vi.mocked(apiClient.updateTask).mock.calls.map(([task]) => task.dueDate)).toEqual([5, 8]);
         expect(state.allTasks.find(task => task.id === 'task-1')?.dueDate).toBe(8);
         expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it('keeps canonical manual-save fields while reapplying only a later generation', async () => {
+        const firstSave = deferred<{
+            status: 'ok';
+            lockVersion: number;
+            completeness: 'partial';
+            entity: Partial<Task> & { id: string };
+            revision: number;
+        }>();
+        const secondSave = deferred<{ status: 'ok'; lockVersion: number }>();
+        let saveCount = 0;
+        vi.mocked(apiClient.updateTask).mockImplementation(async () => {
+            saveCount += 1;
+            return saveCount === 1 ? firstSave.promise : secondSave.promise;
+        });
+        useTaskStore.getState().setTasks([buildTask({
+            id: 'task-1',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            subject: 'persisted',
+            lockVersion: 1
+        })]);
+        useTaskStore.getState().updateTask('task-1', {
+            projectId: '2',
+            trackerId: 2,
+            statusId: 2
+        });
+
+        const saving = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(1));
+        useTaskStore.getState().updateTask('task-1', { subject: 'later intent' });
+        firstSave.resolve({
+            status: 'ok',
+            lockVersion: 2,
+            completeness: 'partial',
+            entity: {
+                id: 'task-1',
+                projectId: '3',
+                trackerId: 3,
+                statusId: 3,
+                subject: 'server normalized',
+                lockVersion: 2
+            },
+            revision: 2
+        });
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(2));
+
+        const afterFirstSave = useTaskStore.getState();
+        expect(afterFirstSave.allTasks.find(task => task.id === 'task-1')).toMatchObject({
+            projectId: '3',
+            trackerId: 3,
+            statusId: 3,
+            subject: 'later intent',
+            lockVersion: 2
+        });
+        expect(afterFirstSave.serverTaskSnapshot.entitiesById['task-1']).toMatchObject({
+            projectId: '3',
+            trackerId: 3,
+            statusId: 3,
+            subject: 'server normalized',
+            lockVersion: 2
+        });
+        expect(afterFirstSave.localTaskPatches['task-1']).toHaveLength(1);
+        expect(afterFirstSave.localTaskPatches['task-1'][0].projection).toEqual({ subject: 'later intent' });
+        expect(afterFirstSave.localTaskPatches['task-1'][0].mutationIntent).toEqual({ subject: 'later intent' });
+
+        secondSave.resolve({ status: 'ok', lockVersion: 3 });
+        await saving;
+    });
+
+    it('aggregates project, tracker, and status edits into one manual-save PATCH', async () => {
+        const original = buildTask({
+            id: 'task-1',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            lockVersion: 1
+        });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask('task-1', { projectId: '2' });
+        useTaskStore.getState().updateTask('task-1', { trackerId: 2 });
+        useTaskStore.getState().updateTask('task-1', { statusId: 2 });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 2,
+            completeness: 'partial',
+            entity: { id: 'task-1', projectId: '2', trackerId: 2, statusId: 2, lockVersion: 2 },
+            revision: 2
+        });
+
+        const failures = await useTaskStore.getState().saveChanges();
+
+        expect(failures).toEqual(new Map());
+        expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+        expect(apiClient.updateTask).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'task-1', projectId: '2', trackerId: 2, statusId: 2 }),
+            expect.any(String),
+            { project_id: '2', tracker_id: 2, status_id: 2 }
+        );
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
+    });
+
+    it('discards a pending project, tracker, and status edit sequence without mutation', async () => {
+        const original = buildTask({
+            id: 'task-1',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            lockVersion: 1
+        });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask('task-1', { projectId: '2' });
+        useTaskStore.getState().updateTask('task-1', { trackerId: 2 });
+        useTaskStore.getState().updateTask('task-1', { statusId: 2 });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([original]));
+
+        await useTaskStore.getState().discardChanges();
+
+        expect(apiClient.updateTask).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().allTasks.find(task => task.id === 'task-1')).toMatchObject({
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1
+        });
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
+        expect(useTaskStore.getState().localTaskPatches).toEqual({});
     });
 
     it('keeps an edit made while a conflict refresh is in flight dirty for explicit resolution', async () => {
@@ -2487,6 +3063,36 @@ describe('TaskStore scheduling state and relation-driven recalculation', () => {
         useUIStore.setState(useUIStore.getInitialState(), true);
     });
 
+    it('does not schedule related dates for context-only edits', () => {
+        const { setTasks, setRelations, updateTask } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'parent', startDate: MONDAY, dueDate: TUESDAY, trackerId: 1 }),
+            buildTask({ id: 'child', parentId: 'parent', startDate: MONDAY, dueDate: TUESDAY, trackerId: 1 })
+        ]);
+        setRelations([
+            { id: 'r1', from: 'parent', to: 'child', type: 'precedes' }
+        ]);
+
+        updateTask('parent', { trackerId: 2 }, { trackerId: 2 });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find((task) => task.id === 'parent')).toMatchObject({
+            trackerId: 2,
+            startDate: MONDAY,
+            dueDate: TUESDAY
+        });
+        expect(state.allTasks.find((task) => task.id === 'child')).toMatchObject({
+            startDate: MONDAY,
+            dueDate: TUESDAY
+        });
+        expect(state.localTaskPatches).toEqual({
+            parent: [expect.objectContaining({
+                projection: { trackerId: 2 },
+                mutationIntent: { trackerId: 2 }
+            })]
+        });
+    });
+
     it('addRelation recalculates downstream tasks and marks them modified', () => {
         const { setTasks, addRelation } = useTaskStore.getState();
         setTasks([
@@ -2850,13 +3456,15 @@ describe('TaskStore saveChanges ordering', () => {
                 'task-1': [
                     {
                         entityId: 'task-1',
-                        fields: { displayOrder: 5 },
+                        projection: { displayOrder: 5 },
+                        mutationIntent: {},
                         generation: 1,
                         operationId: 'parent-move:task-1:1'
                     },
                     {
                         entityId: 'task-1',
-                        fields: { dueDate: 8 },
+                        projection: { dueDate: 8 },
+                        mutationIntent: { dueDate: 8 },
                         generation: 2,
                         operationId: 'edit:task-1:2'
                     }
@@ -2914,7 +3522,8 @@ describe('TaskStore saveChanges ordering', () => {
         expect(state.localTaskPatches['task-1']).toEqual([
             expect.objectContaining({
                 entityId: 'task-1',
-                fields: expect.objectContaining({ subject: 'After' })
+                projection: expect.objectContaining({ subject: 'After' }),
+                mutationIntent: expect.objectContaining({ subject: 'After' })
             })
         ]);
         expect(state.modifiedTaskIds.has('task-1')).toBe(true);
@@ -3140,13 +3749,15 @@ describe('TaskStore saveChanges ordering', () => {
             localTaskPatches: {
                 '18': [{
                     entityId: '18',
-                    fields: { startDate: FRIDAY, dueDate: Date.UTC(2026, 0, 12) },
+                    projection: { startDate: FRIDAY, dueDate: Date.UTC(2026, 0, 12) },
+                    mutationIntent: { startDate: FRIDAY, dueDate: Date.UTC(2026, 0, 12) },
                     generation: 1,
                     operationId: 'edit:18:1'
                 }],
                 '19': [{
                     entityId: '19',
-                    fields: { startDate: Date.UTC(2026, 0, 14), dueDate: Date.UTC(2026, 0, 15) },
+                    projection: { startDate: Date.UTC(2026, 0, 14), dueDate: Date.UTC(2026, 0, 15) },
+                    mutationIntent: { startDate: Date.UTC(2026, 0, 14), dueDate: Date.UTC(2026, 0, 15) },
                     generation: 1,
                     operationId: 'edit:19:1'
                 }]
@@ -3184,14 +3795,89 @@ describe('TaskStore saveChanges ordering', () => {
             updateTask(task.id, { dueDate: TUESDAY + DAY * ((index % 5) + 1) });
         });
 
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => ({
+            status: 'ok',
+            lockVersion: 2,
+            completeness: 'partial',
+            entity: { id: task.id, dueDate: task.dueDate, lockVersion: 2 },
+            revision: 2
+        }));
+        resetDerivedRecalculationCounters();
         const failures = await saveChanges();
 
         expect(failures).toEqual(new Map());
         expect(vi.mocked(apiClient.updateTask)).toHaveBeenCalledTimes(1000);
+        expect(derivedRecalculationCounters.scheduling).toBe(2);
+        expect(derivedRecalculationCounters.criticalPath).toBe(2);
+        expect(derivedRecalculationCounters.layout).toBe(2);
         expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
         expect(useTaskStore.getState().localTaskPatches).toEqual({});
         expect(addNotification).not.toHaveBeenCalled();
     }, 30_000);
+
+    it('deletes every task named by canonical mutation metadata without deleting the source task', async () => {
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'source-task', subject: 'Before', lockVersion: 1 }),
+            buildTask({ id: 'deleted-task', subject: 'Removed', lockVersion: 1 })
+        ]);
+        updateTask('source-task', { subject: 'Local source' });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 2,
+            completeness: 'partial',
+            entity: { id: 'source-task', subject: 'Canonical source', lockVersion: 2 },
+            revision: 2,
+            deletedEntityIds: ['deleted-task']
+        });
+        resetDerivedRecalculationCounters();
+
+        await saveChanges();
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks).toEqual([expect.objectContaining({ id: 'source-task', subject: 'Canonical source' })]);
+        expect(state.taskTombstones['source-task']).toBeUndefined();
+        expect(state.taskTombstones['deleted-task']).toMatchObject({
+            entityId: 'deleted-task',
+            source: 'server'
+        });
+        expect(derivedRecalculationCounters.scheduling).toBe(1);
+        expect(derivedRecalculationCounters.criticalPath).toBe(1);
+        expect(derivedRecalculationCounters.layout).toBe(1);
+    });
+
+    it('batches target-missing tombstone settlement with other task saves', async () => {
+        const { setTasks, updateTask, saveChanges } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'missing-task', subject: 'Gone', lockVersion: 1 }),
+            buildTask({ id: 'surviving-task', subject: 'Before', lockVersion: 1 })
+        ]);
+        updateTask('missing-task', { subject: 'Gone locally' });
+        updateTask('surviving-task', { subject: 'Survives' });
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => task.id === 'missing-task'
+            ? {
+                status: 'not_found',
+                error: 'Task was deleted',
+                failure: { kind: 'not_found', resourceRole: 'target', resourceType: 'task' }
+            }
+            : { status: 'ok', lockVersion: 2 });
+        resetDerivedRecalculationCounters();
+
+        const failures = await saveChanges();
+
+        const state = useTaskStore.getState();
+        expect(failures.get('missing-task')).toBe('Task was deleted');
+        expect(state.allTasks).toEqual([expect.objectContaining({ id: 'surviving-task', subject: 'Survives' })]);
+        expect(state.taskTombstones['missing-task']).toMatchObject({
+            entityId: 'missing-task',
+            source: 'server'
+        });
+        expect(state.modifiedTaskIds).toEqual(new Set());
+        expect(state.localTaskPatches).toEqual({});
+        expect(derivedRecalculationCounters.scheduling).toBe(1);
+        expect(derivedRecalculationCounters.criticalPath).toBe(1);
+        expect(derivedRecalculationCounters.layout).toBe(1);
+    });
 
     it('retains every local patch when a dependency cycle rejects an independent task in the same batch', async () => {
         const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();
@@ -3284,7 +3970,10 @@ describe('TaskStore drag parent updates', () => {
         expect(useTaskStore.getState().allTasks.find((t) => t.id === 'child')?.parentId).toBeUndefined();
         expect(useTaskStore.getState().modifiedTaskIds.has('child')).toBe(true);
         expect(useTaskStore.getState().localTaskPatches.child).toEqual([
-            expect.objectContaining({ fields: { parentId: undefined } })
+            expect.objectContaining({
+                projection: { parentId: undefined },
+                mutationIntent: { parentId: undefined }
+            })
         ]);
         expect(vi.mocked(apiClient.updateTaskFields)).not.toHaveBeenCalled();
     });

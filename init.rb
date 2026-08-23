@@ -13,7 +13,7 @@ Redmine::Plugin.register :redmine_canvas_gantt do
       canvas_gantts: [
         :index, :data, :queries, :edit_meta, :update, :destroy_task,
         :bulk_create_subtasks, :subtask_trackers, :create_relation,
-        :update_relation, :destroy_relation, :save_baseline
+        :update_relation, :destroy_relation, :save_baseline, :schedule_mutation
       ]
     }
     permission :manage_canvas_gantt_baseline, { canvas_gantts: [:save_baseline] }
@@ -44,7 +44,23 @@ require_dependency Rails.root.join(
   'plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt',
   'canvas_gantts_controller_patch'
 ).to_s
+require_dependency Rails.root.join(
+  'plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt',
+  'schedule_mutation_coordinator'
+).to_s
+require_dependency Rails.root.join(
+  'plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt',
+  'issue_schedule_calendar_patch'
+).to_s
 
 unless CanvasGanttsController < RedmineCanvasGantt::CanvasGanttsControllerPatch
   CanvasGanttsController.prepend(RedmineCanvasGantt::CanvasGanttsControllerPatch)
+end
+
+unless Issue.ancestors.include?(RedmineCanvasGantt::IssueScheduleCalendarPatch)
+  Issue.prepend(RedmineCanvasGantt::IssueScheduleCalendarPatch)
+end
+
+unless IssueRelation.ancestors.include?(RedmineCanvasGantt::IssueRelationScheduleCalendarPatch)
+  IssueRelation.prepend(RedmineCanvasGantt::IssueRelationScheduleCalendarPatch)
 end

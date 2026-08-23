@@ -7,27 +7,12 @@ module RedmineCanvasGantt
       @version_class = version_class
     end
 
-    def build(issue:, editable:, custom_fields:, custom_field_values:, permissions:, project_scope_ids:, options_project: nil, capability_issue: issue, capability_context: nil)
-      project_for_options = options_project || issue.project
+    def build(issue:, editable:, custom_fields:, custom_field_values:, permissions:, project_scope_ids:, options_project: nil, capability_issue: issue, capability_context: nil, persisted_task: nil, draft_contract: nil, project_options: nil)
       capability_issue ||= issue
+      project_for_options = capability_issue.project || options_project || issue.project
 
-      {
-        task: {
-          id: issue.id,
-          subject: issue.subject,
-          assigned_to_id: issue.assigned_to_id,
-          status_id: issue.status_id,
-          done_ratio: issue.done_ratio,
-          due_date: issue.due_date,
-          start_date: issue.start_date,
-          priority_id: issue.priority_id,
-          category_id: issue.category_id,
-          estimated_hours: issue.estimated_hours,
-          project_id: issue.project_id,
-          tracker_id: issue.tracker_id,
-          fixed_version_id: issue.fixed_version_id,
-          lock_version: issue.lock_version
-        },
+      payload = {
+        task: persisted_task || task_payload(issue),
         capability_context: capability_context || {
           task_id: issue.id,
           project_id: capability_issue.project_id,
@@ -42,13 +27,38 @@ module RedmineCanvasGantt
             { id: priority.id, name: priority.name, position: priority.position }
           end,
           categories: project_for_options.issue_categories.map { |category| { id: category.id, name: category.name } },
-          projects: project_options_for(project_scope_ids),
+          projects: project_options || project_options_for(issue, project_scope_ids),
           trackers: trackers_for(capability_issue, project_for_options),
-          versions: @version_class.visible.where(project_id: project_for_options.id).map { |version| { id: version.id, name: version.name } },
+          versions: versions_for(capability_issue),
           custom_fields: custom_fields
         },
         custom_field_values: custom_field_values,
         permissions: permissions
+      }
+      payload[:draft_contract] = draft_contract if draft_contract
+      payload
+    end
+
+    def resolved_project_options(issue:, project_scope_ids:)
+      project_options_for(issue, project_scope_ids)
+    end
+
+    def task_payload(issue)
+      {
+        id: issue.id,
+        subject: issue.subject,
+        assigned_to_id: issue.assigned_to_id,
+        status_id: issue.status_id,
+        done_ratio: issue.done_ratio,
+        due_date: issue.due_date,
+        start_date: issue.start_date,
+        priority_id: issue.priority_id,
+        category_id: issue.category_id,
+        estimated_hours: issue.estimated_hours,
+        project_id: issue.project_id,
+        tracker_id: issue.tracker_id,
+        fixed_version_id: issue.fixed_version_id,
+        lock_version: issue.lock_version
       }
     end
 
@@ -60,9 +70,9 @@ module RedmineCanvasGantt
       statuses.uniq.sort_by(&:position).map { |status| { id: status.id, name: status.name } }
     end
 
-    def assignables_for(issue, project_for_options)
-      users = project_for_options == issue.project ? issue.assignable_users : project_for_options.assignable_users
-      if project_for_options == issue.project && issue.assigned_to && !users.include?(issue.assigned_to)
+    def assignables_for(issue, _project_for_options)
+      users = issue.assignable_users
+      if issue.assigned_to && !users.include?(issue.assigned_to)
         users = users.to_a + [issue.assigned_to]
       end
       users.to_a
@@ -70,27 +80,51 @@ module RedmineCanvasGantt
         .map { |user| { id: user.id, name: user.name } }
     end
 
-    def trackers_for(issue, project_for_options)
-      trackers = begin
-        if defined?(Issue) && issue.is_a?(Issue) && issue.respond_to?(:allowed_target_trackers)
-          Array(issue.allowed_target_trackers(@current_user))
-        else
-          Array(project_for_options.trackers)
-        end
-      rescue StandardError
-        Array(project_for_options.trackers)
-      end
-
-      trackers
+    def trackers_for(issue, _project_for_options)
+      issue.allowed_target_trackers(@current_user).to_a
         .uniq { |tracker| tracker.id }
         .map { |tracker| { id: tracker.id, name: tracker.name } }
     end
 
-    def project_options_for(project_scope_ids)
+    def versions_for(issue)
+      issue.assignable_versions.map { |version| { id: version.id, name: version.name } }
+    end
+
+    def project_options_for(issue, project_scope_ids)
+      if issue_domain_candidate_method?(issue)
+        scoped_projects = @project_class.visible.active.where(id: Array(project_scope_ids).map(&:to_i))
+        domain_candidates = issue_domain_project_candidates(issue)
+        if domain_candidates
+          candidate_ids = domain_candidates.to_a.map { |candidate| candidate.respond_to?(:id) ? candidate.id : candidate }.map(&:to_i)
+          return scoped_projects.select { |project| candidate_ids.include?(project.id.to_i) }.map do |project|
+            { id: project.id, name: project.name }
+          end
+        end
+      end
+
       @project_class.allowed_to(:add_issues)
         .active
         .where(id: project_scope_ids)
         .map { |project| { id: project.id, name: project.name } }
+    end
+
+    def issue_domain_candidate_method?(issue)
+      issue.respond_to?(:allowed_target_projects) || issue.respond_to?(:allowed_target_project_ids)
+    end
+
+    def issue_domain_project_candidates(issue)
+      if issue.respond_to?(:allowed_target_projects)
+        return invoke_domain_candidates(issue, :allowed_target_projects)
+      end
+      if issue.respond_to?(:allowed_target_project_ids)
+        return invoke_domain_candidates(issue, :allowed_target_project_ids)
+      end
+
+      nil
+    end
+
+    def invoke_domain_candidates(issue, method_name)
+      issue.public_send(method_name, @current_user)
     end
   end
 end

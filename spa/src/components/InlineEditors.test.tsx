@@ -1,8 +1,16 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { CustomFieldEditor, DueDateEditor, SelectEditor, SubjectEditor } from './InlineEditors';
 
 describe('InlineEditors', () => {
+    const deferred = <T,>() => {
+        let resolve!: (value: T) => void;
+        const promise = new Promise<T>((res) => {
+            resolve = res;
+        });
+        return { promise, resolve };
+    };
+
     it('applies explicit control dimensions to searchable selects', () => {
         const options = Array.from({ length: 21 }, (_, index) => ({
             id: index + 1,
@@ -24,6 +32,70 @@ describe('InlineEditors', () => {
 
         expect(searchInput).toHaveStyle({ height: '22px', padding: '0 8px' });
         expect(select).toHaveStyle({ height: '22px', padding: '0 24px 0 8px' });
+    });
+
+    it('leaves a mounted select enabled when a resolved commit is handled by the owner', async () => {
+        const onCommit = vi.fn().mockResolvedValue(undefined);
+        const onCancel = vi.fn();
+
+        render(
+            <SelectEditor
+                value={1}
+                options={[{ id: 1, name: 'One' }, { id: 2, name: 'Two' }]}
+                onCancel={onCancel}
+                onCommit={onCommit}
+            />
+        );
+
+        const select = screen.getByRole('combobox');
+        fireEvent.change(select, { target: { value: '2' } });
+
+        await waitFor(() => expect(onCommit).toHaveBeenCalledWith(2));
+        await waitFor(() => expect(select).toBeEnabled());
+        expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it('shows a runtime rejection and leaves the select enabled for retry', async () => {
+        const onCommit = vi.fn().mockRejectedValue(new Error('Runtime rejection'));
+
+        render(
+            <SelectEditor
+                value={1}
+                options={[{ id: 1, name: 'One' }, { id: 2, name: 'Two' }]}
+                onCancel={vi.fn()}
+                onCommit={onCommit}
+            />
+        );
+
+        const select = screen.getByRole('combobox');
+        fireEvent.change(select, { target: { value: '2' } });
+
+        expect(await screen.findByText('Runtime rejection')).toBeInTheDocument();
+        expect(select).toBeEnabled();
+    });
+
+    it('does not cancel while a select commit is pending and blur fires', async () => {
+        const save = deferred<void>();
+        const onCancel = vi.fn();
+        const onCommit = vi.fn(() => save.promise);
+
+        render(
+            <SelectEditor
+                value={1}
+                options={[{ id: 1, name: 'One' }, { id: 2, name: 'Two' }]}
+                onCancel={onCancel}
+                onCommit={onCommit}
+            />
+        );
+
+        const select = screen.getByRole('combobox');
+        fireEvent.change(select, { target: { value: '2' } });
+        await waitFor(() => expect(select).toBeDisabled());
+        fireEvent.blur(select, { relatedTarget: null });
+
+        expect(onCancel).not.toHaveBeenCalled();
+        save.resolve();
+        await waitFor(() => expect(select).toBeEnabled());
     });
 
     it('applies explicit control dimensions to subject inputs', () => {

@@ -16,10 +16,10 @@ type RawTask = {
   editable: boolean;
   display_order: number;
   parent_id?: number;
-  fixed_version_id?: number;
-  fixed_version_name?: string;
-  category_id?: number;
-  category_name?: string;
+  fixed_version_id?: number | null;
+  fixed_version_name?: string | null;
+  category_id?: number | null;
+  category_name?: string | null;
   tracker_id?: number;
   tracker_name?: string;
   priority_id?: number;
@@ -59,6 +59,7 @@ type SetupOptions = {
   editCategories?: Array<{ id: number; name: string }>;
   editVersions?: Array<{ id: number; name: string }>;
   editAssignees?: Array<{ id: number; name: string }>;
+  editStatusByTracker?: Record<string, { id: number; name: string }>;
   editOptionsByProject?: Record<string, {
     trackers?: Array<{ id: number; name: string }>;
     categories?: Array<{ id: number; name: string }>;
@@ -77,6 +78,7 @@ const defaultMockData: MockData = {
       start_date: '2026-02-01',
       due_date: '2026-02-10',
       ratio_done: 40,
+      tracker_id: 1,
       status_id: 1,
       status_name: 'New',
       assigned_to_id: 10,
@@ -93,6 +95,7 @@ const defaultMockData: MockData = {
       start_date: '2026-02-05',
       due_date: '2026-02-12',
       ratio_done: 10,
+      tracker_id: 1,
       status_id: 2,
       status_name: 'In Progress',
       assigned_to_id: 11,
@@ -110,6 +113,7 @@ const defaultMockData: MockData = {
       start_date: '2026-02-08',
       due_date: '2026-02-18',
       ratio_done: 90,
+      tracker_id: 1,
       status_id: 3,
       status_name: 'Closed',
       assigned_to_id: 12,
@@ -189,6 +193,21 @@ const createEditMeta = (taskId: string, data: MockData) => {
     },
     custom_field_values: {},
   };
+};
+
+const includePersistedAssignee = (
+  meta: ReturnType<typeof createEditMeta>,
+  data: MockData,
+  taskId: string,
+) => {
+  const persistedTask = data.tasks.find(task => String(task.id) === taskId);
+  if (persistedTask?.assigned_to_id == null || !persistedTask.assigned_to_name) return;
+  if (meta.options.assignees.some(option => option.id === persistedTask.assigned_to_id)) return;
+
+  meta.options.assignees = [
+    ...meta.options.assignees,
+    { id: persistedTask.assigned_to_id, name: persistedTask.assigned_to_name },
+  ];
 };
 
 const cloneData = (data: MockData): MockData => JSON.parse(JSON.stringify(data)) as MockData;
@@ -302,6 +321,71 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
     });
   });
 
+  await page.route('**/canvas_gantt/tasks/*/edit_meta/preview.json**', async (route) => {
+    const url = new URL(route.request().url());
+    const taskId = url.pathname.match(/tasks\/(\d+)\/edit_meta\/preview\.json$/)?.[1] ?? '101';
+    const meta = createEditMeta(taskId, data);
+    const body = route.request().postDataJSON() as { task?: Record<string, unknown> };
+    const intent = body.task ?? {};
+    const targetProjectId = String(intent.project_id ?? meta.task.project_id);
+    const targetTrackerId = String(intent.tracker_id ?? meta.task.tracker_id);
+    const projectOptions = options?.editOptionsByProject?.[targetProjectId];
+    meta.options.projects = options?.editProjects ?? meta.options.projects;
+    meta.options.trackers = projectOptions?.trackers ?? options?.editTrackers ?? meta.options.trackers;
+    meta.options.categories = projectOptions?.categories ?? options?.editCategories ?? meta.options.categories;
+    meta.options.versions = projectOptions?.versions ?? options?.editVersions ?? meta.options.versions;
+    meta.options.assignees = projectOptions?.assignees ?? options?.editAssignees ?? meta.options.assignees;
+    const trackerStatus = options?.editStatusByTracker?.[targetTrackerId];
+    if (trackerStatus && !meta.options.statuses.some(status => status.id === trackerStatus.id)) {
+      meta.options.statuses = [...meta.options.statuses, trackerStatus];
+    }
+    includePersistedAssignee(meta, data, taskId);
+
+    const materialized: Record<string, unknown> = Object.fromEntries(
+      Object.entries(intent).filter(([field]) => field !== 'lock_version'),
+    );
+    const projectChanged = Number(targetProjectId) !== Number(meta.task.project_id);
+    if (projectChanged && materialized.tracker_id === undefined && meta.options.trackers[0]) {
+      materialized.tracker_id = meta.options.trackers[0].id;
+    }
+    if (projectChanged) {
+      materialized.fixed_version_id = null;
+      materialized.category_id = null;
+    }
+    if (
+      trackerStatus &&
+      intent.tracker_id !== undefined &&
+      intent.status_id === undefined &&
+      Number(targetTrackerId) !== Number(meta.task.tracker_id)
+    ) {
+      materialized.status_id = trackerStatus.id;
+    }
+    const responseMeta = meta as typeof meta & { capability_context: Record<string, number> };
+    responseMeta.capability_context = {
+      task_id: Number(taskId),
+      project_id: Number(materialized.project_id ?? meta.task.project_id),
+      tracker_id: Number(materialized.tracker_id ?? meta.task.tracker_id),
+      status_id: Number(materialized.status_id ?? meta.task.status_id),
+    };
+    const normalizations = materialized.tracker_id !== undefined && intent.tracker_id === undefined
+      ? [{ field: 'tracker_id', from: meta.task.tracker_id, to: materialized.tracker_id, source: 'policy' }]
+      : [];
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...responseMeta,
+        draft_contract: {
+          base_revision: Number(intent.lock_version ?? meta.task.lock_version),
+          materialized,
+          normalizations,
+          violations: [],
+        },
+      }),
+    });
+  });
+
   await page.route('**/canvas_gantt/tasks/*/edit_meta.json**', async (route) => {
     const url = new URL(route.request().url());
     const taskId = url.pathname.match(/tasks\/(\d+)\/edit_meta\.json$/)?.[1] ?? '101';
@@ -313,6 +397,7 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
     meta.options.categories = projectOptions?.categories ?? options?.editCategories ?? meta.options.categories;
     meta.options.versions = projectOptions?.versions ?? options?.editVersions ?? meta.options.versions;
     meta.options.assignees = projectOptions?.assignees ?? options?.editAssignees ?? meta.options.assignees;
+    includePersistedAssignee(meta, data, taskId);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -334,22 +419,62 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
       const task = data.tasks.find((entry) => String(entry.id) === taskId);
       const fields = (body as { task?: Record<string, unknown> }).task ?? {};
       if (task) {
+        const previousProjectId = task.project_id;
         if (typeof fields.subject === 'string') task.subject = fields.subject;
         if (typeof fields.status_id === 'number') task.status_id = fields.status_id;
         if (typeof fields.done_ratio === 'number') task.ratio_done = fields.done_ratio;
-        if (typeof fields.project_id === 'number') task.project_id = fields.project_id;
+        if (typeof fields.project_id === 'number') {
+          task.project_id = fields.project_id;
+          const project = options?.editProjects?.find(candidate => candidate.id === fields.project_id);
+          if (project) task.project_name = project.name;
+
+          if (fields.project_id !== previousProjectId) {
+            const targetTrackers = options?.editOptionsByProject?.[String(task.project_id)]?.trackers ?? options?.editTrackers ?? [];
+            if (fields.tracker_id === undefined && targetTrackers.length > 0 && !targetTrackers.some(candidate => candidate.id === task.tracker_id)) {
+              task.tracker_id = targetTrackers[0].id;
+              task.tracker_name = targetTrackers[0].name;
+            }
+            task.fixed_version_id = null;
+            task.fixed_version_name = null;
+            task.category_id = null;
+            task.category_name = null;
+          }
+        }
+        if (typeof fields.tracker_id === 'number') {
+          const previousTrackerId = task.tracker_id;
+          task.tracker_id = fields.tracker_id;
+          const projectTrackers = options?.editOptionsByProject?.[String(task.project_id)]?.trackers;
+          const tracker = (projectTrackers ?? options?.editTrackers)?.find(candidate => candidate.id === fields.tracker_id);
+          if (tracker) task.tracker_name = tracker.name;
+          const trackerStatus = options?.editStatusByTracker?.[String(fields.tracker_id)];
+          if (trackerStatus && fields.status_id === undefined && previousTrackerId !== fields.tracker_id) {
+            task.status_id = trackerStatus.id;
+            task.status_name = trackerStatus.name;
+          }
+        }
         if (fields.fixed_version_id === null) {
-          delete task.fixed_version_id;
-          delete task.fixed_version_name;
+          task.fixed_version_id = null;
+          task.fixed_version_name = null;
         }
         if (fields.category_id === null) {
-          delete task.category_id;
-          delete task.category_name;
+          task.category_id = null;
+          task.category_name = null;
         }
         task.lock_version += 1;
       }
 
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ lock_version: task?.lock_version ?? 2, task_id: taskId }) });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          completeness: 'partial',
+          entity: task,
+          revision: task?.lock_version ?? 2,
+          lock_version: task?.lock_version ?? 2,
+          task_id: taskId,
+        }),
+      });
       return;
     }
 

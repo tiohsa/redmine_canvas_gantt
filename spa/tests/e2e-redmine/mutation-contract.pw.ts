@@ -22,8 +22,14 @@ const ensureCanvasGanttModuleEnabled = async (redmineBase: string, page: Page, p
   }
 };
 
-const ensureProject = async (page: Page, identifier: string, name: string, parentIdentifier?: string): Promise<number> => {
-  const result = await page.evaluate(async ({ identifier, name, parentIdentifier, restAuthorization }) => {
+const ensureProject = async (
+  page: Page,
+  identifier: string,
+  name: string,
+  parentIdentifier?: string,
+  trackerIds: number[] = [1, 2, 3]
+): Promise<number> => {
+  const result = await page.evaluate(async ({ identifier, name, parentIdentifier, trackerIds, restAuthorization }) => {
     const headers = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
@@ -48,12 +54,12 @@ const ensureProject = async (page: Page, identifier: string, name: string, paren
           identifier,
           parent_id: (parentPayload as { project?: { id?: number } }).project?.id,
           enabled_module_names: ['issue_tracking', 'canvas_gantt'],
-          tracker_ids: [1, 2, 3]
+          tracker_ids: trackerIds
         }
       })
     });
     return { status: response.status, payload: await response.json().catch(() => ({})) };
-  }, { identifier, name, parentIdentifier, restAuthorization });
+  }, { identifier, name, parentIdentifier, trackerIds, restAuthorization });
 
   expect([200, 201]).toContain(result.status);
   const projectId = (result.payload as { project?: { id?: number } }).project?.id;
@@ -64,7 +70,7 @@ const ensureProject = async (page: Page, identifier: string, name: string, paren
 const createIssue = async (
   page: Page,
   projectIdentifier: string,
-  fields: { subject: string; startDate?: string; dueDate?: string }
+  fields: { subject: string; startDate?: string; dueDate?: string; trackerId?: number; assignedToId?: number; parentId?: number }
 ): Promise<number> => {
   const result = await page.evaluate(async ({ projectIdentifier, fields, restAuthorization }) => {
     const response = await fetch('/issues.json', {
@@ -77,10 +83,12 @@ const createIssue = async (
       body: JSON.stringify({
         issue: {
           project_id: projectIdentifier,
-          tracker_id: 1,
+          tracker_id: fields.trackerId ?? 1,
           subject: fields.subject,
           start_date: fields.startDate,
-          due_date: fields.dueDate
+          due_date: fields.dueDate,
+          assigned_to_id: fields.assignedToId,
+          parent_issue_id: fields.parentId
         }
       })
     });
@@ -174,8 +182,11 @@ const fetchRestIssue = async (page: Page, issueId: number): Promise<{
   subject: string;
   startDate: string | null;
   dueDate: string | null;
+  lockVersion: number;
+  parentId: number | null;
   projectId: number;
   statusId: number;
+  trackerId: number;
 }> => {
   const result = await page.evaluate(async ({ issueId, restAuthorization }) => {
     const response = await fetch(`/issues/${issueId}.json`, {
@@ -195,18 +206,25 @@ const fetchRestIssue = async (page: Page, issueId: number): Promise<{
       due_date?: string;
       project?: { id?: number };
       status?: { id?: number };
+      tracker?: { id?: number };
+      lock_version?: number;
+      parent?: { id?: number };
     };
   }).issue;
   expect(issue).toBeTruthy();
   expect(issue?.project?.id).toEqual(expect.any(Number));
   expect(issue?.status?.id).toEqual(expect.any(Number));
+  expect(issue?.tracker?.id).toEqual(expect.any(Number));
 
   return {
     subject: issue!.subject ?? '',
     startDate: issue!.start_date ?? null,
     dueDate: issue!.due_date ?? null,
+    lockVersion: issue!.lock_version ?? 1,
+    parentId: issue!.parent?.id ?? null,
     projectId: issue!.project!.id!,
-    statusId: issue!.status!.id!
+    statusId: issue!.status!.id!,
+    trackerId: issue!.tracker!.id!
   };
 };
 
@@ -246,6 +264,155 @@ const patchIssueThroughPlugin = async (
   });
   return { status: response.status, payload: await response.json().catch(() => ({})) };
 }, { issueId, task });
+
+const previewIssueThroughPlugin = async (
+  page: Page,
+  issueId: number,
+  task: Record<string, unknown>
+): Promise<{ status: number; payload: unknown }> => page.evaluate(async ({ issueId, task }) => {
+  const config = (window as Window & {
+    RedmineCanvasGantt: CanvasConfig;
+  }).RedmineCanvasGantt;
+  const response = await fetch(`${config.apiBase}/tasks/${issueId}/edit_meta/preview.json`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': config.authToken,
+      Accept: 'application/json'
+    },
+    body: JSON.stringify({ task })
+  });
+  return { status: response.status, payload: await response.json().catch(() => ({})) };
+}, { issueId, task });
+
+test('draft preview and mutation accept destination project, tracker, and status as one intent', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, 'ecookbook');
+
+  const destinationIdentifier = `draft-move-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const destinationProjectId = await ensureProject(
+    page,
+    destinationIdentifier,
+    uniqueName('Canvas Draft Destination'),
+    'ecookbook',
+    [2, 3]
+  );
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, destinationIdentifier);
+
+  const issueId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas draft project tracker'),
+    trackerId: 1,
+    assignedToId: 1
+  });
+  await loadCanvasPage(page, redmineBase);
+  const persistedIssue = await fetchRestIssue(page, issueId);
+
+  const preview = await previewIssueThroughPlugin(page, issueId, {
+    project_id: destinationProjectId,
+    tracker_id: 2,
+    lock_version: 1
+  });
+
+  expect(preview.status).toBe(200);
+  expect(preview.payload).toEqual(expect.objectContaining({
+    task: expect.not.objectContaining({ project_id: destinationProjectId }),
+    draft_contract: expect.objectContaining({
+      materialized: expect.objectContaining({ project_id: destinationProjectId, tracker_id: 2 }),
+      violations: []
+    })
+  }));
+  const targetStatusId = (preview.payload as {
+    options?: { statuses?: Array<{ id?: number }> };
+  }).options?.statuses?.find(status => status.id !== persistedIssue.statusId)?.id;
+  expect(targetStatusId).toEqual(expect.any(Number));
+  if (targetStatusId === undefined) throw new Error('Destination tracker has no alternate workflow status');
+
+  const statusPreview = await previewIssueThroughPlugin(page, issueId, {
+    project_id: destinationProjectId,
+    tracker_id: 2,
+    status_id: targetStatusId,
+    lock_version: 1
+  });
+  expect(statusPreview.status).toBe(200);
+  expect(statusPreview.payload).toEqual(expect.objectContaining({
+    draft_contract: expect.objectContaining({
+      materialized: expect.objectContaining({
+        project_id: destinationProjectId,
+        tracker_id: 2,
+        status_id: targetStatusId
+      }),
+      violations: []
+    })
+  }));
+
+  const mutation = await patchIssueThroughPlugin(page, issueId, {
+    project_id: destinationProjectId,
+    tracker_id: 2,
+    status_id: targetStatusId,
+    lock_version: 1
+  });
+
+  expect(mutation.status).toBe(200);
+  await expect(fetchRestIssue(page, issueId)).resolves.toMatchObject({
+    projectId: destinationProjectId,
+    trackerId: 2,
+    statusId: targetStatusId
+  });
+});
+
+test('project and parent changes share the same preview and mutation contract', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, 'ecookbook');
+
+  const destinationIdentifier = `draft-parent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const destinationProjectId = await ensureProject(
+    page,
+    destinationIdentifier,
+    uniqueName('Canvas Draft Parent Destination'),
+    'ecookbook',
+    [1, 2, 3]
+  );
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, destinationIdentifier);
+
+  const parentId = await createIssue(page, destinationIdentifier, {
+    subject: uniqueName('Canvas draft parent'),
+    trackerId: 1
+  });
+  const childId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas draft child'),
+    trackerId: 1
+  });
+
+  await loadCanvasPage(page, redmineBase);
+  const before = await fetchRestIssue(page, childId);
+  const intent = {
+    project_id: destinationProjectId,
+    tracker_id: 1,
+    parent_issue_id: parentId,
+    lock_version: before.lockVersion
+  };
+
+  const preview = await previewIssueThroughPlugin(page, childId, intent);
+  expect(preview.status).toBe(200);
+  expect(preview.payload).toEqual(expect.objectContaining({
+    draft_contract: expect.objectContaining({
+      materialized: expect.objectContaining({
+        project_id: destinationProjectId,
+        parent_issue_id: parentId
+      }),
+      violations: []
+    })
+  }));
+
+  const mutation = await patchIssueThroughPlugin(page, childId, intent);
+  expect(mutation.status).toBe(200);
+  await expect(fetchRestIssue(page, childId)).resolves.toMatchObject({
+    projectId: destinationProjectId,
+    parentId
+  });
+});
 
 test('real Redmine optimistic-lock conflict is terminal for the stale plugin mutation', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
@@ -305,7 +472,7 @@ test('linked downstream shift does not publish a self-induced conflict', async (
   const originRow = page.getByTestId(`task-row-${originId}`);
   const mutationStatuses: number[] = [];
   page.on('response', (response) => {
-    if (response.request().method() === 'PATCH' && response.url().includes('/tasks/')) {
+    if (response.request().method() === 'POST' && response.url().includes('/schedule_mutation')) {
       mutationStatuses.push(response.status());
     }
   });
@@ -343,6 +510,99 @@ test('linked downstream shift does not publish a self-induced conflict', async (
   await expect(page.getByText('Loading Canvas Gantt...')).toHaveCount(0);
   await expect(page.getByTestId(`task-conflict-${originId}`)).toHaveCount(0);
   await expect(page.getByTestId(`task-conflict-${downstreamId}`)).toHaveCount(0);
+  await expect(fetchRestIssue(page, downstreamId)).resolves.toMatchObject({
+    startDate: downstreamAfter.startDate,
+    dueDate: downstreamAfter.dueDate
+  });
+});
+
+test('linked downstream shift moves a valid dependency pair left through one schedule mutation', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+  await ensureCanvasGanttModuleEnabled(redmineBase, page, 'ecookbook');
+
+  const originId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas Gantt left linked origin')
+  });
+  const downstreamId = await createIssue(page, 'ecookbook', {
+    subject: uniqueName('Canvas Gantt left linked downstream')
+  });
+
+  await loadCanvasPage(page, redmineBase, 'ecookbook');
+  await createPrecedesRelation(page, originId, downstreamId);
+  await updateIssueThroughRedmineRest(page, originId, {
+    start_date: '2027-09-20',
+    due_date: '2027-09-22'
+  });
+  await loadCanvasPage(page, redmineBase, 'ecookbook', '?sort=id:desc');
+  const originBefore = await fetchRestIssue(page, originId);
+  const downstreamBefore = await fetchRestIssue(page, downstreamId);
+  expect(originBefore.startDate).not.toBeNull();
+  expect(downstreamBefore.startDate).not.toBeNull();
+
+  await page.getByTestId('relation-settings-menu-button').click();
+  await page.getByTestId('auto-schedule-move-mode-select').selectOption('linked_downstream_shift');
+  await page.getByTestId('relation-settings-menu').getByRole('button', { name: /save/i }).click();
+  await enableAutoSave(page);
+
+  const originRow = page.getByTestId(`task-row-${originId}`);
+  const mutationResponses: Array<Promise<{ status: number; requestBody: unknown; responseBody: unknown }>> = [];
+  page.on('response', (response) => {
+    if (response.request().method() === 'POST' && response.url().includes('/schedule_mutation')) {
+      mutationResponses.push((async () => ({
+        status: response.status(),
+        requestBody: response.request().postDataJSON(),
+        responseBody: await response.json()
+      }))());
+    }
+  });
+  await originRow.dispatchEvent('click');
+  await originRow.dispatchEvent('mousemove');
+  const startHandle = page.getByTestId(`task-resize-handle-start-${originId}`);
+  const endHandle = page.getByTestId(`task-resize-handle-end-${originId}`);
+  const startBox = await startHandle.boundingBox();
+  const endBox = await endHandle.boundingBox();
+  expect(startBox).not.toBeNull();
+  expect(endBox).not.toBeNull();
+  const x = ((startBox!.x + startBox!.width / 2) + (endBox!.x + endBox!.width / 2)) / 2;
+  const y = startBox!.y + startBox!.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 160, y, { steps: 10 });
+  await page.mouse.up();
+
+  await expect.poll(() => mutationResponses.length).toBeGreaterThan(0);
+  const mutationResponse = await mutationResponses[0];
+  expect(mutationResponse.status, JSON.stringify(mutationResponse)).toBe(200);
+  const mutationRequest = mutationResponse.requestBody as {
+    changes?: Array<{ task_id?: string }>;
+  };
+  expect(mutationRequest.changes?.map((change) => change.task_id)).toEqual(
+    expect.arrayContaining([String(originId), String(downstreamId)])
+  );
+  expect(mutationRequest.changes).toHaveLength(2);
+  await expect(page.getByTestId(`task-conflict-${originId}`)).toHaveCount(0);
+  await expect(page.getByTestId(`task-conflict-${downstreamId}`)).toHaveCount(0);
+  await expect.poll(async () => (await fetchRestIssue(page, originId)).startDate)
+    .not.toBe(originBefore.startDate);
+  await expect.poll(async () => (await fetchRestIssue(page, downstreamId)).startDate)
+    .not.toBe(downstreamBefore.startDate);
+
+  const originAfter = await fetchRestIssue(page, originId);
+  const downstreamAfter = await fetchRestIssue(page, downstreamId);
+  expect(originAfter.startDate! < originBefore.startDate!).toBe(true);
+  expect(downstreamAfter.startDate! < downstreamBefore.startDate!).toBe(true);
+  expect(downstreamAfter.startDate! > originAfter.dueDate!).toBe(true);
+
+  await page.reload();
+  await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
+  await expect(page.getByText('Loading Canvas Gantt...')).toHaveCount(0);
+  await expect(page.getByTestId(`task-conflict-${originId}`)).toHaveCount(0);
+  await expect(page.getByTestId(`task-conflict-${downstreamId}`)).toHaveCount(0);
+  await expect(fetchRestIssue(page, originId)).resolves.toMatchObject({
+    startDate: originAfter.startDate,
+    dueDate: originAfter.dueDate
+  });
   await expect(fetchRestIssue(page, downstreamId)).resolves.toMatchObject({
     startDate: downstreamAfter.startDate,
     dueDate: downstreamAfter.dueDate
@@ -596,8 +856,25 @@ test('plugin task mutation returns scope not_found for a visible issue outside C
   const before = await fetchRestIssue(page, issueId);
   expect(before.projectId).toBe(outOfScopeProjectId);
 
+  const preview = await previewIssueThroughPlugin(page, issueId, {
+    project_id: outOfScopeProjectId,
+    start_date: '2027-01-03',
+    due_date: '2027-01-03',
+    date_update_mode: 'project_move',
+    lock_version: before.lockVersion
+  });
+  expect(preview.status).toBe(404);
+  expect(preview.payload).toEqual(expect.objectContaining({
+    status: 'not_found',
+    failure: expect.objectContaining({ resource_role: 'scope' })
+  }));
+
   const result = await patchIssueThroughPlugin(page, issueId, {
     subject: `${before.subject} rejected`,
+    project_id: outOfScopeProjectId,
+    start_date: '2027-01-03',
+    due_date: '2027-01-03',
+    date_update_mode: 'project_move',
     lock_version: 1
   });
 
@@ -662,12 +939,33 @@ test('project move plus date update uses the destination project calendar', asyn
 
   await loadCanvasPage(page, redmineBase);
 
+  const before = await fetchRestIssue(page, issueId);
+  const preview = await previewIssueThroughPlugin(page, issueId, {
+    project_id: destinationProjectId,
+    start_date: '2027-07-04',
+    due_date: '2027-07-06',
+    date_update_mode: 'project_move',
+    lock_version: before.lockVersion
+  });
+
+  expect(preview.status).toBe(200);
+  expect(preview.payload).toEqual(expect.objectContaining({
+    draft_contract: expect.objectContaining({
+      materialized: expect.objectContaining({
+        project_id: destinationProjectId,
+        start_date: '2027-07-05',
+        due_date: '2027-07-06'
+      }),
+      violations: []
+    })
+  }));
+
   const moveResult = await patchIssueThroughPlugin(page, issueId, {
     project_id: destinationProjectId,
     start_date: '2027-07-04',
     due_date: '2027-07-06',
     date_update_mode: 'project_move',
-    lock_version: 1
+    lock_version: before.lockVersion
   });
 
   expect(moveResult.status).toBe(200);
@@ -676,4 +974,6 @@ test('project move plus date update uses the destination project calendar', asyn
   expect(after.projectId).toBe(destinationProjectId);
   expect(after.startDate).toBe('2027-07-05');
   expect(after.dueDate).toBe('2027-07-06');
+  expect(after.startDate).toBe((preview.payload as { draft_contract?: { materialized?: { start_date?: string } } }).draft_contract?.materialized?.start_date);
+  expect(after.dueDate).toBe((preview.payload as { draft_contract?: { materialized?: { due_date?: string } } }).draft_contract?.materialized?.due_date);
 });

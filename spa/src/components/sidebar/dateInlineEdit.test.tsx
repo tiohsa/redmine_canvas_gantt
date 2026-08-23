@@ -121,7 +121,7 @@ describe('UiSidebar Date Inline Edit Integration', () => {
                 [taskId]: metaPayload
             },
             fetchEditMeta: fetchEditMetaSpy,
-            loadingTaskId: null,
+            loadingByTaskId: {},
             error: null
         });
         return task;

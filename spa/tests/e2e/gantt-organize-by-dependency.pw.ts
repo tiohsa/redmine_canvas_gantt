@@ -15,7 +15,8 @@ const getRenderedTaskOrder = async (page: Parameters<typeof test>[0]['page']) =>
 
 const enableDependencyOrganization = async (page: Parameters<typeof test>[0]['page']) => {
   await page.getByTestId('display-settings-menu-button').click();
-  await page.getByLabel('Organize by dependency').check();
+  await page.getByText('Organize by dependency', { exact: true }).click();
+  await expect(page.getByLabel('Organize by dependency')).toBeChecked();
 };
 
 test('organize by dependency overrides flat sort order', async ({ page }) => {
