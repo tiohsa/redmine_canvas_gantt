@@ -133,6 +133,7 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
             try {
                 let activeContextKey = key;
                 let activeDraftIntent = initialDraftIntent;
+                let activeCalendarRevision = getBusinessCalendarPayload().revision;
                 let calendarRefreshAttempted = false;
                 while (true) {
                     try {
@@ -158,12 +159,21 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
                             throw new StaleEditMetaResponseError();
                         }
                         calendarRefreshAttempted = true;
-                        await useTaskStore.getState().refreshData();
+                        const refreshOutcome = await useTaskStore.getState().refreshData();
                         if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) {
                             throw new StaleEditMetaResponseError();
                         }
+                        const refreshedCalendarRevision = getBusinessCalendarPayload().revision;
+                        if (
+                            refreshOutcome.status !== 'applied' ||
+                            !refreshedCalendarRevision ||
+                            refreshedCalendarRevision === activeCalendarRevision
+                        ) throw err;
                         activeDraftIntent = draftIntentFor(taskId, options);
                         activeContextKey = contextKey(taskId, activeDraftIntent);
+                        activeCalendarRevision = refreshedCalendarRevision;
+                        editMetaInFlight.set(activeContextKey, promise);
+                        ownedContextKeys.add(activeContextKey);
                     }
                 }
             } catch (err) {
@@ -178,12 +188,15 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
             }
         };
 
+        const ownedContextKeys = new Set<string>([key]);
         const promise = request();
         editMetaInFlight.set(key, promise);
         try {
             return await promise;
         } finally {
-            if (editMetaInFlight.get(key) === promise) editMetaInFlight.delete(key);
+            ownedContextKeys.forEach((ownedKey) => {
+                if (editMetaInFlight.get(ownedKey) === promise) editMetaInFlight.delete(ownedKey);
+            });
         }
     },
 

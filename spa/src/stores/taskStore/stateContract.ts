@@ -18,6 +18,10 @@ export type ReadContext = {
     mergePolicy: 'preserve_dirty' | 'replace' | 'merge';
 };
 
+export type ReadApplyOutcome =
+    | { status: 'applied'; context: ReadContext }
+    | { status: 'superseded'; context: ReadContext };
+
 export type ServerSnapshot<T extends { id: string }> = {
     entitiesById: Record<string, T>;
     revisions: Record<string, number>;

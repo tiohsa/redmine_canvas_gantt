@@ -65,6 +65,7 @@ import {
     type DerivedInvalidation,
     type LocalPatch,
     type EntityTombstone,
+    type ReadApplyOutcome,
     type ReadContext,
     type ServerSnapshot
 } from './taskStore/stateContract';
@@ -180,7 +181,7 @@ export const resetReadLifecycleMetrics = () => {
     readLifecycleMetrics.maxInflight = 0;
 };
 
-const queueRefreshData = (refreshData: () => Promise<void>) => {
+const queueRefreshData = (refreshData: () => Promise<ReadApplyOutcome>) => {
     queueMicrotask(() => {
         // Each UI scope change is an explicit read invalidation. This keeps
         // separately queued changes observable while identical direct
@@ -321,7 +322,7 @@ interface TaskState {
     scrollToTask: (taskId: string) => void;
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
-    refreshData: () => Promise<void>;
+    refreshData: () => Promise<ReadApplyOutcome>;
     loadInitialData: (params: InitialDataParams) => Promise<void>;
     loadSavedQueries: (force?: boolean) => Promise<void>;
     applySavedQuery: (queryId: number) => Promise<void>;
@@ -987,7 +988,7 @@ const matchesTaskFilters = (task: Task, state: TaskState): boolean => {
 };
 
 export const useTaskStore = create<TaskState>((set, get) => {
-    const inflightReads = new Map<string, Promise<void>>();
+    const inflightReads = new Map<string, Promise<ReadApplyOutcome>>();
     let auxiliaryReadContext: ReadContext | null = null;
     let auxiliaryReadGeneration = 0;
     let mutationResyncGeneration = 0;
@@ -995,27 +996,28 @@ export const useTaskStore = create<TaskState>((set, get) => {
     const requestAndApplyData = async (
         fetchData: () => Promise<ApiData>,
         context: ReadContext
-    ): Promise<void> => {
+    ): Promise<ReadApplyOutcome> => {
         const readKey = context.contextId;
         const existing = inflightReads.get(readKey);
         if (existing) return existing;
         activeReadContext = context;
         readLifecycleMetrics.requestsStarted += 1;
         readLifecycleMetrics.maxInflight = Math.max(readLifecycleMetrics.maxInflight, inflightReads.size + 1);
-        const request = (async () => {
+        const request = (async (): Promise<ReadApplyOutcome> => {
         try {
             const data = await fetchData();
             if (context.generation !== dataRequestGeneration || !canApplyReadResponse(activeReadContext, context)) {
                 readLifecycleMetrics.staleResponsesRejected += 1;
-                return;
+                return { status: 'superseded', context };
             }
             get().applyApiData(data, context);
             readLifecycleMetrics.responsesApplied += 1;
+            return { status: 'applied', context };
         } catch (error) {
             // A superseded request must not surface as a user-visible failure.
             if (context.generation !== dataRequestGeneration || !canApplyReadResponse(activeReadContext, context)) {
                 readLifecycleMetrics.staleResponsesRejected += 1;
-                return;
+                return { status: 'superseded', context };
             }
             readLifecycleMetrics.failures += 1;
             throw error;
@@ -1023,12 +1025,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
         })();
         inflightReads.set(readKey, request);
         try {
-            await request;
+            return await request;
         } finally {
             if (inflightReads.get(readKey) === request) inflightReads.delete(readKey);
         }
     };
-    const refreshCurrentData = async (purpose: 'refresh' | 'saved_query'): Promise<void> => {
+    const refreshCurrentData = async (purpose: 'refresh' | 'saved_query'): Promise<ReadApplyOutcome> => {
         const state = get();
         const query = toResolvedQueryStateFromStore(state);
         const scope = { showSubprojects: state.showSubprojects, memberProjectsOnly: state.memberProjectsOnly };
@@ -1040,7 +1042,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             scope,
             purpose
         });
-        await requestAndApplyData(() => apiClient.fetchData({ query, queryContext: state.queryContext }), context);
+        return requestAndApplyData(() => apiClient.fetchData({ query, queryContext: state.queryContext }), context);
     };
     const fetchMutationResyncData = async (params: { query?: { selectedStatusIds?: number[] } }): Promise<ApiData> => {
         const state = get();
