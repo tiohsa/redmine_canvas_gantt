@@ -930,9 +930,7 @@ export const apiClient = {
                 : { headers: buildJsonHeaders(config) }
         );
 
-        if (!response.ok) {
-            throw new Error(await parseErrorMessage(response));
-        }
+        if (!response.ok) throw await parseMutationError(response);
 
         const payload = await response.json();
         const root = asRecord(payload);

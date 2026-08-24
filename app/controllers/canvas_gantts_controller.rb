@@ -2,14 +2,6 @@ require 'set'
 
 class CanvasGanttsController < ApplicationController
   BUSINESS_CALENDAR_REVISION_HEADER = 'HTTP_X_REDMINE_CANVAS_GANTT_CALENDAR_REVISION'.freeze
-  CALENDAR_SENSITIVE_MUTATION_ACTIONS = %i[
-    edit_meta_preview
-    update
-    schedule_mutation
-    bulk_create_subtasks
-    create_relation
-    update_relation
-  ].freeze
 
   CANVAS_GANTT_UI_SETTINGS = {
     'inline_edit_subject' => '1',
@@ -382,7 +374,7 @@ class CanvasGanttsController < ApplicationController
   # their own standard Redmine authorization below.
   before_action :ensure_view_permission
   before_action :ensure_business_calendar_revision,
-                only: CALENDAR_SENSITIVE_MUTATION_ACTIONS
+                if: :business_calendar_revision_required?
   skip_forgery_protection only: [:asset]
   skip_before_action :resolve_canvas_project, :set_permissions, :ensure_view_permission, only: [:asset]
 
@@ -1679,6 +1671,26 @@ class CanvasGanttsController < ApplicationController
       resource_id: resource_role == 'target' ? issue&.id : nil
     ), status: :not_found
     false
+  end
+
+  def business_calendar_revision_required?
+    case action_name.to_sym
+    when :schedule_mutation
+      true
+    when :edit_meta_preview, :update
+      calendar_sensitive_task_intent?(params[:task])
+    when :create_relation, :update_relation
+      DELAY_RELATION_TYPES.include?(params.dig(:relation, :relation_type).to_s)
+    else
+      false
+    end
+  end
+
+  def calendar_sensitive_task_intent?(intent)
+    return false unless intent.respond_to?(:key?)
+
+    intent.key?(:start_date) || intent.key?('start_date') ||
+      intent.key?(:due_date) || intent.key?('due_date')
   end
 
   def requested_operation_issue_ids

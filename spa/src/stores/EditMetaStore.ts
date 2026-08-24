@@ -3,7 +3,9 @@ import type { TaskEditMeta } from '../types/editMeta';
 import { canApplyReadResponse, createReadContext, type ReadContext } from './taskStore/stateContract';
 import { buildTaskDraftIntent } from './taskStore/draftIntent';
 import { apiClient } from '../api/client';
+import { classifyMutationError } from '../api/mutationOutcome';
 import { useTaskStore } from './TaskStore';
+import { getBusinessCalendarPayload } from '../utils/businessCalendar';
 
 let editMetaGeneration = 0;
 
@@ -56,8 +58,16 @@ const stableIntentSignature = (intent: Record<string, unknown> | null): string =
 };
 
 const contextKey = (taskId: string, intent: Record<string, unknown> | null): string => (
-    `${taskId}:${stableIntentSignature(intent)}`
+    `${taskId}:${getBusinessCalendarPayload().revision}:${stableIntentSignature(intent)}`
 );
+
+const needsBusinessCalendarRefresh = (error: unknown): boolean => {
+    const outcome = classifyMutationError(error);
+    return outcome.status === 'conflict' &&
+        outcome.failure?.resourceRole === 'scope' &&
+        outcome.failure.resourceType === 'business_calendar' &&
+        outcome.failure.remoteAvailability === 'needs_refresh';
+};
 
 const cachedMetaMatchesPersistedTask = (taskId: string, meta: TaskEditMeta): boolean => {
     const context = meta.capabilityContext;
@@ -93,12 +103,12 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
     error: null,
 
     fetchEditMeta: async (taskId: string, options) => {
-        const draftIntent = draftIntentFor(taskId, options);
-        const key = contextKey(taskId, draftIntent);
+        const initialDraftIntent = draftIntentFor(taskId, options);
+        const key = contextKey(taskId, initialDraftIntent);
         const cached = get().metaByTaskId[taskId];
         const cachedKey = get().contextKeyByTaskId[taskId];
         if (cached && !options?.force && (
-            cachedKey === key || (!draftIntent && cachedKey === undefined && cachedMetaMatchesPersistedTask(taskId, cached))
+            cachedKey === key || (!initialDraftIntent && cachedKey === undefined && cachedMetaMatchesPersistedTask(taskId, cached))
         )) return cached;
 
         const existing = editMetaInFlight.get(key);
@@ -107,7 +117,7 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
         const context = createReadContext({
             generation: ++editMetaGeneration,
             projectId: null,
-            query: { taskId, draftIntent },
+            query: { taskId, draftIntent: initialDraftIntent },
             scope: { taskId },
             purpose: 'edit_meta',
             mergePolicy: 'replace'
@@ -121,22 +131,41 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
 
         const request = async (): Promise<TaskEditMeta> => {
             try {
-                const meta = await apiClient.fetchEditMeta(
-                    taskId,
-                    undefined,
-                    undefined,
-                    undefined,
-                    draftIntent ?? undefined
-                );
-                if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) {
-                    throw new StaleEditMetaResponseError();
+                let activeContextKey = key;
+                let activeDraftIntent = initialDraftIntent;
+                let calendarRefreshAttempted = false;
+                while (true) {
+                    try {
+                        const meta = await apiClient.fetchEditMeta(
+                            taskId,
+                            undefined,
+                            undefined,
+                            undefined,
+                            activeDraftIntent ?? undefined
+                        );
+                        if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) {
+                            throw new StaleEditMetaResponseError();
+                        }
+                        set((state) => ({
+                            metaByTaskId: { ...state.metaByTaskId, [taskId]: meta },
+                            contextKeyByTaskId: { ...state.contextKeyByTaskId, [taskId]: activeContextKey },
+                            loadingByTaskId: Object.fromEntries(Object.entries(state.loadingByTaskId).filter(([id]) => id !== taskId))
+                        }));
+                        return meta;
+                    } catch (err) {
+                        if (calendarRefreshAttempted || !needsBusinessCalendarRefresh(err)) throw err;
+                        if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) {
+                            throw new StaleEditMetaResponseError();
+                        }
+                        calendarRefreshAttempted = true;
+                        await useTaskStore.getState().refreshData();
+                        if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) {
+                            throw new StaleEditMetaResponseError();
+                        }
+                        activeDraftIntent = draftIntentFor(taskId, options);
+                        activeContextKey = contextKey(taskId, activeDraftIntent);
+                    }
                 }
-                set((state) => ({
-                    metaByTaskId: { ...state.metaByTaskId, [taskId]: meta },
-                    contextKeyByTaskId: { ...state.contextKeyByTaskId, [taskId]: key },
-                    loadingByTaskId: Object.fromEntries(Object.entries(state.loadingByTaskId).filter(([id]) => id !== taskId))
-                }));
-                return meta;
             } catch (err) {
                 if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) throw err;
                 const message = err instanceof Error ? err.message : 'Failed to load edit meta';

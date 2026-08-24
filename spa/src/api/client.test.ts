@@ -238,6 +238,55 @@ describe('apiClient.fetchData', () => {
     });
 });
 
+describe('apiClient.fetchEditMeta', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        configureBusinessCalendar(null);
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('preserves structured business calendar conflicts for draft previews', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 409,
+            statusText: 'Conflict',
+            json: async () => ({
+                status: 'conflict',
+                error: 'Business calendar changed',
+                failure: {
+                    kind: 'conflict',
+                    resource_role: 'scope',
+                    resource_type: 'business_calendar',
+                    resource_id: 'calendar-revision-2',
+                    remote_availability: 'needs_refresh'
+                }
+            })
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.fetchEditMeta('42', undefined, undefined, undefined, {
+            due_date: '2027-01-05',
+            lock_version: 1
+        })).rejects.toMatchObject({
+            name: 'ApiMutationError',
+            status: 'conflict',
+            httpStatus: 409,
+            failure: {
+                kind: 'conflict',
+                resourceRole: 'scope',
+                resourceType: 'business_calendar',
+                resourceId: 'calendar-revision-2',
+                remoteAvailability: 'needs_refresh'
+            }
+        });
+    });
+});
+
 describe('CalendarDate persistence invariant', () => {
     afterEach(() => {
         vi.restoreAllMocks();

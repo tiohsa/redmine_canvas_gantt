@@ -173,6 +173,38 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe '#business_calendar_revision_required?' do
+    def calendar_revision_required_for(action, payload = {})
+      allow(controller).to receive(:action_name).and_return(action.to_s)
+      controller.params.merge!(payload)
+      controller.send(:business_calendar_revision_required?)
+    end
+
+    it 'classifies task preview and update by date intent instead of action name' do
+      expect(calendar_revision_required_for(:update, task: { subject: 'Renamed' })).to be(false)
+      expect(calendar_revision_required_for(:update, task: { status_id: 2 })).to be(false)
+      expect(calendar_revision_required_for(:update, task: { assigned_to_id: 7 })).to be(false)
+      expect(calendar_revision_required_for(:update, task: { custom_field_values: { '1' => 'A' } })).to be(false)
+      expect(calendar_revision_required_for(:update, task: { start_date: '2027-01-04' })).to be(true)
+      expect(calendar_revision_required_for(:edit_meta_preview, task: { due_date: '2027-01-05' })).to be(true)
+      expect(calendar_revision_required_for(:edit_meta_preview, task: { project_id: 2 })).to be(false)
+    end
+
+    it 'classifies relation mutations through the existing delay relation semantics' do
+      expect(calendar_revision_required_for(:create_relation, relation: { relation_type: 'precedes' })).to be(true)
+      expect(calendar_revision_required_for(:update_relation, relation: { relation_type: 'follows' })).to be(true)
+      expect(calendar_revision_required_for(:create_relation, relation: { relation_type: 'relates' })).to be(false)
+      expect(calendar_revision_required_for(:update_relation, relation: { relation_type: 'blocks' })).to be(false)
+      expect(calendar_revision_required_for(:update_relation, relation: { relation_type: 'blocked' })).to be(false)
+    end
+
+    it 'keeps schedule mutations sensitive and current bulk subtasks independent' do
+      expect(calendar_revision_required_for(:schedule_mutation)).to be(true)
+      expect(calendar_revision_required_for(:bulk_create_subtasks)).to be(false)
+      expect(calendar_revision_required_for(:destroy_relation)).to be(false)
+    end
+  end
+
   describe '#safe_build_asset_path' do
     around do |example|
       Dir.mktmpdir do |dir|
@@ -653,6 +685,25 @@ RSpec.describe CanvasGanttsController, type: :controller do
         'baseline_due_date' => '2026-04-15'
       )
       expect(body['warnings']).to eq(['query warning'])
+    end
+
+    it 'returns 413 for filtered baseline overflow without building a broader fallback snapshot' do
+      overflow = RedmineCanvasGantt::DataPayloadBudget::Exceeded.new(
+        resource: 'issues',
+        limit: 10_000,
+        actual: 10_001
+      )
+      allow(resolver).to receive(:resolve).and_raise(overflow)
+      expect(baseline_repository).not_to receive(:build_snapshot)
+
+      post :save_baseline, params: { project_id: 'demo', scope: 'filtered' }, format: :json
+
+      expect(response).to have_http_status(413)
+      expect(JSON.parse(response.body)).to include(
+        'code' => 'canvas_gantt_payload_limit',
+        'resource' => 'issues',
+        'limit' => 10_000
+      )
     end
 
     it 'can save a whole-project baseline snapshot' do

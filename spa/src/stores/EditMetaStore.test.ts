@@ -5,10 +5,12 @@ import type { TaskEditMeta } from '../types/editMeta';
 import { useTaskStore } from './TaskStore';
 import type { Task } from '../types';
 import { createServerSnapshot } from './taskStore/stateContract';
+import { configureBusinessCalendar, getBusinessCalendarPayload } from '../utils/businessCalendar';
 
 vi.mock('../api/client', () => ({
     apiClient: {
-        fetchEditMeta: vi.fn()
+        fetchEditMeta: vi.fn(),
+        fetchData: vi.fn()
     }
 }));
 
@@ -57,11 +59,22 @@ const metaFixture: TaskEditMeta = {
     customFieldValues: { '10': 'A' }
 };
 
+const calendarConflict = () => Object.assign(new Error('Business calendar changed'), {
+    status: 'conflict',
+    failure: {
+        kind: 'conflict',
+        resourceRole: 'scope',
+        resourceType: 'business_calendar',
+        remoteAvailability: 'needs_refresh'
+    }
+});
+
 describe('EditMetaStore', () => {
     beforeEach(() => {
         useEditMetaStore.setState(useEditMetaStore.getInitialState(), true);
         useTaskStore.setState(useTaskStore.getInitialState(), true);
-        vi.clearAllMocks();
+        vi.resetAllMocks();
+        configureBusinessCalendar(null);
     });
 
     it('caches fetchEditMeta result per taskId', async () => {
@@ -280,6 +293,164 @@ describe('EditMetaStore', () => {
 
         useEditMetaStore.getState().clearError();
         expect(useEditMetaStore.getState().error).toBeNull();
+    });
+
+    it('refreshes authoritative data and retries a calendar-conflicted preview once while preserving local intent', async () => {
+        const persistedTask = {
+            id: '1',
+            subject: 'Task',
+            projectId: '1',
+            trackerId: 1,
+            statusId: 1,
+            ratioDone: 0,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        } as Task;
+        useTaskStore.setState({
+            allTasks: [persistedTask],
+            serverTaskSnapshot: createServerSnapshot([persistedTask])
+        });
+        useTaskStore.getState().updateTask('1', { dueDate: Date.UTC(2027, 0, 5) });
+        const patchesBefore = useTaskStore.getState().localTaskPatches['1'];
+        const generationBefore = useTaskStore.getState().editGenerations['1'];
+
+        vi.mocked(apiClient.fetchEditMeta)
+            .mockRejectedValueOnce(calendarConflict())
+            .mockResolvedValueOnce(metaFixture);
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [{ ...persistedTask, lockVersion: 2 }],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [], trackers: [] },
+            project: { id: '1', name: 'Demo' },
+            statuses: [],
+            customFields: [],
+            permissions: { editable: true, viewable: true, baselineEditable: false },
+            businessCalendar: {
+                status: 'ok',
+                revision: 'calendar-revision-2',
+                defaultCalendarId: null,
+                projectCalendarIds: {},
+                calendars: {},
+                warnings: []
+            }
+        });
+
+        await expect(useEditMetaStore.getState().fetchEditMeta('1', { force: true })).resolves.toBe(metaFixture);
+
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(2);
+        expect(apiClient.fetchEditMeta).toHaveBeenLastCalledWith(
+            '1', undefined, undefined, undefined,
+            { due_date: '2027-01-05', lock_version: 2 }
+        );
+        expect(useTaskStore.getState().localTaskPatches['1']).toEqual(patchesBefore);
+        expect(useTaskStore.getState().editGenerations['1']).toBe(generationBefore);
+        expect(useTaskStore.getState().modifiedTaskIds.has('1')).toBe(true);
+        expect(getBusinessCalendarPayload().revision).toBe('calendar-revision-2');
+        expect(useEditMetaStore.getState().errorByTaskId['1']).toBeUndefined();
+    });
+
+    it('stops after one calendar conflict retry and exposes the second failure', async () => {
+        const conflict = calendarConflict();
+        vi.mocked(apiClient.fetchEditMeta).mockRejectedValue(conflict);
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [], trackers: [] },
+            project: { id: '1', name: 'Demo' },
+            statuses: [],
+            customFields: [],
+            permissions: { editable: true, viewable: true, baselineEditable: false }
+        });
+
+        await expect(useEditMetaStore.getState().fetchEditMeta('1', { force: true })).rejects.toBe(conflict);
+
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(2);
+        expect(useEditMetaStore.getState().errorByTaskId['1']).toBe('Business calendar changed');
+    });
+
+    it('does not retry after refresh failure', async () => {
+        vi.mocked(apiClient.fetchEditMeta).mockRejectedValue(calendarConflict());
+        vi.mocked(apiClient.fetchData).mockRejectedValue(new Error('Refresh failed'));
+
+        await expect(useEditMetaStore.getState().fetchEditMeta('1', { force: true })).rejects.toThrow('Refresh failed');
+
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(1);
+        expect(useEditMetaStore.getState().errorByTaskId['1']).toBe('Refresh failed');
+    });
+
+    it('invalidates cached metadata when the business calendar revision changes', async () => {
+        configureBusinessCalendar({
+            status: 'ok',
+            revision: 'calendar-revision-1',
+            defaultCalendarId: null,
+            projectCalendarIds: {},
+            calendars: {},
+            warnings: []
+        });
+        const refreshed = { ...metaFixture, task: { ...metaFixture.task, lockVersion: 2 } };
+        vi.mocked(apiClient.fetchEditMeta).mockResolvedValueOnce(metaFixture).mockResolvedValueOnce(refreshed);
+
+        await useEditMetaStore.getState().fetchEditMeta('1');
+        configureBusinessCalendar({
+            status: 'ok',
+            revision: 'calendar-revision-2',
+            defaultCalendarId: null,
+            projectCalendarIds: {},
+            calendars: {},
+            warnings: []
+        });
+
+        await expect(useEditMetaStore.getState().fetchEditMeta('1')).resolves.toBe(refreshed);
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not retry a calendar conflict after a newer edit-meta generation supersedes it during refresh', async () => {
+        let resolveRefresh!: (value: Awaited<ReturnType<typeof apiClient.fetchData>>) => void;
+        const refreshedData = new Promise<Awaited<ReturnType<typeof apiClient.fetchData>>>(resolve => {
+            resolveRefresh = resolve;
+        });
+        const newer = {
+            ...metaFixture,
+            capabilityContext: { taskId: '1', projectId: 1, trackerId: 3, statusId: 4 }
+        };
+        vi.mocked(apiClient.fetchEditMeta)
+            .mockRejectedValueOnce(calendarConflict())
+            .mockResolvedValueOnce(newer);
+        vi.mocked(apiClient.fetchData).mockReturnValue(refreshedData);
+
+        const olderRequest = useEditMetaStore.getState().fetchEditMeta('1', { targetTrackerId: 2, force: true });
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
+        const newerRequest = useEditMetaStore.getState().fetchEditMeta('1', { targetTrackerId: 3, force: true });
+        await expect(newerRequest).resolves.toBe(newer);
+        resolveRefresh({
+            tasks: [],
+            relations: [],
+            versions: [],
+            filterOptions: { projects: [], assignees: [], trackers: [] },
+            project: { id: '1', name: 'Demo' },
+            statuses: [],
+            customFields: [],
+            permissions: { editable: true, viewable: true, baselineEditable: false },
+            businessCalendar: {
+                status: 'ok',
+                revision: 'calendar-revision-2',
+                defaultCalendarId: null,
+                projectCalendarIds: {},
+                calendars: {},
+                warnings: []
+            }
+        });
+
+        await expect(olderRequest).rejects.toMatchObject({ name: 'StaleEditMetaResponseError' });
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(2);
+        expect(useEditMetaStore.getState().metaByTaskId['1']).toBe(newer);
     });
 
     it('setCustomFieldValue updates only existing task metadata', () => {
