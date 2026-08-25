@@ -6,6 +6,7 @@ import { apiClient } from '../api/client';
 import { classifyMutationError } from '../api/mutationOutcome';
 import { useTaskStore } from './TaskStore';
 import { getBusinessCalendarPayload } from '../utils/businessCalendar';
+import { decideEditMetaCalendarRecovery } from './editMetaCalendarRecoveryPolicy';
 
 let editMetaGeneration = 0;
 
@@ -60,14 +61,6 @@ const stableIntentSignature = (intent: Record<string, unknown> | null): string =
 const contextKey = (taskId: string, intent: Record<string, unknown> | null): string => (
     `${taskId}:${getBusinessCalendarPayload().revision}:${stableIntentSignature(intent)}`
 );
-
-const needsBusinessCalendarRefresh = (error: unknown): boolean => {
-    const outcome = classifyMutationError(error);
-    return outcome.status === 'conflict' &&
-        outcome.failure?.resourceRole === 'scope' &&
-        outcome.failure.resourceType === 'business_calendar' &&
-        outcome.failure.remoteAvailability === 'needs_refresh';
-};
 
 const cachedMetaMatchesPersistedTask = (taskId: string, meta: TaskEditMeta): boolean => {
     const context = meta.capabilityContext;
@@ -134,7 +127,7 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
                 let activeContextKey = key;
                 let activeDraftIntent = initialDraftIntent;
                 let activeCalendarRevision = getBusinessCalendarPayload().revision;
-                let calendarRefreshAttempted = false;
+                let calendarRetryAttempted = false;
                 while (true) {
                     try {
                         const meta = await apiClient.fetchEditMeta(
@@ -154,21 +147,37 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
                         }));
                         return meta;
                     } catch (err) {
-                        if (calendarRefreshAttempted || !needsBusinessCalendarRefresh(err)) throw err;
-                        if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) {
-                            throw new StaleEditMetaResponseError();
-                        }
-                        calendarRefreshAttempted = true;
+                        const outcome = classifyMutationError(err);
+                        const readCurrent = canApplyReadResponse(
+                            get().latestReadContextByTaskId[taskId] ?? null,
+                            context
+                        );
+                        const initialDecision = decideEditMetaCalendarRecovery({
+                            outcome,
+                            retryAttempted: calendarRetryAttempted,
+                            readCurrent,
+                            failedCalendarRevision: activeCalendarRevision
+                        });
+                        if (initialDecision === 'stale') throw new StaleEditMetaResponseError();
+                        if (initialDecision !== 'refresh') throw err;
+
                         const refreshOutcome = await useTaskStore.getState().refreshData();
-                        if (!canApplyReadResponse(get().latestReadContextByTaskId[taskId] ?? null, context)) {
-                            throw new StaleEditMetaResponseError();
-                        }
                         const refreshedCalendarRevision = getBusinessCalendarPayload().revision;
-                        if (
-                            refreshOutcome.status !== 'applied' ||
-                            !refreshedCalendarRevision ||
-                            refreshedCalendarRevision === activeCalendarRevision
-                        ) throw err;
+                        const recoveryDecision = decideEditMetaCalendarRecovery({
+                            outcome,
+                            retryAttempted: calendarRetryAttempted,
+                            readCurrent: canApplyReadResponse(
+                                get().latestReadContextByTaskId[taskId] ?? null,
+                                context
+                            ),
+                            refreshOutcome,
+                            failedCalendarRevision: activeCalendarRevision,
+                            refreshedCalendarRevision
+                        });
+                        if (recoveryDecision === 'stale') throw new StaleEditMetaResponseError();
+                        if (recoveryDecision !== 'retry') throw err;
+
+                        calendarRetryAttempted = true;
                         activeDraftIntent = draftIntentFor(taskId, options);
                         activeContextKey = contextKey(taskId, activeDraftIntent);
                         activeCalendarRevision = refreshedCalendarRevision;

@@ -25,7 +25,7 @@ const isMutationStatus = (value: string): value is MutationStatusValue | 'error'
     ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error', 'protocol_error'].includes(value)
 );
 
-const parseMutationFailure = (value: unknown): MutationFailure | undefined => {
+export const decodeMutationFailure = (value: unknown): MutationFailure | undefined => {
     if (!value || typeof value !== 'object') return undefined;
     const record = value as Record<string, unknown>;
     const kind = record.kind;
@@ -70,7 +70,7 @@ export const classifyMutationResult = (value: unknown): MutationOutcome => {
     const status = (value as { status?: unknown }).status;
     if (typeof status !== 'string' || !isMutationStatus(status)) return { kind: 'terminal', status: 'protocol_error' };
     const message = (value as { error?: unknown }).error;
-    const failure = parseMutationFailure(record.failure);
+    const failure = decodeMutationFailure(record.failure);
     const failCount = (value as { failCount?: unknown }).failCount;
     const baselineMissing = Object.prototype.hasOwnProperty.call(record, 'baseline') && record.baseline === null;
     if (status === 'ok' && ((typeof failCount === 'number' && failCount > 0) || baselineMissing)) {
@@ -93,7 +93,7 @@ export const classifyMutationError = (error: unknown): MutationOutcome => {
     const status = error && typeof error === 'object'
         ? (error as { status?: unknown }).status
         : undefined;
-    const failure = parseMutationFailure(error && typeof error === 'object'
+    const failure = decodeMutationFailure(error && typeof error === 'object'
         ? (error as { failure?: unknown }).failure
         : undefined);
     if (typeof status === 'string' && isMutationStatus(status) && status !== 'ok') {

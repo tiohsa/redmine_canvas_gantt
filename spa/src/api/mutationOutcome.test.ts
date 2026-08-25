@@ -4,8 +4,107 @@ import {
     classifyMutationError,
     classifyMutationResult,
     classifyMutationStatus,
+    decodeMutationFailure,
     type MutationStatusValue
 } from './mutationOutcome';
+
+describe('mutation failure decoding', () => {
+    it.each([
+        'ok',
+        'error',
+        'validation_error',
+        'conflict',
+        'forbidden',
+        'not_found',
+        'transient_error',
+        'protocol_error'
+    ] as const)('accepts the shared %s kind', (kind) => {
+        expect(decodeMutationFailure({ kind })).toEqual({ kind });
+    });
+
+    it('normalizes raw and internal spellings to the same semantic failure', () => {
+        const raw = decodeMutationFailure({
+            kind: 'conflict',
+            resource_role: 'scope',
+            resource_type: 'business_calendar',
+            resource_id: 42,
+            remote_availability: 'needs_refresh',
+            ignored: true
+        });
+        const normalized = decodeMutationFailure({
+            kind: 'conflict',
+            resourceRole: 'scope',
+            resourceType: 'business_calendar',
+            resourceId: '42',
+            remoteAvailability: 'needs_refresh'
+        });
+
+        expect(raw).toEqual(normalized);
+        expect(raw).toEqual({
+            kind: 'conflict',
+            resourceRole: 'scope',
+            resourceType: 'business_calendar',
+            resourceId: '42',
+            remoteAvailability: 'needs_refresh'
+        });
+    });
+
+    it.each([
+        undefined,
+        null,
+        1,
+        {},
+        { kind: 'unexpected_kind' }
+    ])('rejects malformed failure %s', (failure) => {
+        expect(decodeMutationFailure(failure)).toBeUndefined();
+    });
+
+    it('drops invalid optional metadata without rejecting a known kind', () => {
+        expect(decodeMutationFailure({
+            kind: 'conflict',
+            resource_role: 'unknown_role',
+            resource_type: 1,
+            resource_id: null,
+            remote_availability: 'invalid'
+        })).toEqual({ kind: 'conflict' });
+    });
+
+    it.each([
+        'target',
+        'reference',
+        'relation',
+        'scope'
+    ] as const)('accepts the shared %s resource role', (resourceRole) => {
+        expect(decodeMutationFailure({
+            kind: 'not_found',
+            resourceRole
+        })).toEqual({ kind: 'not_found', resourceRole });
+    });
+
+    it.each([
+        'known',
+        'needs_refresh',
+        'unavailable',
+        'unknown'
+    ] as const)('accepts the shared %s remote availability', (remoteAvailability) => {
+        expect(decodeMutationFailure({
+            kind: 'conflict',
+            remote_availability: remoteAvailability
+        })).toEqual({ kind: 'conflict', remoteAvailability });
+    });
+
+    it.each([
+        { resourceId: 7, expected: '7' },
+        { resourceId: 'R2', expected: 'R2' },
+        { resourceId: null, expected: undefined },
+        { resourceId: undefined, expected: undefined }
+    ])('normalizes resource id $resourceId to $expected', ({ resourceId, expected }) => {
+        expect(decodeMutationFailure({
+            kind: 'conflict',
+            resource_id: resourceId
+        })?.resourceId).toBe(expected);
+    });
+});
 
 describe('mutation outcome classification', () => {
     it.each([
@@ -63,6 +162,31 @@ describe('mutation outcome classification', () => {
             status: 'not_found',
             failure: { kind: 'not_found', resourceRole: 'reference', resourceType: 'parent_task' }
         })).toBe('reference_missing');
+    });
+
+    it('classifies raw results and normalized errors with the same failure semantics', () => {
+        const raw = classifyMutationResult({
+            status: 'conflict',
+            failure: {
+                kind: 'conflict',
+                resource_role: 'scope',
+                resource_type: 'business_calendar',
+                resource_id: 2,
+                remote_availability: 'needs_refresh'
+            }
+        });
+        const normalized = classifyMutationError(Object.assign(new Error('changed'), {
+            status: 'conflict',
+            failure: {
+                kind: 'conflict',
+                resourceRole: 'scope',
+                resourceType: 'business_calendar',
+                resourceId: '2',
+                remoteAvailability: 'needs_refresh'
+            }
+        }));
+
+        expect(normalized.failure).toEqual(raw.failure);
     });
 
     it('treats resolved mutation results with failed rows as terminal domain failures', () => {

@@ -285,6 +285,34 @@ describe('apiClient.fetchEditMeta', () => {
             }
         });
     });
+
+    it('keeps the HTTP conflict while discarding an unknown failure kind', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        const json = vi.fn().mockResolvedValue({
+            error: 'Business calendar changed',
+            failure: { kind: 'unexpected_kind', resource_role: 'scope' }
+        });
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 409,
+            statusText: 'Conflict',
+            json
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.fetchEditMeta('42')).rejects.toMatchObject({
+            name: 'ApiMutationError',
+            status: 'conflict',
+            httpStatus: 409,
+            message: 'Business calendar changed',
+            failure: undefined
+        });
+        expect(json).toHaveBeenCalledTimes(1);
+    });
 });
 
 describe('CalendarDate persistence invariant', () => {
