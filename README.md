@@ -190,6 +190,15 @@ Canvas Gantt does not expose a plugin configuration screen. UI defaults are fixe
 
 To use the Vite dev server during development, set `CANVAS_GANTT_USE_VITE_DEV_SERVER=1`.
 
+### Data payload safety limits
+
+The data endpoint rejects an oversized complete payload with HTTP 413 instead of returning a truncated task graph. The built-in finite maxima are 10,000 issues, 50,000 relations, 10,000 auxiliary collection entries, and 25 MiB of encoded JSON. Administrators may lower, but cannot raise, those hard maxima with these environment variables:
+
+- `REDMINE_CANVAS_GANTT_MAX_DATA_ISSUES`
+- `REDMINE_CANVAS_GANTT_MAX_DATA_RELATIONS`
+- `REDMINE_CANVAS_GANTT_MAX_DATA_COLLECTION_ITEMS`
+- `REDMINE_CANVAS_GANTT_MAX_DATA_BYTES`
+
 ### Business calendars
 
 Canvas Gantt can use named business calendars for weekly non-working days, country holidays, company shutdowns, and substitute working days. The same resolved calendar drives dependency validation, automatic scheduling, critical-path calculations, Canvas background shading, and direct task-date changes. When a non-working day is selected during Gantt drag/resize or sidebar date editing, the start date is normalized forward to the next working day and the due date backward to the previous working day. This feature requires no database migration. Holiday data is read-only runtime configuration stored in external YAML files; it is never stored in `Setting.plugin_redmine_canvas_gantt`.

@@ -99,5 +99,24 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
         { id: 10, from: 1, to: 2, type: 'precedes', delay: 0 }
       ])
     end
+
+    it 'serializes an explicitly bounded relation collection without touching issue associations' do
+      builder = described_class.new(
+        custom_field_extractor: instance_double(RedmineCanvasGantt::CustomFieldExtractor),
+        current_user: instance_double(User)
+      )
+      relation = instance_double(
+        IssueRelation,
+        issue_from_id: 1,
+        issue_to_id: 2,
+        id: 10,
+        relation_type: 'precedes',
+        delay: 0
+      )
+
+      expect(builder.build_relations_from([relation])).to eq([
+        { id: 10, from: 1, to: 2, type: 'precedes', delay: 0 }
+      ])
+    end
   end
 end

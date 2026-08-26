@@ -6,6 +6,15 @@ const root = path.resolve(import.meta.dirname, '..');
 const lockPath = path.join(root, 'package-lock.json');
 const packagePath = path.join(root, 'package.json');
 const registryPrefix = 'https://registry.npmjs.org/';
+const competingLockfiles = ['pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb'];
+
+export const findCompetingLockfiles = (rootPath, exists = fs.existsSync) => (
+  competingLockfiles.filter(lockfile => exists(path.join(rootPath, lockfile)))
+);
+
+export const isAlternativePackageManager = (execPath = '') => (
+  /^(?:pnpm|yarn|bun)(?:[-.]|$)/i.test(path.basename(execPath))
+);
 
 const allowedInstallScripts = new Set([
   'node_modules/esbuild',
@@ -19,6 +28,14 @@ const fail = (message) => {
 };
 
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+for (const lockfile of findCompetingLockfiles(root)) {
+  fail(`${lockfile} is not allowed; package-lock.json is the sole dependency lockfile`);
+}
+
+if (isAlternativePackageManager(process.env.npm_execpath)) {
+  fail(`scripts must be run with npm, not ${path.basename(process.env.npm_execpath)}`);
+}
 
 const manifest = readJson(packagePath);
 const lock = readJson(lockPath);

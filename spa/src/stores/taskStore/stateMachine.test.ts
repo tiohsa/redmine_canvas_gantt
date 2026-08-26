@@ -42,6 +42,82 @@ type TransitionInput = {
     remoteMatchesLocal?: boolean;
 };
 
+type CalendarRecoveryPhase =
+    | 'idle'
+    | 'requesting'
+    | 'conflicted'
+    | 'refreshing'
+    | 'retrying'
+    | 'settled'
+    | 'superseded'
+    | 'failed';
+
+type CalendarRecoveryEvent =
+    | 'request_started'
+    | 'calendar_conflict'
+    | 'refresh_started'
+    | 'refresh_applied'
+    | 'refresh_superseded'
+    | 'retry_succeeded'
+    | 'retry_conflicted'
+    | 'became_stale';
+
+type CalendarRecoveryMachine = {
+    phase: CalendarRecoveryPhase;
+    refreshCount: number;
+    retryCount: number;
+    authoritativeWrites: number;
+    ownedContextKeys: Set<'initial' | 'effective'>;
+};
+
+const createCalendarRecoveryMachine = (): CalendarRecoveryMachine => ({
+    phase: 'idle',
+    refreshCount: 0,
+    retryCount: 0,
+    authoritativeWrites: 0,
+    ownedContextKeys: new Set()
+});
+
+const applyCalendarRecoveryEvent = (
+    machine: CalendarRecoveryMachine,
+    event: CalendarRecoveryEvent
+): CalendarRecoveryMachine => {
+    const next = { ...machine, ownedContextKeys: new Set(machine.ownedContextKeys) };
+    if (event === 'became_stale') {
+        next.phase = 'superseded';
+        next.ownedContextKeys.clear();
+        return next;
+    }
+    if (machine.phase === 'idle' && event === 'request_started') {
+        next.phase = 'requesting';
+        next.ownedContextKeys.add('initial');
+    } else if (machine.phase === 'requesting' && event === 'calendar_conflict') {
+        next.phase = 'conflicted';
+    } else if (machine.phase === 'conflicted' && event === 'refresh_started') {
+        next.phase = 'refreshing';
+        next.refreshCount += 1;
+    } else if (machine.phase === 'refreshing' && event === 'refresh_applied') {
+        next.phase = 'retrying';
+        next.retryCount += 1;
+        next.ownedContextKeys.add('effective');
+    } else if (machine.phase === 'refreshing' && event === 'refresh_superseded') {
+        next.phase = 'superseded';
+        next.ownedContextKeys.clear();
+    } else if (machine.phase === 'retrying' && event === 'retry_succeeded') {
+        next.phase = 'settled';
+        next.authoritativeWrites += 1;
+        next.ownedContextKeys.clear();
+    } else if (machine.phase === 'retrying' && event === 'retry_conflicted') {
+        next.phase = 'failed';
+        next.ownedContextKeys.clear();
+    }
+    return next;
+};
+
+const runCalendarRecovery = (events: CalendarRecoveryEvent[]): CalendarRecoveryMachine => (
+    events.reduce(applyCalendarRecoveryEvent, createCalendarRecoveryMachine())
+);
+
 const nextRandom = (seed: number): [number, number] => {
     const next = (seed * 1664525 + 1013904223) >>> 0;
     return [next, next / 0x1_0000_0000];
@@ -126,10 +202,7 @@ const applyMutationTransition = (machine: TransitionMachine, input: TransitionIn
         machine.retryCounts.set(operationId, Math.min(1, retries + 1));
         if (retries < 1) machine.queuedOperationIds.add(operationId);
     } else if (outcome.status === 'not_found') {
-        const failure = input.response && typeof input.response === 'object'
-            ? (input.response as { failure?: { resource_role?: string } }).failure
-            : undefined;
-        const resourceRole = failure?.resource_role;
+        const resourceRole = outcome.failure?.resourceRole;
         if (resourceRole === undefined || resourceRole === 'target') {
             machine.patches = machine.patches.filter((patch) => patch.entityId !== entityId);
             machine.snapshot = removeEntityFromSnapshot(machine.snapshot, entityId);
@@ -145,6 +218,69 @@ const applyMutationTransition = (machine: TransitionMachine, input: TransitionIn
 };
 
 describe('state lifecycle reference model', () => {
+    it.each([
+        {
+            label: 'authoritative refresh and successful retry',
+            events: ['request_started', 'calendar_conflict', 'refresh_started', 'refresh_applied', 'retry_succeeded'],
+            expectedPhase: 'settled',
+            expectedWrites: 1
+        },
+        {
+            label: 'superseded refresh',
+            events: ['request_started', 'calendar_conflict', 'refresh_started', 'refresh_superseded', 'refresh_applied', 'retry_succeeded'],
+            expectedPhase: 'superseded',
+            expectedWrites: 0
+        },
+        {
+            label: 'second calendar conflict',
+            events: ['request_started', 'calendar_conflict', 'refresh_started', 'refresh_applied', 'retry_conflicted', 'refresh_started'],
+            expectedPhase: 'failed',
+            expectedWrites: 0
+        },
+        {
+            label: 'stale operation during retry',
+            events: ['request_started', 'calendar_conflict', 'refresh_started', 'refresh_applied', 'became_stale', 'retry_succeeded'],
+            expectedPhase: 'superseded',
+            expectedWrites: 0
+        }
+    ] as const)('keeps read/recovery invariants for $label', ({ events, expectedPhase, expectedWrites }) => {
+        const machine = runCalendarRecovery([...events]);
+
+        expect(machine.phase).toBe(expectedPhase);
+        expect(machine.refreshCount).toBeLessThanOrEqual(1);
+        expect(machine.retryCount).toBeLessThanOrEqual(1);
+        expect(machine.authoritativeWrites).toBe(expectedWrites);
+        expect(machine.ownedContextKeys.size).toBe(0);
+    });
+
+    it('owns at most the initial and effective keys while retrying', () => {
+        const retrying = runCalendarRecovery([
+            'request_started',
+            'calendar_conflict',
+            'refresh_started',
+            'refresh_applied'
+        ]);
+
+        expect(retrying.phase).toBe('retrying');
+        expect([...retrying.ownedContextKeys]).toEqual(['initial', 'effective']);
+        expect(retrying.ownedContextKeys.size).toBeLessThanOrEqual(2);
+    });
+
+    it('does not let an old operation cleanup remove a key re-owned by a newer operation', () => {
+        const registry = new Map<'initial' | 'effective', 'old' | 'new'>([
+            ['initial', 'old'],
+            ['effective', 'old']
+        ]);
+        const oldOwnedKeys = new Set<'initial' | 'effective'>(['initial', 'effective']);
+        registry.set('effective', 'new');
+
+        oldOwnedKeys.forEach((key) => {
+            if (registry.get(key) === 'old') registry.delete(key);
+        });
+
+        expect(registry).toEqual(new Map([['effective', 'new']]));
+    });
+
     it('preserves projection and persistence intent through the specified draft/save/conflict lifecycle', () => {
         const machine = createMachine();
 

@@ -14,6 +14,10 @@ module RedmineCanvasGantt
       current_snapshot.status
     end
 
+    def revision
+      current_snapshot.revision
+    end
+
     def configuration_error?
       status == 'error'
     end
@@ -125,7 +129,7 @@ module RedmineCanvasGantt
     private
 
     def current_snapshot
-      @snapshot || @repository.snapshot
+      @snapshot ||= @repository.snapshot
     end
 
     def project_and_ancestors(project)

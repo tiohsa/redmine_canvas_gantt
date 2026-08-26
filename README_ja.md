@@ -204,6 +204,15 @@ Canvas Gantt にはプラグイン設定画面はありません。UI の既定�
 
 開発時に Vite dev server を使うには `CANVAS_GANTT_USE_VITE_DEV_SERVER=1` を設定します。
 
+### データ payload の安全上限
+
+data endpoint は、タスクグラフを途中で切り詰めず、完全な payload が上限を超えた場合に HTTP 413 を返します。組み込みの有限上限は、チケット 10,000 件、関連 50,000 件、補助 collection 10,000 件、encode 後 JSON 25 MiB です。管理者は次の環境変数で上限を引き下げられますが、hard maximum を超えて引き上げることはできません。
+
+- `REDMINE_CANVAS_GANTT_MAX_DATA_ISSUES`
+- `REDMINE_CANVAS_GANTT_MAX_DATA_RELATIONS`
+- `REDMINE_CANVAS_GANTT_MAX_DATA_COLLECTION_ITEMS`
+- `REDMINE_CANVAS_GANTT_MAX_DATA_BYTES`
+
 ### 業務カレンダー
 
 Canvas Gantt は、週次非稼働日、国別祝日、会社休業日、振替稼働日を名前付き業務カレンダーで扱えます。解決済みの同じカレンダーを、依存関係検証、自動スケジュール、クリティカルパス計算、Canvas 背景描画、タスク日付の直接変更に使用します。Gantt のドラッグ・リサイズやサイドバーの日付編集で非稼働日が選ばれた場合、開始日は次の稼働日、終了日は直前の稼働日に補正されます。DB マイグレーションは不要です。休日データは外部 YAML を read-only の実行時設定として読み込み、`Setting.plugin_redmine_canvas_gantt` には保存しません。

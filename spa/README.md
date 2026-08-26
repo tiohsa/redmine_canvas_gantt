@@ -26,12 +26,12 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 ## Requirements
 
 - Node.js (LTS recommended)
-- npm or pnpm
+- npm
 
 ## Quick Start
 
 ```bash
-npm install
+npm ci
 ```
 
 ```bash

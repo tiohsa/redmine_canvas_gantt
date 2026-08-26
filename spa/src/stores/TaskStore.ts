@@ -13,7 +13,11 @@ import type { LayoutState, SortConfig } from './taskStore/types';
 import { buildLayout, getVersionRowId, NO_VERSION_ID } from './taskStore/layout';
 import { applyFilters } from './taskStore/filters';
 import { isDescendantTask, tailDisplayOrderForParent, tailDisplayOrderForRoot } from './taskStore/hierarchy';
-import { computeCenteredViewport } from './taskStore/viewport';
+import {
+    clampViewportScrollY,
+    computeCenteredViewport,
+    computeFocusedViewport
+} from './taskStore/viewport';
 import { buildMoveTaskResult, saveModifiedTasks } from './taskStore/taskPersistence';
 import { runParentMove } from './taskStore/parentMove';
 import { buildUniformExpansionMaps, initializeExpansionMaps } from './taskStore/expansion';
@@ -61,6 +65,7 @@ import {
     type DerivedInvalidation,
     type LocalPatch,
     type EntityTombstone,
+    type ReadApplyOutcome,
     type ReadContext,
     type ServerSnapshot
 } from './taskStore/stateContract';
@@ -176,7 +181,7 @@ export const resetReadLifecycleMetrics = () => {
     readLifecycleMetrics.maxInflight = 0;
 };
 
-const queueRefreshData = (refreshData: () => Promise<void>) => {
+const queueRefreshData = (refreshData: () => Promise<ReadApplyOutcome>) => {
     queueMicrotask(() => {
         // Each UI scope change is an explicit read invalidation. This keeps
         // separately queued changes observable while identical direct
@@ -317,7 +322,7 @@ interface TaskState {
     scrollToTask: (taskId: string) => void;
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
-    refreshData: () => Promise<void>;
+    refreshData: () => Promise<ReadApplyOutcome>;
     loadInitialData: (params: InitialDataParams) => Promise<void>;
     loadSavedQueries: (force?: boolean) => Promise<void>;
     applySavedQuery: (queryId: number) => Promise<void>;
@@ -982,34 +987,8 @@ const matchesTaskFilters = (task: Task, state: TaskState): boolean => {
     );
 };
 
-const computeFocusedViewport = (state: TaskState, task: Task) => {
-    const BOTTOM_PADDING_PX = 40;
-    const targetMetadata = getTaskFocusTimestamp(task);
-    let startDate = state.viewport.startDate;
-
-    if (targetMetadata < startDate) {
-        const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
-        startDate = targetMetadata - ONE_WEEK;
-    }
-
-    const taskX = (targetMetadata - startDate) * state.viewport.scale;
-    const scrollX = Math.max(0, taskX - (state.viewport.width / 2));
-
-    const rawScrollY = task.rowIndex * state.viewport.rowHeight - ((state.viewport.height - state.viewport.rowHeight) / 2);
-    const maxScrollY = Math.max(0, state.rowCount * state.viewport.rowHeight + BOTTOM_PADDING_PX - state.viewport.height);
-    const scrollY = Math.max(0, Math.min(maxScrollY, rawScrollY));
-
-    return {
-        ...state.viewport,
-        startDate,
-        scrollX,
-        scrollY
-    };
-};
-
-
 export const useTaskStore = create<TaskState>((set, get) => {
-    const inflightReads = new Map<string, Promise<void>>();
+    const inflightReads = new Map<string, Promise<ReadApplyOutcome>>();
     let auxiliaryReadContext: ReadContext | null = null;
     let auxiliaryReadGeneration = 0;
     let mutationResyncGeneration = 0;
@@ -1017,27 +996,28 @@ export const useTaskStore = create<TaskState>((set, get) => {
     const requestAndApplyData = async (
         fetchData: () => Promise<ApiData>,
         context: ReadContext
-    ): Promise<void> => {
+    ): Promise<ReadApplyOutcome> => {
         const readKey = context.contextId;
         const existing = inflightReads.get(readKey);
         if (existing) return existing;
         activeReadContext = context;
         readLifecycleMetrics.requestsStarted += 1;
         readLifecycleMetrics.maxInflight = Math.max(readLifecycleMetrics.maxInflight, inflightReads.size + 1);
-        const request = (async () => {
+        const request = (async (): Promise<ReadApplyOutcome> => {
         try {
             const data = await fetchData();
             if (context.generation !== dataRequestGeneration || !canApplyReadResponse(activeReadContext, context)) {
                 readLifecycleMetrics.staleResponsesRejected += 1;
-                return;
+                return { status: 'superseded', context };
             }
             get().applyApiData(data, context);
             readLifecycleMetrics.responsesApplied += 1;
+            return { status: 'applied', context };
         } catch (error) {
             // A superseded request must not surface as a user-visible failure.
             if (context.generation !== dataRequestGeneration || !canApplyReadResponse(activeReadContext, context)) {
                 readLifecycleMetrics.staleResponsesRejected += 1;
-                return;
+                return { status: 'superseded', context };
             }
             readLifecycleMetrics.failures += 1;
             throw error;
@@ -1045,12 +1025,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
         })();
         inflightReads.set(readKey, request);
         try {
-            await request;
+            return await request;
         } finally {
             if (inflightReads.get(readKey) === request) inflightReads.delete(readKey);
         }
     };
-    const refreshCurrentData = async (purpose: 'refresh' | 'saved_query'): Promise<void> => {
+    const refreshCurrentData = async (purpose: 'refresh' | 'saved_query'): Promise<ReadApplyOutcome> => {
         const state = get();
         const query = toResolvedQueryStateFromStore(state);
         const scope = { showSubprojects: state.showSubprojects, memberProjectsOnly: state.memberProjectsOnly };
@@ -1062,7 +1042,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             scope,
             purpose
         });
-        await requestAndApplyData(() => apiClient.fetchData({ query, queryContext: state.queryContext }), context);
+        return requestAndApplyData(() => apiClient.fetchData({ query, queryContext: state.queryContext }), context);
     };
     const fetchMutationResyncData = async (params: { query?: { selectedStatusIds?: number[] } }): Promise<ApiData> => {
         const state = get();
@@ -2184,12 +2164,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
     updateViewport: (updates) => set((state) => {
         const nextViewport = { ...state.viewport, ...updates };
-
-        // Must match BOTTOM_PADDING_PX in GanttContainer.tsx
-        const BOTTOM_PADDING_PX = 40;
-        const totalHeight = Math.max(0, state.rowCount * nextViewport.rowHeight + BOTTOM_PADDING_PX);
-        const maxScrollY = Math.max(0, totalHeight - nextViewport.height);
-        const nextScrollY = Math.max(0, Math.min(maxScrollY, nextViewport.scrollY));
+        const nextScrollY = clampViewportScrollY(nextViewport.scrollY, nextViewport, state.rowCount);
 
         const nextState: Partial<TaskState> = {
             viewport: { ...nextViewport, scrollY: nextScrollY }
@@ -2565,11 +2540,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount,
             viewport: computeFocusedViewport({
-                ...state,
+                viewport: state.viewport,
                 rowCount: layout.rowCount,
-                tasks: layout.tasks,
-                layoutRows: layout.layoutRows
-            }, focusedTask),
+                targetTimestamp: getTaskFocusTimestamp(focusedTask),
+                targetRowIndex: focusedTask.rowIndex
+            }),
             selectedTaskId: taskId,
             selectedRelationId: null,
             draftRelation: null,

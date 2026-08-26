@@ -1707,7 +1707,10 @@ describe('TaskStore asynchronous state ownership', () => {
         await Promise.resolve();
         first.resolve(buildApiData([buildTask({ id: 'old' })]));
 
-        await Promise.all([firstRefresh, secondRefresh]);
+        await expect(Promise.all([firstRefresh, secondRefresh])).resolves.toEqual([
+            expect.objectContaining({ status: 'superseded' }),
+            expect.objectContaining({ status: 'applied' })
+        ]);
         expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['new']);
     });
 
@@ -1723,8 +1726,8 @@ describe('TaskStore asynchronous state ownership', () => {
         second.resolve(buildApiData([buildTask({ id: 'new' })]));
         first.reject(new Error('request aborted after supersession'));
 
-        await expect(firstRefresh).resolves.toBeUndefined();
-        await secondRefresh;
+        await expect(firstRefresh).resolves.toEqual(expect.objectContaining({ status: 'superseded' }));
+        await expect(secondRefresh).resolves.toEqual(expect.objectContaining({ status: 'applied' }));
         expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['new']);
     });
 

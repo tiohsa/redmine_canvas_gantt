@@ -3,10 +3,12 @@ import { apiClient } from './client';
 import { addCalendarDays, diffCalendarDays, formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { TaskLogicService } from '../services/TaskLogicService';
+import { configureBusinessCalendar } from '../utils/businessCalendar';
 
 describe('apiClient.fetchQueries', () => {
     afterEach(() => {
         vi.restoreAllMocks();
+        configureBusinessCalendar(null);
         delete window.RedmineCanvasGantt;
     });
 
@@ -233,6 +235,83 @@ describe('apiClient.fetchData', () => {
                 }
             }
         });
+    });
+});
+
+describe('apiClient.fetchEditMeta', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        configureBusinessCalendar(null);
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('preserves structured business calendar conflicts for draft previews', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 409,
+            statusText: 'Conflict',
+            json: async () => ({
+                status: 'conflict',
+                error: 'Business calendar changed',
+                failure: {
+                    kind: 'conflict',
+                    resource_role: 'scope',
+                    resource_type: 'business_calendar',
+                    resource_id: 'calendar-revision-2',
+                    remote_availability: 'needs_refresh'
+                }
+            })
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.fetchEditMeta('42', undefined, undefined, undefined, {
+            due_date: '2027-01-05',
+            lock_version: 1
+        })).rejects.toMatchObject({
+            name: 'ApiMutationError',
+            status: 'conflict',
+            httpStatus: 409,
+            failure: {
+                kind: 'conflict',
+                resourceRole: 'scope',
+                resourceType: 'business_calendar',
+                resourceId: 'calendar-revision-2',
+                remoteAvailability: 'needs_refresh'
+            }
+        });
+    });
+
+    it('keeps the HTTP conflict while discarding an unknown failure kind', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        const json = vi.fn().mockResolvedValue({
+            error: 'Business calendar changed',
+            failure: { kind: 'unexpected_kind', resource_role: 'scope' }
+        });
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 409,
+            statusText: 'Conflict',
+            json
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.fetchEditMeta('42')).rejects.toMatchObject({
+            name: 'ApiMutationError',
+            status: 'conflict',
+            httpStatus: 409,
+            message: 'Business calendar changed',
+            failure: undefined
+        });
+        expect(json).toHaveBeenCalledTimes(1);
     });
 });
 
@@ -703,6 +782,42 @@ describe('mutation error classification', () => {
         ], 'schedule:1');
 
         expect(result.conflict).toEqual({ taskId: '42', expectedRevision: 1, actualRevision: 2 });
+    });
+
+    it('sends the configured business calendar revision with mutations', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        configureBusinessCalendar({
+            status: 'ok',
+            revision: 'calendar-revision-2',
+            default_calendar_id: null,
+            project_calendar_ids: {},
+            calendars: {},
+            warnings: []
+        });
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                status: 'ok',
+                operation_id: 'schedule:calendar',
+                entities: [],
+                revisions: {}
+            })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.scheduleMutation([
+            { taskId: '42', baseRevision: 1, dueDate: 11 }
+        ], 'schedule:calendar');
+
+        const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+        expect(new Headers(request.headers).get('X-Redmine-Canvas-Gantt-Calendar-Revision'))
+            .toBe('calendar-revision-2');
     });
 
     it('keeps mutation entities persisted-only', async () => {

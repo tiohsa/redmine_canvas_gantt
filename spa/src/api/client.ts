@@ -18,10 +18,10 @@ import { normalizeQueryContext } from '../query/queryStateCodec';
 import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/baseline';
 import type { QueryContext } from '../query/types';
 import type { BusinessCalendarPayload } from '../types/businessCalendar';
-import { normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
+import { getBusinessCalendarPayload, normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { sessionFetch } from './sessionFetch';
-import type { MutationFailure, MutationStatusValue } from './mutationOutcome';
+import { decodeMutationFailure, type MutationFailure, type MutationStatusValue } from './mutationOutcome';
 
 export {
     classifyMutationError,
@@ -197,10 +197,16 @@ const buildViewContextQuery = (config: RedmineCanvasGanttConfig): string => {
     return params.toString();
 };
 
-const buildJsonHeaders = (config: RedmineCanvasGanttConfig, includeCsrf: boolean = false): HeadersInit => ({
-    'Content-Type': 'application/json',
-    ...(includeCsrf ? { 'X-CSRF-Token': config.authToken } : {})
-});
+const buildJsonHeaders = (config: RedmineCanvasGanttConfig, includeCsrf: boolean = false): HeadersInit => {
+    const calendarRevision = includeCsrf ? getBusinessCalendarPayload().revision : null;
+    return {
+        'Content-Type': 'application/json',
+        ...(includeCsrf ? { 'X-CSRF-Token': config.authToken } : {}),
+        ...(calendarRevision
+            ? { 'X-Redmine-Canvas-Gantt-Calendar-Revision': calendarRevision }
+            : {})
+    };
+};
 
 const parseErrorMessage = async (response: Response): Promise<string> => {
     const payload = await response.json().catch(() => ({} as UnknownRecord));
@@ -235,24 +241,8 @@ const parseMutationError = async (response: Response): Promise<ApiMutationError>
         : errors
             ? Object.values(errors).join(', ')
             : response.statusText;
-    const failure = parseMutationFailure(record.failure);
+    const failure = decodeMutationFailure(record.failure);
     return new ApiMutationError(mutationStatusForHttp(response.status), message, response.status, errors, failure);
-};
-
-const parseMutationFailure = (value: unknown): MutationFailure | undefined => {
-    if (!value || typeof value !== 'object') return undefined;
-    const record = value as UnknownRecord;
-    const kind = record.kind;
-    if (typeof kind !== 'string') return undefined;
-    const role = record.resource_role;
-    const remoteAvailability = record.remote_availability;
-    return {
-        kind: kind as MutationFailure['kind'],
-        ...(role === 'target' || role === 'reference' || role === 'relation' || role === 'scope' ? { resourceRole: role } : {}),
-        ...(typeof record.resource_type === 'string' ? { resourceType: record.resource_type } : {}),
-        ...(record.resource_id !== undefined && record.resource_id !== null ? { resourceId: String(record.resource_id) } : {}),
-        ...(remoteAvailability === 'known' || remoteAvailability === 'needs_refresh' || remoteAvailability === 'unavailable' || remoteAvailability === 'unknown' ? { remoteAvailability } : {})
-    };
 };
 
 const parseMutationMetadata = (value: unknown): Pick<UpdateTaskResult, 'completeness' | 'invalidatedEntityIds' | 'deletedEntityIds' | 'failure'> => {
@@ -268,7 +258,7 @@ const parseMutationMetadata = (value: unknown): Pick<UpdateTaskResult, 'complete
     if (Array.isArray(deletedIds)) metadata.deletedEntityIds = deletedIds
         .filter(id => typeof id === 'number' || typeof id === 'string')
         .map(String);
-    const failure = parseMutationFailure(record?.failure);
+    const failure = decodeMutationFailure(record?.failure);
     if (failure) metadata.failure = failure;
     return metadata;
 };
@@ -924,9 +914,7 @@ export const apiClient = {
                 : { headers: buildJsonHeaders(config) }
         );
 
-        if (!response.ok) {
-            throw new Error(await parseErrorMessage(response));
-        }
+        if (!response.ok) throw await parseMutationError(response);
 
         const payload = await response.json();
         const root = asRecord(payload);

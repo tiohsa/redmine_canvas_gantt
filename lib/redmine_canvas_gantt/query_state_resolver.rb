@@ -1,6 +1,6 @@
 module RedmineCanvasGantt
   class QueryStateResolver
-    QueryResolution = Struct.new(:issue_ids, :query, :query_id, keyword_init: true)
+    QueryResolution = Struct.new(:issue_scope, :query, :query_id, keyword_init: true)
 
     DEFAULT_STATE = {
       query_id: nil,
@@ -69,12 +69,13 @@ module RedmineCanvasGantt
       'subproject_id' => %w[* !*]
     }.freeze
 
-    def initialize(project:, params:, current_user:, issue_scope:, issue_includes:)
+    def initialize(project:, params:, current_user:, issue_scope:, issue_includes:, data_payload_budget: nil)
       @project = project
       @params = params
       @current_user = current_user
       @issue_scope = issue_scope
       @issue_includes = issue_includes
+      @data_payload_budget = data_payload_budget
       @warnings = []
     end
 
@@ -92,7 +93,7 @@ module RedmineCanvasGantt
       apply_request_overrides!(state)
 
       issues = load_issues(
-        base_issue_ids: query_resolution.issue_ids,
+        query_issue_scope: query_resolution.issue_scope,
         project_ids: project_ids,
         selected_project_ids: selected_project_ids,
         state: state
@@ -114,19 +115,23 @@ module RedmineCanvasGantt
 
     def resolve_query_resolution
       query_id = @params[:query_id].presence
-      return QueryResolution.new(issue_ids: nil, query: nil, query_id: nil) unless query_id
+      return QueryResolution.new(issue_scope: nil, query: nil, query_id: nil) unless query_id
 
       query = IssueQuery.find_by(id: query_id)
       unless query&.visible?(@current_user)
         warn_invalid_query_id(query_id)
-        return QueryResolution.new(issue_ids: nil, query: nil, query_id: nil)
+        return QueryResolution.new(issue_scope: nil, query: nil, query_id: nil)
       end
 
       working_query = build_working_query(query)
-      QueryResolution.new(issue_ids: working_query.issue_ids, query: working_query, query_id: query.id)
+      QueryResolution.new(
+        issue_scope: working_query.base_scope.select(:id),
+        query: working_query,
+        query_id: query.id
+      )
     rescue StandardError => e
       warn_query_resolution_failure(query_id, e)
-      QueryResolution.new(issue_ids: nil, query: nil, query_id: nil)
+      QueryResolution.new(issue_scope: nil, query: nil, query_id: nil)
     end
 
     def query_context(query_resolution)
@@ -502,23 +507,30 @@ module RedmineCanvasGantt
                                       end
     end
 
-    def load_issues(base_issue_ids:, project_ids:, selected_project_ids:, state:)
+    def load_issues(query_issue_scope:, project_ids:, selected_project_ids:, state:)
       scope = issues_scope_for(
-        base_issue_ids: base_issue_ids,
+        query_issue_scope: query_issue_scope,
         project_ids: project_ids,
         selected_project_ids: selected_project_ids,
         state: state
       )
-      issues = scope.to_a
-      issues = preserve_query_order(issues, base_issue_ids) if base_issue_ids
+      issues = if @data_payload_budget
+                 @data_payload_budget.load_records(
+                   scope,
+                   resource: 'issues',
+                   limit: @data_payload_budget.issue_limit
+                 )
+               else
+                 scope.to_a
+               end
       sort_issues!(issues, state[:sort_config])
       issues
     end
 
-    def issues_scope_for(base_issue_ids:, project_ids:, selected_project_ids:, state:)
+    def issues_scope_for(query_issue_scope:, project_ids:, selected_project_ids:, state:)
       scope = @issue_scope.where(project_id: project_scope_ids(project_ids, selected_project_ids))
       scope = scope.where(project_id: @redmine_project_ids) if @redmine_project_ids.present?
-      scope = scope.where(id: base_issue_ids) if base_issue_ids
+      scope = scope.where(id: query_issue_scope) if query_issue_scope
       scope = scope.where(status_id: state[:selected_status_ids]) if state[:selected_status_ids].present?
       scope = apply_version_filter(scope, state[:selected_version_ids]) if state[:selected_version_ids].present?
       scope = apply_assignee_filter(scope, state[:selected_assignee_ids]) if state[:selected_assignee_ids].present?
@@ -549,11 +561,6 @@ module RedmineCanvasGantt
       return scope.where(fixed_version_id: numeric_ids) unless include_none
 
       scope.where(fixed_version_id: numeric_ids).or(scope.where(fixed_version_id: nil))
-    end
-
-    def preserve_query_order(issues, base_issue_ids)
-      issue_by_id = issues.index_by(&:id)
-      Array(base_issue_ids).filter_map { |id| issue_by_id[id] }
     end
 
     def sort_issues!(issues, sort_config)

@@ -22,6 +22,12 @@ RSpec.describe RedmineCanvasGantt::ProjectCalendarResolver do
     )
   end
 
+  it 'exposes the pinned snapshot revision used for request calculations' do
+    resolver = described_class.new(snapshot: snapshot, fallback_non_working_week_days: [6, 7])
+
+    expect(resolver.revision).to eq('revision')
+  end
+
   it 'resolves direct, nearest parent, and default assignments' do
     calendars = { 'direct' => calendar('direct'), 'parent' => calendar('parent'), 'default' => calendar('default') }
     repository = instance_double(
