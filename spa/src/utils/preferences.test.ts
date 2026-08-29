@@ -233,6 +233,20 @@ describe('Preferences storage', () => {
 
         expect(useTaskStore.getState().showVersions).toBe(false);
         expect(useTaskStore.getState().organizeByDependency).toBe(true);
-    });
+    }, 15000);
 
+    it('persists and restores timer column visibility in preferences', async () => {
+        saveDisplayPreferences({
+            visibleColumns: ['id', 'timer', 'subject'],
+            columnSettings: [
+                { key: 'id', visible: true },
+                { key: 'timer', visible: true },
+                { key: 'subject', visible: true }
+            ]
+        }, 1);
+
+        const loaded = loadDisplayPreferencesWithSource(1).preferences;
+        expect(loaded.visibleColumns).toEqual(['id', 'timer', 'subject']);
+        expect(loaded.columnSettings?.find((c) => c.key === 'timer')?.visible).toBe(true);
+    });
 });

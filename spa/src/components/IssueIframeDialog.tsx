@@ -9,6 +9,7 @@ import { fontFamilies, designTokens } from '../styles/designTokens';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import { apiClient } from '../api/client';
 import { canApplyReadResponse, createReadContext, type ReadContext } from '../stores/taskStore/stateContract';
+import { useTimerStore } from '../stores/TimerStore';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
@@ -84,7 +85,9 @@ const getActiveSaveForm = (doc: Document, currentPath?: string): { form: HTMLFor
 
     const timeEntryForm =
         doc.querySelector<HTMLFormElement>('form[action*="/time_entries"]') ||
-        doc.querySelector<HTMLFormElement>('#new_time_entry');
+        doc.querySelector<HTMLFormElement>('#new_time_entry') ||
+        doc.querySelector<HTMLFormElement>('form.new_time_entry') ||
+        doc.querySelector<HTMLFormElement>('form[id^="edit_time_entry"]');
     if (timeEntryForm) return { form: timeEntryForm, target: 'time_entry' };
 
     const issueForm = doc.querySelector<HTMLFormElement>('#issue-form');
@@ -342,28 +345,71 @@ export const IssueIframeDialog: React.FC = () => {
                 }
             }
 
+            const handleFormSubmit = (event: Event) => {
+                const form = event.target as HTMLFormElement | null;
+                const detected = getActiveSaveForm(doc, urlParsed.pathname);
+                const target = detected?.target ?? (
+                    form?.id === 'new_time_entry' || form?.action?.includes('/time_entries') ? 'time_entry' :
+                    form?.id === 'issue-form' ? 'issue' :
+                    form?.id === 'query-form' ? 'query' : null
+                );
+                if (target) {
+                    saveTargetRef.current = target;
+                    setSaveTarget(target);
+                    isSavingRef.current = true;
+                    setIsSaving(true);
+                    setDialogMode('saving');
+                }
+            };
+            doc.addEventListener('submit', handleFormSubmit, true);
+
+            const previousUrl = currentIframeUrl || activeDialogUrl || '';
+            const wasTimeEntryForm = saveTargetRef.current === 'time_entry' || previousUrl.includes('/time_entries');
+            const urlParsedAfterLoad = new URL(loadedUrl, window.location.origin);
+            const pathAfterLoad = urlParsedAfterLoad.pathname;
+            const issueIdAfterLoad = getIssueShowIdFromPath(pathAfterLoad);
+
+            const isTimeEntryFormPage = pathAfterLoad.includes('/time_entries/new') || (pathAfterLoad.includes('/time_entries') && (pathAfterLoad.includes('/new') || pathAfterLoad.includes('/edit')));
+            const isTimeEntrySuccessDestination = !isTimeEntryFormPage && (
+                Boolean(issueIdAfterLoad) ||
+                pathAfterLoad.includes('/time_entries') ||
+                (pathAfterLoad.includes('/projects/') && pathAfterLoad.endsWith('/issues'))
+            );
+
+            const isTimeEntrySuccess = isSavingRef.current && wasTimeEntryForm && !error && isTimeEntrySuccessDestination;
+
+            if (isTimeEntrySuccess) {
+                const currentTimer = useTimerStore.getState().session;
+                const targetId = issueIdAfterLoad || currentTimer?.issueId;
+                if (targetId) {
+                    useTimerStore.getState().clearSessionOnSaveSuccess(targetId);
+                }
+                saveTargetRef.current = null;
+                setSaveTarget(null);
+                isSavingRef.current = false;
+                setIsSaving(false);
+                handleClose();
+                return;
+            }
+
             // If we were saving, update dialog mode when Redmine redirects after submit.
             // Validation failures usually remain on /edit or /new and keep error blocks in DOM.
             if (isSavingRef.current) {
-                const urlParsed = new URL(loadedUrl, window.location.origin);
-                const path = urlParsed.pathname;
-                const issueId = getIssueShowIdFromPath(path);
-
                 const isQuerySuccess = isQueryDialog && !error && (
-                    path.endsWith('/issues') ||
-                    path.includes('/projects/') && path.endsWith('/issues') ||
-                    path.match(/\/queries\/\d+$/) // some plugins redirect here
+                    pathAfterLoad.endsWith('/issues') ||
+                    pathAfterLoad.includes('/projects/') && pathAfterLoad.endsWith('/issues') ||
+                    pathAfterLoad.match(/\/queries\/\d+$/) // some plugins redirect here
                 );
 
-                if (!error && issueId && !isQueryDialog) {
+                if (!error && issueIdAfterLoad && !isQueryDialog) {
                     if (
                         (saveTargetRef.current === 'issue' || saveTargetRef.current === 'new-issue') &&
                         bulkRef.current?.hasSubjects()
                     ) {
-                        await bulkRef.current.createSubtasks(issueId);
+                        await bulkRef.current.createSubtasks(issueIdAfterLoad);
                     }
 
-                    setDisplayedIssueId(issueId);
+                    setDisplayedIssueId(issueIdAfterLoad);
                     saveTargetRef.current = null;
                     setSaveTarget(null);
                     setIsJournalEditing(false);
@@ -383,7 +429,7 @@ export const IssueIframeDialog: React.FC = () => {
                 }
 
                 const reloadedIssueForm = doc.querySelector<HTMLFormElement>('#issue-form');
-                if (!error && saveTargetRef.current === 'issue' && reloadedIssueForm && path.match(/\/issues\/\d+\/edit\/?$/)) {
+                if (!error && saveTargetRef.current === 'issue' && reloadedIssueForm && pathAfterLoad.match(/\/issues\/\d+\/edit\/?$/)) {
                     setDialogMode('saving');
                     setIsSaving(true);
                     return;
@@ -402,7 +448,7 @@ export const IssueIframeDialog: React.FC = () => {
             }
             setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
         }
-    }, [bindIframeSizeObservers, detectSaveTarget, handleClose, handleJournalSaveCompletion, isQueryDialog, measureDialogHeight, refreshData]);
+    }, [activeDialogUrl, bindIframeSizeObservers, currentIframeUrl, detectSaveTarget, handleClose, handleJournalSaveCompletion, isQueryDialog, measureDialogHeight, refreshData]);
 
     const handleSave = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;
@@ -649,7 +695,9 @@ export const IssueIframeDialog: React.FC = () => {
             ? (i18n.t('button_save_comment') || 'Save comment')
             : saveTarget === 'issue'
                 ? (i18n.t('button_save_issue') || 'Save issue')
-                : (i18n.t('button_save') || 'Save');
+                : saveTarget === 'time_entry'
+                    ? (i18n.t('button_log_time') || i18n.t('button_save') || 'Log time')
+                    : (i18n.t('button_save') || 'Save');
     const savingLabel = saveTarget === 'journal'
         ? (i18n.t('label_saving_comment') || 'Saving comment...')
         : (i18n.t('label_loading') || 'Saving...');
@@ -684,20 +732,20 @@ export const IssueIframeDialog: React.FC = () => {
             }}
         >
             <div
-                    style={{
-                        width: `${DEFAULT_DIALOG_WIDTH_PX}px`,
-                        maxWidth: '98vw',
-                        minWidth: `${MIN_DIALOG_WIDTH_PX}px`,
-                        height: dialogHeightPx ? `${dialogHeightPx}px` : `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
-                        maxHeight: `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
-                        backgroundColor: '#ffffff',
-                        borderRadius: '13px',
-                        boxShadow: '0px 0px 22.576px rgba(0,0,0,0.08), 6.5px 2px 17.5px rgba(44,30,116,0.11)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        overflow: 'hidden',
-                        boxSizing: 'border-box',
-                        border: '1px solid rgba(0,0,0,0.06)'
+                style={{
+                    width: `${DEFAULT_DIALOG_WIDTH_PX}px`,
+                    maxWidth: '98vw',
+                    minWidth: `${MIN_DIALOG_WIDTH_PX}px`,
+                    height: dialogHeightPx ? `${dialogHeightPx}px` : `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
+                    maxHeight: `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
+                    backgroundColor: '#ffffff',
+                    borderRadius: '13px',
+                    boxShadow: '0px 0px 22.576px rgba(0,0,0,0.08), 6.5px 2px 17.5px rgba(44,30,116,0.11)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    boxSizing: 'border-box',
+                    border: '1px solid rgba(0,0,0,0.06)'
                 }}
             >
                 {/* Header - Fixed Height */}

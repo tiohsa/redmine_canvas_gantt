@@ -279,8 +279,9 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
   };
 
   await page.addInitScript((initialPreferences) => {
-    localStorage.clear();
-    localStorage.setItem('canvasGantt:preferences', JSON.stringify(initialPreferences));
+    if (!localStorage.getItem('canvasGantt:preferences')) {
+      localStorage.setItem('canvasGantt:preferences', JSON.stringify(initialPreferences));
+    }
     (window as Window & { RedmineCanvasGantt?: unknown }).RedmineCanvasGantt = {
       projectId: 1,
       apiBase: '/projects/1/canvas_gantt',

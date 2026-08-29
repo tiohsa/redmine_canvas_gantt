@@ -1263,9 +1263,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return { ...result.patch, activeReadContext: readContext ?? activeReadContext };
         });
         const isQueryBoundary = readContext?.purpose === 'initial_load' || readContext?.purpose === 'saved_query';
-        if (data.initialState?.visibleColumns?.length && (isQueryBoundary || useUIStore.getState().columnStateSource !== 'user')) {
-            useUIStore.getState().applyQueryVisibleColumns(data.initialState.visibleColumns);
-        } else if (isQueryBoundary && useUIStore.getState().columnStateSource === 'query') {
+        const currentColumnSource = useUIStore.getState().columnStateSource;
+        const shouldApplyQueryColumns = data.initialState?.visibleColumns?.length && (
+            readContext?.purpose === 'saved_query'
+            || (isQueryBoundary && currentColumnSource === 'query')
+            || (!isQueryBoundary && currentColumnSource !== 'user')
+        );
+        if (shouldApplyQueryColumns) {
+            useUIStore.getState().applyQueryVisibleColumns(data.initialState!.visibleColumns!);
+        } else if (isQueryBoundary && currentColumnSource === 'query') {
             useUIStore.getState().restorePreferenceColumns();
         }
         const nextQuerySyncState = querySyncState as SharedQuerySyncState | null;

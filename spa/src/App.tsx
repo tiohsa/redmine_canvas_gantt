@@ -4,6 +4,10 @@ import { GanttContainer } from './components/GanttContainer';
 import { GanttToolbar } from './components/GanttToolbar';
 import Toast from './components/Toast';
 import { ConflictResolutionPanel } from './components/ConflictResolutionPanel';
+import { GlobalTimer } from './components/timer/GlobalTimer';
+import { TimerStartModal } from './components/timer/TimerStartModal';
+import { PendingWorkModal } from './components/timer/PendingWorkModal';
+import { OtherNoticeModal } from './components/timer/OtherNoticeModal';
 import type { GanttExportHandle } from './export/types';
 
 import { useUIStore } from './stores/UIStore';
@@ -53,6 +57,10 @@ function App() {
 
       <Toast />
       <ConflictResolutionPanel />
+      <GlobalTimer />
+      <TimerStartModal />
+      <PendingWorkModal />
+      <OtherNoticeModal />
     </div>
   );
 }

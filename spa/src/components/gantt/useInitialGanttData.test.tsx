@@ -360,4 +360,24 @@ describe('useInitialGanttData persistence', () => {
         expect(url.searchParams.get('group_by')).toBe('project');
         expect(url.searchParams.get('member_projects_only')).toBeNull();
     });
+
+    it('preserves user column visibility preferences including timer when loading from storage without queryId', async () => {
+        const { useUIStore } = await import('../../stores/UIStore');
+        useUIStore.getState().toggleColumnVisibility('timer');
+        expect(useUIStore.getState().visibleColumns).toContain('timer');
+
+        saveLastUsedSharedQueryState({
+            selectedStatusIds: [1, 2],
+            groupBy: 'project'
+        });
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(fetchDataMock).toHaveBeenCalled();
+        });
+
+        expect(useUIStore.getState().visibleColumns).toContain('timer');
+        expect(useUIStore.getState().columnSettings.find((c) => c.key === 'timer')?.visible).toBe(true);
+    });
 });

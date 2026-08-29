@@ -125,7 +125,7 @@ export const useSidebarColumnSizing = ({ tasks, customFields, setColumnWidth }: 
         addAutoWidth('estimatedHours', i18n.t('field_estimated_hours') || 'Estimated Time', (t) => t.estimatedHours !== undefined ? `${t.estimatedHours}h` : '');
         addAutoWidth('createdOn', i18n.t('field_created_on') || 'Created', (t) => t.createdOn ? new Date(t.createdOn).toLocaleString() : '');
         addAutoWidth('updatedOn', i18n.t('field_updated_on') || 'Updated', (t) => t.updatedOn ? new Date(t.updatedOn).toLocaleString() : '');
-        addAutoWidth('spentHours', i18n.t('field_spent_hours') || 'Spent Time', (t) => t.spentHours !== undefined ? `${t.spentHours}h` : '');
+        addAutoWidth('spentHours', i18n.t('field_spent_hours') || 'Spent Time', (t) => t.spentHours !== undefined ? `${Number(t.spentHours.toFixed(1))}h` : '');
         addAutoWidth('version', i18n.t('field_version') || 'Target Version', (t) => t.fixedVersionName || '');
         customFields.forEach((cf) => {
             addAutoWidth(`cf:${cf.id}`, cf.name, (t) => formatCustomFieldCellValue(t, cf));

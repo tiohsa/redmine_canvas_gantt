@@ -992,6 +992,9 @@ describe('TaskStore API data application', () => {
       purpose: 'saved_query'
     });
 
+    // Simulate useInitialGanttData applying URL/query columns first
+    useUIStore.getState().applyQueryVisibleColumns(['status', 'subject']);
+
     useTaskStore.getState().applyApiData({
       ...buildApiData([]),
       initialState: { visibleColumns: ['status', 'subject'] }

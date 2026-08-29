@@ -353,6 +353,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const getColumnLabel = (key: string, fallback: string) => {
         const localizedLabel: Record<string, string> = {
             subject: i18n.t('field_subject') || fallback,
+            timer: i18n.t('label_work_timer') || i18n.t('field_timer') || fallback,
             notification: i18n.t('label_notifications') || fallback,
             project: i18n.t('field_project') || fallback,
             tracker: i18n.t('field_tracker') || fallback,

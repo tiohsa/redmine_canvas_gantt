@@ -8,6 +8,7 @@ export type ColumnMeta = SidebarColumnDefinition & {
 
 export const COLUMN_CATALOG: ColumnMeta[] = [
     { key: 'id', label: 'ID', defaultVisible: true, movable: true, redmineColumn: 'id' },
+    { key: 'timer', label: 'Work Timer', defaultVisible: false, movable: true },
     { key: 'subject', label: 'Task Name', defaultVisible: true, movable: true, redmineColumn: 'subject' },
     { key: 'notification', label: 'Notifications', defaultVisible: true, movable: true },
     { key: 'project', label: 'Project', defaultVisible: false, movable: true, redmineColumn: 'project' },

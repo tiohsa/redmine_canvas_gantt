@@ -1339,6 +1339,7 @@ describe('GanttToolbar shortcuts', () => {
 
         expect(useUIStore.getState().columnSettings.map((column) => column.key)).toEqual([
             'id',
+            'timer',
             'subject',
             'notification',
             'project',

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { IssueIframeDialog } from './IssueIframeDialog';
 import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
+import { useTimerStore } from '../stores/TimerStore';
 import { applyIssueDialogStyles, findIssueDialogErrorElement, getIssueDialogErrorMessage } from '../utils/iframeStyles';
 
 type RefreshData = ReturnType<typeof useTaskStore.getState>['refreshData'];
@@ -825,5 +826,120 @@ describe('IssueIframeDialog', () => {
         expect(issueSubmitClick).toHaveBeenCalledTimes(1);
         expect(issueRequestSubmit).not.toHaveBeenCalled();
         expect(relationClick).not.toHaveBeenCalled();
+    });
+
+    it('submits time entry form and clears timer session on successful redirect', async () => {
+        const clearSpy = vi.spyOn(useTimerStore.getState(), 'clearSessionOnSaveSuccess');
+        useTimerStore.setState({
+            session: {
+                version: 1,
+                sessionId: 's1',
+                issueId: 123,
+                subject: 'Task 123',
+                autoStop: false,
+                state: 'stopped_pending_record',
+                createdAt: Date.now(),
+                segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
+            }
+        });
+
+        useUIStore.setState({ issueDialogUrl: '/issues/123/time_entries/new?time_entry[hours]=0.5' });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="new_time_entry" action="/time_entries" method="post">
+              <input name="time_entry[hours]" type="text" value="0.5" />
+              <input name="commit" type="submit" value="Create" />
+            </form>
+        `;
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/time_entries/new?time_entry[hours]=0.5' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        const footer = screen.getByTestId('issue-dialog-footer');
+        const saveButton = within(footer).getByRole('button', { name: /Log time|Save|button_log_time/i });
+        fireEvent.click(saveButton);
+
+        // Simulate Redmine redirect to /projects/ecookbook/time_entries
+        const successDoc = document.implementation.createHTMLDocument('iframe');
+        successDoc.body.innerHTML = `<div class="flash notice">Successful creation.</div>`;
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/projects/ecookbook/time_entries' }, document: successDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: successDoc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(clearSpy).toHaveBeenCalledWith(123);
+            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+        });
+    });
+
+    it('handles direct form submission inside iframe and clears timer session on redirect to issue show', async () => {
+        const clearSpy = vi.spyOn(useTimerStore.getState(), 'clearSessionOnSaveSuccess');
+        useTimerStore.setState({
+            session: {
+                version: 1,
+                sessionId: 's2',
+                issueId: 456,
+                subject: 'Task 456',
+                autoStop: false,
+                state: 'stopped_pending_record',
+                createdAt: Date.now(),
+                segments: [{ startedAt: Date.now() - 900000, stoppedAt: Date.now() }]
+            }
+        });
+
+        useUIStore.setState({ issueDialogUrl: '/issues/456/time_entries/new?time_entry[hours]=0.25' });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="new_time_entry" action="/time_entries" method="post">
+              <input name="time_entry[hours]" type="text" value="0.25" />
+              <input name="commit" type="submit" value="Create" />
+            </form>
+        `;
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/456/time_entries/new?time_entry[hours]=0.25' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        // Submit form natively inside iframe
+        doc.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+        // Simulate Redmine redirect to /issues/456
+        const redirectDoc = document.implementation.createHTMLDocument('iframe');
+        redirectDoc.body.innerHTML = `<div class="issue">Issue details</div>`;
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/456' }, document: redirectDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: redirectDoc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(clearSpy).toHaveBeenCalled();
+            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+        });
     });
 });

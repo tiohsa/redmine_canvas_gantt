@@ -34,7 +34,8 @@ module RedmineCanvasGantt
       issues.each_with_index.map do |issue, idx|
         build_task_state(issue).merge(
           display_order: idx,
-          editable: @current_user.allowed_to?(:edit_issues, issue.project) && issue.editable?
+          editable: @current_user.allowed_to?(:edit_issues, issue.project) && issue.editable?,
+          can_log_time: @current_user.allowed_to?(:log_time, issue.project)
         )
       end
     end

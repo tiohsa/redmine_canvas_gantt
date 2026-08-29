@@ -25,6 +25,7 @@ import { formatDate } from '../utils/dateUtils';
 import { parseDateOnly } from '../utils/dateOnly';
 import { ContextPreviewViolationError, previewContextChange, StaleContextPreviewError } from '../services/contextPreview';
 import { StaleEditMetaResponseError } from '../stores/EditMetaStore';
+import { useTimerStore } from '../stores/TimerStore';
 const NOTIFICATION_COLUMN_KEY = 'notification';
 
 type CanvasGanttSettings = InlineEditSettings & {
@@ -145,6 +146,7 @@ export const UiSidebar: React.FC = () => {
     const columnWidths = useUIStore(state => state.columnWidths);
     const setColumnWidth = useUIStore(state => state.setColumnWidth);
     const sidebarFontSize = useUIStore(state => state.sidebarFontSize);
+    const timerSession = useTimerStore(state => state.session);
 
     const smallFontSize = Math.max(9, sidebarFontSize - 2);
     const mediumSmallFontSize = Math.max(10, sidebarFontSize - 1);
@@ -280,6 +282,119 @@ export const UiSidebar: React.FC = () => {
                     {t.id}
                 </span>
             )
+        },
+        {
+            key: 'timer',
+            title: tr('label_work_timer') || 'Work Timer',
+            width: columnWidths['timer'] ?? 48,
+            render: (t: Task) => {
+                if (t.canLogTime === false) {
+                    return (
+                        <span
+                            data-testid={`task-timer-disabled-${t.id}`}
+                            data-tooltip={tr('label_timer_cannot_log_time') || 'You do not have permission to log time on this issue.'}
+                            style={{ color: sidebarPlaceholderText, fontSize: `${mediumSmallFontSize}px` }}
+                        >
+                            —
+                        </span>
+                    );
+                }
+
+                const isCurrentSession = timerSession && String(timerSession.issueId) === String(t.id);
+                const isRunning = isCurrentSession && (timerSession.state === 'running' || timerSession.state === 'expired');
+                const isPending = isCurrentSession && timerSession.state === 'stopped_pending_record';
+
+                if (isRunning) {
+                    const ariaLabel = (tr('label_timer_aria_running') || 'Timer for %{subject} is running. View current timer').replace('%{subject}', t.subject);
+                    return (
+                        <button
+                            type="button"
+                            data-testid={`task-timer-running-${t.id}`}
+                            aria-label={ariaLabel}
+                            data-tooltip={ariaLabel}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                            }}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: 22,
+                                height: 22,
+                                border: 'none',
+                                borderRadius: '9999px',
+                                background: designTokens.controlActiveBg,
+                                color: designTokens.brandPrimary,
+                                cursor: 'pointer',
+                                padding: 0
+                            }}
+                        >
+                            <span style={{ fontSize: 13, lineHeight: 1 }}>⏱</span>
+                        </button>
+                    );
+                }
+
+                if (isPending) {
+                    const ariaLabel = (tr('label_timer_aria_pending') || 'Unrecorded work time exists for %{subject}').replace('%{subject}', t.subject);
+                    return (
+                        <button
+                            type="button"
+                            data-testid={`task-timer-pending-${t.id}`}
+                            aria-label={ariaLabel}
+                            data-tooltip={ariaLabel}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                useTimerStore.getState().openPendingWorkModal();
+                            }}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: 22,
+                                height: 22,
+                                border: 'none',
+                                borderRadius: '9999px',
+                                background: designTokens.warningBgSoft,
+                                color: designTokens.warningFg,
+                                cursor: 'pointer',
+                                padding: 0
+                            }}
+                        >
+                            <span style={{ fontSize: 13, lineHeight: 1 }}>🕘</span>
+                        </button>
+                    );
+                }
+
+                const ariaLabel = (tr('label_timer_aria_start') || 'Start work timer for %{subject}').replace('%{subject}', t.subject);
+                return (
+                    <button
+                        type="button"
+                        data-testid={`task-timer-start-${t.id}`}
+                        aria-label={ariaLabel}
+                        data-tooltip={ariaLabel}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            useTimerStore.getState().openStartDialog(t);
+                        }}
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 22,
+                            height: 22,
+                            border: `1px solid ${designTokens.controlBorder}`,
+                            borderRadius: '9999px',
+                            background: designTokens.controlBg,
+                            color: designTokens.controlFg,
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: 11
+                        }}
+                    >
+                        ▶
+                    </button>
+                );
+            }
         },
         {
             key: NOTIFICATION_COLUMN_KEY,
@@ -655,7 +770,7 @@ export const UiSidebar: React.FC = () => {
             key: 'spentHours',
             title: tr('field_spent_hours'),
             width: columnWidths['spentHours'] ?? 80,
-            render: (t: Task) => <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.spentHours !== undefined ? `${t.spentHours}h` : '-'}</span>
+            render: (t: Task) => <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.spentHours !== undefined ? `${Number(t.spentHours.toFixed(1))}h` : '-'}</span>
         },
         {
             key: 'version',
@@ -743,7 +858,7 @@ export const UiSidebar: React.FC = () => {
                                     position: 'relative',
                                     cursor: 'pointer',
                                     userSelect: 'none',
-                                    justifyContent: col.key === NOTIFICATION_COLUMN_KEY ? 'center' : 'space-between'
+                                    justifyContent: (col.key === NOTIFICATION_COLUMN_KEY || col.key === 'timer') ? 'center' : 'space-between'
                                 }}
                                 onClick={() => {
                                     const field = getSortField(col.key);
@@ -752,8 +867,8 @@ export const UiSidebar: React.FC = () => {
                                     }
                                 }}
                             >
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {col.title}
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={col.key === 'timer' ? (tr('label_work_timer') || 'Work Timer') : undefined} aria-label={col.key === 'timer' ? (tr('label_work_timer') || 'Work Timer') : undefined}>
+                                    {col.key === 'timer' ? '⏱' : col.title}
                                 </span>
 
                                 {
@@ -1030,7 +1145,7 @@ export const UiSidebar: React.FC = () => {
                                             borderRight: isLastColumn ? 'none' : sidebarColumnBorder,
                                             display: 'flex',
                                             alignItems: 'center',
-                                            justifyContent: col.key === NOTIFICATION_COLUMN_KEY ? 'center' : 'flex-start',
+                                            justifyContent: (col.key === NOTIFICATION_COLUMN_KEY || col.key === 'timer') ? 'center' : 'flex-start',
                                             overflow: 'hidden',
                                             whiteSpace: 'nowrap'
                                         }}>
@@ -1047,7 +1162,7 @@ export const UiSidebar: React.FC = () => {
                                                     e.preventDefault();
                                                     e.stopPropagation();
                                                     // Prevent double click edit for subject as it is now handled by icon
-                                                    if (col.key === 'subject') return;
+                                                    if (col.key === 'subject' || col.key === 'notification' || col.key === 'timer') return;
 
                                                     const field = getEditField(col.key);
                                                     if (!field || !shouldEnableField(field, task)) return;

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useUIStore } from './UIStore';
 import { buildColumnSettingsFromVisibleKeys } from '../components/sidebar/sidebarColumnSettings';
 import { getColumnDefinitions } from '../components/sidebar/sidebarColumnCatalog';
+import { saveDisplayPreferences } from '../utils/preferences';
 
 describe('UIStore', () => {
     beforeEach(() => {
@@ -250,5 +251,27 @@ describe('UIStore', () => {
         expect(freshUIStore.getState().visibleColumns).toEqual(
             freshUIStore.getState().columnSettings.filter((column) => column.visible).map((column) => column.key)
         );
+    });
+
+    it('retains timer column visibility without forcing explicit query columns', async () => {
+        useUIStore.getState().toggleColumnVisibility('timer');
+
+        expect(useUIStore.getState().visibleColumns).toContain('timer');
+        expect(useUIStore.getState().columnsExplicitInQuery).toBe(false);
+        expect(useUIStore.getState().columnStateSource).toBe('user');
+
+        const currentSettings = useUIStore.getState().columnSettings;
+        const currentVisible = useUIStore.getState().visibleColumns;
+
+        saveDisplayPreferences({
+            visibleColumns: currentVisible,
+            columnSettings: currentSettings
+        });
+
+        vi.resetModules();
+        const { useUIStore: freshUIStore } = await import('./UIStore');
+
+        expect(freshUIStore.getState().visibleColumns).toContain('timer');
+        expect(freshUIStore.getState().columnSettings.find((c) => c.key === 'timer')?.visible).toBe(true);
     });
 });

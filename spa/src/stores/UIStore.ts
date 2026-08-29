@@ -175,6 +175,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     columnSettings: initialDisplayColumns.columnSettings,
     columnWidths: displayPreferences.columnWidths ?? {
         id: 72,
+        timer: 36,
         notification: 44,
         subject: 280,
         status: 100,
@@ -280,28 +281,48 @@ export const useUIStore = create<UIState>((set, get) => ({
     },
     setColumnSettings: (settings) => {
         const next = settings.map((entry) => ({ ...entry }));
-        set(() => ({
+        set((state) => ({
             visibleColumns: toVisibleColumns(next),
             columnSettings: next,
             columnStateSource: 'user',
-            columnsExplicitInQuery: true
+            columnsExplicitInQuery: state.columnsExplicitInQuery
         }));
     },
     toggleColumnVisibility: (key) => {
         const next = toggleColumnSetting(get().columnSettings, key);
-        set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next, columnStateSource: 'user', columnsExplicitInQuery: true }));
+        set((state) => ({
+            visibleColumns: toVisibleColumns(next),
+            columnSettings: next,
+            columnStateSource: 'user',
+            columnsExplicitInQuery: state.columnsExplicitInQuery
+        }));
     },
     moveColumnUp: (key) => {
         const next = moveColumnSetting(get().columnSettings, key, 'up');
-        set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next, columnStateSource: 'user', columnsExplicitInQuery: true }));
+        set((state) => ({
+            visibleColumns: toVisibleColumns(next),
+            columnSettings: next,
+            columnStateSource: 'user',
+            columnsExplicitInQuery: state.columnsExplicitInQuery
+        }));
     },
     moveColumnDown: (key) => {
         const next = moveColumnSetting(get().columnSettings, key, 'down');
-        set(() => ({ visibleColumns: toVisibleColumns(next), columnSettings: next, columnStateSource: 'user', columnsExplicitInQuery: true }));
+        set((state) => ({
+            visibleColumns: toVisibleColumns(next),
+            columnSettings: next,
+            columnStateSource: 'user',
+            columnsExplicitInQuery: state.columnsExplicitInQuery
+        }));
     },
     resetColumns: () => {
         const next = resetColumnSettings(COLUMN_DEFINITIONS);
-        set(() => ({ visibleColumns: DEFAULT_COLUMNS, columnSettings: next, columnStateSource: 'user', columnsExplicitInQuery: true }));
+        set((state) => ({
+            visibleColumns: DEFAULT_COLUMNS,
+            columnSettings: next,
+            columnStateSource: 'user',
+            columnsExplicitInQuery: state.columnsExplicitInQuery
+        }));
     },
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),
     setSidebarWidth: (width) => set(() => ({ sidebarWidth: width })),
