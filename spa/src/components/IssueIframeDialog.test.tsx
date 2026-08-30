@@ -835,14 +835,14 @@ describe('IssueIframeDialog', () => {
         const clearSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         useTimerStore.setState({
             session: {
-                version: 2,
+                version: 3,
                 revision: 1,
                 sessionId: 's1',
                 issueId: 123,
                 subject: 'Task 123',
                 autoStop: false,
                 state: 'stopped_pending_record',
-                recordingAttemptId: 'attempt-1',
+                recordingAttempt: { id: 'attempt-1', openedAt: Date.now(), phase: 'editing' as const },
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
                 segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
@@ -850,7 +850,7 @@ describe('IssueIframeDialog', () => {
         });
         persistTimerSession(useTimerStore.getState().session);
 
-        const recordingContext = { origin: 'timer' as const, sessionId: 's1', issueId: 123, recordingAttemptId: 'attempt-1' };
+        const recordingContext = { origin: 'timer' as const, sessionId: 's1', issueId: 123, attemptId: 'attempt-1' };
         useUIStore.setState({
             issueDialogUrl: '/issues/123/time_entries/new?time_entry[hours]=0.5',
             issueDialogContext: { timerRecording: recordingContext }
@@ -901,14 +901,14 @@ describe('IssueIframeDialog', () => {
     it('clears the matching timer when Redmine redirects back to Canvas Gantt with a success notice', async () => {
         const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         const session = {
-            version: 2 as const,
+            version: 3 as const,
             revision: 1,
             sessionId: 'canvas-redirect',
             issueId: 123,
             subject: 'Task 123',
             autoStop: false,
             state: 'stopped_pending_record' as const,
-            recordingAttemptId: 'canvas-attempt',
+            recordingAttempt: { id: 'canvas-attempt', openedAt: Date.now(), phase: 'editing' as const },
             createdAt: Date.now(),
             updatedAt: Date.now(),
             segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
@@ -917,7 +917,7 @@ describe('IssueIframeDialog', () => {
             origin: 'timer' as const,
             sessionId: session.sessionId,
             issueId: session.issueId,
-            recordingAttemptId: session.recordingAttemptId
+            attemptId: session.recordingAttempt!.id
         };
         useTimerStore.setState({ session });
         persistTimerSession(session);
@@ -960,14 +960,14 @@ describe('IssueIframeDialog', () => {
             const sessionId = `${timerState}-normal-entry`;
             useTimerStore.setState({
                 session: {
-                    version: 2,
+                    version: 3,
                     revision: 1,
                     sessionId,
                     issueId: 123,
                     subject: 'Task 123',
                     autoStop: false,
                     state: timerState,
-                    recordingAttemptId: timerState === 'stopped_pending_record' ? 'attempt-2' : undefined,
+                    ...(timerState === 'stopped_pending_record' ? { recordingAttempt: { id: 'attempt-2', openedAt: Date.now(), phase: 'editing' as const } } : {}),
                     createdAt: Date.now(),
                     updatedAt: Date.now(),
                     segments: [{
@@ -1013,14 +1013,14 @@ describe('IssueIframeDialog', () => {
     it('keeps the pending timer when a timer-origin TimeEntry dialog is cancelled', () => {
         const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         const session = {
-            version: 2 as const,
+            version: 3 as const,
             revision: 1,
             sessionId: 'cancelled-recording',
             issueId: 123,
             subject: 'Task 123',
             autoStop: false,
             state: 'stopped_pending_record' as const,
-            recordingAttemptId: 'cancel-attempt',
+            recordingAttempt: { id: 'cancel-attempt', openedAt: Date.now(), phase: 'editing' as const },
             createdAt: Date.now(),
             updatedAt: Date.now(),
             segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
@@ -1034,7 +1034,7 @@ describe('IssueIframeDialog', () => {
                     origin: 'timer',
                     sessionId: session.sessionId,
                     issueId: session.issueId,
-                    recordingAttemptId: session.recordingAttemptId
+                    attemptId: session.recordingAttempt!.id
                 }
             }
         });
@@ -1054,14 +1054,14 @@ describe('IssueIframeDialog', () => {
     ])('keeps the pending timer after a TimeEntry %s', async (_caseName, errorMessage) => {
         const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         const session = {
-            version: 2 as const,
+            version: 3 as const,
             revision: 1,
             sessionId: `failed-recording-${errorMessage}`,
             issueId: 123,
             subject: 'Task 123',
             autoStop: false,
             state: 'stopped_pending_record' as const,
-            recordingAttemptId: 'failed-attempt',
+            recordingAttempt: { id: 'failed-attempt', openedAt: Date.now(), phase: 'editing' as const },
             createdAt: Date.now(),
             updatedAt: Date.now(),
             segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
@@ -1075,7 +1075,7 @@ describe('IssueIframeDialog', () => {
                     origin: 'timer',
                     sessionId: session.sessionId,
                     issueId: session.issueId,
-                    recordingAttemptId: session.recordingAttemptId
+                    attemptId: session.recordingAttempt!.id
                 }
             }
         });
@@ -1104,14 +1104,14 @@ describe('IssueIframeDialog', () => {
     it('keeps the pending timer after an unexpected TimeEntry redirect', async () => {
         const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         const session = {
-            version: 2 as const,
+            version: 3 as const,
             revision: 1,
             sessionId: 'unexpected-redirect',
             issueId: 123,
             subject: 'Task 123',
             autoStop: false,
             state: 'stopped_pending_record' as const,
-            recordingAttemptId: 'redirect-attempt',
+            recordingAttempt: { id: 'redirect-attempt', openedAt: Date.now(), phase: 'editing' as const },
             createdAt: Date.now(),
             updatedAt: Date.now(),
             segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
@@ -1125,7 +1125,7 @@ describe('IssueIframeDialog', () => {
                     origin: 'timer',
                     sessionId: session.sessionId,
                     issueId: session.issueId,
-                    recordingAttemptId: session.recordingAttemptId
+                    attemptId: session.recordingAttempt!.id
                 }
             }
         });
@@ -1152,23 +1152,24 @@ describe('IssueIframeDialog', () => {
         Object.defineProperty(iframe, 'contentDocument', { value: redirectDoc, configurable: true });
         fireEvent.load(iframe);
 
-        await waitFor(() => expect(screen.getByText('Issue #999')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByTestId('issue-dialog-error')).toBeInTheDocument());
         expect(completeSpy).not.toHaveBeenCalled();
         expect(useTimerStore.getState().session?.sessionId).toBe(session.sessionId);
+        expect(useTimerStore.getState().session?.recordingAttempt?.phase).toBe('unknown');
     });
 
     it('handles direct form submission inside iframe and clears timer session on redirect to issue show', async () => {
         const clearSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         useTimerStore.setState({
             session: {
-                version: 2,
+                version: 3,
                 revision: 1,
                 sessionId: 's2',
                 issueId: 456,
                 subject: 'Task 456',
                 autoStop: false,
                 state: 'stopped_pending_record',
-                recordingAttemptId: 'attempt-2',
+                recordingAttempt: { id: 'attempt-2', openedAt: Date.now(), phase: 'editing' as const },
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
                 segments: [{ startedAt: Date.now() - 900000, stoppedAt: Date.now() }]
@@ -1176,7 +1177,7 @@ describe('IssueIframeDialog', () => {
         });
         persistTimerSession(useTimerStore.getState().session);
 
-        const recordingContext = { origin: 'timer' as const, sessionId: 's2', issueId: 456, recordingAttemptId: 'attempt-2' };
+        const recordingContext = { origin: 'timer' as const, sessionId: 's2', issueId: 456, attemptId: 'attempt-2' };
         useUIStore.setState({
             issueDialogUrl: '/issues/456/time_entries/new?time_entry[hours]=0.25',
             issueDialogContext: { timerRecording: recordingContext }
@@ -1207,7 +1208,7 @@ describe('IssueIframeDialog', () => {
 
         // Simulate Redmine redirect to /issues/456
         const redirectDoc = document.implementation.createHTMLDocument('iframe');
-        redirectDoc.body.innerHTML = `<div class="issue">Issue details</div>`;
+        redirectDoc.body.innerHTML = `<div class="flash notice">Successful creation.</div><div class="issue">Issue details</div>`;
         Object.defineProperty(iframe, 'contentWindow', {
             value: { location: { href: 'http://example.com/issues/456' }, document: redirectDoc },
             configurable: true

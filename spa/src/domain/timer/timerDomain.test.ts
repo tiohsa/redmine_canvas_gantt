@@ -5,11 +5,19 @@ import {
     calculateTimerRemaining,
     calculateTimerOverrun,
     evaluateTimerTick,
+    beginTimerRecording,
+    beginTimerRecordingSubmission,
+    markTimerRecordingValidationError,
+    markTimerRecordingUnknown,
+    cancelTimerRecording,
+    completeTimerRecording,
+    resolveUnknownTimerRecording,
     extendTimerSession,
     stopTimerSession,
     calculateRecordedHours,
     calculateCurrentDeadlineIntervalMinutes,
     formatTimerDuration,
+    formatTimerDurationHoursMinutes,
     formatElapsedMinutesText,
     isTimerSpanningMultipleDays
 } from './timerDomain';
@@ -203,6 +211,53 @@ describe('Timer Domain Logic', () => {
         // Total elapsed: 30 min + 10 min = 40 min (gap of 3 min excluded!)
         expect(calculateTimerElapsed(resumed, checkTime)).toBe(40 * 60 * 1000);
         expect(calculateCurrentDeadlineIntervalMinutes(resumed)).toBe(15);
+    });
+
+    it('keeps a pending recording reservation exclusive across recording transitions', () => {
+        const pending = stopTimerSession(createTimerSession({
+            issueId: 123,
+            subject: 'Task',
+            minutes: 30,
+            autoStop: false,
+            now: baseTime
+        }), baseTime + 10 * 60 * 1000);
+        const reserved = beginTimerRecording(pending, 'attempt-1', baseTime + 11 * 60 * 1000);
+
+        expect(reserved?.recordingAttempt).toEqual({
+            id: 'attempt-1',
+            openedAt: baseTime + 11 * 60 * 1000,
+            phase: 'editing'
+        });
+        expect(extendTimerSession(reserved!, 15, baseTime + 12 * 60 * 1000)).toBe(reserved);
+        expect(beginTimerRecording(reserved!, 'attempt-2', baseTime + 12 * 60 * 1000)).toBeUndefined();
+
+        const submitting = beginTimerRecordingSubmission(reserved!, 'attempt-1');
+        expect(submitting?.recordingAttempt?.phase).toBe('submitting');
+        expect(markTimerRecordingValidationError(submitting!, 'attempt-1')?.recordingAttempt?.phase).toBe('editing');
+        expect(markTimerRecordingUnknown(submitting!, 'attempt-1')?.recordingAttempt?.phase).toBe('unknown');
+        expect(cancelTimerRecording(reserved!, 'attempt-1')?.recordingAttempt).toBeUndefined();
+        expect(completeTimerRecording(submitting!, 'attempt-1')).toBeNull();
+    });
+
+    it('requires explicit resolution for an unknown recording outcome', () => {
+        const pending = stopTimerSession(createTimerSession({
+            issueId: 123,
+            subject: 'Task',
+            minutes: 30,
+            autoStop: false,
+            now: baseTime
+        }), baseTime + 10 * 60 * 1000);
+        const reserved = beginTimerRecording(pending, 'attempt-1', baseTime + 11 * 60 * 1000)!;
+        const unknown = markTimerRecordingUnknown(beginTimerRecordingSubmission(reserved, 'attempt-1')!, 'attempt-1')!;
+
+        expect(resolveUnknownTimerRecording(unknown, 'attempt-1', 'unregistered')?.recordingAttempt).toBeUndefined();
+        expect(resolveUnknownTimerRecording(unknown, 'attempt-1', 'recorded')).toBeNull();
+    });
+
+    it('formats elapsed work time as zero-padded hours and minutes', () => {
+        expect(formatTimerDurationHoursMinutes(0)).toBe('00:00');
+        expect(formatTimerDurationHoursMinutes(2 * 60 * 60 * 1000 + 5 * 60 * 1000 + 59 * 1000)).toBe('02:05');
+        expect(formatTimerDurationHoursMinutes(100 * 60 * 60 * 1000 + 7 * 60 * 1000)).toBe('100:07');
     });
 
     it('calculates recorded hours rounded to 2 decimal places', () => {

@@ -170,7 +170,10 @@ Edge、Firefox、Safari を使用してください。Internet Explorer は対�
 - Redmineの `log_time` 権限があるチケットで開始します。Redmineインスタンス・ユーザーごとに、実行中または未登録のタイマーは1件だけです。
 - 5・10・15・30・60分から選択します。自動停止がOFFなら期限後も計測を続け、ONなら期限時刻ちょうどで停止します。
 - 停止後は未登録状態となり、Redmine標準の作業時間フォームから登録します。フォームのキャンセルや入力エラーでは未登録状態を保持します。
-- 登録時間はtimestampと計測Segmentから算出し、小数第2位へ丸めます。そのため極短時間は `0.00` でフォームが開く場合があり、入力可否はRedmine標準Validationに従います。
+- 画面上の作業時間は秒単位の表示に加えて `hh:mm` 形式でも表示します。登録時間はtimestampと計測Segmentから算出し、小数第2位へ丸めます。そのため極短時間は `0.00` でフォームが開く場合があり、入力可否はRedmine標準Validationに従います。
+- タイマー由来の作業時間フォームを編集中・送信中はPending Sessionを予約し、別タブからの再開・延長・破棄・新規記録を禁止します。保存結果を確認できない場合はSessionを保持し、Redmineを確認した後に「記録済み」または「未登録」として明示的に解決します。
+
+[Timer Sessionアーキテクチャ図](docs/architecture/timer-session-architecture.png) に、Presentation、Application / State、Timer Domain、Browser Infrastructure、Redmine Serverの境界を示しています。
 
 ### ベースライン snapshot
 

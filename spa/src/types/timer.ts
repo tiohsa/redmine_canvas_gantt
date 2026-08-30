@@ -3,10 +3,18 @@ export type TimerIntervalMinutes = 5 | 10 | 15 | 30 | 60;
 export const TIMER_INTERVAL_MINUTES: TimerIntervalMinutes[] = [5, 10, 15, 30, 60];
 
 export type TimerState = 'running' | 'expired' | 'stopped_pending_record';
+export type TimerRecordingPhase = 'editing' | 'submitting' | 'unknown';
+export type TimerRecordingResolution = 'recorded' | 'unregistered';
 
 export interface TimerSegment {
     startedAt: number;
     stoppedAt?: number;
+}
+
+export interface TimerRecordingAttempt {
+    id: string;
+    openedAt: number;
+    phase: TimerRecordingPhase;
 }
 
 export interface TimerSession {
@@ -21,7 +29,7 @@ export interface TimerSession {
     state: TimerState;
     notifiedDeadlineAt?: number;
     notifiedType?: 'running_expired' | 'stopped';
-    recordingAttemptId?: string;
+    recordingAttempt?: TimerRecordingAttempt;
     userId?: number;
     createdAt: number;
     updatedAt: number;
@@ -42,5 +50,5 @@ export interface TimerRecordingContext {
     origin: 'timer';
     sessionId: string;
     issueId: number | string;
-    recordingAttemptId: string;
+    attemptId: string;
 }

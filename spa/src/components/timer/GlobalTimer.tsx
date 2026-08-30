@@ -6,7 +6,8 @@ import {
     calculateTimerOverrun,
     calculateTimerRemaining,
     formatElapsedMinutesText,
-    formatTimerDuration
+    formatTimerDuration,
+    formatTimerDurationHoursMinutes
 } from '../../domain/timer/timerDomain';
 import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
@@ -40,6 +41,7 @@ export const GlobalTimer: React.FC = () => {
     const { formatted: formattedHours } = calculateRecordedHours(session, now);
 
     const elapsedFormatted = formatTimerDuration(elapsedMs);
+    const workTimeFormatted = formatTimerDurationHoursMinutes(elapsedMs);
     const remainingFormatted = formatTimerDuration(remainingMs);
     const overrunFormatted = formatTimerDuration(overrunMs);
 
@@ -117,6 +119,10 @@ export const GlobalTimer: React.FC = () => {
                 }}>
                     {isRunning && (
                         <>
+                            <span data-testid="global-timer-work-time">
+                                {tr('label_timer_work_time') || 'Work'} {workTimeFormatted}
+                            </span>
+                            <span>/</span>
                             <span data-testid="global-timer-remaining" style={{ color: '#4ade80', fontWeight: 600 }}>
                                 {tr('label_timer_remaining') || 'Remaining'} {remainingFormatted}
                             </span>
@@ -129,6 +135,10 @@ export const GlobalTimer: React.FC = () => {
 
                     {isExpired && (
                         <>
+                            <span data-testid="global-timer-work-time">
+                                {tr('label_timer_work_time') || 'Work'} {workTimeFormatted}
+                            </span>
+                            <span>/</span>
                             <span data-testid="global-timer-overrun" style={{ color: '#f87171', fontWeight: 700 }}>
                                 {tr('label_timer_overrun') || 'Overrun'} {overrunFormatted}
                             </span>
@@ -141,7 +151,9 @@ export const GlobalTimer: React.FC = () => {
 
                     {isPending && (
                         <span data-testid="global-timer-pending-text" style={{ color: designTokens.warningFg, fontWeight: 600 }}>
-                            {tr('label_timer_pending_work') || 'Unrecorded'}: {formatElapsedMinutesText(elapsedMs, isJa)} ({formattedHours}h)
+                            {session.recordingAttempt?.phase === 'unknown'
+                                ? (tr('label_timer_recording_unknown') || 'Recording result needs confirmation')
+                                : (tr('label_timer_pending_work') || 'Unrecorded')}: {workTimeFormatted} ({formatElapsedMinutesText(elapsedMs, isJa)} / {formattedHours}h)
                         </span>
                     )}
                 </div>
@@ -264,7 +276,7 @@ export const GlobalTimer: React.FC = () => {
                         <button
                             type="button"
                             data-testid="global-timer-record-button"
-                            onClick={() => void recordTime()}
+                            onClick={() => void (session.recordingAttempt?.phase === 'unknown' ? openPendingWorkModal() : recordTime())}
                             style={{
                                 padding: '5px 14px',
                                 borderRadius: '9999px',

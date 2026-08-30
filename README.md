@@ -166,7 +166,10 @@ The cleanup task deletes the `plugin_redmine_canvas_gantt` row from Redmine's `s
 - Start a timer on an issue where Redmine grants `log_time`. One active or pending timer is allowed for each Redmine instance and user.
 - Choose 5, 10, 15, 30, or 60 minutes. With auto-stop off, measurement continues after the deadline; with it on, measurement stops exactly at the deadline.
 - Stop the timer to create pending work, then record it through Redmine's standard time-entry form. Canceling the form or receiving a validation error keeps the pending timer.
-- Recorded hours are calculated from measured timestamp segments and rounded to two decimal places. Very short measurements may therefore open the form with `0.00`; Redmine validation remains authoritative.
+- The timer's measured work time is shown in `hh:mm` as well as the seconds-level display. Recorded hours are calculated from measured timestamp segments and rounded to two decimal places. Very short measurements may therefore open the form with `0.00`; Redmine validation remains authoritative.
+- While a timer-origin time entry is being edited or submitted, the pending session is reserved and cannot be resumed, extended, discarded, or recorded by another tab. If the save result cannot be confirmed, the session is retained as unknown until you explicitly mark it recorded or not registered after checking Redmine.
+
+See the [Timer Session architecture diagram](docs/architecture/timer-session-architecture.png) for the Presentation, Application/State, Timer Domain, Browser Infrastructure, and Redmine Server boundaries.
 
 ### Baseline snapshots
 

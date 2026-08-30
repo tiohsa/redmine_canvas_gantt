@@ -1,6 +1,13 @@
-import type { TimerIntervalMinutes, TimerSegment, TimerSession, TimerTickResult } from '../../types/timer';
+import type {
+    TimerIntervalMinutes,
+    TimerRecordingPhase,
+    TimerRecordingResolution,
+    TimerSegment,
+    TimerSession,
+    TimerTickResult
+} from '../../types/timer';
 
-export const TIMER_SESSION_VERSION = 2;
+export const TIMER_SESSION_VERSION = 3;
 
 export interface CreateTimerSessionOptions {
     issueId: number | string;
@@ -139,6 +146,8 @@ export const extendTimerSession = (
     minutes: TimerIntervalMinutes,
     now: number = Date.now()
 ): TimerSession => {
+    if (session.recordingAttempt) return session;
+
     const extensionMs = minutes * 60 * 1000;
 
     if (session.state === 'running') {
@@ -169,11 +178,99 @@ export const extendTimerSession = (
             state: 'running',
             segments: newSegments,
             deadlineAt: now + extensionMs,
-            recordingAttemptId: undefined
         };
     }
 
     return session;
+};
+
+const transitionRecording = (
+    session: TimerSession,
+    attemptId: string,
+    phase: TimerRecordingPhase
+): TimerSession | undefined => {
+    const attempt = session.recordingAttempt;
+    if (session.state !== 'stopped_pending_record' || !attempt || attempt.id !== attemptId) return undefined;
+    return { ...session, recordingAttempt: { ...attempt, phase } };
+};
+
+export const beginTimerRecording = (
+    session: TimerSession,
+    attemptId: string = generateSessionId(),
+    now: number = Date.now()
+): TimerSession | undefined => {
+    if (session.state !== 'stopped_pending_record' || session.recordingAttempt) return undefined;
+    return {
+        ...session,
+        recordingAttempt: {
+            id: attemptId,
+            openedAt: now,
+            phase: 'editing'
+        }
+    };
+};
+
+export const beginTimerRecordingSubmission = (
+    session: TimerSession,
+    attemptId: string,
+    now: number = Date.now()
+): TimerSession | undefined => {
+    if (session.recordingAttempt?.phase !== 'editing') return undefined;
+    const next = transitionRecording(session, attemptId, 'submitting');
+    return next ? { ...next, updatedAt: now } : undefined;
+};
+
+export const markTimerRecordingValidationError = (
+    session: TimerSession,
+    attemptId: string,
+    now: number = Date.now()
+): TimerSession | undefined => {
+    if (session.recordingAttempt?.phase !== 'submitting') return undefined;
+    const next = transitionRecording(session, attemptId, 'editing');
+    return next ? { ...next, updatedAt: now } : undefined;
+};
+
+export const markTimerRecordingUnknown = (
+    session: TimerSession,
+    attemptId: string,
+    now: number = Date.now()
+): TimerSession | undefined => {
+    if (session.recordingAttempt?.phase !== 'submitting') return undefined;
+    const next = transitionRecording(session, attemptId, 'unknown');
+    return next ? { ...next, updatedAt: now } : undefined;
+};
+
+export const cancelTimerRecording = (
+    session: TimerSession,
+    attemptId: string,
+    now: number = Date.now()
+): TimerSession | undefined => {
+    if (session.recordingAttempt?.phase !== 'editing') return undefined;
+    const next = transitionRecording(session, attemptId, 'editing');
+    if (!next) return undefined;
+    const withoutAttempt = { ...next };
+    delete withoutAttempt.recordingAttempt;
+    return { ...withoutAttempt, updatedAt: now };
+};
+
+export const completeTimerRecording = (session: TimerSession, attemptId: string): null | undefined => {
+    if (session.state !== 'stopped_pending_record') return undefined;
+    if (session.recordingAttempt?.id !== attemptId || session.recordingAttempt.phase !== 'submitting') return undefined;
+    return null;
+};
+
+export const resolveUnknownTimerRecording = (
+    session: TimerSession,
+    attemptId: string,
+    resolution: TimerRecordingResolution,
+    now: number = Date.now()
+): TimerSession | null | undefined => {
+    if (session.state !== 'stopped_pending_record') return undefined;
+    if (session.recordingAttempt?.id !== attemptId || session.recordingAttempt.phase !== 'unknown') return undefined;
+    if (resolution === 'recorded') return null;
+    const withoutAttempt = { ...session };
+    delete withoutAttempt.recordingAttempt;
+    return { ...withoutAttempt, updatedAt: now };
 };
 
 export const stopTimerSession = (session: TimerSession, now: number = Date.now()): TimerSession => {
@@ -241,6 +338,15 @@ export const formatTimerDuration = (totalMs: number): string => {
         return `${hours}:${pad(minutes)}:${pad(seconds)}`;
     }
     return `${pad(minutes)}:${pad(seconds)}`;
+};
+
+export const formatTimerDurationHoursMinutes = (totalMs: number): string => {
+    const safeMs = Math.max(0, totalMs);
+    const totalMinutes = Math.floor(safeMs / (60 * 1000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    const pad = (num: number) => String(num).padStart(2, '0');
+    return `${pad(hours)}:${pad(minutes)}`;
 };
 
 export const formatElapsedMinutesText = (totalMs: number, isJapanese: boolean = false): string => {

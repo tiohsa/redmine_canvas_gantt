@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useTimerStore } from './TimerStore';
 import { useUIStore } from './UIStore';
 import type { Task } from '../types';
-import { getTimerStorageKeys } from '../services/timerStorage';
+import { getTimerStorageKeys, loadStoredTimerSession, persistTimerSession } from '../services/timerStorage';
 
 describe('TimerStore', () => {
     const mockTask: Task = {
@@ -22,6 +22,7 @@ describe('TimerStore', () => {
         useTimerStore.setState({
             session: null,
             preferences: { autoStop: false },
+            isReady: false,
             startDialogTask: null,
             pendingWorkModalOpen: false,
             otherRunningNotice: null,
@@ -141,6 +142,14 @@ describe('TimerStore', () => {
 
         expect(useTimerStore.getState().session?.segments).toHaveLength(1);
 
+        const pending = useTimerStore.getState().session!;
+        await useTimerStore.getState().cancelTimerRecording({
+            origin: 'timer',
+            sessionId: pending.sessionId,
+            issueId: pending.issueId,
+            attemptId: pending.recordingAttempt!.id
+        });
+
         await useTimerStore.getState().resumeTimer(15);
 
         const session = useTimerStore.getState().session;
@@ -156,11 +165,17 @@ describe('TimerStore', () => {
         expect(useTimerStore.getState().session).not.toBeNull();
 
         const session = useTimerStore.getState().session;
+        await useTimerStore.getState().beginTimerRecordingSubmission({
+            origin: 'timer',
+            sessionId: session!.sessionId,
+            issueId: session!.issueId,
+            attemptId: session!.recordingAttempt!.id
+        });
         await useTimerStore.getState().completeTimerRecording({
             origin: 'timer',
             sessionId: session!.sessionId,
             issueId: '123',
-            recordingAttemptId: session!.recordingAttemptId!
+            attemptId: session!.recordingAttempt!.id
         });
 
         expect(useTimerStore.getState().session).toBeNull();
@@ -175,7 +190,7 @@ describe('TimerStore', () => {
             origin: 'timer',
             sessionId: running.sessionId,
             issueId: running.issueId,
-            recordingAttemptId: 'normal-time-entry'
+            attemptId: 'normal-time-entry'
         });
         expect(useTimerStore.getState().session?.state).toBe('running');
 
@@ -185,7 +200,7 @@ describe('TimerStore', () => {
             origin: 'timer',
             sessionId: pending.sessionId,
             issueId: running.issueId,
-            recordingAttemptId: 'stale-attempt'
+            attemptId: 'stale-attempt'
         });
         expect(useTimerStore.getState().session?.state).toBe('stopped_pending_record');
     });
@@ -200,10 +215,103 @@ describe('TimerStore', () => {
         expect(setItem.mock.calls.filter(([key]) => key === sessionKey)).toHaveLength(0);
     });
 
+    it('reconciles an overdue canonical session during startup before exposing it to actions', async () => {
+        vi.useFakeTimers();
+        const startedAt = 1_700_000_000_000;
+        vi.setSystemTime(startedAt + 35 * 60 * 1000);
+        const overdue = {
+            version: 3,
+            sessionId: 'overdue-session',
+            revision: 1,
+            issueId: 123,
+            subject: 'Overdue task',
+            autoStop: true,
+            deadlineAt: startedAt + 30 * 60 * 1000,
+            segments: [{ startedAt }],
+            state: 'running' as const,
+            createdAt: startedAt,
+            updatedAt: startedAt
+        };
+        persistTimerSession(overdue);
+        useTimerStore.setState({ session: overdue, isReady: false });
+
+        await useTimerStore.getState().tick();
+
+        const reconciled = useTimerStore.getState().session;
+        expect(reconciled?.state).toBe('stopped_pending_record');
+        expect(reconciled?.revision).toBe(2);
+        expect(loadStoredTimerSession()?.state).toBe('stopped_pending_record');
+        vi.useRealTimers();
+    });
+
+    it('reconciles an interrupted submission to unknown during startup', async () => {
+        const startedAt = Date.now() - 30 * 60 * 1000;
+        const submitting = {
+            version: 3,
+            sessionId: 'interrupted-submission',
+            revision: 4,
+            issueId: 123,
+            subject: 'Interrupted task',
+            autoStop: false,
+            state: 'stopped_pending_record' as const,
+            recordingAttempt: {
+                id: 'interrupted-attempt',
+                openedAt: startedAt,
+                phase: 'submitting' as const
+            },
+            segments: [{ startedAt, stoppedAt: Date.now() }],
+            createdAt: startedAt,
+            updatedAt: Date.now()
+        };
+        persistTimerSession(submitting);
+        useTimerStore.setState({ session: submitting, isReady: false });
+
+        await useTimerStore.getState().tick();
+
+        expect(useTimerStore.getState().session?.recordingAttempt?.phase).toBe('unknown');
+        expect(useTimerStore.getState().session?.revision).toBe(5);
+        expect(loadStoredTimerSession()?.recordingAttempt?.phase).toBe('unknown');
+    });
+
+    it('keeps an unknown save outcome until explicit user resolution', async () => {
+        await useTimerStore.getState().startTimer(mockTask, 30);
+        await useTimerStore.getState().stopTimer();
+        const pending = useTimerStore.getState().session!;
+        const context = {
+            origin: 'timer' as const,
+            sessionId: pending.sessionId,
+            issueId: pending.issueId,
+            attemptId: pending.recordingAttempt!.id
+        };
+
+        await useTimerStore.getState().beginTimerRecordingSubmission(context);
+        await useTimerStore.getState().markTimerRecordingUnknown(context);
+        expect(useTimerStore.getState().session?.recordingAttempt?.phase).toBe('unknown');
+
+        await useTimerStore.getState().resolveUnknownTimerRecording(context, 'unregistered');
+        expect(useTimerStore.getState().session?.recordingAttempt).toBeUndefined();
+        expect(useTimerStore.getState().session?.state).toBe('stopped_pending_record');
+
+        await useTimerStore.getState().recordTime();
+        const secondAttempt = useTimerStore.getState().session!.recordingAttempt!;
+        const secondContext = { ...context, attemptId: secondAttempt.id };
+        await useTimerStore.getState().beginTimerRecordingSubmission(secondContext);
+        await useTimerStore.getState().markTimerRecordingUnknown(secondContext);
+        await useTimerStore.getState().resolveUnknownTimerRecording(secondContext, 'recorded');
+        expect(useTimerStore.getState().session).toBeNull();
+    });
+
     it('discards timer session explicitly on user confirmation', async () => {
         await useTimerStore.getState().startTimer(mockTask, 30);
         await useTimerStore.getState().stopTimer();
 
+        const pending = useTimerStore.getState().session!;
+        await useTimerStore.getState().cancelTimerRecording({
+            origin: 'timer',
+            sessionId: pending.sessionId,
+            issueId: pending.issueId,
+            attemptId: pending.recordingAttempt!.id
+        });
         await useTimerStore.getState().discardTimer();
 
         expect(useTimerStore.getState().session).toBeNull();
@@ -214,7 +322,7 @@ describe('TimerStore', () => {
         expect(useTimerStore.getState().session).toBeNull();
 
         const externalSession = {
-            version: 2,
+            version: 3,
             sessionId: 'external-1',
             revision: 1,
             issueId: 999,
@@ -249,7 +357,7 @@ describe('TimerStore', () => {
         expect(canonical.segments.filter(segment => segment.stoppedAt === undefined)).toHaveLength(0);
     });
 
-    it('linearizes resume versus discard without resurrecting a discarded session', async () => {
+    it('rejects resume and discard while a recording reservation is active', async () => {
         await useTimerStore.getState().startTimer(mockTask, 30);
         await useTimerStore.getState().stopTimer();
 
@@ -258,8 +366,22 @@ describe('TimerStore', () => {
             useTimerStore.getState().discardTimer()
         ]);
 
-        expect(useTimerStore.getState().session).toBeNull();
-        expect(window.localStorage.getItem(getTimerStorageKeys().session)).toBeNull();
+        expect(useTimerStore.getState().session?.state).toBe('stopped_pending_record');
+        expect(useTimerStore.getState().session?.recordingAttempt?.phase).toBe('editing');
+        expect(window.localStorage.getItem(getTimerStorageKeys().session)).not.toBeNull();
+    });
+
+    it('does not create a second recording attempt while one is active', async () => {
+        await useTimerStore.getState().startTimer(mockTask, 30);
+        await useTimerStore.getState().stopTimer();
+
+        const firstAttempt = useTimerStore.getState().session?.recordingAttempt;
+        const firstDialogUrl = useUIStore.getState().issueDialogUrl;
+
+        await useTimerStore.getState().recordTime();
+
+        expect(useTimerStore.getState().session?.recordingAttempt).toEqual(firstAttempt);
+        expect(useUIStore.getState().issueDialogUrl).toBe(firstDialogUrl);
     });
 
     it('linearizes TimeEntry success versus resume without clearing a resumed session', async () => {
@@ -270,8 +392,10 @@ describe('TimerStore', () => {
             origin: 'timer' as const,
             sessionId: pending.sessionId,
             issueId: pending.issueId,
-            recordingAttemptId: pending.recordingAttemptId!
+            attemptId: pending.recordingAttempt!.id
         };
+
+        await useTimerStore.getState().beginTimerRecordingSubmission(context);
 
         await Promise.all([
             useTimerStore.getState().resumeTimer(15),
@@ -279,9 +403,7 @@ describe('TimerStore', () => {
         ]);
 
         const canonical = useTimerStore.getState().session;
-        expect(canonical?.state).toBe('running');
-        expect(canonical?.recordingAttemptId).toBeUndefined();
-        expect(canonical?.segments).toHaveLength(2);
+        expect(canonical).toBeNull();
     });
 
     it('does not let storage sync roll back a concurrent canonical extension', async () => {
@@ -294,5 +416,19 @@ describe('TimerStore', () => {
 
         expect(useTimerStore.getState().session?.deadlineAt).toBe(initialDeadline + 15 * 60 * 1000);
         expect(useTimerStore.getState().session?.revision).toBe(2);
+    });
+
+    it('applies both concurrent extensions to the canonical deadline and revision chain', async () => {
+        await useTimerStore.getState().startTimer(mockTask, 30);
+        const initial = useTimerStore.getState().session!;
+
+        await Promise.all([
+            useTimerStore.getState().extendTimer(15),
+            useTimerStore.getState().extendTimer(15)
+        ]);
+
+        const canonical = useTimerStore.getState().session!;
+        expect(canonical.deadlineAt).toBe(initial.deadlineAt! + 30 * 60 * 1000);
+        expect(canonical.revision).toBe(initial.revision + 2);
     });
 });

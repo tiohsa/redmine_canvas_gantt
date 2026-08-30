@@ -6,6 +6,7 @@ import {
     calculateTimerElapsed,
     formatElapsedMinutesText,
     formatTimerDuration,
+    formatTimerDurationHoursMinutes,
     isTimerSpanningMultipleDays
 } from '../../domain/timer/timerDomain';
 import { fontFamilies, designTokens } from '../../styles/designTokens';
@@ -18,8 +19,10 @@ export const PendingWorkModal: React.FC = () => {
     const recordTime = useTimerStore(state => state.recordTime);
     const resumeTimer = useTimerStore(state => state.resumeTimer);
     const discardTimer = useTimerStore(state => state.discardTimer);
+    const resolveUnknownTimerRecording = useTimerStore(state => state.resolveUnknownTimerRecording);
 
     const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
+    const [unknownResolution, setUnknownResolution] = useState<'recorded' | 'unregistered' | null>(null);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -47,11 +50,42 @@ export const PendingWorkModal: React.FC = () => {
     const { formatted } = calculateRecordedHours(session);
     const elapsedText = formatElapsedMinutesText(totalMs, isJa);
     const durationFormatted = formatTimerDuration(totalMs);
+    const hoursMinutesFormatted = formatTimerDurationHoursMinutes(totalMs);
     const isCrossDay = isTimerSpanningMultipleDays(session);
+    const recordingPhase = session.recordingAttempt?.phase;
+    const unknownSecondaryButtonStyle: React.CSSProperties = {
+        padding: '6px 14px',
+        borderRadius: '9999px',
+        border: `1px solid ${designTokens.controlBorder}`,
+        background: designTokens.controlBg,
+        color: designTokens.textPrimary,
+        fontSize: '12px',
+        fontWeight: 500,
+        cursor: 'pointer'
+    };
+    const unknownPrimaryButtonStyle: React.CSSProperties = {
+        ...unknownSecondaryButtonStyle,
+        border: 'none',
+        background: designTokens.brandPrimary,
+        color: '#ffffff',
+        fontWeight: 600
+    };
 
     const handleDiscardConfirm = () => {
         setIsDiscardConfirmOpen(false);
         void discardTimer();
+    };
+
+    const handleUnknownResolutionConfirm = () => {
+        if (!unknownResolution || !session.recordingAttempt) return;
+        const context = {
+            origin: 'timer' as const,
+            sessionId: session.sessionId,
+            issueId: session.issueId,
+            attemptId: session.recordingAttempt.id
+        };
+        setUnknownResolution(null);
+        void resolveUnknownTimerRecording(context, unknownResolution);
     };
 
     return (
@@ -116,7 +150,7 @@ export const PendingWorkModal: React.FC = () => {
                             {tr('label_timer_elapsed') || 'Elapsed'}:
                         </span>
                         <span style={{ fontWeight: 700, fontSize: '16px', color: designTokens.textPrimary, fontFamily: fontFamilies.mono }}>
-                            {durationFormatted} ({elapsedText} / {formatted}h)
+                            {hoursMinutesFormatted} ({durationFormatted} / {elapsedText} / {formatted}h)
                         </span>
                     </div>
 
@@ -135,8 +169,35 @@ export const PendingWorkModal: React.FC = () => {
                     )}
                 </div>
 
-                {/* Confirm Discard Dialog or Main Actions */}
-                {isDiscardConfirmOpen ? (
+                {/* Confirm unknown outcome or discard, otherwise show actions */}
+                {recordingPhase === 'unknown' && unknownResolution ? (
+                    <div data-testid="pending-work-unknown-confirm" style={{
+                        padding: '12px',
+                        backgroundColor: designTokens.warningBg,
+                        borderRadius: '12px',
+                        border: `1px solid ${designTokens.warningFg}`,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px'
+                    }}>
+                        <div style={{ color: designTokens.warningFg, fontSize: '12px', fontWeight: 600 }}>
+                            {(tr('label_timer_unknown_confirm') || 'Confirm how to resolve this recording: %{resolution}').replace(
+                                '%{resolution}',
+                                unknownResolution === 'recorded'
+                                    ? (tr('label_timer_mark_recorded') || 'Recorded')
+                                    : (tr('label_timer_mark_unregistered') || 'Not registered')
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                            <button type="button" data-testid="pending-work-unknown-cancel" onClick={() => setUnknownResolution(null)} style={unknownSecondaryButtonStyle}>
+                                {tr('button_cancel') || 'Cancel'}
+                            </button>
+                            <button type="button" data-testid="pending-work-unknown-confirm-button" onClick={handleUnknownResolutionConfirm} style={unknownPrimaryButtonStyle}>
+                                {tr('button_confirm') || 'Confirm'}
+                            </button>
+                        </div>
+                    </div>
+                ) : isDiscardConfirmOpen ? (
                     <div style={{
                         padding: '12px',
                         backgroundColor: designTokens.errorBg,
@@ -186,6 +247,38 @@ export const PendingWorkModal: React.FC = () => {
                             </button>
                         </div>
                     </div>
+                ) : recordingPhase === 'unknown' ? (
+                    <div data-testid="pending-work-unknown-recovery" style={{
+                        padding: '12px',
+                        backgroundColor: designTokens.warningBg,
+                        borderRadius: '12px',
+                        border: `1px solid ${designTokens.warningFg}`,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px'
+                    }}>
+                        <div style={{ color: designTokens.warningFg, fontSize: '12px', fontWeight: 600 }}>
+                            {tr('label_timer_unknown_recovery') || 'The time-entry result could not be confirmed. Check Redmine before choosing an outcome.'}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                            <button type="button" data-testid="pending-work-unknown-recorded" onClick={() => setUnknownResolution('recorded')} style={unknownPrimaryButtonStyle}>
+                                {tr('label_timer_mark_recorded') || 'Recorded'}
+                            </button>
+                            <button type="button" data-testid="pending-work-unknown-unregistered" onClick={() => setUnknownResolution('unregistered')} style={unknownSecondaryButtonStyle}>
+                                {tr('label_timer_mark_unregistered') || 'Not registered'}
+                            </button>
+                        </div>
+                    </div>
+                ) : recordingPhase ? (
+                    <div data-testid="pending-work-recording-reservation" style={{
+                        padding: '12px',
+                        backgroundColor: designTokens.surfaceSubtle,
+                        borderRadius: '12px',
+                        border: `1px solid ${designTokens.borderSubtle}`,
+                        color: designTokens.textSecondary
+                    }}>
+                        {tr('label_timer_recording_in_progress') || 'This work time is being recorded in another dialog.'}
+                    </div>
                 ) : (
                     <>
                         {/* Primary Record Button */}
@@ -210,7 +303,7 @@ export const PendingWorkModal: React.FC = () => {
                                 boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
                             }}
                         >
-                            <span>📝 {tr('label_timer_record_time') || 'Record time'} ({formatted}h)</span>
+                            <span>📝 {tr('label_timer_record_time') || 'Record time'} ({hoursMinutesFormatted} / {formatted}h)</span>
                         </button>
 
                         {/* Resume / Extension Buttons */}

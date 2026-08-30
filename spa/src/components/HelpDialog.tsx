@@ -428,7 +428,7 @@ export const HelpDialog: React.FC = () => {
                 {
                     icon: timerIcon,
                     title: t('help_label_work_timer', 'Work Timer'),
-                    description: t('help_desc_work_timer', 'Enable the Work Timer column, choose 5/10/15/30/60 minutes, and start timing an issue. Stop or auto-stop creates pending work that you can record through the standard Redmine time-entry form. Only the matching timer-origin form clears pending work; cancel and validation errors keep it.')
+                    description: t('help_desc_work_timer', 'Enable the Work Timer column, choose 5/10/15/30/60 minutes, and start timing an issue. Stop or auto-stop creates pending work that you can record through the standard Redmine time-entry form. The measured time is also shown as hh:mm. A timer-origin form reserves the pending session while editing or submitting; cancel and validation errors keep it, and an unconfirmed result requires explicit resolution.')
                 },
                 {
                     icon: dragIcon,

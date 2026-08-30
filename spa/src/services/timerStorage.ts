@@ -1,5 +1,5 @@
 import type { TimerPreferences, TimerSegment, TimerSession } from '../types/timer';
-import { evaluateTimerTick, generateSessionId, TIMER_SESSION_VERSION } from '../domain/timer/timerDomain';
+import { generateSessionId, TIMER_SESSION_VERSION } from '../domain/timer/timerDomain';
 
 export const TIMER_SESSION_STORAGE_KEY = 'redmine_canvas_gantt_timer_session';
 export const TIMER_PREFS_STORAGE_KEY = 'redmine_canvas_gantt_timer_preferences';
@@ -57,11 +57,58 @@ export const isValidTimerSession = (value: unknown): value is TimerSession => {
     if (candidate.deadlineAt !== undefined && (typeof candidate.deadlineAt !== 'number' || !Number.isFinite(candidate.deadlineAt))) return false;
     if (candidate.notifiedDeadlineAt !== undefined && (typeof candidate.notifiedDeadlineAt !== 'number' || !Number.isFinite(candidate.notifiedDeadlineAt))) return false;
     if (candidate.notifiedType !== undefined && !['running_expired', 'stopped'].includes(String(candidate.notifiedType))) return false;
-    if (candidate.recordingAttemptId !== undefined && (
-        typeof candidate.recordingAttemptId !== 'string' || candidate.recordingAttemptId.trim() === ''
-    )) return false;
+    if (candidate.recordingAttempt !== undefined) {
+        const attempt = candidate.recordingAttempt as Record<string, unknown>;
+        if (
+            !attempt ||
+            typeof attempt.id !== 'string' || attempt.id.trim() === '' ||
+            typeof attempt.openedAt !== 'number' || !Number.isFinite(attempt.openedAt) ||
+            !['editing', 'submitting', 'unknown'].includes(String(attempt.phase))
+        ) return false;
+    }
     if (candidate.userId !== undefined && (typeof candidate.userId !== 'number' || !Number.isFinite(candidate.userId))) return false;
     return Array.isArray(candidate.segments) && candidate.segments.length > 0 && candidate.segments.every(isValidTimerSegment);
+};
+
+const isValidTimerSessionBase = (value: unknown, version: number): value is Record<string, unknown> => {
+    if (!value || typeof value !== 'object') return false;
+    const candidate = value as Record<string, unknown>;
+    if (candidate.version !== version) return false;
+    if (typeof candidate.sessionId !== 'string' || candidate.sessionId.trim() === '') return false;
+    if (!Number.isInteger(candidate.revision) || (candidate.revision as number) < 1) return false;
+    if (candidate.issueId === undefined || candidate.issueId === null || candidate.issueId === '') return false;
+    if (typeof candidate.subject !== 'string' || typeof candidate.autoStop !== 'boolean') return false;
+    if (typeof candidate.createdAt !== 'number' || !Number.isFinite(candidate.createdAt)) return false;
+    if (typeof candidate.updatedAt !== 'number' || !Number.isFinite(candidate.updatedAt)) return false;
+    if (!['running', 'expired', 'stopped_pending_record'].includes(String(candidate.state))) return false;
+    if (candidate.deadlineAt !== undefined && (typeof candidate.deadlineAt !== 'number' || !Number.isFinite(candidate.deadlineAt))) return false;
+    if (candidate.notifiedDeadlineAt !== undefined && (typeof candidate.notifiedDeadlineAt !== 'number' || !Number.isFinite(candidate.notifiedDeadlineAt))) return false;
+    if (candidate.notifiedType !== undefined && !['running_expired', 'stopped'].includes(String(candidate.notifiedType))) return false;
+    if (candidate.userId !== undefined && (typeof candidate.userId !== 'number' || !Number.isFinite(candidate.userId))) return false;
+    return Array.isArray(candidate.segments) && candidate.segments.length > 0 && candidate.segments.every(isValidTimerSegment);
+};
+
+export const migrateTimerSession = (value: unknown): TimerSession | null => {
+    if (isValidTimerSession(value)) return value;
+    if (!isValidTimerSessionBase(value, 2)) return null;
+
+    const candidate = value as Record<string, unknown>;
+    const legacyAttemptId = candidate.recordingAttemptId;
+    if (legacyAttemptId !== undefined && (typeof legacyAttemptId !== 'string' || legacyAttemptId.trim() === '')) return null;
+
+    const withoutLegacyAttempt = { ...candidate };
+    delete withoutLegacyAttempt.recordingAttemptId;
+    return {
+        ...withoutLegacyAttempt,
+        version: TIMER_SESSION_VERSION,
+        ...(legacyAttemptId ? {
+            recordingAttempt: {
+                id: legacyAttemptId,
+                openedAt: candidate.updatedAt as number,
+                phase: 'unknown' as const
+            }
+        } : {})
+    } as TimerSession;
 };
 
 export const isValidTimerPreferences = (value: unknown): value is TimerPreferences => {
@@ -73,16 +120,16 @@ const readStoredTimerSession = (scope: StorageScope): TimerSession | null => {
         const raw = window.localStorage.getItem(getTimerStorageKeys(scope).session);
         if (!raw) return null;
         const parsed: unknown = JSON.parse(raw);
-        if (!isValidTimerSession(parsed)) return null;
-        if (scope.userId !== undefined && parsed.userId !== scope.userId) return null;
-        return parsed;
+        const migrated = migrateTimerSession(parsed);
+        if (!migrated) return null;
+        if (scope.userId !== undefined && migrated.userId !== scope.userId) return null;
+        return migrated;
     } catch { return null; }
 };
 
-export const loadStoredTimerSession = (scope: StorageScope = getStorageScope(), now: number = Date.now()): TimerSession | null => {
-    const stored = readStoredTimerSession(scope);
-    if (!stored || stored.state !== 'running') return stored;
-    return evaluateTimerTick(stored, now).session;
+export const loadStoredTimerSession = (scope: StorageScope = getStorageScope(), now?: number): TimerSession | null => {
+    void now;
+    return readStoredTimerSession(scope);
 };
 
 export const persistTimerSession = (session: TimerSession | null, scope: StorageScope = getStorageScope()): void => {

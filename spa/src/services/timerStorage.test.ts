@@ -29,7 +29,7 @@ describe('Timer Storage & Persistence', () => {
     });
 
     const createSampleSession = (overrides?: Partial<TimerSession>): TimerSession => ({
-        version: 2,
+        version: 3,
         sessionId: 'session-123',
         revision: 1,
         issueId: 101,
@@ -70,7 +70,7 @@ describe('Timer Storage & Persistence', () => {
     it('validates schema correctly and rejects corrupt/partial data', () => {
         expect(isValidTimerSession(null)).toBe(false);
         expect(isValidTimerSession({})).toBe(false);
-        expect(isValidTimerSession({ version: 1 })).toBe(false); // wrong version
+        expect(isValidTimerSession({ version: 2 })).toBe(false); // legacy version is migrated only when loaded
         expect(isValidTimerSession({ ...createSampleSession(), sessionId: '' })).toBe(false);
         expect(isValidTimerSession({ ...createSampleSession(), revision: 0 })).toBe(false);
         expect(isValidTimerSession({ ...createSampleSession(), revision: 1.5 })).toBe(false);
@@ -88,7 +88,7 @@ describe('Timer Storage & Persistence', () => {
         expect(loaded).toBeNull();
     });
 
-    it('auto-recovers running session to expired when autoStop is OFF upon reload past deadline', () => {
+    it('keeps a running session unchanged during pure storage read', () => {
         const session = createSampleSession({
             autoStop: false,
             state: 'running',
@@ -99,11 +99,11 @@ describe('Timer Storage & Persistence', () => {
         // Reload 35 minutes later
         const loaded = loadStoredTimerSession(scope, baseTime + 35 * 60 * 1000);
         expect(loaded).not.toBeNull();
-        expect(loaded?.state).toBe('expired');
+        expect(loaded?.state).toBe('running');
         expect(loaded?.segments[0].stoppedAt).toBeUndefined(); // Remains open
     });
 
-    it('auto-recovers running session to stopped_pending_record when autoStop is ON upon reload past deadline', () => {
+    it('keeps an auto-stop session unchanged during pure storage read', () => {
         const deadline = baseTime + 30 * 60 * 1000;
         const session = createSampleSession({
             autoStop: true,
@@ -115,8 +115,27 @@ describe('Timer Storage & Persistence', () => {
         // Reload 60 minutes later
         const loaded = loadStoredTimerSession(scope, baseTime + 60 * 60 * 1000);
         expect(loaded).not.toBeNull();
-        expect(loaded?.state).toBe('stopped_pending_record');
-        expect(loaded?.segments[0].stoppedAt).toBe(deadline); // Exact deadline
+        expect(loaded?.state).toBe('running');
+        expect(loaded?.segments[0].stoppedAt).toBeUndefined();
+    });
+
+    it('migrates a legacy recording attempt to an unknown reservation without deleting work', () => {
+        const legacy = {
+            ...createSampleSession(),
+            version: 2,
+            recordingAttemptId: 'legacy-attempt'
+        };
+        window.localStorage.setItem(getTimerStorageKeys(scope).session, JSON.stringify(legacy));
+
+        const loaded = loadStoredTimerSession(scope);
+
+        expect(loaded?.version).toBe(3);
+        expect(loaded?.recordingAttempt).toEqual({
+            id: 'legacy-attempt',
+            openedAt: baseTime,
+            phase: 'unknown'
+        });
+        expect(loaded?.state).toBe('running');
     });
 
     it('persists and loads timer preferences independently', () => {
@@ -232,7 +251,9 @@ describe('Timer Storage & Persistence', () => {
         persistTimerSession(session, scope);
 
         expect(calculateTimerElapsed(session)).toBe(segmentCount * 60_000);
-        expect(loadStoredTimerSession(scope)).toEqual(session);
+        const expected = { ...session };
+        delete expected.deadlineAt;
+        expect(loadStoredTimerSession(scope)).toEqual(expected);
         expect(isValidTimerSession(JSON.parse(serialized))).toBe(true);
         if (segmentCount === 256) {
             expect(new TextEncoder().encode(serialized).byteLength).toBeLessThan(64 * 1024);

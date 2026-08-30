@@ -123,6 +123,34 @@ describe('Timer UI Components', () => {
 
             expect(screen.getByTestId('global-timer-record-button')).toBeTruthy();
             expect(screen.getByTestId('global-timer-manage-button')).toBeTruthy();
+            expect(screen.getByTestId('global-timer-pending-text').textContent).toContain('00:30');
+        });
+
+        it('requires explicit confirmation to resolve an unknown recording outcome', async () => {
+            const session = {
+                version: 3,
+                revision: 2,
+                sessionId: 'unknown-session',
+                issueId: '123',
+                subject: 'API設計',
+                autoStop: false,
+                state: 'stopped_pending_record' as const,
+                recordingAttempt: { id: 'unknown-attempt', openedAt: Date.now(), phase: 'unknown' as const },
+                segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
+                createdAt: Date.now() - 30 * 60 * 1000,
+                updatedAt: Date.now()
+            };
+            useTimerStore.setState({ session, pendingWorkModalOpen: true, isReady: true });
+            persistTimerSession(session);
+
+            render(<PendingWorkModal />);
+
+            fireEvent.click(screen.getByTestId('pending-work-unknown-unregistered'));
+            expect(screen.getByTestId('pending-work-unknown-confirm')).toBeTruthy();
+            fireEvent.click(screen.getByTestId('pending-work-unknown-confirm-button'));
+
+            await waitFor(() => expect(useTimerStore.getState().session?.recordingAttempt).toBeUndefined());
+            expect(useTimerStore.getState().session?.state).toBe('stopped_pending_record');
         });
 
         it('quick extend button extends the timer by 15 minutes', async () => {
