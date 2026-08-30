@@ -308,6 +308,37 @@ describe('IssueIframeDialog', () => {
         });
     });
 
+    it('does not refetch trackers when the same Issue changes URL representation', async () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123', queryDialogUrl: null });
+
+        const { container } = render(<IssueIframeDialog />);
+        await waitFor(() => {
+            expect(apiClient.getSubtaskTrackers).toHaveBeenCalledTimes(1);
+        });
+
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const iframeWindow = { location: { href: 'http://example.com/issues/123' }, document: doc };
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: iframeWindow,
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(apiClient.getSubtaskTrackers).toHaveBeenCalledTimes(1);
+        });
+
+        iframeWindow.location.href = 'http://example.com/issues/123/edit';
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(apiClient.getSubtaskTrackers).toHaveBeenCalledTimes(1);
+        });
+    });
+
     it('shrinks dialog height for short iframe content', async () => {
         const { container } = render(<IssueIframeDialog />);
         const iframe = container.querySelector('iframe') as HTMLIFrameElement;

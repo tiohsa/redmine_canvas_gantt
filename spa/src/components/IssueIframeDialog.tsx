@@ -732,7 +732,7 @@ export const IssueIframeDialog: React.FC = () => {
             generation: ++trackerReadGenerationRef.current,
             projectId: useTaskStore.getState().currentProjectId,
             query: { parentId, operationIssueIds },
-            scope: { dialog: effectiveDialogUrl },
+            scope: { dialog: 'bulk_subtasks', parentId },
             purpose: 'subtask_trackers',
             mergePolicy: 'replace'
         });
@@ -747,7 +747,7 @@ export const IssueIframeDialog: React.FC = () => {
         return () => {
             if (trackerReadContextRef.current?.contextId === context.contextId) trackerReadContextRef.current = null;
         };
-    }, [effectiveDialogUrl, parentId, shouldShowBulkSubtasks]);
+    }, [parentId, shouldShowBulkSubtasks]);
 
     React.useEffect(() => {
         iframeEscapeCleanupRef.current?.();
