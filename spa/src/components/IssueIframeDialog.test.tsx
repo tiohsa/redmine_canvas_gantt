@@ -898,6 +898,69 @@ describe('IssueIframeDialog', () => {
         });
     });
 
+    it('clears the timer when success redirect contains the TimeEntry query form', async () => {
+        const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
+        const session = {
+            version: 4 as const,
+            revision: 1,
+            sessionId: 'query-form-success',
+            issueId: 123,
+            subject: 'Task 123',
+            autoStop: false,
+            state: 'stopped_pending_record' as const,
+            recordingAttempt: { id: 'query-form-attempt', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
+        };
+        const recordingContext = {
+            origin: 'timer' as const,
+            sessionId: session.sessionId,
+            issueId: session.issueId,
+            attemptId: session.recordingAttempt!.id
+        };
+        useTimerStore.setState({ session });
+        persistTimerSession(session);
+        useUIStore.setState({
+            issueDialogUrl: '/issues/123/time_entries/new',
+            issueDialogContext: { timerRecording: recordingContext }
+        });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const formDoc = document.implementation.createHTMLDocument('iframe');
+        formDoc.body.innerHTML = '<form id="new_time_entry" action="/time_entries"><input name="time_entry[hours]" value="0.5" /><input type="submit" value="Create" /></form>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/time_entries/new' }, document: formDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: formDoc, configurable: true });
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(within(screen.getByTestId('issue-dialog-footer')).getByRole('button', { name: /Log time|Save|button_log_time/i }));
+
+        const successDoc = document.implementation.createHTMLDocument('iframe');
+        successDoc.body.innerHTML = `
+            <div class="flash notice">Successful creation.</div>
+            <form id="query_form" action="/projects/ecookbook/time_entries" method="get">
+              <input name="set_filter" type="hidden" value="1" />
+              <select name="query[activity_id]"><option value="1">Development</option></select>
+            </form>
+        `;
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/projects/ecookbook/time_entries' }, document: successDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: successDoc, configurable: true });
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(completeSpy).toHaveBeenCalledWith(recordingContext);
+            expect(useTimerStore.getState().session).toBeNull();
+            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+        });
+    });
+
     it('clears the matching timer when Redmine redirects back to Canvas Gantt with a success notice', async () => {
         const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         const session = {

@@ -11,6 +11,7 @@ import { apiClient } from '../api/client';
 import { canApplyReadResponse, createReadContext, type ReadContext } from '../stores/taskStore/stateContract';
 import { useTimerStore } from '../stores/TimerStore';
 import { detectTimerRecordingOutcome } from '../domain/timer/timerRecordingOutcome';
+import { classifyIssueDialogForm, type IssueDialogFormTarget } from '../utils/issueDialogForms';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
@@ -80,15 +81,25 @@ const findJournalEditForm = (doc: Document): HTMLFormElement | null => {
     );
 };
 
+const findFormByTarget = (doc: Document, target: Exclude<IssueDialogFormTarget, null>): HTMLFormElement | null => {
+    return Array.from(doc.forms).find(form => classifyIssueDialogForm(form) === target) ?? null;
+};
+
+const getSaveTargetForForm = (form: HTMLFormElement, currentPath?: string): SaveTarget => {
+    const target = classifyIssueDialogForm(form);
+    if (target === 'issue') {
+        const path = currentPath ?? form.ownerDocument.defaultView?.location?.pathname ?? '';
+        const isNewIssue = path.includes('/issues/new') || /\/projects\/[^/]+\/issues\/new\/?$/.test(path);
+        return isNewIssue ? 'new-issue' : 'issue';
+    }
+    return target;
+};
+
 const getActiveSaveForm = (doc: Document, currentPath?: string): { form: HTMLFormElement; target: SaveTarget } | null => {
     const journalForm = findJournalEditForm(doc);
     if (journalForm) return { form: journalForm, target: 'journal' };
 
-    const timeEntryForm =
-        doc.querySelector<HTMLFormElement>('form[action*="/time_entries"]') ||
-        doc.querySelector<HTMLFormElement>('#new_time_entry') ||
-        doc.querySelector<HTMLFormElement>('form.new_time_entry') ||
-        doc.querySelector<HTMLFormElement>('form[id^="edit_time_entry"]');
+    const timeEntryForm = findFormByTarget(doc, 'time_entry');
     if (timeEntryForm) return { form: timeEntryForm, target: 'time_entry' };
 
     const issueForm = doc.querySelector<HTMLFormElement>('#issue-form');
@@ -98,6 +109,9 @@ const getActiveSaveForm = (doc: Document, currentPath?: string): { form: HTMLFor
         return { form: issueForm, target: isNewIssue ? 'new-issue' : 'issue' };
     }
 
+    // Redmine's issue list uses #query_form as a search form, while the
+    // saved-query editor uses #query-form as its save target. Both are
+    // classified as Query, but only the editor is an active save form.
     const queryForm = doc.querySelector<HTMLFormElement>('#query-form');
     if (queryForm) return { form: queryForm, target: 'query' };
 
@@ -399,14 +413,13 @@ export const IssueIframeDialog: React.FC = () => {
             iframeSubmitCleanupRef.current?.();
             iframeSubmitCleanupRef.current = null;
             const handleFormSubmit = (event: Event) => {
-                const detected = getActiveSaveForm(doc, urlParsed.pathname);
                 const eventTarget = event.target as HTMLElement | null;
-                const form = eventTarget?.tagName === 'FORM' ? eventTarget as HTMLFormElement : detected?.form;
-                const target = detected?.target ?? (
-                    form?.id === 'new_time_entry' || form?.action?.includes('/time_entries') ? 'time_entry' :
-                    form?.id === 'issue-form' ? 'issue' :
-                    form?.id === 'query-form' ? 'query' : null
-                );
+                const submittedForm = eventTarget?.tagName === 'FORM' ? eventTarget as HTMLFormElement : null;
+                const detected = submittedForm
+                    ? { form: submittedForm, target: getSaveTargetForForm(submittedForm, urlParsed.pathname) }
+                    : getActiveSaveForm(doc, urlParsed.pathname);
+                const form = submittedForm ?? detected?.form;
+                const target = detected?.target ?? null;
                 if (target) {
                     if (target === 'time_entry' && issueDialogContext?.timerRecording && !allowNativeTimerSubmitRef.current) {
                         event.preventDefault();

@@ -39,5 +39,6 @@ test('records timer work through the standard Redmine TimeEntry redirect', async
   await page.getByTestId('issue-dialog-footer').getByRole('button', { name: /Log time|Save|button_log_time/i }).click();
 
   await expect(page.locator('iframe[src*="/time_entries/new"]')).toHaveCount(0);
+  await expect(page.getByTestId('issue-dialog-error')).toHaveCount(0);
   await expect.poll(() => timerSessionCount(page)).toBe(0);
 });

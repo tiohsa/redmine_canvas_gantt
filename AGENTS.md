@@ -157,6 +157,14 @@ bundle exec rspec plugins/redmine_canvas_gantt/spec
 * API mutation/read call boundaries are protected by the allowlist in `spa/scripts/check-async-contract.mjs`. Before adding a new direct API call, integrate it into an existing service/store boundary. Update the allowlist and tests only when intentionally introducing a new boundary.
 * Business calendars must use the same resolution rules across backend and SPA date calculations, validation, and rendering. `examples/business_calendars/` contains configuration examples, while `tools/holiday_generator/` is a generation tool. Do not confuse company-specific customizations with managed generated files.
 
+## Recurring Implementation Notes
+
+* `IssueIframeDialog` のiframe内フォームは `action` URLだけで役割を判定しない。RedmineのTimeEntry一覧の `query_form` も `/time_entries` をactionに持ち得るため、`query_form` / `query-form` を先に除外し、TimeEntry Editorは `new_time_entry`、`edit_time_entry*`、`new_time_entry` class、または `time_entry[...]` fieldのsemantic structureで分類する。判定ロジックは `spa/src/utils/issueDialogForms.ts` に集約し、DOMパターンごとのunit testを追加する。
+* iframeフォーム判定を変更するときは、フッター保存ボタンの対象選択とiframe内のnative `submit` listenerの両方を同じclassifierへ接続する。片方だけ直すと、保存ボタンとEnter／フォームボタン押下でTimerの保存結果が不一致になる。
+* Work TimerのTimeEntry成功判定はredirect先pathnameを固定しない。`back_url` によりCanvas Ganttへ戻ることがあるため、送信開始済み、TimeEntry Editorから離脱、成功flash表示、validation errorなしを組み合わせる。`IssueIframeDialog.test.tsx` のquery form混入回帰と `spa/tests/e2e-redmine/work-timer.pw.ts` の実Redmine lifecycle検証を併用する。
+* 互換性E2Eを起動する前に、既存のDockerコンテナ・イメージ・DB volumeを確認する。Composeの既定はRedmine 7.0.0で、6.0.6／6.1.2はREADMEの `REDMINE_IMAGE` 切替を使う。既存環境を検証目的で `down -v` したり削除したりせず、対象versionのbase URLを明示してテストする。
+* `.codegraph/` が存在しても `codegraph_status` がDB open errorになる場合は、同じ問い合わせを繰り返さない。失敗を記録したうえで、対象ファイルが絞れたら直接読み取りへ切り替える。`.codegraph/` 自体が存在しない場合だけ、初期化が必要かを確認する。
+
 ## Security and Safety
 
 * Do not commit API keys, tokens, or confidential information.
