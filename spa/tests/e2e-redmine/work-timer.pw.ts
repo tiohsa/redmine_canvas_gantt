@@ -44,6 +44,7 @@ test('records timer work through the standard Redmine TimeEntry redirect', async
   const timeEntryFrame = page.frameLocator('iframe[src*="/time_entries/new"]');
   const hours = timeEntryFrame.locator('input[name="time_entry[hours]"]');
   await expect(hours).toBeVisible();
+  await expect(page.getByTestId('issue-dialog-header')).toContainText('#2');
   await expect(timeEntryFrame.getByRole('link', { name: /cancel/i })).toBeHidden();
   await expect(page.getByText('Bulk Ticket Creation')).toHaveCount(0);
   const dialogFooter = page.getByTestId('issue-dialog-footer');

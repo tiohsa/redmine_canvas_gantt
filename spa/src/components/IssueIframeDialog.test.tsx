@@ -223,6 +223,29 @@ describe('IssueIframeDialog', () => {
         expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
     });
 
+    it('preserves the related Issue context in a direct TimeEntry header', () => {
+        useTaskStore.setState({
+            tasks: [{
+                id: '123',
+                subject: 'Task 123',
+                ratioDone: 0,
+                statusId: 1,
+                lockVersion: 1,
+                editable: true,
+                rowIndex: 0,
+                hasChildren: false
+            }]
+        });
+        useUIStore.setState({ issueDialogUrl: '/issues/123/time_entries/new', issueDialogContext: null, queryDialogUrl: null });
+
+        render(<IssueIframeDialog />);
+
+        expect(screen.getByText('Issue #123')).toBeInTheDocument();
+        expect(screen.getByText('Task 123')).toBeInTheDocument();
+        expect(screen.queryByText('Edit', { exact: true })).not.toBeInTheDocument();
+        expect(screen.queryByText('Bulk Ticket Creation')).not.toBeInTheDocument();
+    });
+
     it.each([
         ['timer-originated TimeEntry', '/issues/123/time_entries/new', { origin: 'timer' as const, sessionId: 's1', issueId: 123, attemptId: 'a1' }],
         ['direct TimeEntry', '/issues/123/time_entries/new', null],
@@ -240,6 +263,49 @@ describe('IssueIframeDialog', () => {
         expect(screen.queryByText('Bulk Ticket Creation')).not.toBeInTheDocument();
         await Promise.resolve();
         expect(apiClient.getSubtaskTrackers).not.toHaveBeenCalled();
+    });
+
+    it('updates bulk eligibility when the iframe navigates to an Issue sub-resource', async () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123', queryDialogUrl: null });
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = '<div id="content"><p>Issue relation</p></div>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/relations/4' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(screen.queryByText('Bulk Ticket Creation')).not.toBeInTheDocument();
+        });
+    });
+
+    it('uses the current iframe Issue as the bulk parent after navigation', async () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123', queryDialogUrl: null });
+        useTaskStore.setState({ tasks: [], allTasks: [] });
+        vi.clearAllMocks();
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = '<div id="content"><p>Different issue</p></div>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/456' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(screen.getByText('Bulk Ticket Creation')).toBeInTheDocument();
+            expect(screen.getByText('Issue #456')).toBeInTheDocument();
+            expect(apiClient.getSubtaskTrackers).toHaveBeenCalledWith('456', expect.any(Array));
+        });
     });
 
     it('shrinks dialog height for short iframe content', async () => {

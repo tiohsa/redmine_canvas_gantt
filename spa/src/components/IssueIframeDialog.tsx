@@ -70,8 +70,12 @@ const getIssueShowIdFromPath = (path: string): string | null => {
     return issueMatch?.[1] ?? null;
 };
 
-const getIssueIdFromPath = (path: string): string | null => (
+const getIssuePageIdFromPath = (path: string): string | null => (
     path.match(/\/issues\/(\d+)(?:\/edit)?\/?$/)?.[1] ?? null
+);
+
+const getRelatedIssueIdFromPath = (path: string): string | null => (
+    path.match(/\/issues\/(\d+)(?:\/|$)/)?.[1] ?? null
 );
 
 const isTimeEntryDialogUrl = (url: string | null): boolean => {
@@ -185,6 +189,7 @@ export const IssueIframeDialog: React.FC = () => {
     const [defaultTrackerId, setDefaultTrackerId] = React.useState<number | undefined>(undefined);
     const [hasBulkSubjects, setHasBulkSubjects] = React.useState(false);
     const activeDialogUrl = queryDialogUrl || issueDialogUrl;
+    const effectiveDialogUrl = currentIframeUrl ?? activeDialogUrl;
     const isQueryDialog = Boolean(queryDialogUrl);
 
     const handleClose = React.useCallback(() => {
@@ -448,7 +453,7 @@ export const IssueIframeDialog: React.FC = () => {
             doc.addEventListener('submit', handleFormSubmit, true);
             iframeSubmitCleanupRef.current = () => doc.removeEventListener('submit', handleFormSubmit, true);
 
-            const previousUrl = currentIframeUrl || activeDialogUrl || '';
+            const previousUrl = currentIframeUrl ?? activeDialogUrl ?? '';
             const wasTimeEntryForm = saveTargetRef.current === 'time_entry' || previousUrl.includes('/time_entries');
             const urlParsedAfterLoad = new URL(loadedUrl, window.location.origin);
             const pathAfterLoad = urlParsedAfterLoad.pathname;
@@ -648,16 +653,6 @@ export const IssueIframeDialog: React.FC = () => {
     }, [displayedIssueId, hasBulkSubjects]);
 
     const { issueLabel, issueSubject } = React.useMemo(() => {
-        if (displayedIssueId && !isQueryDialog) {
-            const task = useTaskStore.getState().tasks.find(t => String(t.id) === displayedIssueId);
-            if (task) {
-                const label = `${task.trackerName || i18n.t('label_issue') || 'Issue'} #${task.id}`;
-                return { issueLabel: label, issueSubject: task.subject || '' };
-            }
-            const label = `${i18n.t('label_issue') || 'Issue'} #${displayedIssueId}`;
-            return { issueLabel: label, issueSubject: '' };
-        }
-
         if (!activeDialogUrl) return { issueLabel: '', issueSubject: '' };
         if (isQueryDialog) {
             return {
@@ -666,8 +661,8 @@ export const IssueIframeDialog: React.FC = () => {
             };
         }
 
-        const url = activeDialogUrl.split('?')[0];
-        const issueId = getIssueIdFromPath(url);
+        const url = effectiveDialogUrl?.split('?')[0] ?? '';
+        const issueId = getIssuePageIdFromPath(url) ?? getRelatedIssueIdFromPath(url) ?? displayedIssueId;
 
         // 1. Treat only an issue show or edit URL as an issue dialog.
         if (issueId) {
@@ -690,28 +685,28 @@ export const IssueIframeDialog: React.FC = () => {
         // 3. General "Edit" fallback
         const label = i18n.t('button_edit') || 'Edit';
         return { issueLabel: label, issueSubject: '' };
-    }, [activeDialogUrl, displayedIssueId, isQueryDialog]);
+    }, [activeDialogUrl, displayedIssueId, effectiveDialogUrl, isQueryDialog]);
 
-    const initialTimeEntryDialog = Boolean(issueDialogContext?.timerRecording) || isTimeEntryDialogUrl(activeDialogUrl);
+    const initialTimeEntryDialog = Boolean(issueDialogContext?.timerRecording) || isTimeEntryDialogUrl(effectiveDialogUrl);
     const isTimeEntryDialog = initialTimeEntryDialog || saveTarget === 'time_entry';
 
     const isBulkEligibleIssueDialog = React.useMemo(() => {
-        if (!activeDialogUrl || isQueryDialog) return false;
+        if (!effectiveDialogUrl || isQueryDialog) return false;
 
         try {
-            const path = new URL(activeDialogUrl, window.location.origin).pathname;
-            return Boolean(getIssueIdFromPath(path)) || /\/(?:projects\/[^/]+\/)?issues\/new\/?$/.test(path);
+            const path = new URL(effectiveDialogUrl, window.location.origin).pathname;
+            return Boolean(getIssuePageIdFromPath(path)) || /\/(?:projects\/[^/]+\/)?issues\/new\/?$/.test(path);
         } catch {
             return false;
         }
-    }, [activeDialogUrl, isQueryDialog]);
+    }, [effectiveDialogUrl, isQueryDialog]);
 
     const parentId = React.useMemo(() => {
-        if (!activeDialogUrl || isQueryDialog) return undefined;
+        if (!effectiveDialogUrl || isQueryDialog) return undefined;
 
         try {
-            const urlParsed = new URL(activeDialogUrl, window.location.origin);
-            const issueId = getIssueIdFromPath(urlParsed.pathname);
+            const urlParsed = new URL(effectiveDialogUrl, window.location.origin);
+            const issueId = getIssuePageIdFromPath(urlParsed.pathname);
             if (issueId) return issueId;
 
             const isNewIssuePath = /\/(?:projects\/[^/]+\/)?issues\/new\/?$/.test(urlParsed.pathname);
@@ -722,7 +717,7 @@ export const IssueIframeDialog: React.FC = () => {
             console.error("Failed to parse issue dialog URL", e);
             return undefined;
         }
-    }, [activeDialogUrl, isQueryDialog]);
+    }, [effectiveDialogUrl, isQueryDialog]);
     const parentTask = useTaskStore(state => parentId ? state.tasks.find(task => task.id === parentId) : undefined);
     const canBulkCreateForParent = !parentTask?.isContextOnly;
     const shouldShowBulkSubtasks = isBulkEligibleIssueDialog && !isTimeEntryDialog && canBulkCreateForParent;
@@ -737,7 +732,7 @@ export const IssueIframeDialog: React.FC = () => {
             generation: ++trackerReadGenerationRef.current,
             projectId: useTaskStore.getState().currentProjectId,
             query: { parentId, operationIssueIds },
-            scope: { dialog: activeDialogUrl },
+            scope: { dialog: effectiveDialogUrl },
             purpose: 'subtask_trackers',
             mergePolicy: 'replace'
         });
@@ -752,7 +747,7 @@ export const IssueIframeDialog: React.FC = () => {
         return () => {
             if (trackerReadContextRef.current?.contextId === context.contextId) trackerReadContextRef.current = null;
         };
-    }, [activeDialogUrl, parentId, shouldShowBulkSubtasks]);
+    }, [effectiveDialogUrl, parentId, shouldShowBulkSubtasks]);
 
     React.useEffect(() => {
         iframeEscapeCleanupRef.current?.();
@@ -850,7 +845,7 @@ export const IssueIframeDialog: React.FC = () => {
 
     if (!activeDialogUrl) return null;
 
-    const externalDialogUrl = currentIframeUrl || activeDialogUrl;
+    const externalDialogUrl = effectiveDialogUrl ?? undefined;
     const isIssueShowMode = dialogMode === 'issue-show' && !isQueryDialog;
     const isJournalSaveMode = saveTarget === 'journal' || isJournalEditing;
     const shouldShowSave =
