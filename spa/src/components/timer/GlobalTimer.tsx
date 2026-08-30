@@ -49,6 +49,12 @@ export const GlobalTimer: React.FC = () => {
     const isRunning = session.state === 'running';
     const isExpired = session.state === 'expired';
     const isPending = session.state === 'stopped_pending_record';
+    const recordingPhase = session.recordingAttempt?.phase;
+    const pendingPrimaryAction = session.recordingAttempt === undefined
+        ? 'record'
+        : recordingPhase === 'unknown'
+            ? 'resolve'
+            : 'recover';
 
     const handleExtend = (minutes: TimerIntervalMinutes) => {
         setIsExtendMenuOpen(false);
@@ -278,7 +284,7 @@ export const GlobalTimer: React.FC = () => {
                         <button
                             type="button"
                             data-testid="global-timer-record-button"
-                            onClick={() => void (session.recordingAttempt?.phase === 'unknown' ? openPendingWorkModal() : recordTime())}
+                            onClick={() => void (pendingPrimaryAction === 'record' ? recordTime() : openPendingWorkModal())}
                             style={{
                                 padding: '5px 14px',
                                 borderRadius: '9999px',
@@ -290,7 +296,11 @@ export const GlobalTimer: React.FC = () => {
                                 cursor: 'pointer'
                             }}
                         >
-                            📝 {tr('label_timer_record_time') || 'Record'}
+                            📝 {pendingPrimaryAction === 'record'
+                                ? (tr('label_timer_record_time') || 'Record')
+                                : pendingPrimaryAction === 'recover'
+                                    ? (tr('label_timer_recording_recover') || 'Recover recording')
+                                    : (tr('label_timer_recording_unknown') || 'Confirm recording result')}
                         </button>
 
                         <button

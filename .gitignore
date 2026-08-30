@@ -1,7 +1,10 @@
 .vite/
 .antigravitycli/
 .codegraph/
-docs/
+docs/*
+!docs/architecture/
+docs/architecture/*
+!docs/architecture/timer-session-architecture.png
 graphify-out/
 spec-docs/
 DESIGN.md
@@ -48,4 +51,3 @@ Thumbs.db
 .tokensave
 spa/bench/results/
 .agents/
-

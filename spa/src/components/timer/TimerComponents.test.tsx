@@ -130,6 +130,116 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('global-timer-pending-text').textContent).toContain('00:30');
         });
 
+        it('opens recovery for an editing recording attempt without creating a new attempt', () => {
+            const recordingAttempt = { id: 'editing-attempt', ownerTabId: 'other-tab', openedAt: Date.now(), phase: 'editing' as const };
+            const session = {
+                version: 4,
+                revision: 1,
+                sessionId: 'editing-session',
+                issueId: '123',
+                subject: 'API設計',
+                autoStop: false,
+                state: 'stopped_pending_record' as const,
+                recordingAttempt,
+                segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
+                createdAt: Date.now() - 30 * 60 * 1000,
+                updatedAt: Date.now()
+            };
+            useTimerStore.setState({ session, isReady: true });
+            persistTimerSession(session);
+            const recordTime = vi.spyOn(useTimerStore.getState(), 'recordTime');
+
+            render(<GlobalTimer />);
+            expect(screen.getByTestId('global-timer-record-button')).toHaveTextContent('Recover recording');
+            fireEvent.click(screen.getByTestId('global-timer-record-button'));
+
+            expect(useTimerStore.getState().pendingWorkModalOpen).toBe(true);
+            expect(useTimerStore.getState().session?.recordingAttempt).toEqual(recordingAttempt);
+            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+            expect(recordTime).not.toHaveBeenCalled();
+        });
+
+        it('opens recovery for a submitting recording attempt without creating a new attempt', () => {
+            const recordingAttempt = { id: 'submitting-attempt', ownerTabId: 'other-tab', openedAt: Date.now(), phase: 'submitting' as const };
+            const session = {
+                version: 4,
+                revision: 1,
+                sessionId: 'submitting-session',
+                issueId: '123',
+                subject: 'API設計',
+                autoStop: false,
+                state: 'stopped_pending_record' as const,
+                recordingAttempt,
+                segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
+                createdAt: Date.now() - 30 * 60 * 1000,
+                updatedAt: Date.now()
+            };
+            useTimerStore.setState({ session, isReady: true });
+            persistTimerSession(session);
+            const recordTime = vi.spyOn(useTimerStore.getState(), 'recordTime');
+
+            render(<GlobalTimer />);
+            expect(screen.getByTestId('global-timer-record-button')).toHaveTextContent('Recover recording');
+            fireEvent.click(screen.getByTestId('global-timer-record-button'));
+
+            expect(useTimerStore.getState().pendingWorkModalOpen).toBe(true);
+            expect(useTimerStore.getState().session?.recordingAttempt).toEqual(recordingAttempt);
+            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+            expect(recordTime).not.toHaveBeenCalled();
+        });
+
+        it('starts recording only when the pending session has no recording attempt', async () => {
+            const session = {
+                version: 4,
+                revision: 1,
+                sessionId: 'recordable-session',
+                issueId: '123',
+                subject: 'API設計',
+                autoStop: false,
+                state: 'stopped_pending_record' as const,
+                segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
+                createdAt: Date.now() - 30 * 60 * 1000,
+                updatedAt: Date.now()
+            };
+            useTimerStore.setState({ session, isReady: true });
+            persistTimerSession(session);
+
+            render(<GlobalTimer />);
+            expect(screen.getByTestId('global-timer-record-button')).toHaveTextContent('Record');
+            fireEvent.click(screen.getByTestId('global-timer-record-button'));
+
+            await waitFor(() => expect(useUIStore.getState().issueDialogUrl).toContain('/issues/123/time_entries/new'));
+            expect(useTimerStore.getState().pendingWorkModalOpen).toBe(false);
+        });
+
+        it('opens unknown recording resolution from the pending timer CTA', () => {
+            const recordingAttempt = { id: 'unknown-attempt', ownerTabId: 'other-tab', openedAt: Date.now(), phase: 'unknown' as const };
+            const session = {
+                version: 4,
+                revision: 1,
+                sessionId: 'unknown-session',
+                issueId: '123',
+                subject: 'API設計',
+                autoStop: false,
+                state: 'stopped_pending_record' as const,
+                recordingAttempt,
+                segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
+                createdAt: Date.now() - 30 * 60 * 1000,
+                updatedAt: Date.now()
+            };
+            useTimerStore.setState({ session, isReady: true });
+            persistTimerSession(session);
+            const recordTime = vi.spyOn(useTimerStore.getState(), 'recordTime');
+
+            render(<GlobalTimer />);
+            expect(screen.getByTestId('global-timer-record-button')).toHaveTextContent('Confirm recording result');
+            fireEvent.click(screen.getByTestId('global-timer-record-button'));
+
+            expect(useTimerStore.getState().pendingWorkModalOpen).toBe(true);
+            expect(useTimerStore.getState().session?.recordingAttempt).toEqual(recordingAttempt);
+            expect(recordTime).not.toHaveBeenCalled();
+        });
+
         it('requires explicit confirmation to resolve an unknown recording outcome', async () => {
             const session = {
                 version: 4,
