@@ -159,11 +159,11 @@ bundle exec rspec plugins/redmine_canvas_gantt/spec
 
 ## Recurring Implementation Notes
 
-* `IssueIframeDialog` のiframe内フォームは `action` URLだけで役割を判定しない。RedmineのTimeEntry一覧の `query_form` も `/time_entries` をactionに持ち得るため、`query_form` / `query-form` を先に除外し、TimeEntry Editorは `new_time_entry`、`edit_time_entry*`、`new_time_entry` class、または `time_entry[...]` fieldのsemantic structureで分類する。判定ロジックは `spa/src/utils/issueDialogForms.ts` に集約し、DOMパターンごとのunit testを追加する。
-* iframeフォーム判定を変更するときは、フッター保存ボタンの対象選択とiframe内のnative `submit` listenerの両方を同じclassifierへ接続する。片方だけ直すと、保存ボタンとEnter／フォームボタン押下でTimerの保存結果が不一致になる。
-* Work TimerのTimeEntry成功判定はredirect先pathnameを固定しない。`back_url` によりCanvas Ganttへ戻ることがあるため、送信開始済み、TimeEntry Editorから離脱、成功flash表示、validation errorなしを組み合わせる。`IssueIframeDialog.test.tsx` のquery form混入回帰と `spa/tests/e2e-redmine/work-timer.pw.ts` の実Redmine lifecycle検証を併用する。
-* 互換性E2Eを起動する前に、既存のDockerコンテナ・イメージ・DB volumeを確認する。Composeの既定はRedmine 7.0.0で、6.0.6／6.1.2はREADMEの `REDMINE_IMAGE` 切替を使う。既存環境を検証目的で `down -v` したり削除したりせず、対象versionのbase URLを明示してテストする。
-* `.codegraph/` が存在しても `codegraph_status` がDB open errorになる場合は、同じ問い合わせを繰り返さない。失敗を記録したうえで、対象ファイルが絞れたら直接読み取りへ切り替える。`.codegraph/` 自体が存在しない場合だけ、初期化が必要かを確認する。
+* Do not determine the role of forms inside the `IssueIframeDialog` iframe solely from the `action` URL. Redmine's TimeEntry list `query_form` may also use `/time_entries` as its action, so first exclude `query_form` / `query-form`. Classify a TimeEntry Editor by `new_time_entry`, `edit_time_entry*`, the `new_time_entry` class, or the semantic structure of `time_entry[...]` fields. Centralize the classification logic in `spa/src/utils/issueDialogForms.ts` and add unit tests for each DOM pattern.
+* When changing iframe form classification, connect both the footer save button's target selection and the iframe's native `submit` listener to the same classifier. Fixing only one path causes inconsistent Timer save results between the save button and submissions triggered by Enter or an in-form button.
+* Do not determine Work Timer TimeEntry success from a fixed redirect pathname. Because `back_url` may redirect back to Canvas Gantt, combine the following signals: submission has started, navigation away from the TimeEntry Editor, a success flash is displayed, and no validation error is present. Use both the query-form regression coverage in `IssueIframeDialog.test.tsx` and the real Redmine lifecycle verification in `spa/tests/e2e-redmine/work-timer.pw.ts`.
+* Before starting compatibility E2E tests, inspect the existing Docker containers, images, and DB volumes. The Compose default is Redmine 7.0.0; use the `REDMINE_IMAGE` override documented in the README for 6.0.6 and 6.1.2. Do not run `down -v` or delete an existing environment solely for verification. Instead, explicitly specify the base URL for the target version when running tests.
+* If `.codegraph/` exists but `codegraph_status` returns a DB open error, do not repeat the same query. Record the failure and switch to direct file inspection once the relevant files have been narrowed down. Check whether initialization is required only when `.codegraph/` itself does not exist.
 
 ## Security and Safety
 
