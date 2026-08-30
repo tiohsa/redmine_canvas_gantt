@@ -121,6 +121,7 @@ const submitForm = (form: HTMLFormElement): void => {
 
 export const IssueIframeDialog: React.FC = () => {
     const issueDialogUrl = useUIStore(state => state.issueDialogUrl);
+    const issueDialogContext = useUIStore(state => state.issueDialogContext);
     const queryDialogUrl = useUIStore(state => state.queryDialogUrl);
     const closeIssueDialog = useUIStore(state => state.closeIssueDialog);
     const closeQueryDialog = useUIStore(state => state.closeQueryDialog);
@@ -370,19 +371,23 @@ export const IssueIframeDialog: React.FC = () => {
             const issueIdAfterLoad = getIssueShowIdFromPath(pathAfterLoad);
 
             const isTimeEntryFormPage = pathAfterLoad.includes('/time_entries/new') || (pathAfterLoad.includes('/time_entries') && (pathAfterLoad.includes('/new') || pathAfterLoad.includes('/edit')));
+            const hasTimeEntrySuccessNotice = Boolean(doc.querySelector('.flash.notice'));
             const isTimeEntrySuccessDestination = !isTimeEntryFormPage && (
+                hasTimeEntrySuccessNotice ||
                 Boolean(issueIdAfterLoad) ||
                 pathAfterLoad.includes('/time_entries') ||
                 (pathAfterLoad.includes('/projects/') && pathAfterLoad.endsWith('/issues'))
             );
+            const timerRecordingIssueMatches = !issueDialogContext?.timerRecording ||
+                !issueIdAfterLoad ||
+                String(issueIdAfterLoad) === String(issueDialogContext.timerRecording.issueId);
 
-            const isTimeEntrySuccess = isSavingRef.current && wasTimeEntryForm && !error && isTimeEntrySuccessDestination;
+            const isTimeEntrySuccess = isSavingRef.current && wasTimeEntryForm && !error &&
+                isTimeEntrySuccessDestination && timerRecordingIssueMatches;
 
             if (isTimeEntrySuccess) {
-                const currentTimer = useTimerStore.getState().session;
-                const targetId = issueIdAfterLoad || currentTimer?.issueId;
-                if (targetId) {
-                    useTimerStore.getState().clearSessionOnSaveSuccess(targetId);
+                if (issueDialogContext?.timerRecording) {
+                    void useTimerStore.getState().completeTimerRecording(issueDialogContext.timerRecording);
                 }
                 saveTargetRef.current = null;
                 setSaveTarget(null);
@@ -448,7 +453,7 @@ export const IssueIframeDialog: React.FC = () => {
             }
             setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
         }
-    }, [activeDialogUrl, bindIframeSizeObservers, currentIframeUrl, detectSaveTarget, handleClose, handleJournalSaveCompletion, isQueryDialog, measureDialogHeight, refreshData]);
+    }, [activeDialogUrl, bindIframeSizeObservers, currentIframeUrl, detectSaveTarget, handleClose, handleJournalSaveCompletion, isQueryDialog, issueDialogContext, measureDialogHeight, refreshData]);
 
     const handleSave = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;

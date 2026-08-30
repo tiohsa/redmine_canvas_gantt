@@ -1,23 +1,23 @@
 import { create } from 'zustand';
 import type { Task } from '../types';
-import type { TimerIntervalMinutes, TimerPreferences, TimerSession } from '../types/timer';
+import type { TimerIntervalMinutes, TimerPreferences, TimerRecordingContext, TimerSession } from '../types/timer';
 import {
+    calculateCurrentDeadlineIntervalMinutes,
     calculateRecordedHours,
     calculateTimerElapsed,
     createTimerSession,
     evaluateTimerTick,
     extendTimerSession,
+    generateSessionId,
     stopTimerSession
 } from '../domain/timer/timerDomain';
 import {
     acquireTimerSession,
-    clearStoredTimerSession,
+    getTimerStorageKeys,
     loadStoredTimerPreferences,
     loadStoredTimerSession,
     persistTimerPreferences,
-    persistTimerSession,
-    TIMER_PREFS_STORAGE_KEY,
-    TIMER_SESSION_STORAGE_KEY
+    mutateStoredTimerSession
 } from '../services/timerStorage';
 import { requestNotificationPermission, sendTimerNotification } from '../services/timerNotification';
 import { buildRedmineUrl } from '../utils/redmineUrl';
@@ -44,20 +44,20 @@ export interface TimerStoreState {
     otherPendingNotice: OtherPendingNotice | null;
 
     // Actions
-    startTimer: (task: Task, minutes: TimerIntervalMinutes, autoStop?: boolean) => boolean;
-    extendTimer: (minutes: TimerIntervalMinutes) => void;
-    stopTimer: () => void;
-    resumeTimer: (minutes: TimerIntervalMinutes) => void;
-    discardTimer: () => void;
-    recordTime: () => void;
-    clearSessionOnSaveSuccess: (issueId: number | string) => void;
+    startTimer: (task: Task, minutes: TimerIntervalMinutes) => Promise<boolean>;
+    extendTimer: (minutes: TimerIntervalMinutes) => Promise<void>;
+    stopTimer: () => Promise<void>;
+    resumeTimer: (minutes: TimerIntervalMinutes) => Promise<void>;
+    discardTimer: () => Promise<void>;
+    recordTime: () => Promise<void>;
+    completeTimerRecording: (context: TimerRecordingContext) => Promise<void>;
     setAutoStopPreference: (autoStop: boolean) => void;
     openStartDialog: (task: Task) => void;
     closeStartDialog: () => void;
     openPendingWorkModal: () => void;
     closePendingWorkModal: () => void;
     closeOtherNotices: () => void;
-    tick: () => void;
+    tick: () => Promise<void>;
     syncFromStorage: () => void;
 }
 
@@ -72,8 +72,10 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
     otherRunningNotice: null,
     otherPendingNotice: null,
 
-    startTimer: (task: Task, minutes: TimerIntervalMinutes, customAutoStop?: boolean) => {
-        const state = get();
+    startTimer: async (task: Task, minutes: TimerIntervalMinutes) => {
+        const canonicalSession = loadStoredTimerSession();
+        const state = { ...get(), session: canonicalSession };
+        if (canonicalSession !== get().session) set({ session: canonicalSession });
 
         // 1. Check if an active or pending timer already exists
         if (state.session) {
@@ -109,7 +111,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
         }
 
         // 3. User autoStop preference snapshot
-        const autoStop = customAutoStop ?? state.preferences.autoStop;
+        const autoStop = state.preferences.autoStop;
 
         // Request notification permission opportunistically on user click
         void requestNotificationPermission();
@@ -126,7 +128,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
         });
 
         // 4. Concurrency check and acquire
-        const acquireResult = acquireTimerSession(newSession);
+        const acquireResult = await acquireTimerSession(newSession);
         if (!acquireResult.acquired) {
             const conflictId = acquireResult.conflictSession?.issueId ?? 'another issue';
             const conflictMsg = (i18n.t('label_timer_conflict_cancelled') || 'Timer start was cancelled because a timer for #%{id} was started in another tab.')
@@ -137,7 +139,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
         }
 
         set({
-            session: newSession,
+            session: acquireResult.session,
             startDialogTask: null,
             otherRunningNotice: null,
             otherPendingNotice: null
@@ -146,27 +148,41 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
         return true;
     },
 
-    extendTimer: (minutes: TimerIntervalMinutes) => {
+    extendTimer: async (minutes: TimerIntervalMinutes) => {
         const { session } = get();
         if (!session) return;
-
-        const nextSession = extendTimerSession(session, minutes);
-        persistTimerSession(nextSession);
+        const now = Date.now();
+        const result = await mutateStoredTimerSession((canonical) => {
+            if (!canonical || canonical.sessionId !== session.sessionId) return undefined;
+            const recovered = evaluateTimerTick(canonical, now).session;
+            return extendTimerSession(recovered, minutes, now);
+        }, undefined, now);
         set({
-            session: nextSession,
+            session: result.session,
             pendingWorkModalOpen: false,
             otherRunningNotice: null,
             otherPendingNotice: null
         });
     },
 
-    stopTimer: () => {
+    stopTimer: async () => {
         const { session } = get();
         if (!session || session.state === 'stopped_pending_record') return;
-
-        const nextSession = stopTimerSession(session);
-        // Persist to storage BEFORE opening standard Redmine form (Section 28)
-        persistTimerSession(nextSession);
+        const now = Date.now();
+        const recordingAttemptId = generateSessionId();
+        const result = await mutateStoredTimerSession((canonical) => {
+            if (!canonical || canonical.sessionId !== session.sessionId || canonical.state === 'stopped_pending_record') return undefined;
+            const recovered = evaluateTimerTick(canonical, now).session;
+            const stopped = recovered.state === 'stopped_pending_record'
+                ? recovered
+                : stopTimerSession(recovered, now);
+            return { ...stopped, recordingAttemptId };
+        }, undefined, now);
+        const nextSession = result.session;
+        if (!result.applied || !nextSession) {
+            set({ session: nextSession });
+            return;
+        }
 
         set({
             session: nextSession,
@@ -177,44 +193,76 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
         // Open Redmine TimeEntry form in IssueIframeDialog prefilled with hours
         const { formatted } = calculateRecordedHours(nextSession);
         const url = buildRedmineUrl(`/issues/${nextSession.issueId}/time_entries/new?time_entry[hours]=${formatted}`);
-        useUIStore.getState().openIssueDialog(url);
+        useUIStore.getState().openIssueDialog(url, {
+            timerRecording: {
+                origin: 'timer',
+                sessionId: nextSession.sessionId,
+                issueId: nextSession.issueId,
+                recordingAttemptId
+            }
+        });
     },
 
-    resumeTimer: (minutes: TimerIntervalMinutes) => {
-        get().extendTimer(minutes);
+    resumeTimer: async (minutes: TimerIntervalMinutes) => {
+        await get().extendTimer(minutes);
     },
 
-    discardTimer: () => {
-        clearStoredTimerSession();
+    discardTimer: async () => {
+        const sessionId = get().session?.sessionId;
+        const result = await mutateStoredTimerSession((canonical) => (
+            canonical && (!sessionId || canonical.sessionId !== sessionId) ? undefined : null
+        ));
         set({
-            session: null,
+            session: result.session,
             pendingWorkModalOpen: false,
             otherRunningNotice: null,
             otherPendingNotice: null
         });
     },
 
-    recordTime: () => {
-        const { session } = get();
-        if (!session) return;
+    recordTime: async () => {
+        const localSession = get().session;
+        const recordingAttemptId = generateSessionId();
+        const result = await mutateStoredTimerSession((canonical) => {
+            if (!canonical || canonical.sessionId !== localSession?.sessionId || canonical.state !== 'stopped_pending_record') {
+                return undefined;
+            }
+            return { ...canonical, recordingAttemptId };
+        });
+        const session = result.session;
+        if (!result.applied || !session || session.state !== 'stopped_pending_record') {
+            set({ session });
+            return;
+        }
 
         const { formatted } = calculateRecordedHours(session);
         const url = buildRedmineUrl(`/issues/${session.issueId}/time_entries/new?time_entry[hours]=${formatted}`);
-        useUIStore.getState().openIssueDialog(url);
+        useUIStore.getState().openIssueDialog(url, {
+            timerRecording: {
+                origin: 'timer',
+                sessionId: session.sessionId,
+                issueId: session.issueId,
+                recordingAttemptId
+            }
+        });
         set({ pendingWorkModalOpen: false });
     },
 
-    clearSessionOnSaveSuccess: (issueId?: number | string) => {
-        const { session } = get();
-        if (session && (!issueId || String(session.issueId) === String(issueId))) {
-            clearStoredTimerSession();
-            set({
-                session: null,
-                pendingWorkModalOpen: false,
-                otherRunningNotice: null,
-                otherPendingNotice: null
-            });
-        }
+    completeTimerRecording: async (context) => {
+        const result = await mutateStoredTimerSession((canonical) => {
+            if (!canonical || context.origin !== 'timer') return undefined;
+            if (canonical.sessionId !== context.sessionId) return undefined;
+            if (String(canonical.issueId) !== String(context.issueId)) return undefined;
+            if (canonical.state !== 'stopped_pending_record') return undefined;
+            if (canonical.recordingAttemptId !== context.recordingAttemptId) return undefined;
+            return null;
+        });
+        set({
+            session: result.session,
+            pendingWorkModalOpen: false,
+            otherRunningNotice: null,
+            otherPendingNotice: null
+        });
     },
 
     setAutoStopPreference: (autoStop: boolean) => {
@@ -289,25 +337,30 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
         set({ otherRunningNotice: null, otherPendingNotice: null });
     },
 
-    tick: () => {
-        const { session } = get();
-        if (!session) return;
+    tick: async () => {
+        const now = Date.now();
+        let notification: { session: TimerSession; type: 'running_expired' | 'stopped' } | null = null;
+        const mutation = await mutateStoredTimerSession((canonical) => {
+            if (!canonical) return undefined;
+            const tickResult = evaluateTimerTick(canonical, now);
+            if (!tickResult.stateChanged) return undefined;
+            if (tickResult.shouldNotify) {
+                notification = { session: tickResult.session, type: tickResult.notifyType ?? 'running_expired' };
+            }
+            return tickResult.session;
+        }, undefined, now);
+        if (mutation.session !== get().session) set({ session: mutation.session });
 
-        const result = evaluateTimerTick(session, Date.now());
-        if (result.stateChanged) {
-            persistTimerSession(result.session);
-            set({ session: result.session });
-        }
-
-        if (result.shouldNotify) {
-            const minutes = session.deadlineAt
-                ? Math.max(1, Math.round((session.deadlineAt - session.segments[0].startedAt) / (60 * 1000)))
-                : 0;
+        if (mutation.applied && notification) {
+            const claimed = notification as { session: TimerSession; type: 'running_expired' | 'stopped' };
             sendTimerNotification({
-                issueId: session.issueId,
-                subject: session.subject,
-                minutes,
-                type: result.notifyType ?? 'running_expired'
+                scopeKey: getTimerStorageKeys().session,
+                sessionId: claimed.session.sessionId,
+                issueId: claimed.session.issueId,
+                deadlineAt: claimed.session.deadlineAt ?? 0,
+                subject: claimed.session.subject,
+                minutes: calculateCurrentDeadlineIntervalMinutes(claimed.session),
+                type: claimed.type
             });
         }
     },
@@ -324,15 +377,16 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
 
 // Setup global storage listener for multi-tab sync and timer tick interval
 if (typeof window !== 'undefined') {
+    const storageKeys = getTimerStorageKeys();
     window.addEventListener('storage', (event) => {
-        if (event.key === TIMER_SESSION_STORAGE_KEY || event.key === TIMER_PREFS_STORAGE_KEY) {
+        if (event.key === storageKeys.session || event.key === storageKeys.preferences) {
             useTimerStore.getState().syncFromStorage();
         }
     });
 
     if (import.meta.env.MODE !== 'test') {
         setInterval(() => {
-            useTimerStore.getState().tick();
+            void useTimerStore.getState().tick();
         }, 1000);
     }
 }

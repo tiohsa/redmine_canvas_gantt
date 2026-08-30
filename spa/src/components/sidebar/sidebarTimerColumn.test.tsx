@@ -114,7 +114,8 @@ describe('Sidebar Timer Column', () => {
 
         useTimerStore.setState({
             session: {
-                version: 1,
+                version: 2,
+                revision: 1,
                 sessionId: 's-103',
                 issueId: '103',
                 subject: 'Task 103',
@@ -122,7 +123,8 @@ describe('Sidebar Timer Column', () => {
                 state: 'running',
                 deadlineAt: Date.now() + 15 * 60 * 1000,
                 segments: [{ startedAt: Date.now() }],
-                createdAt: Date.now()
+                createdAt: Date.now(),
+            updatedAt: Date.now()
             }
         });
 
@@ -152,7 +154,8 @@ describe('Sidebar Timer Column', () => {
 
         useTimerStore.setState({
             session: {
-                version: 1,
+                version: 2,
+                revision: 1,
                 sessionId: 's-104',
                 issueId: '104',
                 subject: 'Task 104',
@@ -160,7 +163,8 @@ describe('Sidebar Timer Column', () => {
                 state: 'stopped_pending_record',
                 deadlineAt: Date.now() - 5 * 60 * 1000,
                 segments: [{ startedAt: Date.now() - 35 * 60 * 1000, stoppedAt: Date.now() - 5 * 60 * 1000 }],
-                createdAt: Date.now() - 35 * 60 * 1000
+                createdAt: Date.now() - 35 * 60 * 1000,
+            updatedAt: Date.now()
             }
         });
 

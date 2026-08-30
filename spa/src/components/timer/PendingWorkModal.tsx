@@ -51,7 +51,7 @@ export const PendingWorkModal: React.FC = () => {
 
     const handleDiscardConfirm = () => {
         setIsDiscardConfirmOpen(false);
-        discardTimer();
+        void discardTimer();
     };
 
     return (
@@ -192,7 +192,7 @@ export const PendingWorkModal: React.FC = () => {
                         <button
                             type="button"
                             data-testid="pending-work-record-button"
-                            onClick={recordTime}
+                            onClick={() => void recordTime()}
                             style={{
                                 width: '100%',
                                 padding: '10px 16px',
@@ -224,7 +224,7 @@ export const PendingWorkModal: React.FC = () => {
                                         key={minutes}
                                         type="button"
                                         data-testid={`pending-work-resume-button-${minutes}`}
-                                        onClick={() => resumeTimer(minutes)}
+                                        onClick={() => void resumeTimer(minutes)}
                                         style={{
                                             padding: '5px 12px',
                                             borderRadius: '9999px',

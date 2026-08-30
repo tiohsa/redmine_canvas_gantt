@@ -49,7 +49,7 @@ export const GlobalTimer: React.FC = () => {
 
     const handleExtend = (minutes: TimerIntervalMinutes) => {
         setIsExtendMenuOpen(false);
-        extendTimer(minutes);
+        void extendTimer(minutes);
     };
 
     return (
@@ -155,7 +155,7 @@ export const GlobalTimer: React.FC = () => {
                         <button
                             type="button"
                             data-testid="global-timer-quick-extend"
-                            onClick={() => extendTimer(15)}
+                            onClick={() => void extendTimer(15)}
                             style={{
                                 padding: '5px 10px',
                                 borderRadius: '9999px',
@@ -241,7 +241,7 @@ export const GlobalTimer: React.FC = () => {
                         <button
                             type="button"
                             data-testid="global-timer-stop-button"
-                            onClick={stopTimer}
+                            onClick={() => void stopTimer()}
                             style={{
                                 padding: '5px 14px',
                                 borderRadius: '9999px',
@@ -264,7 +264,7 @@ export const GlobalTimer: React.FC = () => {
                         <button
                             type="button"
                             data-testid="global-timer-record-button"
-                            onClick={recordTime}
+                            onClick={() => void recordTime()}
                             style={{
                                 padding: '5px 14px',
                                 borderRadius: '9999px',

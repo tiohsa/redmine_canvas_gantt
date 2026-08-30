@@ -8,6 +8,7 @@ import {
     extendTimerSession,
     stopTimerSession,
     calculateRecordedHours,
+    calculateCurrentDeadlineIntervalMinutes,
     formatTimerDuration,
     formatElapsedMinutesText,
     isTimerSpanningMultipleDays
@@ -201,18 +202,21 @@ describe('Timer Domain Logic', () => {
         const checkTime = resumeTime + 10 * 60 * 1000;
         // Total elapsed: 30 min + 10 min = 40 min (gap of 3 min excluded!)
         expect(calculateTimerElapsed(resumed, checkTime)).toBe(40 * 60 * 1000);
+        expect(calculateCurrentDeadlineIntervalMinutes(resumed)).toBe(15);
     });
 
     it('calculates recorded hours rounded to 2 decimal places', () => {
         // 30 min -> 0.50
         const session30m: TimerSession = {
-            version: 1,
+            version: 2,
             sessionId: 's1',
+            revision: 1,
             issueId: 1,
             subject: 'Test',
             autoStop: false,
             state: 'stopped_pending_record',
             createdAt: baseTime,
+            updatedAt: baseTime,
             segments: [{ startedAt: baseTime, stoppedAt: baseTime + 30 * 60 * 1000 }]
         };
         expect(calculateRecordedHours(session30m).hours).toBe(0.50);
@@ -243,6 +247,13 @@ describe('Timer Domain Logic', () => {
             ]
         };
         expect(calculateRecordedHours(sessionMulti).hours).toBe(0.75);
+
+        const tenSeconds: TimerSession = {
+            ...session30m,
+            segments: [{ startedAt: baseTime, stoppedAt: baseTime + 10 * 1000 }]
+        };
+        expect(calculateRecordedHours(tenSeconds).hours).toBe(0);
+        expect(calculateRecordedHours(tenSeconds).formatted).toBe('0.00');
     });
 
     it('formats duration string correctly', () => {
@@ -259,25 +270,29 @@ describe('Timer Domain Logic', () => {
 
     it('detects when timer segments span multiple days', () => {
         const sameDaySession: TimerSession = {
-            version: 1,
+            version: 2,
             sessionId: 's1',
+            revision: 1,
             issueId: 1,
             subject: 'Test',
             autoStop: false,
             state: 'stopped_pending_record',
             createdAt: baseTime,
+            updatedAt: baseTime,
             segments: [{ startedAt: baseTime, stoppedAt: baseTime + 30 * 60 * 1000 }]
         };
         expect(isTimerSpanningMultipleDays(sameDaySession)).toBe(false);
 
         const crossDaySession: TimerSession = {
-            version: 1,
+            version: 2,
             sessionId: 's1',
+            revision: 1,
             issueId: 1,
             subject: 'Test',
             autoStop: false,
             state: 'stopped_pending_record',
             createdAt: baseTime,
+            updatedAt: baseTime,
             segments: [{ startedAt: baseTime, stoppedAt: baseTime + 28 * 3600 * 1000 }]
         };
         expect(isTimerSpanningMultipleDays(crossDaySession)).toBe(true);

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { GlobalTimer } from './GlobalTimer';
 import { TimerStartModal } from './TimerStartModal';
 import { PendingWorkModal } from './PendingWorkModal';
@@ -7,6 +7,7 @@ import { OtherNoticeModal } from './OtherNoticeModal';
 import { useTimerStore } from '../../stores/TimerStore';
 import { useUIStore } from '../../stores/UIStore';
 import type { Task } from '../../types';
+import { persistTimerSession } from '../../services/timerStorage';
 
 describe('Timer UI Components', () => {
     const baseTime = 1700000000000;
@@ -53,7 +54,8 @@ describe('Timer UI Components', () => {
         it('renders running timer with remaining and elapsed time', () => {
             useTimerStore.setState({
                 session: {
-                    version: 1,
+                    version: 2,
+                    revision: 1,
                     sessionId: 's1',
                     issueId: '123',
                     subject: 'API設計',
@@ -61,11 +63,13 @@ describe('Timer UI Components', () => {
                     state: 'running',
                     deadlineAt: Date.now() + 20 * 60 * 1000,
                     segments: [{ startedAt: Date.now() - 10 * 60 * 1000 }],
-                    createdAt: Date.now() - 10 * 60 * 1000
+                    createdAt: Date.now() - 10 * 60 * 1000,
+                updatedAt: Date.now()
                 }
             });
 
-            render(<GlobalTimer />);
+        render(<GlobalTimer />);
+        persistTimerSession(useTimerStore.getState().session);
 
             expect(screen.getByTestId('global-timer')).toBeTruthy();
             expect(screen.getByTestId('global-timer-subject').textContent).toContain('#123 API設計');
@@ -78,7 +82,8 @@ describe('Timer UI Components', () => {
         it('renders expired timer with overrun indicator', () => {
             useTimerStore.setState({
                 session: {
-                    version: 1,
+                    version: 2,
+                    revision: 1,
                     sessionId: 's1',
                     issueId: '123',
                     subject: 'API設計',
@@ -86,11 +91,13 @@ describe('Timer UI Components', () => {
                     state: 'expired',
                     deadlineAt: Date.now() - 5 * 60 * 1000,
                     segments: [{ startedAt: Date.now() - 35 * 60 * 1000 }],
-                    createdAt: Date.now() - 35 * 60 * 1000
+                    createdAt: Date.now() - 35 * 60 * 1000,
+                updatedAt: Date.now()
                 }
             });
 
-            render(<GlobalTimer />);
+        render(<GlobalTimer />);
+        persistTimerSession(useTimerStore.getState().session);
 
             expect(screen.getByTestId('global-timer-overrun')).toBeTruthy();
         });
@@ -98,7 +105,8 @@ describe('Timer UI Components', () => {
         it('renders pending timer with record and manage actions', () => {
             useTimerStore.setState({
                 session: {
-                    version: 1,
+                    version: 2,
+                    revision: 1,
                     sessionId: 's1',
                     issueId: '123',
                     subject: 'API設計',
@@ -106,7 +114,8 @@ describe('Timer UI Components', () => {
                     state: 'stopped_pending_record',
                     deadlineAt: Date.now() - 10 * 60 * 1000,
                     segments: [{ startedAt: Date.now() - 40 * 60 * 1000, stoppedAt: Date.now() - 10 * 60 * 1000 }],
-                    createdAt: Date.now() - 40 * 60 * 1000
+                    createdAt: Date.now() - 40 * 60 * 1000,
+                updatedAt: Date.now()
                 }
             });
 
@@ -116,11 +125,12 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('global-timer-manage-button')).toBeTruthy();
         });
 
-        it('quick extend button extends the timer by 15 minutes', () => {
+        it('quick extend button extends the timer by 15 minutes', async () => {
             const now = Date.now();
             useTimerStore.setState({
                 session: {
-                    version: 1,
+                    version: 2,
+                    revision: 1,
                     sessionId: 's1',
                     issueId: '123',
                     subject: 'API設計',
@@ -128,23 +138,25 @@ describe('Timer UI Components', () => {
                     state: 'running',
                     deadlineAt: now + 10 * 60 * 1000,
                     segments: [{ startedAt: now }],
-                    createdAt: now
+                    createdAt: now,
+                updatedAt: Date.now()
                 }
             });
 
-            render(<GlobalTimer />);
+        render(<GlobalTimer />);
 
-            const extendBtn = screen.getByTestId('global-timer-quick-extend');
+        persistTimerSession(useTimerStore.getState().session);
+        const extendBtn = screen.getByTestId('global-timer-quick-extend');
             fireEvent.click(extendBtn);
 
-            const session = useTimerStore.getState().session;
-            expect(session?.deadlineAt).toBe(now + 25 * 60 * 1000);
+            await waitFor(() => expect(useTimerStore.getState().session?.deadlineAt).toBe(now + 25 * 60 * 1000));
         });
 
-        it('manual stop button stops timer and triggers time entry form', () => {
+        it('manual stop button stops timer and triggers time entry form', async () => {
             useTimerStore.setState({
                 session: {
-                    version: 1,
+                    version: 2,
+                    revision: 1,
                     sessionId: 's1',
                     issueId: '123',
                     subject: 'API設計',
@@ -152,16 +164,18 @@ describe('Timer UI Components', () => {
                     state: 'running',
                     deadlineAt: Date.now() + 10 * 60 * 1000,
                     segments: [{ startedAt: Date.now() - 10 * 60 * 1000 }],
-                    createdAt: Date.now() - 10 * 60 * 1000
+                    createdAt: Date.now() - 10 * 60 * 1000,
+                updatedAt: Date.now()
                 }
             });
 
-            render(<GlobalTimer />);
+        render(<GlobalTimer />);
 
-            const stopBtn = screen.getByTestId('global-timer-stop-button');
+        persistTimerSession(useTimerStore.getState().session);
+        const stopBtn = screen.getByTestId('global-timer-stop-button');
             fireEvent.click(stopBtn);
 
-            expect(useTimerStore.getState().session?.state).toBe('stopped_pending_record');
+            await waitFor(() => expect(useTimerStore.getState().session?.state).toBe('stopped_pending_record'));
             expect(useUIStore.getState().issueDialogUrl).toContain('/issues/123/time_entries/new');
         });
     });
@@ -182,7 +196,7 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('timer-autostop-checkbox')).toBeTruthy();
         });
 
-        it('allows selecting duration and starting timer', () => {
+        it('allows selecting duration and starting timer', async () => {
             useTimerStore.setState({ startDialogTask: mockTask });
 
             render(<TimerStartModal />);
@@ -193,9 +207,18 @@ describe('Timer UI Components', () => {
             // Click start
             fireEvent.click(screen.getByTestId('timer-start-confirm-button'));
 
-            expect(useTimerStore.getState().session).not.toBeNull();
+            await waitFor(() => expect(useTimerStore.getState().session).not.toBeNull());
             expect(useTimerStore.getState().session?.issueId).toBe('123');
             expect(useTimerStore.getState().startDialogTask).toBeNull();
+        });
+
+        it('updates the store preference immediately when auto-stop changes', () => {
+            useTimerStore.setState({ startDialogTask: mockTask });
+            render(<TimerStartModal />);
+
+            fireEvent.click(screen.getByTestId('timer-autostop-checkbox'));
+
+            expect(useTimerStore.getState().preferences.autoStop).toBe(true);
         });
 
         it('cancels start dialog when cancel button clicked', () => {
@@ -215,7 +238,8 @@ describe('Timer UI Components', () => {
             useTimerStore.setState({
                 pendingWorkModalOpen: true,
                 session: {
-                    version: 1,
+                    version: 2,
+                    revision: 1,
                     sessionId: 's1',
                     issueId: '123',
                     subject: 'API設計',
@@ -223,11 +247,13 @@ describe('Timer UI Components', () => {
                     state: 'stopped_pending_record',
                     deadlineAt: baseTime + 30 * 60 * 1000,
                     segments: [{ startedAt: baseTime, stoppedAt: baseTime + 30 * 60 * 1000 }],
-                    createdAt: baseTime
+                    createdAt: baseTime,
+                updatedAt: Date.now()
                 }
             });
 
-            render(<PendingWorkModal />);
+        render(<PendingWorkModal />);
+        persistTimerSession(useTimerStore.getState().session);
 
             expect(screen.getByTestId('pending-work-modal')).toBeTruthy();
             expect(screen.getByTestId('pending-work-record-button')).toBeTruthy();
@@ -235,11 +261,12 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('pending-work-discard-button')).toBeTruthy();
         });
 
-        it('clicking record time opens time entry dialog', () => {
+        it('clicking record time opens time entry dialog', async () => {
             useTimerStore.setState({
                 pendingWorkModalOpen: true,
                 session: {
-                    version: 1,
+                    version: 2,
+                    revision: 1,
                     sessionId: 's1',
                     issueId: '123',
                     subject: 'API設計',
@@ -247,23 +274,26 @@ describe('Timer UI Components', () => {
                     state: 'stopped_pending_record',
                     deadlineAt: baseTime + 30 * 60 * 1000,
                     segments: [{ startedAt: baseTime, stoppedAt: baseTime + 30 * 60 * 1000 }],
-                    createdAt: baseTime
+                    createdAt: baseTime,
+                updatedAt: Date.now()
                 }
             });
 
-            render(<PendingWorkModal />);
+        render(<PendingWorkModal />);
 
-            fireEvent.click(screen.getByTestId('pending-work-record-button'));
+        persistTimerSession(useTimerStore.getState().session);
+        fireEvent.click(screen.getByTestId('pending-work-record-button'));
 
-            expect(useUIStore.getState().issueDialogUrl).toContain('/issues/123/time_entries/new?time_entry[hours]=0.50');
+            await waitFor(() => expect(useUIStore.getState().issueDialogUrl).toContain('/issues/123/time_entries/new?time_entry[hours]=0.50'));
             expect(useTimerStore.getState().pendingWorkModalOpen).toBe(false);
         });
 
-        it('clicking discard requires confirmation before deleting session', () => {
+        it('clicking discard requires confirmation before deleting session', async () => {
             useTimerStore.setState({
                 pendingWorkModalOpen: true,
                 session: {
-                    version: 1,
+                    version: 2,
+                    revision: 1,
                     sessionId: 's1',
                     issueId: '123',
                     subject: 'API設計',
@@ -271,7 +301,8 @@ describe('Timer UI Components', () => {
                     state: 'stopped_pending_record',
                     deadlineAt: baseTime + 30 * 60 * 1000,
                     segments: [{ startedAt: baseTime, stoppedAt: baseTime + 30 * 60 * 1000 }],
-                    createdAt: baseTime
+                    createdAt: baseTime,
+                updatedAt: Date.now()
                 }
             });
 
@@ -285,7 +316,7 @@ describe('Timer UI Components', () => {
 
             // Confirm
             fireEvent.click(screen.getByTestId('pending-work-discard-confirm'));
-            expect(useTimerStore.getState().session).toBeNull();
+            await waitFor(() => expect(useTimerStore.getState().session).toBeNull());
         });
     });
 

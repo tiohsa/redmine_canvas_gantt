@@ -11,7 +11,8 @@ import {
     toggleColumnSetting,
     type ColumnConfig
 } from '../components/sidebar/sidebarColumnSettings';
-import { getColumnDefinitions, getDefaultVisibleColumnKeys } from '../components/sidebar/sidebarColumnCatalog';
+import { getColumnDefinitions, getDefaultVisibleColumnKeys, isRedmineBackedColumn } from '../components/sidebar/sidebarColumnCatalog';
+import type { TimerRecordingContext } from '../types/timer';
 
 export const DEFAULT_COLUMNS = [...DEFAULT_VISIBLE_COLUMN_KEY_LIST];
 
@@ -33,6 +34,10 @@ export type ActiveInlineEdit = {
     sessionId?: string;
 };
 
+export interface IssueDialogContext {
+    timerRecording?: TimerRecordingContext;
+}
+
 interface UIState {
     notifications: Notification[];
     showProgressLine: boolean;
@@ -51,6 +56,7 @@ interface UIState {
     activeInlineEdit: ActiveInlineEdit | null;
     isFullScreen: boolean;
     issueDialogUrl: string | null;
+    issueDialogContext: IssueDialogContext | null;
     queryDialogUrl: string | null;
     savedQueriesReloadToken: number;
     isHelpDialogOpen: boolean;
@@ -91,7 +97,7 @@ interface UIState {
     setActiveInlineEdit: (value: ActiveInlineEdit | null, ownerSessionId?: string) => void;
     setFullScreen: (value: boolean) => void;
     toggleFullScreen: () => void;
-    openIssueDialog: (url: string) => void;
+    openIssueDialog: (url: string, context?: IssueDialogContext) => void;
     closeIssueDialog: () => void;
     openQueryDialog: (url: string) => void;
     closeQueryDialog: () => void;
@@ -159,6 +165,11 @@ const normalizeQueryColumns = (columns: string[], currentSettings: ColumnConfig[
     ];
 };
 
+const redmineColumnState = (settings: ColumnConfig[]): string => settings
+    .filter((entry) => isRedmineBackedColumn(entry.key))
+    .map((entry) => `${entry.key}:${entry.visible ? '1' : '0'}`)
+    .join('|');
+
 export const useUIStore = create<UIState>((set, get) => ({
     notifications: [],
     showProgressLine: displayPreferences.showProgressLine ?? false,
@@ -188,6 +199,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     activeInlineEdit: null,
     isFullScreen: false,
     issueDialogUrl: null,
+    issueDialogContext: null,
     queryDialogUrl: null,
     savedQueriesReloadToken: 0,
     isHelpDialogOpen: false,
@@ -285,7 +297,7 @@ export const useUIStore = create<UIState>((set, get) => ({
             visibleColumns: toVisibleColumns(next),
             columnSettings: next,
             columnStateSource: 'user',
-            columnsExplicitInQuery: state.columnsExplicitInQuery
+            columnsExplicitInQuery: state.columnsExplicitInQuery || redmineColumnState(state.columnSettings) !== redmineColumnState(next)
         }));
     },
     toggleColumnVisibility: (key) => {
@@ -294,7 +306,7 @@ export const useUIStore = create<UIState>((set, get) => ({
             visibleColumns: toVisibleColumns(next),
             columnSettings: next,
             columnStateSource: 'user',
-            columnsExplicitInQuery: state.columnsExplicitInQuery
+            columnsExplicitInQuery: state.columnsExplicitInQuery || isRedmineBackedColumn(key)
         }));
     },
     moveColumnUp: (key) => {
@@ -303,7 +315,7 @@ export const useUIStore = create<UIState>((set, get) => ({
             visibleColumns: toVisibleColumns(next),
             columnSettings: next,
             columnStateSource: 'user',
-            columnsExplicitInQuery: state.columnsExplicitInQuery
+            columnsExplicitInQuery: state.columnsExplicitInQuery || isRedmineBackedColumn(key)
         }));
     },
     moveColumnDown: (key) => {
@@ -312,7 +324,7 @@ export const useUIStore = create<UIState>((set, get) => ({
             visibleColumns: toVisibleColumns(next),
             columnSettings: next,
             columnStateSource: 'user',
-            columnsExplicitInQuery: state.columnsExplicitInQuery
+            columnsExplicitInQuery: state.columnsExplicitInQuery || isRedmineBackedColumn(key)
         }));
     },
     resetColumns: () => {
@@ -321,7 +333,8 @@ export const useUIStore = create<UIState>((set, get) => ({
             visibleColumns: DEFAULT_COLUMNS,
             columnSettings: next,
             columnStateSource: 'user',
-            columnsExplicitInQuery: state.columnsExplicitInQuery
+            columnsExplicitInQuery: state.columnsExplicitInQuery ||
+                redmineColumnState(state.columnSettings) !== redmineColumnState(next)
         }));
     },
     setColumnWidth: (key, width) => set((state) => ({ columnWidths: { ...state.columnWidths, [key]: width } })),
@@ -338,8 +351,11 @@ export const useUIStore = create<UIState>((set, get) => ({
     }),
     setFullScreen: (value) => set(() => ({ isFullScreen: value })),
     toggleFullScreen: () => set((state) => ({ isFullScreen: !state.isFullScreen })),
-    openIssueDialog: (url) => set(() => ({ issueDialogUrl: buildRedmineUrl(url) })),
-    closeIssueDialog: () => set(() => ({ issueDialogUrl: null })),
+    openIssueDialog: (url, context) => set(() => ({
+        issueDialogUrl: buildRedmineUrl(url),
+        issueDialogContext: context ?? null
+    })),
+    closeIssueDialog: () => set(() => ({ issueDialogUrl: null, issueDialogContext: null })),
     openQueryDialog: (url) => set(() => ({ queryDialogUrl: buildRedmineUrl(url) })),
     closeQueryDialog: () => set((state) => ({
         queryDialogUrl: null,

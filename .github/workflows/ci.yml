@@ -220,6 +220,9 @@ jobs:
       - name: Run Project move mock suite
         run: npx playwright test tests/e2e/gantt-project-move.pw.ts
 
+      - name: Run Work Timer multi-tab mock suite
+        run: npx playwright test tests/e2e/gantt-work-timer-multitab.pw.ts
+
   e2e-redmine-compat:
     name: Redmine ${{ matrix.label }} compatibility
     needs:
@@ -351,7 +354,7 @@ jobs:
 
       - name: Run Redmine compatibility smoke test
         if: ${{ !matrix.full_e2e }}
-        run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts
+        run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts tests/e2e-redmine/work-timer.pw.ts
 
       - name: Run business calendar E2E
         if: ${{ !matrix.full_e2e }}

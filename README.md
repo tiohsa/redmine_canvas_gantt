@@ -51,6 +51,7 @@ Baseline snapshots are stored in Redmine's plugin settings (`Setting.plugin_redm
 - Filters by subject text, project, tracker, target version, assignee, and status; tracker filters round-trip through saved and Redmine queries
 - Grouping by project or assignee; target-version headers are a display toggle, not a grouping mode
 - Workload pane, export to PNG or CSV, full screen mode, and toolbar controls for zoom, row height, and font size
+- Per-issue Work Timer with 5/10/15/30/60-minute targets, optional auto-stop, multi-tab synchronization, and Redmine standard time-entry recording
 - Display settings stored per project or shared across all projects in the same browser profile (not across Redmine users)
 - Version headers, progress line, hierarchy lines, orphan date points, task titles, and dependency-based organization
 
@@ -158,6 +159,14 @@ The cleanup task deletes the `plugin_redmine_canvas_gantt` row from Redmine's `s
    - Use display settings to save and share UI preferences across projects.
    - Export the current view as PNG or CSV when the layout supports it.
    - Toggle full screen for more workspace when needed.
+
+### Work Timer
+
+- Enable the **Work Timer** column from column settings. It is hidden by default and does not become a Redmine query column.
+- Start a timer on an issue where Redmine grants `log_time`. One active or pending timer is allowed for each Redmine instance and user.
+- Choose 5, 10, 15, 30, or 60 minutes. With auto-stop off, measurement continues after the deadline; with it on, measurement stops exactly at the deadline.
+- Stop the timer to create pending work, then record it through Redmine's standard time-entry form. Canceling the form or receiving a validation error keeps the pending timer.
+- Recorded hours are calculated from measured timestamp segments and rounded to two decimal places. Very short measurements may therefore open the form with `0.00`; Redmine validation remains authoritative.
 
 ### Baseline snapshots
 

@@ -276,6 +276,8 @@ class CanvasGanttsController < ApplicationController
     label_help: :label_help,
     help_label_layout_filters: :help_label_layout_filters,
     label_help_toolbar_icons: :label_help_toolbar_icons,
+    help_label_work_timer: :help_label_work_timer,
+    help_desc_work_timer: :help_desc_work_timer,
     help_desc_edit_query: :help_desc_edit_query,
     help_desc_saved_queries: :help_desc_saved_queries,
     help_desc_chart_display: :help_desc_chart_display,

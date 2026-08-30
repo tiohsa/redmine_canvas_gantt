@@ -274,4 +274,48 @@ describe('UIStore', () => {
         expect(freshUIStore.getState().visibleColumns).toContain('timer');
         expect(freshUIStore.getState().columnSettings.find((c) => c.key === 'timer')?.visible).toBe(true);
     });
+
+    it('changes query explicitness only for Redmine-backed column operations', () => {
+        const settings = [
+            { key: 'id', visible: true },
+            { key: 'timer', visible: false },
+            { key: 'notification', visible: true },
+            { key: 'subject', visible: true },
+            { key: 'status', visible: true }
+        ];
+        useUIStore.setState({
+            visibleColumns: ['id', 'notification', 'subject', 'status'],
+            columnSettings: settings,
+            columnsExplicitInQuery: false
+        });
+
+        useUIStore.getState().toggleColumnVisibility('timer');
+        useUIStore.getState().moveColumnDown('timer');
+        useUIStore.getState().toggleColumnVisibility('notification');
+        expect(useUIStore.getState().columnsExplicitInQuery).toBe(false);
+
+        useUIStore.getState().toggleColumnVisibility('status');
+        expect(useUIStore.getState().columnsExplicitInQuery).toBe(true);
+
+        useUIStore.setState({ columnSettings: settings, columnsExplicitInQuery: false });
+        useUIStore.getState().moveColumnDown('subject');
+        expect(useUIStore.getState().columnsExplicitInQuery).toBe(true);
+
+        useUIStore.setState({ columnSettings: settings, columnsExplicitInQuery: false });
+        useUIStore.getState().setColumnSettings([
+            settings[0], settings[2], settings[1], settings[3], settings[4]
+        ]);
+        expect(useUIStore.getState().columnsExplicitInQuery).toBe(false);
+    });
+
+    it('does not force query columns when reset only hides a local timer column', () => {
+        useUIStore.setState(useUIStore.getInitialState(), true);
+        useUIStore.getState().toggleColumnVisibility('timer');
+        expect(useUIStore.getState().columnsExplicitInQuery).toBe(false);
+
+        useUIStore.getState().resetColumns();
+
+        expect(useUIStore.getState().visibleColumns).not.toContain('timer');
+        expect(useUIStore.getState().columnsExplicitInQuery).toBe(false);
+    });
 });

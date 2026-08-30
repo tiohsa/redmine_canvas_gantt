@@ -211,6 +211,10 @@ const zoomIcon = (
     <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.04em' }}>M/W/D</div>
 );
 
+const timerIcon = (
+    <div data-testid="help-icon-work-timer" aria-hidden="true" style={{ fontSize: '16px', lineHeight: 1 }}>⏱</div>
+);
+
 const exportIcon = (
     <svg width="16" height="16" viewBox="0 0 24 24" {...iconStroke}>
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -421,6 +425,11 @@ export const HelpDialog: React.FC = () => {
         {
             title: t('help_label_editing_saving', '3. Editing and Saving'),
             items: [
+                {
+                    icon: timerIcon,
+                    title: t('help_label_work_timer', 'Work Timer'),
+                    description: t('help_desc_work_timer', 'Enable the Work Timer column, choose 5/10/15/30/60 minutes, and start timing an issue. Stop or auto-stop creates pending work that you can record through the standard Redmine time-entry form. Only the matching timer-origin form clears pending work; cancel and validation errors keep it.')
+                },
                 {
                     icon: dragIcon,
                     title: t('help_op_drag_drop', 'Drag & Drop'),

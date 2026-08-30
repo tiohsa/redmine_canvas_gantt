@@ -1,6 +1,6 @@
 import type { TimerIntervalMinutes, TimerSegment, TimerSession, TimerTickResult } from '../../types/timer';
 
-export const TIMER_SESSION_VERSION = 1;
+export const TIMER_SESSION_VERSION = 2;
 
 export interface CreateTimerSessionOptions {
     issueId: number | string;
@@ -32,6 +32,7 @@ export const createTimerSession = ({
     return {
         version: TIMER_SESSION_VERSION,
         sessionId,
+        revision: 1,
         issueId,
         subject,
         autoStop,
@@ -40,7 +41,8 @@ export const createTimerSession = ({
         state: 'running',
         notifiedDeadlineAt: undefined,
         userId,
-        createdAt: now
+        createdAt: now,
+        updatedAt: now
     };
 };
 
@@ -82,7 +84,8 @@ export const evaluateTimerTick = (session: TimerSession, now: number = Date.now(
 
     if (session.state === 'running') {
         if (session.deadlineAt !== undefined && now >= session.deadlineAt) {
-            const shouldNotify = session.notifiedDeadlineAt !== session.deadlineAt;
+            const notifyType = session.autoStop ? 'stopped' : 'running_expired';
+            const shouldNotify = session.notifiedDeadlineAt !== session.deadlineAt || session.notifiedType !== notifyType;
             const notifiedDeadlineAt = session.deadlineAt;
 
             if (session.autoStop) {
@@ -99,28 +102,30 @@ export const evaluateTimerTick = (session: TimerSession, now: number = Date.now(
                     ...session,
                     state: 'stopped_pending_record',
                     segments: updatedSegments,
-                    notifiedDeadlineAt
+                    notifiedDeadlineAt,
+                    notifiedType: notifyType
                 };
 
                 return {
                     session: updatedSession,
                     stateChanged: true,
                     shouldNotify,
-                    notifyType: 'stopped'
+                    notifyType
                 };
             } else {
                 // When autoStop is OFF, state becomes expired, but current segment remains open
                 const updatedSession: TimerSession = {
                     ...session,
                     state: 'expired',
-                    notifiedDeadlineAt
+                    notifiedDeadlineAt,
+                    notifiedType: notifyType
                 };
 
                 return {
                     session: updatedSession,
                     stateChanged: true,
                     shouldNotify,
-                    notifyType: 'running_expired'
+                    notifyType
                 };
             }
         }
@@ -163,7 +168,8 @@ export const extendTimerSession = (
             ...session,
             state: 'running',
             segments: newSegments,
-            deadlineAt: now + extensionMs
+            deadlineAt: now + extensionMs,
+            recordingAttemptId: undefined
         };
     }
 
@@ -203,7 +209,7 @@ export const calculateRecordedHours = (session: TimerSession, now: number = Date
     const totalSeconds = totalMs / 1000;
     const rawHours = totalSeconds / 3600;
     const rounded = Math.round(rawHours * 100) / 100;
-    const hours = totalSeconds > 0 ? Math.max(0.01, rounded) : 0;
+    const hours = rounded;
     const formatted = hours.toFixed(2);
 
     return {
@@ -213,6 +219,13 @@ export const calculateRecordedHours = (session: TimerSession, now: number = Date
         hours,
         formatted
     };
+};
+
+export const calculateCurrentDeadlineIntervalMinutes = (session: TimerSession): number => {
+    if (session.deadlineAt === undefined || session.segments.length === 0) return 0;
+    const currentSegment = session.segments[session.segments.length - 1];
+    if (!currentSegment) return 0;
+    return Math.max(0, Math.round((session.deadlineAt - currentSegment.startedAt) / (60 * 1000)));
 };
 
 export const formatTimerDuration = (totalMs: number): string => {

@@ -12,7 +12,6 @@ export const TimerStartModal: React.FC = () => {
     const setAutoStopPreference = useTimerStore(state => state.setAutoStopPreference);
 
     const [selectedMinutes, setSelectedMinutes] = useState<TimerIntervalMinutes>(30);
-    const [autoStop, setAutoStop] = useState<boolean>(preferences.autoStop);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -30,11 +29,7 @@ export const TimerStartModal: React.FC = () => {
     if (!startDialogTask) return null;
 
     const handleStart = () => {
-        // Save preference change if user toggled it
-        if (autoStop !== preferences.autoStop) {
-            setAutoStopPreference(autoStop);
-        }
-        startTimer(startDialogTask, selectedMinutes, autoStop);
+        void startTimer(startDialogTask, selectedMinutes);
     };
 
     const tr = (key: string) => i18n.t(key) ?? '';
@@ -130,8 +125,8 @@ export const TimerStartModal: React.FC = () => {
                     <input
                         type="checkbox"
                         data-testid="timer-autostop-checkbox"
-                        checked={autoStop}
-                        onChange={(e) => setAutoStop(e.target.checked)}
+                    checked={preferences.autoStop}
+                    onChange={(e) => setAutoStopPreference(e.target.checked)}
                         style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: designTokens.brandPrimary }}
                     />
                     <span>{tr('label_timer_auto_stop') || 'Auto-stop when time is up'}</span>

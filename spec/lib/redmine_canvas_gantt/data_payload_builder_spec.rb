@@ -121,7 +121,7 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
   end
 
   describe '#build_tasks' do
-    it 'sets can_log_time based on current_user log_time permission on the issue project' do
+    it 'keeps can_log_time permission work constant for 100 and 500 issues in one project' do
       current_user = instance_double(User)
       extractor = instance_double(RedmineCanvasGantt::CustomFieldExtractor, build_task_custom_field_values: {})
       builder = described_class.new(
@@ -207,9 +207,12 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
         editable?: true
       )
 
-      tasks = builder.build_tasks([issue1, issue2])
-      expect(tasks[0][:can_log_time]).to eq(true)
-      expect(tasks[1][:can_log_time]).to eq(false)
+      tasks_100 = builder.build_tasks(Array.new(100, issue1))
+      tasks_500 = builder.build_tasks(Array.new(500, issue1))
+
+      expect(tasks_100.first[:can_log_time]).to eq(true)
+      expect(tasks_500.last[:can_log_time]).to eq(true)
+      expect(current_user).to have_received(:allowed_to?).with(:log_time, project1).twice
     end
   end
 end

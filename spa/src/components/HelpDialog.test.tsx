@@ -35,6 +35,8 @@ const translations = (prefix: string): Record<string, string> => ({
     button_close: `${prefix} Close`,
     help_label_timeline_view: `${prefix} Timeline and View Controls`,
     help_label_editing_saving: `${prefix} Editing and Saving`,
+    help_label_work_timer: `${prefix} Work Timer`,
+    help_desc_work_timer: `${prefix} timer description`,
     button_save: `${prefix} Save`,
     button_cancel: `${prefix} Cancel`
 });
@@ -54,6 +56,9 @@ describe('HelpDialog', () => {
         expect(screen.getByText(`${prefix} Header Menu Icons`)).toBeInTheDocument();
         expect(screen.getByText(`${prefix} Settings`)).toBeInTheDocument();
         expect(screen.getByText(`${prefix} settings description`)).toBeInTheDocument();
+        expect(screen.getByText(`${prefix} Work Timer`)).toBeInTheDocument();
+        expect(screen.getByText(`${prefix} timer description`)).toBeInTheDocument();
+        expect(screen.getByTestId('help-icon-work-timer')).toBeInTheDocument();
         expect(screen.queryByText(`${prefix} Chart`)).not.toBeInTheDocument();
         expect(screen.queryByText(`${prefix} Display`)).not.toBeInTheDocument();
         expect(screen.queryByText(`${prefix} Auto Save`)).not.toBeInTheDocument();

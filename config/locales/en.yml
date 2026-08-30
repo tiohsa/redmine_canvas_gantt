@@ -332,6 +332,8 @@ en:
     help_label_autosave: "Auto Save"
     help_desc_autosave: "When enabled, changes such as dragging tasks or inline edits are saved immediately. When disabled, changes stay pending; Save and Cancel appear when there are pending changes."
     help_label_editing_saving: "3. Editing and Saving"
+    help_label_work_timer: "Work Timer"
+    help_desc_work_timer: "Enable the Work Timer column, choose 5/10/15/30/60 minutes, and start timing an issue. Stop or auto-stop creates pending work that you can record through the standard Redmine time-entry form. Only the matching timer-origin form clears pending work; cancel and validation errors keep it."
     help_desc_save: "Shown only when auto save is off and there are pending changes. Saves all pending changes and refreshes the chart."
     help_desc_cancel: "Shown only when auto save is off and there are pending changes. Refreshes the data and discards the pending changes."
     help_desc_top: "Scroll the task list back to the top. Useful after moving deep into a long Gantt."

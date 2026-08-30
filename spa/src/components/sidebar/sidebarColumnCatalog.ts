@@ -53,3 +53,7 @@ export const getColumnDefinitions = (): SidebarColumnDefinition[] =>
 
 export const getDefaultVisibleColumnKeys = (): string[] =>
     COLUMN_CATALOG.filter((column) => column.defaultVisible).map((column) => column.key);
+
+export const isRedmineBackedColumn = (key: string): boolean => (
+    /^cf:\d+$/.test(key) || COLUMN_CATALOG.some((column) => column.key === key && Boolean(column.redmineColumn))
+);

@@ -2,11 +2,23 @@ import { i18n } from '../utils/i18n';
 import { useUIStore } from '../stores/UIStore';
 
 export interface SendTimerNotificationParams {
+    scopeKey: string;
+    sessionId: string;
     issueId: number | string;
+    deadlineAt: number;
     subject: string;
     minutes: number;
     type: 'running_expired' | 'stopped';
 }
+
+export const getTimerNotificationTag = ({
+    scopeKey,
+    sessionId,
+    deadlineAt,
+    type
+}: Pick<SendTimerNotificationParams, 'scopeKey' | 'sessionId' | 'deadlineAt' | 'type'>): string => (
+    `timer:${scopeKey}:${sessionId}:${deadlineAt}:${type}`
+);
 
 export const requestNotificationPermission = async (): Promise<NotificationPermission> => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -22,7 +34,10 @@ export const requestNotificationPermission = async (): Promise<NotificationPermi
 };
 
 export const sendTimerNotification = ({
+    scopeKey,
+    sessionId,
     issueId,
+    deadlineAt,
     subject,
     minutes,
     type
@@ -42,7 +57,7 @@ export const sendTimerNotification = ({
         try {
             new Notification(title, {
                 body,
-                tag: `timer-${issueId}-${Date.now()}`
+                tag: getTimerNotificationTag({ scopeKey, sessionId, deadlineAt, type })
             });
             return;
         } catch (e) {
