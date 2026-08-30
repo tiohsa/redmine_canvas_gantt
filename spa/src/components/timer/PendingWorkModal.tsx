@@ -12,7 +12,6 @@ import {
 } from '../../domain/timer/timerDomain';
 import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
-import { getCurrentTimerTabId } from '../../services/timerStorage';
 
 export const PendingWorkModal: React.FC = () => {
     const pendingWorkModalOpen = useTimerStore(state => state.pendingWorkModalOpen);
@@ -59,10 +58,9 @@ export const PendingWorkModal: React.FC = () => {
     const hoursMinutesFormatted = formatTimerDurationHoursMinutes(totalMs);
     const isCrossDay = isTimerSpanningMultipleDays(session);
     const recordingPhase = session.recordingAttempt?.phase;
-    const isStrandedRecording = Boolean(
+    const isRecoverableRecording = Boolean(
         recordingPhase &&
-        recordingPhase !== 'unknown' &&
-        session.recordingAttempt?.ownerTabId !== getCurrentTimerTabId()
+        recordingPhase !== 'unknown'
     );
     const unknownSecondaryButtonStyle: React.CSSProperties = {
         padding: '6px 14px',
@@ -100,7 +98,7 @@ export const PendingWorkModal: React.FC = () => {
     };
 
     const handleRecordingRecoveryConfirm = () => {
-        if (!session.recordingAttempt || !isStrandedRecording) return;
+        if (!session.recordingAttempt || !isRecoverableRecording) return;
         const context = {
             origin: 'timer' as const,
             sessionId: session.sessionId,
@@ -193,7 +191,7 @@ export const PendingWorkModal: React.FC = () => {
                 </div>
 
                 {/* Confirm unknown outcome or discard, otherwise show actions */}
-                {isStrandedRecording && isRecoveryConfirmOpen ? (
+                {isRecoverableRecording && isRecoveryConfirmOpen ? (
                     <div data-testid="pending-work-recording-recovery-confirm" style={{
                         padding: '12px',
                         backgroundColor: designTokens.warningBg,
@@ -316,7 +314,7 @@ export const PendingWorkModal: React.FC = () => {
                             </button>
                         </div>
                     </div>
-                ) : isStrandedRecording ? (
+                ) : isRecoverableRecording ? (
                     <div data-testid="pending-work-recording-reservation" style={{
                         padding: '12px',
                         backgroundColor: designTokens.surfaceSubtle,

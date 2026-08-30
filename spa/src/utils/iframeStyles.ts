@@ -96,7 +96,7 @@ export const applyLinkTargetBlank = (doc: Document): void => {
 export const findIssueDialogErrorElement = (doc: Document): HTMLElement | null => {
     for (const selector of ISSUE_DIALOG_ERROR_SELECTORS) {
         const element = doc.querySelector(selector);
-        if (element instanceof HTMLElement) return element;
+        if (element) return element as HTMLElement;
     }
     return null;
 };

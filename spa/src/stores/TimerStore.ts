@@ -157,51 +157,13 @@ const reconcileCanonicalDeadline = async (now: number = Date.now()) => {
     return result;
 };
 
-const isCurrentTimerRecordingDialog = (session: TimerSession): boolean => {
-    const recording = useUIStore.getState().issueDialogContext?.timerRecording;
-    return Boolean(
-        recording &&
-        recording.origin === 'timer' &&
-        recording.sessionId === session.sessionId &&
-        String(recording.issueId) === String(session.issueId) &&
-        session.recordingAttempt?.id === recording.attemptId
-    );
-};
-
-const reconcileRecordingReservation = async (now: number = Date.now()) => {
-    const currentTabId = getCurrentTimerTabId();
-    return mutateStoredTimerSession((canonical) => {
-        const attempt = canonical?.recordingAttempt;
-        if (canonical?.state !== 'stopped_pending_record' || !attempt || attempt.ownerTabId !== currentTabId) {
-            return undefined;
-        }
-
-        if (attempt.phase === 'editing') {
-            if (isCurrentTimerRecordingDialog(canonical)) return undefined;
-            return cancelTimerRecording(canonical, attempt.id, now);
-        }
-
-        if (attempt.phase !== 'submitting') return undefined;
-
-        return {
-            ...canonical,
-            recordingAttempt: {
-                ...attempt,
-                phase: 'unknown'
-            },
-            updatedAt: now
-        };
-    }, undefined, now);
-};
-
 const ensureTimerStoreReady = async (): Promise<void> => {
     if (useTimerStore.getState().isReady) return;
 
     if (!startupPromise) {
         startupPromise = (async () => {
-            const recordingResult = await reconcileRecordingReservation();
             const result = await reconcileCanonicalDeadline();
-            const session = result.session ?? recordingResult.session ?? loadStoredTimerSession();
+            const session = result.session ?? loadStoredTimerSession();
             useTimerStore.setState({ session, isReady: true });
             scheduleDeadlineReconciliation(session);
         })().catch((error) => {
@@ -426,10 +388,8 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
 
     recoverTimerRecording: async (context) => {
         await ensureTimerStoreReady();
-        const currentTabId = getCurrentTimerTabId();
         const result = await mutateStoredTimerSession((canonical) => {
             if (!recordingContextMatches(canonical, context)) return undefined;
-            if (canonical?.recordingAttempt?.ownerTabId === currentTabId) return undefined;
             return recoverTimerRecording(canonical!, context.attemptId);
         });
         updateSessionAndSchedule(result.session);

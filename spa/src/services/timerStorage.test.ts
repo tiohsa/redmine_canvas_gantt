@@ -85,6 +85,19 @@ describe('Timer Storage & Persistence', () => {
         expect(isValidTimerSession(createSampleSession())).toBe(true);
     });
 
+    it('allows a recording attempt only while work is pending recording', () => {
+        const recordingAttempt = {
+            id: 'attempt-123',
+            ownerTabId: 'tab-123',
+            openedAt: baseTime,
+            phase: 'editing' as const
+        };
+
+        expect(isValidTimerSession(createSampleSession({ recordingAttempt }))).toBe(false);
+        expect(isValidTimerSession(createSampleSession({ state: 'expired', recordingAttempt }))).toBe(false);
+        expect(isValidTimerSession(createSampleSession({ state: 'stopped_pending_record', recordingAttempt }))).toBe(true);
+    });
+
     it('does not restore session if userId belongs to a different user', () => {
         const session = createSampleSession({ userId: 42 });
         persistTimerSession(session, scope);
@@ -124,7 +137,7 @@ describe('Timer Storage & Persistence', () => {
         expect(loaded?.segments[0].stoppedAt).toBeUndefined();
     });
 
-    it('migrates a legacy recording attempt to an unknown reservation without deleting work', () => {
+    it('removes a legacy running recording attempt without deleting measured work', () => {
         const legacy = {
             ...createSampleSession(),
             version: 2,
@@ -135,13 +148,28 @@ describe('Timer Storage & Persistence', () => {
         const loaded = loadStoredTimerSession(scope);
 
         expect(loaded?.version).toBe(TIMER_SESSION_VERSION);
-        expect(loaded?.recordingAttempt).toEqual({
-            id: 'legacy-attempt',
-            ownerTabId: LEGACY_TIMER_OWNER_TAB_ID,
-            openedAt: baseTime,
-            phase: 'unknown'
-        });
+        expect(loaded?.recordingAttempt).toBeUndefined();
         expect(loaded?.state).toBe('running');
+        expect(loaded?.segments).toEqual(legacy.segments);
+    });
+
+    it.each(['running', 'expired'] as const)('normalizes a current-schema %s recording attempt without deleting measured work', (state) => {
+        const session = createSampleSession({
+            state,
+            recordingAttempt: {
+                id: `${state}-attempt`,
+                ownerTabId: 'tab-123',
+                openedAt: baseTime,
+                phase: 'submitting'
+            }
+        });
+        window.localStorage.setItem(getTimerStorageKeys(scope).session, JSON.stringify(session));
+
+        const loaded = loadStoredTimerSession(scope);
+
+        expect(loaded?.state).toBe(state);
+        expect(loaded?.recordingAttempt).toBeUndefined();
+        expect(loaded?.segments).toEqual(session.segments);
     });
 
     it('migrates a version 3 recording attempt without an owner to the legacy owner', () => {

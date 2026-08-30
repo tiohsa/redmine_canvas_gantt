@@ -7,7 +7,7 @@ import { OtherNoticeModal } from './OtherNoticeModal';
 import { useTimerStore } from '../../stores/TimerStore';
 import { useUIStore } from '../../stores/UIStore';
 import type { Task } from '../../types';
-import { persistTimerSession } from '../../services/timerStorage';
+import { getCurrentTimerTabId, persistTimerSession } from '../../services/timerStorage';
 
 describe('Timer UI Components', () => {
     const baseTime = 1700000000000;
@@ -157,7 +157,7 @@ describe('Timer UI Components', () => {
             expect(useTimerStore.getState().session?.state).toBe('stopped_pending_record');
         });
 
-        it('offers explicit recovery for another tab reservation', async () => {
+        it('offers explicit recovery for a reservation owned by this tab', async () => {
             const session = {
                 version: 4,
                 revision: 1,
@@ -166,7 +166,7 @@ describe('Timer UI Components', () => {
                 subject: 'API設計',
                 autoStop: false,
                 state: 'stopped_pending_record' as const,
-                recordingAttempt: { id: 'stranded-attempt', ownerTabId: 'other-tab', openedAt: Date.now(), phase: 'editing' as const },
+                recordingAttempt: { id: 'stranded-attempt', ownerTabId: getCurrentTimerTabId(), openedAt: Date.now(), phase: 'editing' as const },
                 segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
                 createdAt: Date.now() - 30 * 60 * 1000,
                 updatedAt: Date.now()

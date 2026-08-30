@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { applyIssueDialogStyles, findIssueDialogErrorElement, getIssueDialogErrorMessage, ISSUE_DIALOG_STYLE_ID } from './iframeStyles';
 
 describe('iframeStyles', () => {
@@ -96,6 +96,16 @@ describe('iframeStyles', () => {
 
         expect(findIssueDialogErrorElement(doc)).toBe(error);
         expect(getIssueDialogErrorMessage(doc)).toBe('Permission denied');
+    });
+
+    it('detects an error element from an iframe document realm', () => {
+        const error = { textContent: 'Hours is invalid' } as unknown as HTMLElement;
+        const doc = {
+            querySelector: vi.fn((selector: string) => selector === '#errorExplanation' ? error : null)
+        } as unknown as Document;
+
+        expect(findIssueDialogErrorElement(doc)).toBe(error);
+        expect(getIssueDialogErrorMessage(doc)).toBe('Hours is invalid');
     });
 
     it('detects conflict warning block as an error signal', () => {

@@ -78,6 +78,7 @@ export const isValidTimerSession = (value: unknown): value is TimerSession => {
     if (candidate.notifiedDeadlineAt !== undefined && (typeof candidate.notifiedDeadlineAt !== 'number' || !Number.isFinite(candidate.notifiedDeadlineAt))) return false;
     if (candidate.notifiedType !== undefined && !['running_expired', 'stopped'].includes(String(candidate.notifiedType))) return false;
     if (candidate.recordingAttempt !== undefined) {
+        if (candidate.state !== 'stopped_pending_record') return false;
         const attempt = candidate.recordingAttempt as Record<string, unknown>;
         if (
             !attempt ||
@@ -111,9 +112,20 @@ const isValidTimerSessionBase = (value: unknown, version: number): value is Reco
 
 export const migrateTimerSession = (value: unknown): TimerSession | null => {
     if (isValidTimerSession(value)) return value;
-    if (!isValidTimerSessionBase(value, 2) && !isValidTimerSessionBase(value, 3)) return null;
+    if (!isValidTimerSessionBase(value, 2) && !isValidTimerSessionBase(value, 3) && !isValidTimerSessionBase(value, TIMER_SESSION_VERSION)) return null;
 
     const candidate = value as Record<string, unknown>;
+    const withoutLegacyAttempt = { ...candidate };
+    delete withoutLegacyAttempt.recordingAttemptId;
+    delete withoutLegacyAttempt.recordingAttempt;
+
+    if (candidate.state !== 'stopped_pending_record') {
+        return {
+            ...withoutLegacyAttempt,
+            version: TIMER_SESSION_VERSION
+        } as TimerSession;
+    }
+
     const legacyAttemptId = candidate.recordingAttemptId;
     if (legacyAttemptId !== undefined && (typeof legacyAttemptId !== 'string' || legacyAttemptId.trim() === '')) return null;
 
@@ -128,9 +140,6 @@ export const migrateTimerSession = (value: unknown): TimerSession | null => {
         ) return null;
     }
 
-    const withoutLegacyAttempt = { ...candidate };
-    delete withoutLegacyAttempt.recordingAttemptId;
-    delete withoutLegacyAttempt.recordingAttempt;
     const normalizedAttempt = legacyAttempt as Record<string, unknown> | undefined;
     return {
         ...withoutLegacyAttempt,

@@ -176,7 +176,7 @@ test('serializes simultaneous starts through the IndexedDB fallback when Web Loc
   });
 });
 
-test('reconciles recording ownership on reload without changing another tab reservation', async ({ context }) => {
+test('preserves recording reservations on reload regardless of owner or phase', async ({ context }) => {
   const pageA = await context.newPage();
   const pageB = await context.newPage();
   await Promise.all([
@@ -185,6 +185,8 @@ test('reconciles recording ownership on reload without changing another tab rese
   ]);
   await Promise.all([waitForInitialRender(pageA), waitForInitialRender(pageB)]);
 
+  await pageA.evaluate(() => sessionStorage.setItem('redmine_canvas_gantt_timer_tab_id', 'owner-tab'));
+  await pageB.evaluate(() => sessionStorage.setItem('redmine_canvas_gantt_timer_tab_id', 'other-tab'));
   const ownerTabId = await pageA.evaluate(() => sessionStorage.getItem('redmine_canvas_gantt_timer_tab_id'));
   const otherTabId = await pageB.evaluate(() => sessionStorage.getItem('redmine_canvas_gantt_timer_tab_id'));
   expect(ownerTabId).toBeTruthy();
@@ -222,8 +224,18 @@ test('reconciles recording ownership on reload without changing another tab rese
   await pageA.getByTestId('cell-101-subject').waitFor({ state: 'visible' });
   await expect.poll(() => pageA.evaluate(() => {
     const key = Object.keys(localStorage).find(candidate => candidate.startsWith('redmine_canvas_gantt_timer_session:'))!;
-    return JSON.parse(localStorage.getItem(key)!).recordingAttempt;
-  })).toBeUndefined();
+    const session = JSON.parse(localStorage.getItem(key)!);
+    return { phase: session.recordingAttempt.phase, ownerTabId: session.recordingAttempt.ownerTabId };
+  })).toEqual({ phase: 'editing', ownerTabId });
+
+  await writePendingSession(pageA, 'submitting', ownerTabId!);
+  await pageA.reload();
+  await pageA.getByTestId('cell-101-subject').waitFor({ state: 'visible' });
+  await expect.poll(() => pageA.evaluate(() => {
+    const key = Object.keys(localStorage).find(candidate => candidate.startsWith('redmine_canvas_gantt_timer_session:'))!;
+    const session = JSON.parse(localStorage.getItem(key)!);
+    return { phase: session.recordingAttempt.phase, ownerTabId: session.recordingAttempt.ownerTabId };
+  })).toEqual({ phase: 'submitting', ownerTabId });
 
   await writePendingSession(pageA, 'editing', ownerTabId!);
   await pageB.reload();
