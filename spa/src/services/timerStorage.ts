@@ -1,15 +1,35 @@
-import type { TimerPreferences, TimerSegment, TimerSession } from '../types/timer';
+import type { TimerPreferences, TimerRecordingPhase, TimerSegment, TimerSession } from '../types/timer';
 import { generateSessionId, TIMER_SESSION_VERSION } from '../domain/timer/timerDomain';
 
 export const TIMER_SESSION_STORAGE_KEY = 'redmine_canvas_gantt_timer_session';
 export const TIMER_PREFS_STORAGE_KEY = 'redmine_canvas_gantt_timer_preferences';
+export const TIMER_TAB_ID_STORAGE_KEY = 'redmine_canvas_gantt_timer_tab_id';
 const TIMER_MUTATION_LOCK_KEY = 'redmine_canvas_gantt_timer_lock';
 const MUTATION_LOCK_LEASE_MS = 2_000;
 const TIMER_LOCK_DB_NAME = 'redmine_canvas_gantt_timer_locks';
 const TIMER_LOCK_STORE_NAME = 'locks';
+export const LEGACY_TIMER_OWNER_TAB_ID = 'legacy-owner';
 
 export interface StorageScope { userId?: number; instanceKey?: string; }
 export interface TimerStorageKeys { session: string; preferences: string; lock: string; }
+
+let fallbackTabId: string | null = null;
+
+export const getCurrentTimerTabId = (): string => {
+    if (typeof window === 'undefined') return 'server-tab';
+
+    try {
+        const existing = window.sessionStorage.getItem(TIMER_TAB_ID_STORAGE_KEY);
+        if (existing?.trim()) return existing;
+
+        const next = generateSessionId();
+        window.sessionStorage.setItem(TIMER_TAB_ID_STORAGE_KEY, next);
+        return next;
+    } catch {
+        fallbackTabId ??= generateSessionId();
+        return fallbackTabId;
+    }
+};
 
 export const getStorageScope = (): StorageScope => {
     const redmineBase = typeof window !== 'undefined' ? window.RedmineCanvasGantt?.redmineBase ?? '' : '';
@@ -62,6 +82,7 @@ export const isValidTimerSession = (value: unknown): value is TimerSession => {
         if (
             !attempt ||
             typeof attempt.id !== 'string' || attempt.id.trim() === '' ||
+            typeof attempt.ownerTabId !== 'string' || attempt.ownerTabId.trim() === '' ||
             typeof attempt.openedAt !== 'number' || !Number.isFinite(attempt.openedAt) ||
             !['editing', 'submitting', 'unknown'].includes(String(attempt.phase))
         ) return false;
@@ -90,22 +111,45 @@ const isValidTimerSessionBase = (value: unknown, version: number): value is Reco
 
 export const migrateTimerSession = (value: unknown): TimerSession | null => {
     if (isValidTimerSession(value)) return value;
-    if (!isValidTimerSessionBase(value, 2)) return null;
+    if (!isValidTimerSessionBase(value, 2) && !isValidTimerSessionBase(value, 3)) return null;
 
     const candidate = value as Record<string, unknown>;
     const legacyAttemptId = candidate.recordingAttemptId;
     if (legacyAttemptId !== undefined && (typeof legacyAttemptId !== 'string' || legacyAttemptId.trim() === '')) return null;
 
+    const legacyAttempt = candidate.recordingAttempt;
+    if (legacyAttempt !== undefined) {
+        if (!legacyAttempt || typeof legacyAttempt !== 'object') return null;
+        const attempt = legacyAttempt as Record<string, unknown>;
+        if (
+            typeof attempt.id !== 'string' || attempt.id.trim() === '' ||
+            typeof attempt.openedAt !== 'number' || !Number.isFinite(attempt.openedAt) ||
+            !['editing', 'submitting', 'unknown'].includes(String(attempt.phase))
+        ) return null;
+    }
+
     const withoutLegacyAttempt = { ...candidate };
     delete withoutLegacyAttempt.recordingAttemptId;
+    delete withoutLegacyAttempt.recordingAttempt;
+    const normalizedAttempt = legacyAttempt as Record<string, unknown> | undefined;
     return {
         ...withoutLegacyAttempt,
         version: TIMER_SESSION_VERSION,
         ...(legacyAttemptId ? {
             recordingAttempt: {
                 id: legacyAttemptId,
+                ownerTabId: LEGACY_TIMER_OWNER_TAB_ID,
                 openedAt: candidate.updatedAt as number,
                 phase: 'unknown' as const
+            }
+        } : normalizedAttempt ? {
+            recordingAttempt: {
+                id: normalizedAttempt.id as string,
+                ownerTabId: typeof normalizedAttempt.ownerTabId === 'string' && normalizedAttempt.ownerTabId.trim()
+                    ? normalizedAttempt.ownerTabId
+                    : LEGACY_TIMER_OWNER_TAB_ID,
+                openedAt: normalizedAttempt.openedAt as number,
+                phase: normalizedAttempt.phase as TimerRecordingPhase
             }
         } : {})
     } as TimerSession;

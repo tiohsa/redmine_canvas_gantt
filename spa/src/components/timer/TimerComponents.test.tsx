@@ -26,6 +26,7 @@ describe('Timer UI Components', () => {
 
     beforeEach(() => {
         window.localStorage.clear();
+        window.sessionStorage.clear();
         useTimerStore.setState({
             session: null,
             preferences: { autoStop: false },
@@ -43,6 +44,7 @@ describe('Timer UI Components', () => {
 
     afterEach(() => {
         window.localStorage.clear();
+        window.sessionStorage.clear();
     });
 
     describe('GlobalTimer', () => {
@@ -54,7 +56,7 @@ describe('Timer UI Components', () => {
         it('renders running timer with remaining and elapsed time', () => {
             useTimerStore.setState({
                 session: {
-                    version: 2,
+                    version: 4,
                     revision: 1,
                     sessionId: 's1',
                     issueId: '123',
@@ -77,12 +79,14 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('global-timer-elapsed')).toBeTruthy();
             expect(screen.getByTestId('global-timer-stop-button')).toBeTruthy();
             expect(screen.getByTestId('global-timer-quick-extend')).toBeTruthy();
+            expect(screen.getByTestId('global-timer-quick-extend')).toHaveTextContent('+15 min');
+            expect(screen.getByTestId('global-timer')).toHaveAttribute('tabindex', '-1');
         });
 
         it('renders expired timer with overrun indicator', () => {
             useTimerStore.setState({
                 session: {
-                    version: 2,
+                    version: 4,
                     revision: 1,
                     sessionId: 's1',
                     issueId: '123',
@@ -105,7 +109,7 @@ describe('Timer UI Components', () => {
         it('renders pending timer with record and manage actions', () => {
             useTimerStore.setState({
                 session: {
-                    version: 2,
+                    version: 4,
                     revision: 1,
                     sessionId: 's1',
                     issueId: '123',
@@ -128,14 +132,14 @@ describe('Timer UI Components', () => {
 
         it('requires explicit confirmation to resolve an unknown recording outcome', async () => {
             const session = {
-                version: 3,
+                version: 4,
                 revision: 2,
                 sessionId: 'unknown-session',
                 issueId: '123',
                 subject: 'API設計',
                 autoStop: false,
                 state: 'stopped_pending_record' as const,
-                recordingAttempt: { id: 'unknown-attempt', openedAt: Date.now(), phase: 'unknown' as const },
+                recordingAttempt: { id: 'unknown-attempt', ownerTabId: 'other-tab', openedAt: Date.now(), phase: 'unknown' as const },
                 segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
                 createdAt: Date.now() - 30 * 60 * 1000,
                 updatedAt: Date.now()
@@ -153,11 +157,64 @@ describe('Timer UI Components', () => {
             expect(useTimerStore.getState().session?.state).toBe('stopped_pending_record');
         });
 
+        it('offers explicit recovery for another tab reservation', async () => {
+            const session = {
+                version: 4,
+                revision: 1,
+                sessionId: 'stranded-session',
+                issueId: '123',
+                subject: 'API設計',
+                autoStop: false,
+                state: 'stopped_pending_record' as const,
+                recordingAttempt: { id: 'stranded-attempt', ownerTabId: 'other-tab', openedAt: Date.now(), phase: 'editing' as const },
+                segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
+                createdAt: Date.now() - 30 * 60 * 1000,
+                updatedAt: Date.now()
+            };
+            useTimerStore.setState({ session, pendingWorkModalOpen: true, isReady: true });
+            persistTimerSession(session);
+
+            render(<PendingWorkModal />);
+
+            fireEvent.click(screen.getByTestId('pending-work-recording-recovery'));
+            expect(screen.getByTestId('pending-work-recording-recovery-confirm')).toBeInTheDocument();
+            fireEvent.click(screen.getByTestId('pending-work-recording-recovery-confirm-button'));
+
+            await waitFor(() => expect(useTimerStore.getState().session?.recordingAttempt).toBeUndefined());
+            expect(useTimerStore.getState().session?.state).toBe('stopped_pending_record');
+        });
+
+        it('routes another tab submitting reservation to unknown recovery', async () => {
+            const session = {
+                version: 4,
+                revision: 1,
+                sessionId: 'stranded-submitting-session',
+                issueId: '123',
+                subject: 'API設計',
+                autoStop: false,
+                state: 'stopped_pending_record' as const,
+                recordingAttempt: { id: 'stranded-submitting-attempt', ownerTabId: 'other-tab', openedAt: Date.now(), phase: 'submitting' as const },
+                segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
+                createdAt: Date.now() - 30 * 60 * 1000,
+                updatedAt: Date.now()
+            };
+            useTimerStore.setState({ session, pendingWorkModalOpen: true, isReady: true });
+            persistTimerSession(session);
+
+            render(<PendingWorkModal />);
+
+            fireEvent.click(screen.getByTestId('pending-work-recording-recovery'));
+            fireEvent.click(screen.getByTestId('pending-work-recording-recovery-confirm-button'));
+
+            await waitFor(() => expect(useTimerStore.getState().session?.recordingAttempt?.phase).toBe('unknown'));
+            expect(screen.getByTestId('pending-work-unknown-recovery')).toBeInTheDocument();
+        });
+
         it('quick extend button extends the timer by 15 minutes', async () => {
             const now = Date.now();
             useTimerStore.setState({
                 session: {
-                    version: 2,
+                    version: 4,
                     revision: 1,
                     sessionId: 's1',
                     issueId: '123',
@@ -183,7 +240,7 @@ describe('Timer UI Components', () => {
         it('manual stop button stops timer and triggers time entry form', async () => {
             useTimerStore.setState({
                 session: {
-                    version: 2,
+                    version: 4,
                     revision: 1,
                     sessionId: 's1',
                     issueId: '123',
@@ -266,7 +323,7 @@ describe('Timer UI Components', () => {
             useTimerStore.setState({
                 pendingWorkModalOpen: true,
                 session: {
-                    version: 2,
+                    version: 4,
                     revision: 1,
                     sessionId: 's1',
                     issueId: '123',
@@ -293,7 +350,7 @@ describe('Timer UI Components', () => {
             useTimerStore.setState({
                 pendingWorkModalOpen: true,
                 session: {
-                    version: 2,
+                    version: 4,
                     revision: 1,
                     sessionId: 's1',
                     issueId: '123',
@@ -320,7 +377,7 @@ describe('Timer UI Components', () => {
             useTimerStore.setState({
                 pendingWorkModalOpen: true,
                 session: {
-                    version: 2,
+                    version: 4,
                     revision: 1,
                     sessionId: 's1',
                     issueId: '123',

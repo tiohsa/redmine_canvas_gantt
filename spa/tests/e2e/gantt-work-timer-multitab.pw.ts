@@ -51,6 +51,8 @@ test('serializes simultaneous timer starts and synchronizes the winner across ta
   const canonical = JSON.parse(canonicalFromA!) as { issueId: number | string; revision: number; deadlineAt: number };
   expect(['101', '102']).toContain(String(canonical.issueId));
   expect(canonical.revision).toBe(1);
+  const initialDeadline = canonical.deadlineAt;
+  const initialRevision = canonical.revision;
 
   await Promise.all([
     expect(pageA.getByTestId('global-timer')).toBeVisible(),
@@ -77,8 +79,8 @@ test('serializes simultaneous timer starts and synchronizes the winner across ta
     const key = Object.keys(localStorage).find(candidate => candidate.startsWith('redmine_canvas_gantt_timer_session:'))!;
     return JSON.parse(localStorage.getItem(key)!) as { deadlineAt: number; revision: number };
   });
-  expect(afterConcurrentExtend.deadlineAt).toBeGreaterThan(canonical.deadlineAt);
-  expect(afterConcurrentExtend.revision).toBeGreaterThan(canonical.revision);
+  expect(afterConcurrentExtend.deadlineAt).toBe(initialDeadline + 30 * 60 * 1000);
+  expect(afterConcurrentExtend.revision).toBe(initialRevision + 2);
 
   await pageA.evaluate(() => {
     const key = Object.keys(localStorage).find(candidate => candidate.startsWith('redmine_canvas_gantt_timer_session:'))!;
@@ -157,4 +159,86 @@ test('serializes simultaneous starts through the IndexedDB fallback when Web Loc
   expect(sessions[0]).not.toBeNull();
   expect(sessions[1]).toBe(sessions[0]);
   expect(JSON.parse(sessions[0]!).revision).toBe(1);
+
+  const initialSession = JSON.parse(sessions[0]!) as { deadlineAt: number; revision: number };
+  await Promise.all([
+    pageA.getByTestId('global-timer-quick-extend').click(),
+    pageB.getByTestId('global-timer-quick-extend').click(),
+  ]);
+  await expect.poll(async () => pageA.evaluate(() => {
+    const key = Object.keys(localStorage).find(candidate => candidate.startsWith('redmine_canvas_gantt_timer_session:'));
+    if (!key) return null;
+    const session = JSON.parse(localStorage.getItem(key)!) as { deadlineAt: number; revision: number };
+    return { deadlineAt: session.deadlineAt, revision: session.revision };
+  })).toEqual({
+    deadlineAt: initialSession.deadlineAt + 30 * 60 * 1000,
+    revision: initialSession.revision + 2,
+  });
+});
+
+test('reconciles recording ownership on reload without changing another tab reservation', async ({ context }) => {
+  const pageA = await context.newPage();
+  const pageB = await context.newPage();
+  await Promise.all([
+    setupMockApp(pageA, { preferences: timerColumnPreferences }),
+    setupMockApp(pageB, { preferences: timerColumnPreferences }),
+  ]);
+  await Promise.all([waitForInitialRender(pageA), waitForInitialRender(pageB)]);
+
+  const ownerTabId = await pageA.evaluate(() => sessionStorage.getItem('redmine_canvas_gantt_timer_tab_id'));
+  const otherTabId = await pageB.evaluate(() => sessionStorage.getItem('redmine_canvas_gantt_timer_tab_id'));
+  expect(ownerTabId).toBeTruthy();
+  expect(otherTabId).toBeTruthy();
+  expect(otherTabId).not.toBe(ownerTabId);
+
+  const writePendingSession = async (page: typeof pageA, phase: 'editing' | 'submitting', owner: string) => {
+    await page.evaluate(({ phase: attemptPhase, ownerTabId: attemptOwner }) => {
+      const key = `redmine_canvas_gantt_timer_session:${encodeURIComponent(window.location.origin)}:user:1`;
+      const now = Date.now();
+      localStorage.setItem(key, JSON.stringify({
+        version: 4,
+        sessionId: `ownership-${attemptPhase}-${attemptOwner}`,
+        revision: 1,
+        issueId: 101,
+        subject: 'Task 101',
+        autoStop: false,
+        userId: 1,
+        state: 'stopped_pending_record',
+        recordingAttempt: {
+          id: `attempt-${attemptPhase}`,
+          ownerTabId: attemptOwner,
+          openedAt: now - 30 * 60 * 1000,
+          phase: attemptPhase,
+        },
+        segments: [{ startedAt: now - 30 * 60 * 1000, stoppedAt: now }],
+        createdAt: now - 30 * 60 * 1000,
+        updatedAt: now,
+      }));
+    }, { phase, ownerTabId: owner });
+  };
+
+  await writePendingSession(pageA, 'editing', ownerTabId!);
+  await pageA.reload();
+  await pageA.getByTestId('cell-101-subject').waitFor({ state: 'visible' });
+  await expect.poll(() => pageA.evaluate(() => {
+    const key = Object.keys(localStorage).find(candidate => candidate.startsWith('redmine_canvas_gantt_timer_session:'))!;
+    return JSON.parse(localStorage.getItem(key)!).recordingAttempt;
+  })).toBeUndefined();
+
+  await writePendingSession(pageA, 'editing', ownerTabId!);
+  await pageB.reload();
+  await pageB.getByTestId('cell-101-subject').waitFor({ state: 'visible' });
+  await expect.poll(() => pageB.evaluate(() => {
+    const key = Object.keys(localStorage).find(candidate => candidate.startsWith('redmine_canvas_gantt_timer_session:'))!;
+    return JSON.parse(localStorage.getItem(key)!).recordingAttempt.phase;
+  })).toBe('editing');
+
+  await writePendingSession(pageA, 'submitting', ownerTabId!);
+  await pageB.reload();
+  await pageB.getByTestId('cell-101-subject').waitFor({ state: 'visible' });
+  await expect.poll(() => pageB.evaluate(() => {
+    const key = Object.keys(localStorage).find(candidate => candidate.startsWith('redmine_canvas_gantt_timer_session:'))!;
+    const session = JSON.parse(localStorage.getItem(key)!);
+    return { phase: session.recordingAttempt.phase, ownerTabId: session.recordingAttempt.ownerTabId };
+  })).toEqual({ phase: 'submitting', ownerTabId });
 });

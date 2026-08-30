@@ -114,7 +114,7 @@ describe('Sidebar Timer Column', () => {
 
         useTimerStore.setState({
             session: {
-                version: 2,
+                version: 4,
                 revision: 1,
                 sessionId: 's-103',
                 issueId: '103',
@@ -133,6 +133,47 @@ describe('Sidebar Timer Column', () => {
         const runningBtn = screen.getByTestId('task-timer-running-103');
         expect(runningBtn).toBeTruthy();
         expect(runningBtn.textContent).toContain('⏱');
+    });
+
+    it('focuses the global timer when the running icon is clicked', () => {
+        const task: Task = {
+            id: '105',
+            subject: 'Task 105',
+            startDate: 0,
+            dueDate: 1,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            canLogTime: true,
+            rowIndex: 0,
+            hasChildren: false
+        };
+        useTaskStore.getState().setTasks([task]);
+        useTimerStore.setState({
+            session: {
+                version: 4,
+                revision: 1,
+                sessionId: 's-105',
+                issueId: '105',
+                subject: 'Task 105',
+                autoStop: false,
+                state: 'running',
+                deadlineAt: Date.now() + 15 * 60 * 1000,
+                segments: [{ startedAt: Date.now() }],
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            }
+        });
+        const globalTimer = document.createElement('div');
+        globalTimer.dataset.testid = 'global-timer';
+        document.body.appendChild(globalTimer);
+        const focusSpy = vi.spyOn(globalTimer, 'focus');
+
+        render(<UiSidebar />);
+        fireEvent.click(screen.getByTestId('task-timer-running-105'));
+
+        expect(focusSpy).toHaveBeenCalledTimes(1);
     });
 
     it('renders pending icon when timer has unrecorded work for the task', () => {
@@ -154,7 +195,7 @@ describe('Sidebar Timer Column', () => {
 
         useTimerStore.setState({
             session: {
-                version: 2,
+                version: 4,
                 revision: 1,
                 sessionId: 's-104',
                 issueId: '104',

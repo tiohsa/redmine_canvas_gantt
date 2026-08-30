@@ -11,7 +11,7 @@ import { useEditMetaStore } from '../stores/EditMetaStore';
 import type { InlineEditSettings } from '../types/editMeta';
 import { i18n } from '../utils/i18n';
 import { buildRedmineUrl } from '../utils/redmineUrl';
-import { customFieldEditField, customFieldIdFromEditField, formatCustomFieldCellValue, type SidebarColumn } from './sidebar/sidebarColumns';
+import { customFieldEditField, customFieldIdFromEditField, formatCustomFieldCellValue, formatHoursMinutes, type SidebarColumn } from './sidebar/sidebarColumns';
 import { mergeColumnSettings, resolveVisibleColumnKeys } from './sidebar/sidebarColumnSettings';
 import { useSidebarColumnSizing } from './sidebar/useSidebarColumnSizing';
 import { useSidebarDragAndDrop } from './sidebar/useSidebarDragAndDrop';
@@ -314,6 +314,7 @@ export const UiSidebar: React.FC = () => {
                             data-tooltip={ariaLabel}
                             onClick={(e) => {
                                 e.stopPropagation();
+                                document.querySelector<HTMLElement>('[data-testid="global-timer"]')?.focus();
                             }}
                             style={{
                                 display: 'inline-flex',
@@ -770,7 +771,7 @@ export const UiSidebar: React.FC = () => {
             key: 'spentHours',
             title: tr('field_spent_hours'),
             width: columnWidths['spentHours'] ?? 80,
-            render: (t: Task) => <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.spentHours !== undefined ? `${Number(t.spentHours.toFixed(1))}h` : '-'}</span>
+            render: (t: Task) => <span style={{ color: sidebarMutedText, fontSize: `${mediumSmallFontSize}px` }}>{t.spentHours !== undefined ? formatHoursMinutes(t.spentHours) : '-'}</span>
         },
         {
             key: 'version',

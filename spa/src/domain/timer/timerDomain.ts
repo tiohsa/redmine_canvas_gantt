@@ -7,7 +7,7 @@ import type {
     TimerTickResult
 } from '../../types/timer';
 
-export const TIMER_SESSION_VERSION = 3;
+export const TIMER_SESSION_VERSION = 4;
 
 export interface CreateTimerSessionOptions {
     issueId: number | string;
@@ -196,14 +196,16 @@ const transitionRecording = (
 
 export const beginTimerRecording = (
     session: TimerSession,
+    ownerTabId: string,
     attemptId: string = generateSessionId(),
     now: number = Date.now()
 ): TimerSession | undefined => {
-    if (session.state !== 'stopped_pending_record' || session.recordingAttempt) return undefined;
+    if (session.state !== 'stopped_pending_record' || session.recordingAttempt || typeof ownerTabId !== 'string' || ownerTabId.trim() === '') return undefined;
     return {
         ...session,
         recordingAttempt: {
             id: attemptId,
+            ownerTabId,
             openedAt: now,
             phase: 'editing'
         }
@@ -251,6 +253,31 @@ export const cancelTimerRecording = (
     const withoutAttempt = { ...next };
     delete withoutAttempt.recordingAttempt;
     return { ...withoutAttempt, updatedAt: now };
+};
+
+export const recoverTimerRecording = (
+    session: TimerSession,
+    attemptId: string,
+    now: number = Date.now()
+): TimerSession | undefined => {
+    const attempt = session.recordingAttempt;
+    if (session.state !== 'stopped_pending_record' || !attempt || attempt.id !== attemptId) return undefined;
+
+    if (attempt.phase === 'editing') {
+        const withoutAttempt = { ...session };
+        delete withoutAttempt.recordingAttempt;
+        return { ...withoutAttempt, updatedAt: now };
+    }
+
+    if (attempt.phase === 'submitting') {
+        return {
+            ...session,
+            recordingAttempt: { ...attempt, phase: 'unknown' },
+            updatedAt: now
+        };
+    }
+
+    return undefined;
 };
 
 export const completeTimerRecording = (session: TimerSession, attemptId: string): null | undefined => {
@@ -355,6 +382,12 @@ export const formatElapsedMinutesText = (totalMs: number, isJapanese: boolean = 
         return `${totalMinutes}分`;
     }
     return `${totalMinutes} min`;
+};
+
+export const formatTimerExtensionLabel = (minutes: TimerIntervalMinutes, localizedMinutesTemplate?: string): string => {
+    const template = localizedMinutesTemplate || '%{count} min';
+    const formatted = template.replace('%{count}', String(minutes));
+    return formatted.startsWith('+') ? formatted : `+${formatted}`;
 };
 
 export const isTimerSpanningMultipleDays = (session: TimerSession, now: number = Date.now()): boolean => {

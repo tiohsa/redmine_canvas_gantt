@@ -835,14 +835,14 @@ describe('IssueIframeDialog', () => {
         const clearSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         useTimerStore.setState({
             session: {
-                version: 3,
+                version: 4,
                 revision: 1,
                 sessionId: 's1',
                 issueId: 123,
                 subject: 'Task 123',
                 autoStop: false,
                 state: 'stopped_pending_record',
-                recordingAttempt: { id: 'attempt-1', openedAt: Date.now(), phase: 'editing' as const },
+                recordingAttempt: { id: 'attempt-1', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
                 segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
@@ -901,14 +901,14 @@ describe('IssueIframeDialog', () => {
     it('clears the matching timer when Redmine redirects back to Canvas Gantt with a success notice', async () => {
         const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         const session = {
-            version: 3 as const,
+            version: 4 as const,
             revision: 1,
             sessionId: 'canvas-redirect',
             issueId: 123,
             subject: 'Task 123',
             autoStop: false,
             state: 'stopped_pending_record' as const,
-            recordingAttempt: { id: 'canvas-attempt', openedAt: Date.now(), phase: 'editing' as const },
+            recordingAttempt: { id: 'canvas-attempt', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
             createdAt: Date.now(),
             updatedAt: Date.now(),
             segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
@@ -960,14 +960,14 @@ describe('IssueIframeDialog', () => {
             const sessionId = `${timerState}-normal-entry`;
             useTimerStore.setState({
                 session: {
-                    version: 3,
+                    version: 4,
                     revision: 1,
                     sessionId,
                     issueId: 123,
                     subject: 'Task 123',
                     autoStop: false,
                     state: timerState,
-                    ...(timerState === 'stopped_pending_record' ? { recordingAttempt: { id: 'attempt-2', openedAt: Date.now(), phase: 'editing' as const } } : {}),
+                    ...(timerState === 'stopped_pending_record' ? { recordingAttempt: { id: 'attempt-2', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const } } : {}),
                     createdAt: Date.now(),
                     updatedAt: Date.now(),
                     segments: [{
@@ -1013,14 +1013,14 @@ describe('IssueIframeDialog', () => {
     it('keeps the pending timer when a timer-origin TimeEntry dialog is cancelled', () => {
         const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         const session = {
-            version: 3 as const,
+            version: 4 as const,
             revision: 1,
             sessionId: 'cancelled-recording',
             issueId: 123,
             subject: 'Task 123',
             autoStop: false,
             state: 'stopped_pending_record' as const,
-            recordingAttempt: { id: 'cancel-attempt', openedAt: Date.now(), phase: 'editing' as const },
+            recordingAttempt: { id: 'cancel-attempt', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
             createdAt: Date.now(),
             updatedAt: Date.now(),
             segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
@@ -1054,14 +1054,14 @@ describe('IssueIframeDialog', () => {
     ])('keeps the pending timer after a TimeEntry %s', async (_caseName, errorMessage) => {
         const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         const session = {
-            version: 3 as const,
+            version: 4 as const,
             revision: 1,
             sessionId: `failed-recording-${errorMessage}`,
             issueId: 123,
             subject: 'Task 123',
             autoStop: false,
             state: 'stopped_pending_record' as const,
-            recordingAttempt: { id: 'failed-attempt', openedAt: Date.now(), phase: 'editing' as const },
+            recordingAttempt: { id: 'failed-attempt', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
             createdAt: Date.now(),
             updatedAt: Date.now(),
             segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
@@ -1085,7 +1085,7 @@ describe('IssueIframeDialog', () => {
         const doc = document.implementation.createHTMLDocument('iframe');
         doc.body.innerHTML = '<form id="new_time_entry" action="/time_entries"><input name="commit" type="submit" value="Create" /></form>';
         Object.defineProperty(iframe, 'contentWindow', {
-            value: { location: { href: 'http://example.com/issues/123/time_entries/new' }, document: doc },
+            value: { location: { href: 'http://example.com/time_entries' }, document: doc },
             configurable: true
         });
         Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
@@ -1104,14 +1104,14 @@ describe('IssueIframeDialog', () => {
     it('keeps the pending timer after an unexpected TimeEntry redirect', async () => {
         const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         const session = {
-            version: 3 as const,
+            version: 4 as const,
             revision: 1,
             sessionId: 'unexpected-redirect',
             issueId: 123,
             subject: 'Task 123',
             autoStop: false,
             state: 'stopped_pending_record' as const,
-            recordingAttempt: { id: 'redirect-attempt', openedAt: Date.now(), phase: 'editing' as const },
+            recordingAttempt: { id: 'redirect-attempt', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
             createdAt: Date.now(),
             updatedAt: Date.now(),
             segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
@@ -1162,14 +1162,14 @@ describe('IssueIframeDialog', () => {
         const clearSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         useTimerStore.setState({
             session: {
-                version: 3,
+                version: 4,
                 revision: 1,
                 sessionId: 's2',
                 issueId: 456,
                 subject: 'Task 456',
                 autoStop: false,
                 state: 'stopped_pending_record',
-                recordingAttempt: { id: 'attempt-2', openedAt: Date.now(), phase: 'editing' as const },
+                recordingAttempt: { id: 'attempt-2', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
                 segments: [{ startedAt: Date.now() - 900000, stoppedAt: Date.now() }]

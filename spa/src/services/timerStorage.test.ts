@@ -10,10 +10,13 @@ import {
     getTimerStorageKeys,
     mutateStoredTimerSession,
     TIMER_PREFS_STORAGE_KEY,
-    TIMER_SESSION_STORAGE_KEY
+    TIMER_SESSION_STORAGE_KEY,
+    LEGACY_TIMER_OWNER_TAB_ID,
+    getCurrentTimerTabId,
+    TIMER_TAB_ID_STORAGE_KEY
 } from './timerStorage';
 import type { TimerSession } from '../types/timer';
-import { calculateTimerElapsed, evaluateTimerTick, extendTimerSession } from '../domain/timer/timerDomain';
+import { calculateTimerElapsed, evaluateTimerTick, extendTimerSession, TIMER_SESSION_VERSION } from '../domain/timer/timerDomain';
 
 describe('Timer Storage & Persistence', () => {
     const baseTime = 1700000000000;
@@ -21,15 +24,17 @@ describe('Timer Storage & Persistence', () => {
 
     beforeEach(() => {
         window.localStorage.clear();
+        window.sessionStorage.clear();
         vi.restoreAllMocks();
     });
 
     afterEach(() => {
         window.localStorage.clear();
+        window.sessionStorage.clear();
     });
 
     const createSampleSession = (overrides?: Partial<TimerSession>): TimerSession => ({
-        version: 3,
+        version: TIMER_SESSION_VERSION,
         sessionId: 'session-123',
         revision: 1,
         issueId: 101,
@@ -129,13 +134,50 @@ describe('Timer Storage & Persistence', () => {
 
         const loaded = loadStoredTimerSession(scope);
 
-        expect(loaded?.version).toBe(3);
+        expect(loaded?.version).toBe(TIMER_SESSION_VERSION);
         expect(loaded?.recordingAttempt).toEqual({
             id: 'legacy-attempt',
+            ownerTabId: LEGACY_TIMER_OWNER_TAB_ID,
             openedAt: baseTime,
             phase: 'unknown'
         });
         expect(loaded?.state).toBe('running');
+    });
+
+    it('migrates a version 3 recording attempt without an owner to the legacy owner', () => {
+        const version3 = {
+            ...createSampleSession(),
+            version: 3,
+            state: 'stopped_pending_record' as const,
+            recordingAttempt: {
+                id: 'version-3-attempt',
+                openedAt: baseTime,
+                phase: 'editing' as const
+            }
+        };
+        window.localStorage.setItem(getTimerStorageKeys(scope).session, JSON.stringify(version3));
+
+        const loaded = loadStoredTimerSession(scope);
+
+        expect(loaded?.version).toBe(TIMER_SESSION_VERSION);
+        expect(loaded?.recordingAttempt?.ownerTabId).toBe(LEGACY_TIMER_OWNER_TAB_ID);
+        expect(loaded?.recordingAttempt?.phase).toBe('editing');
+    });
+
+    it('keeps a stable tab id in session storage', () => {
+        const first = getCurrentTimerTabId();
+        expect(window.sessionStorage.getItem(TIMER_TAB_ID_STORAGE_KEY)).toBe(first);
+        expect(getCurrentTimerTabId()).toBe(first);
+
+        window.sessionStorage.clear();
+        expect(getCurrentTimerTabId()).not.toBe(first);
+    });
+
+    it('rejects a current-schema recording attempt without an owner', () => {
+        expect(isValidTimerSession({
+            ...createSampleSession(),
+            recordingAttempt: { id: 'attempt', openedAt: baseTime, phase: 'editing' }
+        })).toBe(false);
     });
 
     it('persists and loads timer preferences independently', () => {

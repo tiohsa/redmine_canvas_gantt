@@ -10,6 +10,7 @@ import {
     markTimerRecordingValidationError,
     markTimerRecordingUnknown,
     cancelTimerRecording,
+    recoverTimerRecording,
     completeTimerRecording,
     resolveUnknownTimerRecording,
     extendTimerSession,
@@ -19,6 +20,7 @@ import {
     formatTimerDuration,
     formatTimerDurationHoursMinutes,
     formatElapsedMinutesText,
+    formatTimerExtensionLabel,
     isTimerSpanningMultipleDays
 } from './timerDomain';
 import type { TimerSession } from '../../types/timer';
@@ -221,15 +223,16 @@ describe('Timer Domain Logic', () => {
             autoStop: false,
             now: baseTime
         }), baseTime + 10 * 60 * 1000);
-        const reserved = beginTimerRecording(pending, 'attempt-1', baseTime + 11 * 60 * 1000);
+        const reserved = beginTimerRecording(pending, 'tab-1', 'attempt-1', baseTime + 11 * 60 * 1000);
 
         expect(reserved?.recordingAttempt).toEqual({
             id: 'attempt-1',
+            ownerTabId: 'tab-1',
             openedAt: baseTime + 11 * 60 * 1000,
             phase: 'editing'
         });
         expect(extendTimerSession(reserved!, 15, baseTime + 12 * 60 * 1000)).toBe(reserved);
-        expect(beginTimerRecording(reserved!, 'attempt-2', baseTime + 12 * 60 * 1000)).toBeUndefined();
+        expect(beginTimerRecording(reserved!, 'tab-2', 'attempt-2', baseTime + 12 * 60 * 1000)).toBeUndefined();
 
         const submitting = beginTimerRecordingSubmission(reserved!, 'attempt-1');
         expect(submitting?.recordingAttempt?.phase).toBe('submitting');
@@ -247,11 +250,31 @@ describe('Timer Domain Logic', () => {
             autoStop: false,
             now: baseTime
         }), baseTime + 10 * 60 * 1000);
-        const reserved = beginTimerRecording(pending, 'attempt-1', baseTime + 11 * 60 * 1000)!;
+        const reserved = beginTimerRecording(pending, 'tab-1', 'attempt-1', baseTime + 11 * 60 * 1000)!;
         const unknown = markTimerRecordingUnknown(beginTimerRecordingSubmission(reserved, 'attempt-1')!, 'attempt-1')!;
 
         expect(resolveUnknownTimerRecording(unknown, 'attempt-1', 'unregistered')?.recordingAttempt).toBeUndefined();
         expect(resolveUnknownTimerRecording(unknown, 'attempt-1', 'recorded')).toBeNull();
+    });
+
+    it('recovers stranded editing and submitting reservations by phase', () => {
+        const pending = stopTimerSession(createTimerSession({
+            issueId: 123,
+            subject: 'Task',
+            minutes: 30,
+            autoStop: false,
+            now: baseTime
+        }), baseTime + 10 * 60 * 1000);
+        const editing = beginTimerRecording(pending, 'other-tab', 'editing-attempt', baseTime + 11 * 60 * 1000)!;
+        const recoveredEditing = recoverTimerRecording(editing, 'editing-attempt', baseTime + 12 * 60 * 1000);
+        expect(recoveredEditing?.recordingAttempt).toBeUndefined();
+
+        const submitting = beginTimerRecordingSubmission(editing, 'editing-attempt', baseTime + 12 * 60 * 1000)!;
+        const recoveredSubmitting = recoverTimerRecording(submitting, 'editing-attempt', baseTime + 13 * 60 * 1000);
+        expect(recoveredSubmitting?.recordingAttempt?.phase).toBe('unknown');
+
+        const unknown = markTimerRecordingUnknown(submitting, 'editing-attempt', baseTime + 13 * 60 * 1000)!;
+        expect(recoverTimerRecording(unknown, 'editing-attempt', baseTime + 14 * 60 * 1000)).toBeUndefined();
     });
 
     it('formats elapsed work time as zero-padded hours and minutes', () => {
@@ -260,10 +283,16 @@ describe('Timer Domain Logic', () => {
         expect(formatTimerDurationHoursMinutes(100 * 60 * 60 * 1000 + 7 * 60 * 1000)).toBe('100:07');
     });
 
+    it('formats timer extension labels with localized minute templates', () => {
+        expect(formatTimerExtensionLabel(5)).toBe('+5 min');
+        expect(formatTimerExtensionLabel(15, '+%{count} min')).toBe('+15 min');
+        expect(formatTimerExtensionLabel(15, '+%{count}分')).toBe('+15分');
+    });
+
     it('calculates recorded hours rounded to 2 decimal places', () => {
         // 30 min -> 0.50
         const session30m: TimerSession = {
-            version: 2,
+            version: 4,
             sessionId: 's1',
             revision: 1,
             issueId: 1,
@@ -325,7 +354,7 @@ describe('Timer Domain Logic', () => {
 
     it('detects when timer segments span multiple days', () => {
         const sameDaySession: TimerSession = {
-            version: 2,
+            version: 4,
             sessionId: 's1',
             revision: 1,
             issueId: 1,
@@ -339,7 +368,7 @@ describe('Timer Domain Logic', () => {
         expect(isTimerSpanningMultipleDays(sameDaySession)).toBe(false);
 
         const crossDaySession: TimerSession = {
-            version: 2,
+            version: 4,
             sessionId: 's1',
             revision: 1,
             issueId: 1,

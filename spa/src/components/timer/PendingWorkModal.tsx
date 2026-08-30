@@ -5,12 +5,14 @@ import {
     calculateRecordedHours,
     calculateTimerElapsed,
     formatElapsedMinutesText,
+    formatTimerExtensionLabel,
     formatTimerDuration,
     formatTimerDurationHoursMinutes,
     isTimerSpanningMultipleDays
 } from '../../domain/timer/timerDomain';
 import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
+import { getCurrentTimerTabId } from '../../services/timerStorage';
 
 export const PendingWorkModal: React.FC = () => {
     const pendingWorkModalOpen = useTimerStore(state => state.pendingWorkModalOpen);
@@ -19,10 +21,12 @@ export const PendingWorkModal: React.FC = () => {
     const recordTime = useTimerStore(state => state.recordTime);
     const resumeTimer = useTimerStore(state => state.resumeTimer);
     const discardTimer = useTimerStore(state => state.discardTimer);
+    const recoverTimerRecording = useTimerStore(state => state.recoverTimerRecording);
     const resolveUnknownTimerRecording = useTimerStore(state => state.resolveUnknownTimerRecording);
 
     const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
     const [unknownResolution, setUnknownResolution] = useState<'recorded' | 'unregistered' | null>(null);
+    const [isRecoveryConfirmOpen, setIsRecoveryConfirmOpen] = useState(false);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -31,6 +35,8 @@ export const PendingWorkModal: React.FC = () => {
                 e.preventDefault();
                 if (isDiscardConfirmOpen) {
                     setIsDiscardConfirmOpen(false);
+                } else if (isRecoveryConfirmOpen) {
+                    setIsRecoveryConfirmOpen(false);
                 } else {
                     closePendingWorkModal();
                 }
@@ -39,7 +45,7 @@ export const PendingWorkModal: React.FC = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [pendingWorkModalOpen, isDiscardConfirmOpen, closePendingWorkModal]);
+    }, [pendingWorkModalOpen, isDiscardConfirmOpen, isRecoveryConfirmOpen, closePendingWorkModal]);
 
     if (!pendingWorkModalOpen || !session) return null;
 
@@ -53,6 +59,11 @@ export const PendingWorkModal: React.FC = () => {
     const hoursMinutesFormatted = formatTimerDurationHoursMinutes(totalMs);
     const isCrossDay = isTimerSpanningMultipleDays(session);
     const recordingPhase = session.recordingAttempt?.phase;
+    const isStrandedRecording = Boolean(
+        recordingPhase &&
+        recordingPhase !== 'unknown' &&
+        session.recordingAttempt?.ownerTabId !== getCurrentTimerTabId()
+    );
     const unknownSecondaryButtonStyle: React.CSSProperties = {
         padding: '6px 14px',
         borderRadius: '9999px',
@@ -86,6 +97,18 @@ export const PendingWorkModal: React.FC = () => {
         };
         setUnknownResolution(null);
         void resolveUnknownTimerRecording(context, unknownResolution);
+    };
+
+    const handleRecordingRecoveryConfirm = () => {
+        if (!session.recordingAttempt || !isStrandedRecording) return;
+        const context = {
+            origin: 'timer' as const,
+            sessionId: session.sessionId,
+            issueId: session.issueId,
+            attemptId: session.recordingAttempt.id
+        };
+        setIsRecoveryConfirmOpen(false);
+        void recoverTimerRecording(context);
     };
 
     return (
@@ -170,7 +193,31 @@ export const PendingWorkModal: React.FC = () => {
                 </div>
 
                 {/* Confirm unknown outcome or discard, otherwise show actions */}
-                {recordingPhase === 'unknown' && unknownResolution ? (
+                {isStrandedRecording && isRecoveryConfirmOpen ? (
+                    <div data-testid="pending-work-recording-recovery-confirm" style={{
+                        padding: '12px',
+                        backgroundColor: designTokens.warningBg,
+                        borderRadius: '12px',
+                        border: `1px solid ${designTokens.warningFg}`,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px'
+                    }}>
+                        <div style={{ color: designTokens.warningFg, fontSize: '12px', fontWeight: 600 }}>
+                            {recordingPhase === 'editing'
+                                ? (tr('label_timer_recording_recovery_confirm') || 'Confirm that the time-entry form is not being edited in another tab.')
+                                : (tr('label_timer_recording_recovery_submitting') || 'The submission may have reached Redmine. Check Redmine before recovering it.')}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                            <button type="button" data-testid="pending-work-recording-recovery-cancel" onClick={() => setIsRecoveryConfirmOpen(false)} style={unknownSecondaryButtonStyle}>
+                                {tr('button_cancel') || 'Cancel'}
+                            </button>
+                            <button type="button" data-testid="pending-work-recording-recovery-confirm-button" onClick={handleRecordingRecoveryConfirm} style={unknownPrimaryButtonStyle}>
+                                {tr('label_timer_recording_recover') || 'Recover recording'}
+                            </button>
+                        </div>
+                    </div>
+                ) : recordingPhase === 'unknown' && unknownResolution ? (
                     <div data-testid="pending-work-unknown-confirm" style={{
                         padding: '12px',
                         backgroundColor: designTokens.warningBg,
@@ -269,6 +316,19 @@ export const PendingWorkModal: React.FC = () => {
                             </button>
                         </div>
                     </div>
+                ) : isStrandedRecording ? (
+                    <div data-testid="pending-work-recording-reservation" style={{
+                        padding: '12px',
+                        backgroundColor: designTokens.surfaceSubtle,
+                        borderRadius: '12px',
+                        border: `1px solid ${designTokens.borderSubtle}`,
+                        color: designTokens.textSecondary
+                    }}>
+                        <div>{tr('label_timer_recording_recovery') || tr('label_timer_recording_in_progress') || 'A recording reservation from another tab is still active.'}</div>
+                        <button type="button" data-testid="pending-work-recording-recovery" onClick={() => setIsRecoveryConfirmOpen(true)} style={unknownPrimaryButtonStyle}>
+                            {tr('label_timer_recording_recover') || 'Recover recording'}
+                        </button>
+                    </div>
                 ) : recordingPhase ? (
                     <div data-testid="pending-work-recording-reservation" style={{
                         padding: '12px',
@@ -329,7 +389,7 @@ export const PendingWorkModal: React.FC = () => {
                                             cursor: 'pointer'
                                         }}
                                     >
-                                        +{minutes}m
+                                        {formatTimerExtensionLabel(minutes, tr('label_timer_minutes') || '%{count} min')}
                                     </button>
                                 ))}
                             </div>

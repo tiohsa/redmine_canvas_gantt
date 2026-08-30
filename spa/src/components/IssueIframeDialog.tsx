@@ -10,7 +10,7 @@ import { buildRedmineUrl } from '../utils/redmineUrl';
 import { apiClient } from '../api/client';
 import { canApplyReadResponse, createReadContext, type ReadContext } from '../stores/taskStore/stateContract';
 import { useTimerStore } from '../stores/TimerStore';
-import { detectTimerRecordingOutcome, isTimeEntryFormPath } from '../domain/timer/timerRecordingOutcome';
+import { detectTimerRecordingOutcome } from '../domain/timer/timerRecordingOutcome';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
@@ -429,7 +429,7 @@ export const IssueIframeDialog: React.FC = () => {
             const pathAfterLoad = urlParsedAfterLoad.pathname;
             const issueIdAfterLoad = getIssueShowIdFromPath(pathAfterLoad);
 
-            const isTimeEntryFormPage = isTimeEntryFormPath(pathAfterLoad);
+            const hasTimeEntryForm = getActiveSaveForm(doc, pathAfterLoad)?.target === 'time_entry';
             const hasTimeEntrySuccessNotice = Boolean(doc.querySelector('.flash.notice'));
             const timerRecordingIssueMatches = !issueDialogContext?.timerRecording ||
                 !issueIdAfterLoad ||
@@ -442,7 +442,7 @@ export const IssueIframeDialog: React.FC = () => {
                 ? detectTimerRecordingOutcome({
                     isSaving: isSavingRef.current,
                     wasTimeEntryForm,
-                    isTimeEntryFormPage,
+                    hasTimeEntryForm,
                     hasSuccessNotice: hasTimeEntrySuccessNotice,
                     hasValidationError: Boolean(error),
                     issueMatches: timerRecordingIssueMatches

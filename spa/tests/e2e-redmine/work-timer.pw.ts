@@ -16,7 +16,7 @@ test('records timer work through the standard Redmine TimeEntry redirect', async
   if (!(await timerColumn.isChecked())) await timerColumn.click();
   await expect(page.getByTestId('sidebar-header-timer')).toBeVisible();
 
-  const startButton = page.locator('[data-testid^="task-timer-start-"]:not([disabled])').first();
+  const startButton = page.locator('[data-testid="task-timer-start-2"]');
   await expect(startButton).toBeVisible();
   await startButton.dispatchEvent('click');
   await page.getByTestId('timer-start-confirm-button').click();
@@ -41,4 +41,3 @@ test('records timer work through the standard Redmine TimeEntry redirect', async
   await expect(page.locator('iframe[src*="/time_entries/new"]')).toHaveCount(0);
   await expect.poll(() => timerSessionCount(page)).toBe(0);
 });
-

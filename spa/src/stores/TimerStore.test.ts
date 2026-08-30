@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useTimerStore } from './TimerStore';
 import { useUIStore } from './UIStore';
 import type { Task } from '../types';
-import { getTimerStorageKeys, loadStoredTimerSession, persistTimerSession } from '../services/timerStorage';
+import { getTimerStorageKeys, loadStoredTimerSession, persistTimerSession, TIMER_TAB_ID_STORAGE_KEY } from '../services/timerStorage';
 
 describe('TimerStore', () => {
     const mockTask: Task = {
@@ -19,6 +19,8 @@ describe('TimerStore', () => {
 
     beforeEach(() => {
         window.localStorage.clear();
+        window.sessionStorage.clear();
+        window.sessionStorage.setItem(TIMER_TAB_ID_STORAGE_KEY, 'test-tab');
         useTimerStore.setState({
             session: null,
             preferences: { autoStop: false },
@@ -38,6 +40,7 @@ describe('TimerStore', () => {
     afterEach(() => {
         vi.useRealTimers();
         window.localStorage.clear();
+        window.sessionStorage.clear();
     });
 
     it('starts a timer session with chosen duration and autoStop preference snapshot', async () => {
@@ -220,7 +223,7 @@ describe('TimerStore', () => {
         const startedAt = 1_700_000_000_000;
         vi.setSystemTime(startedAt + 35 * 60 * 1000);
         const overdue = {
-            version: 3,
+            version: 4,
             sessionId: 'overdue-session',
             revision: 1,
             issueId: 123,
@@ -247,7 +250,7 @@ describe('TimerStore', () => {
     it('reconciles an interrupted submission to unknown during startup', async () => {
         const startedAt = Date.now() - 30 * 60 * 1000;
         const submitting = {
-            version: 3,
+            version: 4,
             sessionId: 'interrupted-submission',
             revision: 4,
             issueId: 123,
@@ -256,6 +259,7 @@ describe('TimerStore', () => {
             state: 'stopped_pending_record' as const,
             recordingAttempt: {
                 id: 'interrupted-attempt',
+                ownerTabId: 'test-tab',
                 openedAt: startedAt,
                 phase: 'submitting' as const
             },
@@ -271,6 +275,94 @@ describe('TimerStore', () => {
         expect(useTimerStore.getState().session?.recordingAttempt?.phase).toBe('unknown');
         expect(useTimerStore.getState().session?.revision).toBe(5);
         expect(loadStoredTimerSession()?.recordingAttempt?.phase).toBe('unknown');
+    });
+
+    it('reconciles recording reservations by owner and phase during startup', async () => {
+        const makePending = (ownerTabId: string, phase: 'editing' | 'submitting' | 'unknown') => {
+            const startedAt = Date.now() - 30 * 60 * 1000;
+            return {
+                version: 4,
+                sessionId: `startup-${ownerTabId}-${phase}`,
+                revision: 1,
+                issueId: 123,
+                subject: 'Startup task',
+                autoStop: false,
+                state: 'stopped_pending_record' as const,
+                recordingAttempt: {
+                    id: `attempt-${ownerTabId}-${phase}`,
+                    ownerTabId,
+                    openedAt: startedAt,
+                    phase
+                },
+                segments: [{ startedAt, stoppedAt: Date.now() }],
+                createdAt: startedAt,
+                updatedAt: Date.now()
+            };
+        };
+
+        const cases = [
+            { name: 'current editing without dialog', ownerTabId: 'test-tab', phase: 'editing' as const, attemptExpected: undefined, hasDialog: false },
+            { name: 'current editing with dialog', ownerTabId: 'test-tab', phase: 'editing' as const, attemptExpected: 'editing' as const, hasDialog: true },
+            { name: 'current submitting', ownerTabId: 'test-tab', phase: 'submitting' as const, attemptExpected: 'unknown' as const, hasDialog: false },
+            { name: 'other editing', ownerTabId: 'other-tab', phase: 'editing' as const, attemptExpected: 'editing' as const, hasDialog: false },
+            { name: 'other submitting', ownerTabId: 'other-tab', phase: 'submitting' as const, attemptExpected: 'submitting' as const, hasDialog: false },
+            { name: 'unknown outcome', ownerTabId: 'test-tab', phase: 'unknown' as const, attemptExpected: 'unknown' as const, hasDialog: false }
+        ];
+
+        for (const testCase of cases) {
+            const session = makePending(testCase.ownerTabId, testCase.phase);
+            persistTimerSession(session);
+            useTimerStore.setState({ session, isReady: false });
+            useUIStore.setState({
+                issueDialogContext: testCase.hasDialog ? {
+                    timerRecording: {
+                        origin: 'timer',
+                        sessionId: session.sessionId,
+                        issueId: session.issueId,
+                        attemptId: session.recordingAttempt.id
+                    }
+                } : null
+            });
+
+            await useTimerStore.getState().tick();
+
+            const reconciled = useTimerStore.getState().session;
+            expect(reconciled?.recordingAttempt?.phase, testCase.name).toBe(testCase.attemptExpected);
+            expect(reconciled?.revision, testCase.name).toBe(testCase.attemptExpected === testCase.phase ? 1 : 2);
+        }
+    });
+
+    it('recovers another tab editing or submitting reservation explicitly', async () => {
+        const startedAt = Date.now() - 30 * 60 * 1000;
+        const makePending = (phase: 'editing' | 'submitting') => ({
+            version: 4,
+            sessionId: `recover-${phase}`,
+            revision: 1,
+            issueId: 123,
+            subject: 'Recoverable task',
+            autoStop: false,
+            state: 'stopped_pending_record' as const,
+            recordingAttempt: { id: `recover-attempt-${phase}`, ownerTabId: 'other-tab', openedAt: startedAt, phase },
+            segments: [{ startedAt, stoppedAt: Date.now() }],
+            createdAt: startedAt,
+            updatedAt: Date.now()
+        });
+
+        for (const phase of ['editing', 'submitting'] as const) {
+            const session = makePending(phase);
+            persistTimerSession(session);
+            useTimerStore.setState({ session, isReady: true });
+
+            const recovered = await useTimerStore.getState().recoverTimerRecording({
+                origin: 'timer',
+                sessionId: session.sessionId,
+                issueId: session.issueId,
+                attemptId: session.recordingAttempt.id
+            });
+
+            expect(recovered).toBe(true);
+            expect(useTimerStore.getState().session?.recordingAttempt?.phase).toBe(phase === 'editing' ? undefined : 'unknown');
+        }
     });
 
     it('keeps an unknown save outcome until explicit user resolution', async () => {
@@ -322,7 +414,7 @@ describe('TimerStore', () => {
         expect(useTimerStore.getState().session).toBeNull();
 
         const externalSession = {
-            version: 3,
+            version: 4,
             sessionId: 'external-1',
             revision: 1,
             issueId: 999,

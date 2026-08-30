@@ -18,6 +18,13 @@ export const customFieldIdFromColumnKey = (key: string) => (isCustomFieldColumnK
 export const customFieldEditField = (id: string) => `${CUSTOM_FIELD_EDIT_PREFIX}${id}`;
 export const customFieldIdFromEditField = (field: string) => field.startsWith(CUSTOM_FIELD_EDIT_PREFIX) ? field.slice(CUSTOM_FIELD_EDIT_PREFIX.length) : null;
 
+export const formatHoursMinutes = (hours: number): string => {
+    const totalMinutes = Math.max(0, Math.round(hours * 60));
+    const formattedHours = String(Math.floor(totalMinutes / 60));
+    const formattedMinutes = String(totalMinutes % 60).padStart(2, '0');
+    return `${formattedHours}:${formattedMinutes}`;
+};
+
 export const formatCustomFieldCellValue = (task: Task, customField: CustomFieldMeta): string => {
     const raw = task.customFieldValues?.[String(customField.id)];
     if (raw === undefined || raw === null || raw === '') return '-';

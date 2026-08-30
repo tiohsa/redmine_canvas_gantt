@@ -13,6 +13,7 @@ export interface TimerSegment {
 
 export interface TimerRecordingAttempt {
     id: string;
+    ownerTabId: string;
     openedAt: number;
     phase: TimerRecordingPhase;
 }

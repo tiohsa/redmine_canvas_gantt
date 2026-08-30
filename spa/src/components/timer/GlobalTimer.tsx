@@ -6,6 +6,7 @@ import {
     calculateTimerOverrun,
     calculateTimerRemaining,
     formatElapsedMinutesText,
+    formatTimerExtensionLabel,
     formatTimerDuration,
     formatTimerDurationHoursMinutes
 } from '../../domain/timer/timerDomain';
@@ -57,6 +58,7 @@ export const GlobalTimer: React.FC = () => {
     return (
         <div
             data-testid="global-timer"
+            tabIndex={-1}
             style={{
                 position: 'fixed',
                 bottom: '20px',
@@ -178,9 +180,9 @@ export const GlobalTimer: React.FC = () => {
                                 fontWeight: 600,
                                 cursor: 'pointer'
                             }}
-                            title="+15 min"
+                            title={formatTimerExtensionLabel(15, tr('label_timer_minutes') || '%{count} min')}
                         >
-                            +15m
+                            {formatTimerExtensionLabel(15, tr('label_timer_minutes') || '%{count} min')}
                         </button>
 
                         {/* Extend dropdown toggle */}
@@ -243,7 +245,7 @@ export const GlobalTimer: React.FC = () => {
                                         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f0f0')}
                                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                                     >
-                                        +{min} {tr('label_day_plural') ? 'min' : '分'}
+                                        {formatTimerExtensionLabel(min, tr('label_timer_minutes') || '%{count} min')}
                                     </button>
                                 ))}
                             </div>
