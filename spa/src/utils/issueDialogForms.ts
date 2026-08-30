@@ -28,7 +28,7 @@ const isTimeEntryEditorForm = (form: HTMLFormElement): boolean => {
 export const classifyIssueDialogForm = (form: HTMLFormElement): IssueDialogFormTarget => {
     if (isQueryForm(form)) return 'query';
     if (isJournalForm(form)) return 'journal';
-    if (isTimeEntryEditorForm(form)) return 'time_entry';
     if (form.id === 'issue-form') return 'issue';
+    if (isTimeEntryEditorForm(form)) return 'time_entry';
     return null;
 };

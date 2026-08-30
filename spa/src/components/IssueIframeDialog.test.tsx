@@ -6,6 +6,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useTimerStore } from '../stores/TimerStore';
 import { applyIssueDialogStyles, findIssueDialogErrorElement, getIssueDialogErrorMessage } from '../utils/iframeStyles';
 import { persistTimerSession } from '../services/timerStorage';
+import { apiClient } from '../api/client';
 
 type RefreshData = ReturnType<typeof useTaskStore.getState>['refreshData'];
 
@@ -53,6 +54,7 @@ const setElementHeight = (element: HTMLElement, height: number) => {
 
 describe('IssueIframeDialog', () => {
     beforeEach(() => {
+        vi.restoreAllMocks();
         window.localStorage.clear();
         window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
         useUIStore.setState({ issueDialogUrl: '/issues/123/edit', issueDialogContext: null, queryDialogUrl: null });
@@ -61,6 +63,7 @@ describe('IssueIframeDialog', () => {
         vi.mocked(applyIssueDialogStyles).mockReset();
         vi.mocked(findIssueDialogErrorElement).mockReset();
         vi.mocked(getIssueDialogErrorMessage).mockReset();
+        vi.spyOn(apiClient, 'getSubtaskTrackers').mockResolvedValue([]);
     });
 
     it('applies iframe styles on load', () => {
@@ -175,6 +178,68 @@ describe('IssueIframeDialog', () => {
         fireEvent.click(screen.getByText('Bulk Ticket Creation'));
 
         expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
+    });
+
+    it('offers bulk child creation for an issue edit dialog', () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123/edit', queryDialogUrl: null });
+
+        render(<IssueIframeDialog />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
+    });
+
+    it.each(['/issues/123/', '/issues/123/edit/', '/redmine/issues/123'])('offers bulk child creation for supported Issue URL %s', (issueDialogUrl) => {
+        useUIStore.setState({ issueDialogUrl, queryDialogUrl: null });
+
+        render(<IssueIframeDialog />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
+    });
+
+    it('preserves bulk child creation for a new Issue with an explicit parent', () => {
+        useUIStore.setState({
+            issueDialogUrl: '/projects/example/issues/new?issue[parent_issue_id]=123',
+            queryDialogUrl: null
+        });
+
+        render(<IssueIframeDialog />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
+    });
+
+    it('offers bulk child creation for a new Issue before a parent is selected', () => {
+        useUIStore.setState({ issueDialogUrl: '/projects/example/issues/new', queryDialogUrl: null });
+
+        render(<IssueIframeDialog />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
+    });
+
+    it.each([
+        ['timer-originated TimeEntry', '/issues/123/time_entries/new', { origin: 'timer' as const, sessionId: 's1', issueId: 123, attemptId: 'a1' }],
+        ['direct TimeEntry', '/issues/123/time_entries/new', null],
+        ['Issue sub-resource', '/issues/123/relations/4', null],
+        ['other Issue sub-path', '/issues/123/example', null]
+    ])('does not render bulk subtasks or fetch trackers for %s', async (_name, issueDialogUrl, timerRecording) => {
+        useUIStore.setState({
+            issueDialogUrl,
+            issueDialogContext: timerRecording ? { timerRecording } : null,
+            queryDialogUrl: null
+        });
+
+        render(<IssueIframeDialog />);
+
+        expect(screen.queryByText('Bulk Ticket Creation')).not.toBeInTheDocument();
+        await Promise.resolve();
+        expect(apiClient.getSubtaskTrackers).not.toHaveBeenCalled();
     });
 
     it('shrinks dialog height for short iframe content', async () => {

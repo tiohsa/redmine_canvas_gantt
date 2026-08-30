@@ -16,6 +16,7 @@ describe('classifyIssueDialogForm', () => {
         ['<form><select name="time_entry[activity_id]"></select></form>', 'time_entry'],
         ['<form><textarea name="time_entry[comments]"></textarea></form>', 'time_entry'],
         ['<form id="issue-form"></form>', 'issue'],
+        ['<form id="issue-form"><input name="time_entry[hours]" /></form>', 'issue'],
         ['<form id="journal-7-form"></form>', 'journal'],
         ['<form action="/journals/7"><textarea name="journal[notes]"></textarea></form>', 'journal'],
         ['<form id="query_form" action="/projects/demo/time_entries"></form>', 'query'],

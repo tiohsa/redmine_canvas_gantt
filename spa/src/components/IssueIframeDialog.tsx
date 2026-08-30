@@ -67,9 +67,21 @@ type SaveTarget = 'issue' | 'new-issue' | 'journal' | 'time_entry' | 'query' | n
 
 const getIssueShowIdFromPath = (path: string): string | null => {
     const issueMatch = path.match(/\/issues\/(\d+)\/?$/);
-    if (!issueMatch) return null;
-    if (path.includes('/edit') || path.includes('/new')) return null;
-    return issueMatch[1];
+    return issueMatch?.[1] ?? null;
+};
+
+const getIssueIdFromPath = (path: string): string | null => (
+    path.match(/\/issues\/(\d+)(?:\/edit)?\/?$/)?.[1] ?? null
+);
+
+const isTimeEntryDialogUrl = (url: string | null): boolean => {
+    if (!url) return false;
+
+    try {
+        return /(?:^|\/)time_entries(?:\/|$)/.test(new URL(url, window.location.origin).pathname);
+    } catch {
+        return false;
+    }
 };
 
 const findJournalEditForm = (doc: Document): HTMLFormElement | null => {
@@ -655,11 +667,10 @@ export const IssueIframeDialog: React.FC = () => {
         }
 
         const url = activeDialogUrl.split('?')[0];
+        const issueId = getIssueIdFromPath(url);
 
-        // 1. Try to extract issue ID from /issues/123 or /issues/123/edit
-        const issueMatch = url.match(/\/issues\/(\d+)(?:\/edit)?/);
-        if (issueMatch) {
-            const issueId = issueMatch[1];
+        // 1. Treat only an issue show or edit URL as an issue dialog.
+        if (issueId) {
             // Try to find the task in the store to get more info (Tracker, etc.)
             const task = useTaskStore.getState().tasks.find(t => String(t.id) === issueId);
             if (task) {
@@ -681,24 +692,32 @@ export const IssueIframeDialog: React.FC = () => {
         return { issueLabel: label, issueSubject: '' };
     }, [activeDialogUrl, displayedIssueId, isQueryDialog]);
 
+    const initialTimeEntryDialog = Boolean(issueDialogContext?.timerRecording) || isTimeEntryDialogUrl(activeDialogUrl);
+    const isTimeEntryDialog = initialTimeEntryDialog || saveTarget === 'time_entry';
+
+    const isBulkEligibleIssueDialog = React.useMemo(() => {
+        if (!activeDialogUrl || isQueryDialog) return false;
+
+        try {
+            const path = new URL(activeDialogUrl, window.location.origin).pathname;
+            return Boolean(getIssueIdFromPath(path)) || /\/(?:projects\/[^/]+\/)?issues\/new\/?$/.test(path);
+        } catch {
+            return false;
+        }
+    }, [activeDialogUrl, isQueryDialog]);
+
     const parentId = React.useMemo(() => {
         if (!activeDialogUrl || isQueryDialog) return undefined;
 
         try {
             const urlParsed = new URL(activeDialogUrl, window.location.origin);
-            const path = urlParsed.pathname;
-            const params = urlParsed.searchParams;
+            const issueId = getIssueIdFromPath(urlParsed.pathname);
+            if (issueId) return issueId;
 
-            let paId = params.get('issue[parent_issue_id]') || params.get('parent_issue_id') || undefined;
+            const isNewIssuePath = /\/(?:projects\/[^/]+\/)?issues\/new\/?$/.test(urlParsed.pathname);
+            if (!isNewIssuePath) return undefined;
 
-            // The issue itself is the parent for subtasks from both the edit and
-            // show dialogs. New issues have no stable parent until they are saved.
-            const issueMatch = path.match(/\/issues\/(\d+)(?:\/edit)?/);
-            if (issueMatch) {
-                paId = issueMatch[1];
-            }
-
-            return paId;
+            return urlParsed.searchParams.get('issue[parent_issue_id]') || urlParsed.searchParams.get('parent_issue_id') || undefined;
         } catch (e) {
             console.error("Failed to parse issue dialog URL", e);
             return undefined;
@@ -706,9 +725,10 @@ export const IssueIframeDialog: React.FC = () => {
     }, [activeDialogUrl, isQueryDialog]);
     const parentTask = useTaskStore(state => parentId ? state.tasks.find(task => task.id === parentId) : undefined);
     const canBulkCreateForParent = !parentTask?.isContextOnly;
+    const shouldShowBulkSubtasks = isBulkEligibleIssueDialog && !isTimeEntryDialog && canBulkCreateForParent;
 
     React.useEffect(() => {
-        if (!parentId || isQueryDialog || !canBulkCreateForParent) return;
+        if (!shouldShowBulkSubtasks || !parentId) return;
 
         const operationIssueIds = useTaskStore.getState().tasks
             .filter(task => !task.isContextOnly)
@@ -732,7 +752,7 @@ export const IssueIframeDialog: React.FC = () => {
         return () => {
             if (trackerReadContextRef.current?.contextId === context.contextId) trackerReadContextRef.current = null;
         };
-    }, [activeDialogUrl, canBulkCreateForParent, isQueryDialog, parentId]);
+    }, [activeDialogUrl, parentId, shouldShowBulkSubtasks]);
 
     React.useEffect(() => {
         iframeEscapeCleanupRef.current?.();
@@ -1007,7 +1027,7 @@ export const IssueIframeDialog: React.FC = () => {
                 </div>
 
                 {/* Bulk Creation Section - Only for Issues */}
-                {!isQueryDialog && canBulkCreateForParent && (
+                {shouldShowBulkSubtasks && (
                     <div ref={bulkSectionRef} style={{ flex: '0 0 auto', padding: '8px 16px 0 16px', backgroundColor: designTokens.controlBg, borderTop: `1px solid ${designTokens.controlBorder}` }}>
                         <BulkSubtaskCreator
                             ref={bulkRef}

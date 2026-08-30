@@ -28,12 +28,21 @@ const ISSUE_DIALOG_HIDE_SELECTORS = [
     '#query-form a[href*="/queries"]',
     '#query-form a[onclick*="history.back"]',
     '#new_time_entry > input[type="submit"]',
-    '#new_time_entry > .buttons',
-    '#new_time_entry > a[href*="/time_entries"]',
-    '#new_time_entry a[onclick*="history.back"]',
-    'form[action*="/time_entries"] > input[type="submit"]',
-    'form[action*="/time_entries"] > .buttons',
-    'form[action*="/time_entries"] > a[href*="/time_entries"]'
+    'form.new_time_entry > input[type="submit"]',
+    'form[id^="edit_time_entry"] > input[type="submit"]',
+    'form.edit_time_entry > input[type="submit"]',
+    '#new_time_entry > .buttons > input[type="submit"]',
+    'form.new_time_entry > .buttons > input[type="submit"]',
+    'form[id^="edit_time_entry"] > .buttons > input[type="submit"]',
+    'form.edit_time_entry > .buttons > input[type="submit"]',
+    '#new_time_entry > input[type="submit"] + a',
+    'form.new_time_entry > input[type="submit"] + a',
+    'form[id^="edit_time_entry"] > input[type="submit"] + a',
+    'form.edit_time_entry > input[type="submit"] + a',
+    '#new_time_entry > .buttons > input[type="submit"] + a',
+    'form.new_time_entry > .buttons > input[type="submit"] + a',
+    'form[id^="edit_time_entry"] > .buttons > input[type="submit"] + a',
+    'form.edit_time_entry > .buttons > input[type="submit"] + a'
 ];
 
 const ISSUE_SHOW_HIDE_SELECTORS = [
