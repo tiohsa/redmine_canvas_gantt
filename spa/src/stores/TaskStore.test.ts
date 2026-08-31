@@ -80,6 +80,20 @@ describe('TaskStore viewport clamping', () => {
         updateViewport({ scrollY: 5000 });
         expect(useTaskStore.getState().viewport.scrollY).toBe(maxScroll2);
     });
+
+    it('同じViewport値の更新と同じrowHeightの再設定をStore更新にしない', () => {
+        const listener = vi.fn();
+        const unsubscribe = useTaskStore.subscribe(listener);
+        const viewport = useTaskStore.getState().viewport;
+
+        useTaskStore.getState().updateViewport({ ...viewport });
+        useTaskStore.getState().setRowHeight(viewport.rowHeight);
+
+        expect(listener).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().viewport).toBe(viewport);
+
+        unsubscribe();
+    });
 });
 
 describe('TaskStore canonical mutation reconciliation', () => {

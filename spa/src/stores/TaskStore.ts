@@ -2172,6 +2172,16 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const nextViewport = { ...state.viewport, ...updates };
         const nextScrollY = clampViewportScrollY(nextViewport.scrollY, nextViewport, state.rowCount);
 
+        const viewportChanged = (
+            state.viewport.startDate !== nextViewport.startDate
+            || state.viewport.scrollX !== nextViewport.scrollX
+            || state.viewport.scrollY !== nextScrollY
+            || state.viewport.scale !== nextViewport.scale
+            || state.viewport.width !== nextViewport.width
+            || state.viewport.height !== nextViewport.height
+            || state.viewport.rowHeight !== nextViewport.rowHeight
+        );
+
         const nextState: Partial<TaskState> = {
             viewport: { ...nextViewport, scrollY: nextScrollY }
         };
@@ -2184,11 +2194,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
             };
         }
 
+        if (!viewportChanged && !nextState.customScales) return state;
+
         return nextState;
     }),
-    setRowHeight: (height) => set((state) => ({
-        viewport: { ...state.viewport, rowHeight: height }
-    })),
+    setRowHeight: (height) => set((state) => (
+        state.viewport.rowHeight === height
+            ? state
+            : { viewport: { ...state.viewport, rowHeight: height } }
+    )),
 
     setViewMode: (mode) => set((state) => {
         let zoom = state.zoomLevel;

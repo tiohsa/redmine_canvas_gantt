@@ -120,6 +120,48 @@ describe('GanttContainer Resize', () => {
         });
     });
 
+    it('does not redraw canvases when only the sidebar font size changes', async () => {
+        render(<GanttContainer />);
+
+        await waitFor(() => {
+            expect(taskRenderMock).toHaveBeenCalled();
+        });
+        backgroundRenderMock.mockClear();
+        baselineRenderMock.mockClear();
+        taskRenderMock.mockClear();
+        overlayRenderMock.mockClear();
+
+        act(() => {
+            useUIStore.getState().setSidebarFontSize(15);
+        });
+
+        expect(backgroundRenderMock).not.toHaveBeenCalled();
+        expect(baselineRenderMock).not.toHaveBeenCalled();
+        expect(taskRenderMock).not.toHaveBeenCalled();
+        expect(overlayRenderMock).not.toHaveBeenCalled();
+    });
+
+    it('redraws each canvas once when the row height changes', async () => {
+        render(<GanttContainer />);
+
+        await waitFor(() => {
+            expect(taskRenderMock).toHaveBeenCalled();
+        });
+        backgroundRenderMock.mockClear();
+        baselineRenderMock.mockClear();
+        taskRenderMock.mockClear();
+        overlayRenderMock.mockClear();
+
+        act(() => {
+            useTaskStore.getState().setRowHeight(44);
+        });
+
+        expect(backgroundRenderMock).toHaveBeenCalledTimes(1);
+        expect(baselineRenderMock).toHaveBeenCalledTimes(1);
+        expect(taskRenderMock).toHaveBeenCalledTimes(1);
+        expect(overlayRenderMock).toHaveBeenCalledTimes(1);
+    });
+
     beforeEach(() => {
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
