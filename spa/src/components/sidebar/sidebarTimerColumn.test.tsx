@@ -66,6 +66,14 @@ describe('Sidebar Timer Column', () => {
 
         const startBtn = screen.getByTestId('task-timer-start-101');
         expect(startBtn).toBeTruthy();
+        expect(startBtn).toHaveStyle({
+            boxSizing: 'border-box',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '22px',
+            padding: '0px'
+        });
 
         fireEvent.click(startBtn);
         expect(useTimerStore.getState().startDialogTask?.id).toBe('101');

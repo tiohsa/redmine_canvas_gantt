@@ -327,7 +327,9 @@ export const UiSidebar: React.FC = () => {
                                 background: designTokens.controlActiveBg,
                                 color: designTokens.brandPrimary,
                                 cursor: 'pointer',
-                                padding: 0
+                                padding: 0,
+                                boxSizing: 'border-box',
+                                fontFamily: fontFamilies.ui
                             }}
                         >
                             <span style={{ fontSize: 13, lineHeight: 1 }}>⏱</span>
@@ -358,7 +360,9 @@ export const UiSidebar: React.FC = () => {
                                 background: designTokens.warningBgSoft,
                                 color: designTokens.warningFg,
                                 cursor: 'pointer',
-                                padding: 0
+                                padding: 0,
+                                boxSizing: 'border-box',
+                                fontFamily: fontFamilies.ui
                             }}
                         >
                             <span style={{ fontSize: 13, lineHeight: 1 }}>🕘</span>
@@ -389,6 +393,8 @@ export const UiSidebar: React.FC = () => {
                             color: designTokens.controlFg,
                             cursor: 'pointer',
                             padding: 0,
+                            boxSizing: 'border-box',
+                            fontFamily: fontFamilies.ui,
                             fontSize: 11
                         }}
                     >

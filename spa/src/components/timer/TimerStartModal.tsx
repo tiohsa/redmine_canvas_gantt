@@ -3,6 +3,7 @@ import { useTimerStore } from '../../stores/TimerStore';
 import { TIMER_INTERVAL_MINUTES, type TimerIntervalMinutes } from '../../types/timer';
 import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
+import { timerButtonLayout } from './timerButtonStyles';
 
 export const TimerStartModal: React.FC = () => {
     const startDialogTask = useTimerStore(state => state.startDialogTask);
@@ -102,7 +103,9 @@ export const TimerStartModal: React.FC = () => {
                                     data-testid={`timer-duration-button-${minutes}`}
                                     onClick={() => setSelectedMinutes(minutes)}
                                     style={{
-                                        padding: '6px 14px',
+                                        ...timerButtonLayout,
+                                        height: '30px',
+                                        padding: '0 14px',
                                         borderRadius: '9999px',
                                         border: isSelected ? `2px solid ${designTokens.brandPrimary}` : `1px solid ${designTokens.controlBorder}`,
                                         background: isSelected ? designTokens.brandPrimary : designTokens.controlBg,
@@ -139,7 +142,9 @@ export const TimerStartModal: React.FC = () => {
                         data-testid="timer-start-cancel-button"
                         onClick={closeStartDialog}
                         style={{
-                            padding: '8px 18px',
+                            ...timerButtonLayout,
+                            height: '32px',
+                            padding: '0 18px',
                             borderRadius: '9999px',
                             border: 'none',
                             background: '#f0f0f0',
@@ -156,7 +161,9 @@ export const TimerStartModal: React.FC = () => {
                         data-testid="timer-start-confirm-button"
                         onClick={handleStart}
                         style={{
-                            padding: '8px 22px',
+                            ...timerButtonLayout,
+                            height: '32px',
+                            padding: '0 22px',
                             borderRadius: '9999px',
                             border: 'none',
                             background: '#181e25',

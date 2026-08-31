@@ -9,6 +9,18 @@ import { useUIStore } from '../../stores/UIStore';
 import type { Task } from '../../types';
 import { getCurrentTimerTabId, persistTimerSession } from '../../services/timerStorage';
 
+const expectCenteredTimerButton = (button: HTMLElement, height: string) => {
+    expect(button).toHaveStyle({
+        boxSizing: 'border-box',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height,
+        paddingTop: '0px',
+        paddingBottom: '0px'
+    });
+};
+
 describe('Timer UI Components', () => {
     const baseTime = 1700000000000;
 
@@ -81,6 +93,9 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('global-timer-quick-extend')).toBeTruthy();
             expect(screen.getByTestId('global-timer-quick-extend')).toHaveTextContent('+15 min');
             expect(screen.getByTestId('global-timer')).toHaveAttribute('tabindex', '-1');
+            expectCenteredTimerButton(screen.getByTestId('global-timer-quick-extend'), '28px');
+            expectCenteredTimerButton(screen.getByTestId('global-timer-extend-menu-toggle'), '28px');
+            expectCenteredTimerButton(screen.getByTestId('global-timer-stop-button'), '28px');
         });
 
         it('renders expired timer with overrun indicator', () => {
@@ -389,6 +404,9 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('timer-duration-button-30')).toBeTruthy();
             expect(screen.getByTestId('timer-duration-button-60')).toBeTruthy();
             expect(screen.getByTestId('timer-autostop-checkbox')).toBeTruthy();
+            expectCenteredTimerButton(screen.getByTestId('timer-duration-button-5'), '30px');
+            expectCenteredTimerButton(screen.getByTestId('timer-start-cancel-button'), '32px');
+            expectCenteredTimerButton(screen.getByTestId('timer-start-confirm-button'), '32px');
         });
 
         it('allows selecting duration and starting timer', async () => {
@@ -454,6 +472,9 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('pending-work-record-button')).toBeTruthy();
             expect(screen.getByTestId('pending-work-resume-button-15')).toBeTruthy();
             expect(screen.getByTestId('pending-work-discard-button')).toBeTruthy();
+            expectCenteredTimerButton(screen.getByTestId('pending-work-record-button'), '38px');
+            expectCenteredTimerButton(screen.getByTestId('pending-work-resume-button-15'), '28px');
+            expectCenteredTimerButton(screen.getByTestId('pending-work-discard-button'), '28px');
         });
 
         it('clicking record time opens time entry dialog', async () => {

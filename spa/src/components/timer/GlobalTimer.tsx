@@ -13,6 +13,7 @@ import {
 import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
 import type { TimerIntervalMinutes } from '../../types/timer';
+import { timerButtonLayout } from './timerButtonStyles';
 
 export const GlobalTimer: React.FC = () => {
     const session = useTimerStore(state => state.session);
@@ -177,7 +178,9 @@ export const GlobalTimer: React.FC = () => {
                             data-testid="global-timer-quick-extend"
                             onClick={() => void extendTimer(15)}
                             style={{
-                                padding: '5px 10px',
+                                ...timerButtonLayout,
+                                height: '28px',
+                                padding: '0 10px',
                                 borderRadius: '9999px',
                                 border: '1px solid rgba(255,255,255,0.25)',
                                 background: 'rgba(255,255,255,0.1)',
@@ -197,7 +200,9 @@ export const GlobalTimer: React.FC = () => {
                             data-testid="global-timer-extend-menu-toggle"
                             onClick={() => setIsExtendMenuOpen(!isExtendMenuOpen)}
                             style={{
-                                padding: '5px 8px',
+                                ...timerButtonLayout,
+                                height: '28px',
+                                padding: '0 8px',
                                 borderRadius: '9999px',
                                 border: '1px solid rgba(255,255,255,0.25)',
                                 background: isExtendMenuOpen ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)',
@@ -237,7 +242,9 @@ export const GlobalTimer: React.FC = () => {
                                         data-testid={`global-timer-extend-${min}`}
                                         onClick={() => handleExtend(min)}
                                         style={{
-                                            padding: '6px 14px',
+                                            ...timerButtonLayout,
+                                            height: '28px',
+                                            padding: '0 14px',
                                             borderRadius: '8px',
                                             border: 'none',
                                             background: 'transparent',
@@ -245,7 +252,6 @@ export const GlobalTimer: React.FC = () => {
                                             fontSize: '12px',
                                             fontWeight: 500,
                                             cursor: 'pointer',
-                                            textAlign: 'left',
                                             whiteSpace: 'nowrap'
                                         }}
                                         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f0f0')}
@@ -263,7 +269,9 @@ export const GlobalTimer: React.FC = () => {
                             data-testid="global-timer-stop-button"
                             onClick={() => void stopTimer()}
                             style={{
-                                padding: '5px 14px',
+                                ...timerButtonLayout,
+                                height: '28px',
+                                padding: '0 14px',
                                 borderRadius: '9999px',
                                 border: 'none',
                                 background: '#ef4444',
@@ -286,7 +294,9 @@ export const GlobalTimer: React.FC = () => {
                             data-testid="global-timer-record-button"
                             onClick={() => void (pendingPrimaryAction === 'record' ? recordTime() : openPendingWorkModal())}
                             style={{
-                                padding: '5px 14px',
+                                ...timerButtonLayout,
+                                height: '28px',
+                                padding: '0 14px',
                                 borderRadius: '9999px',
                                 border: 'none',
                                 background: '#181e25',
@@ -308,7 +318,9 @@ export const GlobalTimer: React.FC = () => {
                             data-testid="global-timer-manage-button"
                             onClick={openPendingWorkModal}
                             style={{
-                                padding: '5px 10px',
+                                ...timerButtonLayout,
+                                height: '28px',
+                                padding: '0 10px',
                                 borderRadius: '9999px',
                                 border: `1px solid ${designTokens.controlBorder}`,
                                 background: '#ffffff',

@@ -12,6 +12,7 @@ import {
 } from '../../domain/timer/timerDomain';
 import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
+import { timerButtonLayout } from './timerButtonStyles';
 
 export const PendingWorkModal: React.FC = () => {
     const pendingWorkModalOpen = useTimerStore(state => state.pendingWorkModalOpen);
@@ -63,7 +64,9 @@ export const PendingWorkModal: React.FC = () => {
         recordingPhase !== 'unknown'
     );
     const unknownSecondaryButtonStyle: React.CSSProperties = {
-        padding: '6px 14px',
+        ...timerButtonLayout,
+        height: '30px',
+        padding: '0 14px',
         borderRadius: '9999px',
         border: `1px solid ${designTokens.controlBorder}`,
         background: designTokens.controlBg,
@@ -261,7 +264,9 @@ export const PendingWorkModal: React.FC = () => {
                                 data-testid="pending-work-discard-cancel"
                                 onClick={() => setIsDiscardConfirmOpen(false)}
                                 style={{
-                                    padding: '6px 14px',
+                                    ...timerButtonLayout,
+                                    height: '30px',
+                                    padding: '0 14px',
                                     borderRadius: '9999px',
                                     border: 'none',
                                     background: '#ffffff',
@@ -278,7 +283,9 @@ export const PendingWorkModal: React.FC = () => {
                                 data-testid="pending-work-discard-confirm"
                                 onClick={handleDiscardConfirm}
                                 style={{
-                                    padding: '6px 14px',
+                                    ...timerButtonLayout,
+                                    height: '30px',
+                                    padding: '0 14px',
                                     borderRadius: '9999px',
                                     border: 'none',
                                     background: designTokens.errorFg,
@@ -345,8 +352,10 @@ export const PendingWorkModal: React.FC = () => {
                             data-testid="pending-work-record-button"
                             onClick={() => void recordTime()}
                             style={{
+                                ...timerButtonLayout,
                                 width: '100%',
-                                padding: '10px 16px',
+                                height: '38px',
+                                padding: '0 16px',
                                 borderRadius: '9999px',
                                 border: 'none',
                                 background: '#181e25',
@@ -354,9 +363,6 @@ export const PendingWorkModal: React.FC = () => {
                                 fontSize: '14px',
                                 fontWeight: 600,
                                 cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
                                 gap: '8px',
                                 boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
                             }}
@@ -377,7 +383,9 @@ export const PendingWorkModal: React.FC = () => {
                                         data-testid={`pending-work-resume-button-${minutes}`}
                                         onClick={() => void resumeTimer(minutes)}
                                         style={{
-                                            padding: '5px 12px',
+                                            ...timerButtonLayout,
+                                            height: '28px',
+                                            padding: '0 12px',
                                             borderRadius: '9999px',
                                             border: `1px solid ${designTokens.controlBorder}`,
                                             background: designTokens.controlBg,
@@ -400,7 +408,9 @@ export const PendingWorkModal: React.FC = () => {
                                 data-testid="pending-work-discard-button"
                                 onClick={() => setIsDiscardConfirmOpen(true)}
                                 style={{
-                                    padding: '6px 12px',
+                                    ...timerButtonLayout,
+                                    height: '28px',
+                                    padding: '0 12px',
                                     borderRadius: '9999px',
                                     border: 'none',
                                     background: 'transparent',
@@ -418,7 +428,9 @@ export const PendingWorkModal: React.FC = () => {
                                 data-testid="pending-work-close-button"
                                 onClick={closePendingWorkModal}
                                 style={{
-                                    padding: '6px 16px',
+                                    ...timerButtonLayout,
+                                    height: '28px',
+                                    padding: '0 16px',
                                     borderRadius: '9999px',
                                     border: 'none',
                                     background: '#f0f0f0',
