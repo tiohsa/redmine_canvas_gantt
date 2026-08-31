@@ -14,8 +14,10 @@ import { useUIStore } from './stores/UIStore';
 import './App.css';
 
 function App() {
-  const { zoomLevel, setZoomLevel } = useTaskStore();
-  const { isFullScreen, setFullScreen } = useUIStore();
+  const zoomLevel = useTaskStore(state => state.zoomLevel);
+  const setZoomLevel = useTaskStore(state => state.setZoomLevel);
+  const isFullScreen = useUIStore(state => state.isFullScreen);
+  const setFullScreen = useUIStore(state => state.setFullScreen);
   const previousOverflow = useRef<string | undefined>(undefined);
   const exportRef = useRef<GanttExportHandle>(null);
 
