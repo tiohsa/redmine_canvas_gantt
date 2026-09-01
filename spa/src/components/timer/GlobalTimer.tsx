@@ -14,6 +14,7 @@ import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
 import type { TimerIntervalMinutes } from '../../types/timer';
 import { timerButtonLayout } from './timerButtonStyles';
+import { WorkTimerIcon } from './WorkTimerIcon';
 
 export const GlobalTimer: React.FC = () => {
     const session = useTimerStore(state => state.session);
@@ -93,12 +94,11 @@ export const GlobalTimer: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '18px',
                     lineHeight: 1,
                     flexShrink: 0
                 }}
             >
-                {isPending ? '🕘' : isExpired ? '⚠️' : '⏱'}
+                {isPending ? <WorkTimerIcon state="pending" size={28} /> : isExpired ? '⚠️' : <WorkTimerIcon state="running" size={28} />}
             </div>
 
             {/* Task and Time Details */}

@@ -4,6 +4,7 @@ import { TIMER_INTERVAL_MINUTES, type TimerIntervalMinutes } from '../../types/t
 import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
 import { timerButtonLayout } from './timerButtonStyles';
+import { WorkTimerIcon } from './WorkTimerIcon';
 
 export const TimerStartModal: React.FC = () => {
     const startDialogTask = useTimerStore(state => state.startDialogTask);
@@ -72,7 +73,10 @@ export const TimerStartModal: React.FC = () => {
                 {/* Header */}
                 <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: designTokens.textMuted, fontSize: '12px', fontWeight: 600 }}>
-                        <span>⏱ {tr('label_work_timer') || 'Work Timer'}</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <WorkTimerIcon state="start" size={16} />
+                            {tr('label_work_timer') || 'Work Timer'}
+                        </span>
                     </div>
                     <div style={{
                         marginTop: '4px',

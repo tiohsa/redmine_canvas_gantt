@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
 import { fontFamilies, designTokens } from '../styles/designTokens';
+import { WorkTimerIcon } from './timer/WorkTimerIcon';
 
 type HelpItem = {
     icon: React.ReactNode;
@@ -212,7 +213,7 @@ const zoomIcon = (
 );
 
 const timerIcon = (
-    <div data-testid="help-icon-work-timer" aria-hidden="true" style={{ fontSize: '16px', lineHeight: 1 }}>⏱</div>
+    <div data-testid="help-icon-work-timer"><WorkTimerIcon state="start" size={18} /></div>
 );
 
 const exportIcon = (

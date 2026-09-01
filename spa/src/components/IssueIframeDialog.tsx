@@ -15,6 +15,7 @@ import { classifyIssueDialogForm, type IssueDialogFormTarget } from '../utils/is
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
+const MIN_TIME_ENTRY_DIALOG_HEIGHT_PX = 420;
 const DEFAULT_DIALOG_WIDTH_PX = 1200;
 const MIN_DIALOG_WIDTH_PX = 800;
 
@@ -225,13 +226,18 @@ export const IssueIframeDialog: React.FC = () => {
             getElementOuterHeight(bulkSectionRef.current) +
             getElementOuterHeight(footerRef.current);
         const iframeContentHeight = getIssueDialogContentHeight(doc);
+        // Redmine's standard time-entry form is intentionally compact. Keep
+        // its dialog from inheriting the larger issue-editor minimum height,
+        // which otherwise leaves a large blank area below the form.
+        const isTimeEntry = saveTargetRef.current === 'time_entry' || isTimeEntryDialogUrl(activeDialogUrl);
+        const minimumHeightPx = isTimeEntry ? MIN_TIME_ENTRY_DIALOG_HEIGHT_PX : MIN_DIALOG_HEIGHT_PX;
         const nextHeight = Math.min(
             maxHeightPx,
-            Math.max(MIN_DIALOG_HEIGHT_PX, chromeHeight + iframeContentHeight)
+            Math.max(minimumHeightPx, chromeHeight + iframeContentHeight)
         );
 
         setDialogHeightPx(nextHeight);
-    }, []);
+    }, [activeDialogUrl]);
 
     const detectSaveTarget = React.useCallback((doc: Document, currentPath?: string) => {
         const activeSaveForm = getActiveSaveForm(doc, currentPath);

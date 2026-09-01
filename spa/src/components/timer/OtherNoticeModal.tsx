@@ -3,6 +3,7 @@ import { useTimerStore } from '../../stores/TimerStore';
 import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
 import { timerButtonLayout } from './timerButtonStyles';
+import { WorkTimerIcon } from './WorkTimerIcon';
 
 export const OtherNoticeModal: React.FC = () => {
     const otherRunningNotice = useTimerStore(state => state.otherRunningNotice);
@@ -64,7 +65,7 @@ export const OtherNoticeModal: React.FC = () => {
                 {otherRunningNotice && (
                     <>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                            <span style={{ fontSize: '20px', lineHeight: 1 }}>⏱</span>
+                            <WorkTimerIcon state="running" size={24} />
                             <div>
                                 <div style={{ fontSize: '15px', fontWeight: 700, color: designTokens.textPrimary }}>
                                     {tr('label_timer_running') || 'Timer running'}
@@ -104,7 +105,7 @@ export const OtherNoticeModal: React.FC = () => {
                 {otherPendingNotice && (
                     <>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                            <span style={{ fontSize: '20px', lineHeight: 1 }}>🕘</span>
+                            <WorkTimerIcon state="pending" size={24} />
                             <div>
                                 <div style={{ fontSize: '15px', fontWeight: 700, color: designTokens.warningFg }}>
                                     {tr('label_timer_pending_work') || 'Unrecorded work time exists'}

@@ -71,7 +71,7 @@ describe('Sidebar Timer Column', () => {
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            height: '22px',
+            height: '28px',
             padding: '0px'
         });
 
@@ -140,7 +140,7 @@ describe('Sidebar Timer Column', () => {
 
         const runningBtn = screen.getByTestId('task-timer-running-103');
         expect(runningBtn).toBeTruthy();
-        expect(runningBtn.textContent).toContain('⏱');
+        expect(runningBtn.querySelector('svg')).toBeInTheDocument();
     });
 
     it('focuses the global timer when the running icon is clicked', () => {
@@ -221,7 +221,7 @@ describe('Sidebar Timer Column', () => {
 
         const pendingBtn = screen.getByTestId('task-timer-pending-104');
         expect(pendingBtn).toBeTruthy();
-        expect(pendingBtn.textContent).toContain('🕘');
+        expect(pendingBtn.querySelector('svg')).toBeInTheDocument();
 
         fireEvent.click(pendingBtn);
         expect(useTimerStore.getState().pendingWorkModalOpen).toBe(true);

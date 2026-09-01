@@ -26,6 +26,7 @@ import { parseDateOnly } from '../utils/dateOnly';
 import { ContextPreviewViolationError, previewContextChange, StaleContextPreviewError } from '../services/contextPreview';
 import { StaleEditMetaResponseError } from '../stores/EditMetaStore';
 import { useTimerStore } from '../stores/TimerStore';
+import { WorkTimerIcon } from './timer/WorkTimerIcon';
 const NOTIFICATION_COLUMN_KEY = 'notification';
 
 type CanvasGanttSettings = InlineEditSettings & {
@@ -320,19 +321,18 @@ export const UiSidebar: React.FC = () => {
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                width: 22,
-                                height: 22,
+                                width: 28,
+                                height: 28,
                                 border: 'none',
-                                borderRadius: '9999px',
-                                background: designTokens.controlActiveBg,
-                                color: designTokens.brandPrimary,
+                                borderRadius: '50%',
+                                background: 'transparent',
                                 cursor: 'pointer',
                                 padding: 0,
                                 boxSizing: 'border-box',
                                 fontFamily: fontFamilies.ui
                             }}
                         >
-                            <span style={{ fontSize: 13, lineHeight: 1 }}>⏱</span>
+                            <WorkTimerIcon state="running" size={22} />
                         </button>
                     );
                 }
@@ -353,19 +353,18 @@ export const UiSidebar: React.FC = () => {
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                width: 22,
-                                height: 22,
+                                width: 28,
+                                height: 28,
                                 border: 'none',
-                                borderRadius: '9999px',
-                                background: designTokens.warningBgSoft,
-                                color: designTokens.warningFg,
+                                borderRadius: '50%',
+                                background: 'transparent',
                                 cursor: 'pointer',
                                 padding: 0,
                                 boxSizing: 'border-box',
                                 fontFamily: fontFamilies.ui
                             }}
                         >
-                            <span style={{ fontSize: 13, lineHeight: 1 }}>🕘</span>
+                            <WorkTimerIcon state="pending" size={22} />
                         </button>
                     );
                 }
@@ -385,20 +384,18 @@ export const UiSidebar: React.FC = () => {
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            width: 22,
-                            height: 22,
-                            border: `1px solid ${designTokens.controlBorder}`,
-                            borderRadius: '9999px',
-                            background: designTokens.controlBg,
-                            color: designTokens.controlFg,
+                            width: 28,
+                            height: 28,
+                            border: 'none',
+                            borderRadius: '50%',
+                            background: 'transparent',
                             cursor: 'pointer',
                             padding: 0,
                             boxSizing: 'border-box',
-                            fontFamily: fontFamilies.ui,
-                            fontSize: 11
+                            fontFamily: fontFamilies.ui
                         }}
                     >
-                        ▶
+                        <WorkTimerIcon state="start" size={22} />
                     </button>
                 );
             }
@@ -874,8 +871,12 @@ export const UiSidebar: React.FC = () => {
                                     }
                                 }}
                             >
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={col.key === 'timer' ? (tr('label_work_timer') || 'Work Timer') : undefined} aria-label={col.key === 'timer' ? (tr('label_work_timer') || 'Work Timer') : undefined}>
-                                    {col.key === 'timer' ? '⏱' : col.title}
+                                <span
+                                    style={{ display: 'flex', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                    title={col.key === 'timer' ? (tr('label_work_timer') || 'Work Timer') : undefined}
+                                    aria-label={col.key === 'timer' ? (tr('label_work_timer') || 'Work Timer') : undefined}
+                                >
+                                    {col.key === 'timer' ? <WorkTimerIcon state="start" size={16} /> : col.title}
                                 </span>
 
                                 {
