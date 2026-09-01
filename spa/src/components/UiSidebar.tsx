@@ -179,6 +179,23 @@ export const UiSidebar: React.FC = () => {
     const sidebarRootDropBorder = designTokens.sidebarRootDropBorder;
     const tr = (key: string) => i18n.t(key) ?? '';
 
+    const timerButtonSize = Math.min(28, Math.max(18, viewport.rowHeight - 2));
+    const timerIconSize = Math.min(22, Math.max(14, timerButtonSize - 4));
+    const timerButtonStyle = {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: timerButtonSize,
+        height: timerButtonSize,
+        border: 'none',
+        borderRadius: '50%',
+        background: 'transparent',
+        cursor: 'pointer',
+        padding: 0,
+        boxSizing: 'border-box' as const,
+        fontFamily: fontFamilies.ui
+    };
+
     const settings = React.useMemo(() => {
         return (window as unknown as { RedmineCanvasGantt?: { settings?: CanvasGanttSettings } }).RedmineCanvasGantt?.settings ?? {};
     }, []);
@@ -317,22 +334,9 @@ export const UiSidebar: React.FC = () => {
                                 e.stopPropagation();
                                 document.querySelector<HTMLElement>('[data-testid="global-timer"]')?.focus();
                             }}
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: 28,
-                                height: 28,
-                                border: 'none',
-                                borderRadius: '50%',
-                                background: 'transparent',
-                                cursor: 'pointer',
-                                padding: 0,
-                                boxSizing: 'border-box',
-                                fontFamily: fontFamilies.ui
-                            }}
+                            style={timerButtonStyle}
                         >
-                            <WorkTimerIcon state="running" size={22} />
+                            <WorkTimerIcon state="running" size={timerIconSize} />
                         </button>
                     );
                 }
@@ -349,22 +353,9 @@ export const UiSidebar: React.FC = () => {
                                 e.stopPropagation();
                                 useTimerStore.getState().openPendingWorkModal();
                             }}
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: 28,
-                                height: 28,
-                                border: 'none',
-                                borderRadius: '50%',
-                                background: 'transparent',
-                                cursor: 'pointer',
-                                padding: 0,
-                                boxSizing: 'border-box',
-                                fontFamily: fontFamilies.ui
-                            }}
+                            style={timerButtonStyle}
                         >
-                            <WorkTimerIcon state="pending" size={22} />
+                            <WorkTimerIcon state="pending" size={timerIconSize} />
                         </button>
                     );
                 }
@@ -380,22 +371,9 @@ export const UiSidebar: React.FC = () => {
                             e.stopPropagation();
                             useTimerStore.getState().openStartDialog(t);
                         }}
-                        style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 28,
-                            height: 28,
-                            border: 'none',
-                            borderRadius: '50%',
-                            background: 'transparent',
-                            cursor: 'pointer',
-                            padding: 0,
-                            boxSizing: 'border-box',
-                            fontFamily: fontFamilies.ui
-                        }}
+                        style={timerButtonStyle}
                     >
-                        <WorkTimerIcon state="start" size={22} />
+                        <WorkTimerIcon state="start" size={timerIconSize} />
                     </button>
                 );
             }

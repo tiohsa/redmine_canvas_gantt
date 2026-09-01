@@ -365,6 +365,58 @@ describe('IssueIframeDialog', () => {
         });
     });
 
+    it.each([
+        ['/issues/123/time_entries/new', 420],
+        ['/issues/123/edit', 600],
+        ['/issues/new', 600]
+    ])('uses the expected minimum height for %s', async (issueDialogUrl, minimumHeight) => {
+        useUIStore.setState({ issueDialogUrl, queryDialogUrl: null });
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const content = doc.createElement('div');
+        content.id = 'content';
+        doc.body.appendChild(content);
+        setElementHeight(content, 120);
+        setElementHeight(doc.body, 120);
+        setElementHeight(doc.documentElement, 120);
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: `http://example.com${issueDialogUrl}` }, document: doc }, configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            const dialog = screen.getByTestId('issue-dialog-header').parentElement as HTMLDivElement;
+            expect(dialog.style.height).toBe(`${minimumHeight}px`);
+        });
+    });
+
+    it('expands a Time Entry dialog when content exceeds its minimum height', async () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123/time_entries/new', queryDialogUrl: null });
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const content = doc.createElement('div');
+        content.id = 'content';
+        doc.body.appendChild(content);
+        setElementHeight(content, 500);
+        setElementHeight(doc.body, 500);
+        setElementHeight(doc.documentElement, 500);
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/time_entries/new' }, document: doc }, configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            const dialog = screen.getByTestId('issue-dialog-header').parentElement as HTMLDivElement;
+            expect(dialog.style.height).toBe('500px');
+        });
+    });
+
     it('clamps dialog height for tall iframe content', async () => {
         const { container } = render(<IssueIframeDialog />);
         const iframe = container.querySelector('iframe') as HTMLIFrameElement;

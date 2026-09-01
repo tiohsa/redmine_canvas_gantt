@@ -79,6 +79,43 @@ describe('Sidebar Timer Column', () => {
         expect(useTimerStore.getState().startDialogTask?.id).toBe('101');
     });
 
+    it.each([
+        [20, 'start', 'task-timer-start-101', 18, 14],
+        [20, 'running', 'task-timer-running-101', 18, 14],
+        [20, 'pending', 'task-timer-pending-101', 18, 14],
+        [28, 'start', 'task-timer-start-101', 26, 22],
+        [28, 'running', 'task-timer-running-101', 26, 22],
+        [28, 'pending', 'task-timer-pending-101', 26, 22],
+        [36, 'start', 'task-timer-start-101', 28, 22],
+        [36, 'running', 'task-timer-running-101', 28, 22],
+        [36, 'pending', 'task-timer-pending-101', 28, 22]
+    ])('sizes the %s timer button for a %spx row', (rowHeight, state, testId, buttonSize, iconSize) => {
+        useTaskStore.setState({
+            viewport: { startDate: 0, scrollX: 0, scrollY: 0, scale: 1, width: 800, height: 600, rowHeight }
+        });
+        useTaskStore.getState().setTasks([{
+            id: '101', subject: 'Task 101', startDate: 0, dueDate: 1, ratioDone: 0,
+            statusId: 1, lockVersion: 1, editable: true, canLogTime: true, rowIndex: 0, hasChildren: false
+        }]);
+        if (state !== 'start') {
+            useTimerStore.setState({
+                session: {
+                    version: 4, revision: 1, sessionId: 's-101', issueId: '101', subject: 'Task 101',
+                    autoStop: state === 'pending', state: state === 'pending' ? 'stopped_pending_record' : 'running',
+                    deadlineAt: Date.now() + 15 * 60 * 1000, segments: [{ startedAt: Date.now() }],
+                    createdAt: Date.now(), updatedAt: Date.now()
+                }
+            });
+        }
+
+        render(<UiSidebar />);
+
+        const button = screen.getByTestId(testId);
+        expect(button).toHaveStyle({ width: `${buttonSize}px`, height: `${buttonSize}px` });
+        expect(button.querySelector('svg')).toHaveAttribute('width', String(iconSize));
+        expect(button.querySelector('svg')).toHaveAttribute('height', String(iconSize));
+    });
+
     it('renders disabled dash for task with canLogTime: false', () => {
         const task: Task = {
             id: '102',

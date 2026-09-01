@@ -1,5 +1,33 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { setupMockApp, waitForInitialRender } from './support/mockApp';
+
+/**
+ * Dismiss the OtherNoticeModal that appears on the tab that lost the simultaneous-start
+ * race. If the modal is not visible this function is a no-op, so it is safe to call on
+ * both the winning and losing tab.
+ *
+ * Validates that the modal content refers to the canonical session's issue before
+ * closing it through the official UI button.
+ */
+const dismissRunningNoticeIfPresent = async (
+  page: Page,
+  canonicalIssueId: number | string,
+): Promise<void> => {
+  const notice = page.getByTestId('timer-notice-modal');
+
+  if (!(await notice.isVisible().catch(() => false))) {
+    return;
+  }
+
+  // Validate that the notice content is consistent with the canonical session.
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText(`#${canonicalIssueId}`);
+
+  // Close through the official UI button (not force: true, not backdrop click).
+  await page.getByTestId('timer-notice-close-button').click();
+
+  await expect(notice).toBeHidden();
+};
 
 const timerColumnPreferences = {
   visibleColumns: ['timer', 'subject', 'status'],
@@ -160,7 +188,17 @@ test('serializes simultaneous starts through the IndexedDB fallback when Web Loc
   expect(sessions[1]).toBe(sessions[0]);
   expect(JSON.parse(sessions[0]!).revision).toBe(1);
 
-  const initialSession = JSON.parse(sessions[0]!) as { deadlineAt: number; revision: number };
+  const initialSession = JSON.parse(sessions[0]!) as { issueId: number | string; deadlineAt: number; revision: number };
+
+  // Step 4: In the IndexedDB fallback path the losing tab may display OtherNoticeModal
+  // because syncFromStorage() propagates the canonical session but intentionally leaves
+  // otherRunningNotice intact (it is a valid UI signal to the user). Dismiss it through
+  // the official UI before attempting the concurrent extend so it cannot block clicks.
+  await Promise.all([
+    dismissRunningNoticeIfPresent(pageA, initialSession.issueId),
+    dismissRunningNoticeIfPresent(pageB, initialSession.issueId),
+  ]);
+
   await Promise.all([
     pageA.getByTestId('global-timer-quick-extend').click(),
     pageB.getByTestId('global-timer-quick-extend').click(),
