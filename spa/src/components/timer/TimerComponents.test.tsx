@@ -8,6 +8,7 @@ import { useTimerStore } from '../../stores/TimerStore';
 import { useUIStore } from '../../stores/UIStore';
 import type { Task } from '../../types';
 import { getCurrentTimerTabId, persistTimerSession } from '../../services/timerStorage';
+import { fontFamilies } from '../../styles/designTokens';
 
 const expectCenteredTimerButton = (button: HTMLElement, height: string) => {
     expect(button).toHaveStyle({
@@ -17,7 +18,8 @@ const expectCenteredTimerButton = (button: HTMLElement, height: string) => {
         justifyContent: 'center',
         height,
         paddingTop: '0px',
-        paddingBottom: '0px'
+        paddingBottom: '0px',
+        fontFamily: fontFamilies.ui
     });
 };
 
@@ -546,6 +548,7 @@ describe('Timer UI Components', () => {
 
             expect(screen.getByTestId('timer-notice-modal')).toBeTruthy();
             expect(screen.getByTestId('timer-notice-modal').textContent).toContain('#999 Other Issue');
+            expectCenteredTimerButton(screen.getByTestId('timer-notice-close-button'), '32px');
 
             fireEvent.click(screen.getByTestId('timer-notice-close-button'));
             expect(useTimerStore.getState().otherRunningNotice).toBeNull();
@@ -559,6 +562,8 @@ describe('Timer UI Components', () => {
             render(<OtherNoticeModal />);
 
             expect(screen.getByTestId('timer-notice-modal')).toBeTruthy();
+            expectCenteredTimerButton(screen.getByTestId('timer-notice-cancel-button'), '32px');
+            expectCenteredTimerButton(screen.getByTestId('timer-notice-pending-action-button'), '32px');
 
             fireEvent.click(screen.getByTestId('timer-notice-pending-action-button'));
             expect(useTimerStore.getState().otherPendingNotice).toBeNull();

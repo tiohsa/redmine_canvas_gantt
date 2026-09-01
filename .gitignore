@@ -38,6 +38,9 @@ pnpm-debug.log*
 coverage/
 spa/coverage/
 
+# Playwright temporary transform/cache files
+spa/.playwright-temp/
+
 # Editor / OS
 .DS_Store
 Thumbs.db

@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useTimerStore } from '../../stores/TimerStore';
 import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
+import { timerButtonLayout } from './timerButtonStyles';
 
 export const OtherNoticeModal: React.FC = () => {
     const otherRunningNotice = useTimerStore(state => state.otherRunningNotice);
@@ -82,7 +83,9 @@ export const OtherNoticeModal: React.FC = () => {
                                 data-testid="timer-notice-close-button"
                                 onClick={closeOtherNotices}
                                 style={{
-                                    padding: '8px 18px',
+                                    ...timerButtonLayout,
+                                    height: '32px',
+                                    padding: '0 18px',
                                     borderRadius: '9999px',
                                     border: 'none',
                                     background: '#181e25',
@@ -120,7 +123,9 @@ export const OtherNoticeModal: React.FC = () => {
                                 data-testid="timer-notice-cancel-button"
                                 onClick={closeOtherNotices}
                                 style={{
-                                    padding: '8px 16px',
+                                    ...timerButtonLayout,
+                                    height: '32px',
+                                    padding: '0 16px',
                                     borderRadius: '9999px',
                                     border: 'none',
                                     background: '#f0f0f0',
@@ -140,7 +145,9 @@ export const OtherNoticeModal: React.FC = () => {
                                     openPendingWorkModal();
                                 }}
                                 style={{
-                                    padding: '8px 18px',
+                                    ...timerButtonLayout,
+                                    height: '32px',
+                                    padding: '0 18px',
                                     borderRadius: '9999px',
                                     border: 'none',
                                     background: '#181e25',
