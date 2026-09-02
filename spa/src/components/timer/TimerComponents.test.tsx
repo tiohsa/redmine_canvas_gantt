@@ -91,6 +91,7 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('global-timer-subject').textContent).toContain('#123 API設計');
             expect(screen.getByTestId('global-timer-remaining')).toBeTruthy();
             expect(screen.getByTestId('global-timer-elapsed')).toBeTruthy();
+            expect(screen.queryByTestId('global-timer-work-time')).toBeNull();
             expect(screen.getByTestId('global-timer-stop-button')).toBeTruthy();
             expect(screen.getByTestId('global-timer-quick-extend')).toBeTruthy();
             expect(screen.getByTestId('global-timer-quick-extend')).toHaveTextContent('+15 min');
@@ -143,8 +144,10 @@ describe('Timer UI Components', () => {
             render(<GlobalTimer />);
 
             expect(screen.getByTestId('global-timer-record-button')).toBeTruthy();
-            expect(screen.getByTestId('global-timer-manage-button')).toBeTruthy();
-            expect(screen.getByTestId('global-timer-pending-text').textContent).toContain('00:30');
+            expect(screen.getByTestId('global-timer-manage-button')).toHaveTextContent('Manage pending work');
+            expect(screen.getByTestId('global-timer-manage-button')).toHaveAccessibleName('Manage pending work');
+            expect(screen.getByTestId('global-timer-pending-text')).toHaveTextContent('0:30:00');
+            expect(screen.getByTestId('global-timer-pending-text')).not.toHaveTextContent('0.50h');
         });
 
         it('opens recovery for an editing recording attempt without creating a new attempt', () => {
@@ -473,7 +476,26 @@ describe('Timer UI Components', () => {
         persistTimerSession(useTimerStore.getState().session);
 
             expect(screen.getByTestId('pending-work-modal')).toBeTruthy();
+            expect(screen.getByTestId('pending-work-modal')).toHaveTextContent('Elapsed:');
+            expect(screen.getByTestId('pending-work-elapsed-value')).toHaveTextContent('0:30:00');
+            expect(screen.getByTestId('pending-work-elapsed-value')).not.toHaveTextContent('(');
+            expect(screen.getByTestId('pending-work-record-section')).not.toHaveTextContent('Record this work time');
+            expect(screen.getByTestId('pending-work-record-section')).toHaveStyle({ padding: '12px', borderRadius: '12px' });
+            expect(screen.getByTestId('pending-work-or-separator')).toHaveTextContent('or');
+            expect(screen.getByTestId('pending-work-resume-section')).toHaveTextContent('Continue working');
+            expect(screen.getByTestId('pending-work-resume-section')).toHaveStyle({ padding: '12px', borderRadius: '12px' });
+            expect(screen.getByTestId('pending-work-modal')).toHaveStyle({ width: '560px' });
+            expect(screen.getByTestId('pending-work-resume-options')).toHaveStyle({ flexWrap: 'nowrap' });
             expect(screen.getByTestId('pending-work-record-button')).toBeTruthy();
+            expect(screen.getByTestId('pending-work-record-button')).toHaveTextContent('Record time');
+            expect(screen.getByTestId('pending-work-record-button')).not.toHaveTextContent('00:30');
+            expect(screen.getByTestId('pending-work-record-button')).toHaveStyle({ background: '#ffffff', color: '#222222' });
+            fireEvent.mouseEnter(screen.getByTestId('pending-work-record-button'));
+            expect(screen.getByTestId('pending-work-record-button')).toHaveStyle({ background: '#e8f0fe', color: '#1a73e8' });
+            fireEvent.mouseLeave(screen.getByTestId('pending-work-record-button'));
+            fireEvent.mouseEnter(screen.getByTestId('pending-work-resume-button-15'));
+            expect(screen.getByTestId('pending-work-resume-button-15')).toHaveStyle({ background: '#e8f0fe', color: '#1a73e8' });
+            fireEvent.mouseLeave(screen.getByTestId('pending-work-resume-button-15'));
             expect(screen.getByTestId('pending-work-resume-button-15')).toBeTruthy();
             expect(screen.getByTestId('pending-work-discard-button')).toBeTruthy();
             expectCenteredTimerButton(screen.getByTestId('pending-work-record-button'), '38px');

@@ -341,9 +341,9 @@ describe('Timer Domain Logic', () => {
     });
 
     it('formats duration string correctly', () => {
-        expect(formatTimerDuration(0)).toBe('00:00');
-        expect(formatTimerDuration(45 * 1000)).toBe('00:45');
-        expect(formatTimerDuration(18 * 60 * 1000 + 42 * 1000)).toBe('18:42');
+        expect(formatTimerDuration(0)).toBe('0:00:00');
+        expect(formatTimerDuration(45 * 1000)).toBe('0:00:45');
+        expect(formatTimerDuration(18 * 60 * 1000 + 42 * 1000)).toBe('0:18:42');
         expect(formatTimerDuration(65 * 60 * 1000 + 15 * 1000)).toBe('1:05:15');
     });
 

@@ -1,14 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useTimerStore } from '../../stores/TimerStore';
 import {
-    calculateRecordedHours,
     calculateTimerElapsed,
     calculateTimerOverrun,
     calculateTimerRemaining,
-    formatElapsedMinutesText,
     formatTimerExtensionLabel,
-    formatTimerDuration,
-    formatTimerDurationHoursMinutes
+    formatTimerDuration
 } from '../../domain/timer/timerDomain';
 import { fontFamilies, designTokens } from '../../styles/designTokens';
 import { i18n } from '../../utils/i18n';
@@ -36,15 +33,11 @@ export const GlobalTimer: React.FC = () => {
     if (!session) return null;
 
     const tr = (key: string) => i18n.t(key) ?? '';
-    const isJa = (typeof window !== 'undefined' && window.RedmineCanvasGantt?.language === 'ja') || i18n.t('general_text_yes') === 'はい';
-
     const elapsedMs = calculateTimerElapsed(session, now);
     const remainingMs = calculateTimerRemaining(session, now);
     const overrunMs = calculateTimerOverrun(session, now);
-    const { formatted: formattedHours } = calculateRecordedHours(session, now);
 
     const elapsedFormatted = formatTimerDuration(elapsedMs);
-    const workTimeFormatted = formatTimerDurationHoursMinutes(elapsedMs);
     const remainingFormatted = formatTimerDuration(remainingMs);
     const overrunFormatted = formatTimerDuration(overrunMs);
 
@@ -128,10 +121,6 @@ export const GlobalTimer: React.FC = () => {
                 }}>
                     {isRunning && (
                         <>
-                            <span data-testid="global-timer-work-time">
-                                {tr('label_timer_work_time') || 'Work'} {workTimeFormatted}
-                            </span>
-                            <span>/</span>
                             <span data-testid="global-timer-remaining" style={{ color: '#4ade80', fontWeight: 600 }}>
                                 {tr('label_timer_remaining') || 'Remaining'} {remainingFormatted}
                             </span>
@@ -144,10 +133,6 @@ export const GlobalTimer: React.FC = () => {
 
                     {isExpired && (
                         <>
-                            <span data-testid="global-timer-work-time">
-                                {tr('label_timer_work_time') || 'Work'} {workTimeFormatted}
-                            </span>
-                            <span>/</span>
                             <span data-testid="global-timer-overrun" style={{ color: '#f87171', fontWeight: 700 }}>
                                 {tr('label_timer_overrun') || 'Overrun'} {overrunFormatted}
                             </span>
@@ -162,7 +147,7 @@ export const GlobalTimer: React.FC = () => {
                         <span data-testid="global-timer-pending-text" style={{ color: designTokens.warningFg, fontWeight: 600 }}>
                             {session.recordingAttempt?.phase === 'unknown'
                                 ? (tr('label_timer_recording_unknown') || 'Recording result needs confirmation')
-                                : (tr('label_timer_pending_work') || 'Unrecorded')}: {workTimeFormatted} ({formatElapsedMinutesText(elapsedMs, isJa)} / {formattedHours}h)
+                                : (tr('label_timer_pending_work') || 'Unrecorded')}: {elapsedFormatted}
                         </span>
                     )}
                 </div>
@@ -316,6 +301,8 @@ export const GlobalTimer: React.FC = () => {
                         <button
                             type="button"
                             data-testid="global-timer-manage-button"
+                            aria-label={tr('label_timer_manage_pending') || 'Manage pending work'}
+                            title={tr('label_timer_manage_pending') || 'Manage pending work'}
                             onClick={openPendingWorkModal}
                             style={{
                                 ...timerButtonLayout,
@@ -330,7 +317,7 @@ export const GlobalTimer: React.FC = () => {
                                 cursor: 'pointer'
                             }}
                         >
-                            ⋯
+                            {tr('label_timer_manage_pending') || 'Manage pending work'}
                         </button>
                     </>
                 )}

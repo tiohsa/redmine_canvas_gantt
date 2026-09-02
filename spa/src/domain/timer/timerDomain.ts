@@ -361,10 +361,7 @@ export const formatTimerDuration = (totalMs: number): string => {
 
     const pad = (num: number) => String(num).padStart(2, '0');
 
-    if (hours > 0) {
-        return `${hours}:${pad(minutes)}:${pad(seconds)}`;
-    }
-    return `${pad(minutes)}:${pad(seconds)}`;
+    return `${hours}:${pad(minutes)}:${pad(seconds)}`;
 };
 
 export const formatTimerDurationHoursMinutes = (totalMs: number): string => {
