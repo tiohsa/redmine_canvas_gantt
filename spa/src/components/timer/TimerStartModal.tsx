@@ -57,7 +57,7 @@ export const TimerStartModal: React.FC = () => {
             <div
                 data-testid="timer-start-modal"
                 style={{
-                    width: '380px',
+                    width: '440px',
                     maxWidth: '92vw',
                     backgroundColor: designTokens.appBg,
                     borderRadius: '16px',
@@ -96,7 +96,7 @@ export const TimerStartModal: React.FC = () => {
                     <div style={{ fontSize: '12px', fontWeight: 600, color: designTokens.textSecondary, marginBottom: '8px' }}>
                         {tr('field_estimated_hours') || 'Duration'}
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'nowrap', overflowX: 'auto', paddingBottom: '2px' }}>
                         {TIMER_INTERVAL_MINUTES.map((minutes) => {
                             const isSelected = selectedMinutes === minutes;
                             const label = (tr('label_timer_minutes') || '%{count} min').replace('%{count}', String(minutes));
@@ -108,6 +108,7 @@ export const TimerStartModal: React.FC = () => {
                                     onClick={() => setSelectedMinutes(minutes)}
                                     style={{
                                         ...timerButtonLayout,
+                                        flex: '0 0 auto',
                                         height: '30px',
                                         padding: '0 14px',
                                         borderRadius: '9999px',

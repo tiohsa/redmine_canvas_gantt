@@ -406,6 +406,8 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('timer-duration-button-30')).toBeTruthy();
             expect(screen.getByTestId('timer-duration-button-60')).toBeTruthy();
             expect(screen.getByTestId('timer-autostop-checkbox')).toBeTruthy();
+            expect(screen.getByTestId('timer-start-modal')).toHaveStyle({ width: '440px' });
+            expect(screen.getByTestId('timer-duration-button-5').parentElement).toHaveStyle({ flexWrap: 'nowrap' });
             expectCenteredTimerButton(screen.getByTestId('timer-duration-button-5'), '30px');
             expectCenteredTimerButton(screen.getByTestId('timer-start-cancel-button'), '32px');
             expectCenteredTimerButton(screen.getByTestId('timer-start-confirm-button'), '32px');
