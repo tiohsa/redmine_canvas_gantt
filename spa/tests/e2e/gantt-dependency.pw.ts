@@ -116,6 +116,41 @@ test('creates dependency between visible member project issues', async ({ page }
   });
 });
 
+test('requires a manual-save project change to be saved before creating a dependency', async ({ page }) => {
+  const created: unknown[] = [];
+  await setupMockApp(page, {
+    mockData: { ...p2DependencyData, relations: [] },
+    preferences: { ...viewportPreferences, autoSave: false },
+    onCreateRelation: (payload) => created.push(payload),
+  });
+  await page.goto('/');
+  await page.getByTestId('cell-401-subject').waitFor({ state: 'visible' });
+
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    useTaskStore.getState().updateTask('402', { projectId: '2' });
+  });
+
+  await page.evaluate(() => {
+    (window as typeof window & { RedmineCanvasGanttTest?: { setDraftRelation: (relation: unknown) => void } }).RedmineCanvasGanttTest?.setDraftRelation({
+      from: '401',
+      to: '402',
+      type: 'relates',
+      anchor: { x: 140, y: 36 },
+    });
+  });
+  await page.getByTestId('relation-save-button').click();
+  await expect(page.getByTestId('relation-error')).toHaveText('There are unsaved task changes. Save the task changes before modifying the relation.');
+  expect(created).toHaveLength(0);
+
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    await useTaskStore.getState().saveChanges();
+  });
+  await page.getByTestId('relation-save-button').click();
+  await expect.poll(() => created.length).toBe(1);
+});
+
 test('updates and deletes a visible dependency relation', async ({ page }) => {
   const updated: string[] = [];
   const deleted: string[] = [];

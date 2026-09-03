@@ -4,6 +4,16 @@ import { parseDateOnly } from '../../utils/dateOnly';
 import type { LocalPatch, ServerSnapshot } from './stateContract';
 
 const persistableFields = new Set<string>(PERSISTABLE_TASK_FIELDS);
+const relationConsistencyFields = new Set<keyof Task>(['startDate', 'dueDate', 'projectId']);
+
+export const hasPendingRelationConsistencyChanges = (
+    localTaskPatches: Record<string, Array<LocalPatch<Task>>>,
+    taskIds: Iterable<string>
+): boolean => [...taskIds].some((taskId) => (
+    (localTaskPatches[taskId] ?? []).some((patch) => (
+        Object.keys(patch.mutationIntent).some((field) => relationConsistencyFields.has(field as keyof Task))
+    ))
+));
 
 /** Context-changing selectors emit only the field explicitly selected by the user.
  * Server materialized policy fields are display-only and must not be resent.
