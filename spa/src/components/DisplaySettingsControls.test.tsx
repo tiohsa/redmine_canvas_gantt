@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import { DisplaySettingsControls } from './DisplaySettingsControls';
 import { useTaskStore } from '../stores/TaskStore';
@@ -209,6 +209,28 @@ describe('DisplaySettingsControls', () => {
         fireEvent.click(screen.getByLabelText('Progress line'));
 
         expect(useUIStore.getState().showProgressLine).toBe(true);
+    });
+
+    it('uses the Auto Save transition action and disables the switch while enabling', () => {
+        const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
+        const requestAutoSaveChange = vi.fn();
+        useTaskStore.setState({ requestAutoSaveChange });
+
+        render(
+            <DisplaySettingsControls
+                displaySettingsMenuRef={displaySettingsMenuRef}
+                showDisplaySettingsMenu={true}
+                onToggleDisplaySettingsMenu={vi.fn()}
+            />
+        );
+
+        fireEvent.click(screen.getByLabelText('Auto Save'));
+        expect(requestAutoSaveChange).toHaveBeenCalledWith(true);
+
+        act(() => {
+            useTaskStore.setState({ autoSaveTransition: 'enabling' });
+        });
+        expect(screen.getByLabelText('Auto Save')).toBeDisabled();
     });
 
     it('keeps pane maximization controls in the popup and leaves it open after toggling', () => {

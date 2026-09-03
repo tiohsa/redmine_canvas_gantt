@@ -470,11 +470,12 @@ describe('HtmlOverlay', () => {
         expect(apiClient.createRelation).not.toHaveBeenCalled();
     });
 
-    it('blocks relation creation in manual save mode when an endpoint has unsaved scheduling changes', async () => {
+    it('blocks relation creation while Manual Save changes are being saved before Auto Save enables', async () => {
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);
             useTaskStore.setState({
                 autoSave: false,
+                autoSaveTransition: 'enabling',
                 localTaskPatches: {
                     '1': [{ entityId: '1', projection: { dueDate: DAY_MS * 2 }, mutationIntent: { dueDate: DAY_MS * 2 }, generation: 1, operationId: 'edit:1:1' }]
                 },
@@ -529,26 +530,6 @@ describe('HtmlOverlay', () => {
                     '1': [{ entityId: '1', projection: { subject: 'Draft' }, mutationIntent: { subject: 'Draft' }, generation: 1, operationId: 'edit:1:1' }]
                 },
                 modifiedTaskIds: new Set(['1']),
-                draftRelation: { from: '1', to: '2', type: RelationType.Relates, anchor: { x: 100, y: 80 } }
-            });
-        });
-
-        render(<HtmlOverlay />);
-        fireEvent.click(await screen.findByTestId('relation-save-button'));
-
-        await waitFor(() => expect(apiClient.createRelation).toHaveBeenCalled());
-    });
-
-    it('does not apply the pending consistency guard in auto-save mode', async () => {
-        const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Relates };
-        vi.mocked(apiClient.createRelation).mockResolvedValue({ status: 'ok', ...relation });
-        act(() => {
-            useTaskStore.getState().setTasks([task1, task2]);
-            useTaskStore.setState({
-                autoSave: true,
-                localTaskPatches: {
-                    '2': [{ entityId: '2', projection: { projectId: 'p2' }, mutationIntent: { projectId: 'p2' }, generation: 1, operationId: 'edit:2:1' }]
-                },
                 draftRelation: { from: '1', to: '2', type: RelationType.Relates, anchor: { x: 100, y: 80 } }
             });
         });

@@ -358,6 +358,74 @@ describe('TaskStore canonical mutation reconciliation', () => {
     });
 });
 
+describe('TaskStore Auto Save mode transitions', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('enables Auto Save immediately when no task changes are pending', async () => {
+        const saveChanges = vi.fn();
+        useTaskStore.setState({ autoSave: false, saveChanges });
+
+        await useTaskStore.getState().requestAutoSaveChange(true);
+
+        expect(saveChanges).not.toHaveBeenCalled();
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: true, autoSaveTransition: 'idle' });
+    });
+
+    it('saves pending changes before enabling Auto Save', async () => {
+        const saveChanges = vi.fn(async () => {
+            useTaskStore.setState({ modifiedTaskIds: new Set() });
+            return new Map<string, string>();
+        });
+        useTaskStore.setState({ autoSave: false, modifiedTaskIds: new Set(['task-1']), saveChanges });
+
+        const enabling = useTaskStore.getState().requestAutoSaveChange(true);
+
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'enabling' });
+        await enabling;
+
+        expect(saveChanges).toHaveBeenCalledTimes(1);
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: true, autoSaveTransition: 'idle' });
+    });
+
+    it('keeps Manual Save and pending changes when enabling Auto Save cannot save them', async () => {
+        const pending = new Set(['task-1']);
+        const saveChanges = vi.fn(async () => new Map([['task-1', 'validation failed']]));
+        useTaskStore.setState({ autoSave: false, modifiedTaskIds: pending, saveChanges });
+
+        await useTaskStore.getState().requestAutoSaveChange(true);
+
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
+        expect(useTaskStore.getState().modifiedTaskIds).toBe(pending);
+    });
+
+    it('coalesces repeated Auto Save enable requests while saving pending changes', async () => {
+        const saving = deferred<Map<string, string>>();
+        const saveChanges = vi.fn(() => saving.promise);
+        useTaskStore.setState({ autoSave: false, modifiedTaskIds: new Set(['task-1']), saveChanges });
+
+        const first = useTaskStore.getState().requestAutoSaveChange(true);
+        const second = useTaskStore.getState().requestAutoSaveChange(true);
+        const third = useTaskStore.getState().requestAutoSaveChange(true);
+
+        expect(saveChanges).toHaveBeenCalledTimes(1);
+        useTaskStore.setState({ modifiedTaskIds: new Set() });
+        saving.resolve(new Map());
+        await Promise.all([first, second, third]);
+
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: true, autoSaveTransition: 'idle' });
+    });
+
+    it('disables Auto Save immediately without cancelling a pending mutation', async () => {
+        useTaskStore.setState({ autoSave: true, autoSaveTransition: 'idle' });
+
+        await useTaskStore.getState().requestAutoSaveChange(false);
+
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
+    });
+});
+
 describe('TaskStore bar operation rollback', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);

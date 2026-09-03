@@ -159,6 +159,7 @@ const invalidateDataRequests = () => {
 };
 
 let saveChangesOperation: Promise<Map<string, string>> | null = null;
+let autoSaveEnableOperation: Promise<void> | null = null;
 let barOperationSequence = 0;
 
 const buildTaskPatchFieldsPayload = (task: Task, fields: Partial<Task>): Record<string, unknown> => {
@@ -247,6 +248,7 @@ interface TaskState {
     modifiedTaskIds: Set<string>;
     editGenerations: Record<string, number>;
     autoSave: boolean;
+    autoSaveTransition: 'idle' | 'enabling';
     initialDataLoaded: boolean;
     activeReadContext: ReadContext | null;
     serverTaskSnapshot: ServerSnapshot<Task>;
@@ -258,6 +260,7 @@ interface TaskState {
 
     // Actions
     setAutoSave: (enabled: boolean) => void;
+    requestAutoSaveChange: (enabled: boolean) => Promise<void>;
     setTasks: (tasks: Task[]) => void;
     setRelations: (relations: Relation[]) => void;
     setVersions: (versions: Version[]) => void;
@@ -1124,6 +1127,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     modifiedTaskIds: new Set(),
     editGenerations: {},
     autoSave: preferences.autoSave ?? false,
+    autoSaveTransition: 'idle',
     initialDataLoaded: false,
     activeReadContext: null,
     serverTaskSnapshot: createServerSnapshot<Task>([]),
@@ -1134,6 +1138,46 @@ export const useTaskStore = create<TaskState>((set, get) => {
     activeBarOperationId: null,
 
     setAutoSave: (enabled) => set({ autoSave: enabled }),
+
+    requestAutoSaveChange: async (enabled) => {
+        if (!enabled) {
+            set({ autoSave: false, autoSaveTransition: 'idle' });
+            return;
+        }
+
+        const state = get();
+        if (state.autoSave || state.autoSaveTransition === 'enabling') {
+            return autoSaveEnableOperation ?? Promise.resolve();
+        }
+        if (state.modifiedTaskIds.size === 0) {
+            set({ autoSave: true });
+            return;
+        }
+
+        set({ autoSaveTransition: 'enabling' });
+        const operation = (async () => {
+            try {
+                const failures = await get().saveChanges();
+                if (failures.size === 0 && get().modifiedTaskIds.size === 0 && get().autoSaveTransition === 'enabling') {
+                    set({ autoSave: true });
+                }
+            } catch (error) {
+                const message = error instanceof Error ? error.message : (i18n.t('label_failed_to_save') || 'Failed to save');
+                useUIStore.getState().addNotification(message, 'error');
+            } finally {
+                if (get().autoSaveTransition === 'enabling') {
+                    set({ autoSaveTransition: 'idle' });
+                }
+            }
+        })();
+
+        autoSaveEnableOperation = operation;
+        try {
+            await operation;
+        } finally {
+            if (autoSaveEnableOperation === operation) autoSaveEnableOperation = null;
+        }
+    },
 
     setTasks: (tasks) => set((state) => {
         const effectiveTasks = tasks.filter(task => !state.taskTombstones[task.id]);

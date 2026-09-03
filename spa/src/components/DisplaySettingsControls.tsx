@@ -29,11 +29,12 @@ interface DisplaySettingsControlsProps {
 
 interface DisplaySettingSwitchProps {
     checked: boolean;
+    disabled?: boolean;
     label: string;
     onChange: React.ChangeEventHandler<HTMLInputElement>;
 }
 
-const DisplaySettingSwitch: React.FC<DisplaySettingSwitchProps> = ({ checked, label, onChange }) => (
+const DisplaySettingSwitch: React.FC<DisplaySettingSwitchProps> = ({ checked, disabled = false, label, onChange }) => (
     <label
         style={{
             display: 'flex',
@@ -51,6 +52,7 @@ const DisplaySettingSwitch: React.FC<DisplaySettingSwitchProps> = ({ checked, la
                 type="checkbox"
                 role="switch"
                 checked={checked}
+                disabled={disabled}
                 onChange={onChange}
                 style={{
                     position: 'absolute',
@@ -107,7 +109,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         setRowHeight,
         customScales,
         autoSave,
-        setAutoSave
+        autoSaveTransition,
+        requestAutoSaveChange
     } = useTaskStore();
     const {
         showProgressLine,
@@ -293,7 +296,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 8 }}>
                             <DisplaySettingSwitch
                                 checked={autoSave}
-                                onChange={(event) => setAutoSave(event.target.checked)}
+                                disabled={autoSaveTransition === 'enabling'}
+                                onChange={(event) => void requestAutoSaveChange(event.target.checked)}
                                 label={i18n.t('help_label_autosave') || 'Auto Save'}
                             />
                             <DisplaySettingSwitch
