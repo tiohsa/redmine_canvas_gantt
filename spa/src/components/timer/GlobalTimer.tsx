@@ -76,7 +76,8 @@ export const GlobalTimer: React.FC = () => {
                 gap: '14px',
                 fontFamily: fontFamilies.ui,
                 fontSize: '13px',
-                maxWidth: '480px',
+                width: isPending ? 'max-content' : undefined,
+                maxWidth: isPending ? 'calc(100vw - 32px)' : '480px',
                 boxSizing: 'border-box'
             }}
         >
@@ -95,7 +96,7 @@ export const GlobalTimer: React.FC = () => {
             </div>
 
             {/* Task and Time Details */}
-            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: isPending ? '0 1 auto' : 1 }}>
                 <div
                     data-testid="global-timer-subject"
                     style={{
@@ -144,7 +145,7 @@ export const GlobalTimer: React.FC = () => {
                     )}
 
                     {isPending && (
-                        <span data-testid="global-timer-pending-text" style={{ color: designTokens.warningFg, fontWeight: 600 }}>
+                        <span data-testid="global-timer-pending-text" style={{ display: 'block', color: designTokens.warningFg, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {session.recordingAttempt?.phase === 'unknown'
                                 ? (tr('label_timer_recording_unknown') || 'Recording result needs confirmation')
                                 : (tr('label_timer_pending_work') || 'Unrecorded')}: {elapsedFormatted}

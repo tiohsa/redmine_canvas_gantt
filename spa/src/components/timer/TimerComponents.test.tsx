@@ -147,7 +147,9 @@ describe('Timer UI Components', () => {
             expect(screen.getByTestId('global-timer-manage-button')).toHaveTextContent('Manage pending work');
             expect(screen.getByTestId('global-timer-manage-button')).toHaveAccessibleName('Manage pending work');
             expect(screen.getByTestId('global-timer-pending-text')).toHaveTextContent('0:30:00');
+            expect(screen.getByTestId('global-timer-pending-text')).toHaveStyle({ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
             expect(screen.getByTestId('global-timer-pending-text')).not.toHaveTextContent('0.50h');
+            expect(screen.getByTestId('global-timer')).toHaveStyle({ width: 'max-content', maxWidth: 'calc(100vw - 32px)' });
         });
 
         it('opens recovery for an editing recording attempt without creating a new attempt', () => {
