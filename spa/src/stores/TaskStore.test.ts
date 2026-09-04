@@ -400,6 +400,40 @@ describe('TaskStore Auto Save mode transitions', () => {
         expect(useTaskStore.getState().modifiedTaskIds).toBe(pending);
     });
 
+    it('keeps dirty drafts when saveChanges returns no failures without settling them', async () => {
+        useTaskStore.setState({ autoSave: false });
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', subject: 'persisted' })]);
+        useTaskStore.getState().updateTask('task-1', { subject: 'draft' });
+        const patches = useTaskStore.getState().localTaskPatches;
+        const saveChanges = vi.fn().mockResolvedValue(new Map());
+        useTaskStore.setState({ saveChanges });
+
+        await useTaskStore.getState().requestAutoSaveChange(true);
+
+        expect(saveChanges).toHaveBeenCalledTimes(1);
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set(['task-1']));
+        expect(useTaskStore.getState().localTaskPatches).toBe(patches);
+    });
+
+    it('notifies and resolves the enable action when saving throws, preserving the draft', async () => {
+        useUIStore.setState({ notifications: [] });
+        useTaskStore.setState({ autoSave: false });
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', subject: 'persisted' })]);
+        useTaskStore.getState().updateTask('task-1', { subject: 'draft' });
+        const patches = useTaskStore.getState().localTaskPatches;
+        useTaskStore.setState({ saveChanges: vi.fn().mockRejectedValue(new Error('network error')) });
+
+        await expect(useTaskStore.getState().requestAutoSaveChange(true)).resolves.toBeUndefined();
+
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set(['task-1']));
+        expect(useTaskStore.getState().localTaskPatches).toBe(patches);
+        expect(useUIStore.getState().notifications).toEqual([
+            expect.objectContaining({ message: 'network error', type: 'error' })
+        ]);
+    });
+
     it('coalesces repeated Auto Save enable requests while saving pending changes', async () => {
         const saving = deferred<Map<string, string>>();
         const saveChanges = vi.fn(() => saving.promise);
@@ -418,10 +452,26 @@ describe('TaskStore Auto Save mode transitions', () => {
     });
 
     it('disables Auto Save immediately without cancelling a pending mutation', async () => {
-        useTaskStore.setState({ autoSave: true, autoSaveTransition: 'idle' });
+        const response = deferred<Awaited<ReturnType<typeof apiClient.updateTask>>>();
+        vi.mocked(apiClient.updateTask).mockClear().mockReturnValueOnce(response.promise);
+        useTaskStore.setState({ autoSave: true });
+        useTaskStore.getState().setTasks([buildTask({ id: 'pending-off', subject: 'persisted', lockVersion: 1 })]);
+        useTaskStore.getState().updateTask('pending-off', { subject: 'draft' });
+        const saving = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(1));
+        let settled = false;
+        void saving.then(() => { settled = true; });
 
         await useTaskStore.getState().requestAutoSaveChange(false);
 
+        expect(settled).toBe(false);
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set(['pending-off']));
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
+        response.resolve({ status: 'ok', lockVersion: 2, entity: { id: 'pending-off', subject: 'draft', lockVersion: 2 } });
+        await expect(saving).resolves.toEqual(new Map());
+        expect(useTaskStore.getState().modifiedTaskIds.size).toBe(0);
+        expect(useTaskStore.getState().localTaskPatches['pending-off'] ?? []).toEqual([]);
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject({ subject: 'draft', lockVersion: 2 });
         expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
     });
 });

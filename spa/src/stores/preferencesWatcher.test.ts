@@ -28,6 +28,26 @@ describe('preferencesWatcher', () => {
         vi.clearAllMocks();
     });
 
+    it.each([true, false])('persists effective Auto Save only after save success=%s', async (success) => {
+        let complete!: (failures: Map<string, string>) => void;
+        const pending = new Promise<Map<string, string>>(resolve => { complete = resolve; });
+        useTaskStore.setState({ autoSave: false, modifiedTaskIds: new Set(['task-1']), saveChanges: () => pending });
+        vi.mocked(preferences.savePreferences).mockClear();
+
+        const enabling = useTaskStore.getState().requestAutoSaveChange(true);
+        expect(preferences.savePreferences).not.toHaveBeenCalled();
+        if (success) useTaskStore.setState({ modifiedTaskIds: new Set() });
+        complete(success ? new Map() : new Map([['task-1', 'failed']]));
+        await enabling;
+
+        expect(useTaskStore.getState().autoSave).toBe(success);
+        if (success) {
+            expect(preferences.savePreferences).toHaveBeenCalledWith(expect.objectContaining({ autoSave: true }));
+        } else {
+            expect(preferences.savePreferences).not.toHaveBeenCalled();
+        }
+    });
+
     it('persists a font-size change only as Display Preferences', () => {
         useUIStore.getState().setSidebarFontSize(15);
 

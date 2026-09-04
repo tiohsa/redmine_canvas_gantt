@@ -556,12 +556,13 @@ describe('HtmlOverlay', () => {
         expect(apiClient.updateRelation).not.toHaveBeenCalled();
     });
 
-    it('blocks relation update in manual save mode when an endpoint has unsaved scheduling changes', async () => {
+    it.each(['idle', 'enabling'] as const)('blocks relation update with dirty endpoints while transition is %s', async (autoSaveTransition) => {
         const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Relates };
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);
             useTaskStore.setState({
                 autoSave: false,
+                autoSaveTransition,
                 relations: [relation],
                 selectedRelationId: relation.id,
                 localTaskPatches: {

@@ -197,3 +197,73 @@ test('rejects relation deletion when one side is filtered out of the current vie
   await expect(page.getByTestId('remove-relation-77')).toHaveCount(0);
   expect(deleted).toEqual([]);
 });
+
+for (const saveSucceeds of [true, false]) {
+  test(`Auto Save switch settles manual edits before dependency creation (success=${saveSucceeds})`, async ({ page }) => {
+    const events: string[] = [];
+    const pageErrors: string[] = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+    page.on('response', response => {
+      if (response.request().method() === 'PATCH' && new URL(response.url()).pathname.endsWith('/tasks/401.json')) {
+        events.push(response.ok() ? 'task-success' : 'task-failure');
+      }
+    });
+    await setupMockApp(page, {
+      mockData: { ...p2DependencyData, relations: [] },
+      preferences: { ...viewportPreferences, autoSave: false, visibleColumns: ['id', 'subject', 'ratioDone'], sidebarWidth: 700 },
+      onCreateRelation: () => events.push('relation'),
+    });
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/canvas_gantt/tasks/401.json**', async route => {
+      if (route.request().method() !== 'PATCH') return route.fallback();
+      events.push('task-request');
+      expect(route.request().postDataJSON().task.done_ratio).toBe(70);
+      await pending;
+      if (saveSucceeds) await route.fallback();
+      else await route.fulfill({ status: 422, json: { error: 'Update failed' } });
+    });
+    await page.goto('/');
+    const cell = page.getByTestId('cell-401-ratioDone');
+    await cell.dispatchEvent('dblclick', { bubbles: true, cancelable: true });
+    const input = cell.locator('input[type="number"]');
+    await input.fill('70');
+    await input.press('Enter');
+    const state = () => page.evaluate(async () => {
+      const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+      const current = useTaskStore.getState();
+      return { autoSave: current.autoSave, dirty: [...current.modifiedTaskIds], transition: current.autoSaveTransition };
+    });
+    await expect.poll(state).toEqual({ autoSave: false, dirty: ['401'], transition: 'idle' });
+    expect(events).toEqual([]);
+    await page.getByTestId('display-settings-menu-button').click();
+    const toggle = page.getByRole('switch', { name: 'Auto Save', exact: true });
+    await page.locator('label').filter({ has: toggle }).click();
+    await expect.poll(() => events).toEqual(['task-request']);
+    await expect(toggle).toBeDisabled();
+    await expect(toggle).not.toBeChecked();
+    await expect.poll(state).toEqual({ autoSave: false, dirty: ['401'], transition: 'enabling' });
+    const preference = () => page.evaluate(async () => {
+      const { loadPreferences } = await import('/src/utils/preferences.ts');
+      return loadPreferences().autoSave;
+    });
+    await expect.poll(preference).toBe(false);
+
+    release();
+    await expect(toggle).toBeEnabled();
+    await expect.poll(state).toEqual({ autoSave: saveSucceeds, dirty: saveSucceeds ? [] : ['401'], transition: 'idle' });
+    await expect.poll(preference).toBe(saveSucceeds);
+    if (saveSucceeds) {
+      await expect(toggle).toBeChecked();
+      await page.getByTestId('display-settings-menu-button').click();
+      await openDraftRelation(page);
+      await page.getByTestId('relation-save-button').click();
+      await expect.poll(() => events).toEqual(['task-request', 'task-success', 'relation']);
+      await expect(page.getByTestId('relation-editor')).toHaveCount(0);
+    } else {
+      await expect(toggle).not.toBeChecked();
+      expect(events).toEqual(['task-request', 'task-failure']);
+    }
+    expect(pageErrors).toEqual([]);
+  });
+}
