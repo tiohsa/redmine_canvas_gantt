@@ -149,9 +149,7 @@
         padding-left: 4px !important;
         padding-right: 4px !important;
     }
-}
 
-@container (max-width: 999px) {
     .gantt-toolbar-left .gantt-toolbar-button-label {
         display: none;
     }

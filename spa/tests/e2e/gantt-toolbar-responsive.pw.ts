@@ -79,7 +79,7 @@ test('keeps dirty controls contained across the dirty breakpoint and returns to 
 test('keeps right controls contained and left labels compact across breakpoint boundaries', async ({ page }) => {
   await waitForInitialRender(page);
 
-  for (const width of [1920, 1600, 1200, 1199, 1000, 999, 880, 865, 864, 701, 700, 360]) {
+  for (const width of [1920, 1600, 1201, 1200, 1199, 1000, 999, 880, 865, 864, 701, 700, 360]) {
     await page.setViewportSize({ width, height: 800 });
     const metrics = await toolbarMetrics(page);
     expect(metrics.right.right, `right group at ${width}px`).toBeLessThanOrEqual(metrics.toolbar.right + 1);
@@ -90,7 +90,7 @@ test('keeps right controls contained and left labels compact across breakpoint b
       expect(button.right, `${button.name} right at ${width}px`).toBeLessThanOrEqual(metrics.toolbar.right + 1);
     }
     const toolbarWidth = metrics.toolbar.right - metrics.toolbar.left;
-    if (toolbarWidth > 999) expect(metrics.labelsVisible, `labels at ${width}px (toolbar ${toolbarWidth}px)`).toBe(true);
+    if (toolbarWidth > 1200) expect(metrics.labelsVisible, `labels at ${width}px (toolbar ${toolbarWidth}px)`).toBe(true);
     else expect(metrics.labelsVisible, `labels at ${width}px (toolbar ${toolbarWidth}px)`).toBe(false);
     if (toolbarWidth > 864) {
       expect(metrics.left.top, `left row at ${width}px`).toBe(metrics.right.top);
