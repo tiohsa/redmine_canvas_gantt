@@ -596,7 +596,8 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         { level: 2, label: dayLabel === 'Day' ? 'D' : dayLabel, fullLabel: dayLabel }
     ];
     return (
-        <div className="gantt-toolbar" style={{
+        <div className="gantt-toolbar-container">
+          <div className="gantt-toolbar" style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -2014,6 +2015,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     </svg>
                 </button>
             </div>
-        </div >
+          </div>
+        </div>
     );
 };

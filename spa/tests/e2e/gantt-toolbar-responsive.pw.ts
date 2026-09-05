@@ -58,9 +58,13 @@ test('keeps right controls contained and left labels compact across breakpoint b
       expect(button.right, `${button.name} right at ${width}px`).toBeLessThanOrEqual(metrics.toolbar.right + 1);
     }
     const toolbarWidth = metrics.toolbar.right - metrics.toolbar.left;
-    if (width >= 1600) expect(metrics.labelsVisible, `labels at ${width}px (toolbar ${toolbarWidth}px)`).toBe(true);
-    if (width <= 999) expect(metrics.labelsVisible, `labels at ${width}px (toolbar ${toolbarWidth}px)`).toBe(false);
-    if (width >= 1600) expect(metrics.left.top).toBe(metrics.right.top);
+    if (toolbarWidth > 999) expect(metrics.labelsVisible, `labels at ${width}px (toolbar ${toolbarWidth}px)`).toBe(true);
+    else expect(metrics.labelsVisible, `labels at ${width}px (toolbar ${toolbarWidth}px)`).toBe(false);
+    if (toolbarWidth > 700) {
+      expect(metrics.left.top, `left row at ${width}px`).toBe(metrics.right.top);
+    } else {
+      expect(metrics.right.top, `right row at ${width}px`).toBeGreaterThan(metrics.left.top);
+    }
   }
 });
 
