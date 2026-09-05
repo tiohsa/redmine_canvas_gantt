@@ -189,3 +189,33 @@
         row-gap: 4px;
     }
 }
+
+/* Manual-save actions add two text buttons to the right group. Move the
+   complete toolbar to the same wrapped layout earlier when that extra width
+   cannot coexist with the left controls. The threshold is measured in the
+   responsive E2E with the maximum visible control set. */
+@container (max-width: 1528px) {
+    .gantt-toolbar--dirty {
+        flex-wrap: wrap;
+        height: auto !important;
+        min-height: 48px;
+        row-gap: 4px;
+    }
+
+    .gantt-toolbar--dirty .gantt-toolbar-left,
+    .gantt-toolbar--dirty .gantt-toolbar-right {
+        flex: 0 0 100%;
+        width: 100%;
+    }
+
+    .gantt-toolbar--dirty .gantt-toolbar-left {
+        flex-wrap: wrap;
+    }
+
+    .gantt-toolbar--dirty .gantt-toolbar-right {
+        min-width: 0;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        row-gap: 4px;
+    }
+}

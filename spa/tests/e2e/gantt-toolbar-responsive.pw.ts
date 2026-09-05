@@ -44,6 +44,38 @@ test.beforeEach(async ({ page }) => {
   await setupMockApp(page);
 });
 
+test('keeps dirty controls contained across the dirty breakpoint and returns to clean layout', async ({ page }) => {
+  await waitForInitialRender(page);
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    useTaskStore.setState({ modifiedTaskIds: new Set(['101']), autoSave: false });
+  });
+  await expect(page.getByTitle('Save changes')).toBeVisible();
+  await expect(page.getByTitle('Discard changes')).toBeVisible();
+
+  for (const width of [1600, 1545, 1544, 1400, 1200, 1000, 999, 950, 900]) {
+    await page.setViewportSize({ width, height: 800 });
+    const metrics = await toolbarMetrics(page);
+    const toolbarWidth = metrics.toolbar.right - metrics.toolbar.left;
+    expect(metrics.overlaps, `dirty overlaps at ${width}px`).toEqual([]);
+    for (const button of metrics.buttons) {
+      expect(button.left, `${button.name} left at dirty ${width}px`).toBeGreaterThanOrEqual(metrics.toolbar.left - 1);
+      expect(button.right, `${button.name} right at dirty ${width}px`).toBeLessThanOrEqual(metrics.toolbar.right + 1);
+    }
+    if (toolbarWidth > 1528) {
+      expect(metrics.left.top, `dirty left row at ${width}px`).toBe(metrics.right.top);
+    } else {
+      expect(metrics.right.top, `dirty right row at ${width}px`).toBeGreaterThan(metrics.left.top);
+    }
+  }
+
+  await page.setViewportSize({ width: 1600, height: 800 });
+  await page.getByTitle('Discard changes').click();
+  await expect(page.getByTitle('Discard changes')).toBeHidden();
+  const cleanMetrics = await toolbarMetrics(page);
+  expect(cleanMetrics.left.top).toBe(cleanMetrics.right.top);
+});
+
 test('keeps right controls contained and left labels compact across breakpoint boundaries', async ({ page }) => {
   await waitForInitialRender(page);
 
@@ -111,6 +143,15 @@ test('responds to a narrow embedded toolbar and preserves primary interactions',
   await page.getByTestId('column-menu-button').click();
   await expectPopupInViewport(page, 'column-menu');
   await page.getByTestId('column-menu-button').click();
+  await page.getByTestId('relation-settings-menu-button').click();
+  await expectPopupInViewport(page, 'relation-settings-menu');
+  await page.getByTestId('relation-settings-menu-button').click();
+  await page.getByTitle('Workload').click();
+  await expectPopupInViewport(page, 'workload-menu');
+  await page.getByTitle('Workload').click();
+  await page.getByTestId('project-filter-menu-button').click();
+  await expectPopupInViewport(page, 'project-menu');
+  await page.getByTestId('project-filter-menu-button').click();
   await page.getByTitle('Filter Tasks').click();
   await expectPopupInViewport(page, 'filter-menu');
   await page.getByTitle('Filter Tasks').click();

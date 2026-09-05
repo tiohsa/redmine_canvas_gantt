@@ -136,6 +136,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const showWorkloadMenu = isMenuOpen('workload');
     const showBaselineSaveMenu = isMenuOpen('baselineSave');
     const displayedActiveQueryId = pendingSavedQueryId ?? activeQueryId;
+    const hasPendingManualChanges = modifiedTaskIds.size > 0 && !autoSave;
 
     useToolbarShortcuts({
         closeMenu,
@@ -597,7 +598,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     ];
     return (
         <div className="gantt-toolbar-container">
-          <div className="gantt-toolbar" style={{
+          <div className={`gantt-toolbar${hasPendingManualChanges ? ' gantt-toolbar--dirty' : ''}`} style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -994,6 +995,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     
                     {showWorkloadMenu && (
                         <div
+                            data-testid="workload-menu"
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -1097,6 +1099,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     
                     {showProjectMenu && (
                         <div
+                            data-testid="project-menu"
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -1939,7 +1942,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     onToggleBaseline={() => toggleBaseline()}
                 />
 
-                {modifiedTaskIds.size > 0 && !autoSave && (
+                {hasPendingManualChanges && (
                     <>
                         <button
                             onClick={() => void saveChanges()}
