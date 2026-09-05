@@ -82,7 +82,8 @@ describe('HtmlOverlay', () => {
 
         useUIStore.setState({
             ...useUIStore.getState(),
-            issueDialogUrl: null
+            issueDialogUrl: null,
+            notifications: []
         });
 
         useTaskStore.setState({
@@ -99,7 +100,10 @@ describe('HtmlOverlay', () => {
             selectedRelationId: null,
             draftRelation: null,
             hoveredTaskId: null,
-            contextMenu: null
+            contextMenu: null,
+            autoSave: false,
+            localTaskPatches: {},
+            modifiedTaskIds: new Set()
         });
         useBaselineStore.getState().reset();
         useUIStore.setState({
@@ -366,6 +370,43 @@ describe('HtmlOverlay', () => {
         });
         expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
     });
+
+    it('blocks auto-applied relation creation when an endpoint has pending consistency intent', async () => {
+        act(() => {
+            useUIStore.setState({
+                autoApplyDefaultRelation: true,
+                defaultRelationType: RelationType.Relates,
+                autoCalculateDelay: false
+            });
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.getState().setHoveredTask('1');
+            useTaskStore.setState({
+                autoSave: false,
+                localTaskPatches: {
+                    '2': [{ entityId: '2', projection: { startDate: DAY_MS * 3 }, mutationIntent: { startDate: DAY_MS * 3 }, generation: 1, operationId: 'edit:2:1' }]
+                },
+                modifiedTaskIds: new Set(['2'])
+            });
+        });
+
+        const { container } = render(<HtmlOverlay />);
+        mockOverlayRect(container);
+        const handles = container.querySelectorAll('.dependency-handle');
+        fireEvent.mouseDown(handles[1]);
+        const arrangedTask2 = useTaskStore.getState().tasks.find(t => t.id === '2');
+        const bounds2 = LayoutEngine.getTaskBounds(arrangedTask2!, viewport, 'hit', 2);
+        fireEvent.mouseMove(window, { clientX: bounds2.x + 1, clientY: bounds2.y + 1 });
+        fireEvent.mouseUp(window);
+
+        await waitFor(() => {
+            expect(apiClient.createRelation).not.toHaveBeenCalled();
+            expect(useUIStore.getState().notifications.at(-1)).toMatchObject({
+                message: 'There are unsaved task changes. Save the task changes before modifying the relation.',
+                type: 'error'
+            });
+        });
+    });
+
     it('updates an existing relation from the popover', async () => {
         const existingRelation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Follows, delay: 2 };
         const updatedRelation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Blocked };
@@ -429,6 +470,76 @@ describe('HtmlOverlay', () => {
         expect(apiClient.createRelation).not.toHaveBeenCalled();
     });
 
+    it('blocks relation creation while Manual Save changes are being saved before Auto Save enables', async () => {
+        act(() => {
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.setState({
+                autoSave: false,
+                autoSaveTransition: 'enabling',
+                localTaskPatches: {
+                    '1': [{ entityId: '1', projection: { dueDate: DAY_MS * 2 }, mutationIntent: { dueDate: DAY_MS * 2 }, generation: 1, operationId: 'edit:1:1' }]
+                },
+                modifiedTaskIds: new Set(['1']),
+                draftRelation: { from: '1', to: '2', type: RelationType.Relates, anchor: { x: 100, y: 80 } }
+            });
+        });
+
+        render(<HtmlOverlay />);
+        fireEvent.click(await screen.findByTestId('relation-save-button'));
+
+        expect(await screen.findByTestId('relation-error')).toHaveTextContent('There are unsaved task changes. Save the task changes before modifying the relation.');
+        expect(apiClient.createRelation).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().localTaskPatches['1']).toHaveLength(1);
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set(['1']));
+        expect(useTaskStore.getState().draftRelation).not.toBeNull();
+    });
+
+    it.each([
+        ['startDate', '2', { startDate: DAY_MS * 3 }],
+        ['projectId on the successor', '2', { projectId: 'p2' }],
+        ['projectId on the predecessor', '1', { projectId: 'p2' }]
+    ] as const)('blocks relation creation for pending %s intent', async (label, endpointId, mutationIntent) => {
+        const relationType = label === 'projectId on the successor' ? RelationType.Precedes : RelationType.Relates;
+        act(() => {
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.setState({
+                autoSave: false,
+                localTaskPatches: {
+                    [endpointId]: [{ entityId: endpointId, projection: mutationIntent, mutationIntent, generation: 1, operationId: `edit:${endpointId}:1` }]
+                },
+                modifiedTaskIds: new Set([endpointId]),
+                draftRelation: { from: '1', to: '2', type: relationType, delay: relationType === RelationType.Precedes ? 0 : undefined, anchor: { x: 100, y: 80 } }
+            });
+        });
+
+        render(<HtmlOverlay />);
+        fireEvent.click(await screen.findByTestId('relation-save-button'));
+
+        expect(await screen.findByTestId('relation-error')).toHaveTextContent('There are unsaved task changes.');
+        expect(apiClient.createRelation).not.toHaveBeenCalled();
+    });
+
+    it('allows relation creation when the endpoint has only pending subject intent', async () => {
+        const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Relates };
+        vi.mocked(apiClient.createRelation).mockResolvedValue({ status: 'ok', ...relation });
+        act(() => {
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.setState({
+                autoSave: false,
+                localTaskPatches: {
+                    '1': [{ entityId: '1', projection: { subject: 'Draft' }, mutationIntent: { subject: 'Draft' }, generation: 1, operationId: 'edit:1:1' }]
+                },
+                modifiedTaskIds: new Set(['1']),
+                draftRelation: { from: '1', to: '2', type: RelationType.Relates, anchor: { x: 100, y: 80 } }
+            });
+        });
+
+        render(<HtmlOverlay />);
+        fireEvent.click(await screen.findByTestId('relation-save-button'));
+
+        await waitFor(() => expect(apiClient.createRelation).toHaveBeenCalled());
+    });
+
     it('blocks follows relation update when delay does not match current task dates', async () => {
         const invalidFollowsRelation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Follows, delay: 0 };
 
@@ -443,6 +554,30 @@ describe('HtmlOverlay', () => {
 
         expect(await screen.findByTestId('relation-error')).toHaveTextContent('Delay does not match the current task dates.');
         expect(apiClient.updateRelation).not.toHaveBeenCalled();
+    });
+
+    it.each(['idle', 'enabling'] as const)('blocks relation update with dirty endpoints while transition is %s', async (autoSaveTransition) => {
+        const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Relates };
+        act(() => {
+            useTaskStore.getState().setTasks([task1, task2]);
+            useTaskStore.setState({
+                autoSave: false,
+                autoSaveTransition,
+                relations: [relation],
+                selectedRelationId: relation.id,
+                localTaskPatches: {
+                    '2': [{ entityId: '2', projection: { projectId: 'p2', trackerId: 7 }, mutationIntent: { projectId: 'p2' }, generation: 1, operationId: 'edit:2:1' }]
+                },
+                modifiedTaskIds: new Set(['2'])
+            });
+        });
+
+        render(<HtmlOverlay />);
+        fireEvent.click(await screen.findByTestId('relation-save-button'));
+
+        expect(await screen.findByTestId('relation-error')).toHaveTextContent('There are unsaved task changes. Save the task changes before modifying the relation.');
+        expect(apiClient.updateRelation).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().selectedRelationId).toBe(relation.id);
     });
 
     it('allows save when dependency dates are missing', async () => {
@@ -503,6 +638,13 @@ describe('HtmlOverlay', () => {
             useTaskStore.getState().setTasks([task1, task2]);
             useTaskStore.getState().setRelations([{ id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes }]);
             useTaskStore.getState().selectRelation('rel-1');
+            useTaskStore.setState({
+                autoSave: false,
+                localTaskPatches: {
+                    '2': [{ entityId: '2', projection: { projectId: 'p2' }, mutationIntent: { projectId: 'p2' }, generation: 1, operationId: 'edit:2:1' }]
+                },
+                modifiedTaskIds: new Set(['2'])
+            });
         });
 
         render(<HtmlOverlay />);
@@ -512,6 +654,7 @@ describe('HtmlOverlay', () => {
             expect(apiClient.deleteRelation).toHaveBeenCalledWith('rel-1', expect.stringMatching(/^mutation:/));
             expect(useTaskStore.getState().relations).toEqual([]);
             expect(useTaskStore.getState().selectedRelationId).toBeNull();
+            expect(useTaskStore.getState().localTaskPatches['2']).toHaveLength(1);
         });
     });
 

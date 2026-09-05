@@ -156,6 +156,30 @@ describe('UiSidebar', () => {
         expect(cell.querySelector('.task-cell-editable')).toBeNull();
     });
 
+    it('renders spent hours in [h]:mm format', () => {
+        const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['spentHours']);
+        useUIStore.setState({ visibleColumns: ['spentHours'], columnSettings });
+        useTaskStore.setState({
+            viewport: { startDate: 0, scrollX: 0, scrollY: 0, scale: 1, width: 800, height: 600, rowHeight: 32 },
+            groupByProject: false
+        });
+        useTaskStore.getState().setTasks([{
+            id: 'spent-hours-task',
+            subject: 'Spent hours task',
+            spentHours: 1.5,
+            ratioDone: 0,
+            statusId: 1,
+            lockVersion: 1,
+            editable: true,
+            rowIndex: 0,
+            hasChildren: false
+        }]);
+
+        render(<UiSidebar />);
+
+        expect(screen.getByTestId('cell-spent-hours-task-spentHours')).toHaveTextContent('1:30');
+    });
+
     it('renders the subject tracker icon from the trackerId map', () => {
         const columnSettings = buildColumnSettingsFromVisibleKeys(getColumnDefinitions(), ['subject']);
         useUIStore.setState({ visibleColumns: ['subject'], columnSettings });

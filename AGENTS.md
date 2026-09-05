@@ -157,6 +157,14 @@ bundle exec rspec plugins/redmine_canvas_gantt/spec
 * API mutation/read call boundaries are protected by the allowlist in `spa/scripts/check-async-contract.mjs`. Before adding a new direct API call, integrate it into an existing service/store boundary. Update the allowlist and tests only when intentionally introducing a new boundary.
 * Business calendars must use the same resolution rules across backend and SPA date calculations, validation, and rendering. `examples/business_calendars/` contains configuration examples, while `tools/holiday_generator/` is a generation tool. Do not confuse company-specific customizations with managed generated files.
 
+## Recurring Implementation Notes
+
+* Do not determine the role of forms inside the `IssueIframeDialog` iframe solely from the `action` URL. Redmine's TimeEntry list `query_form` may also use `/time_entries` as its action, so first exclude `query_form` / `query-form`. Classify a TimeEntry Editor by `new_time_entry`, `edit_time_entry*`, the `new_time_entry` class, or the semantic structure of `time_entry[...]` fields. Centralize the classification logic in `spa/src/utils/issueDialogForms.ts` and add unit tests for each DOM pattern.
+* When changing iframe form classification, connect both the footer save button's target selection and the iframe's native `submit` listener to the same classifier. Fixing only one path causes inconsistent Timer save results between the save button and submissions triggered by Enter or an in-form button.
+* Do not determine Work Timer TimeEntry success from a fixed redirect pathname. Because `back_url` may redirect back to Canvas Gantt, combine the following signals: submission has started, navigation away from the TimeEntry Editor, a success flash is displayed, and no validation error is present. Use both the query-form regression coverage in `IssueIframeDialog.test.tsx` and the real Redmine lifecycle verification in `spa/tests/e2e-redmine/work-timer.pw.ts`.
+* Before starting compatibility E2E tests, inspect the existing Docker containers, images, and DB volumes. The Compose default is Redmine 7.0.0; use the `REDMINE_IMAGE` override documented in the README for 6.0.6 and 6.1.2. Do not run `down -v` or delete an existing environment solely for verification. Instead, explicitly specify the base URL for the target version when running tests.
+* If `.codegraph/` exists but `codegraph_status` returns a DB open error, do not repeat the same query. Record the failure and switch to direct file inspection once the relevant files have been narrowed down. Check whether initialization is required only when `.codegraph/` itself does not exist.
+
 ## Security and Safety
 
 * Do not commit API keys, tokens, or confidential information.

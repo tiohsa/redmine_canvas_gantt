@@ -136,6 +136,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const showWorkloadMenu = isMenuOpen('workload');
     const showBaselineSaveMenu = isMenuOpen('baselineSave');
     const displayedActiveQueryId = pendingSavedQueryId ?? activeQueryId;
+    const hasPendingManualChanges = modifiedTaskIds.size > 0 && !autoSave;
 
     useToolbarShortcuts({
         closeMenu,
@@ -353,6 +354,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const getColumnLabel = (key: string, fallback: string) => {
         const localizedLabel: Record<string, string> = {
             subject: i18n.t('field_subject') || fallback,
+            timer: i18n.t('label_work_timer') || i18n.t('field_timer') || fallback,
             notification: i18n.t('label_notifications') || fallback,
             project: i18n.t('field_project') || fallback,
             tracker: i18n.t('field_tracker') || fallback,
@@ -595,14 +597,15 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         { level: 2, label: dayLabel === 'Day' ? 'D' : dayLabel, fullLabel: dayLabel }
     ];
     return (
-        <div style={{
+        <div className="gantt-toolbar-container">
+          <div className={`gantt-toolbar${hasPendingManualChanges ? ' gantt-toolbar--dirty' : ''}`} style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '8px 24px 8px 12px',
             backgroundColor: designTokens.controlBg,
             borderBottom: `1px solid ${designTokens.borderSubtle}`,
-            height: '48px',
+            minHeight: '48px',
             boxSizing: 'border-box',
             fontFamily: fontFamilies.ui,
             fontSize: '13px',
@@ -645,6 +648,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
 
                     {showFilterMenu && (
                     <div
+                        data-testid="filter-menu"
                         style={{
                             position: 'absolute',
                             top: '40px',
@@ -870,6 +874,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     <button
                         onClick={() => toggleMenu('column')}
                         title={i18n.t('label_column_plural') || 'Columns'}
+                        data-testid="column-menu-button"
                         className="gantt-toolbar-labeled-button"
                         style={{
                             display: 'flex',
@@ -898,6 +903,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     
                     {showColumnMenu && (
                         <div
+                            data-testid="column-menu"
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -989,6 +995,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     
                     {showWorkloadMenu && (
                         <div
+                            data-testid="workload-menu"
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -1092,6 +1099,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     
                     {showProjectMenu && (
                         <div
+                            data-testid="project-menu"
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -1688,7 +1696,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
             </div>
 
             {/* Right: Zoom Level & Today */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="gantt-toolbar-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ display: 'flex', gap: '4px' }}>
                     <button
                         aria-label={i18n.t('label_prev_month') || 'Previous month'}
@@ -1934,7 +1942,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     onToggleBaseline={() => toggleBaseline()}
                 />
 
-                {modifiedTaskIds.size > 0 && !autoSave && (
+                {hasPendingManualChanges && (
                     <>
                         <button
                             onClick={() => void saveChanges()}
@@ -2010,6 +2018,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     </svg>
                 </button>
             </div>
-        </div >
+          </div>
+        </div>
     );
 };

@@ -31,10 +31,15 @@ module RedmineCanvasGantt
     end
 
     def build_tasks(issues)
+      can_log_time_by_project_id = {}
+
       issues.each_with_index.map do |issue, idx|
         build_task_state(issue).merge(
           display_order: idx,
-          editable: @current_user.allowed_to?(:edit_issues, issue.project) && issue.editable?
+          editable: @current_user.allowed_to?(:edit_issues, issue.project) && issue.editable?,
+          can_log_time: can_log_time_by_project_id.fetch(issue.project_id) do
+            can_log_time_by_project_id[issue.project_id] = @current_user.allowed_to?(:log_time, issue.project)
+          end
         )
       end
     end

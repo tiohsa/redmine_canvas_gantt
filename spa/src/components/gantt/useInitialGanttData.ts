@@ -37,7 +37,10 @@ export const useInitialGanttData = ({
                 replaceIssueQueryParamsInUrl(initialSharedQueryState.state, initialQueryContext);
             }
 
-            if (initialSharedQueryState.state.visibleColumns?.length) {
+            if (
+                initialSharedQueryState.state.visibleColumns?.length &&
+                (initialSharedQueryState.source === 'url' || (initialSharedQueryState.state.queryId !== null && initialSharedQueryState.state.queryId !== undefined))
+            ) {
                 useUIStore.getState().applyQueryVisibleColumns(initialSharedQueryState.state.visibleColumns);
             }
 

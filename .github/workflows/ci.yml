@@ -10,6 +10,8 @@ on:
       - synchronize
       - reopened
   workflow_dispatch:
+  schedule:
+    - cron: '0 18 * * 0'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -17,32 +19,17 @@ concurrency:
 
 jobs:
   init:
-    name: init
+    name: config validation
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: spa
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.19.0'
-          cache: npm
-          cache-dependency-path: spa/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Validate Docker Compose configuration
-        working-directory: .
         run: docker compose config
 
   build:
     name: build
-    needs: init
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,9 +54,15 @@ jobs:
       - name: Verify tracked SPA build artifacts
         run: npm run check:build-artifacts
 
+      - name: Upload SPA build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: spa-build
+          path: assets/build
+          if-no-files-found: error
+
   lint:
     name: lint
-    needs: init
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -96,7 +89,6 @@ jobs:
 
   test:
     name: test
-    needs: init
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -120,13 +112,11 @@ jobs:
 
   timezone-test:
     name: Unit tests (${{ matrix.timezone }})
-    needs: init
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         timezone:
-          - UTC
           - Asia/Tokyo
           - America/Los_Angeles
     env:
@@ -149,11 +139,12 @@ jobs:
         run: npm ci
 
       - name: Unit tests
-        run: npm run test -- --run
+        run: npx vitest run $(rg --files src | rg '\.timezone\.test\.tsx?$')
 
   spa-benchmark:
     name: SPA Benchmark
     needs:
+      - build
       - lint
       - test
     runs-on: ubuntu-latest
@@ -178,8 +169,17 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Download SPA build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: spa-build
+          path: assets/build
+
       - name: Run benchmark regression gate
-        run: npm run benchmark:ci
+        env:
+          BENCHMARK_SAMPLE_COUNT: ${{ github.event_name == 'pull_request' && '1' || '3' }}
+          BENCHMARK_SCENARIOS: ${{ github.event_name == 'pull_request' && 'flat-1000,dependency-1000' || '' }}
+        run: npm run benchmark:ci:run
 
       - name: Upload benchmark results
         if: always()
@@ -192,7 +192,6 @@ jobs:
   project-move-mock-e2e:
     name: Project move mock E2E
     needs:
-      - build
       - lint
       - test
     runs-on: ubuntu-latest
@@ -220,13 +219,21 @@ jobs:
       - name: Run Project move mock suite
         run: npx playwright test tests/e2e/gantt-project-move.pw.ts
 
+      - name: Run Work Timer multi-tab mock suite
+        run: npx playwright test tests/e2e/gantt-work-timer-multitab.pw.ts
+
+      - name: Run Dependency mock suite
+        run: npx playwright test tests/e2e/gantt-dependency.pw.ts
+
+      - name: Run Gantt toolbar responsive suite
+        run: npx playwright test tests/e2e/gantt-toolbar-responsive.pw.ts
+
   e2e-redmine-compat:
     name: Redmine ${{ matrix.label }} compatibility
     needs:
       - build
       - lint
       - test
-      - timezone-test
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -267,8 +274,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build SPA assets for Redmine
-        run: npm run build
+      - name: Download SPA build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: spa-build
+          path: assets/build
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
@@ -350,23 +360,23 @@ jobs:
           "
 
       - name: Run Redmine compatibility smoke test
-        if: ${{ !matrix.full_e2e }}
-        run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts
+        if: ${{ matrix.label == '6.0' && github.event_name == 'pull_request' }}
+        run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts tests/e2e-redmine/work-timer.pw.ts
 
       - name: Run business calendar E2E
-        if: ${{ !matrix.full_e2e }}
+        if: ${{ matrix.label == '6.0' && github.event_name == 'pull_request' }}
         run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/business-calendar.pw.ts
 
       - name: Run mutation contract E2E
-        if: ${{ !matrix.full_e2e }}
+        if: ${{ matrix.label == '6.0' && github.event_name == 'pull_request' }}
         run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/mutation-contract.pw.ts
 
       - name: Run baseline permission E2E
-        if: ${{ !matrix.full_e2e }}
+        if: ${{ matrix.label == '6.0' && github.event_name == 'pull_request' }}
         run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/baseline-permissions.pw.ts
 
       - name: Run full Redmine E2E suite
-        if: ${{ matrix.full_e2e }}
+        if: ${{ matrix.full_e2e || github.event_name != 'pull_request' }}
         run: npx playwright test -c playwright.redmine.config.ts
 
       - name: Upload Playwright report

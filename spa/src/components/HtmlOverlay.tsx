@@ -3,6 +3,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { taskMutationService } from '../services/taskMutationService';
+import { hasPendingRelationConsistencyChanges } from '../stores/taskStore/draftIntent';
 import { RelationType } from '../types/constraints';
 import { useUIStore } from '../stores/UIStore';
 import { useBaselineStore } from '../stores/BaselineStore';
@@ -247,6 +248,10 @@ export const HtmlOverlay: React.FC = () => {
     }, [hitTestTask, setDragDraftState, toLocalPoint]);
 
     const handleCreateRelation = React.useCallback(async (relation: DraftRelation, rawType: string, delay?: number) => {
+        const { autoSave, localTaskPatches } = useTaskStore.getState();
+        if (!autoSave && hasPendingRelationConsistencyChanges(localTaskPatches, [relation.from, relation.to])) {
+            throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
+        }
         const createdRelation = await taskMutationService.createRelation(relation.from, relation.to, rawType, delay);
         addRelation(toRelationState(createdRelation));
         useTaskStore.getState().refreshForMutationMetadata(createdRelation);
@@ -257,6 +262,10 @@ export const HtmlOverlay: React.FC = () => {
     const handleUpdateRelation = React.useCallback(async (relationId: string, rawType: string, delay?: number) => {
         const currentRelation = useTaskStore.getState().relations.find(relation => relation.id === relationId);
         const endpointIds = currentRelation ? [currentRelation.from, currentRelation.to] : [];
+        const { autoSave, localTaskPatches } = useTaskStore.getState();
+        if (!autoSave && hasPendingRelationConsistencyChanges(localTaskPatches, endpointIds)) {
+            throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
+        }
         const updatedRelation = await taskMutationService.updateRelation(relationId, rawType, delay, endpointIds);
         replaceRelation(toRelationState(updatedRelation));
         useTaskStore.getState().refreshForMutationMetadata(updatedRelation);

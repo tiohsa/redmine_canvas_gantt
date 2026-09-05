@@ -166,3 +166,22 @@ test('left pane maximize keeps sidebar tasks visible', async ({ page }) => {
   await expect(rightPane).toHaveCSS('display', 'none');
   await expect(taskRow).toBeVisible();
 });
+
+test('work timer column visibility persists across page reload', async ({ page }) => {
+  await waitForInitialRender(page);
+
+  await expect(page.getByTestId('sidebar-header-timer')).toHaveCount(0);
+
+  const columnMenuButton = page.getByRole('button', { name: /cols|columns/i });
+  await columnMenuButton.click();
+
+  const timerMenuItem = page.getByRole('checkbox', { name: /work timer|timer/i });
+  await timerMenuItem.click();
+
+  await expect(page.getByTestId('sidebar-header-timer')).toBeVisible();
+
+  await page.reload();
+  await waitForInitialRender(page);
+
+  await expect(page.getByTestId('sidebar-header-timer')).toBeVisible();
+});

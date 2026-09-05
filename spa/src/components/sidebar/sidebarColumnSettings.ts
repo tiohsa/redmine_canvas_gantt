@@ -10,6 +10,7 @@ export type SidebarColumnDefinition = {
 
 export const DEFAULT_COLUMN_KEYS = [
     'id',
+    'timer',
     'subject',
     'notification',
     'project',

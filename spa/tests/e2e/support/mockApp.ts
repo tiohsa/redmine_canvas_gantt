@@ -14,6 +14,7 @@ type RawTask = {
   assigned_to_name?: string;
   lock_version: number;
   editable: boolean;
+  can_log_time?: boolean;
   display_order: number;
   parent_id?: number;
   fixed_version_id?: number | null;
@@ -85,6 +86,7 @@ const defaultMockData: MockData = {
       assigned_to_name: 'Jane Doe',
       lock_version: 1,
       editable: true,
+      can_log_time: true,
       display_order: 0,
     },
     {
@@ -102,6 +104,7 @@ const defaultMockData: MockData = {
       assigned_to_name: 'John Smith',
       lock_version: 1,
       editable: true,
+      can_log_time: true,
       display_order: 1,
       parent_id: 101,
     },
@@ -120,6 +123,7 @@ const defaultMockData: MockData = {
       assigned_to_name: 'Mary Major',
       lock_version: 1,
       editable: true,
+      can_log_time: true,
       display_order: 2,
     },
   ],
@@ -279,14 +283,16 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
   };
 
   await page.addInitScript((initialPreferences) => {
-    localStorage.clear();
-    localStorage.setItem('canvasGantt:preferences', JSON.stringify(initialPreferences));
+    if (!localStorage.getItem('canvasGantt:preferences')) {
+      localStorage.setItem('canvasGantt:preferences', JSON.stringify(initialPreferences));
+    }
     (window as Window & { RedmineCanvasGantt?: unknown }).RedmineCanvasGantt = {
       projectId: 1,
       apiBase: '/projects/1/canvas_gantt',
       redmineBase: '',
       authToken: 'test-token',
       apiKey: 'test-api-key',
+      userId: 1,
       i18n: {
         field_subject: 'Task Name',
         field_status: 'Status',

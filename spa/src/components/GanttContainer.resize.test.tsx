@@ -17,6 +17,8 @@ const backgroundRenderMock = vi.fn();
 const baselineRenderMock = vi.fn();
 const taskRenderMock = vi.fn();
 const overlayRenderMock = vi.fn();
+const resizeCanvasForDprMock = vi.fn();
+const resizeObserverCallbacks: ResizeObserverCallback[] = [];
 
 // Mock engines and renderers
 vi.mock('../engines/InteractionEngine', () => ({
@@ -57,14 +59,37 @@ vi.mock('../renderers/OverlayRenderer', () => ({
     }
 }));
 
-// Mock ResizeObserver
-window.ResizeObserver = vi.fn().mockImplementation(function () {
+vi.mock('../utils/canvasDpr', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../utils/canvasDpr')>();
     return {
-        observe: vi.fn(),
-        unobserve: vi.fn(),
-        disconnect: vi.fn(),
+        ...actual,
+        resizeCanvasForDpr: (...args: unknown[]) => resizeCanvasForDprMock(...args),
     };
 });
+
+class ResizeObserverMock {
+    constructor(callback: ResizeObserverCallback) {
+        resizeObserverCallbacks.push(callback);
+    }
+
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+}
+
+window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+
+const notifyResizeObservers = (width: number, height: number) => {
+    const entry = {
+        contentRect: { width, height }
+    } as ResizeObserverEntry;
+
+    act(() => {
+        resizeObserverCallbacks.forEach((callback) => {
+            callback([entry], {} as ResizeObserver);
+        });
+    });
+};
 
 // Mock canvas getContext
 HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
@@ -120,6 +145,48 @@ describe('GanttContainer Resize', () => {
         });
     });
 
+    it('does not redraw canvases when only the sidebar font size changes', async () => {
+        render(<GanttContainer />);
+
+        await waitFor(() => {
+            expect(taskRenderMock).toHaveBeenCalled();
+        });
+        backgroundRenderMock.mockClear();
+        baselineRenderMock.mockClear();
+        taskRenderMock.mockClear();
+        overlayRenderMock.mockClear();
+
+        act(() => {
+            useUIStore.getState().setSidebarFontSize(15);
+        });
+
+        expect(backgroundRenderMock).not.toHaveBeenCalled();
+        expect(baselineRenderMock).not.toHaveBeenCalled();
+        expect(taskRenderMock).not.toHaveBeenCalled();
+        expect(overlayRenderMock).not.toHaveBeenCalled();
+    });
+
+    it('redraws each canvas once when the row height changes', async () => {
+        render(<GanttContainer />);
+
+        await waitFor(() => {
+            expect(taskRenderMock).toHaveBeenCalled();
+        });
+        backgroundRenderMock.mockClear();
+        baselineRenderMock.mockClear();
+        taskRenderMock.mockClear();
+        overlayRenderMock.mockClear();
+
+        act(() => {
+            useTaskStore.getState().setRowHeight(44);
+        });
+
+        expect(backgroundRenderMock).toHaveBeenCalledTimes(1);
+        expect(baselineRenderMock).toHaveBeenCalledTimes(1);
+        expect(taskRenderMock).toHaveBeenCalledTimes(1);
+        expect(overlayRenderMock).toHaveBeenCalledTimes(1);
+    });
+
     beforeEach(() => {
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
@@ -149,11 +216,73 @@ describe('GanttContainer Resize', () => {
             workloadData: null
         }, true);
         fetchDataMock.mockClear();
+        resizeObserverCallbacks.length = 0;
         vi.clearAllMocks();
         backgroundRenderMock.mockClear();
         baselineRenderMock.mockClear();
         taskRenderMock.mockClear();
         overlayRenderMock.mockClear();
+    });
+
+    it('does not notify TaskStore subscribers for repeated identical ResizeObserver sizes', () => {
+        const originalUpdateViewport = useTaskStore.getState().updateViewport;
+        const updateViewportSpy = vi.fn((updates: Parameters<typeof originalUpdateViewport>[0]) => {
+            originalUpdateViewport(updates);
+        });
+        useTaskStore.setState({ updateViewport: updateViewportSpy });
+
+        const { container } = render(<GanttContainer />);
+        const scrollPane = container.querySelector('.rcg-gantt-scroll-pane') as HTMLDivElement;
+        Object.defineProperties(scrollPane, {
+            clientWidth: { configurable: true, value: 1000 },
+            clientHeight: { configurable: true, value: 600 }
+        });
+        const viewport = useTaskStore.getState().viewport;
+        const listener = vi.fn();
+        const unsubscribe = useTaskStore.subscribe(listener);
+
+        for (let index = 0; index < 10; index += 1) {
+            notifyResizeObservers(1000, 600);
+        }
+
+        expect(updateViewportSpy).toHaveBeenCalledTimes(10);
+        expect(resizeCanvasForDprMock).toHaveBeenCalledTimes(40);
+        expect(listener).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().viewport).toBe(viewport);
+
+        unsubscribe();
+    });
+
+    it('converges after a row height change when ResizeObserver reports the same size', async () => {
+        const { container } = render(<GanttContainer />);
+        const scrollPane = container.querySelector('.rcg-gantt-scroll-pane') as HTMLDivElement;
+        Object.defineProperties(scrollPane, {
+            clientWidth: { configurable: true, value: 1000 },
+            clientHeight: { configurable: true, value: 600 }
+        });
+        await waitFor(() => {
+            expect(taskRenderMock).toHaveBeenCalled();
+        });
+        backgroundRenderMock.mockClear();
+        baselineRenderMock.mockClear();
+        taskRenderMock.mockClear();
+        overlayRenderMock.mockClear();
+
+        const listener = vi.fn();
+        const unsubscribe = useTaskStore.subscribe(listener);
+
+        act(() => {
+            useTaskStore.getState().setRowHeight(44);
+        });
+        notifyResizeObservers(1000, 600);
+
+        expect(listener).toHaveBeenCalledTimes(1);
+        expect(backgroundRenderMock).toHaveBeenCalledTimes(1);
+        expect(baselineRenderMock).toHaveBeenCalledTimes(1);
+        expect(taskRenderMock).toHaveBeenCalledTimes(1);
+        expect(overlayRenderMock).toHaveBeenCalledTimes(1);
+
+        unsubscribe();
     });
 
     it('should use ew-resize and restore previous body styles during sidebar resize', async () => {

@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
 import { fontFamilies, designTokens } from '../styles/designTokens';
+import { WorkTimerIcon } from './timer/WorkTimerIcon';
 
 type HelpItem = {
     icon: React.ReactNode;
@@ -209,6 +210,10 @@ const calendarIcon = (
 
 const zoomIcon = (
     <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.04em' }}>M/W/D</div>
+);
+
+const timerIcon = (
+    <div data-testid="help-icon-work-timer"><WorkTimerIcon state="start" size={18} /></div>
 );
 
 const exportIcon = (
@@ -421,6 +426,11 @@ export const HelpDialog: React.FC = () => {
         {
             title: t('help_label_editing_saving', '3. Editing and Saving'),
             items: [
+                {
+                    icon: timerIcon,
+                    title: t('help_label_work_timer', 'Work Timer'),
+                    description: t('help_desc_work_timer', 'Enable the Work Timer column, choose 5/10/15/30/60 minutes, and start timing an issue. Stop or auto-stop creates pending work that you can record through the standard Redmine time-entry form. The measured time is also shown as hh:mm. A timer-origin form reserves the pending session while editing or submitting; cancel and validation errors keep it, and an unconfirmed result requires explicit resolution.')
+                },
                 {
                     icon: dragIcon,
                     title: t('help_op_drag_drop', 'Drag & Drop'),

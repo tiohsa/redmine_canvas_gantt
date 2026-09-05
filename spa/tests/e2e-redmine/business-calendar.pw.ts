@@ -174,6 +174,37 @@ test('loads the YAML business calendar through data.json', async ({ page, baseUR
   });
 });
 
+test('keeps clean toolbar controls from overlapping at the standard viewport', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+
+  await adminLogin(redmineBase, page);
+  await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
+  await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
+
+  const controls = [
+    page.getByTestId('display-settings-menu-button'),
+    page.getByRole('button', { name: /previous month/i }),
+    page.getByRole('button', { name: /next month/i }),
+    page.getByRole('button', { name: 'Today' })
+  ];
+  for (const control of controls) await expect(control).toBeVisible();
+
+  const boxes = await Promise.all(controls.map(control => control.boundingBox()));
+  for (let firstIndex = 0; firstIndex < boxes.length; firstIndex += 1) {
+    expect(boxes[firstIndex]).not.toBeNull();
+    for (let secondIndex = firstIndex + 1; secondIndex < boxes.length; secondIndex += 1) {
+      expect(boxes[secondIndex]).not.toBeNull();
+      const first = boxes[firstIndex]!;
+      const second = boxes[secondIndex]!;
+      const overlaps = first.x < second.x + second.width
+        && first.x + first.width > second.x
+        && first.y < second.y + second.height
+        && first.y + first.height > second.y;
+      expect(overlaps, `toolbar controls ${firstIndex} and ${secondIndex} overlap`).toBe(false);
+    }
+  }
+});
+
 test('renders a YAML holiday in the day-view Gantt background', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   const holiday = '2027-08-12';

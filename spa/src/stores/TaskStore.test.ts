@@ -80,6 +80,20 @@ describe('TaskStore viewport clamping', () => {
         updateViewport({ scrollY: 5000 });
         expect(useTaskStore.getState().viewport.scrollY).toBe(maxScroll2);
     });
+
+    it('同じViewport値の更新と同じrowHeightの再設定をStore更新にしない', () => {
+        const listener = vi.fn();
+        const unsubscribe = useTaskStore.subscribe(listener);
+        const viewport = useTaskStore.getState().viewport;
+
+        useTaskStore.getState().updateViewport({ ...viewport });
+        useTaskStore.getState().setRowHeight(viewport.rowHeight);
+
+        expect(listener).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().viewport).toBe(viewport);
+
+        unsubscribe();
+    });
 });
 
 describe('TaskStore canonical mutation reconciliation', () => {
@@ -341,6 +355,124 @@ describe('TaskStore canonical mutation reconciliation', () => {
         } finally {
             delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
         }
+    });
+});
+
+describe('TaskStore Auto Save mode transitions', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+    });
+
+    it('enables Auto Save immediately when no task changes are pending', async () => {
+        const saveChanges = vi.fn();
+        useTaskStore.setState({ autoSave: false, saveChanges });
+
+        await useTaskStore.getState().requestAutoSaveChange(true);
+
+        expect(saveChanges).not.toHaveBeenCalled();
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: true, autoSaveTransition: 'idle' });
+    });
+
+    it('saves pending changes before enabling Auto Save', async () => {
+        const saveChanges = vi.fn(async () => {
+            useTaskStore.setState({ modifiedTaskIds: new Set() });
+            return new Map<string, string>();
+        });
+        useTaskStore.setState({ autoSave: false, modifiedTaskIds: new Set(['task-1']), saveChanges });
+
+        const enabling = useTaskStore.getState().requestAutoSaveChange(true);
+
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'enabling' });
+        await enabling;
+
+        expect(saveChanges).toHaveBeenCalledTimes(1);
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: true, autoSaveTransition: 'idle' });
+    });
+
+    it('keeps Manual Save and pending changes when enabling Auto Save cannot save them', async () => {
+        const pending = new Set(['task-1']);
+        const saveChanges = vi.fn(async () => new Map([['task-1', 'validation failed']]));
+        useTaskStore.setState({ autoSave: false, modifiedTaskIds: pending, saveChanges });
+
+        await useTaskStore.getState().requestAutoSaveChange(true);
+
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
+        expect(useTaskStore.getState().modifiedTaskIds).toBe(pending);
+    });
+
+    it('keeps dirty drafts when saveChanges returns no failures without settling them', async () => {
+        useTaskStore.setState({ autoSave: false });
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', subject: 'persisted' })]);
+        useTaskStore.getState().updateTask('task-1', { subject: 'draft' });
+        const patches = useTaskStore.getState().localTaskPatches;
+        const saveChanges = vi.fn().mockResolvedValue(new Map());
+        useTaskStore.setState({ saveChanges });
+
+        await useTaskStore.getState().requestAutoSaveChange(true);
+
+        expect(saveChanges).toHaveBeenCalledTimes(1);
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set(['task-1']));
+        expect(useTaskStore.getState().localTaskPatches).toBe(patches);
+    });
+
+    it('notifies and resolves the enable action when saving throws, preserving the draft', async () => {
+        useUIStore.setState({ notifications: [] });
+        useTaskStore.setState({ autoSave: false });
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', subject: 'persisted' })]);
+        useTaskStore.getState().updateTask('task-1', { subject: 'draft' });
+        const patches = useTaskStore.getState().localTaskPatches;
+        useTaskStore.setState({ saveChanges: vi.fn().mockRejectedValue(new Error('network error')) });
+
+        await expect(useTaskStore.getState().requestAutoSaveChange(true)).resolves.toBeUndefined();
+
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set(['task-1']));
+        expect(useTaskStore.getState().localTaskPatches).toBe(patches);
+        expect(useUIStore.getState().notifications).toEqual([
+            expect.objectContaining({ message: 'network error', type: 'error' })
+        ]);
+    });
+
+    it('coalesces repeated Auto Save enable requests while saving pending changes', async () => {
+        const saving = deferred<Map<string, string>>();
+        const saveChanges = vi.fn(() => saving.promise);
+        useTaskStore.setState({ autoSave: false, modifiedTaskIds: new Set(['task-1']), saveChanges });
+
+        const first = useTaskStore.getState().requestAutoSaveChange(true);
+        const second = useTaskStore.getState().requestAutoSaveChange(true);
+        const third = useTaskStore.getState().requestAutoSaveChange(true);
+
+        expect(saveChanges).toHaveBeenCalledTimes(1);
+        useTaskStore.setState({ modifiedTaskIds: new Set() });
+        saving.resolve(new Map());
+        await Promise.all([first, second, third]);
+
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: true, autoSaveTransition: 'idle' });
+    });
+
+    it('disables Auto Save immediately without cancelling a pending mutation', async () => {
+        const response = deferred<Awaited<ReturnType<typeof apiClient.updateTask>>>();
+        vi.mocked(apiClient.updateTask).mockClear().mockReturnValueOnce(response.promise);
+        useTaskStore.setState({ autoSave: true });
+        useTaskStore.getState().setTasks([buildTask({ id: 'pending-off', subject: 'persisted', lockVersion: 1 })]);
+        useTaskStore.getState().updateTask('pending-off', { subject: 'draft' });
+        const saving = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(apiClient.updateTask).toHaveBeenCalledTimes(1));
+        let settled = false;
+        void saving.then(() => { settled = true; });
+
+        await useTaskStore.getState().requestAutoSaveChange(false);
+
+        expect(settled).toBe(false);
+        expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set(['pending-off']));
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
+        response.resolve({ status: 'ok', lockVersion: 2, entity: { id: 'pending-off', subject: 'draft', lockVersion: 2 } });
+        await expect(saving).resolves.toEqual(new Map());
+        expect(useTaskStore.getState().modifiedTaskIds.size).toBe(0);
+        expect(useTaskStore.getState().localTaskPatches['pending-off'] ?? []).toEqual([]);
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject({ subject: 'draft', lockVersion: 2 });
+        expect(useTaskStore.getState()).toMatchObject({ autoSave: false, autoSaveTransition: 'idle' });
     });
 });
 
@@ -991,6 +1123,9 @@ describe('TaskStore API data application', () => {
       scope: {},
       purpose: 'saved_query'
     });
+
+    // Simulate useInitialGanttData applying URL/query columns first
+    useUIStore.getState().applyQueryVisibleColumns(['status', 'subject']);
 
     useTaskStore.getState().applyApiData({
       ...buildApiData([]),

@@ -8,6 +8,7 @@ export type ColumnMeta = SidebarColumnDefinition & {
 
 export const COLUMN_CATALOG: ColumnMeta[] = [
     { key: 'id', label: 'ID', defaultVisible: true, movable: true, redmineColumn: 'id' },
+    { key: 'timer', label: 'Work Timer', defaultVisible: false, movable: true },
     { key: 'subject', label: 'Task Name', defaultVisible: true, movable: true, redmineColumn: 'subject' },
     { key: 'notification', label: 'Notifications', defaultVisible: true, movable: true },
     { key: 'project', label: 'Project', defaultVisible: false, movable: true, redmineColumn: 'project' },
@@ -52,3 +53,7 @@ export const getColumnDefinitions = (): SidebarColumnDefinition[] =>
 
 export const getDefaultVisibleColumnKeys = (): string[] =>
     COLUMN_CATALOG.filter((column) => column.defaultVisible).map((column) => column.key);
+
+export const isRedmineBackedColumn = (key: string): boolean => (
+    /^cf:\d+$/.test(key) || COLUMN_CATALOG.some((column) => column.key === key && Boolean(column.redmineColumn))
+);

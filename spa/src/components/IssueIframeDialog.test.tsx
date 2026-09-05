@@ -3,7 +3,10 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { IssueIframeDialog } from './IssueIframeDialog';
 import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
+import { useTimerStore } from '../stores/TimerStore';
 import { applyIssueDialogStyles, findIssueDialogErrorElement, getIssueDialogErrorMessage } from '../utils/iframeStyles';
+import { persistTimerSession } from '../services/timerStorage';
+import { apiClient } from '../api/client';
 
 type RefreshData = ReturnType<typeof useTaskStore.getState>['refreshData'];
 
@@ -51,12 +54,16 @@ const setElementHeight = (element: HTMLElement, height: number) => {
 
 describe('IssueIframeDialog', () => {
     beforeEach(() => {
+        vi.restoreAllMocks();
+        window.localStorage.clear();
         window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
-        useUIStore.setState({ issueDialogUrl: '/issues/123/edit', queryDialogUrl: null });
+        useUIStore.setState({ issueDialogUrl: '/issues/123/edit', issueDialogContext: null, queryDialogUrl: null });
+        useTimerStore.setState({ session: null });
         useTaskStore.setState({ refreshData: vi.fn() as unknown as RefreshData });
         vi.mocked(applyIssueDialogStyles).mockReset();
         vi.mocked(findIssueDialogErrorElement).mockReset();
         vi.mocked(getIssueDialogErrorMessage).mockReset();
+        vi.spyOn(apiClient, 'getSubtaskTrackers').mockResolvedValue([]);
     });
 
     it('applies iframe styles on load', () => {
@@ -173,6 +180,165 @@ describe('IssueIframeDialog', () => {
         expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
     });
 
+    it('offers bulk child creation for an issue edit dialog', () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123/edit', queryDialogUrl: null });
+
+        render(<IssueIframeDialog />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
+    });
+
+    it.each(['/issues/123/', '/issues/123/edit/', '/redmine/issues/123'])('offers bulk child creation for supported Issue URL %s', (issueDialogUrl) => {
+        useUIStore.setState({ issueDialogUrl, queryDialogUrl: null });
+
+        render(<IssueIframeDialog />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
+    });
+
+    it('preserves bulk child creation for a new Issue with an explicit parent', () => {
+        useUIStore.setState({
+            issueDialogUrl: '/projects/example/issues/new?issue[parent_issue_id]=123',
+            queryDialogUrl: null
+        });
+
+        render(<IssueIframeDialog />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
+    });
+
+    it('offers bulk child creation for a new Issue before a parent is selected', () => {
+        useUIStore.setState({ issueDialogUrl: '/projects/example/issues/new', queryDialogUrl: null });
+
+        render(<IssueIframeDialog />);
+
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+
+        expect(screen.getByTestId('bulk-subtask-subjects')).toBeInTheDocument();
+    });
+
+    it('preserves the related Issue context in a direct TimeEntry header', () => {
+        useTaskStore.setState({
+            tasks: [{
+                id: '123',
+                subject: 'Task 123',
+                ratioDone: 0,
+                statusId: 1,
+                lockVersion: 1,
+                editable: true,
+                rowIndex: 0,
+                hasChildren: false
+            }]
+        });
+        useUIStore.setState({ issueDialogUrl: '/issues/123/time_entries/new', issueDialogContext: null, queryDialogUrl: null });
+
+        render(<IssueIframeDialog />);
+
+        expect(screen.getByText('Issue #123')).toBeInTheDocument();
+        expect(screen.getByText('Task 123')).toBeInTheDocument();
+        expect(screen.queryByText('Edit', { exact: true })).not.toBeInTheDocument();
+        expect(screen.queryByText('Bulk Ticket Creation')).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ['timer-originated TimeEntry', '/issues/123/time_entries/new', { origin: 'timer' as const, sessionId: 's1', issueId: 123, attemptId: 'a1' }],
+        ['direct TimeEntry', '/issues/123/time_entries/new', null],
+        ['Issue sub-resource', '/issues/123/relations/4', null],
+        ['other Issue sub-path', '/issues/123/example', null]
+    ])('does not render bulk subtasks or fetch trackers for %s', async (_name, issueDialogUrl, timerRecording) => {
+        useUIStore.setState({
+            issueDialogUrl,
+            issueDialogContext: timerRecording ? { timerRecording } : null,
+            queryDialogUrl: null
+        });
+
+        render(<IssueIframeDialog />);
+
+        expect(screen.queryByText('Bulk Ticket Creation')).not.toBeInTheDocument();
+        await Promise.resolve();
+        expect(apiClient.getSubtaskTrackers).not.toHaveBeenCalled();
+    });
+
+    it('updates bulk eligibility when the iframe navigates to an Issue sub-resource', async () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123', queryDialogUrl: null });
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = '<div id="content"><p>Issue relation</p></div>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/relations/4' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(screen.queryByText('Bulk Ticket Creation')).not.toBeInTheDocument();
+        });
+    });
+
+    it('uses the current iframe Issue as the bulk parent after navigation', async () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123', queryDialogUrl: null });
+        useTaskStore.setState({ tasks: [], allTasks: [] });
+        vi.clearAllMocks();
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = '<div id="content"><p>Different issue</p></div>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/456' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(screen.getByText('Bulk Ticket Creation')).toBeInTheDocument();
+            expect(screen.getByText('Issue #456')).toBeInTheDocument();
+            expect(apiClient.getSubtaskTrackers).toHaveBeenCalledWith('456', expect.any(Array));
+        });
+    });
+
+    it('does not refetch trackers when the same Issue changes URL representation', async () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123', queryDialogUrl: null });
+
+        const { container } = render(<IssueIframeDialog />);
+        await waitFor(() => {
+            expect(apiClient.getSubtaskTrackers).toHaveBeenCalledTimes(1);
+        });
+
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const iframeWindow = { location: { href: 'http://example.com/issues/123' }, document: doc };
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: iframeWindow,
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(apiClient.getSubtaskTrackers).toHaveBeenCalledTimes(1);
+        });
+
+        iframeWindow.location.href = 'http://example.com/issues/123/edit';
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(apiClient.getSubtaskTrackers).toHaveBeenCalledTimes(1);
+        });
+    });
+
     it('shrinks dialog height for short iframe content', async () => {
         const { container } = render(<IssueIframeDialog />);
         const iframe = container.querySelector('iframe') as HTMLIFrameElement;
@@ -196,6 +362,58 @@ describe('IssueIframeDialog', () => {
         await waitFor(() => {
             const dialog = screen.getByTestId('issue-dialog-header').parentElement as HTMLDivElement;
             expect(dialog.style.height).toBe('600px');
+        });
+    });
+
+    it.each([
+        ['/issues/123/time_entries/new', 420],
+        ['/issues/123/edit', 600],
+        ['/issues/new', 600]
+    ])('uses the expected minimum height for %s', async (issueDialogUrl, minimumHeight) => {
+        useUIStore.setState({ issueDialogUrl, queryDialogUrl: null });
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const content = doc.createElement('div');
+        content.id = 'content';
+        doc.body.appendChild(content);
+        setElementHeight(content, 120);
+        setElementHeight(doc.body, 120);
+        setElementHeight(doc.documentElement, 120);
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: `http://example.com${issueDialogUrl}` }, document: doc }, configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            const dialog = screen.getByTestId('issue-dialog-header').parentElement as HTMLDivElement;
+            expect(dialog.style.height).toBe(`${minimumHeight}px`);
+        });
+    });
+
+    it('expands a Time Entry dialog when content exceeds its minimum height', async () => {
+        useUIStore.setState({ issueDialogUrl: '/issues/123/time_entries/new', queryDialogUrl: null });
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        const content = doc.createElement('div');
+        content.id = 'content';
+        doc.body.appendChild(content);
+        setElementHeight(content, 500);
+        setElementHeight(doc.body, 500);
+        setElementHeight(doc.documentElement, 500);
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/time_entries/new' }, document: doc }, configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            const dialog = screen.getByTestId('issue-dialog-header').parentElement as HTMLDivElement;
+            expect(dialog.style.height).toBe('500px');
         });
     });
 
@@ -825,5 +1043,460 @@ describe('IssueIframeDialog', () => {
         expect(issueSubmitClick).toHaveBeenCalledTimes(1);
         expect(issueRequestSubmit).not.toHaveBeenCalled();
         expect(relationClick).not.toHaveBeenCalled();
+    });
+
+    it('submits time entry form and clears timer session on successful redirect', async () => {
+        const clearSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
+        useTimerStore.setState({
+            session: {
+                version: 4,
+                revision: 1,
+                sessionId: 's1',
+                issueId: 123,
+                subject: 'Task 123',
+                autoStop: false,
+                state: 'stopped_pending_record',
+                recordingAttempt: { id: 'attempt-1', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
+            }
+        });
+        persistTimerSession(useTimerStore.getState().session);
+
+        const recordingContext = { origin: 'timer' as const, sessionId: 's1', issueId: 123, attemptId: 'attempt-1' };
+        useUIStore.setState({
+            issueDialogUrl: '/issues/123/time_entries/new?time_entry[hours]=0.5',
+            issueDialogContext: { timerRecording: recordingContext }
+        });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="new_time_entry" action="/time_entries" method="post">
+              <input name="time_entry[hours]" type="text" value="0.5" />
+              <input name="commit" type="submit" value="Create" />
+            </form>
+        `;
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/time_entries/new?time_entry[hours]=0.5' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        const footer = screen.getByTestId('issue-dialog-footer');
+        const saveButton = within(footer).getByRole('button', { name: /Log time|Save|button_log_time/i });
+        fireEvent.click(saveButton);
+
+        // Simulate Redmine redirect to /projects/ecookbook/time_entries
+        const successDoc = document.implementation.createHTMLDocument('iframe');
+        successDoc.body.innerHTML = `<div class="flash notice">Successful creation.</div>`;
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/projects/ecookbook/time_entries' }, document: successDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: successDoc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(clearSpy).toHaveBeenCalledWith(recordingContext);
+            expect(useTimerStore.getState().session).toBeNull();
+            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+        });
+    });
+
+    it('clears the timer when success redirect contains the TimeEntry query form', async () => {
+        const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
+        const session = {
+            version: 4 as const,
+            revision: 1,
+            sessionId: 'query-form-success',
+            issueId: 123,
+            subject: 'Task 123',
+            autoStop: false,
+            state: 'stopped_pending_record' as const,
+            recordingAttempt: { id: 'query-form-attempt', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
+        };
+        const recordingContext = {
+            origin: 'timer' as const,
+            sessionId: session.sessionId,
+            issueId: session.issueId,
+            attemptId: session.recordingAttempt!.id
+        };
+        useTimerStore.setState({ session });
+        persistTimerSession(session);
+        useUIStore.setState({
+            issueDialogUrl: '/issues/123/time_entries/new',
+            issueDialogContext: { timerRecording: recordingContext }
+        });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const formDoc = document.implementation.createHTMLDocument('iframe');
+        formDoc.body.innerHTML = '<form id="new_time_entry" action="/time_entries"><input name="time_entry[hours]" value="0.5" /><input type="submit" value="Create" /></form>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/time_entries/new' }, document: formDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: formDoc, configurable: true });
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(within(screen.getByTestId('issue-dialog-footer')).getByRole('button', { name: /Log time|Save|button_log_time/i }));
+
+        const successDoc = document.implementation.createHTMLDocument('iframe');
+        successDoc.body.innerHTML = `
+            <div class="flash notice">Successful creation.</div>
+            <form id="query_form" action="/projects/ecookbook/time_entries" method="get">
+              <input name="set_filter" type="hidden" value="1" />
+              <select name="query[activity_id]"><option value="1">Development</option></select>
+            </form>
+        `;
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/projects/ecookbook/time_entries' }, document: successDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: successDoc, configurable: true });
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(completeSpy).toHaveBeenCalledWith(recordingContext);
+            expect(useTimerStore.getState().session).toBeNull();
+            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+        });
+    });
+
+    it('clears the matching timer when Redmine redirects back to Canvas Gantt with a success notice', async () => {
+        const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
+        const session = {
+            version: 4 as const,
+            revision: 1,
+            sessionId: 'canvas-redirect',
+            issueId: 123,
+            subject: 'Task 123',
+            autoStop: false,
+            state: 'stopped_pending_record' as const,
+            recordingAttempt: { id: 'canvas-attempt', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
+        };
+        const recordingContext = {
+            origin: 'timer' as const,
+            sessionId: session.sessionId,
+            issueId: session.issueId,
+            attemptId: session.recordingAttempt!.id
+        };
+        useTimerStore.setState({ session });
+        persistTimerSession(session);
+        useUIStore.setState({
+            issueDialogUrl: '/issues/123/time_entries/new',
+            issueDialogContext: { timerRecording: recordingContext }
+        });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const formDoc = document.implementation.createHTMLDocument('iframe');
+        formDoc.body.innerHTML = '<form id="new_time_entry" action="/time_entries"><input name="commit" type="submit" value="Create" /></form>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/time_entries/new' }, document: formDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: formDoc, configurable: true });
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(within(screen.getByTestId('issue-dialog-footer')).getByRole('button', { name: /Log time|Save|button_log_time/i }));
+
+        const successDoc = document.implementation.createHTMLDocument('iframe');
+        successDoc.body.innerHTML = '<div class="flash notice">Successful creation.</div>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/projects/ecookbook/canvas_gantt' }, document: successDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: successDoc, configurable: true });
+        fireEvent.load(iframe);
+
+        await waitFor(() => expect(completeSpy).toHaveBeenCalledWith(recordingContext));
+        expect(useTimerStore.getState().session).toBeNull();
+        expect(useUIStore.getState().issueDialogUrl).toBeNull();
+    });
+
+    it.each(['running', 'stopped_pending_record'] as const)(
+        'does not clear a %s timer after a normal TimeEntry save',
+        async (timerState) => {
+            const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
+            const sessionId = `${timerState}-normal-entry`;
+            useTimerStore.setState({
+                session: {
+                    version: 4,
+                    revision: 1,
+                    sessionId,
+                    issueId: 123,
+                    subject: 'Task 123',
+                    autoStop: false,
+                    state: timerState,
+                    ...(timerState === 'stopped_pending_record' ? { recordingAttempt: { id: 'attempt-2', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const } } : {}),
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                    segments: [{
+                        startedAt: Date.now() - 1800000,
+                        ...(timerState === 'stopped_pending_record' ? { stoppedAt: Date.now() } : {})
+                    }]
+                }
+            });
+            persistTimerSession(useTimerStore.getState().session);
+            useUIStore.setState({
+                issueDialogUrl: '/issues/123/time_entries/new?time_entry[hours]=0.5',
+                issueDialogContext: null
+            });
+
+            const { container } = render(<IssueIframeDialog />);
+            const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+            const formDoc = document.implementation.createHTMLDocument('iframe');
+            formDoc.body.innerHTML = '<form id="new_time_entry" action="/time_entries"><input name="commit" type="submit" value="Create" /></form>';
+            vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+            Object.defineProperty(iframe, 'contentWindow', {
+                value: { location: { href: 'http://example.com/issues/123/time_entries/new' }, document: formDoc },
+                configurable: true
+            });
+            Object.defineProperty(iframe, 'contentDocument', { value: formDoc, configurable: true });
+            fireEvent.load(iframe);
+            fireEvent.click(within(screen.getByTestId('issue-dialog-footer')).getByRole('button', { name: /Log time|Save|button_log_time/i }));
+
+            const successDoc = document.implementation.createHTMLDocument('iframe');
+            successDoc.body.innerHTML = '<div class="flash notice">Successful creation.</div>';
+            Object.defineProperty(iframe, 'contentWindow', {
+                value: { location: { href: 'http://example.com/issues/123' }, document: successDoc },
+                configurable: true
+            });
+            Object.defineProperty(iframe, 'contentDocument', { value: successDoc, configurable: true });
+            fireEvent.load(iframe);
+
+            await waitFor(() => expect(useUIStore.getState().issueDialogUrl).toBeNull());
+            expect(completeSpy).not.toHaveBeenCalled();
+            expect(useTimerStore.getState().session?.sessionId).toBe(sessionId);
+        }
+    );
+
+    it('keeps the pending timer when a timer-origin TimeEntry dialog is cancelled', () => {
+        const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
+        const session = {
+            version: 4 as const,
+            revision: 1,
+            sessionId: 'cancelled-recording',
+            issueId: 123,
+            subject: 'Task 123',
+            autoStop: false,
+            state: 'stopped_pending_record' as const,
+            recordingAttempt: { id: 'cancel-attempt', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
+        };
+        useTimerStore.setState({ session });
+        persistTimerSession(session);
+        useUIStore.setState({
+            issueDialogUrl: '/issues/123/time_entries/new',
+            issueDialogContext: {
+                timerRecording: {
+                    origin: 'timer',
+                    sessionId: session.sessionId,
+                    issueId: session.issueId,
+                    attemptId: session.recordingAttempt!.id
+                }
+            }
+        });
+
+        render(<IssueIframeDialog />);
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+        expect(completeSpy).not.toHaveBeenCalled();
+        expect(useTimerStore.getState().session?.sessionId).toBe(session.sessionId);
+        expect(useUIStore.getState().issueDialogContext).toBeNull();
+    });
+
+    it.each([
+        ['validation error', 'Hours is invalid'],
+        ['permission error', 'You are not authorized to access this page'],
+        ['iframe error', 'The embedded form failed to load']
+    ])('keeps the pending timer after a TimeEntry %s', async (_caseName, errorMessage) => {
+        const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
+        const session = {
+            version: 4 as const,
+            revision: 1,
+            sessionId: `failed-recording-${errorMessage}`,
+            issueId: 123,
+            subject: 'Task 123',
+            autoStop: false,
+            state: 'stopped_pending_record' as const,
+            recordingAttempt: { id: 'failed-attempt', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
+        };
+        useTimerStore.setState({ session });
+        persistTimerSession(session);
+        useUIStore.setState({
+            issueDialogUrl: '/issues/123/time_entries/new',
+            issueDialogContext: {
+                timerRecording: {
+                    origin: 'timer',
+                    sessionId: session.sessionId,
+                    issueId: session.issueId,
+                    attemptId: session.recordingAttempt!.id
+                }
+            }
+        });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = '<form id="new_time_entry" action="/time_entries"><input name="commit" type="submit" value="Create" /></form>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/time_entries' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(within(screen.getByTestId('issue-dialog-footer')).getByRole('button', { name: /Log time|Save|button_log_time/i }));
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(errorMessage);
+        fireEvent.load(iframe);
+
+        await waitFor(() => expect(screen.getByTestId('issue-dialog-error')).toHaveTextContent(errorMessage));
+        expect(completeSpy).not.toHaveBeenCalled();
+        expect(useTimerStore.getState().session?.sessionId).toBe(session.sessionId);
+    });
+
+    it('keeps the pending timer after an unexpected TimeEntry redirect', async () => {
+        const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
+        const session = {
+            version: 4 as const,
+            revision: 1,
+            sessionId: 'unexpected-redirect',
+            issueId: 123,
+            subject: 'Task 123',
+            autoStop: false,
+            state: 'stopped_pending_record' as const,
+            recordingAttempt: { id: 'redirect-attempt', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            segments: [{ startedAt: Date.now() - 1800000, stoppedAt: Date.now() }]
+        };
+        useTimerStore.setState({ session });
+        persistTimerSession(session);
+        useUIStore.setState({
+            issueDialogUrl: '/issues/123/time_entries/new',
+            issueDialogContext: {
+                timerRecording: {
+                    origin: 'timer',
+                    sessionId: session.sessionId,
+                    issueId: session.issueId,
+                    attemptId: session.recordingAttempt!.id
+                }
+            }
+        });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const formDoc = document.implementation.createHTMLDocument('iframe');
+        formDoc.body.innerHTML = '<form id="new_time_entry" action="/time_entries"><input name="commit" type="submit" value="Create" /></form>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/time_entries/new' }, document: formDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: formDoc, configurable: true });
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+        fireEvent.load(iframe);
+        fireEvent.click(within(screen.getByTestId('issue-dialog-footer')).getByRole('button', { name: /Log time|Save|button_log_time/i }));
+
+        const redirectDoc = document.implementation.createHTMLDocument('iframe');
+        redirectDoc.body.innerHTML = '<div class="issue">Different issue</div>';
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/999' }, document: redirectDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: redirectDoc, configurable: true });
+        fireEvent.load(iframe);
+
+        await waitFor(() => expect(screen.getByTestId('issue-dialog-error')).toBeInTheDocument());
+        expect(completeSpy).not.toHaveBeenCalled();
+        expect(useTimerStore.getState().session?.sessionId).toBe(session.sessionId);
+        expect(useTimerStore.getState().session?.recordingAttempt?.phase).toBe('unknown');
+    });
+
+    it('handles direct form submission inside iframe and clears timer session on redirect to issue show', async () => {
+        const clearSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
+        useTimerStore.setState({
+            session: {
+                version: 4,
+                revision: 1,
+                sessionId: 's2',
+                issueId: 456,
+                subject: 'Task 456',
+                autoStop: false,
+                state: 'stopped_pending_record',
+                recordingAttempt: { id: 'attempt-2', ownerTabId: 'test-tab', openedAt: Date.now(), phase: 'editing' as const },
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                segments: [{ startedAt: Date.now() - 900000, stoppedAt: Date.now() }]
+            }
+        });
+        persistTimerSession(useTimerStore.getState().session);
+
+        const recordingContext = { origin: 'timer' as const, sessionId: 's2', issueId: 456, attemptId: 'attempt-2' };
+        useUIStore.setState({
+            issueDialogUrl: '/issues/456/time_entries/new?time_entry[hours]=0.25',
+            issueDialogContext: { timerRecording: recordingContext }
+        });
+
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        doc.body.innerHTML = `
+            <form id="new_time_entry" action="/time_entries" method="post">
+              <input name="time_entry[hours]" type="text" value="0.25" />
+              <input name="commit" type="submit" value="Create" />
+            </form>
+        `;
+
+        vi.mocked(getIssueDialogErrorMessage).mockReturnValue(null);
+
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/456/time_entries/new?time_entry[hours]=0.25' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        // Submit form natively inside iframe
+        doc.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+        // Simulate Redmine redirect to /issues/456
+        const redirectDoc = document.implementation.createHTMLDocument('iframe');
+        redirectDoc.body.innerHTML = `<div class="flash notice">Successful creation.</div><div class="issue">Issue details</div>`;
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/456' }, document: redirectDoc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: redirectDoc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => {
+            expect(clearSpy).toHaveBeenCalledWith(recordingContext);
+            expect(useUIStore.getState().issueDialogUrl).toBeNull();
+        });
     });
 });

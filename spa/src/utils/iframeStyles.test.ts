@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { applyIssueDialogStyles, findIssueDialogErrorElement, getIssueDialogErrorMessage, ISSUE_DIALOG_STYLE_ID } from './iframeStyles';
 
 describe('iframeStyles', () => {
@@ -72,6 +72,28 @@ describe('iframeStyles', () => {
         expect(css).toContain('#query-form > input[type="submit"]');
     });
 
+    it('hides only the standard TimeEntry actions and adjacent cancel link without URL matching', () => {
+        const doc = document.implementation.createHTMLDocument('time entry iframe');
+
+        applyIssueDialogStyles(doc);
+
+        const css = doc.querySelector(`#${ISSUE_DIALOG_STYLE_ID}`)?.textContent || '';
+        expect(css).toContain('#new_time_entry > .buttons > input[type="submit"] + a');
+        expect(css).toContain('form[id^="edit_time_entry"] > .buttons > input[type="submit"] + a');
+        expect(css).not.toContain('a[href*="/time_entries"]');
+        expect(css).not.toContain('form[action*="/time_entries"]');
+    });
+
+    it('does not hide journal form actions when adding TimeEntry cancel styles', () => {
+        const doc = document.implementation.createHTMLDocument('iframe');
+
+        applyIssueDialogStyles(doc);
+
+        const css = doc.querySelector(`#${ISSUE_DIALOG_STYLE_ID}`)?.textContent || '';
+        expect(css).not.toContain('form[action*="/journals/"] > .buttons');
+        expect(css).not.toContain('form[id^="journal-"] > .buttons');
+    });
+
     it('adds issue detail safe area styles only on issue show pages', () => {
         const formDoc = document.implementation.createHTMLDocument('form iframe');
         const showDoc = document.implementation.createHTMLDocument('show iframe');
@@ -96,6 +118,16 @@ describe('iframeStyles', () => {
 
         expect(findIssueDialogErrorElement(doc)).toBe(error);
         expect(getIssueDialogErrorMessage(doc)).toBe('Permission denied');
+    });
+
+    it('detects an error element from an iframe document realm', () => {
+        const error = { textContent: 'Hours is invalid' } as unknown as HTMLElement;
+        const doc = {
+            querySelector: vi.fn((selector: string) => selector === '#errorExplanation' ? error : null)
+        } as unknown as Document;
+
+        expect(findIssueDialogErrorElement(doc)).toBe(error);
+        expect(getIssueDialogErrorMessage(doc)).toBe('Hours is invalid');
     });
 
     it('detects conflict warning block as an error signal', () => {

@@ -4,14 +4,20 @@ import { GanttContainer } from './components/GanttContainer';
 import { GanttToolbar } from './components/GanttToolbar';
 import Toast from './components/Toast';
 import { ConflictResolutionPanel } from './components/ConflictResolutionPanel';
+import { GlobalTimer } from './components/timer/GlobalTimer';
+import { TimerStartModal } from './components/timer/TimerStartModal';
+import { PendingWorkModal } from './components/timer/PendingWorkModal';
+import { OtherNoticeModal } from './components/timer/OtherNoticeModal';
 import type { GanttExportHandle } from './export/types';
 
 import { useUIStore } from './stores/UIStore';
 import './App.css';
 
 function App() {
-  const { zoomLevel, setZoomLevel } = useTaskStore();
-  const { isFullScreen, setFullScreen } = useUIStore();
+  const zoomLevel = useTaskStore(state => state.zoomLevel);
+  const setZoomLevel = useTaskStore(state => state.setZoomLevel);
+  const isFullScreen = useUIStore(state => state.isFullScreen);
+  const setFullScreen = useUIStore(state => state.setFullScreen);
   const previousOverflow = useRef<string | undefined>(undefined);
   const exportRef = useRef<GanttExportHandle>(null);
 
@@ -53,6 +59,10 @@ function App() {
 
       <Toast />
       <ConflictResolutionPanel />
+      <GlobalTimer />
+      <TimerStartModal />
+      <PendingWorkModal />
+      <OtherNoticeModal />
     </div>
   );
 }

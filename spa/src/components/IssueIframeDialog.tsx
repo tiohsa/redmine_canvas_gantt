@@ -9,9 +9,13 @@ import { fontFamilies, designTokens } from '../styles/designTokens';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import { apiClient } from '../api/client';
 import { canApplyReadResponse, createReadContext, type ReadContext } from '../stores/taskStore/stateContract';
+import { useTimerStore } from '../stores/TimerStore';
+import { detectTimerRecordingOutcome } from '../domain/timer/timerRecordingOutcome';
+import { classifyIssueDialogForm, type IssueDialogFormTarget } from '../utils/issueDialogForms';
 
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
 const MIN_DIALOG_HEIGHT_PX = 600;
+const MIN_TIME_ENTRY_DIALOG_HEIGHT_PX = 420;
 const DEFAULT_DIALOG_WIDTH_PX = 1200;
 const MIN_DIALOG_WIDTH_PX = 800;
 
@@ -64,9 +68,25 @@ type SaveTarget = 'issue' | 'new-issue' | 'journal' | 'time_entry' | 'query' | n
 
 const getIssueShowIdFromPath = (path: string): string | null => {
     const issueMatch = path.match(/\/issues\/(\d+)\/?$/);
-    if (!issueMatch) return null;
-    if (path.includes('/edit') || path.includes('/new')) return null;
-    return issueMatch[1];
+    return issueMatch?.[1] ?? null;
+};
+
+const getIssuePageIdFromPath = (path: string): string | null => (
+    path.match(/\/issues\/(\d+)(?:\/edit)?\/?$/)?.[1] ?? null
+);
+
+const getRelatedIssueIdFromPath = (path: string): string | null => (
+    path.match(/\/issues\/(\d+)(?:\/|$)/)?.[1] ?? null
+);
+
+const isTimeEntryDialogUrl = (url: string | null): boolean => {
+    if (!url) return false;
+
+    try {
+        return /(?:^|\/)time_entries(?:\/|$)/.test(new URL(url, window.location.origin).pathname);
+    } catch {
+        return false;
+    }
 };
 
 const findJournalEditForm = (doc: Document): HTMLFormElement | null => {
@@ -78,13 +98,25 @@ const findJournalEditForm = (doc: Document): HTMLFormElement | null => {
     );
 };
 
+const findFormByTarget = (doc: Document, target: Exclude<IssueDialogFormTarget, null>): HTMLFormElement | null => {
+    return Array.from(doc.forms).find(form => classifyIssueDialogForm(form) === target) ?? null;
+};
+
+const getSaveTargetForForm = (form: HTMLFormElement, currentPath?: string): SaveTarget => {
+    const target = classifyIssueDialogForm(form);
+    if (target === 'issue') {
+        const path = currentPath ?? form.ownerDocument.defaultView?.location?.pathname ?? '';
+        const isNewIssue = path.includes('/issues/new') || /\/projects\/[^/]+\/issues\/new\/?$/.test(path);
+        return isNewIssue ? 'new-issue' : 'issue';
+    }
+    return target;
+};
+
 const getActiveSaveForm = (doc: Document, currentPath?: string): { form: HTMLFormElement; target: SaveTarget } | null => {
     const journalForm = findJournalEditForm(doc);
     if (journalForm) return { form: journalForm, target: 'journal' };
 
-    const timeEntryForm =
-        doc.querySelector<HTMLFormElement>('form[action*="/time_entries"]') ||
-        doc.querySelector<HTMLFormElement>('#new_time_entry');
+    const timeEntryForm = findFormByTarget(doc, 'time_entry');
     if (timeEntryForm) return { form: timeEntryForm, target: 'time_entry' };
 
     const issueForm = doc.querySelector<HTMLFormElement>('#issue-form');
@@ -94,6 +126,9 @@ const getActiveSaveForm = (doc: Document, currentPath?: string): { form: HTMLFor
         return { form: issueForm, target: isNewIssue ? 'new-issue' : 'issue' };
     }
 
+    // Redmine's issue list uses #query_form as a search form, while the
+    // saved-query editor uses #query-form as its save target. Both are
+    // classified as Query, but only the editor is an active save form.
     const queryForm = doc.querySelector<HTMLFormElement>('#query-form');
     if (queryForm) return { form: queryForm, target: 'query' };
 
@@ -118,6 +153,7 @@ const submitForm = (form: HTMLFormElement): void => {
 
 export const IssueIframeDialog: React.FC = () => {
     const issueDialogUrl = useUIStore(state => state.issueDialogUrl);
+    const issueDialogContext = useUIStore(state => state.issueDialogContext);
     const queryDialogUrl = useUIStore(state => state.queryDialogUrl);
     const closeIssueDialog = useUIStore(state => state.closeIssueDialog);
     const closeQueryDialog = useUIStore(state => state.closeQueryDialog);
@@ -130,8 +166,13 @@ export const IssueIframeDialog: React.FC = () => {
     const errorRef = React.useRef<HTMLDivElement>(null);
     const iframeEscapeCleanupRef = React.useRef<(() => void) | null>(null);
     const iframeSizeObserverCleanupRef = React.useRef<(() => void) | null>(null);
+    const iframeSubmitCleanupRef = React.useRef<(() => void) | null>(null);
     const dialogResizeCleanupRef = React.useRef<(() => void) | null>(null);
     const isSavingRef = React.useRef(false);
+    const timerSubmissionPendingRef = React.useRef(false);
+    const timerSubmissionPromiseRef = React.useRef<Promise<void> | null>(null);
+    const allowNativeTimerSubmitRef = React.useRef(false);
+    const bypassTimerCloseCleanupRef = React.useRef(false);
     const pendingAutoSubmitRef = React.useRef(false);
     const trackerReadContextRef = React.useRef<ReadContext | null>(null);
     const trackerReadGenerationRef = React.useRef(0);
@@ -149,16 +190,27 @@ export const IssueIframeDialog: React.FC = () => {
     const [defaultTrackerId, setDefaultTrackerId] = React.useState<number | undefined>(undefined);
     const [hasBulkSubjects, setHasBulkSubjects] = React.useState(false);
     const activeDialogUrl = queryDialogUrl || issueDialogUrl;
+    const effectiveDialogUrl = currentIframeUrl ?? activeDialogUrl;
     const isQueryDialog = Boolean(queryDialogUrl);
 
     const handleClose = React.useCallback(() => {
+        const timerRecording = issueDialogContext?.timerRecording;
+        if (timerRecording && !bypassTimerCloseCleanupRef.current) {
+            const timerSession = useTimerStore.getState().session;
+            const phase = timerSession?.recordingAttempt?.phase;
+            if (isSavingRef.current || phase === 'submitting') {
+                void useTimerStore.getState().markTimerRecordingUnknown(timerRecording);
+            } else if (phase === 'editing') {
+                void useTimerStore.getState().cancelTimerRecording(timerRecording);
+            }
+        }
         if (queryDialogUrl) {
             closeQueryDialog();
         } else {
             closeIssueDialog();
         }
         void refreshData();
-    }, [closeIssueDialog, closeQueryDialog, queryDialogUrl, refreshData]);
+    }, [closeIssueDialog, closeQueryDialog, issueDialogContext, queryDialogUrl, refreshData]);
 
     const measureDialogHeight = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;
@@ -174,13 +226,18 @@ export const IssueIframeDialog: React.FC = () => {
             getElementOuterHeight(bulkSectionRef.current) +
             getElementOuterHeight(footerRef.current);
         const iframeContentHeight = getIssueDialogContentHeight(doc);
+        // Redmine's standard time-entry form is intentionally compact. Keep
+        // its dialog from inheriting the larger issue-editor minimum height,
+        // which otherwise leaves a large blank area below the form.
+        const isTimeEntry = saveTargetRef.current === 'time_entry' || isTimeEntryDialogUrl(activeDialogUrl);
+        const minimumHeightPx = isTimeEntry ? MIN_TIME_ENTRY_DIALOG_HEIGHT_PX : MIN_DIALOG_HEIGHT_PX;
         const nextHeight = Math.min(
             maxHeightPx,
-            Math.max(MIN_DIALOG_HEIGHT_PX, chromeHeight + iframeContentHeight)
+            Math.max(minimumHeightPx, chromeHeight + iframeContentHeight)
         );
 
         setDialogHeightPx(nextHeight);
-    }, []);
+    }, [activeDialogUrl]);
 
     const detectSaveTarget = React.useCallback((doc: Document, currentPath?: string) => {
         const activeSaveForm = getActiveSaveForm(doc, currentPath);
@@ -223,6 +280,40 @@ export const IssueIframeDialog: React.FC = () => {
 
         return false;
     }, [refreshData]);
+
+    const prepareTimerFormSubmission = React.useCallback(async (form: HTMLFormElement): Promise<void> => {
+        const timerRecording = issueDialogContext?.timerRecording;
+        if (!timerRecording || timerSubmissionPendingRef.current) return;
+
+        timerSubmissionPendingRef.current = true;
+        saveTargetRef.current = 'time_entry';
+        setSaveTarget('time_entry');
+        setDialogMode('saving');
+        setIsSaving(true);
+        isSavingRef.current = true;
+
+        const preparationPromise = useTimerStore.getState().beginTimerRecordingSubmission(timerRecording).then((prepared) => {
+            if (!prepared) throw new Error('Timer recording reservation could not be moved to submitting');
+        });
+        timerSubmissionPromiseRef.current = preparationPromise;
+        try {
+            await preparationPromise;
+            allowNativeTimerSubmitRef.current = true;
+            submitForm(form);
+            allowNativeTimerSubmitRef.current = false;
+        } catch (error) {
+            console.debug('Could not prepare timer time-entry submission', error);
+            allowNativeTimerSubmitRef.current = false;
+            void useTimerStore.getState().markTimerRecordingUnknown(timerRecording);
+            setIframeError(i18n.t('label_timer_unknown_error') || 'The time-entry result could not be confirmed. The pending work was kept.');
+            setDialogMode('error');
+            isSavingRef.current = false;
+            setIsSaving(false);
+        } finally {
+            if (timerSubmissionPromiseRef.current === preparationPromise) timerSubmissionPromiseRef.current = null;
+            timerSubmissionPendingRef.current = false;
+        }
+    }, [issueDialogContext]);
 
     const bindIframeSizeObservers = React.useCallback((doc: Document) => {
         iframeSizeObserverCleanupRef.current?.();
@@ -342,28 +433,123 @@ export const IssueIframeDialog: React.FC = () => {
                 }
             }
 
+            iframeSubmitCleanupRef.current?.();
+            iframeSubmitCleanupRef.current = null;
+            const handleFormSubmit = (event: Event) => {
+                const eventTarget = event.target as HTMLElement | null;
+                const submittedForm = eventTarget?.tagName === 'FORM' ? eventTarget as HTMLFormElement : null;
+                const detected = submittedForm
+                    ? { form: submittedForm, target: getSaveTargetForForm(submittedForm, urlParsed.pathname) }
+                    : getActiveSaveForm(doc, urlParsed.pathname);
+                const form = submittedForm ?? detected?.form;
+                const target = detected?.target ?? null;
+                if (target) {
+                    if (target === 'time_entry' && issueDialogContext?.timerRecording && !allowNativeTimerSubmitRef.current) {
+                        event.preventDefault();
+                        if (form) void prepareTimerFormSubmission(form);
+                        return;
+                    }
+                    saveTargetRef.current = target;
+                    setSaveTarget(target);
+                    isSavingRef.current = true;
+                    setIsSaving(true);
+                    setDialogMode('saving');
+                }
+            };
+            doc.addEventListener('submit', handleFormSubmit, true);
+            iframeSubmitCleanupRef.current = () => doc.removeEventListener('submit', handleFormSubmit, true);
+
+            const previousUrl = currentIframeUrl ?? activeDialogUrl ?? '';
+            const wasTimeEntryForm = saveTargetRef.current === 'time_entry' || previousUrl.includes('/time_entries');
+            const urlParsedAfterLoad = new URL(loadedUrl, window.location.origin);
+            const pathAfterLoad = urlParsedAfterLoad.pathname;
+            const issueIdAfterLoad = getIssueShowIdFromPath(pathAfterLoad);
+
+            const hasTimeEntryForm = getActiveSaveForm(doc, pathAfterLoad)?.target === 'time_entry';
+            const hasTimeEntrySuccessNotice = Boolean(doc.querySelector('.flash.notice'));
+            const timerRecordingIssueMatches = !issueDialogContext?.timerRecording ||
+                !issueIdAfterLoad ||
+                String(issueIdAfterLoad) === String(issueDialogContext.timerRecording.issueId);
+            if (issueDialogContext?.timerRecording && isSavingRef.current && timerSubmissionPromiseRef.current) {
+                await timerSubmissionPromiseRef.current;
+            }
+
+            const timerRecordingOutcome = issueDialogContext?.timerRecording
+                ? detectTimerRecordingOutcome({
+                    isSaving: isSavingRef.current,
+                    wasTimeEntryForm,
+                    hasTimeEntryForm,
+                    hasSuccessNotice: hasTimeEntrySuccessNotice,
+                    hasValidationError: Boolean(error),
+                    issueMatches: timerRecordingIssueMatches
+                })
+                : null;
+
+            if (timerRecordingOutcome === 'success' && issueDialogContext?.timerRecording) {
+                const recordingContext = issueDialogContext.timerRecording;
+                bypassTimerCloseCleanupRef.current = true;
+                void useTimerStore.getState().completeTimerRecording(recordingContext);
+                saveTargetRef.current = null;
+                setSaveTarget(null);
+                isSavingRef.current = false;
+                setIsSaving(false);
+                handleClose();
+                bypassTimerCloseCleanupRef.current = false;
+                return;
+            }
+
+            if (timerRecordingOutcome === 'validation_error' && issueDialogContext?.timerRecording) {
+                void useTimerStore.getState().markTimerRecordingValidationError(issueDialogContext.timerRecording);
+                setDialogMode('error');
+                setIframeError(error || i18n.t('label_timer_validation_error') || 'Redmine could not save this time entry. Correct the form and try again.');
+                isSavingRef.current = false;
+                setIsSaving(false);
+                return;
+            }
+
+            if (timerRecordingOutcome === 'unknown' && issueDialogContext?.timerRecording) {
+                void useTimerStore.getState().markTimerRecordingUnknown(issueDialogContext.timerRecording);
+                setDialogMode('error');
+                setIframeError(i18n.t('label_timer_unknown_error') || 'The time-entry result could not be confirmed. The pending work was kept.');
+                isSavingRef.current = false;
+                setIsSaving(false);
+                return;
+            }
+
+            const isTimeEntrySuccess = !issueDialogContext?.timerRecording && isSavingRef.current && wasTimeEntryForm && !error && (
+                hasTimeEntrySuccessNotice ||
+                Boolean(issueIdAfterLoad) ||
+                pathAfterLoad.includes('/time_entries') ||
+                (pathAfterLoad.includes('/projects/') && pathAfterLoad.endsWith('/issues'))
+            );
+
+            if (isTimeEntrySuccess) {
+                saveTargetRef.current = null;
+                setSaveTarget(null);
+                isSavingRef.current = false;
+                setIsSaving(false);
+                handleClose();
+                return;
+            }
+
             // If we were saving, update dialog mode when Redmine redirects after submit.
             // Validation failures usually remain on /edit or /new and keep error blocks in DOM.
             if (isSavingRef.current) {
-                const urlParsed = new URL(loadedUrl, window.location.origin);
-                const path = urlParsed.pathname;
-                const issueId = getIssueShowIdFromPath(path);
-
                 const isQuerySuccess = isQueryDialog && !error && (
-                    path.endsWith('/issues') ||
-                    path.includes('/projects/') && path.endsWith('/issues') ||
-                    path.match(/\/queries\/\d+$/) // some plugins redirect here
+                    pathAfterLoad.endsWith('/issues') ||
+                    pathAfterLoad.includes('/projects/') && pathAfterLoad.endsWith('/issues') ||
+                    pathAfterLoad.match(/\/queries\/\d+$/) // some plugins redirect here
                 );
 
-                if (!error && issueId && !isQueryDialog) {
+                if (!error && issueIdAfterLoad && !isQueryDialog) {
                     if (
                         (saveTargetRef.current === 'issue' || saveTargetRef.current === 'new-issue') &&
                         bulkRef.current?.hasSubjects()
                     ) {
-                        await bulkRef.current.createSubtasks(issueId);
+                        await bulkRef.current.createSubtasks(issueIdAfterLoad);
                     }
 
-                    setDisplayedIssueId(issueId);
+                    setDisplayedIssueId(issueIdAfterLoad);
                     saveTargetRef.current = null;
                     setSaveTarget(null);
                     setIsJournalEditing(false);
@@ -383,7 +569,7 @@ export const IssueIframeDialog: React.FC = () => {
                 }
 
                 const reloadedIssueForm = doc.querySelector<HTMLFormElement>('#issue-form');
-                if (!error && saveTargetRef.current === 'issue' && reloadedIssueForm && path.match(/\/issues\/\d+\/edit\/?$/)) {
+                if (!error && saveTargetRef.current === 'issue' && reloadedIssueForm && pathAfterLoad.match(/\/issues\/\d+\/edit\/?$/)) {
                     setDialogMode('saving');
                     setIsSaving(true);
                     return;
@@ -396,13 +582,18 @@ export const IssueIframeDialog: React.FC = () => {
             }
         } catch (e) {
             console.debug("Could not verify iframe URL", e);
+            if (issueDialogContext?.timerRecording && isSavingRef.current) {
+                void useTimerStore.getState().markTimerRecordingUnknown(issueDialogContext.timerRecording);
+                setIframeError(i18n.t('label_timer_unknown_error') || 'The time-entry result could not be confirmed. The pending work was kept.');
+                setDialogMode('error');
+            }
             if (isSavingRef.current) {
                 isSavingRef.current = false;
                 setIsSaving(false);
             }
             setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
         }
-    }, [bindIframeSizeObservers, detectSaveTarget, handleClose, handleJournalSaveCompletion, isQueryDialog, measureDialogHeight, refreshData]);
+    }, [activeDialogUrl, bindIframeSizeObservers, currentIframeUrl, detectSaveTarget, handleClose, handleJournalSaveCompletion, isQueryDialog, issueDialogContext, measureDialogHeight, prepareTimerFormSubmission, refreshData]);
 
     const handleSave = React.useCallback(() => {
         const doc = iframeRef.current?.contentDocument;
@@ -412,6 +603,11 @@ export const IssueIframeDialog: React.FC = () => {
         const saveForm = getActiveSaveForm(doc, currentPath);
         if (!saveForm) return;
 
+        if (saveForm.target === 'time_entry' && issueDialogContext?.timerRecording) {
+            void prepareTimerFormSubmission(saveForm.form);
+            return;
+        }
+
         saveTargetRef.current = saveForm.target;
         isSavingRef.current = true;
         setSaveTarget(saveForm.target);
@@ -419,7 +615,20 @@ export const IssueIframeDialog: React.FC = () => {
         setDialogMode('saving');
         setIsSaving(true);
         submitForm(saveForm.form);
-    }, []);
+    }, [issueDialogContext, prepareTimerFormSubmission]);
+
+    const handleIframeError = React.useCallback(() => {
+        const timerRecording = issueDialogContext?.timerRecording;
+        if (timerRecording && isSavingRef.current) {
+            void useTimerStore.getState().markTimerRecordingUnknown(timerRecording);
+            setIframeError(i18n.t('label_timer_unknown_error') || 'The time-entry result could not be confirmed. The pending work was kept.');
+            setDialogMode('error');
+            isSavingRef.current = false;
+            setIsSaving(false);
+        } else {
+            setIframeError(i18n.t('label_failed_to_load') || 'Failed to load the dialog.');
+        }
+    }, [issueDialogContext]);
 
     const handleIssueShowPrimaryAction = React.useCallback(() => {
         if (!displayedIssueId || !iframeRef.current?.contentWindow) return;
@@ -450,16 +659,6 @@ export const IssueIframeDialog: React.FC = () => {
     }, [displayedIssueId, hasBulkSubjects]);
 
     const { issueLabel, issueSubject } = React.useMemo(() => {
-        if (displayedIssueId && !isQueryDialog) {
-            const task = useTaskStore.getState().tasks.find(t => String(t.id) === displayedIssueId);
-            if (task) {
-                const label = `${task.trackerName || i18n.t('label_issue') || 'Issue'} #${task.id}`;
-                return { issueLabel: label, issueSubject: task.subject || '' };
-            }
-            const label = `${i18n.t('label_issue') || 'Issue'} #${displayedIssueId}`;
-            return { issueLabel: label, issueSubject: '' };
-        }
-
         if (!activeDialogUrl) return { issueLabel: '', issueSubject: '' };
         if (isQueryDialog) {
             return {
@@ -468,12 +667,11 @@ export const IssueIframeDialog: React.FC = () => {
             };
         }
 
-        const url = activeDialogUrl.split('?')[0];
+        const url = effectiveDialogUrl?.split('?')[0] ?? '';
+        const issueId = getIssuePageIdFromPath(url) ?? getRelatedIssueIdFromPath(url) ?? displayedIssueId;
 
-        // 1. Try to extract issue ID from /issues/123 or /issues/123/edit
-        const issueMatch = url.match(/\/issues\/(\d+)(?:\/edit)?/);
-        if (issueMatch) {
-            const issueId = issueMatch[1];
+        // 1. Treat only an issue show or edit URL as an issue dialog.
+        if (issueId) {
             // Try to find the task in the store to get more info (Tracker, etc.)
             const task = useTaskStore.getState().tasks.find(t => String(t.id) === issueId);
             if (task) {
@@ -493,36 +691,45 @@ export const IssueIframeDialog: React.FC = () => {
         // 3. General "Edit" fallback
         const label = i18n.t('button_edit') || 'Edit';
         return { issueLabel: label, issueSubject: '' };
-    }, [activeDialogUrl, displayedIssueId, isQueryDialog]);
+    }, [activeDialogUrl, displayedIssueId, effectiveDialogUrl, isQueryDialog]);
 
-    const parentId = React.useMemo(() => {
-        if (!activeDialogUrl || isQueryDialog) return undefined;
+    const initialTimeEntryDialog = Boolean(issueDialogContext?.timerRecording) || isTimeEntryDialogUrl(effectiveDialogUrl);
+    const isTimeEntryDialog = initialTimeEntryDialog || saveTarget === 'time_entry';
+
+    const isBulkEligibleIssueDialog = React.useMemo(() => {
+        if (!effectiveDialogUrl || isQueryDialog) return false;
 
         try {
-            const urlParsed = new URL(activeDialogUrl, window.location.origin);
-            const path = urlParsed.pathname;
-            const params = urlParsed.searchParams;
+            const path = new URL(effectiveDialogUrl, window.location.origin).pathname;
+            return Boolean(getIssuePageIdFromPath(path)) || /\/(?:projects\/[^/]+\/)?issues\/new\/?$/.test(path);
+        } catch {
+            return false;
+        }
+    }, [effectiveDialogUrl, isQueryDialog]);
 
-            let paId = params.get('issue[parent_issue_id]') || params.get('parent_issue_id') || undefined;
+    const parentId = React.useMemo(() => {
+        if (!effectiveDialogUrl || isQueryDialog) return undefined;
 
-            // The issue itself is the parent for subtasks from both the edit and
-            // show dialogs. New issues have no stable parent until they are saved.
-            const issueMatch = path.match(/\/issues\/(\d+)(?:\/edit)?/);
-            if (issueMatch) {
-                paId = issueMatch[1];
-            }
+        try {
+            const urlParsed = new URL(effectiveDialogUrl, window.location.origin);
+            const issueId = getIssuePageIdFromPath(urlParsed.pathname);
+            if (issueId) return issueId;
 
-            return paId;
+            const isNewIssuePath = /\/(?:projects\/[^/]+\/)?issues\/new\/?$/.test(urlParsed.pathname);
+            if (!isNewIssuePath) return undefined;
+
+            return urlParsed.searchParams.get('issue[parent_issue_id]') || urlParsed.searchParams.get('parent_issue_id') || undefined;
         } catch (e) {
             console.error("Failed to parse issue dialog URL", e);
             return undefined;
         }
-    }, [activeDialogUrl, isQueryDialog]);
+    }, [effectiveDialogUrl, isQueryDialog]);
     const parentTask = useTaskStore(state => parentId ? state.tasks.find(task => task.id === parentId) : undefined);
     const canBulkCreateForParent = !parentTask?.isContextOnly;
+    const shouldShowBulkSubtasks = isBulkEligibleIssueDialog && !isTimeEntryDialog && canBulkCreateForParent;
 
     React.useEffect(() => {
-        if (!parentId || isQueryDialog || !canBulkCreateForParent) return;
+        if (!shouldShowBulkSubtasks || !parentId) return;
 
         const operationIssueIds = useTaskStore.getState().tasks
             .filter(task => !task.isContextOnly)
@@ -531,7 +738,7 @@ export const IssueIframeDialog: React.FC = () => {
             generation: ++trackerReadGenerationRef.current,
             projectId: useTaskStore.getState().currentProjectId,
             query: { parentId, operationIssueIds },
-            scope: { dialog: activeDialogUrl },
+            scope: { dialog: 'bulk_subtasks', parentId },
             purpose: 'subtask_trackers',
             mergePolicy: 'replace'
         });
@@ -546,13 +753,15 @@ export const IssueIframeDialog: React.FC = () => {
         return () => {
             if (trackerReadContextRef.current?.contextId === context.contextId) trackerReadContextRef.current = null;
         };
-    }, [activeDialogUrl, canBulkCreateForParent, isQueryDialog, parentId]);
+    }, [parentId, shouldShowBulkSubtasks]);
 
     React.useEffect(() => {
         iframeEscapeCleanupRef.current?.();
         iframeEscapeCleanupRef.current = null;
         iframeSizeObserverCleanupRef.current?.();
         iframeSizeObserverCleanupRef.current = null;
+        iframeSubmitCleanupRef.current?.();
+        iframeSubmitCleanupRef.current = null;
         setIframeError(null);
         setDialogMode('form');
         setCurrentIframeUrl(null);
@@ -561,6 +770,10 @@ export const IssueIframeDialog: React.FC = () => {
         setIsJournalEditing(false);
         saveTargetRef.current = null;
         isSavingRef.current = false;
+        timerSubmissionPendingRef.current = false;
+        timerSubmissionPromiseRef.current = null;
+        allowNativeTimerSubmitRef.current = false;
+        bypassTimerCloseCleanupRef.current = false;
         pendingAutoSubmitRef.current = false;
         setIsSaving(false);
         setDialogHeightPx(null);
@@ -596,6 +809,9 @@ export const IssueIframeDialog: React.FC = () => {
         iframeEscapeCleanupRef.current = null;
         iframeSizeObserverCleanupRef.current?.();
         iframeSizeObserverCleanupRef.current = null;
+        iframeSubmitCleanupRef.current?.();
+        iframeSubmitCleanupRef.current = null;
+        timerSubmissionPromiseRef.current = null;
         dialogResizeCleanupRef.current?.();
         dialogResizeCleanupRef.current = null;
     }, []);
@@ -635,7 +851,7 @@ export const IssueIframeDialog: React.FC = () => {
 
     if (!activeDialogUrl) return null;
 
-    const externalDialogUrl = currentIframeUrl || activeDialogUrl;
+    const externalDialogUrl = effectiveDialogUrl ?? undefined;
     const isIssueShowMode = dialogMode === 'issue-show' && !isQueryDialog;
     const isJournalSaveMode = saveTarget === 'journal' || isJournalEditing;
     const shouldShowSave =
@@ -649,7 +865,9 @@ export const IssueIframeDialog: React.FC = () => {
             ? (i18n.t('button_save_comment') || 'Save comment')
             : saveTarget === 'issue'
                 ? (i18n.t('button_save_issue') || 'Save issue')
-                : (i18n.t('button_save') || 'Save');
+                : saveTarget === 'time_entry'
+                    ? (i18n.t('button_log_time') || i18n.t('button_save') || 'Log time')
+                    : (i18n.t('button_save') || 'Save');
     const savingLabel = saveTarget === 'journal'
         ? (i18n.t('label_saving_comment') || 'Saving comment...')
         : (i18n.t('label_loading') || 'Saving...');
@@ -684,20 +902,20 @@ export const IssueIframeDialog: React.FC = () => {
             }}
         >
             <div
-                    style={{
-                        width: `${DEFAULT_DIALOG_WIDTH_PX}px`,
-                        maxWidth: '98vw',
-                        minWidth: `${MIN_DIALOG_WIDTH_PX}px`,
-                        height: dialogHeightPx ? `${dialogHeightPx}px` : `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
-                        maxHeight: `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
-                        backgroundColor: '#ffffff',
-                        borderRadius: '13px',
-                        boxShadow: '0px 0px 22.576px rgba(0,0,0,0.08), 6.5px 2px 17.5px rgba(44,30,116,0.11)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        overflow: 'hidden',
-                        boxSizing: 'border-box',
-                        border: '1px solid rgba(0,0,0,0.06)'
+                style={{
+                    width: `${DEFAULT_DIALOG_WIDTH_PX}px`,
+                    maxWidth: '98vw',
+                    minWidth: `${MIN_DIALOG_WIDTH_PX}px`,
+                    height: dialogHeightPx ? `${dialogHeightPx}px` : `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
+                    maxHeight: `${Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO)}px`,
+                    backgroundColor: '#ffffff',
+                    borderRadius: '13px',
+                    boxShadow: '0px 0px 22.576px rgba(0,0,0,0.08), 6.5px 2px 17.5px rgba(44,30,116,0.11)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    boxSizing: 'border-box',
+                    border: '1px solid rgba(0,0,0,0.06)'
                 }}
             >
                 {/* Header - Fixed Height */}
@@ -798,6 +1016,7 @@ export const IssueIframeDialog: React.FC = () => {
                         ref={iframeRef}
                         src={activeDialogUrl}
                         onLoad={handleIframeLoad}
+                        onError={handleIframeError}
                         style={{
                             width: '100%',
                             height: '100%',
@@ -809,7 +1028,7 @@ export const IssueIframeDialog: React.FC = () => {
                 </div>
 
                 {/* Bulk Creation Section - Only for Issues */}
-                {!isQueryDialog && canBulkCreateForParent && (
+                {shouldShowBulkSubtasks && (
                     <div ref={bulkSectionRef} style={{ flex: '0 0 auto', padding: '8px 16px 0 16px', backgroundColor: designTokens.controlBg, borderTop: `1px solid ${designTokens.controlBorder}` }}>
                         <BulkSubtaskCreator
                             ref={bulkRef}

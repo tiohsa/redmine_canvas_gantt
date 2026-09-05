@@ -26,7 +26,23 @@ const ISSUE_DIALOG_HIDE_SELECTORS = [
     '#query-form > input[type="submit"]',
     '#query-form > a[href*="preview"]',
     '#query-form a[href*="/queries"]',
-    '#query-form a[onclick*="history.back"]'
+    '#query-form a[onclick*="history.back"]',
+    '#new_time_entry > input[type="submit"]',
+    'form.new_time_entry > input[type="submit"]',
+    'form[id^="edit_time_entry"] > input[type="submit"]',
+    'form.edit_time_entry > input[type="submit"]',
+    '#new_time_entry > .buttons > input[type="submit"]',
+    'form.new_time_entry > .buttons > input[type="submit"]',
+    'form[id^="edit_time_entry"] > .buttons > input[type="submit"]',
+    'form.edit_time_entry > .buttons > input[type="submit"]',
+    '#new_time_entry > input[type="submit"] + a',
+    'form.new_time_entry > input[type="submit"] + a',
+    'form[id^="edit_time_entry"] > input[type="submit"] + a',
+    'form.edit_time_entry > input[type="submit"] + a',
+    '#new_time_entry > .buttons > input[type="submit"] + a',
+    'form.new_time_entry > .buttons > input[type="submit"] + a',
+    'form[id^="edit_time_entry"] > .buttons > input[type="submit"] + a',
+    'form.edit_time_entry > .buttons > input[type="submit"] + a'
 ];
 
 const ISSUE_SHOW_HIDE_SELECTORS = [
@@ -89,7 +105,7 @@ export const applyLinkTargetBlank = (doc: Document): void => {
 export const findIssueDialogErrorElement = (doc: Document): HTMLElement | null => {
     for (const selector of ISSUE_DIALOG_ERROR_SELECTORS) {
         const element = doc.querySelector(selector);
-        if (element instanceof HTMLElement) return element;
+        if (element) return element as HTMLElement;
     }
     return null;
 };

@@ -172,6 +172,10 @@ declare global {
             authToken: string;
             apiKey?: string;
             nonWorkingWeekDays?: number[];
+            userId?: number;
+            language?: string;
+            dateFormat?: string;
+            yearMonthFormat?: string;
             settings?: InlineEditSettings & { row_height?: string; tracker_icon_map?: string };
             i18n?: Record<string, string>;
         };
@@ -755,6 +759,7 @@ export const apiClient = {
                 parentId: t.parent_id ? String(t.parent_id) : undefined,
                 lockVersion: typeof t.lock_version === 'number' ? t.lock_version : 0,
                 editable: Boolean(t.editable),
+                canLogTime: typeof t.can_log_time === 'boolean' ? t.can_log_time : undefined,
                 trackerId: typeof t.tracker_id === 'number' ? t.tracker_id : undefined,
                 trackerName: typeof t.tracker_name === 'string' ? t.tracker_name : undefined,
                 fixedVersionId: t.fixed_version_id ? String(t.fixed_version_id) : undefined,

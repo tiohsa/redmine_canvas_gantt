@@ -287,7 +287,17 @@ const evaluateBudgets = (results, budgets) => results.map((result) => {
 const main = async () => {
   const args = parseArgs(process.argv.slice(2));
   const fixtures = await loadFixtures();
-  const scenarios = fixtures.map(createScenario);
+  const requestedScenarioNames = (process.env.BENCHMARK_SCENARIOS ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+  const selectedFixtures = requestedScenarioNames.length > 0
+    ? fixtures.filter((fixture) => requestedScenarioNames.includes(fixture.name))
+    : fixtures;
+  if (selectedFixtures.length === 0) {
+    throw new Error(`No benchmark scenarios matched: ${requestedScenarioNames.join(', ')}`);
+  }
+  const scenarios = selectedFixtures.map(createScenario);
   const budgets = JSON.parse(await readFile(BUDGET_FILE, 'utf8'));
 
   await mkdir(resolve(RESULTS_DIR), { recursive: true });

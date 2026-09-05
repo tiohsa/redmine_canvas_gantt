@@ -119,4 +119,100 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
       ])
     end
   end
+
+  describe '#build_tasks' do
+    it 'keeps can_log_time permission work constant for 100 and 500 issues in one project' do
+      current_user = instance_double(User)
+      extractor = instance_double(RedmineCanvasGantt::CustomFieldExtractor, build_task_custom_field_values: {})
+      builder = described_class.new(
+        custom_field_extractor: extractor,
+        current_user: current_user
+      )
+
+      project1 = instance_double(Project, id: 1, name: 'Project 1')
+      project2 = instance_double(Project, id: 2, name: 'Project 2')
+
+      allow(current_user).to receive(:allowed_to?).with(:log_time, project1).and_return(true)
+      allow(current_user).to receive(:allowed_to?).with(:log_time, project2).and_return(false)
+      allow(current_user).to receive(:allowed_to?).with(:edit_issues, any_args).and_return(true)
+
+      now = Time.now
+      issue1 = instance_double(
+        Issue,
+        id: 101,
+        subject: 'Task 1',
+        start_date: nil,
+        due_date: nil,
+        done_ratio: 0,
+        status_id: 1,
+        status: instance_double(IssueStatus, name: 'New', is_closed: false),
+        lock_version: 1,
+        project: project1,
+        project_id: 1,
+        tracker_id: 1,
+        tracker: instance_double(Tracker, name: 'Bug'),
+        priority_id: 1,
+        priority: instance_double(IssuePriority, name: 'Normal', position: 1),
+        assigned_to_id: nil,
+        assigned_to: nil,
+        author_id: 1,
+        author: instance_double(User, name: 'Admin'),
+        fixed_version_id: nil,
+        fixed_version: nil,
+        category_id: nil,
+        category: nil,
+        estimated_hours: nil,
+        spent_hours: 0.0,
+        created_on: now,
+        updated_on: now,
+        parent_id: nil,
+        custom_field_values: [],
+        rgt: 2,
+        lft: 1,
+        editable?: true
+      )
+
+      issue2 = instance_double(
+        Issue,
+        id: 102,
+        subject: 'Task 2',
+        start_date: nil,
+        due_date: nil,
+        done_ratio: 0,
+        status_id: 1,
+        status: instance_double(IssueStatus, name: 'New', is_closed: false),
+        lock_version: 1,
+        project: project2,
+        project_id: 2,
+        tracker_id: 1,
+        tracker: instance_double(Tracker, name: 'Bug'),
+        priority_id: 1,
+        priority: instance_double(IssuePriority, name: 'Normal', position: 1),
+        assigned_to_id: nil,
+        assigned_to: nil,
+        author_id: 1,
+        author: instance_double(User, name: 'Admin'),
+        fixed_version_id: nil,
+        fixed_version: nil,
+        category_id: nil,
+        category: nil,
+        estimated_hours: nil,
+        spent_hours: 0.0,
+        created_on: now,
+        updated_on: now,
+        parent_id: nil,
+        custom_field_values: [],
+        rgt: 4,
+        lft: 3,
+        editable?: true
+      )
+
+      tasks_100 = builder.build_tasks(Array.new(100, issue1))
+      tasks_500 = builder.build_tasks(Array.new(500, issue1))
+
+      expect(tasks_100.first[:can_log_time]).to eq(true)
+      expect(tasks_500.last[:can_log_time]).to eq(true)
+      expect(current_user).to have_received(:allowed_to?).with(:log_time, project1).twice
+    end
+  end
 end

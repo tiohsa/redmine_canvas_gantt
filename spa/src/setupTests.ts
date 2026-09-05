@@ -90,6 +90,7 @@ window.RedmineCanvasGantt = {
         label_relation_remove_failed: 'Failed to remove dependency',
         label_relation_removed: 'Dependency removed',
         label_relation_added: 'Dependency created',
+        label_relation_save_pending_task_changes: 'There are unsaved task changes. Save the task changes before modifying the relation.',
         label_relation_already_exists: 'Relation already exists',
         label_relation_type_precedes: 'Precedes',
         label_relation_type_relates: 'Relates',

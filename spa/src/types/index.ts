@@ -13,6 +13,7 @@ export interface Task {
     parentId?: string;
     lockVersion: number;
     editable: boolean;
+    canLogTime?: boolean;
     trackerId?: number;
     trackerName?: string;
     fixedVersionId?: string;

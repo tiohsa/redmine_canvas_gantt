@@ -57,22 +57,32 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         previousUserSelect: string;
     } | null>(null);
 
-    const { viewport, tasks, relations, selectedTaskId, selectedRelationId, draftRelation, rowCount, zoomLevel, viewportFromStorage, layoutRows, showVersions, updateViewport, customFields } = useTaskStore();
-    const {
-        sidebarWidth,
-        setSidebarWidth,
-        leftPaneVisible,
-        rightPaneVisible,
-        showProgressLine,
-        showTaskTitles,
-        showTaskBarDates,
-        showPointsOrphans,
-        showStartDateOnly,
-        showDueDateOnly,
-        isSidebarResizing,
-        setSidebarResizing
-    } = useUIStore();
-    const { workloadPaneVisible } = useWorkloadStore();
+    const viewport = useTaskStore(state => state.viewport);
+    const tasks = useTaskStore(state => state.tasks);
+    const relations = useTaskStore(state => state.relations);
+    const selectedTaskId = useTaskStore(state => state.selectedTaskId);
+    const selectedRelationId = useTaskStore(state => state.selectedRelationId);
+    const draftRelation = useTaskStore(state => state.draftRelation);
+    const rowCount = useTaskStore(state => state.rowCount);
+    const zoomLevel = useTaskStore(state => state.zoomLevel);
+    const viewportFromStorage = useTaskStore(state => state.viewportFromStorage);
+    const layoutRows = useTaskStore(state => state.layoutRows);
+    const showVersions = useTaskStore(state => state.showVersions);
+    const updateViewport = useTaskStore(state => state.updateViewport);
+    const customFields = useTaskStore(state => state.customFields);
+    const sidebarWidth = useUIStore(state => state.sidebarWidth);
+    const setSidebarWidth = useUIStore(state => state.setSidebarWidth);
+    const leftPaneVisible = useUIStore(state => state.leftPaneVisible);
+    const rightPaneVisible = useUIStore(state => state.rightPaneVisible);
+    const showProgressLine = useUIStore(state => state.showProgressLine);
+    const showTaskTitles = useUIStore(state => state.showTaskTitles);
+    const showTaskBarDates = useUIStore(state => state.showTaskBarDates);
+    const showPointsOrphans = useUIStore(state => state.showPointsOrphans);
+    const showStartDateOnly = useUIStore(state => state.showStartDateOnly);
+    const showDueDateOnly = useUIStore(state => state.showDueDateOnly);
+    const isSidebarResizing = useUIStore(state => state.isSidebarResizing);
+    const setSidebarResizing = useUIStore(state => state.setSidebarResizing);
+    const workloadPaneVisible = useWorkloadStore(state => state.workloadPaneVisible);
     const baselineSnapshot = useBaselineStore(state => state.snapshot);
     const showBaseline = useUIStore(state => state.showBaseline);
     const isSplitView = leftPaneVisible && rightPaneVisible;
