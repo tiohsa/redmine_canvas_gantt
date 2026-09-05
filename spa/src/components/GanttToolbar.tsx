@@ -596,14 +596,14 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         { level: 2, label: dayLabel === 'Day' ? 'D' : dayLabel, fullLabel: dayLabel }
     ];
     return (
-        <div style={{
+        <div className="gantt-toolbar" style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '8px 24px 8px 12px',
             backgroundColor: designTokens.controlBg,
             borderBottom: `1px solid ${designTokens.borderSubtle}`,
-            height: '48px',
+            minHeight: '48px',
             boxSizing: 'border-box',
             fontFamily: fontFamilies.ui,
             fontSize: '13px',
@@ -646,6 +646,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
 
                     {showFilterMenu && (
                     <div
+                        data-testid="filter-menu"
                         style={{
                             position: 'absolute',
                             top: '40px',
@@ -871,6 +872,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     <button
                         onClick={() => toggleMenu('column')}
                         title={i18n.t('label_column_plural') || 'Columns'}
+                        data-testid="column-menu-button"
                         className="gantt-toolbar-labeled-button"
                         style={{
                             display: 'flex',
@@ -899,6 +901,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     
                     {showColumnMenu && (
                         <div
+                            data-testid="column-menu"
                             style={{
                                 position: 'absolute',
                                 top: '100%',
@@ -1689,7 +1692,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
             </div>
 
             {/* Right: Zoom Level & Today */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="gantt-toolbar-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{ display: 'flex', gap: '4px' }}>
                     <button
                         aria-label={i18n.t('label_prev_month') || 'Previous month'}

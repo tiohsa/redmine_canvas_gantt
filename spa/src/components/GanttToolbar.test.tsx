@@ -138,6 +138,19 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByRole('button', { name: 'Day' })).toHaveTextContent('D');
     });
 
+    it('keeps responsive left and right toolbar groups addressable without changing controls', () => {
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        expect(document.querySelector('.gantt-toolbar')).toBeInTheDocument();
+        expect(document.querySelector('.gantt-toolbar-left')).toBeInTheDocument();
+        expect(document.querySelector('.gantt-toolbar-right')).toBeInTheDocument();
+        expect(screen.getByTestId('display-settings-menu-button'))
+            .toHaveAttribute('aria-label', 'Settings');
+        expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('title', 'Today');
+        expect(screen.getByRole('button', { name: 'Previous month' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument();
+    });
+
     it('renders workload menu labels from frontend i18n payload', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {

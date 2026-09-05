@@ -1,3 +1,23 @@
+.gantt-toolbar {
+    container-type: inline-size;
+    min-width: 0;
+    gap: 8px;
+    flex-wrap: wrap;
+    height: auto;
+}
+
+.gantt-toolbar-left {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 8px !important;
+}
+
+.gantt-toolbar-right {
+    flex: 0 0 auto;
+    min-width: max-content;
+    white-space: nowrap;
+}
+
 .gantt-toolbar-left > :nth-child(1) {
     order: 2;
 }
@@ -103,4 +123,117 @@
     font-size: 11px;
     font-weight: 500;
     line-height: 1;
+}
+
+/* Keep responsive declarations after the base button rule so they win over
+   the inline padding and the normal 6px label gap. The toolbar itself is the
+   container, so its own spacing remains media-query controlled while its
+   descendants use container queries for embedded/sidebar layouts. */
+@media (max-width: 1199px) {
+    .gantt-toolbar {
+        gap: 4px;
+        padding-right: 12px !important;
+    }
+
+    .gantt-toolbar-left {
+        gap: 4px !important;
+    }
+
+    .gantt-toolbar-left .gantt-toolbar-labeled-button {
+        gap: 4px !important;
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+    }
+}
+
+@media (max-width: 999px) {
+    .gantt-toolbar-left .gantt-toolbar-button-label {
+        display: none;
+    }
+
+    .gantt-toolbar-left .gantt-toolbar-labeled-button {
+        width: 32px !important;
+        gap: 0 !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+}
+
+/* At phone-sized widths the two complete control groups cannot share one
+   row. Let the groups use additional rows so every control remains reachable
+   instead of clipping the right edge. */
+@media (max-width: 700px) {
+    .gantt-toolbar {
+        flex-wrap: wrap;
+        height: auto !important;
+        min-height: 48px;
+        row-gap: 4px;
+    }
+
+    .gantt-toolbar-left,
+    .gantt-toolbar-right {
+        flex-basis: 100%;
+        width: 100%;
+    }
+
+    .gantt-toolbar-left {
+        flex-wrap: wrap;
+    }
+
+    .gantt-toolbar-right {
+        min-width: 0;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        row-gap: 4px;
+    }
+}
+
+@container (max-width: 1199px) {
+    .gantt-toolbar-left {
+        gap: 4px !important;
+    }
+
+    .gantt-toolbar-left .gantt-toolbar-labeled-button {
+        gap: 4px !important;
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+    }
+}
+
+@container (max-width: 999px) {
+    .gantt-toolbar-left .gantt-toolbar-button-label {
+        display: none;
+    }
+
+    .gantt-toolbar-left .gantt-toolbar-labeled-button {
+        width: 32px !important;
+        gap: 0 !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+}
+
+@container (max-width: 1199px) {
+    .gantt-toolbar-left {
+        flex-wrap: wrap;
+    }
+}
+
+@container (max-width: 700px) {
+    .gantt-toolbar-left,
+    .gantt-toolbar-right {
+        flex-basis: 100%;
+        width: 100%;
+    }
+
+    .gantt-toolbar-left {
+        flex-wrap: wrap;
+    }
+
+    .gantt-toolbar-right {
+        min-width: 0;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        row-gap: 4px;
+    }
 }
