@@ -120,7 +120,7 @@ en:
     label_filter: "Filter"
     label_row_height: "Row height (pixel)"
     label_column_plural: "Columns"
-    label_prev_month: "Prev Month"
+    label_prev_month: "Previous month"
     label_next_month: "Next Month"
     label_today: "Today"
     label_month: "Month"
