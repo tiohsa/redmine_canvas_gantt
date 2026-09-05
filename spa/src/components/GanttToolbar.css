@@ -164,7 +164,7 @@
     }
 }
 
-@container (max-width: 700px) {
+@container (max-width: 864px) {
     .gantt-toolbar {
         flex-wrap: wrap;
         height: auto !important;

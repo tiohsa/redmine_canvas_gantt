@@ -225,6 +225,9 @@ jobs:
       - name: Run Dependency mock suite
         run: npx playwright test tests/e2e/gantt-dependency.pw.ts
 
+      - name: Run Gantt toolbar responsive suite
+        run: npx playwright test tests/e2e/gantt-toolbar-responsive.pw.ts
+
   e2e-redmine-compat:
     name: Redmine ${{ matrix.label }} compatibility
     needs:
