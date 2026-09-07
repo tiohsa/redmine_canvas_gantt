@@ -122,7 +122,7 @@ export class WorkloadRenderer {
                     viewport,
                     verticalScroll,
                     assigneeIndex,
-                    assigneePeakLoad: Math.max(assignee.plannedPeak, assignee.actualPeak),
+                    assigneePeakLoad: Math.max(assignee.plannedPeak, state.showActual === false ? 0 : assignee.actualPeak),
                     daily,
                     series
                 });
@@ -223,7 +223,7 @@ export class WorkloadRenderer {
             }
 
             // Draw Threshold line
-            const maxGraphLoad = Math.max(capacityThreshold * 1.5, Math.ceil(Math.max(assignee.plannedPeak, assignee.actualPeak)), WorkloadRenderer.MAX_EXPECTED_LOAD);
+            const maxGraphLoad = Math.max(capacityThreshold * 1.5, Math.ceil(Math.max(assignee.plannedPeak, state.showActual === false ? 0 : assignee.actualPeak)), WorkloadRenderer.MAX_EXPECTED_LOAD);
             const thresholdY = snapLinePosition(rowY + rowHeight - (capacityThreshold / maxGraphLoad) * rowHeight * 0.9);
             
             ctx.strokeStyle = designTokens.threshold;
@@ -245,7 +245,7 @@ export class WorkloadRenderer {
                     viewport,
                     verticalScroll,
                     assigneeIndex: index,
-                    assigneePeakLoad: Math.max(assignee.plannedPeak, assignee.actualPeak),
+                    assigneePeakLoad: Math.max(assignee.plannedPeak, state.showActual === false ? 0 : assignee.actualPeak),
                     daily,
                     series
                 });

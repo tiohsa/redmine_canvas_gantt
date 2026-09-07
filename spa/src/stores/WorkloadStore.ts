@@ -179,7 +179,7 @@ interface WorkloadState {
     actualScopeKey: string | null;
     range: WorkloadRange | null;
     setRange: (range: WorkloadRange) => void;
-    refreshActual: () => void;
+    refreshActual: (options?: { deferCalculation?: boolean }) => void;
     loadActual: () => Promise<void>;
     // Derived Data
     workloadData: WorkloadData | null;
@@ -207,6 +207,21 @@ interface WorkloadState {
     getOverloadCycleInfo: (assigneeId: number, series?: WorkloadSeries) => CycleInfo;
     calculateWorkloadData: () => void;
 }
+
+let calculationFrame: number | undefined;
+const cancelCalculation = () => {
+    if (calculationFrame !== undefined) cancelAnimationFrame(calculationFrame);
+    calculationFrame = undefined;
+};
+const scheduleCalculation = () => {
+    if (calculationFrame !== undefined) return;
+    calculationFrame = requestAnimationFrame(() => {
+        calculationFrame = undefined;
+        if (useWorkloadStore.getState().workloadPaneVisible) {
+            useWorkloadStore.getState().calculateWorkloadData();
+        }
+    });
+};
 
 let actualGeneration = 0;
 let actualReloadTimer: ReturnType<typeof setTimeout> | undefined;
@@ -245,9 +260,9 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
         if (range.from === get().range?.from && range.to === get().range?.to) return;
         set({ range });
         if (!get().workloadPaneVisible) return;
-        get().refreshActual();
+        get().refreshActual({ deferCalculation: true });
     },
-    refreshActual: () => {
+    refreshActual: (options) => {
         cancelActual();
         if (!get().workloadPaneVisible) return;
         if (!get().range) {
@@ -257,7 +272,8 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
         const request = actualRequest();
         set({ actualStatus: 'loading',
             ...(request?.key !== get().actualScopeKey ? { actualEntries: [] } : {}) });
-        get().calculateWorkloadData();
+        if (options?.deferCalculation) scheduleCalculation();
+        else get().calculateWorkloadData();
         actualReloadTimer = setTimeout(() => { void get().loadActual(); }, 150);
     },
     loadActual: async () => {
@@ -285,6 +301,7 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
 
     setWorkloadPaneVisible: (visible) => {
         cancelActual();
+        cancelCalculation();
         set({ workloadPaneVisible: visible });
         if (visible) get().refreshActual();
     },
@@ -442,6 +459,7 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
     },
 
     calculateWorkloadData: () => {
+        cancelCalculation();
         const { capacityThreshold, leafIssuesOnly, includeClosedIssues, todayOnwardOnly } = get();
         
         const taskStore = useTaskStore.getState();

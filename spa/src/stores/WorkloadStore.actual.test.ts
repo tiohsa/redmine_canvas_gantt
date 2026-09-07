@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api/client';
 import { useTaskStore } from './TaskStore';
 import { useWorkloadStore } from './WorkloadStore';
-import type { ActualWorkloadEntry } from '../services/WorkloadLogicService';
+import { WorkloadLogicService, type ActualWorkloadEntry } from '../services/WorkloadLogicService';
 
 const day = Date.UTC(2026, 8, 7);
 const entries: ActualWorkloadEntry[] = [{ id: 'e', issueId: '1', userId: 2, userName: 'John', spentOn: '2026-09-07', hours: 3 }];
@@ -83,6 +83,66 @@ describe('actual workload lifecycle', () => {
         useTaskStore.setState({ serverTaskSnapshot: { ...useTaskStore.getState().serverTaskSnapshot } });
         await vi.advanceTimersByTimeAsync(150);
         expect(fetch).toHaveBeenCalledTimes(3);
+    });
+    it('coalesces range calculations and fetches while preserving the final issue-wide allocation', async () => {
+        const task = useTaskStore.getState().allTasks[0];
+        useTaskStore.setState({ allTasks: [{ ...task, estimatedHours: 40, dueDate: day + 4 * 86400000 }] });
+        const fetch = vi.spyOn(apiClient, 'fetchActualWorkload').mockResolvedValue([]);
+        useWorkloadStore.getState().setWorkloadPaneVisible(true);
+        await vi.advanceTimersByTimeAsync(150);
+        const calculate = vi.spyOn(WorkloadLogicService, 'calculateWorkload');
+        fetch.mockClear();
+        for (let i = 0; i < 100; i++) {
+            const date = day + (i % 5) * 86400000;
+            useWorkloadStore.getState().setRange({ from: date, to: date });
+        }
+        await vi.advanceTimersByTimeAsync(150);
+        expect(calculate.mock.calls.length).toBeGreaterThan(0);
+        expect(calculate.mock.calls.length).toBeLessThan(10);
+        expect(calculate.mock.lastCall?.[4]).toEqual({ from: day + 4 * 86400000, to: day + 4 * 86400000 });
+        expect(useWorkloadStore.getState().workloadData?.assignees.get(1)?.plannedTotal).toBe(8);
+        expect([...useWorkloadStore.getState().workloadData!.assignees.get(1)!.dailyWorkloads.keys()]).toEqual(['2026-09-11']);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(fetch.mock.lastCall?.[0]).toMatchObject({ from: '2026-09-11', to: '2026-09-11' });
+    });
+    it('updates capacity immediately during a pending range calculation without refetching', async () => {
+        const fetch = vi.spyOn(apiClient, 'fetchActualWorkload').mockResolvedValue([]);
+        useWorkloadStore.getState().setWorkloadPaneVisible(true);
+        await vi.advanceTimersByTimeAsync(150);
+        useWorkloadStore.getState().setRange({ from: day, to: day + 86400000 });
+        useWorkloadStore.getState().setCapacityThreshold(4);
+        expect(useWorkloadStore.getState().workloadData?.assignees.get(1)?.dailyWorkloads.get('2026-09-07')?.isPlannedOverload).toBe(true);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(150);
+        expect(fetch).toHaveBeenCalledTimes(2);
+        useWorkloadStore.getState().setCapacityThreshold(8);
+        await vi.advanceTimersByTimeAsync(150);
+        expect(fetch).toHaveBeenCalledTimes(2);
+    });
+    it('cancels pending range calculation on close', async () => {
+        vi.spyOn(apiClient, 'fetchActualWorkload').mockResolvedValue([]);
+        useWorkloadStore.getState().setWorkloadPaneVisible(true);
+        await vi.advanceTimersByTimeAsync(150);
+        useWorkloadStore.getState().setRange({ from: day + 86400000, to: day + 86400000 });
+        const calculate = vi.spyOn(WorkloadLogicService, 'calculateWorkload');
+        useWorkloadStore.getState().setWorkloadPaneVisible(false);
+        await vi.advanceTimersByTimeAsync(200);
+        expect(calculate).not.toHaveBeenCalled();
+    });
+    it.each(['project', 'query'] as const)('ignores an old response after %s changes', async (scope) => {
+        const old = deferred();
+        vi.spyOn(apiClient, 'fetchActualWorkload').mockReturnValueOnce(old.promise).mockResolvedValue([]);
+        useWorkloadStore.getState().setWorkloadPaneVisible(true);
+        await vi.advanceTimersByTimeAsync(150);
+        if (scope === 'project') useTaskStore.setState({ currentProjectId: '2' });
+        else useTaskStore.setState({ selectedStatusIds: [1] });
+        old.resolve(entries);
+        await Promise.resolve();
+        expect(useWorkloadStore.getState().actualEntries).toEqual([]);
+        expect(useWorkloadStore.getState().actualStatus).toBe('loading');
+        await vi.advanceTimersByTimeAsync(150);
+        expect(useWorkloadStore.getState().actualStatus).toBe('ready');
+        expect(useWorkloadStore.getState().actualEntries).toEqual([]);
     });
     it('cycles actual issues once each independently from planned selection', async () => {
         useTaskStore.setState({ allTasks: [...useTaskStore.getState().allTasks, { ...useTaskStore.getState().allTasks[0], id: '2', estimatedHours: 4 }] });

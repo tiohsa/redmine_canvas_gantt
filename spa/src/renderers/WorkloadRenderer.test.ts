@@ -416,3 +416,70 @@ it('draws independent adjacent series with the same scale and threshold, and hit
     expect(renderer.hitTestDailyBar({ ...state, pointerX: 25, pointerY: 60 })).toEqual({ assigneeId: 1, dateStr: '2026-01-01', series: 'actual' });
     expect(renderer.hitTestDailyBar({ ...state, showActual: false, pointerX: 25, pointerY: 60 })).toBeNull();
 });
+
+it.each([24, 48])('keeps a hidden stale Actual peak out of the scale at %dh', (actualPeak) => {
+    const ctx = createMockContext();
+    const canvas = { width: 800, height: 240, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    const renderer = new WorkloadRenderer(canvas);
+    const data = buildWorkloadData(0);
+    data.assignees.get(1)!.actualPeak = actualPeak;
+    data.assignees.get(1)!.dailyWorkloads.get('2026-01-01')!.actualHours = actualPeak;
+    const state = {
+        viewport: buildViewport({ scale: 40 / ONE_DAY }),
+        zoomLevel: 2 as const,
+        workloadData: data,
+        capacityThreshold: 8,
+        verticalScroll: 0,
+        showActual: false,
+        hoveredAssigneeId: null,
+        hoveredDateStr: null,
+        focusedAssigneeId: 1,
+        focusedDateStr: '2026-01-01',
+        focusedSeries: 'actual' as const
+    };
+
+    renderer.render(state);
+
+    const plannedBar = vi.mocked(ctx.fillRect).mock.calls.find(([, , width]) => width === 18.5);
+    expect(plannedBar?.[3]).toBe(22);
+    expect(vi.mocked(ctx.moveTo).mock.calls).toContainEqual([0, 50.5]);
+    expect(renderer.hitTestDailyBar({ ...state, pointerX: 5, pointerY: 54 })).toEqual({ assigneeId: 1, dateStr: '2026-01-01' });
+    expect(renderer.hitTestDailyBar({ ...state, pointerX: 25, pointerY: 54 })).toBeNull();
+    // The hidden Actual series cannot receive a focus outline.
+    expect(vi.mocked(ctx.strokeRect)).toHaveBeenCalledTimes(1);
+});
+
+it.each([24, 48])('uses the ready Actual peak in the shared scale at %dh', (actualPeak) => {
+    const ctx = createMockContext();
+    const canvas = { width: 800, height: 240, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    const renderer = new WorkloadRenderer(canvas);
+    const data = buildWorkloadData(0);
+    const assignee = data.assignees.get(1)!;
+    assignee.actualPeak = actualPeak;
+    assignee.dailyWorkloads.get('2026-01-01')!.actualHours = actualPeak;
+    const state = {
+        viewport: buildViewport({ scale: 40 / ONE_DAY }),
+        zoomLevel: 2 as const,
+        workloadData: data,
+        capacityThreshold: 8,
+        verticalScroll: 0,
+        showActual: true,
+        hoveredAssigneeId: null,
+        hoveredDateStr: null,
+        focusedAssigneeId: null,
+        focusedDateStr: null
+    };
+
+    renderer.render(state);
+
+    const bars = vi.mocked(ctx.fillRect).mock.calls.filter(([, , width]) => width === 18.5);
+    expect(bars).toHaveLength(2);
+    expect(bars[0][3]).toBe(actualPeak === 24 ? 22 : 11);
+    expect(bars[1][3]).toBe(65);
+    expect(vi.mocked(ctx.moveTo).mock.calls).toContainEqual([0, actualPeak === 24 ? 50.5 : 61.5]);
+    expect(renderer.hitTestDailyBar({ ...state, pointerX: 25, pointerY: 40 })).toEqual({
+        assigneeId: 1,
+        dateStr: '2026-01-01',
+        series: 'actual'
+    });
+});

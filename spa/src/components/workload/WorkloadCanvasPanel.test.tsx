@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { Mock } from 'vitest';
 import { WorkloadCanvasPanel } from './WorkloadCanvasPanel';
 import { WorkloadSidebar } from './WorkloadSidebar';
@@ -792,4 +792,39 @@ it('exposes both daily series in a DOM tooltip and cycles issues from the actual
     fireEvent.mouseUp(window, { clientX: 25, clientY: 70 });
     expect(focus).toHaveBeenCalledWith('actual-issue');
     expect(useWorkloadStore.getState().focusedHistogramBar?.series).toBe('actual');
+});
+
+it('keeps accessible descriptions bounded as assignees and days grow and announces focus', () => {
+    const { container } = render(<WorkloadCanvasPanel />);
+    const smallNodeCount = container.querySelectorAll('*').length;
+    const data = buildWorkloadData();
+    const template = data.assignees.get(1)!;
+    const daily = template.dailyWorkloads.get('2026-01-01')!;
+    for (let user = 1; user <= 30; user++) {
+        data.assignees.set(user, { ...template, assigneeId: user, dailyWorkloads: new Map(
+            Array.from({ length: 365 }, (_, index) => {
+                const dateStr = `day-${index}`;
+                return [dateStr, { ...daily, dateStr, timestamp: daily.timestamp + index * ONE_DAY }];
+            })
+        ) });
+    }
+    act(() => { useWorkloadStore.setState({ workloadData: data, actualStatus: 'ready',
+        focusedHistogramBar: { assigneeId: 1, dateStr: 'day-0' } }); });
+    expect(container.querySelectorAll('*').length).toBeLessThanOrEqual(smallNodeCount + 3);
+    const canvas = screen.getByTestId('workload-canvas');
+    expect(canvas).toHaveAccessibleDescription('day-0 Alice\nPlanned: 8.0h\nActual: 0.0h');
+    expect(document.getElementById(canvas.getAttribute('aria-describedby')!)).toHaveAttribute('aria-live', 'polite');
+});
+it.each(['ready', 'loading', 'error'] as const)('describes hovered and focused hours with actual status %s', (actualStatus) => {
+    const data = buildWorkloadData();
+    data.assignees.get(1)!.dailyWorkloads.get('2026-01-01')!.actualHours = 24;
+    useWorkloadStore.setState({ workloadData: data, actualStatus });
+    render(<WorkloadCanvasPanel />);
+    const viewport = screen.getByTestId('workload-canvas-viewport');
+    fireEvent.mouseMove(viewport, { clientX: 15, clientY: 70 });
+    const description = `2026-01-01 Alice\nPlanned: 8.0h\nActual: ${actualStatus === 'ready' ? '24.0h' : '—'}`;
+    expect(screen.getByTestId('workload-canvas')).toHaveAccessibleDescription(description);
+    act(() => { useWorkloadStore.getState().setFocusedHistogramBar({ assigneeId: 1, dateStr: '2026-01-01' }); });
+    fireEvent.mouseLeave(viewport);
+    expect(screen.getByTestId('workload-canvas')).toHaveAccessibleDescription(description);
 });

@@ -1,7 +1,7 @@
 import type { WorkloadSeries } from '../../services/WorkloadLogicService';
-import { calendarDateKey, toCalendarDate } from '../../utils/dateOnly';
+import { toCalendarDate } from '../../utils/dateOnly';
 import { designTokens } from '../../styles/designTokens';
-import React, { useEffect, useRef, useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useCallback, useLayoutEffect, useMemo, useState, useId } from 'react';
 import { i18n } from '../../utils/i18n';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
 import { useTaskStore } from '../../stores/TaskStore';
@@ -39,6 +39,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
     scrollTop = 0,
     onScroll
 }) => {
+    const descriptionId = useId();
     const HEADER_HEIGHT = 40;
     const [hoveredBar, setHoveredBar] = useState<HistogramBarHit | null>(null);
     const FOCUS_PADDING_X = 24;
@@ -492,6 +493,11 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         return `${dateStr} ${assignee?.assigneeName ?? ''}\n${i18n.t('label_workload_planned')}: ${(daily?.plannedLoad ?? 0).toFixed(1)}h\n${i18n.t('label_workload_actual')}: ${actualStatus === 'ready' ? `${(daily?.actualHours ?? 0).toFixed(1)}h` : '—'}`;
     };
 
+    const describedBar = hoveredBar ?? focusedHistogramBar;
+    const description = describedBar && workloadData?.assignees.get(describedBar.assigneeId)?.dailyWorkloads.has(describedBar.dateStr)
+        ? dailyDescription(describedBar.assigneeId, describedBar.dateStr)
+        : '';
+
     return (
         <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', borderTop: '1px solid #e0e0e0', backgroundColor: '#ffffff' }}>
             <div style={{
@@ -534,7 +540,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                 }}
             >
                 <div style={{ position: 'relative', minHeight: '100%', height: hasAssignees ? `${contentHeight}px` : '100%' }}>
-                    <canvas ref={canvasRef} aria-label={i18n.t('label_workload_daily_details')} data-testid="workload-canvas" style={{ position: 'sticky', top: 0, display: 'block', cursor }} />
+                    <canvas ref={canvasRef} tabIndex={0} aria-describedby={descriptionId} aria-label={i18n.t('label_workload_daily_details')} data-testid="workload-canvas" style={{ position: 'sticky', top: 0, display: 'block', cursor }} />
                 </div>
                 {!hasAssignees && (
                     <div style={{
@@ -555,9 +561,8 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                     </div>
                 )}
             </div>
-            <div style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }} aria-label={i18n.t('label_workload_daily_details')}>
-                {Array.from(workloadData?.assignees.values() ?? []).flatMap(assignee =>
-                    Array.from(assignee.dailyWorkloads.values()).map(daily => <div key={`${assignee.assigneeId}:${calendarDateKey(daily.timestamp)}`}>{dailyDescription(assignee.assigneeId, daily.dateStr)}</div>))}
+            <div id={descriptionId} aria-live="polite" aria-atomic="true" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }}>
+                {description}
             </div>
         </div>
     );
