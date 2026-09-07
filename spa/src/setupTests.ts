@@ -38,6 +38,12 @@ window.RedmineCanvasGantt = {
     apiKey: '',
     nonWorkingWeekDays: [],
     i18n: {
+        label_workload_planned: 'Planned', label_workload_actual: 'Actual',
+        label_workload_planned_short: 'P', label_workload_actual_short: 'A',
+        label_workload_planned_overload: 'Plan overload', label_workload_actual_overload: 'Actual overload',
+        label_workload_focus_overload: 'Focus overload histogram for %{name}',
+        label_workload_actual_load_failed: 'Failed to load actual workload',
+        label_workload_capacity: 'Capacity', label_workload_daily_details: 'Daily workload details',
         field_id: 'ID',
         field_subject: 'Task Name',
         field_status: 'Status',

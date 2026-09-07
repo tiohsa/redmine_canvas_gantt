@@ -1,3 +1,4 @@
+import { useWorkloadStore } from '../stores/WorkloadStore';
 import React from 'react';
 import { useUIStore } from '../stores/UIStore';
 import { useTaskStore } from '../stores/TaskStore';
@@ -486,6 +487,7 @@ export const IssueIframeDialog: React.FC = () => {
                 : null;
 
             if (timerRecordingOutcome === 'success' && issueDialogContext?.timerRecording) {
+                useWorkloadStore.getState().refreshActual();
                 const recordingContext = issueDialogContext.timerRecording;
                 bypassTimerCloseCleanupRef.current = true;
                 void useTimerStore.getState().completeTimerRecording(recordingContext);
@@ -516,14 +518,11 @@ export const IssueIframeDialog: React.FC = () => {
                 return;
             }
 
-            const isTimeEntrySuccess = !issueDialogContext?.timerRecording && isSavingRef.current && wasTimeEntryForm && !error && (
-                hasTimeEntrySuccessNotice ||
-                Boolean(issueIdAfterLoad) ||
-                pathAfterLoad.includes('/time_entries') ||
-                (pathAfterLoad.includes('/projects/') && pathAfterLoad.endsWith('/issues'))
-            );
+            const isTimeEntrySuccess = !issueDialogContext?.timerRecording && isSavingRef.current &&
+                wasTimeEntryForm && !hasTimeEntryForm && !error && hasTimeEntrySuccessNotice;
 
             if (isTimeEntrySuccess) {
+                useWorkloadStore.getState().refreshActual();
                 saveTargetRef.current = null;
                 setSaveTarget(null);
                 isSavingRef.current = false;

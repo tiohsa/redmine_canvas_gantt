@@ -1,3 +1,4 @@
+import type { ActualWorkloadEntry } from '../services/WorkloadLogicService';
 import type {
     FilterAssigneeOption,
     FilterOptions,
@@ -693,6 +694,32 @@ const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | n
 };
 
 export const apiClient = {
+    fetchActualWorkload: async (params: { query: ResolvedQueryState; queryContext: QueryContext;
+        from: string; to: string; leafOnly: boolean; includeClosed: boolean }): Promise<ActualWorkloadEntry[]> => {
+        const config = getConfig();
+        const query = buildIssueQueryParams(params.query, { queryContext: params.queryContext });
+        query.set('from', params.from);
+        query.set('to', params.to);
+        query.set('leaf_only', params.leafOnly ? '1' : '0');
+        query.set('include_closed', params.includeClosed ? '1' : '0');
+        const response = await sessionFetch(new URL(`${config.apiBase}/actual_workload.json?${query}`, window.location.origin).toString(), {
+            headers: buildJsonHeaders(config)
+        });
+        if (!response.ok) throw new Error(await parseErrorMessage(response));
+        const payload = asRecord(await response.json());
+        if (!Array.isArray(payload?.entries)) throw new Error('Invalid actual workload response');
+        return payload.entries.map((raw: unknown) => {
+            const entry = asRecord(raw);
+            if (!entry || typeof entry.id !== 'string' || typeof entry.issueId !== 'string' ||
+                typeof entry.userId !== 'number' || !Number.isInteger(entry.userId) ||
+                typeof entry.userName !== 'string' || typeof entry.spentOn !== 'string' ||
+                parseDateOnly(entry.spentOn) === null || typeof entry.hours !== 'number' || !Number.isFinite(entry.hours)) {
+                throw new Error('Invalid actual workload entry');
+            }
+            return { id: entry.id, issueId: entry.issueId, userId: entry.userId,
+                userName: entry.userName, spentOn: entry.spentOn, hours: entry.hours };
+        });
+    },
     fetchQueries: async (): Promise<SavedQuery[]> => {
         const config = getConfig();
         const response = await sessionFetch(new URL(`${config.apiBase}/queries.json`, window.location.origin).toString(), {

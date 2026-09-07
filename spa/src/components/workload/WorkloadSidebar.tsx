@@ -1,3 +1,4 @@
+import { designTokens } from '../../styles/designTokens';
 import React from 'react';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
 import { useTaskStore } from '../../stores/TaskStore';
@@ -17,6 +18,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
     const OVERLOAD_COLUMN_WIDTH = 170;
     const {
         workloadData,
+        actualStatus,
         resolveNextOverloadBar,
         resetHistogramSelectionCycle,
         resolveNextHistogramTask,
@@ -86,8 +88,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                 {hasAssignees ? (
                     <div style={{ minHeight: `${assignees.length * rowHeight}px` }}>
                         {assignees.map((assignee) => {
-                            const hasOverload = Array.from(assignee.dailyWorkloads.values()).some(d => d.isOverload);
-                            const overloadCycleInfo = getOverloadCycleInfo(assignee.assigneeId);
+
                             return (
                                 <div
                                     key={assignee.assigneeId}
@@ -121,22 +122,28 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                     </div>
                                     <div
                                         data-testid={`workload-sidebar-peak-${assignee.assigneeId}`}
-                                        style={{ gridColumn: '2 / 3', gridRow: '2 / 3', textAlign: 'right', fontSize: '12px', color: '#666' }}
+                                        style={{ gridColumn: '2 / 3', gridRow: '1 / 3', textAlign: 'right', fontSize: '12px', color: '#666' }}
                                     >
-                                        {assignee.peakLoad.toFixed(1)}h
+                                        <div aria-label={`${i18n.t('label_workload_planned')} ${assignee.plannedPeak.toFixed(1)}h`}>{i18n.t('label_workload_planned_short')} {assignee.plannedPeak.toFixed(1)}h</div>
+                                        <div aria-label={`${i18n.t('label_workload_actual')} ${actualStatus === 'ready' ? `${assignee.actualPeak.toFixed(1)}h` : '—'}`}>{i18n.t('label_workload_actual_short')} {actualStatus === 'ready' ? `${assignee.actualPeak.toFixed(1)}h` : '—'}</div>
                                     </div>
                                     <div
                                         data-testid={`workload-sidebar-total-${assignee.assigneeId}`}
-                                        style={{ gridColumn: '3 / 4', gridRow: '2 / 3', textAlign: 'right', fontSize: '12px', color: '#666' }}
+                                        style={{ gridColumn: '3 / 4', gridRow: '1 / 3', textAlign: 'right', fontSize: '12px', color: '#666' }}
                                     >
-                                        {assignee.totalLoad.toFixed(1)}h
+                                        <div aria-label={`${i18n.t('label_workload_planned')} ${assignee.plannedTotal.toFixed(1)}h`}>{i18n.t('label_workload_planned_short')} {assignee.plannedTotal.toFixed(1)}h</div>
+                                        <div aria-label={`${i18n.t('label_workload_actual')} ${actualStatus === 'ready' ? `${assignee.actualTotal.toFixed(1)}h` : '—'}`}>{i18n.t('label_workload_actual_short')} {actualStatus === 'ready' ? `${assignee.actualTotal.toFixed(1)}h` : '—'}</div>
                                     </div>
-                                    {hasOverload && (
+                                    {(['planned', 'actual'] as const).map(series => {
+                                        const hasOverload = Array.from(assignee.dailyWorkloads.values()).some(d => series === 'planned' ? d.isPlannedOverload : actualStatus === 'ready' && d.isActualOverload);
+                                        const overloadCycleInfo = getOverloadCycleInfo(assignee.assigneeId, series);
+                                        return hasOverload && (
                                         <div
-                                            data-testid={`overload-action-area-${assignee.assigneeId}`}
+                                            key={series}
+                                            data-testid={`${series === 'actual' ? 'actual-' : ''}overload-action-area-${assignee.assigneeId}`}
                                             style={{
                                                 gridColumn: '4 / 5',
-                                                gridRow: '1 / 3',
+                                                gridRow: series === 'planned' ? '1 / 2' : '2 / 3',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'flex-end',
@@ -147,14 +154,14 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                         >
                                             <button
                                                 type="button"
-                                                aria-label={`Focus overload histogram for ${assignee.assigneeName}`}
+                                                aria-label={`${i18n.t('label_workload_focus_overload', { name: assignee.assigneeName })} (${i18n.t(`label_workload_${series}`)})`}
                                                 onClick={() => {
-                                                    const selectedBar = resolveNextOverloadBar(assignee.assigneeId);
+                                                    const selectedBar = resolveNextOverloadBar(assignee.assigneeId, series);
                                                     if (!selectedBar) return;
 
                                                     suppressNextFocusedHistogramBarVerticalScroll(selectedBar);
                                                     resetHistogramSelectionCycle();
-                                                    const { taskId } = resolveNextHistogramTask(selectedBar.assigneeId, selectedBar.dateStr);
+                                                    const { taskId } = resolveNextHistogramTask(selectedBar.assigneeId, selectedBar.dateStr, series);
                                                     if (!taskId) return;
 
                                                     const result = useTaskStore.getState().focusTask(taskId);
@@ -163,8 +170,8 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                                     }
                                                 }}
                                                 style={{
-                                                    backgroundColor: '#fce8e6',
-                                                    color: '#d93025',
+                                                    backgroundColor: designTokens.controlBg,
+                                                    color: designTokens.taskDelayed,
                                                     padding: '2px 6px',
                                                     borderRadius: '4px',
                                                     fontSize: '11px',
@@ -173,10 +180,10 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                                     cursor: 'pointer'
                                                 }}
                                             >
-                                                OVERLOAD
+                                                {i18n.t(`label_workload_${series}_overload`)}
                                             </button>
                                             <span
-                                                data-testid={`overload-cycle-count-${assignee.assigneeId}`}
+                                                data-testid={`${series === 'actual' ? 'actual-' : ''}overload-cycle-count-${assignee.assigneeId}`}
                                                 style={{
                                                     width: '32px',
                                                     fontSize: '11px',
@@ -189,7 +196,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                                 {overloadCycleInfo ? `${overloadCycleInfo.current}/${overloadCycleInfo.total}` : '0/0'}
                                             </span>
                                         </div>
-                                    )}
+                                    ); })}
                                 </div>
                             );
                         })}

@@ -23,10 +23,19 @@ test('keeps an Issue edit dialog distinct from a TimeEntry dialog', async ({ pag
 });
 
 test('records timer work through the standard Redmine TimeEntry redirect', async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   await adminLogin(redmineBase, page);
   await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
   await expect(page.getByText('Loading Canvas Gantt...')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  await page.getByTitle('Workload', { exact: true }).click();
+  const actualLoaded = page.waitForResponse(response => response.url().includes('/actual_workload.json') && response.status() === 200);
+  await page.getByLabel('Show Workload Pane').check();
+  const entriesBefore = (await (await actualLoaded).json()).entries as Array<{ userId: number; hours: number }>;
+  const actualBefore = entriesBefore.filter(entry => entry.userId === 1).reduce((sum, entry) => sum + entry.hours, 0);
+  await expect(page.getByTestId('workload-canvas')).toBeVisible();
+  await page.getByTitle('Workload', { exact: true }).click();
 
   await page.getByRole('button', { name: /cols|columns/i }).click();
   const timerColumn = page.getByRole('checkbox', { name: /work timer|timer/i });
@@ -50,7 +59,7 @@ test('records timer work through the standard Redmine TimeEntry redirect', async
   const dialogFooter = page.getByTestId('issue-dialog-footer');
   await expect(dialogFooter.getByRole('button', { name: /cancel/i })).toBeVisible();
   await expect(dialogFooter.getByRole('button', { name: /log time|save|button_log_time/i })).toBeVisible();
-  await hours.fill('0.01');
+  await hours.fill('1.0');
   const activity = timeEntryFrame.locator('select[name="time_entry[activity_id]"]');
   if (await activity.count()) {
     const activityValue = await activity.locator('option').evaluateAll(options => (
@@ -64,6 +73,12 @@ test('records timer work through the standard Redmine TimeEntry redirect', async
   await expect(page.locator('iframe[src*="/time_entries/new"]')).toHaveCount(0);
   await expect(page.getByTestId('issue-dialog-error')).toHaveCount(0);
   await expect.poll(() => timerSessionCount(page)).toBe(0);
+  await expect(page.getByTestId('workload-sidebar-total-1')).toContainText(`A ${(actualBefore + 1).toFixed(1)}h`);
+  await page.reload();
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  await page.getByTitle('Workload', { exact: true }).click();
+  await page.getByLabel('Show Workload Pane').check();
+  await expect(page.getByTestId('workload-sidebar-total-1')).toContainText(`A ${(actualBefore + 1).toFixed(1)}h`);
 });
 
 test('keeps the timer session after Redmine validation and records it on retry', async ({ page, baseURL }) => {

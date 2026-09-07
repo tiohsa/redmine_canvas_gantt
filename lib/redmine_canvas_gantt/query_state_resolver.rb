@@ -79,7 +79,7 @@ module RedmineCanvasGantt
       @warnings = []
     end
 
-    def resolve(project_ids:)
+    def resolve(project_ids:, scope_only: false)
       state = default_state
       selected_project_ids = resolve_selected_project_ids(project_ids)
       state[:selected_project_ids] = selected_project_ids.map(&:to_s)
@@ -96,7 +96,8 @@ module RedmineCanvasGantt
         query_issue_scope: query_resolution.issue_scope,
         project_ids: project_ids,
         selected_project_ids: selected_project_ids,
-        state: state
+        state: state,
+        scope_only: scope_only
       )
 
       {
@@ -507,13 +508,14 @@ module RedmineCanvasGantt
                                       end
     end
 
-    def load_issues(query_issue_scope:, project_ids:, selected_project_ids:, state:)
+    def load_issues(query_issue_scope:, project_ids:, selected_project_ids:, state:, scope_only: false)
       scope = issues_scope_for(
         query_issue_scope: query_issue_scope,
         project_ids: project_ids,
         selected_project_ids: selected_project_ids,
         state: state
       )
+      return scope.except(:includes, :order) if scope_only
       issues = if @data_payload_budget
                  @data_payload_budget.load_records(
                    scope,

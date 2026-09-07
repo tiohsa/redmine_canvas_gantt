@@ -29,28 +29,38 @@ const buildWorkloadData = (): WorkloadData => ({
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 16,
-            peakLoad: 8,
+            plannedTotal: 16,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 8,
             dailyWorkloads: new Map([
                 ['2026-01-01', {
                     dateStr: '2026-01-01',
                     timestamp: 0,
-                    totalLoad: 8,
-                    isOverload: false,
-                    contributingTasks: []
+                    plannedLoad: 8,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: []
                 }],
                 ['2026-01-02', {
                     dateStr: '2026-01-02',
                     timestamp: ONE_DAY,
-                    totalLoad: 8,
-                    isOverload: false,
-                    contributingTasks: []
+                    plannedLoad: 8,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: []
                 }]
             ])
         }]
     ]),
-    overloadedAssigneeCount: 0,
-    overloadedDayCount: 0
+    plannedOverloadedAssigneeCount: 0,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 0
 });
 
 const buildOverloadWorkloadData = (): WorkloadData => ({
@@ -58,15 +68,20 @@ const buildOverloadWorkloadData = (): WorkloadData => ({
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 31,
-            peakLoad: 13,
+            plannedTotal: 31,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 13,
             dailyWorkloads: new Map([
                 ['2026-01-05', {
                     dateStr: '2026-01-05',
                     timestamp: ONE_DAY * 4,
-                    totalLoad: 13,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 13,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         {
                             task: buildTask({
                                 id: 'task-late',
@@ -85,9 +100,12 @@ const buildOverloadWorkloadData = (): WorkloadData => ({
                 ['2026-01-02', {
                     dateStr: '2026-01-02',
                     timestamp: ONE_DAY,
-                    totalLoad: 11,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 11,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         {
                             task: buildTask({
                                 id: 'task-early',
@@ -106,9 +124,12 @@ const buildOverloadWorkloadData = (): WorkloadData => ({
                 ['2026-01-04', {
                     dateStr: '2026-01-04',
                     timestamp: ONE_DAY * 3,
-                    totalLoad: 7,
-                    isOverload: false,
-                    contributingTasks: [
+                    plannedLoad: 7,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: [
                         {
                             task: buildTask({
                                 id: 'task-normal',
@@ -127,8 +148,10 @@ const buildOverloadWorkloadData = (): WorkloadData => ({
             ])
         }]
     ]),
-    overloadedAssigneeCount: 1,
-    overloadedDayCount: 2
+    plannedOverloadedAssigneeCount: 1,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 2
 });
 
 describe('WorkloadSidebar', () => {
@@ -212,8 +235,10 @@ describe('WorkloadSidebar', () => {
             ...useWorkloadStore.getState(),
             workloadData: {
                 assignees: new Map(),
-                overloadedAssigneeCount: 0,
-                overloadedDayCount: 0
+                plannedOverloadedAssigneeCount: 0,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 0
             }
         });
 
@@ -252,7 +277,7 @@ describe('WorkloadSidebar', () => {
 
         render(<WorkloadSidebar />);
 
-        const overloadControl = screen.getByRole('button', { name: 'Focus overload histogram for Alice' });
+        const overloadControl = screen.getByRole('button', { name: 'Focus overload histogram for Alice (Planned)' });
         expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '170px', justifyContent: 'flex-end' });
         expect(screen.getByTestId('overload-cycle-count-1')).toHaveTextContent('1/2');
         fireEvent.click(overloadControl);
@@ -291,7 +316,7 @@ describe('WorkloadSidebar', () => {
 
         render(<WorkloadSidebar />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Focus overload histogram for Alice' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Focus overload histogram for Alice (Planned)' }));
 
         expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({ assigneeId: 1, dateStr: '2026-01-02' });
         expect(useTaskStore.getState().selectedTaskId).toBeNull();
@@ -307,21 +332,28 @@ describe('WorkloadSidebar', () => {
                     [1, {
                         assigneeId: 1,
                         assigneeName: 'Alice',
-                        totalLoad: 8,
-                        peakLoad: 8,
+                        plannedTotal: 8,
+                        actualTotal: 0,
+                        actualPeak: 0,
+                        plannedPeak: 8,
                         dailyWorkloads: new Map([
                             ['2026-01-02', {
                                 dateStr: '2026-01-02',
                                 timestamp: ONE_DAY,
-                                totalLoad: 11,
-                                isOverload: true,
-                                contributingTasks: []
+                                plannedLoad: 11,
+                                actualHours: 0,
+                                actualContributions: [],
+                                isActualOverload: false,
+                                isPlannedOverload: true,
+                                plannedContributions: []
                             }]
                         ])
                     }]
                 ]),
-                overloadedAssigneeCount: 1,
-                overloadedDayCount: 1
+                plannedOverloadedAssigneeCount: 1,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 1
             }
         });
 
@@ -341,5 +373,40 @@ describe('WorkloadSidebar', () => {
 
         expect(screen.getByTestId('workload-sidebar-peak-1')).toHaveStyle({ textAlign: 'right' });
         expect(screen.getByTestId('workload-sidebar-total-1')).toHaveStyle({ textAlign: 'right' });
+    });
+});
+
+describe('actual workload metrics', () => {
+    it.each(['idle', 'loading', 'error', 'ready'] as const)('distinguishes actual %s from zero and shows two metric lines', actualStatus => {
+        const data = buildWorkloadData();
+        const assignee = data.assignees.get(1)!;
+        assignee.actualPeak = 9;
+        assignee.actualTotal = 12;
+        assignee.dailyWorkloads.get('2026-01-01')!.isActualOverload = true;
+        useWorkloadStore.setState({ ...useWorkloadStore.getInitialState(), workloadData: data, actualStatus }, true);
+        render(<WorkloadSidebar />);
+        const peak = screen.getByTestId('workload-sidebar-peak-1');
+        const total = screen.getByTestId('workload-sidebar-total-1');
+        expect(peak).toHaveTextContent('P 8.0h');
+        expect(total).toHaveTextContent('P 16.0h');
+        expect(peak).toHaveTextContent(actualStatus === 'ready' ? 'A 9.0h' : 'A —');
+        expect(total).toHaveTextContent(actualStatus === 'ready' ? 'A 12.0h' : 'A —');
+        expect(screen.queryByText('Actual overload') !== null).toBe(actualStatus === 'ready');
+    });
+
+    it('shows actual-only workers and both overload badges without adding columns', () => {
+        const data = buildWorkloadData();
+        const alice = data.assignees.get(1)!;
+        alice.actualPeak = 10;
+        alice.actualTotal = 10;
+        alice.dailyWorkloads.get('2026-01-01')!.isActualOverload = true;
+        alice.dailyWorkloads.get('2026-01-01')!.isPlannedOverload = true;
+        data.assignees.set(2, { assigneeId: 2, assigneeName: 'John', plannedTotal: 0, plannedPeak: 0,
+            actualTotal: 4, actualPeak: 4, dailyWorkloads: new Map() });
+        useWorkloadStore.setState({ ...useWorkloadStore.getInitialState(), workloadData: data, actualStatus: 'ready' }, true);
+        render(<WorkloadSidebar />);
+        expect(screen.getByText('Plan overload')).toBeVisible();
+        expect(screen.getByText('Actual overload')).toBeVisible();
+        expect(screen.getByTestId('workload-sidebar-total-2')).toHaveTextContent('P 0.0hA 4.0h');
     });
 });

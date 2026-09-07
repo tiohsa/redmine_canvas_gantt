@@ -429,8 +429,10 @@ describe('GanttContainer Resize', () => {
             workloadPaneVisible: true,
             workloadData: {
                 assignees: new Map(),
-                overloadedAssigneeCount: 0,
-                overloadedDayCount: 0
+                plannedOverloadedAssigneeCount: 0,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 0
             }
         });
 
@@ -467,8 +469,10 @@ describe('GanttContainer Resize', () => {
             workloadPaneVisible: true,
             workloadData: {
                 assignees: new Map(),
-                overloadedAssigneeCount: 0,
-                overloadedDayCount: 0
+                plannedOverloadedAssigneeCount: 0,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 0
             }
         });
 
@@ -521,8 +525,10 @@ describe('GanttContainer Resize', () => {
                 workloadPaneVisible: true,
                 workloadData: {
                     assignees: new Map(),
-                    overloadedAssigneeCount: 0,
-                    overloadedDayCount: 0
+                    plannedOverloadedAssigneeCount: 0,
+                    actualOverloadedAssigneeCount: 0,
+                    actualOverloadedDayCount: 0,
+                    plannedOverloadedDayCount: 0
                 }
             });
         });
