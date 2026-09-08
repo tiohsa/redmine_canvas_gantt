@@ -26,18 +26,35 @@ RSpec.describe CanvasGanttsController, type: :controller do
   end
 
   it 'aggregates repeated entries by worker, date and issue, without leaking other dates/projects or issue-less time' do
+    other_project = Issue.find(4).project
+    other_project.enable_module!(:time_tracking)
+
     entry(hours: 2)
     entry(hours: 1)
     entry(hours: 4, user_id: 3)
     entry(hours: 5, spent_on: date - 1)
     entry(hours: 6, issue_id: 4)
-    TimeEntry.create!(project: project, user_id: 2, author_id: 1,
-                      activity_id: TimeEntryActivity.first.id, hours: 2, spent_on: date)
+
+    TimeEntry.create!(
+      project: project,
+      user_id: 2,
+      author_id: 1,
+      activity_id: TimeEntryActivity.first.id,
+      hours: 2,
+      spent_on: date
+    )
+
     fetch_actual(canvas_project_ids: [project.id.to_s])
+
     expect(response).to have_http_status(:ok)
+
     rows = JSON.parse(response.body).fetch('entries')
-    expect(rows.map { |row| [row['userId'], row['hours']] }).to contain_exactly([2, 3.0], [3, 4.0])
-    expect(rows).to all(include('issueId' => '1', 'spentOn' => date.iso8601))
+    expect(rows.map { |row| [row['userId'], row['hours']] })
+      .to contain_exactly([2, 3.0], [3, 4.0])
+
+    expect(rows).to all(
+      include('issueId' => '1', 'spentOn' => date.iso8601)
+    )
   end
 
   it 'rejects missing, reversed and excessive date ranges' do
