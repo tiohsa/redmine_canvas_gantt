@@ -4,6 +4,7 @@ import { useWorkloadStore } from '../../stores/WorkloadStore';
 import { useTaskStore } from '../../stores/TaskStore';
 import { useUIStore } from '../../stores/UIStore';
 import { i18n } from '../../utils/i18n';
+import { compareWorkloadAssignees } from '../../services/WorkloadLogicService';
 
 interface WorkloadSidebarProps {
     scrollTop?: number;
@@ -29,7 +30,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
     const scrollRef = React.useRef<HTMLDivElement>(null);
     const rowHeight = viewport.rowHeight * 2;
     const assignees = workloadData
-        ? Array.from(workloadData.assignees.values()).sort((a, b) => a.assigneeName.localeCompare(b.assigneeName))
+        ? Array.from(workloadData.assignees.values()).sort(compareWorkloadAssignees)
         : [];
     const hasAssignees = assignees.length > 0;
 

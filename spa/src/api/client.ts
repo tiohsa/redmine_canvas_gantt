@@ -805,16 +805,8 @@ export const apiClient = {
                 fixedVersionName: typeof t.fixed_version_name === 'string' ? t.fixed_version_name : undefined,
                 customFieldValues,
                 rowIndex: index, // Simplify for now: default order
-                hasChildren: false // Will be updated below
+                hasChildren: t.has_children === true
             };
-        });
-
-        // Compute hasChildren efficiently
-        const parentIds = new Set(tasks.filter(t => t.parentId).map(t => t.parentId));
-        tasks.forEach(t => {
-            if (parentIds.has(t.id)) {
-                t.hasChildren = true;
-            }
         });
 
         const relationsRaw = Array.isArray(data.relations) ? data.relations : [];

@@ -499,6 +499,8 @@ class CanvasGanttsController < ApplicationController
     end
   end
 
+  MAX_ACTUAL_WORKLOAD_RANGE_DAYS = 730
+
   # GET /projects/:project_id/canvas_gantt/actual_workload.json
   def actual_workload
     unless [params.require(:from), params.require(:to)].all? { |value| value.to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/) }
@@ -506,7 +508,7 @@ class CanvasGanttsController < ApplicationController
     end
     from = Date.iso8601(params.require(:from).to_s)
     to = Date.iso8601(params.require(:to).to_s)
-    raise ArgumentError, 'Invalid workload date range' if from > to || (to - from) > 3660
+    raise ArgumentError, 'Invalid workload date range' if from > to || (to - from + 1) > MAX_ACTUAL_WORKLOAD_RANGE_DAYS
 
     resolved = query_state_resolver.resolve(project_ids: descendant_project_ids, scope_only: true)
     scope = resolved[:issues].where(project_id: Project.allowed_to(User.current, :view_canvas_gantt).select(:id))

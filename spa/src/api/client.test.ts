@@ -47,6 +47,23 @@ describe('apiClient.fetchQueries', () => {
 });
 
 describe('apiClient.fetchData', () => {
+    it('uses physical has_children even when children are absent from the payload', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ tasks: [
+                { id: 1, has_children: true },
+                { id: 2, has_children: false },
+                { id: 3, parent_id: 2, has_children: false },
+                { id: 4 }
+            ] })
+        }));
+
+        const result = await apiClient.fetchData();
+
+        expect(result.tasks.map(task => task.hasChildren)).toEqual([true, false, false, false]);
+    });
+
     afterEach(() => {
         vi.restoreAllMocks();
         delete window.RedmineCanvasGantt;

@@ -90,7 +90,7 @@ export const buildLayout = (
     });
     const projectNameById = new Map(projectOptions.map((project) => [project.id, project.name]));
 
-    const normalizedTasks = tasks.map((task) => ({ ...task, hasChildren: false }));
+    const normalizedTasks = tasks.map((task) => ({ ...task }));
 
     const nodeMap = new Map<string, { task: Task; children: string[] }>();
     normalizedTasks.forEach((task) => nodeMap.set(task.id, { task, children: [] }));
@@ -112,9 +112,6 @@ export const buildLayout = (
 
             if (groupingMode === 'none' || sameGroup) {
                 parentNode?.children.push(task.id);
-                if (parentNode) {
-                    parentNode.task.hasChildren = true;
-                }
                 treatedAsChild = true;
             }
         }

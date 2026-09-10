@@ -168,6 +168,19 @@ describe('WorkloadSidebar', () => {
         useWorkloadStore.setState(useWorkloadStore.getInitialState(), true);
     });
 
+    it('orders same-name rows by numeric assignee ID', () => {
+        const data = buildWorkloadData();
+        const assignee = data.assignees.get(1)!;
+        data.assignees = new Map([
+            [10, { ...assignee, assigneeId: 10 }],
+            [2, { ...assignee, assigneeId: 2 }]
+        ]);
+        useWorkloadStore.setState({ workloadData: data });
+        render(<WorkloadSidebar />);
+        expect(screen.getAllByTestId(/^workload-sidebar-row-/).map(row => row.dataset.testid))
+            .toEqual(['workload-sidebar-row-2', 'workload-sidebar-row-10']);
+    });
+
     it('keeps assignees visible even when the gantt pane is vertically scrolled', () => {
         useWorkloadStore.setState({
             ...useWorkloadStore.getState(),

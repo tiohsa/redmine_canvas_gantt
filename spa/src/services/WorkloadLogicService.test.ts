@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { WorkloadLogicService } from './WorkloadLogicService';
+import { compareWorkloadAssignees, WorkloadLogicService } from './WorkloadLogicService';
 import type { Task } from '../types';
 
 const buildTask = (overrides: Partial<Task>): Task => ({
@@ -50,6 +50,25 @@ describe('planned and actual comparison', () => {
     const options = { capacityThreshold: 8, leafIssuesOnly: true, includeClosedIssues: false, todayOnwardOnly: false };
     const planned = buildTask({ id: '1', assignedToId: 10, assignedToName: 'Dave', estimatedHours: 40, startDate: monday, dueDate: monday + 4 * 86400000 });
     const entry = (hours: number, overrides = {}) => ({ id: 'e1', issueId: '1', userId: 20, userName: 'John', spentOn: '2026-09-07', hours, ...overrides });
+
+    it('excludes a physical parent from both series even when its child is absent', () => {
+        const parent = { ...planned, hasChildren: true };
+        expect(WorkloadLogicService.calculateWorkload([parent], new Set(), options, [entry(3)]).assignees.size).toBe(0);
+        const included = WorkloadLogicService.calculateWorkload([parent], new Set(), { ...options, leafIssuesOnly: false }, [entry(3)]);
+        expect(included.assignees.get(10)?.plannedTotal).toBe(40);
+        expect(included.assignees.get(20)?.actualTotal).toBe(3);
+    });
+
+    it('orders assignees by name then numeric ID regardless of insertion order', () => {
+        const data = WorkloadLogicService.calculateWorkload([planned], new Set(), options, [
+            entry(3, { userId: 100, userName: 'Alice' }),
+            entry(2, { userId: 2, userName: 'Alice' }),
+            entry(1, { userId: 1, userName: 'Zoe' })
+        ]);
+        const assignees = [...data.assignees.values()];
+        expect(assignees.sort(compareWorkloadAssignees).map(a => a.assigneeId)).toEqual([2, 100, 10, 1]);
+        expect(assignees.reverse().sort(compareWorkloadAssignees).map(a => a.assigneeId)).toEqual([2, 100, 10, 1]);
+    });
 
     it('preserves 40h / 5 working days and attributes actuals to the worker without adding series', () => {
         const data = WorkloadLogicService.calculateWorkload([planned], new Set(), options, [entry(3)]);

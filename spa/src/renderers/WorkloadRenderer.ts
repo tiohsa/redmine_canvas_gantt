@@ -3,6 +3,7 @@ import { getGridScales } from '../utils/grid';
 import { canvasFonts, designTokens } from '../styles/designTokens';
 import { getCanvasLogicalSize, snapTextPosition, snapLinePosition } from '../utils/canvasDpr';
 import type { AssigneeWorkload, DailyWorkload, WorkloadData, WorkloadSeries } from '../services/WorkloadLogicService';
+import { compareWorkloadAssignees } from '../services/WorkloadLogicService';
 import { calendarWeekday } from '../utils/dateOnly';
 
 export interface WorkloadRenderState {
@@ -50,7 +51,7 @@ export class WorkloadRenderer {
     }
 
     private static getSortedAssignees(workloadData: WorkloadData): AssigneeWorkload[] {
-        return Array.from(workloadData.assignees.values()).sort((a, b) => a.assigneeName.localeCompare(b.assigneeName));
+        return Array.from(workloadData.assignees.values()).sort(compareWorkloadAssignees);
     }
 
     private static getDailyBarRect(params: {

@@ -104,19 +104,24 @@ const findFocusedHistogramBarForTask = (
         return currentFocusedHistogramBar;
     }
 
-    for (const assignee of workloadData.assignees.values()) {
-        const sortedDailyWorkloads = Array.from(assignee.dailyWorkloads.values())
-            .sort((a, b) => a.timestamp - b.timestamp);
+    for (const series of ['planned', 'actual'] as const) {
+        for (const assignee of workloadData.assignees.values()) {
+            const sortedDailyWorkloads = Array.from(assignee.dailyWorkloads.values())
+                .sort((a, b) => a.timestamp - b.timestamp);
 
-        const match = sortedDailyWorkloads.find((daily) => (
-            daily.plannedContributions.some(({ task }) => task.id === taskId)
-        ));
+            const match = sortedDailyWorkloads.find((daily) => (
+                series === 'planned'
+                    ? daily.plannedContributions.some(({ task }) => task.id === taskId)
+                    : daily.actualContributions.some(({ issueId }) => issueId === taskId)
+            ));
 
-        if (match) {
-            return {
-                assigneeId: assignee.assigneeId,
-                dateStr: match.dateStr
-            };
+            if (match) {
+                return {
+                    assigneeId: assignee.assigneeId,
+                    dateStr: match.dateStr,
+                    ...(series === 'actual' ? { series } : {})
+                };
+            }
         }
     }
 
@@ -509,7 +514,8 @@ useTaskStore.subscribe((state, prevState) => {
 
         if (
             workloadState.focusedHistogramBar?.assigneeId !== nextFocusedHistogramBar?.assigneeId ||
-            workloadState.focusedHistogramBar?.dateStr !== nextFocusedHistogramBar?.dateStr
+            workloadState.focusedHistogramBar?.dateStr !== nextFocusedHistogramBar?.dateStr ||
+            workloadState.focusedHistogramBar?.series !== nextFocusedHistogramBar?.series
         ) {
             useWorkloadStore.setState({
                 focusedHistogramBar: nextFocusedHistogramBar,

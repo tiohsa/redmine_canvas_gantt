@@ -59,6 +59,10 @@ export interface WorkloadData {
     actualOverloadedDayCount: number;
 }
 
+export const compareWorkloadAssignees = (a: AssigneeWorkload, b: AssigneeWorkload): number => (
+    a.assigneeName.localeCompare(b.assigneeName) || a.assigneeId - b.assigneeId
+);
+
 export class WorkloadLogicService {
     static normalizeDate(timestamp: number): number {
         return toCalendarDate(timestamp);

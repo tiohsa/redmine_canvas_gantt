@@ -1,4 +1,5 @@
 import type { WorkloadSeries } from '../../services/WorkloadLogicService';
+import { compareWorkloadAssignees } from '../../services/WorkloadLogicService';
 import { toCalendarDate } from '../../utils/dateOnly';
 import { designTokens } from '../../styles/designTokens';
 import React, { useEffect, useRef, useCallback, useLayoutEffect, useMemo, useState, useId } from 'react';
@@ -222,7 +223,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
             return;
         }
 
-        const assignees = Array.from(workloadData.assignees.values()).sort((a, b) => a.assigneeName.localeCompare(b.assigneeName));
+        const assignees = Array.from(workloadData.assignees.values()).sort(compareWorkloadAssignees);
         const assigneeIndex = assignees.findIndex((assignee) => assignee.assigneeId === focusedHistogramBar.assigneeId);
         if (assigneeIndex < 0) return;
 

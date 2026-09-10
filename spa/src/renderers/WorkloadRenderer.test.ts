@@ -117,6 +117,21 @@ const buildTwoAssigneeWorkloadData = (timestamp: number): WorkloadData => ({
 });
 
 describe('WorkloadRenderer', () => {
+    it('hit tests same-name assignees in numeric ID order', () => {
+        const canvas = { width: 800, height: 240, getContext: () => createMockContext() } as unknown as HTMLCanvasElement;
+        const renderer = new WorkloadRenderer(canvas);
+        const data = buildWorkloadData(0);
+        const assignee = data.assignees.get(1)!;
+        data.assignees = new Map([
+            [10, { ...assignee, assigneeId: 10 }],
+            [2, { ...assignee, assigneeId: 2 }]
+        ]);
+        const state = { viewport: buildViewport({ scale: 10 / ONE_DAY }), zoomLevel: 2 as const,
+            workloadData: data, capacityThreshold: 8, verticalScroll: 0, pointerX: 3 };
+        expect(renderer.hitTestDailyBar({ ...state, pointerY: 54 })).toEqual({ assigneeId: 2, dateStr: '2026-01-01' });
+        expect(renderer.hitTestDailyBar({ ...state, pointerY: 126 })).toEqual({ assigneeId: 10, dateStr: '2026-01-01' });
+    });
+
     it('draws visible bars using the same horizontal scroll direction as the gantt viewport', () => {
         const ctx = createMockContext();
         const canvas = {

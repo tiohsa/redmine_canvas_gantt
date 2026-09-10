@@ -629,6 +629,16 @@ describe('WorkloadCanvasPanel', () => {
         expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({ assigneeId: 1, dateStr: '2026-01-01' });
     });
 
+    it('scrolls to the same-name assignee in numeric ID order', () => {
+        const data = buildFocusedOverloadWorkloadData();
+        data.assignees.get(1)!.assigneeName = 'Same name';
+        data.assignees.get(2)!.assigneeName = 'Same name';
+        data.assignees = new Map([...data.assignees].reverse());
+        useWorkloadStore.setState({ workloadData: data, focusedHistogramBar: { assigneeId: 2, dateStr: '2026-01-12' } });
+        render(<WorkloadCanvasPanel />);
+        expect(screen.getByTestId('workload-canvas-viewport').scrollTop).toBe(80);
+    });
+
     it('scrolls the workload pane to the focused overload assignee row', () => {
         useWorkloadStore.setState({
             ...useWorkloadStore.getState(),

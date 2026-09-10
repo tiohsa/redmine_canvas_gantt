@@ -65,6 +65,14 @@ describe('TaskStore viewport clamping', () => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
     });
 
+    it('preserves physical parenthood through layout when children are filtered out', () => {
+        const parent = buildTask({ id: 'parent', hasChildren: true });
+        useTaskStore.getState().applyApiData(buildApiData([parent]));
+
+        expect(useTaskStore.getState().allTasks.find(task => task.id === parent.id)?.hasChildren).toBe(true);
+        expect(useTaskStore.getState().tasks.find(task => task.id === parent.id)?.hasChildren).toBe(true);
+    });
+
     it('updateViewport は scrollY を rowCount に合わせてクランプする', () => {
         const { updateViewport } = useTaskStore.getState();
         useTaskStore.setState({ rowCount: 10 });
