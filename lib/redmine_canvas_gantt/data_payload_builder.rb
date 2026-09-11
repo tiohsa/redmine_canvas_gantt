@@ -35,7 +35,6 @@ module RedmineCanvasGantt
 
       issues.each_with_index.map do |issue, idx|
         build_task_state(issue).merge(
-          has_children: issue.rgt > issue.lft + 1,
           display_order: idx,
           editable: @current_user.allowed_to?(:edit_issues, issue.project) && issue.editable?,
           can_log_time: can_log_time_by_project_id.fetch(issue.project_id) do
@@ -62,6 +61,7 @@ module RedmineCanvasGantt
           assigned_to_id: issue.assigned_to_id,
           assigned_to_name: issue.assigned_to&.name,
           parent_id: issue.parent_id,
+          has_physical_children: issue.rgt > issue.lft + 1,
           lock_version: issue.lock_version,
           tracker_id: issue.tracker_id,
           tracker_name: issue.tracker&.name,

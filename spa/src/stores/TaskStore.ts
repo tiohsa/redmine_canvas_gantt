@@ -571,7 +571,10 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
     const versions = data.versions ?? [];
     const relations = data.relations ?? [];
     const serverTasks = (data.tasks ?? []).filter(task => !state.taskTombstones[task.id]);
-    const mergedServerTasks = serverTasks.map((task) => {
+    const serverTaskSnapshot = replaceServerSnapshot(
+        state.serverTaskSnapshot, serverTasks, readContext ?? state.activeReadContext
+    );
+    const mergedServerTasks = Object.values(serverTaskSnapshot.entitiesById).map((task) => {
         const patches = state.localTaskPatches[task.id] ?? [];
         return patches.length > 0 ? applyLocalPatches(task, patches) : task;
     });
@@ -669,11 +672,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
             versionExpansion,
             taskExpansion,
             modifiedTaskIds: new Set(state.modifiedTaskIds),
-            serverTaskSnapshot: replaceServerSnapshot(
-                state.serverTaskSnapshot,
-                serverTasks,
-                readContext ?? state.activeReadContext
-            ),
+            serverTaskSnapshot,
             ...toDerivedTaskStatePatch(derived)
         }
     };
@@ -1975,8 +1974,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 metadata.completeness ?? 'partial',
                 metadata.revision ?? metadata.entity.lockVersion ?? 0
             );
+            if (serverTaskSnapshot === state.serverTaskSnapshot) return state;
             const mergedTask = applyLocalPatches(
-                persistedServerTask,
+                serverTaskSnapshot.entitiesById[taskId],
                 state.localTaskPatches[taskId] ?? []
             );
             const allTasks = currentTask

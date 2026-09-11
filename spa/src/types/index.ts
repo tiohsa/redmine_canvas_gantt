@@ -32,6 +32,8 @@ export interface Task {
     fixedVersionName?: string;
     customFieldValues?: Record<string, string | null>;
     isContextOnly?: boolean;
+    // Canonical Redmine hierarchy; never infer from the loaded task graph.
+    hasPhysicalChildren?: boolean;
 
     // Computed for layout (cached)
     rowIndex: number;
@@ -48,7 +50,7 @@ export type PersistedTaskState = Pick<Task, 'id'> & Partial<Pick<Task,
     'lockVersion' | 'trackerId' | 'trackerName' | 'fixedVersionId' |
     'priorityId' | 'priorityName' | 'priorityPosition' | 'authorId' | 'authorName' |
     'categoryId' | 'categoryName' | 'estimatedHours' | 'createdOn' | 'updatedOn' |
-    'statusName' | 'spentHours' | 'fixedVersionName' | 'customFieldValues'
+    'statusName' | 'spentHours' | 'fixedVersionName' | 'customFieldValues' | 'hasPhysicalChildren'
 >>;
 
 export interface Relation {

@@ -112,7 +112,7 @@ export class WorkloadLogicService {
             // 3. valid working range (start_date <= due_date)
             if (!task.startDate || !task.dueDate || task.startDate > task.dueDate) return;
             // 4. leaf-only option
-            if (options.leafIssuesOnly && task.hasChildren) return;
+            if (options.leafIssuesOnly && task.hasPhysicalChildren) return;
             // 5. closed issues option
             if (!options.includeClosedIssues && closedStatusIds.has(task.statusId)) return;
 
@@ -171,7 +171,7 @@ export class WorkloadLogicService {
             const task = taskById.get(entry.issueId);
             const dayMs = parseDateOnly(entry.spentOn);
             if (!task || dayMs === null || !Number.isFinite(entry.hours) || entry.hours <= 0) continue;
-            if (options.leafIssuesOnly && task.hasChildren) continue;
+            if (options.leafIssuesOnly && task.hasPhysicalChildren) continue;
             if (!options.includeClosedIssues && closedStatusIds.has(task.statusId)) continue;
             if (options.todayOnwardOnly && dayMs < todayMs) continue;
             if (range && (dayMs < range.from || dayMs > range.to)) continue;

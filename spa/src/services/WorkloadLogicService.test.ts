@@ -52,7 +52,7 @@ describe('planned and actual comparison', () => {
     const entry = (hours: number, overrides = {}) => ({ id: 'e1', issueId: '1', userId: 20, userName: 'John', spentOn: '2026-09-07', hours, ...overrides });
 
     it('excludes a physical parent from both series even when its child is absent', () => {
-        const parent = { ...planned, hasChildren: true };
+        const parent = { ...planned, hasPhysicalChildren: true, hasChildren: false };
         expect(WorkloadLogicService.calculateWorkload([parent], new Set(), options, [entry(3)]).assignees.size).toBe(0);
         const included = WorkloadLogicService.calculateWorkload([parent], new Set(), { ...options, leafIssuesOnly: false }, [entry(3)]);
         expect(included.assignees.get(10)?.plannedTotal).toBe(40);
@@ -102,7 +102,7 @@ describe('planned and actual comparison', () => {
     });
 
     it('applies closed and leaf filters to actuals, rejects invalid dates and out-of-scope issues', () => {
-        const tasks = [planned, buildTask({ id: '2', statusId: 5 }), buildTask({ id: '3', hasChildren: true })];
+        const tasks = [planned, buildTask({ id: '2', statusId: 5 }), buildTask({ id: '3', hasPhysicalChildren: true, hasChildren: false })];
         const entries = [entry(1, { issueId: '2' }), entry(2, { issueId: '3' }), entry(3, { issueId: 'missing' }), entry(4, { spentOn: '2026-02-30' })];
         expect(WorkloadLogicService.calculateWorkload(tasks, new Set([5]), options, entries).assignees.has(20)).toBe(false);
         expect(WorkloadLogicService.calculateWorkload(tasks, new Set([5]), { ...options, leafIssuesOnly: false, includeClosedIssues: true }, entries).assignees.get(20)?.actualTotal).toBe(3);

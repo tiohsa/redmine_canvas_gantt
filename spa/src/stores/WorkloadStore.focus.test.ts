@@ -34,10 +34,23 @@ describe('external workload focus across series', () => {
         useWorkloadStore.setState({ workloadData: calculate([task]) });
         useTaskStore.getState().selectTask(task.id);
         expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({
-            assigneeId: 2, dateStr: '2026-09-08', series: 'actual'
+            assigneeId: 3, dateStr: '2026-09-07', series: 'actual'
         });
         useTaskStore.getState().selectTask(null);
         expect(useWorkloadStore.getState().focusedHistogramBar).toBeNull();
+        useTaskStore.getState().selectTask(task.id);
+        expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({
+            assigneeId: 3, dateStr: '2026-09-07', series: 'actual'
+        });
+    });
+
+    it.each([false, true])('uses name, numeric worker ID, then earliest date (reversed=%s)', (reverse) => {
+        const actuals = [
+            { ...entries[0], userId: 100, userName: 'Alice', spentOn: '2026-09-07' },
+            { ...entries[0], userId: 2, userName: 'Alice', spentOn: '2026-09-09' },
+            { ...entries[0], userId: 2, userName: 'Alice', spentOn: '2026-09-08' }
+        ];
+        useWorkloadStore.setState({ workloadData: calculate([task], reverse ? actuals.reverse() : actuals) });
         useTaskStore.getState().selectTask(task.id);
         expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({
             assigneeId: 2, dateStr: '2026-09-08', series: 'actual'
@@ -84,7 +97,7 @@ describe('external workload focus across series', () => {
         useWorkloadStore.setState({ actualEntries: entries, todayOnwardOnly: false });
         useWorkloadStore.getState().calculateWorkloadData();
         expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({
-            assigneeId: 2, dateStr: '2026-09-08', series: 'actual'
+            assigneeId: 3, dateStr: '2026-09-07', series: 'actual'
         });
     });
 });

@@ -261,6 +261,7 @@ export const buildLayout = (
         if (!hiddenByAncestor) {
             const taskWithLayout: Task = {
                 ...node.task,
+                hasChildren: node.children.length > 0,
                 indentLevel: depth,
                 rowIndex,
                 treeLevelGuides: guides,

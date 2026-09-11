@@ -300,6 +300,7 @@ const parseMutationEntity = (value: unknown): PersistedTaskState | undefined => 
         ...(record.assigned_to_id === null || typeof record.assigned_to_id === 'number' ? { assignedToId: record.assigned_to_id } : {}),
         ...(record.assigned_to_name === null || typeof record.assigned_to_name === 'string' ? { assignedToName: record.assigned_to_name } : {}),
         ...(has('parent_id') ? { parentId: parseNullableId('parent_id') } : {}),
+        ...(typeof record.has_physical_children === 'boolean' ? { hasPhysicalChildren: record.has_physical_children } : {}),
         ...(typeof record.lock_version === 'number' ? { lockVersion: record.lock_version } : {}),
         ...(has('tracker_id') ? { trackerId: parseNullableNumber('tracker_id') } : {}),
         ...(typeof record.tracker_name === 'string' ? { trackerName: record.tracker_name } : {}),
@@ -805,7 +806,8 @@ export const apiClient = {
                 fixedVersionName: typeof t.fixed_version_name === 'string' ? t.fixed_version_name : undefined,
                 customFieldValues,
                 rowIndex: index, // Simplify for now: default order
-                hasChildren: t.has_children === true
+                hasPhysicalChildren: t.has_physical_children === true,
+                hasChildren: false
             };
         });
 

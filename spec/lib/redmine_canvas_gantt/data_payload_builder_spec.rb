@@ -213,6 +213,15 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
       expect(tasks_100.first[:can_log_time]).to eq(true)
       expect(tasks_500.last[:can_log_time]).to eq(true)
       expect(current_user).to have_received(:allowed_to?).with(:log_time, project1).twice
+      expect(tasks_100.first[:has_physical_children]).to eq(false)
+
+      # The payload contains only the parent; its physical child is filtered out.
+      allow(issue1).to receive(:rgt).and_return(4)
+      expect(issue1).not_to receive(:children)
+      expect(builder.build_tasks([issue1]).first[:has_physical_children]).to eq(true)
+      expect(builder.build_task_state(issue1)).to include(has_physical_children: true)
+      expect(builder.build_task_state(issue1)).not_to have_key(:display_order)
+      expect(builder.build_task_state(issue1)).not_to have_key(:has_children)
     end
   end
 end

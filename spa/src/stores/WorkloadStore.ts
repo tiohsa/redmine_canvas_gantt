@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import { useTaskStore } from './TaskStore';
 import {
     WorkloadLogicService,
+    compareWorkloadAssignees,
     type DailyWorkload,
     type WorkloadData,
     type WorkloadOptions
@@ -104,8 +105,9 @@ const findFocusedHistogramBarForTask = (
         return currentFocusedHistogramBar;
     }
 
+    const assignees = [...workloadData.assignees.values()].sort(compareWorkloadAssignees);
     for (const series of ['planned', 'actual'] as const) {
-        for (const assignee of workloadData.assignees.values()) {
+        for (const assignee of assignees) {
             const sortedDailyWorkloads = Array.from(assignee.dailyWorkloads.values())
                 .sort((a, b) => a.timestamp - b.timestamp);
 

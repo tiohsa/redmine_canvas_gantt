@@ -7,6 +7,7 @@ import { useUIStore } from './UIStore';
 import { AutoScheduleMoveMode } from '../types/constraints';
 import { loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
+import { WorkloadLogicService } from '../services/WorkloadLogicService';
 import { createReadContext } from './taskStore/stateContract';
 
 vi.mock('../api/client', () => ({
@@ -66,11 +67,13 @@ describe('TaskStore viewport clamping', () => {
     });
 
     it('preserves physical parenthood through layout when children are filtered out', () => {
-        const parent = buildTask({ id: 'parent', hasChildren: true });
+        const parent = buildTask({ id: 'parent', hasPhysicalChildren: true });
         useTaskStore.getState().applyApiData(buildApiData([parent]));
 
-        expect(useTaskStore.getState().allTasks.find(task => task.id === parent.id)?.hasChildren).toBe(true);
-        expect(useTaskStore.getState().tasks.find(task => task.id === parent.id)?.hasChildren).toBe(true);
+        expect(useTaskStore.getState().allTasks.find(task => task.id === parent.id)?.hasPhysicalChildren).toBe(true);
+        expect(useTaskStore.getState().tasks.find(task => task.id === parent.id)).toMatchObject({
+            hasChildren: false, hasPhysicalChildren: true
+        });
     });
 
     it('updateViewport は scrollY を rowCount に合わせてクランプする', () => {
@@ -4425,5 +4428,82 @@ describe('TaskStore drag parent updates', () => {
         expect(state.localTaskPatches.child).toEqual(expect.arrayContaining([
             expect.objectContaining({ generation: parentMoveGeneration })
         ]));
+    });
+});
+
+
+describe('physical hierarchy canonical reconciliation', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        vi.mocked(apiClient.updateTaskFields).mockReset();
+        vi.mocked(apiClient.fetchData).mockReset();
+        useTaskStore.setState({ autoSave: true, currentProjectId: 'p1' });
+    });
+
+    it.each([
+        { name: 'leaf becomes parent', toRoot: false, before: false, after: true },
+        { name: 'only child leaves', toRoot: true, before: true, after: false },
+        { name: 'hidden sibling remains', toRoot: true, before: true, after: true }
+    ])('$name uses server hierarchy after invalidation refresh', async ({ toRoot, before, after }) => {
+        const parent = buildTask({ id: '11', projectId: 'p1', hasPhysicalChildren: before,
+            assignedToId: 1, estimatedHours: 8, startDate: MONDAY, dueDate: MONDAY });
+        const child = buildTask({ id: '10', projectId: 'p1', parentId: toRoot ? '11' : undefined });
+        useTaskStore.getState().applyApiData(buildApiData([parent, child]));
+        const read = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(read.promise);
+        const canonicalChild = { ...child, parentId: toRoot ? undefined : '11', lockVersion: 1 };
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValueOnce({
+            status: 'ok', lockVersion: 1, parentId: canonicalChild.parentId,
+            entity: canonicalChild, invalidatedEntityIds: ['10', '11'], completeness: 'partial'
+        });
+        const result = await (toRoot ? useTaskStore.getState().moveTaskToRoot('10')
+            : useTaskStore.getState().moveTaskAsChild('10', '11'));
+        expect(result.status).toBe('ok');
+        expect(useTaskStore.getState().allTasks.find(t => t.id === '11')?.hasPhysicalChildren).toBe(before);
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+        read.resolve(buildApiData([{ ...parent, hasPhysicalChildren: after }, canonicalChild]));
+        await vi.waitFor(() => expect(useTaskStore.getState().serverTaskSnapshot.entitiesById['11']?.hasPhysicalChildren).toBe(after));
+        const state = useTaskStore.getState();
+        expect(state.tasks.find(t => t.id === '11')).toMatchObject({ hasChildren: !toRoot, hasPhysicalChildren: after });
+        const workload = WorkloadLogicService.calculateWorkload(state.allTasks, new Set(), {
+            leafIssuesOnly: true, capacityThreshold: 8, todayOnwardOnly: false, includeClosedIssues: true
+        });
+        expect(workload.assignees.has(1)).toBe(!after);
+    });
+
+    it('rejects late invalidation reads without rolling back newer hierarchy or local edits', async () => {
+        const parent = buildTask({ id: '11', projectId: 'p1', hasPhysicalChildren: false });
+        const child = buildTask({ id: '10', projectId: 'p1' });
+        useTaskStore.getState().applyApiData(buildApiData([parent, child]));
+        const oldRead = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(oldRead.promise)
+            .mockResolvedValueOnce(buildApiData([{ ...parent, hasPhysicalChildren: false }, { ...child, lockVersion: 2 }]));
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValueOnce({
+            status: 'ok', lockVersion: 1, parentId: '11',
+            entity: { id: '10', parentId: '11', lockVersion: 1 }, invalidatedEntityIds: ['10', '11']
+        }).mockResolvedValueOnce({
+            status: 'ok', lockVersion: 2, entity: { id: '10', parentId: undefined, lockVersion: 2 },
+            invalidatedEntityIds: ['10', '11']
+        });
+        await useTaskStore.getState().moveTaskAsChild('10', '11');
+        await useTaskStore.getState().moveTaskToRoot('10');
+        await vi.waitFor(() => expect(useTaskStore.getState().serverTaskSnapshot.entitiesById['10'].lockVersion).toBe(2));
+        useTaskStore.getState().updateTask('10', { subject: 'later local edit' });
+        oldRead.resolve(buildApiData([{ ...parent, hasPhysicalChildren: true }, { ...child, parentId: '11', lockVersion: 1 }]));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const state = useTaskStore.getState();
+        expect(state.serverTaskSnapshot.entitiesById['11'].hasPhysicalChildren).toBe(false);
+        expect(state.allTasks.find(t => t.id === '10')?.parentId).toBeUndefined();
+        expect(state.allTasks.find(t => t.id === '10')?.subject).toBe('later local edit');
+    });
+
+    it.each(['mutation', 'read'])('rejects an older %s revision in both snapshot and view', (kind) => {
+        const current = buildTask({ id: '10', hasPhysicalChildren: true, parentId: 'new', lockVersion: 4 });
+        useTaskStore.getState().applyApiData(buildApiData([current]));
+        const old = { ...current, hasPhysicalChildren: false, parentId: 'old', lockVersion: 3 };
+        if (kind === 'mutation') useTaskStore.getState().applyTaskMutationMetadata('10', { entity: old, revision: 3 });
+        else useTaskStore.getState().applyApiData(buildApiData([old]));
+        expect(useTaskStore.getState().serverTaskSnapshot.entitiesById['10']).toMatchObject(current);
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject(current);
     });
 });
