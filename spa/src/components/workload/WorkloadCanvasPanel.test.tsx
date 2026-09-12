@@ -8,6 +8,15 @@ import { useWorkloadStore } from '../../stores/WorkloadStore';
 import type { WorkloadData } from '../../services/WorkloadLogicService';
 import type { Task } from '../../types';
 import { useUIStore } from '../../stores/UIStore';
+import { WORKLOAD_HEADER_HEIGHT } from '../../constants';
+
+const setScrollMetrics = (element: HTMLElement, { clientHeight, scrollHeight, scrollTop }: { clientHeight: number; scrollHeight: number; scrollTop: number }) => {
+    Object.defineProperties(element, {
+        clientHeight: { configurable: true, value: clientHeight },
+        scrollHeight: { configurable: true, value: scrollHeight },
+        scrollTop: { configurable: true, writable: true, value: scrollTop }
+    });
+};
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
@@ -288,6 +297,10 @@ beforeEach(() => {
         if (this.dataset.testid === 'workload-canvas-viewport') return 220;
         return 260;
     });
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.testid === 'workload-canvas-viewport') return 1000;
+        return 0;
+    });
 
     useTaskStore.setState({
         ...useTaskStore.getInitialState(),
@@ -330,6 +343,20 @@ describe('WorkloadCanvasPanel', () => {
 
         expect(canvas?.width).toBe(640);
         expect(canvas?.height).toBe(220);
+    });
+
+    it('keeps the panel and viewport aligned to the shared header geometry', () => {
+        render(<WorkloadCanvasPanel />);
+
+        expect(screen.getByTestId('workload-canvas-panel')).toHaveStyle({ boxSizing: 'border-box' });
+        expect(screen.getByTestId('workload-canvas-header')).toHaveStyle({
+            height: `${WORKLOAD_HEADER_HEIGHT}px`,
+            boxSizing: 'border-box'
+        });
+        expect(screen.getByTestId('workload-canvas-viewport')).toHaveStyle({
+            top: `${WORKLOAD_HEADER_HEIGHT}px`,
+            bottom: '0px'
+        });
     });
 
     it('pans the shared viewport when dragging the histogram area', () => {
@@ -502,6 +529,32 @@ describe('WorkloadCanvasPanel', () => {
         fireEvent.scroll(viewportElement, { target: { scrollTop: 48 } });
 
         expect(handleScroll).toHaveBeenCalledWith(48);
+    });
+
+    it('clamps and does not re-notify an externally applied scroll position', () => {
+        const handleScroll = vi.fn();
+        const { rerender } = render(<WorkloadCanvasPanel scrollTop={0} onScroll={handleScroll} />);
+        const viewportElement = screen.getByTestId('workload-canvas-viewport');
+        setScrollMetrics(viewportElement, { clientHeight: 100, scrollHeight: 201, scrollTop: 0 });
+
+        rerender(<WorkloadCanvasPanel scrollTop={999} onScroll={handleScroll} />);
+
+        expect(viewportElement.scrollTop).toBe(101);
+        fireEvent.scroll(viewportElement);
+
+        expect(handleScroll).not.toHaveBeenCalled();
+    });
+
+    it('notifies the parent for a user scroll', () => {
+        const handleScroll = vi.fn();
+        render(<WorkloadCanvasPanel onScroll={handleScroll} />);
+        const viewportElement = screen.getByTestId('workload-canvas-viewport');
+        setScrollMetrics(viewportElement, { clientHeight: 100, scrollHeight: 201, scrollTop: 0 });
+        viewportElement.scrollTop = 72;
+
+        fireEvent.scroll(viewportElement);
+
+        expect(handleScroll).toHaveBeenCalledWith(72);
     });
 
     it('focuses the matching task when a histogram bar is clicked', () => {

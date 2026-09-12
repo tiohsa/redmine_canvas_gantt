@@ -5,6 +5,8 @@ import { useTaskStore } from '../../stores/TaskStore';
 import { useUIStore } from '../../stores/UIStore';
 import { i18n } from '../../utils/i18n';
 import { compareWorkloadAssignees } from '../../services/WorkloadLogicService';
+import { WORKLOAD_HEADER_HEIGHT } from '../../constants';
+import { useWorkloadScrollSync } from './workloadScrollSync';
 
 interface WorkloadSidebarProps {
     scrollTop?: number;
@@ -33,13 +35,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
         ? Array.from(workloadData.assignees.values()).sort(compareWorkloadAssignees)
         : [];
     const hasAssignees = assignees.length > 0;
-
-    React.useEffect(() => {
-        if (!scrollRef.current) return;
-        if (Math.abs(scrollRef.current.scrollTop - scrollTop) > 1) {
-            scrollRef.current.scrollTop = scrollTop;
-        }
-    }, [scrollTop]);
+    const handleScroll = useWorkloadScrollSync(scrollRef, scrollTop, onScroll);
 
     if (!workloadData) {
         return <div style={{ padding: '10px', color: '#666', fontSize: '13px' }}>{i18n.t('label_loading') || 'Loading...'}</div>;
@@ -48,10 +44,12 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
     return (
         <div
             data-testid="workload-sidebar"
-            style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, width: '100%', height: '100%', borderTop: '1px solid #e0e0e0', backgroundColor: '#fafafa' }}
+            style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, width: '100%', height: '100%', boxSizing: 'border-box', borderTop: '1px solid #e0e0e0', backgroundColor: '#fafafa' }}
         >
             <div style={{
-                height: '40px',
+                height: `${WORKLOAD_HEADER_HEIGHT}px`,
+                flex: `0 0 ${WORKLOAD_HEADER_HEIGHT}px`,
+                boxSizing: 'border-box',
                 borderBottom: '1px solid #e0e0e0',
                 display: 'grid',
                 gridTemplateColumns: `minmax(0, 1fr) ${METRIC_COLUMN_WIDTH}px ${METRIC_COLUMN_WIDTH}px ${OVERLOAD_COLUMN_WIDTH}px`,
@@ -62,7 +60,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                 color: '#666',
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px'
-            }}>
+            }} data-testid="workload-sidebar-header">
                 <div style={{ minWidth: 0 }}>
                     {i18n.t('label_assignee_plural') || 'Assignees'}
                 </div>
@@ -83,8 +81,8 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
             <div
                 ref={scrollRef}
                 data-testid="workload-sidebar-scroll"
-                onScroll={(event) => onScroll?.(event.currentTarget.scrollTop)}
-                style={{ flex: 1, overflowY: hasAssignees ? 'auto' : 'hidden', overflowX: 'hidden', position: 'relative' }}
+                onScroll={handleScroll}
+                style={{ flex: 1, minHeight: 0, overflowY: hasAssignees ? 'auto' : 'hidden', overflowX: 'hidden', position: 'relative' }}
             >
                 {hasAssignees ? (
                     <div style={{ minHeight: `${assignees.length * rowHeight}px` }}>

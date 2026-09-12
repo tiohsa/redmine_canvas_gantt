@@ -10,6 +10,8 @@ import { useUIStore } from '../../stores/UIStore';
 import { WorkloadRenderer } from '../../renderers/WorkloadRenderer';
 import { panViewportByPixels } from '../../engines/viewportPan';
 import { resizeCanvasForDpr } from '../../utils/canvasDpr';
+import { WORKLOAD_HEADER_HEIGHT } from '../../constants';
+import { useWorkloadScrollSync } from './workloadScrollSync';
 
 interface WorkloadCanvasPanelProps {
     scrollTop?: number;
@@ -41,7 +43,6 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
     onScroll
 }) => {
     const descriptionId = useId();
-    const HEADER_HEIGHT = 40;
     const [hoveredBar, setHoveredBar] = useState<HistogramBarHit | null>(null);
     const FOCUS_PADDING_X = 24;
     const SCROLL_SYNC_TOLERANCE_PX = 3;
@@ -162,6 +163,8 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
 
     useEffect(() => { updateRange(); }, [updateRange]);
 
+    const handleScroll = useWorkloadScrollSync(viewportRef, scrollTop, onScroll);
+
     const updateCanvasSize = useCallback(() => {
         if (!canvasRef.current) return;
 
@@ -170,7 +173,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         if (!viewportElement && !containerElement) return;
 
         const width = viewportElement?.clientWidth ?? containerElement?.clientWidth ?? 0;
-        const height = viewportElement?.clientHeight ?? Math.max(0, (containerElement?.clientHeight ?? 0) - HEADER_HEIGHT);
+        const height = viewportElement?.clientHeight ?? Math.max(0, (containerElement?.clientHeight ?? 0) - WORKLOAD_HEADER_HEIGHT);
         if (width > 0 && height > 0) {
             const ctx = canvasRef.current.getContext('2d');
             resizeCanvasForDpr(canvasRef.current, ctx, width, height);
@@ -205,13 +208,6 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
     useEffect(() => {
         renderCurrentState();
     }, [renderCurrentState]);
-
-    useEffect(() => {
-        if (!viewportRef.current) return;
-        if (Math.abs(viewportRef.current.scrollTop - scrollTop) > 1) {
-            viewportRef.current.scrollTop = scrollTop;
-        }
-    }, [scrollTop]);
 
     useEffect(() => {
         if (!focusedHistogramBar || !workloadData || !viewportRef.current) return;
@@ -500,9 +496,10 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         : '';
 
     return (
-        <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', borderTop: '1px solid #e0e0e0', backgroundColor: '#ffffff' }}>
+        <div ref={containerRef} data-testid="workload-canvas-panel" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', boxSizing: 'border-box', borderTop: '1px solid #e0e0e0', backgroundColor: '#ffffff' }}>
             <div style={{
-                height: '40px',
+                height: `${WORKLOAD_HEADER_HEIGHT}px`,
+                boxSizing: 'border-box',
                 borderBottom: '1px solid #e0e0e0',
                 display: 'flex',
                 alignItems: 'center',
@@ -514,7 +511,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px',
                 backgroundColor: '#fafafa'
-            }}>
+            }} data-testid="workload-canvas-header">
                 <span>{i18n.t('label_workload_histogram') || 'HISTOGRAM (DAILY WORKLOAD)'}</span>
                 <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 10 }}>
                     <span>□ {i18n.t('label_workload_planned')}</span>
@@ -522,16 +519,16 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                     <span>┄ {i18n.t('label_workload_capacity')} {capacityThreshold}h</span>
                 </span>
             </div>
-            {actualStatus === 'error' && <div role="alert" style={{ position: 'absolute', top: HEADER_HEIGHT, right: 8, zIndex: 2, background: designTokens.appBg, color: designTokens.taskDelayed, fontSize: 12 }}>{i18n.t('label_workload_actual_load_failed')}</div>}
-            {actualStatus === 'loading' && <span role="status" style={{ position: 'absolute', top: HEADER_HEIGHT, right: 8, zIndex: 2, fontSize: 12 }}>{i18n.t('label_workload_actual')} — {i18n.t('label_loading')}</span>}
-            {hoveredBar && <div role="tooltip" style={{ position: 'absolute', top: HEADER_HEIGHT, left: 8, zIndex: 3, pointerEvents: 'none', whiteSpace: 'pre-line', padding: 8, borderRadius: 8, background: designTokens.appBg, border: `1px solid ${designTokens.controlBorder}`, fontSize: 12 }}>{dailyDescription(hoveredBar.assigneeId, hoveredBar.dateStr)}</div>}
+            {actualStatus === 'error' && <div role="alert" style={{ position: 'absolute', top: WORKLOAD_HEADER_HEIGHT, right: 8, zIndex: 2, background: designTokens.appBg, color: designTokens.taskDelayed, fontSize: 12 }}>{i18n.t('label_workload_actual_load_failed')}</div>}
+            {actualStatus === 'loading' && <span role="status" style={{ position: 'absolute', top: WORKLOAD_HEADER_HEIGHT, right: 8, zIndex: 2, fontSize: 12 }}>{i18n.t('label_workload_actual')} — {i18n.t('label_loading')}</span>}
+            {hoveredBar && <div role="tooltip" style={{ position: 'absolute', top: WORKLOAD_HEADER_HEIGHT, left: 8, zIndex: 3, pointerEvents: 'none', whiteSpace: 'pre-line', padding: 8, borderRadius: 8, background: designTokens.appBg, border: `1px solid ${designTokens.controlBorder}`, fontSize: 12 }}>{dailyDescription(hoveredBar.assigneeId, hoveredBar.dateStr)}</div>}
             <div
                 ref={viewportRef}
                 data-testid="workload-canvas-viewport"
-                onScroll={(event) => onScroll?.(event.currentTarget.scrollTop)}
+                onScroll={handleScroll}
                 style={{
                     position: 'absolute',
-                    top: HEADER_HEIGHT,
+                    top: WORKLOAD_HEADER_HEIGHT,
                     left: 0,
                     right: 0,
                     bottom: 0,

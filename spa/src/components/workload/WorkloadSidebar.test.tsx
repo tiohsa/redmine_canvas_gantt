@@ -6,6 +6,15 @@ import { useWorkloadStore } from '../../stores/WorkloadStore';
 import type { WorkloadData } from '../../services/WorkloadLogicService';
 import type { Task } from '../../types';
 import { useUIStore } from '../../stores/UIStore';
+import { WORKLOAD_HEADER_HEIGHT } from '../../constants';
+
+const setScrollMetrics = (element: HTMLElement, { clientHeight, scrollHeight, scrollTop }: { clientHeight: number; scrollHeight: number; scrollTop: number }) => {
+    Object.defineProperties(element, {
+        clientHeight: { configurable: true, value: clientHeight },
+        scrollHeight: { configurable: true, value: scrollHeight },
+        scrollTop: { configurable: true, writable: true, value: scrollTop }
+    });
+};
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 const START = Date.UTC(2026, 0, 5, 12);
@@ -207,6 +216,27 @@ describe('WorkloadSidebar', () => {
         expect(screen.getByTestId('workload-sidebar-header-total')).toHaveTextContent('Total');
     });
 
+    it('keeps the header and scroll viewport in the shared border-box geometry', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData()
+        });
+
+        render(<WorkloadSidebar />);
+
+        const root = screen.getByTestId('workload-sidebar');
+        const header = screen.getByTestId('workload-sidebar-header');
+        const scrollViewport = screen.getByTestId('workload-sidebar-scroll');
+
+        expect(root).toHaveStyle({ boxSizing: 'border-box' });
+        expect(header).toHaveStyle({
+            height: `${WORKLOAD_HEADER_HEIGHT}px`,
+            flex: `0 0 ${WORKLOAD_HEADER_HEIGHT}px`,
+            boxSizing: 'border-box'
+        });
+        expect(scrollViewport.style.minHeight).toBe('0');
+    });
+
     it('stretches to fill the workload pane width', () => {
         useWorkloadStore.setState({
             ...useWorkloadStore.getState(),
@@ -239,6 +269,36 @@ describe('WorkloadSidebar', () => {
         });
 
         scrollElement.dispatchEvent(new Event('scroll'));
+
+        expect(handleScroll).toHaveBeenCalledWith(72);
+    });
+
+    it('clamps and does not re-notify an externally applied scroll position', () => {
+        const handleScroll = vi.fn();
+        useWorkloadStore.setState({ workloadData: buildWorkloadData() });
+
+        const { rerender } = render(<WorkloadSidebar scrollTop={0} onScroll={handleScroll} />);
+        const scrollElement = screen.getByTestId('workload-sidebar-scroll');
+        setScrollMetrics(scrollElement, { clientHeight: 100, scrollHeight: 201, scrollTop: 0 });
+
+        rerender(<WorkloadSidebar scrollTop={999} onScroll={handleScroll} />);
+
+        expect(scrollElement.scrollTop).toBe(101);
+        fireEvent.scroll(scrollElement);
+
+        expect(handleScroll).not.toHaveBeenCalled();
+    });
+
+    it('notifies the parent for a user scroll', () => {
+        const handleScroll = vi.fn();
+        useWorkloadStore.setState({ workloadData: buildWorkloadData() });
+
+        render(<WorkloadSidebar onScroll={handleScroll} />);
+        const scrollElement = screen.getByTestId('workload-sidebar-scroll');
+        setScrollMetrics(scrollElement, { clientHeight: 100, scrollHeight: 201, scrollTop: 0 });
+        scrollElement.scrollTop = 72;
+
+        fireEvent.scroll(scrollElement);
 
         expect(handleScroll).toHaveBeenCalledWith(72);
     });

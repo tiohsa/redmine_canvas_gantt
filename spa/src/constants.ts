@@ -12,3 +12,4 @@ export const SIDEBAR_DEFAULT_WIDTH = 300;
 export const SIDEBAR_RESIZE_CURSOR = 'ew-resize';
 export const SIDEBAR_DRAG_EDGE_TOLERANCE = 15;
 export const GANTT_HEADER_HEIGHT = 64;
+export const WORKLOAD_HEADER_HEIGHT = 40;

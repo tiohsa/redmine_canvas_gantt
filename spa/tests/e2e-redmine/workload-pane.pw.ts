@@ -32,6 +32,49 @@ test('shows workload pane in the lower split view area', async ({ page, baseURL 
   await expect(histogramCanvas).toBeVisible();
 });
 
+test('keeps workload viewport metrics aligned at boundary pane heights', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+
+  await adminLogin(redmineBase, page);
+  await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
+  await page.getByTitle(/^(Workload|ワークロード)$/i).click();
+  await page.getByLabel(/^(Show Workload Pane|ワークロードパネルを表示)$/i).check();
+  await page.getByTestId('workload-canvas-viewport').waitFor();
+
+  for (const paneHeight of [358, 359, 360, 361, 362, 363]) {
+    await page.evaluate((height) => {
+      for (const testId of ['workload-split-layout-left', 'workload-split-layout-right']) {
+        const layout = document.querySelector(`[data-testid="${testId}"]`);
+        if (layout instanceof HTMLElement) {
+          layout.style.gridTemplateRows = `minmax(160px, 1fr) 8px ${height}px`;
+        }
+      }
+    }, paneHeight);
+
+    const metrics = await page.evaluate(() => {
+      const read = (testId: string) => {
+        const element = document.querySelector(`[data-testid="${testId}"]`);
+        if (!(element instanceof HTMLElement)) return null;
+        return {
+          clientHeight: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+          maxScrollTop: Math.max(0, element.scrollHeight - element.clientHeight)
+        };
+      };
+
+      return {
+        sidebar: read('workload-sidebar-scroll'),
+        canvas: read('workload-canvas-viewport')
+      };
+    });
+
+    expect(metrics.sidebar).not.toBeNull();
+    expect(metrics.canvas).not.toBeNull();
+    expect(metrics.sidebar!.clientHeight).toBe(metrics.canvas!.clientHeight);
+    expect(metrics.sidebar!.maxScrollTop).toBe(metrics.canvas!.maxScrollTop);
+  }
+});
+
 test('compares planned and actual workers, shows overload and retains actuals after reload', async ({ page, baseURL }, testInfo) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   const base = baseURL ?? 'http://127.0.0.1:3000';
