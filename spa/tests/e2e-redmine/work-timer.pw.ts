@@ -29,13 +29,13 @@ test('records timer work through the standard Redmine TimeEntry redirect', async
   await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
   await expect(page.getByText('Loading Canvas Gantt...')).toHaveCount(0);
   await page.getByRole('button', { name: 'Today', exact: true }).click();
-  await page.getByTitle('Workload', { exact: true }).click();
+  await page.getByTestId('workload-menu-button').click();
   const actualLoaded = page.waitForResponse(response => response.url().includes('/actual_workload.json') && response.status() === 200);
   await page.getByLabel('Show Workload Pane').check();
   const entriesBefore = (await (await actualLoaded).json()).entries as Array<{ userId: number; hours: number }>;
   const actualBefore = entriesBefore.filter(entry => entry.userId === 1).reduce((sum, entry) => sum + entry.hours, 0);
   await expect(page.getByTestId('workload-canvas')).toBeVisible();
-  await page.getByTitle('Workload', { exact: true }).click();
+  await page.getByTestId('workload-menu-button').click();
 
   await page.getByRole('button', { name: /cols|columns/i }).click();
   const timerColumn = page.getByRole('checkbox', { name: /work timer|timer/i });
@@ -76,7 +76,7 @@ test('records timer work through the standard Redmine TimeEntry redirect', async
   await expect(page.getByTestId('workload-sidebar-total-1')).toContainText(`A ${(actualBefore + 1).toFixed(1)}h`);
   await page.reload();
   await page.getByRole('button', { name: 'Today', exact: true }).click();
-  await page.getByTitle('Workload', { exact: true }).click();
+  await page.getByTestId('workload-menu-button').click();
   await page.getByLabel('Show Workload Pane').check();
   await expect(page.getByTestId('workload-sidebar-total-1')).toContainText(`A ${(actualBefore + 1).toFixed(1)}h`);
 });

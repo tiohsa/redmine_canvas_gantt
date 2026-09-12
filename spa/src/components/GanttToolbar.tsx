@@ -966,6 +966,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     <button
                     onClick={() => toggleMenu('workload')}
                     title={i18n.t('label_workload') || 'Workload'}
+                    data-testid="workload-menu-button"
                     className="gantt-toolbar-labeled-button"
                             style={{
                                 display: 'flex',

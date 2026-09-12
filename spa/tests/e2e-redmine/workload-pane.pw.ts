@@ -10,7 +10,7 @@ test('shows workload pane in the lower split view area', async ({ page, baseURL 
   await adminLogin(redmineBase, page);
   await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
 
-  await page.getByTitle('Workload').click();
+  await page.getByTestId('workload-menu-button').click();
   await page.getByLabel('Show Workload Pane').check();
 
   const histogramHeader = page.getByText('HISTOGRAM (DAILY WORKLOAD)');
@@ -21,7 +21,7 @@ test('shows workload pane in the lower split view area', async ({ page, baseURL 
   await expect(workloadMenu).toBeVisible();
 
   const histogramBox = await histogramHeader.boundingBox();
-  const toolbarButtonBox = await page.getByTitle('Workload').boundingBox();
+  const toolbarButtonBox = await page.getByTestId('workload-menu-button').boundingBox();
   const histogramCanvas = page.getByTestId('workload-canvas');
   const histogramCanvasBox = await histogramCanvas.boundingBox();
 
@@ -39,7 +39,7 @@ test('keeps workload viewport metrics aligned at boundary pane heights', async (
 
   await adminLogin(redmineBase, page);
   await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
-  await page.getByTitle(/^(Workload|ワークロード)$/i).click();
+  await page.getByTestId('workload-menu-button').click();
   await page.getByLabel(/^(Show Workload Pane|ワークロードパネルを表示)$/i).check();
   await page.getByTestId('workload-canvas-viewport').waitFor();
 
@@ -138,10 +138,10 @@ test.describe('planned and actual workload comparison', () => {
       expect(response.status()).toBe(201);
     }
     await page.goto(`${base}/projects/${identifier}/canvas_gantt`);
-    await page.getByTitle('Workload', { exact: true }).click();
+    await page.getByTestId('workload-menu-button').click();
     const workloadPaneToggle = page.getByLabel('Show Workload Pane');
     await expect(workloadPaneToggle).not.toBeChecked();
-    await page.getByTitle('Workload', { exact: true }).click();
+    await page.getByTestId('workload-menu-button').click();
 
     const sidebar = page.getByTestId('left-pane');
     const sidebarResizeHandle = page.getByTestId('sidebar-resize-handle');
@@ -158,7 +158,7 @@ test.describe('planned and actual workload comparison', () => {
     await expect.poll(async () => Math.round((await sidebar.boundingBox())?.width ?? 0)).toBe(200);
 
     await page.getByRole('button', { name: 'Today', exact: true }).click();
-    await page.getByTitle('Workload', { exact: true }).click();
+    await page.getByTestId('workload-menu-button').click();
     await page.getByLabel('Show Workload Pane').check();
     await expect(page.getByTestId('workload-sidebar-total-3')).toContainText('A 6.0h');
     await expect(page.getByTestId('workload-sidebar-total-3')).toContainText('P 8.0h');
@@ -183,11 +183,11 @@ test.describe('planned and actual workload comparison', () => {
       expect(columnBox!.x + columnBox!.width).toBeLessThanOrEqual(sidebarRight + 1);
     }
 
-    await page.getByTitle('Workload', { exact: true }).click();
+    await page.getByTestId('workload-menu-button').click();
     await page.screenshot({ path: testInfo.outputPath('comparison.png') });
     await page.reload();
     await page.getByRole('button', { name: 'Today', exact: true }).click();
-    await page.getByTitle('Workload', { exact: true }).click();
+    await page.getByTestId('workload-menu-button').click();
     await page.getByLabel('Show Workload Pane').check();
     await expect(page.getByTestId('workload-sidebar-total-2')).toContainText('A 18.0h');
   });
