@@ -836,6 +836,11 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(i18n_payload['label_display_settings_source_project']).to eq(canvas_gantt_t(:label_display_settings_source_project))
       expect(i18n_payload['label_display_settings_source_global']).to eq(canvas_gantt_t(:label_display_settings_source_global))
       expect(i18n_payload['label_display_settings_source_default']).to eq(canvas_gantt_t(:label_display_settings_source_default))
+      expect(i18n_payload['label_timer_recording_confirmed']).to eq(canvas_gantt_t(:label_timer_recording_confirmed))
+      expect(i18n_payload['label_timer_confirmed_other']).to eq(canvas_gantt_t(:label_timer_confirmed_other))
+      expect(i18n_payload['label_timer_retry_sync']).to eq(canvas_gantt_t(:label_timer_retry_sync))
+      expect(i18n_payload['label_timer_review_sync']).to eq(canvas_gantt_t(:label_timer_review_sync))
+      expect(i18n_payload['label_timer_storage_error']).to eq(canvas_gantt_t(:label_timer_storage_error))
       expect(response.body).not_to include('baseline_snapshots')
       expect(response.body).not_to include('tracker_icon_map')
       expect(response.body).not_to include('use_vite_dev_server')
@@ -878,6 +883,11 @@ RSpec.describe CanvasGanttsController, type: :controller do
         expect(i18n_payload['label_toggle_hierarchy_lines']).to eq(canvas_gantt_t(:label_toggle_hierarchy_lines))
         expect(i18n_payload['label_display_settings']).to eq(canvas_gantt_t(:label_display_settings))
         expect(i18n_payload['label_display_settings_source_global']).to eq(canvas_gantt_t(:label_display_settings_source_global))
+        expect(i18n_payload['label_timer_recording_confirmed']).to eq(canvas_gantt_t(:label_timer_recording_confirmed))
+        expect(i18n_payload['label_timer_confirmed_other']).to eq(canvas_gantt_t(:label_timer_confirmed_other))
+        expect(i18n_payload['label_timer_retry_sync']).to eq(canvas_gantt_t(:label_timer_retry_sync))
+        expect(i18n_payload['label_timer_review_sync']).to eq(canvas_gantt_t(:label_timer_review_sync))
+        expect(i18n_payload['label_timer_storage_error']).to eq(canvas_gantt_t(:label_timer_storage_error))
       end
     end
 

@@ -164,7 +164,7 @@ export const OtherNoticeModal: React.FC = () => {
                                 }}
                             >
                                 {confirmedPending
-                                    ? (tr('label_timer_retry_sync') || 'Retry synchronization')
+                                    ? (tr('label_timer_review_sync') || 'Review synchronization')
                                     : (tr('label_timer_record_time') || 'Record / Manage')}
                             </button>
                         </div>

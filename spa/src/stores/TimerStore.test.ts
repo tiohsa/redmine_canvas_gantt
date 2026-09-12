@@ -75,6 +75,37 @@ describe('TimerStore', () => {
         expect(useUIStore.getState().notifications).toHaveLength(1);
     });
 
+    it.each([
+        ['malformed JSON', '{invalid-json:'],
+        ['unsupported session version', JSON.stringify({ version: 99 })]
+    ])('keeps the start dialog open and preserves %s when stored timer data cannot be read', async (_name, raw) => {
+        const key = getTimerStorageKeys().session;
+        window.localStorage.setItem(key, raw);
+        useTimerStore.setState({ startDialogTask: mockTask, isReady: true });
+
+        const started = await useTimerStore.getState().startTimer(mockTask, 30);
+
+        expect(started).toBe(false);
+        expect(useTimerStore.getState().session).toBeNull();
+        expect(useTimerStore.getState().startDialogTask).toEqual(mockTask);
+        expect(window.localStorage.getItem(key)).toBe(raw);
+        expect(useUIStore.getState().notifications).toHaveLength(1);
+        expect(useUIStore.getState().notifications[0]).toMatchObject({
+            type: 'error',
+            message: 'Stored timer data could not be read. Existing data was preserved.'
+        });
+    });
+
+    it('starts a timer normally when no stored session exists', async () => {
+        useTimerStore.setState({ startDialogTask: mockTask, isReady: true });
+
+        const started = await useTimerStore.getState().startTimer(mockTask, 30);
+
+        expect(started).toBe(true);
+        expect(useTimerStore.getState().startDialogTask).toBeNull();
+        expect(useTimerStore.getState().session?.state).toBe('running');
+    });
+
     it('prevents starting a second timer while another issue is running', async () => {
         await useTimerStore.getState().startTimer(mockTask, 30);
 
