@@ -83,6 +83,10 @@ test('compares planned and actual workers, shows overload and retains actuals af
   const day = new Date();
   while (day.getDay() === 0 || day.getDay() === 6) day.setDate(day.getDate() + 1);
   const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+  const nextDay = new Date(day);
+  nextDay.setDate(nextDay.getDate() + 1);
+  while (nextDay.getDay() === 0 || nextDay.getDay() === 6) nextDay.setDate(nextDay.getDate() + 1);
+  const nextDate = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, '0')}-${String(nextDay.getDate()).padStart(2, '0')}`;
   const authorization = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
   const identifier = `workload-${Date.now()}`;
   const projectResponse = await page.request.post(`${base}/projects.json`, {
@@ -99,36 +103,73 @@ test('compares planned and actual workers, shows overload and retains actuals af
   const issueResponse = await page.request.post(`${base}/issues.json`, {
     headers: { Authorization: authorization },
     data: { issue: { project_id: identifier, tracker_id: 1, subject: `Workload comparison ${Date.now()}`,
-      assigned_to_id: 3, estimated_hours: 8, start_date: date, due_date: date } }
+      assigned_to_id: 3, estimated_hours: 8, start_date: date, due_date: nextDate } }
   });
   expect(issueResponse.status()).toBe(201);
   const issueId = (await issueResponse.json()).issue.id;
   try {
     const activityResponse = await page.request.get(`${base}/enumerations/time_entry_activities.json`, { headers: { Authorization: authorization } });
     const activityId = (await activityResponse.json()).time_entry_activities[0].id;
-    for (const [userId, hours] of [[3, 6], [2, 9]]) {
+    for (const [userId, hours, spentOn] of [[3, 6, date], [2, 9, date], [2, 9, nextDate]] as const) {
       const response = await page.request.post(`${base}/time_entries.json`, {
         headers: { Authorization: authorization },
-        data: { time_entry: { issue_id: issueId, user_id: userId, hours, spent_on: date, activity_id: activityId } }
+        data: { time_entry: { issue_id: issueId, user_id: userId, hours, spent_on: spentOn, activity_id: activityId } }
       });
       expect(response.status()).toBe(201);
     }
     await page.goto(`${base}/projects/${identifier}/canvas_gantt`);
+    await page.getByTitle('Workload', { exact: true }).click();
+    const workloadPaneToggle = page.getByLabel('Show Workload Pane');
+    await expect(workloadPaneToggle).not.toBeChecked();
+    await page.getByTitle('Workload', { exact: true }).click();
+
+    const sidebar = page.getByTestId('left-pane');
+    const sidebarResizeHandle = page.getByTestId('sidebar-resize-handle');
+    const sidebarBoxBefore = await sidebar.boundingBox();
+    const resizeHandleBox = await sidebarResizeHandle.boundingBox();
+    expect(sidebarBoxBefore).not.toBeNull();
+    expect(resizeHandleBox).not.toBeNull();
+    const resizeX = resizeHandleBox!.x + resizeHandleBox!.width / 2;
+    const resizeY = resizeHandleBox!.y + resizeHandleBox!.height / 2;
+    await page.mouse.move(resizeX, resizeY);
+    await page.mouse.down();
+    await page.mouse.move(sidebarBoxBefore!.x + 200, resizeY, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(async () => Math.round((await sidebar.boundingBox())?.width ?? 0)).toBe(200);
+
     await page.getByRole('button', { name: 'Today', exact: true }).click();
     await page.getByTitle('Workload', { exact: true }).click();
     await page.getByLabel('Show Workload Pane').check();
     await expect(page.getByTestId('workload-sidebar-total-3')).toContainText('A 6.0h');
     await expect(page.getByTestId('workload-sidebar-total-3')).toContainText('P 8.0h');
-    await expect(page.getByTestId('workload-sidebar-total-2')).toContainText('A 9.0h');
+    await expect(page.getByTestId('workload-sidebar-total-2')).toContainText('A 18.0h');
     await expect(page.getByTestId('workload-sidebar-total-2')).toContainText('P 0.0h');
     await expect(page.getByTestId('actual-overload-action-area-2')).toContainText('Actual overload');
+    await expect(page.getByTestId('actual-overload-cycle-count-2')).toBeVisible();
+    await expect(page.getByTestId('actual-overload-cycle-count-2')).toHaveText('1/2');
+
+    const sidebarBoxAfter = await sidebar.boundingBox();
+    expect(sidebarBoxAfter).not.toBeNull();
+    expect(sidebarBoxAfter!.width).toBeGreaterThanOrEqual(300);
+    const sidebarRight = sidebarBoxAfter!.x + sidebarBoxAfter!.width;
+    for (const workloadColumn of [
+      page.getByTestId('workload-sidebar-header-peak'),
+      page.getByTestId('workload-sidebar-header-total'),
+      page.getByTestId('actual-overload-action-area-2'),
+      page.getByTestId('actual-overload-cycle-count-2')
+    ]) {
+      const columnBox = await workloadColumn.boundingBox();
+      expect(columnBox).not.toBeNull();
+      expect(columnBox!.x + columnBox!.width).toBeLessThanOrEqual(sidebarRight + 1);
+    }
+
     await page.getByTitle('Workload', { exact: true }).click();
     await page.screenshot({ path: testInfo.outputPath('comparison.png') });
     await page.reload();
     await page.getByRole('button', { name: 'Today', exact: true }).click();
     await page.getByTitle('Workload', { exact: true }).click();
     await page.getByLabel('Show Workload Pane').check();
-    await expect(page.getByTestId('workload-sidebar-total-2')).toContainText('A 9.0h');
+    await expect(page.getByTestId('workload-sidebar-total-2')).toContainText('A 18.0h');
   } finally {
     await page.request.delete(`${base}/projects/${identifier}.json`, { headers: { Authorization: authorization } });
   }
