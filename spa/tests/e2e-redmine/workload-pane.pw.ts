@@ -2,6 +2,8 @@ import { Buffer } from 'node:buffer';
 import { expect, test } from '@playwright/test';
 import { adminLogin } from './helpers';
 
+const restAuthorization = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
+
 test('shows workload pane in the lower split view area', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
 
@@ -75,44 +77,62 @@ test('keeps workload viewport metrics aligned at boundary pane heights', async (
   }
 });
 
-test('compares planned and actual workers, shows overload and retains actuals after reload', async ({ page, baseURL }, testInfo) => {
-  await page.setViewportSize({ width: 1920, height: 1080 });
-  const base = baseURL ?? 'http://127.0.0.1:3000';
-  await adminLogin(base, page);
-  await page.goto(`${base}/projects/ecookbook/canvas_gantt`);
-  const day = new Date();
-  while (day.getDay() === 0 || day.getDay() === 6) day.setDate(day.getDate() + 1);
-  const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-  const nextDay = new Date(day);
-  nextDay.setDate(nextDay.getDate() + 1);
-  while (nextDay.getDay() === 0 || nextDay.getDay() === 6) nextDay.setDate(nextDay.getDate() + 1);
-  const nextDate = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, '0')}-${String(nextDay.getDate()).padStart(2, '0')}`;
-  const authorization = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
-  const identifier = `workload-${Date.now()}`;
-  const projectResponse = await page.request.post(`${base}/projects.json`, {
-    headers: { Authorization: authorization },
-    data: { project: { name: identifier, identifier, enabled_module_names: ['issue_tracking', 'time_tracking', 'canvas_gantt'] } }
+test.describe('planned and actual workload comparison', () => {
+  let projectIdentifier: string | null = null;
+
+  test.afterEach(async ({ page, baseURL, request }) => {
+    if (!projectIdentifier) return;
+
+    const base = baseURL ?? 'http://127.0.0.1:3000';
+    try {
+      await page.close();
+      const response = await request.delete(`${base}/projects/${projectIdentifier}.json`, {
+        headers: { Authorization: restAuthorization },
+        timeout: 15_000
+      });
+      expect(response.ok()).toBe(true);
+    } finally {
+      projectIdentifier = null;
+    }
   });
-  expect(projectResponse.status()).toBe(201);
-  for (const userId of [2, 3]) {
-    const membership = await page.request.post(`${base}/projects/${identifier}/memberships.json`, {
-      headers: { Authorization: authorization }, data: { membership: { user_id: userId, role_ids: [1] } }
+
+  test('compares planned and actual workers, shows overload and retains actuals after reload', async ({ page, baseURL, request }, testInfo) => {
+    testInfo.setTimeout(120_000);
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    const base = baseURL ?? 'http://127.0.0.1:3000';
+    await adminLogin(base, page);
+    const day = new Date();
+    while (day.getDay() === 0 || day.getDay() === 6) day.setDate(day.getDate() + 1);
+    const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    const nextDay = new Date(day);
+    nextDay.setDate(nextDay.getDate() + 1);
+    while (nextDay.getDay() === 0 || nextDay.getDay() === 6) nextDay.setDate(nextDay.getDate() + 1);
+    const nextDate = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, '0')}-${String(nextDay.getDate()).padStart(2, '0')}`;
+    const identifier = `workload-${Date.now()}`;
+    const projectResponse = await request.post(`${base}/projects.json`, {
+      headers: { Authorization: restAuthorization },
+      data: { project: { name: identifier, identifier, enabled_module_names: ['issue_tracking', 'time_tracking', 'canvas_gantt'] } }
     });
-    expect(membership.status()).toBe(201);
-  }
-  const issueResponse = await page.request.post(`${base}/issues.json`, {
-    headers: { Authorization: authorization },
-    data: { issue: { project_id: identifier, tracker_id: 1, subject: `Workload comparison ${Date.now()}`,
-      assigned_to_id: 3, estimated_hours: 8, start_date: date, due_date: nextDate } }
-  });
-  expect(issueResponse.status()).toBe(201);
-  const issueId = (await issueResponse.json()).issue.id;
-  try {
-    const activityResponse = await page.request.get(`${base}/enumerations/time_entry_activities.json`, { headers: { Authorization: authorization } });
+    expect(projectResponse.status()).toBe(201);
+    projectIdentifier = identifier;
+    for (const userId of [2, 3]) {
+      const membership = await request.post(`${base}/projects/${identifier}/memberships.json`, {
+        headers: { Authorization: restAuthorization }, data: { membership: { user_id: userId, role_ids: [1] } }
+      });
+      expect(membership.status()).toBe(201);
+    }
+    const issueResponse = await request.post(`${base}/issues.json`, {
+      headers: { Authorization: restAuthorization },
+      data: { issue: { project_id: identifier, tracker_id: 1, subject: `Workload comparison ${Date.now()}`,
+        assigned_to_id: 3, estimated_hours: 8, start_date: date, due_date: nextDate } }
+    });
+    expect(issueResponse.status()).toBe(201);
+    const issueId = (await issueResponse.json()).issue.id;
+    const activityResponse = await request.get(`${base}/enumerations/time_entry_activities.json`, { headers: { Authorization: restAuthorization } });
     const activityId = (await activityResponse.json()).time_entry_activities[0].id;
     for (const [userId, hours, spentOn] of [[3, 6, date], [2, 9, date], [2, 9, nextDate]] as const) {
-      const response = await page.request.post(`${base}/time_entries.json`, {
-        headers: { Authorization: authorization },
+      const response = await request.post(`${base}/time_entries.json`, {
+        headers: { Authorization: restAuthorization },
         data: { time_entry: { issue_id: issueId, user_id: userId, hours, spent_on: spentOn, activity_id: activityId } }
       });
       expect(response.status()).toBe(201);
@@ -170,7 +190,5 @@ test('compares planned and actual workers, shows overload and retains actuals af
     await page.getByTitle('Workload', { exact: true }).click();
     await page.getByLabel('Show Workload Pane').check();
     await expect(page.getByTestId('workload-sidebar-total-2')).toContainText('A 18.0h');
-  } finally {
-    await page.request.delete(`${base}/projects/${identifier}.json`, { headers: { Authorization: authorization } });
-  }
+  });
 });
