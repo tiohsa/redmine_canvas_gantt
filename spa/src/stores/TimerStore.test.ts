@@ -305,7 +305,7 @@ describe('TimerStore', () => {
     });
 
     it('preserves recording reservations during startup regardless of owner and phase', async () => {
-        const makePending = (ownerTabId: string, phase: 'editing' | 'submitting' | 'unknown') => {
+        const makePending = (ownerTabId: string, phase: 'editing' | 'submitting' | 'confirmed' | 'unknown') => {
             const startedAt = Date.now() - 30 * 60 * 1000;
             return {
                 version: 4,
@@ -332,6 +332,7 @@ describe('TimerStore', () => {
             { name: 'current submitting', ownerTabId: 'test-tab', phase: 'submitting' as const },
             { name: 'other editing', ownerTabId: 'other-tab', phase: 'editing' as const },
             { name: 'other submitting', ownerTabId: 'other-tab', phase: 'submitting' as const },
+            { name: 'confirmed cleanup pending', ownerTabId: 'other-tab', phase: 'confirmed' as const },
             { name: 'unknown outcome', ownerTabId: 'test-tab', phase: 'unknown' as const }
         ];
 
@@ -346,6 +347,33 @@ describe('TimerStore', () => {
             expect(reconciled?.recordingAttempt?.phase, testCase.name).toBe(testCase.phase);
             expect(reconciled?.revision, testCase.name).toBe(1);
         }
+    });
+
+    it('keeps the in-memory confirmed session when a later storage read fails', () => {
+        const confirmed = {
+            version: 4,
+            sessionId: 'confirmed-storage-error',
+            revision: 2,
+            issueId: 123,
+            subject: 'Confirmed task',
+            autoStop: false,
+            state: 'stopped_pending_record' as const,
+            recordingAttempt: {
+                id: 'confirmed-attempt',
+                ownerTabId: 'other-tab',
+                openedAt: Date.now(),
+                phase: 'confirmed' as const
+            },
+            segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
+            createdAt: Date.now() - 30 * 60 * 1000,
+            updatedAt: Date.now()
+        };
+        useTimerStore.setState({ session: confirmed, isReady: true });
+        window.localStorage.setItem(getTimerStorageKeys().session, '{corrupt');
+
+        useTimerStore.getState().syncFromStorage();
+
+        expect(useTimerStore.getState().session?.recordingAttempt?.phase).toBe('confirmed');
     });
 
     it('recovers an editing or submitting reservation explicitly regardless of owner identity', async () => {

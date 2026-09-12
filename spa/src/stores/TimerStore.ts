@@ -4,6 +4,7 @@ import type {
     TimerIntervalMinutes,
     TimerPreferences,
     TimerRecordingContext,
+    TimerRecordingPhase,
     TimerRecordingResolution,
     TimerSession
 } from '../types/timer';
@@ -34,8 +35,10 @@ import {
     loadStoredTimerPreferences,
     loadStoredTimerSession,
     persistTimerPreferences,
-    mutateStoredTimerSession
+    mutateStoredTimerSession,
+    readStoredTimerSession
 } from '../services/timerStorage';
+import type { TimerMutationResult } from '../services/timerStorage';
 import { requestNotificationPermission, sendTimerNotification } from '../services/timerNotification';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import { useUIStore } from './UIStore';
@@ -50,6 +53,7 @@ export interface OtherPendingNotice {
     issueId: number | string;
     subject: string;
     elapsedMs: number;
+    recordingPhase?: TimerRecordingPhase;
 }
 
 export interface TimerStoreState {
@@ -85,7 +89,7 @@ export interface TimerStoreState {
 }
 
 const initialPreferences = loadStoredTimerPreferences();
-const initialSession = loadStoredTimerSession();
+const initialSession = readStoredTimerSession().session;
 let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
 let startupPromise: Promise<void> | null = null;
 
@@ -123,6 +127,13 @@ const updateSessionAndSchedule = (session: TimerSession | null): void => {
         return { session };
     });
     scheduleDeadlineReconciliation(acceptedSession);
+};
+
+const updateFromMutationResult = (result: TimerMutationResult): void => {
+    const session = result.reason === 'storage_error' || result.reason === 'locked'
+        ? useTimerStore.getState().session
+        : result.session;
+    updateSessionAndSchedule(session);
 };
 
 const reconcileCanonicalDeadline = async (now: number = Date.now()) => {
@@ -165,12 +176,14 @@ const ensureTimerStoreReady = async (): Promise<void> => {
     if (!startupPromise) {
         startupPromise = (async () => {
             const result = await reconcileCanonicalDeadline();
-            const session = result.session ?? loadStoredTimerSession();
+            const session = result.reason === 'storage_error' || result.reason === 'locked'
+                ? useTimerStore.getState().session
+                : result.session ?? loadStoredTimerSession();
             useTimerStore.setState({ session, isReady: true });
             scheduleDeadlineReconciliation(session);
         })().catch((error) => {
             console.debug('Timer startup reconciliation failed', error);
-            const session = loadStoredTimerSession();
+            const session = useTimerStore.getState().session;
             useTimerStore.setState({ session, isReady: true });
             scheduleDeadlineReconciliation(session);
         }).finally(() => {
@@ -207,7 +220,12 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
 
     startTimer: async (task: Task, minutes: TimerIntervalMinutes) => {
         await ensureTimerStoreReady();
-        const canonicalSession = loadStoredTimerSession();
+        const readResult = readStoredTimerSession();
+        if (readResult.outcome === 'storage_error') {
+            set({ startDialogTask: null });
+            return false;
+        }
+        const canonicalSession = readResult.session;
         const state = { ...get(), session: canonicalSession };
         if (canonicalSession !== get().session) updateSessionAndSchedule(canonicalSession);
 
@@ -228,7 +246,8 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
                     otherPendingNotice: {
                         issueId: state.session.issueId,
                         subject: state.session.subject,
-                        elapsedMs: calculateTimerElapsed(state.session)
+                        elapsedMs: calculateTimerElapsed(state.session),
+                        recordingPhase: state.session.recordingAttempt?.phase
                     }
                 });
                 return false;
@@ -279,7 +298,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             const recovered = evaluateTimerTick(canonical, now).session;
             return extendTimerSession(recovered, minutes, now);
         }, undefined, now);
-        updateSessionAndSchedule(result.session);
+        updateFromMutationResult(result);
         set({ pendingWorkModalOpen: false, otherRunningNotice: null, otherPendingNotice: null });
     },
 
@@ -294,7 +313,9 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             const stopped = recovered.state === 'stopped_pending_record' ? recovered : stopTimerSession(recovered, now);
             return beginTimerRecording(stopped, getCurrentTimerTabId(), generateSessionId(), now);
         }, undefined, now);
-        const nextSession = result.session;
+        const nextSession = result.reason === 'storage_error' || result.reason === 'locked'
+            ? get().session
+            : result.session;
         updateSessionAndSchedule(nextSession);
         if (!result.applied || !nextSession?.recordingAttempt) return;
 
@@ -325,7 +346,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             if (canonical.state !== 'stopped_pending_record') return undefined;
             return null;
         });
-        updateSessionAndSchedule(result.session);
+        updateFromMutationResult(result);
         set({ pendingWorkModalOpen: false, otherRunningNotice: null, otherPendingNotice: null });
     },
 
@@ -338,7 +359,9 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             if (!canonical || canonical.sessionId !== sessionId || canonical.state !== 'stopped_pending_record') return undefined;
             return beginTimerRecording(canonical, getCurrentTimerTabId(), generateSessionId(), now);
         }, undefined, now);
-        const session = result.session;
+        const session = result.reason === 'storage_error' || result.reason === 'locked'
+            ? get().session
+            : result.session;
         updateSessionAndSchedule(session);
         if (!result.applied || !session?.recordingAttempt || session.state !== 'stopped_pending_record') return;
 
@@ -363,7 +386,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             if (!recordingContextMatches(canonical, context)) return undefined;
             return beginTimerRecordingSubmission(canonical!, context.attemptId);
         });
-        updateSessionAndSchedule(result.session);
+        updateFromMutationResult(result);
         return Boolean(result.applied && result.session?.recordingAttempt?.phase === 'submitting');
     },
 
@@ -373,7 +396,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             if (!recordingContextMatches(canonical, context)) return undefined;
             return markTimerRecordingValidationError(canonical!, context.attemptId);
         });
-        updateSessionAndSchedule(result.session);
+        updateFromMutationResult(result);
         return Boolean(
             result.session?.recordingAttempt?.phase === 'editing' &&
             recordingContextMatches(result.session, context) &&
@@ -387,7 +410,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             if (!recordingContextMatches(canonical, context)) return undefined;
             return markTimerRecordingUnknown(canonical!, context.attemptId);
         });
-        updateSessionAndSchedule(result.session);
+        updateFromMutationResult(result);
         return Boolean(result.applied && result.session?.recordingAttempt?.phase === 'unknown');
     },
 
@@ -397,7 +420,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             if (!recordingContextMatches(canonical, context)) return undefined;
             return cancelTimerRecording(canonical!, context.attemptId);
         });
-        updateSessionAndSchedule(result.session);
+        updateFromMutationResult(result);
         return Boolean(result.applied && !result.session?.recordingAttempt);
     },
 
@@ -407,7 +430,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             if (!recordingContextMatches(canonical, context)) return undefined;
             return recoverTimerRecording(canonical!, context.attemptId);
         });
-        updateSessionAndSchedule(result.session);
+        updateFromMutationResult(result);
         return result.applied;
     },
 
@@ -417,13 +440,16 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             if (!recordingContextMatches(canonical, context)) return undefined;
             return completeTimerRecording(canonical!, context.attemptId);
         });
-        updateSessionAndSchedule(result.session);
-        if (result.session?.recordingAttempt?.phase === 'confirmed') {
+        updateFromMutationResult(result);
+        const completedSession = result.reason === 'storage_error' || result.reason === 'locked'
+            ? get().session
+            : result.session;
+        if (completedSession?.recordingAttempt?.phase === 'confirmed') {
             const cleanup = await mutateStoredTimerSession((canonical) => {
                 if (!recordingContextMatches(canonical, context)) return undefined;
                 return cleanupConfirmedTimerRecording(canonical!, context.attemptId);
             });
-            updateSessionAndSchedule(cleanup.session);
+            updateFromMutationResult(cleanup);
         }
         set({ pendingWorkModalOpen: false, otherRunningNotice: null, otherPendingNotice: null });
     },
@@ -434,7 +460,7 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             if (!recordingContextMatches(canonical, context)) return undefined;
             return resolveUnknownTimerRecording(canonical!, context.attemptId, resolution);
         });
-        updateSessionAndSchedule(result.session);
+        updateFromMutationResult(result);
         set({ pendingWorkModalOpen: false, otherRunningNotice: null, otherPendingNotice: null });
         return Boolean(result.applied && (resolution === 'recorded' ? !result.session : !result.session?.recordingAttempt));
     },
@@ -460,7 +486,8 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
                     otherPendingNotice: {
                         issueId: state.session.issueId,
                         subject: state.session.subject,
-                        elapsedMs: calculateTimerElapsed(state.session)
+                        elapsedMs: calculateTimerElapsed(state.session),
+                        recordingPhase: state.session.recordingAttempt?.phase
                     }
                 });
                 return;
@@ -484,7 +511,9 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
     tick: async () => {
         await ensureTimerStoreReady();
         const now = Date.now();
-        const canonical = loadStoredTimerSession();
+        const readResult = readStoredTimerSession();
+        if (readResult.outcome === 'storage_error') return;
+        const canonical = readResult.session;
         if (!canonical) {
             updateSessionAndSchedule(null);
             return;
@@ -494,12 +523,17 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             return;
         }
         const result = await reconcileCanonicalDeadline(now);
-        updateSessionAndSchedule(result.session ?? canonical);
+        updateFromMutationResult(result);
     },
 
     syncFromStorage: () => {
-        const storedSession = loadStoredTimerSession();
+        const readResult = readStoredTimerSession();
         const storedPrefs = loadStoredTimerPreferences();
+        if (readResult.outcome === 'storage_error') {
+            set({ preferences: storedPrefs });
+            return;
+        }
+        const storedSession = readResult.session;
         const accepted = acceptsSnapshot(get().session, storedSession);
         if (accepted) set({ session: storedSession });
         set({ preferences: storedPrefs });

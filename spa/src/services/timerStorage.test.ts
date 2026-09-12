@@ -8,6 +8,7 @@ import {
     acquireTimerSession,
     isValidTimerSession,
     getTimerStorageKeys,
+    readStoredTimerSession,
     mutateStoredTimerSession,
     TIMER_PREFS_STORAGE_KEY,
     TIMER_SESSION_STORAGE_KEY,
@@ -67,9 +68,32 @@ describe('Timer Storage & Persistence', () => {
         expect(loadStoredTimerSession(scope)).toBeNull();
     });
 
-    it('gracefully handles invalid JSON in localStorage', () => {
+    it('distinguishes an absent session from invalid stored data', () => {
+        expect(readStoredTimerSession(scope)).toEqual({ outcome: 'absent', session: null });
+
         window.localStorage.setItem(getTimerStorageKeys(scope).session, '{invalid-json:');
+        expect(readStoredTimerSession(scope)).toEqual({ outcome: 'storage_error', session: null });
         expect(loadStoredTimerSession(scope)).toBeNull();
+    });
+
+    it.each([
+        ['malformed JSON', '{invalid-json:'],
+        ['unsupported version', JSON.stringify({ ...createSampleSession(), version: 99 })],
+        ['unknown recording phase', JSON.stringify({
+            ...createSampleSession({ state: 'stopped_pending_record' }),
+            recordingAttempt: { id: 'attempt', ownerTabId: 'tab-123', openedAt: baseTime, phase: 'invalid' }
+        })]
+    ])('does not let %s be treated as an absent session', async (_name, raw) => {
+        const updater = vi.fn(() => createSampleSession({ sessionId: 'replacement' }));
+        const key = getTimerStorageKeys(scope).session;
+        window.localStorage.setItem(key, raw);
+
+        expect(readStoredTimerSession(scope).outcome).toBe('storage_error');
+        const result = await mutateStoredTimerSession(updater, scope, baseTime + 1);
+
+        expect(result).toEqual({ applied: false, session: null, reason: 'storage_error' });
+        expect(updater).not.toHaveBeenCalled();
+        expect(window.localStorage.getItem(key)).toBe(raw);
     });
 
     it('validates schema correctly and rejects corrupt/partial data', () => {
@@ -96,6 +120,24 @@ describe('Timer Storage & Persistence', () => {
             expect(isValidTimerSession(createSampleSession({ state: 'stopped_pending_record', recordingAttempt }))).toBe(true);
             expect(isValidTimerSession(createSampleSession({ state: 'expired', recordingAttempt }))).toBe(false);
         }
+    });
+
+    it('loads and migrates a Kanban-compatible confirmed session without changing its phase', () => {
+        const confirmed = createSampleSession({
+            state: 'stopped_pending_record',
+            recordingAttempt: {
+                id: 'confirmed-attempt',
+                ownerTabId: 'kanban-tab',
+                openedAt: baseTime,
+                phase: 'confirmed'
+            }
+        });
+        window.localStorage.setItem(getTimerStorageKeys(scope).session, JSON.stringify(confirmed));
+
+        const readResult = readStoredTimerSession(scope);
+        expect(readResult.outcome).toBe('found');
+        expect(readResult.session?.recordingAttempt?.phase).toBe('confirmed');
+        expect(loadStoredTimerSession(scope)?.recordingAttempt?.phase).toBe('confirmed');
     });
 
     it.each([undefined, null, '', 'abc', 0, -1, 'NaN', Infinity])('rejects invalid issueId %s', (issueId) => {
@@ -157,7 +199,7 @@ describe('Timer Storage & Persistence', () => {
         expect(loaded?.segments).toEqual(legacy.segments);
     });
 
-    it.each(['running', 'expired'] as const)('normalizes a current-schema %s recording attempt without deleting measured work', (state) => {
+    it.each(['running', 'expired'] as const)('rejects a current-schema %s recording attempt instead of deleting its reservation', (state) => {
         const session = createSampleSession({
             state,
             recordingAttempt: {
@@ -171,9 +213,9 @@ describe('Timer Storage & Persistence', () => {
 
         const loaded = loadStoredTimerSession(scope);
 
-        expect(loaded?.state).toBe(state);
-        expect(loaded?.recordingAttempt).toBeUndefined();
-        expect(loaded?.segments).toEqual(session.segments);
+        expect(loaded).toBeNull();
+        expect(readStoredTimerSession(scope).outcome).toBe('storage_error');
+        expect(window.localStorage.getItem(getTimerStorageKeys(scope).session)).toBe(JSON.stringify(session));
     });
 
     it('migrates a version 3 recording attempt without an owner to the legacy owner', () => {
@@ -232,6 +274,56 @@ describe('Timer Storage & Persistence', () => {
         const resultB = await acquireTimerSession(sessionB, scope);
         expect(resultB.acquired).toBe(false);
         expect(resultB.conflictSession?.sessionId).toBe('session-A');
+    });
+
+    it('does not overwrite an unsupported stored session when acquiring a new timer', async () => {
+        const key = getTimerStorageKeys(scope).session;
+        const unsupported = JSON.stringify({ ...createSampleSession(), version: 99 });
+        window.localStorage.setItem(key, unsupported);
+
+        const result = await acquireTimerSession(createSampleSession({ sessionId: 'new-session' }), scope);
+
+        expect(result.acquired).toBe(false);
+        expect(window.localStorage.getItem(key)).toBe(unsupported);
+    });
+
+    it('does not overwrite an existing confirmed session when acquiring a new timer', async () => {
+        const confirmed = createSampleSession({
+            state: 'stopped_pending_record',
+            recordingAttempt: {
+                id: 'confirmed-attempt',
+                ownerTabId: 'kanban-tab',
+                openedAt: baseTime,
+                phase: 'confirmed'
+            }
+        });
+        persistTimerSession(confirmed, scope);
+
+        const result = await acquireTimerSession(createSampleSession({ sessionId: 'new-session' }), scope);
+
+        expect(result.acquired).toBe(false);
+        expect(result.conflictSession?.recordingAttempt?.phase).toBe('confirmed');
+        expect(loadStoredTimerSession(scope)?.recordingAttempt?.phase).toBe('confirmed');
+    });
+
+    it('does not replace a confirmed session even when a retry uses the same session id', async () => {
+        const confirmed = createSampleSession({
+            sessionId: 'shared-session',
+            state: 'stopped_pending_record',
+            recordingAttempt: {
+                id: 'confirmed-attempt',
+                ownerTabId: 'kanban-tab',
+                openedAt: baseTime,
+                phase: 'confirmed'
+            }
+        });
+        persistTimerSession(confirmed, scope);
+        const replacement = createSampleSession({ sessionId: confirmed.sessionId, state: 'running', revision: 1 });
+
+        const result = await acquireTimerSession(replacement, scope);
+
+        expect(result.acquired).toBe(false);
+        expect(loadStoredTimerSession(scope)).toEqual(confirmed);
     });
 
     it('separates session and preference keys by Redmine instance and user', () => {

@@ -283,6 +283,7 @@ describe('Timer UI Components', () => {
             render(<><GlobalTimer /><PendingWorkModal /></>);
 
             expect(screen.getByTestId('global-timer-record-button')).toHaveTextContent('Retry synchronization');
+            expect(screen.getByTestId('pending-work-modal')).toHaveTextContent('Recorded; synchronization pending');
             expect(screen.getByTestId('pending-work-confirmed-recovery')).toBeInTheDocument();
             expect(screen.getByTestId('pending-work-retry-sync-button')).toBeInTheDocument();
             expect(screen.queryByTestId('pending-work-record-button')).toBeNull();
@@ -623,6 +624,23 @@ describe('Timer UI Components', () => {
             fireEvent.click(screen.getByTestId('timer-notice-pending-action-button'));
             expect(useTimerStore.getState().otherPendingNotice).toBeNull();
             expect(useTimerStore.getState().pendingWorkModalOpen).toBe(true);
+        });
+
+        it('does not present confirmed work as recordable in the other-timer notice', () => {
+            useTimerStore.setState({
+                otherPendingNotice: {
+                    issueId: '999',
+                    subject: 'Other Issue',
+                    elapsedMs: 30 * 60 * 1000,
+                    recordingPhase: 'confirmed'
+                }
+            });
+
+            render(<OtherNoticeModal />);
+
+            expect(screen.getByTestId('timer-notice-modal')).toHaveTextContent('Recorded; synchronization pending');
+            expect(screen.getByTestId('timer-notice-pending-action-button')).toHaveTextContent('Retry synchronization');
+            expect(screen.getByTestId('timer-notice-modal')).not.toHaveTextContent('Record or discard');
         });
     });
 });

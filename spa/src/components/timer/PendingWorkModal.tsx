@@ -167,7 +167,9 @@ export const PendingWorkModal: React.FC = () => {
           <WorkTimerIcon state="pending" size={24} />
           <div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: designTokens.warningFg }}>
-              {tr('label_timer_pending_work') || 'Unrecorded work time exists'}
+              {recordingPhase === 'confirmed'
+                ? (tr('label_timer_recording_confirmed') || 'Recorded; synchronization pending')
+                : (tr('label_timer_pending_work') || 'Unrecorded work time exists')}
             </div>
             <div style={{ fontSize: '13px', fontWeight: 600, color: designTokens.textPrimary, marginTop: '2px' }}>
               #{session.issueId} {session.subject}
@@ -261,7 +263,7 @@ export const PendingWorkModal: React.FC = () => {
               </button>
             </div>
           </div>
-        ) : isDiscardConfirmOpen ? (
+        ) : recordingPhase !== 'confirmed' && isDiscardConfirmOpen ? (
           <div style={{
             padding: '12px',
             backgroundColor: designTokens.errorBg,

@@ -12,6 +12,10 @@ export const LEGACY_TIMER_OWNER_TAB_ID = 'legacy-owner';
 
 export interface StorageScope { userId?: number; instanceKey?: string; }
 export interface TimerStorageKeys { session: string; preferences: string; lock: string; }
+export type TimerReadResult =
+    | { outcome: 'found'; session: TimerSession }
+    | { outcome: 'absent'; session: null }
+    | { outcome: 'storage_error'; session: null };
 
 let fallbackTabId: string | null = null;
 
@@ -117,6 +121,10 @@ export const migrateTimerSession = (value: unknown): TimerSession | null => {
     if (!isValidTimerSessionBase(value, 2) && !isValidTimerSessionBase(value, 3) && !isValidTimerSessionBase(value, TIMER_SESSION_VERSION)) return null;
 
     const candidate = value as Record<string, unknown>;
+    const isLegacyVersion = candidate.version === 2 || candidate.version === 3;
+    if (!isLegacyVersion && (candidate.recordingAttemptId !== undefined || (
+        candidate.state !== 'stopped_pending_record' && candidate.recordingAttempt !== undefined
+    ))) return null;
     const withoutLegacyAttempt = { ...candidate };
     delete withoutLegacyAttempt.recordingAttemptId;
     delete withoutLegacyAttempt.recordingAttempt;
@@ -170,26 +178,24 @@ export const isValidTimerPreferences = (value: unknown): value is TimerPreferenc
     return Boolean(value && typeof value === 'object' && typeof (value as Record<string, unknown>).autoStop === 'boolean');
 };
 
-const readStoredTimerSession = (scope: StorageScope, strict = false): TimerSession | null => {
+export const readStoredTimerSession = (scope: StorageScope = getStorageScope()): TimerReadResult => {
     try {
         const raw = window.localStorage.getItem(getTimerStorageKeys(scope).session);
-        if (raw === null) return null;
+        if (raw === null) return { outcome: 'absent', session: null };
         const parsed: unknown = JSON.parse(raw);
         const migrated = migrateTimerSession(parsed);
         if (!migrated || (scope.userId !== undefined && migrated.userId !== undefined && migrated.userId !== scope.userId)) {
-            if (strict) throw new Error('Invalid timer session');
-            return null;
+            return { outcome: 'storage_error', session: null };
         }
-        return migrated;
-    } catch (error) {
-        if (strict) throw error;
-        return null;
+        return { outcome: 'found', session: migrated };
+    } catch {
+        return { outcome: 'storage_error', session: null };
     }
 };
 
 export const loadStoredTimerSession = (scope: StorageScope = getStorageScope(), now?: number): TimerSession | null => {
     void now;
-    return readStoredTimerSession(scope);
+    return readStoredTimerSession(scope).session;
 };
 
 export const persistTimerSession = (session: TimerSession | null, scope: StorageScope = getStorageScope()): boolean => {
@@ -249,9 +255,11 @@ const applyStoredTimerMutationUnlocked = (
     scope: StorageScope,
     now: number
 ): TimerMutationResult => {
-    let canonical: TimerSession | null;
-    try { canonical = readStoredTimerSession(scope, true); }
-    catch { return { applied: false, session: null, reason: 'storage_error' }; }
+    const readResult = readStoredTimerSession(scope);
+    if (readResult.outcome === 'storage_error') {
+        return { applied: false, session: null, reason: 'storage_error' };
+    }
+    const canonical = readResult.session;
     const next = mutation(canonical);
     if (next === undefined || next === canonical) return { applied: false, session: canonical, reason: 'unchanged' };
     if (next === null) {
@@ -322,7 +330,7 @@ const applyStoredTimerMutation = (
     now: number = Date.now()
 ): TimerMutationResult => {
     const result = withMutationLock(scope, () => applyStoredTimerMutationUnlocked(mutation, scope, now));
-    return result ?? { applied: false, session: readStoredTimerSession(scope), reason: 'locked' };
+    return result ?? { applied: false, session: readStoredTimerSession(scope).session, reason: 'locked' };
 };
 
 export const mutateStoredTimerSession = async (
@@ -348,11 +356,11 @@ export const mutateStoredTimerSession = async (
     if (typeof indexedDB !== 'undefined') {
         const result = await withIndexedDbMutationLock(scope, apply);
         if (result) return result;
-        if (executed) return { applied: false, session: readStoredTimerSession(scope), reason: 'storage_error' };
+        if (executed) return { applied: false, session: readStoredTimerSession(scope).session, reason: 'storage_error' };
     }
     return applyStoredTimerMutation(mutation, scope, now);
     } catch {
-        return { applied: false, session: readStoredTimerSession(scope), reason: 'storage_error' };
+        return { applied: false, session: readStoredTimerSession(scope).session, reason: 'storage_error' };
     }
 };
 
@@ -362,7 +370,7 @@ export const acquireTimerSession = async (
     scope: StorageScope = getStorageScope()
 ): Promise<AcquireSessionResult> => {
     const result = await mutateStoredTimerSession(
-        canonical => canonical && canonical.sessionId !== newSession.sessionId ? undefined : newSession,
+        canonical => canonical ? undefined : newSession,
         scope,
         newSession.updatedAt
     );
