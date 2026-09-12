@@ -70,6 +70,18 @@ class CanvasGanttsController < ApplicationController
     label_peak: :label_peak,
     label_total: :label_total,
     label_workload: :label_workload,
+    label_workload_planned: :label_workload_planned,
+    label_workload_actual: :label_workload_actual,
+    label_workload_planned_short: :label_workload_planned_short,
+    label_workload_actual_short: :label_workload_actual_short,
+    label_workload_planned_overload: :label_workload_planned_overload,
+    label_workload_actual_overload: :label_workload_actual_overload,
+    label_workload_actual_load_failed: :label_workload_actual_load_failed,
+    label_workload_capacity: :label_workload_capacity,
+    label_workload_histogram: :label_workload_histogram,
+    label_workload_focus_overload: :label_workload_focus_overload,
+    label_workload_daily_details: :label_workload_daily_details,
+
     label_show_workload: :label_show_workload,
     label_capacity_threshold: :label_capacity_threshold,
     label_leaf_issues_only: :label_leaf_issues_only,
@@ -414,8 +426,10 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'baseline_snapshot').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'baseline_repository').to_s
 
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'actual_workload_builder').to_s
+
   helper RedmineCanvasGantt::ViteAssetHelper
-  accept_api_auth :data, :queries, :edit_meta, :edit_meta_preview, :update, :destroy_task, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation, :save_baseline
+  accept_api_auth :actual_workload, :data, :queries, :edit_meta, :edit_meta_preview, :update, :destroy_task, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation, :save_baseline
 
   before_action :resolve_canvas_project
   before_action :set_permissions
@@ -483,6 +497,31 @@ class CanvasGanttsController < ApplicationController
     rescue => e
       render_internal_error(e)
     end
+  end
+
+  MAX_ACTUAL_WORKLOAD_RANGE_DAYS = 730
+
+  # GET /projects/:project_id/canvas_gantt/actual_workload.json
+  def actual_workload
+    unless [params.require(:from), params.require(:to)].all? { |value| value.to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/) }
+      raise ArgumentError, 'Invalid workload date format'
+    end
+    from = Date.iso8601(params.require(:from).to_s)
+    to = Date.iso8601(params.require(:to).to_s)
+    raise ArgumentError, 'Invalid workload date range' if from > to || (to - from + 1) > MAX_ACTUAL_WORKLOAD_RANGE_DAYS
+
+    resolved = query_state_resolver.resolve(project_ids: descendant_project_ids, scope_only: true)
+    scope = resolved[:issues].where(project_id: Project.allowed_to(User.current, :view_canvas_gantt).select(:id))
+    scope = scope.joins(:status).where(issue_statuses: { is_closed: false }) unless params[:include_closed] == '1'
+    scope = scope.where('issues.rgt = issues.lft + 1') if params[:leaf_only] == '1'
+    entries = RedmineCanvasGantt::ActualWorkloadBuilder.build(
+      issue_scope: scope, current_user: User.current, from: from, to: to, budget: data_payload_budget
+    )
+    render body: data_payload_budget.encode_json({ entries: entries }), content_type: 'application/json'
+  rescue ArgumentError, ActionController::ParameterMissing => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  rescue RedmineCanvasGantt::DataPayloadBudget::Exceeded => e
+    render_data_payload_limit(e)
   end
 
   # GET /projects/:project_id/canvas_gantt/queries.json

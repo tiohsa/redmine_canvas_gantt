@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import { SIDEBAR_RESIZE_CURSOR } from '../../constants';
+import { SIDEBAR_MIN_WIDTH, SIDEBAR_RESIZE_CURSOR } from '../../constants';
 import { clampSidebarWidthToBounds, computeSidebarWidthBounds } from '../../utils/sidebarWidth';
 
 type Params = {
     containerRef: RefObject<HTMLDivElement | null>;
     leftPaneVisible: boolean;
     sidebarWidth: number;
+    minWidth?: number;
     setSidebarWidth: (width: number) => void;
     setSidebarResizing: (resizing: boolean) => void;
 };
@@ -15,6 +16,7 @@ export const useSidebarResize = ({
     containerRef,
     leftPaneVisible,
     sidebarWidth,
+    minWidth = SIDEBAR_MIN_WIDTH,
     setSidebarWidth,
     setSidebarResizing
 }: Params): { startResize: () => void } => {
@@ -47,8 +49,8 @@ export const useSidebarResize = ({
 
     const getSidebarWidthBounds = useCallback(() => {
         const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 0;
-        return computeSidebarWidthBounds(containerWidth);
-    }, [containerRef]);
+        return computeSidebarWidthBounds(containerWidth, minWidth);
+    }, [containerRef, minWidth]);
 
     const getClampedSidebarWidth = useCallback((width: number): number | null => {
         const bounds = getSidebarWidthBounds();

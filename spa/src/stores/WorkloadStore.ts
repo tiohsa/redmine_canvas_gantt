@@ -1,7 +1,13 @@
+import { apiClient } from '../api/client';
+import { buildIssueQueryParams, toResolvedQueryStateFromStore } from '../utils/queryParams';
+import { calendarDateKey, todayCalendarDate } from '../utils/dateOnly';
+import type { ActualWorkloadEntry, ActualWorkloadStatus, WorkloadRange, WorkloadSeries } from '../services/WorkloadLogicService';
+import { applyFilters } from './taskStore/filters';
 import { create } from 'zustand';
 import { useTaskStore } from './TaskStore';
 import {
     WorkloadLogicService,
+    compareWorkloadAssignees,
     type DailyWorkload,
     type WorkloadData,
     type WorkloadOptions
@@ -16,12 +22,14 @@ type HistogramSelectionCycle = {
 
 type OverloadFocusCycle = {
     activeAssigneeId: number | null;
+    series?: WorkloadSeries;
     nextIndex: number;
 };
 
 type FocusedHistogramBar = {
     assigneeId: number;
     dateStr: string;
+    series?: WorkloadSeries;
 } | null;
 
 type CycleInfo = {
@@ -29,19 +37,35 @@ type CycleInfo = {
     total: number;
 } | null;
 
+const histogramKey = (assigneeId: number, dateStr: string, series: WorkloadSeries = 'planned') =>
+    `${assigneeId}:${dateStr}${series === 'actual' ? ':actual' : ''}`;
+
+const contributionsFor = (daily: DailyWorkload | undefined, series: WorkloadSeries = 'planned') => {
+    if (!daily) return [];
+    if (series === 'planned') return daily.plannedContributions;
+    const issues = new Map<string, { task: Task; dailyLoad: number }>();
+    for (const entry of daily.actualContributions) {
+        const contribution = issues.get(entry.issueId);
+        if (contribution) contribution.dailyLoad += entry.hours;
+        else issues.set(entry.issueId, { task: entry.issue, dailyLoad: entry.hours });
+    }
+    return [...issues.values()];
+};
+
 const getHistogramCycleInfo = (
     workloadData: WorkloadData | null,
     cycle: HistogramSelectionCycle,
     assigneeId: number,
     dateStr: string,
-    includeInactiveCycle: boolean
+    includeInactiveCycle: boolean,
+    series: WorkloadSeries = 'planned'
 ): CycleInfo => {
     if (!workloadData) return null;
 
-    const total = workloadData.assignees.get(assigneeId)?.dailyWorkloads.get(dateStr)?.contributingTasks.length ?? 0;
+    const total = contributionsFor(workloadData.assignees.get(assigneeId)?.dailyWorkloads.get(dateStr), series).length;
     if (total <= 1) return null;
 
-    const isActiveCycle = cycle.activeKey === `${assigneeId}:${dateStr}`;
+    const isActiveCycle = cycle.activeKey === histogramKey(assigneeId, dateStr, series);
     if (!isActiveCycle) {
         return includeInactiveCycle ? { current: 1, total } : null;
     }
@@ -52,12 +76,12 @@ const getHistogramCycleInfo = (
     };
 };
 
-const getOverloadWorkloads = (workloadData: WorkloadData, assigneeId: number): DailyWorkload[] => {
+const getOverloadWorkloads = (workloadData: WorkloadData, assigneeId: number, series: WorkloadSeries = 'planned'): DailyWorkload[] => {
     const assignee = workloadData.assignees.get(assigneeId);
     if (!assignee) return [];
 
     return Array.from(assignee.dailyWorkloads.values())
-        .filter((daily) => daily.isOverload)
+        .filter((daily) => series === 'planned' ? daily.isPlannedOverload : daily.isActualOverload)
         .sort((a, b) => a.timestamp - b.timestamp);
 };
 
@@ -67,7 +91,7 @@ const barContainsTask = (workloadData: WorkloadData, bar: FocusedHistogramBar, t
     const daily = workloadData.assignees.get(bar.assigneeId)?.dailyWorkloads.get(bar.dateStr);
     if (!daily) return false;
 
-    return daily.contributingTasks.some(({ task }) => task.id === taskId);
+    return contributionsFor(daily, bar.series).some(({ task }) => task.id === taskId);
 };
 
 const findFocusedHistogramBarForTask = (
@@ -81,19 +105,25 @@ const findFocusedHistogramBarForTask = (
         return currentFocusedHistogramBar;
     }
 
-    for (const assignee of workloadData.assignees.values()) {
-        const sortedDailyWorkloads = Array.from(assignee.dailyWorkloads.values())
-            .sort((a, b) => a.timestamp - b.timestamp);
+    const assignees = [...workloadData.assignees.values()].sort(compareWorkloadAssignees);
+    for (const series of ['planned', 'actual'] as const) {
+        for (const assignee of assignees) {
+            const sortedDailyWorkloads = Array.from(assignee.dailyWorkloads.values())
+                .sort((a, b) => a.timestamp - b.timestamp);
 
-        const match = sortedDailyWorkloads.find((daily) => (
-            daily.contributingTasks.some(({ task }) => task.id === taskId)
-        ));
+            const match = sortedDailyWorkloads.find((daily) => (
+                series === 'planned'
+                    ? daily.plannedContributions.some(({ task }) => task.id === taskId)
+                    : daily.actualContributions.some(({ issueId }) => issueId === taskId)
+            ));
 
-        if (match) {
-            return {
-                assigneeId: assignee.assigneeId,
-                dateStr: match.dateStr
-            };
+            if (match) {
+                return {
+                    assigneeId: assignee.assigneeId,
+                    dateStr: match.dateStr,
+                    ...(series === 'actual' ? { series } : {})
+                };
+            }
         }
     }
 
@@ -151,6 +181,13 @@ interface WorkloadState {
     includeClosedIssues: boolean;
     todayOnwardOnly: boolean;
 
+    actualStatus: ActualWorkloadStatus;
+    actualEntries: ActualWorkloadEntry[];
+    actualScopeKey: string | null;
+    range: WorkloadRange | null;
+    setRange: (range: WorkloadRange) => void;
+    refreshActual: (options?: { deferCalculation?: boolean }) => void;
+    loadActual: () => Promise<void>;
     // Derived Data
     workloadData: WorkloadData | null;
     histogramSelectionCycle: HistogramSelectionCycle;
@@ -166,17 +203,51 @@ interface WorkloadState {
     setIncludeClosedIssues: (include: boolean) => void;
     setTodayOnwardOnly: (todayOnward: boolean) => void;
     resetHistogramSelectionCycle: () => void;
-    resolveNextHistogramTask: (assigneeId: number, dateStr: string) => { taskId: string | null };
-    getHistogramTaskCycleInfo: (assigneeId: number, dateStr: string) => CycleInfo;
-    getHistogramBarLabelInfo: (assigneeId: number, dateStr: string) => CycleInfo;
+    resolveNextHistogramTask: (assigneeId: number, dateStr: string, series?: WorkloadSeries) => { taskId: string | null };
+    getHistogramTaskCycleInfo: (assigneeId: number, dateStr: string, series?: WorkloadSeries) => CycleInfo;
+    getHistogramBarLabelInfo: (assigneeId: number, dateStr: string, series?: WorkloadSeries) => CycleInfo;
     setFocusedHistogramBar: (bar: FocusedHistogramBar) => void;
     suppressNextFocusedHistogramBarVerticalScroll: (bar: FocusedHistogramBar) => void;
     consumeFocusedHistogramBarVerticalScrollSuppression: (bar: FocusedHistogramBar) => boolean;
     resetOverloadFocus: () => void;
-    resolveNextOverloadBar: (assigneeId: number) => FocusedHistogramBar;
-    getOverloadCycleInfo: (assigneeId: number) => CycleInfo;
+    resolveNextOverloadBar: (assigneeId: number, series?: WorkloadSeries) => FocusedHistogramBar;
+    getOverloadCycleInfo: (assigneeId: number, series?: WorkloadSeries) => CycleInfo;
     calculateWorkloadData: () => void;
 }
+
+let calculationFrame: number | undefined;
+const cancelCalculation = () => {
+    if (calculationFrame !== undefined) cancelAnimationFrame(calculationFrame);
+    calculationFrame = undefined;
+};
+const scheduleCalculation = () => {
+    if (calculationFrame !== undefined) return;
+    calculationFrame = requestAnimationFrame(() => {
+        calculationFrame = undefined;
+        if (useWorkloadStore.getState().workloadPaneVisible) {
+            useWorkloadStore.getState().calculateWorkloadData();
+        }
+    });
+};
+
+let actualGeneration = 0;
+let actualReloadTimer: ReturnType<typeof setTimeout> | undefined;
+const cancelActual = () => { actualGeneration++; clearTimeout(actualReloadTimer); };
+
+const actualRequest = () => {
+    const state = useWorkloadStore.getState();
+    const taskState = useTaskStore.getState();
+    if (!state.range) return null;
+    const from = state.todayOnwardOnly ? Math.max(state.range.from, todayCalendarDate()) : state.range.from;
+    const query = toResolvedQueryStateFromStore(taskState);
+    const params = { query, queryContext: taskState.queryContext,
+        from: calendarDateKey(from), to: calendarDateKey(state.range.to),
+        leafOnly: state.leafIssuesOnly, includeClosed: state.includeClosedIssues };
+    const key = JSON.stringify([taskState.currentProjectId,
+        buildIssueQueryParams(query, { queryContext: taskState.queryContext }).toString(),
+        params.from, params.to, params.leafOnly, params.includeClosed]);
+    return { params, key, empty: from > state.range.to };
+};
 
 const prefs = loadPreferences();
 
@@ -188,6 +259,47 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
     includeClosedIssues: prefs.includeClosedIssues ?? false,
     todayOnwardOnly: prefs.todayOnwardOnly ?? false,
     
+    actualStatus: 'idle',
+    actualEntries: [],
+    actualScopeKey: null,
+    range: null,
+    setRange: (range) => {
+        if (range.from === get().range?.from && range.to === get().range?.to) return;
+        set({ range });
+        if (!get().workloadPaneVisible) return;
+        get().refreshActual({ deferCalculation: true });
+    },
+    refreshActual: (options) => {
+        cancelActual();
+        if (!get().workloadPaneVisible) return;
+        if (!get().range) {
+            get().calculateWorkloadData();
+            return;
+        }
+        const request = actualRequest();
+        set({ actualStatus: 'loading',
+            ...(request?.key !== get().actualScopeKey ? { actualEntries: [] } : {}) });
+        if (options?.deferCalculation) scheduleCalculation();
+        else get().calculateWorkloadData();
+        actualReloadTimer = setTimeout(() => { void get().loadActual(); }, 150);
+    },
+    loadActual: async () => {
+        clearTimeout(actualReloadTimer);
+        if (!get().workloadPaneVisible) return;
+        const request = actualRequest();
+        if (!request) return;
+        const generation = ++actualGeneration;
+        set({ actualStatus: 'loading' });
+        try {
+            const entries = request.empty ? [] : await apiClient.fetchActualWorkload(request.params);
+            if (generation !== actualGeneration || !get().workloadPaneVisible || actualRequest()?.key !== request.key) return;
+            set({ actualEntries: entries, actualStatus: 'ready', actualScopeKey: request.key });
+        } catch {
+            if (generation !== actualGeneration || !get().workloadPaneVisible || actualRequest()?.key !== request.key) return;
+            set({ actualStatus: 'error' });
+        }
+        get().calculateWorkloadData();
+    },
     workloadData: null,
     histogramSelectionCycle: HISTOGRAM_SELECTION_RESET,
     overloadFocusCycle: OVERLOAD_FOCUS_RESET,
@@ -195,18 +307,14 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
     suppressFocusedHistogramBarVerticalScrollKey: null,
 
     setWorkloadPaneVisible: (visible) => {
+        cancelActual();
+        cancelCalculation();
         set({ workloadPaneVisible: visible });
-        if (visible) {
-            get().calculateWorkloadData();
-        }
+        if (visible) get().refreshActual();
     },
 
     toggleWorkloadPaneVisible: () => {
-        const nextVisible = !get().workloadPaneVisible;
-        set({ workloadPaneVisible: nextVisible });
-        if (nextVisible) {
-            get().calculateWorkloadData();
-        }
+        get().setWorkloadPaneVisible(!get().workloadPaneVisible);
     },
 
     setCapacityThreshold: (threshold) => {
@@ -219,26 +327,20 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
 
     setLeafIssuesOnly: (leafOnly) => {
         set({ leafIssuesOnly: leafOnly });
+        get().refreshActual();
         savePreferences({ leafIssuesOnly: leafOnly });
-        if (get().workloadPaneVisible) {
-            get().calculateWorkloadData();
-        }
     },
 
     setIncludeClosedIssues: (include) => {
         set({ includeClosedIssues: include });
+        get().refreshActual();
         savePreferences({ includeClosedIssues: include });
-        if (get().workloadPaneVisible) {
-            get().calculateWorkloadData();
-        }
     },
 
     setTodayOnwardOnly: (todayOnward) => {
         set({ todayOnwardOnly: todayOnward });
+        get().refreshActual();
         savePreferences({ todayOnwardOnly: todayOnward });
-        if (get().workloadPaneVisible) {
-            get().calculateWorkloadData();
-        }
     },
 
     resetHistogramSelectionCycle: () => {
@@ -265,15 +367,16 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
         return true;
     },
 
-    resolveNextHistogramTask: (assigneeId, dateStr) => {
+    resolveNextHistogramTask: (assigneeId, dateStr, series = 'planned') => {
         const { workloadData, histogramSelectionCycle } = get();
         if (!workloadData) return { taskId: null };
 
         const daily = workloadData.assignees.get(assigneeId)?.dailyWorkloads.get(dateStr);
-        if (!daily || daily.contributingTasks.length === 0) return { taskId: null };
+        const contributions = contributionsFor(daily, series);
+        if (!daily || contributions.length === 0) return { taskId: null };
 
-        const sortedTasks = sortHistogramTasks(daily.contributingTasks);
-        const currentKey = `${assigneeId}:${dateStr}`;
+        const sortedTasks = sortHistogramTasks(contributions);
+        const currentKey = histogramKey(assigneeId, dateStr, series);
         const isSameBar = histogramSelectionCycle.activeKey === currentKey;
         const nextIndex = isSameBar
             ? histogramSelectionCycle.nextIndex % sortedTasks.length
@@ -293,14 +396,14 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
         return { taskId: nextTask.id };
     },
 
-    getHistogramTaskCycleInfo: (assigneeId, dateStr) => {
+    getHistogramTaskCycleInfo: (assigneeId, dateStr, series = 'planned') => {
         const { workloadData, histogramSelectionCycle } = get();
-        return getHistogramCycleInfo(workloadData, histogramSelectionCycle, assigneeId, dateStr, false);
+        return getHistogramCycleInfo(workloadData, histogramSelectionCycle, assigneeId, dateStr, false, series);
     },
 
-    getHistogramBarLabelInfo: (assigneeId, dateStr) => {
+    getHistogramBarLabelInfo: (assigneeId, dateStr, series = 'planned') => {
         const { workloadData, histogramSelectionCycle } = get();
-        return getHistogramCycleInfo(workloadData, histogramSelectionCycle, assigneeId, dateStr, true);
+        return getHistogramCycleInfo(workloadData, histogramSelectionCycle, assigneeId, dateStr, true, series);
     },
 
     resetOverloadFocus: () => {
@@ -311,26 +414,28 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
         });
     },
 
-    resolveNextOverloadBar: (assigneeId) => {
+    resolveNextOverloadBar: (assigneeId, series = 'planned') => {
         const { workloadData, overloadFocusCycle } = get();
         if (!workloadData) return null;
 
-        const overloads = getOverloadWorkloads(workloadData, assigneeId);
+        const overloads = getOverloadWorkloads(workloadData, assigneeId, series);
         if (overloads.length === 0) return null;
 
-        const isSameAssignee = overloadFocusCycle.activeAssigneeId === assigneeId;
+        const isSameAssignee = overloadFocusCycle.activeAssigneeId === assigneeId && (overloadFocusCycle.series ?? 'planned') === series;
         const nextIndex = isSameAssignee
             ? overloadFocusCycle.nextIndex % overloads.length
             : 0;
         const nextDaily = overloads[nextIndex];
         const focusedHistogramBar = {
             assigneeId,
-            dateStr: nextDaily.dateStr
+            dateStr: nextDaily.dateStr,
+            ...(series === 'actual' ? { series } : {})
         };
 
         set({
             overloadFocusCycle: {
                 activeAssigneeId: assigneeId,
+                series,
                 nextIndex: overloads.length > 1
                     ? (nextIndex + 1) % overloads.length
                     : 0
@@ -341,13 +446,13 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
         return focusedHistogramBar;
     },
 
-    getOverloadCycleInfo: (assigneeId) => {
+    getOverloadCycleInfo: (assigneeId, series = 'planned') => {
         const { workloadData, overloadFocusCycle } = get();
         if (!workloadData) return null;
 
-        const total = getOverloadWorkloads(workloadData, assigneeId).length;
+        const total = getOverloadWorkloads(workloadData, assigneeId, series).length;
         if (total <= 1) return null;
-        if (overloadFocusCycle.activeAssigneeId !== assigneeId) {
+        if (overloadFocusCycle.activeAssigneeId !== assigneeId || (overloadFocusCycle.series ?? 'planned') !== series) {
             return {
                 current: 1,
                 total
@@ -361,6 +466,7 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
     },
 
     calculateWorkloadData: () => {
+        cancelCalculation();
         const { capacityThreshold, leafIssuesOnly, includeClosedIssues, todayOnwardOnly } = get();
         
         const taskStore = useTaskStore.getState();
@@ -377,7 +483,12 @@ export const useWorkloadStore = create<WorkloadState>((set, get) => ({
             todayOnwardOnly
         };
 
-        const data = WorkloadLogicService.calculateWorkload(allTasks, closedStatusIds, options);
+        const scopedTasks = applyFilters(allTasks, '', taskStore.selectedAssigneeIds,
+            taskStore.selectedProjectIds, taskStore.selectedVersionIds, taskStore.selectedTrackerIds,
+            taskStore.showSubprojects, taskStore.currentProjectId)
+            .filter(task => !task.isContextOnly && (taskStore.selectedStatusIds.length === 0 || taskStore.selectedStatusIds.includes(task.statusId)));
+        const data = WorkloadLogicService.calculateWorkload(scopedTasks, closedStatusIds, options,
+            get().actualEntries, get().range ?? undefined);
         const focusedHistogramBar = findFocusedHistogramBarForTask(
             data,
             selectedTaskId,
@@ -405,13 +516,26 @@ useTaskStore.subscribe((state, prevState) => {
 
         if (
             workloadState.focusedHistogramBar?.assigneeId !== nextFocusedHistogramBar?.assigneeId ||
-            workloadState.focusedHistogramBar?.dateStr !== nextFocusedHistogramBar?.dateStr
+            workloadState.focusedHistogramBar?.dateStr !== nextFocusedHistogramBar?.dateStr ||
+            workloadState.focusedHistogramBar?.series !== nextFocusedHistogramBar?.series
         ) {
             useWorkloadStore.setState({
                 focusedHistogramBar: nextFocusedHistogramBar,
                 suppressFocusedHistogramBarVerticalScrollKey: null
             });
         }
+    }
+
+    if (useWorkloadStore.getState().workloadPaneVisible && (
+        state.queryContext !== prevState.queryContext || state.currentProjectId !== prevState.currentProjectId ||
+        state.serverTaskSnapshot !== prevState.serverTaskSnapshot || state.showSubprojects !== prevState.showSubprojects ||
+        state.memberProjectsOnly !== prevState.memberProjectsOnly ||
+        state.selectedProjectIds !== prevState.selectedProjectIds || state.selectedStatusIds !== prevState.selectedStatusIds ||
+        state.selectedAssigneeIds !== prevState.selectedAssigneeIds || state.selectedVersionIds !== prevState.selectedVersionIds ||
+        state.selectedTrackerIds !== prevState.selectedTrackerIds
+    )) {
+        useWorkloadStore.getState().refreshActual();
+        return;
     }
 
     // Basic optimization: Only recalculate if task list or statuses change,

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { Mock } from 'vitest';
 import { WorkloadCanvasPanel } from './WorkloadCanvasPanel';
 import { WorkloadSidebar } from './WorkloadSidebar';
@@ -8,6 +8,15 @@ import { useWorkloadStore } from '../../stores/WorkloadStore';
 import type { WorkloadData } from '../../services/WorkloadLogicService';
 import type { Task } from '../../types';
 import { useUIStore } from '../../stores/UIStore';
+import { WORKLOAD_HEADER_HEIGHT } from '../../constants';
+
+const setScrollMetrics = (element: HTMLElement, { clientHeight, scrollHeight, scrollTop }: { clientHeight: number; scrollHeight: number; scrollTop: number }) => {
+    Object.defineProperties(element, {
+        clientHeight: { configurable: true, value: clientHeight },
+        scrollHeight: { configurable: true, value: scrollHeight },
+        scrollTop: { configurable: true, writable: true, value: scrollTop }
+    });
+};
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
@@ -45,20 +54,25 @@ const buildTask = (overrides: Partial<Task>): Task => ({
     ...overrides
 });
 
-const buildWorkloadData = (contributingTasks: Task[] = []): WorkloadData => ({
+const buildWorkloadData = (plannedContributions: Task[] = []): WorkloadData => ({
     assignees: new Map([
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 8,
-            peakLoad: 8,
+            plannedTotal: 8,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 8,
             dailyWorkloads: new Map([
                 ['2026-01-01', {
                     dateStr: '2026-01-01',
                     timestamp: ONE_DAY * 3,
-                    totalLoad: 8,
-                    isOverload: false,
-                    contributingTasks: contributingTasks.map((task) => ({
+                    plannedLoad: 8,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: plannedContributions.map((task) => ({
                         task,
                         dailyLoad: 1
                     }))
@@ -66,8 +80,10 @@ const buildWorkloadData = (contributingTasks: Task[] = []): WorkloadData => ({
             ])
         }]
     ]),
-    overloadedAssigneeCount: 0,
-    overloadedDayCount: 0
+    plannedOverloadedAssigneeCount: 0,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 0
 });
 
 const buildFocusedOverloadWorkloadData = (): WorkloadData => ({
@@ -75,36 +91,48 @@ const buildFocusedOverloadWorkloadData = (): WorkloadData => ({
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 9,
-            peakLoad: 9,
+            plannedTotal: 9,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 9,
             dailyWorkloads: new Map([
                 ['2026-01-06', {
                     dateStr: '2026-01-06',
                     timestamp: ONE_DAY * 5,
-                    totalLoad: 9,
-                    isOverload: true,
-                    contributingTasks: []
+                    plannedLoad: 9,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: []
                 }]
             ])
         }],
         [2, {
             assigneeId: 2,
             assigneeName: 'Bob',
-            totalLoad: 10,
-            peakLoad: 10,
+            plannedTotal: 10,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 10,
             dailyWorkloads: new Map([
                 ['2026-01-12', {
                     dateStr: '2026-01-12',
                     timestamp: ONE_DAY * 40,
-                    totalLoad: 10,
-                    isOverload: true,
-                    contributingTasks: []
+                    plannedLoad: 10,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: []
                 }]
             ])
         }]
     ]),
-    overloadedAssigneeCount: 2,
-    overloadedDayCount: 2
+    plannedOverloadedAssigneeCount: 2,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 2
 });
 
 const buildTwoAssigneeWorkloadData = (aliceTasks: Task[] = [], bobTasks: Task[] = []): WorkloadData => ({
@@ -112,15 +140,20 @@ const buildTwoAssigneeWorkloadData = (aliceTasks: Task[] = [], bobTasks: Task[] 
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 4,
-            peakLoad: 4,
+            plannedTotal: 4,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 4,
             dailyWorkloads: new Map([
                 ['2026-01-01', {
                     dateStr: '2026-01-01',
                     timestamp: ONE_DAY * 3,
-                    totalLoad: 4,
-                    isOverload: false,
-                    contributingTasks: aliceTasks.map((task) => ({
+                    plannedLoad: 4,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: aliceTasks.map((task) => ({
                         task,
                         dailyLoad: 1
                     }))
@@ -130,15 +163,20 @@ const buildTwoAssigneeWorkloadData = (aliceTasks: Task[] = [], bobTasks: Task[] 
         [2, {
             assigneeId: 2,
             assigneeName: 'Bob',
-            totalLoad: 6,
-            peakLoad: 6,
+            plannedTotal: 6,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 6,
             dailyWorkloads: new Map([
                 ['2026-01-02', {
                     dateStr: '2026-01-02',
                     timestamp: ONE_DAY * 4,
-                    totalLoad: 6,
-                    isOverload: false,
-                    contributingTasks: bobTasks.map((task) => ({
+                    plannedLoad: 6,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: bobTasks.map((task) => ({
                         task,
                         dailyLoad: 1
                     }))
@@ -146,8 +184,10 @@ const buildTwoAssigneeWorkloadData = (aliceTasks: Task[] = [], bobTasks: Task[] 
             ])
         }]
     ]),
-    overloadedAssigneeCount: 0,
-    overloadedDayCount: 0
+    plannedOverloadedAssigneeCount: 0,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 0
 });
 
 const buildMixedInteractionWorkloadData = (aliceTasks: Task[], bobTasks: Task[]): WorkloadData => ({
@@ -155,24 +195,32 @@ const buildMixedInteractionWorkloadData = (aliceTasks: Task[], bobTasks: Task[])
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 22,
-            peakLoad: 12,
+            plannedTotal: 22,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 12,
             dailyWorkloads: new Map([
                 ['2026-01-01', {
                     dateStr: '2026-01-01',
                     timestamp: ONE_DAY * 3,
-                    totalLoad: 12,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 12,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         { task: aliceTasks[0], dailyLoad: 12 }
                     ]
                 }],
                 ['2026-01-02', {
                     dateStr: '2026-01-02',
                     timestamp: ONE_DAY * 4,
-                    totalLoad: 10,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 10,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         { task: aliceTasks[1], dailyLoad: 10 }
                     ]
                 }]
@@ -181,32 +229,42 @@ const buildMixedInteractionWorkloadData = (aliceTasks: Task[], bobTasks: Task[])
         [2, {
             assigneeId: 2,
             assigneeName: 'Bob',
-            totalLoad: 21,
-            peakLoad: 11,
+            plannedTotal: 21,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 11,
             dailyWorkloads: new Map([
                 ['2026-01-03', {
                     dateStr: '2026-01-03',
                     timestamp: ONE_DAY * 5,
-                    totalLoad: 11,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 11,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         { task: bobTasks[0], dailyLoad: 11 }
                     ]
                 }],
                 ['2026-01-12', {
                     dateStr: '2026-01-12',
                     timestamp: ONE_DAY * 40,
-                    totalLoad: 10,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 10,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         { task: bobTasks[1], dailyLoad: 10 }
                     ]
                 }]
             ])
         }]
     ]),
-    overloadedAssigneeCount: 2,
-    overloadedDayCount: 4
+    plannedOverloadedAssigneeCount: 2,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 4
 });
 
 beforeEach(() => {
@@ -239,6 +297,10 @@ beforeEach(() => {
         if (this.dataset.testid === 'workload-canvas-viewport') return 220;
         return 260;
     });
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.testid === 'workload-canvas-viewport') return 1000;
+        return 0;
+    });
 
     useTaskStore.setState({
         ...useTaskStore.getInitialState(),
@@ -263,7 +325,7 @@ beforeEach(() => {
 });
 
 describe('WorkloadCanvasPanel', () => {
-    const getLastBarDrawCall = () => vi.mocked(mockContext.fillRect).mock.calls.filter(([, , width]) => width === 18).at(-1);
+    const getLastBarDrawCall = () => vi.mocked(mockContext.fillRect).mock.calls.filter(([, , width]) => width === 8.5).at(-1);
 
     const getViewportAndCanvas = () => {
         const viewportElement = screen.getByTestId('workload-canvas-viewport');
@@ -281,6 +343,20 @@ describe('WorkloadCanvasPanel', () => {
 
         expect(canvas?.width).toBe(640);
         expect(canvas?.height).toBe(220);
+    });
+
+    it('keeps the panel and viewport aligned to the shared header geometry', () => {
+        render(<WorkloadCanvasPanel />);
+
+        expect(screen.getByTestId('workload-canvas-panel')).toHaveStyle({ boxSizing: 'border-box' });
+        expect(screen.getByTestId('workload-canvas-header')).toHaveStyle({
+            height: `${WORKLOAD_HEADER_HEIGHT}px`,
+            boxSizing: 'border-box'
+        });
+        expect(screen.getByTestId('workload-canvas-viewport')).toHaveStyle({
+            top: `${WORKLOAD_HEADER_HEIGHT}px`,
+            bottom: '0px'
+        });
     });
 
     it('pans the shared viewport when dragging the histogram area', () => {
@@ -455,6 +531,34 @@ describe('WorkloadCanvasPanel', () => {
         expect(handleScroll).toHaveBeenCalledWith(48);
     });
 
+    it('clamps and notifies the parent of the canonical scroll position', () => {
+        const handleScroll = vi.fn();
+        const { rerender } = render(<WorkloadCanvasPanel scrollTop={0} onScroll={handleScroll} />);
+        const viewportElement = screen.getByTestId('workload-canvas-viewport');
+        setScrollMetrics(viewportElement, { clientHeight: 100, scrollHeight: 201, scrollTop: 0 });
+
+        rerender(<WorkloadCanvasPanel scrollTop={999} onScroll={handleScroll} />);
+
+        expect(viewportElement.scrollTop).toBe(101);
+        expect(handleScroll).toHaveBeenCalledTimes(1);
+        expect(handleScroll).toHaveBeenCalledWith(101);
+        fireEvent.scroll(viewportElement);
+
+        expect(handleScroll).toHaveBeenCalledTimes(1);
+    });
+
+    it('notifies the parent for a user scroll', () => {
+        const handleScroll = vi.fn();
+        render(<WorkloadCanvasPanel onScroll={handleScroll} />);
+        const viewportElement = screen.getByTestId('workload-canvas-viewport');
+        setScrollMetrics(viewportElement, { clientHeight: 100, scrollHeight: 201, scrollTop: 0 });
+        viewportElement.scrollTop = 72;
+
+        fireEvent.scroll(viewportElement);
+
+        expect(handleScroll).toHaveBeenCalledWith(72);
+    });
+
     it('focuses the matching task when a histogram bar is clicked', () => {
         const tasks = [
             buildTask({ id: 'task-1', subject: 'Task 1', projectId: 'p1', startDate: ONE_DAY, dueDate: ONE_DAY, estimatedHours: 4 }),
@@ -580,6 +684,16 @@ describe('WorkloadCanvasPanel', () => {
         expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({ assigneeId: 1, dateStr: '2026-01-01' });
     });
 
+    it('scrolls to the same-name assignee in numeric ID order', () => {
+        const data = buildFocusedOverloadWorkloadData();
+        data.assignees.get(1)!.assigneeName = 'Same name';
+        data.assignees.get(2)!.assigneeName = 'Same name';
+        data.assignees = new Map([...data.assignees].reverse());
+        useWorkloadStore.setState({ workloadData: data, focusedHistogramBar: { assigneeId: 2, dateStr: '2026-01-12' } });
+        render(<WorkloadCanvasPanel />);
+        expect(screen.getByTestId('workload-canvas-viewport').scrollTop).toBe(80);
+    });
+
     it('scrolls the workload pane to the focused overload assignee row', () => {
         useWorkloadStore.setState({
             ...useWorkloadStore.getState(),
@@ -679,8 +793,8 @@ describe('WorkloadCanvasPanel', () => {
             </>
         );
 
-        const aliceOverload = screen.getByRole('button', { name: 'Focus overload histogram for Alice' });
-        const bobOverload = screen.getByRole('button', { name: 'Focus overload histogram for Bob' });
+        const aliceOverload = screen.getByRole('button', { name: 'Focus overload histogram for Alice (Planned)' });
+        const bobOverload = screen.getByRole('button', { name: 'Focus overload histogram for Bob (Planned)' });
         const viewportElement = screen.getByTestId('workload-canvas-viewport');
 
         fireEvent.click(aliceOverload);
@@ -720,4 +834,62 @@ describe('WorkloadCanvasPanel', () => {
 
         expect(vi.mocked(mockContext.fillText)).not.toHaveBeenCalledWith('1/1', expect.any(Number), expect.any(Number));
     });
+});
+
+it('exposes both daily series in a DOM tooltip and cycles issues from the actual bar', () => {
+    const task = buildTask({ id: 'actual-issue', subject: 'Actual issue', projectId: 'p1' });
+    useTaskStore.getState().setTasks([task]);
+    const data = buildWorkloadData();
+    const assignee = data.assignees.get(1)!;
+    const daily = assignee.dailyWorkloads.get('2026-01-01')!;
+    daily.actualHours = 6;
+    daily.actualContributions = [{ id: 'entry', issueId: task.id, userId: 1, userName: 'Alice', spentOn: daily.dateStr, hours: 6, issue: task }];
+    assignee.actualPeak = 6;
+    assignee.actualTotal = 6;
+    useWorkloadStore.setState({ workloadData: data, actualStatus: 'ready' });
+    const focus = vi.spyOn(useTaskStore.getState(), 'focusTask');
+    render(<WorkloadCanvasPanel />);
+    const viewport = screen.getByTestId('workload-canvas-viewport');
+    fireEvent.mouseMove(viewport, { clientX: 25, clientY: 70 });
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Actual: 6.0h');
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Planned: 8.0h');
+    fireEvent.mouseDown(viewport, { button: 0, clientX: 25, clientY: 70 });
+    fireEvent.mouseUp(window, { clientX: 25, clientY: 70 });
+    expect(focus).toHaveBeenCalledWith('actual-issue');
+    expect(useWorkloadStore.getState().focusedHistogramBar?.series).toBe('actual');
+});
+
+it('keeps accessible descriptions bounded as assignees and days grow and announces focus', () => {
+    const { container } = render(<WorkloadCanvasPanel />);
+    const smallNodeCount = container.querySelectorAll('*').length;
+    const data = buildWorkloadData();
+    const template = data.assignees.get(1)!;
+    const daily = template.dailyWorkloads.get('2026-01-01')!;
+    for (let user = 1; user <= 30; user++) {
+        data.assignees.set(user, { ...template, assigneeId: user, dailyWorkloads: new Map(
+            Array.from({ length: 365 }, (_, index) => {
+                const dateStr = `day-${index}`;
+                return [dateStr, { ...daily, dateStr, timestamp: daily.timestamp + index * ONE_DAY }];
+            })
+        ) });
+    }
+    act(() => { useWorkloadStore.setState({ workloadData: data, actualStatus: 'ready',
+        focusedHistogramBar: { assigneeId: 1, dateStr: 'day-0' } }); });
+    expect(container.querySelectorAll('*').length).toBeLessThanOrEqual(smallNodeCount + 3);
+    const canvas = screen.getByTestId('workload-canvas');
+    expect(canvas).toHaveAccessibleDescription('day-0 Alice\nPlanned: 8.0h\nActual: 0.0h');
+    expect(document.getElementById(canvas.getAttribute('aria-describedby')!)).toHaveAttribute('aria-live', 'polite');
+});
+it.each(['ready', 'loading', 'error'] as const)('describes hovered and focused hours with actual status %s', (actualStatus) => {
+    const data = buildWorkloadData();
+    data.assignees.get(1)!.dailyWorkloads.get('2026-01-01')!.actualHours = 24;
+    useWorkloadStore.setState({ workloadData: data, actualStatus });
+    render(<WorkloadCanvasPanel />);
+    const viewport = screen.getByTestId('workload-canvas-viewport');
+    fireEvent.mouseMove(viewport, { clientX: 15, clientY: 70 });
+    const description = `2026-01-01 Alice\nPlanned: 8.0h\nActual: ${actualStatus === 'ready' ? '24.0h' : '—'}`;
+    expect(screen.getByTestId('workload-canvas')).toHaveAccessibleDescription(description);
+    act(() => { useWorkloadStore.getState().setFocusedHistogramBar({ assigneeId: 1, dateStr: '2026-01-01' }); });
+    fireEvent.mouseLeave(viewport);
+    expect(screen.getByTestId('workload-canvas')).toHaveAccessibleDescription(description);
 });

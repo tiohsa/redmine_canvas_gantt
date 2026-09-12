@@ -1,11 +1,24 @@
 import type { Task } from '../types';
 import { isWorkingDay } from '../utils/businessCalendar';
 import {
+    parseDateOnly,
     addCalendarDays,
     calendarDateKey,
     todayCalendarDate,
     toCalendarDate
 } from '../utils/dateOnly';
+
+export type WorkloadSeries = 'planned' | 'actual';
+export type ActualWorkloadStatus = 'idle' | 'loading' | 'ready' | 'error';
+export interface ActualWorkloadEntry {
+    id: string;
+    issueId: string;
+    userId: number;
+    userName: string;
+    spentOn: string;
+    hours: number;
+}
+export interface WorkloadRange { from: number; to: number }
 
 export interface WorkloadOptions {
     capacityThreshold: number; // e.g. 8.0
@@ -17,9 +30,12 @@ export interface WorkloadOptions {
 export interface DailyWorkload {
     dateStr: string; // YYYY-MM-DD
     timestamp: number;
-    totalLoad: number;
-    isOverload: boolean;
-    contributingTasks: Array<{
+    actualHours: number;
+    actualContributions: Array<ActualWorkloadEntry & { issue: Task }>;
+    isActualOverload: boolean;
+    plannedLoad: number;
+    isPlannedOverload: boolean;
+    plannedContributions: Array<{
         task: Task;
         dailyLoad: number;
     }>;
@@ -29,15 +45,23 @@ export interface AssigneeWorkload {
     assigneeId: number;
     assigneeName: string;
     dailyWorkloads: Map<string, DailyWorkload>; // Keyed by YYYY-MM-DD
-    totalLoad: number;
-    peakLoad: number;
+    plannedTotal: number;
+    plannedPeak: number;
+    actualTotal: number;
+    actualPeak: number;
 }
 
 export interface WorkloadData {
     assignees: Map<number, AssigneeWorkload>; // Keyed by assigneeId
-    overloadedAssigneeCount: number;
-    overloadedDayCount: number;
+    plannedOverloadedAssigneeCount: number;
+    plannedOverloadedDayCount: number;
+    actualOverloadedAssigneeCount: number;
+    actualOverloadedDayCount: number;
 }
+
+export const compareWorkloadAssignees = (a: AssigneeWorkload, b: AssigneeWorkload): number => (
+    a.assigneeName.localeCompare(b.assigneeName) || a.assigneeId - b.assigneeId
+);
 
 export class WorkloadLogicService {
     static normalizeDate(timestamp: number): number {
@@ -70,11 +94,13 @@ export class WorkloadLogicService {
     static calculateWorkload(
         tasks: Task[],
         closedStatusIds: Set<number>,
-        options: WorkloadOptions
+        options: WorkloadOptions,
+        actualEntries: ActualWorkloadEntry[] = [],
+        range?: WorkloadRange
     ): WorkloadData {
         const assignees = new Map<number, AssigneeWorkload>();
-        let overloadedAssigneeCount = 0;
-        let overloadedDayCount = 0;
+        let plannedOverloadedAssigneeCount = 0;
+        let plannedOverloadedDayCount = 0;
         
         const todayMs = todayCalendarDate();
 
@@ -86,7 +112,7 @@ export class WorkloadLogicService {
             // 3. valid working range (start_date <= due_date)
             if (!task.startDate || !task.dueDate || task.startDate > task.dueDate) return;
             // 4. leaf-only option
-            if (options.leafIssuesOnly && task.hasChildren) return;
+            if (options.leafIssuesOnly && task.hasPhysicalChildren) return;
             // 5. closed issues option
             if (!options.includeClosedIssues && closedStatusIds.has(task.statusId)) return;
 
@@ -96,6 +122,7 @@ export class WorkloadLogicService {
             const dailyLoad = task.estimatedHours / businessDays.length;
 
             businessDays.forEach(dayMs => {
+                if (range && (dayMs < range.from || dayMs > range.to)) return;
                 if (options.todayOnwardOnly && dayMs < todayMs) return;
 
                 const dateStr = this.formatDateStr(dayMs);
@@ -107,8 +134,10 @@ export class WorkloadLogicService {
                         assigneeId,
                         assigneeName,
                         dailyWorkloads: new Map(),
-                        totalLoad: 0,
-                        peakLoad: 0
+                        plannedTotal: 0,
+                        actualTotal: 0,
+                        actualPeak: 0,
+                        plannedPeak: 0
                     });
                 }
 
@@ -117,42 +146,80 @@ export class WorkloadLogicService {
                     workload.dailyWorkloads.set(dateStr, {
                         dateStr,
                         timestamp: dayMs,
-                        totalLoad: 0,
-                        isOverload: false,
-                        contributingTasks: []
+                        plannedLoad: 0,
+                        actualHours: 0,
+                        actualContributions: [],
+                        isActualOverload: false,
+                        isPlannedOverload: false,
+                        plannedContributions: []
                     });
                 }
 
                 const daily = workload.dailyWorkloads.get(dateStr)!;
-                daily.totalLoad += dailyLoad;
-                daily.contributingTasks.push({ task, dailyLoad });
-                workload.totalLoad += dailyLoad;
+                daily.plannedLoad += dailyLoad;
+                daily.plannedContributions.push({ task, dailyLoad });
+                workload.plannedTotal += dailyLoad;
                 
-                if (daily.totalLoad > workload.peakLoad) {
-                    workload.peakLoad = daily.totalLoad;
+                if (daily.plannedLoad > workload.plannedPeak) {
+                    workload.plannedPeak = daily.plannedLoad;
                 }
             });
         });
 
+        const taskById = new Map(tasks.map(task => [task.id, task]));
+        for (const entry of actualEntries) {
+            const task = taskById.get(entry.issueId);
+            const dayMs = parseDateOnly(entry.spentOn);
+            if (!task || dayMs === null || !Number.isFinite(entry.hours) || entry.hours <= 0) continue;
+            if (options.leafIssuesOnly && task.hasPhysicalChildren) continue;
+            if (!options.includeClosedIssues && closedStatusIds.has(task.statusId)) continue;
+            if (options.todayOnwardOnly && dayMs < todayMs) continue;
+            if (range && (dayMs < range.from || dayMs > range.to)) continue;
+            let assignee = assignees.get(entry.userId);
+            if (!assignee) {
+                assignee = { assigneeId: entry.userId, assigneeName: entry.userName,
+                    dailyWorkloads: new Map(), plannedTotal: 0, plannedPeak: 0, actualTotal: 0, actualPeak: 0 };
+                assignees.set(entry.userId, assignee);
+            }
+            let daily = assignee.dailyWorkloads.get(entry.spentOn);
+            if (!daily) {
+                daily = { dateStr: entry.spentOn, timestamp: dayMs, plannedLoad: 0,
+                    isPlannedOverload: false, plannedContributions: [], actualHours: 0,
+                    isActualOverload: false, actualContributions: [] };
+                assignee.dailyWorkloads.set(entry.spentOn, daily);
+            }
+            daily.actualHours += entry.hours;
+            daily.actualContributions.push({ ...entry, issue: task });
+            assignee.actualTotal += entry.hours;
+            assignee.actualPeak = Math.max(assignee.actualPeak, daily.actualHours);
+        }
+        let actualOverloadedAssigneeCount = 0;
+        let actualOverloadedDayCount = 0;
         // Second pass: determine overloads and summarize
         assignees.forEach(workload => {
             let assigneeHasOverload = false;
+            let actualHasOverload = false;
             workload.dailyWorkloads.forEach(daily => {
-                if (daily.totalLoad > options.capacityThreshold) {
-                    daily.isOverload = true;
-                    overloadedDayCount++;
+                daily.isActualOverload = daily.actualHours > options.capacityThreshold;
+                if (daily.isActualOverload) { actualOverloadedDayCount++; actualHasOverload = true; }
+                if (daily.plannedLoad > options.capacityThreshold) {
+                    daily.isPlannedOverload = true;
+                    plannedOverloadedDayCount++;
                     assigneeHasOverload = true;
                 }
             });
+            if (actualHasOverload) actualOverloadedAssigneeCount++;
             if (assigneeHasOverload) {
-                overloadedAssigneeCount++;
+                plannedOverloadedAssigneeCount++;
             }
         });
 
         return {
             assignees,
-            overloadedAssigneeCount,
-            overloadedDayCount
+            plannedOverloadedAssigneeCount,
+            plannedOverloadedDayCount,
+            actualOverloadedAssigneeCount,
+            actualOverloadedDayCount
         };
     }
 }

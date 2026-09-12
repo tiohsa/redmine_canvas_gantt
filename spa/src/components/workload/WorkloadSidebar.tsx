@@ -1,22 +1,36 @@
+import { designTokens } from '../../styles/designTokens';
 import React from 'react';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
 import { useTaskStore } from '../../stores/TaskStore';
 import { useUIStore } from '../../stores/UIStore';
 import { i18n } from '../../utils/i18n';
+import { compareWorkloadAssignees } from '../../services/WorkloadLogicService';
+import { WORKLOAD_HEADER_HEIGHT } from '../../constants';
+import { useWorkloadScrollSync } from './workloadScrollSync';
 
 interface WorkloadSidebarProps {
     scrollTop?: number;
     onScroll?: (scrollTop: number) => void;
 }
 
+const METRIC_COLUMN_MIN_WIDTH = 44;
+const METRIC_COLUMN_MAX_WIDTH = 72;
+const OVERLOAD_COLUMN_MIN_WIDTH = 124;
+const OVERLOAD_COLUMN_MAX_WIDTH = 170;
+const WORKLOAD_GRID_TEMPLATE = [
+    'minmax(0, 1fr)',
+    `clamp(${METRIC_COLUMN_MIN_WIDTH}px, 16%, ${METRIC_COLUMN_MAX_WIDTH}px)`,
+    `clamp(${METRIC_COLUMN_MIN_WIDTH}px, 16%, ${METRIC_COLUMN_MAX_WIDTH}px)`,
+    `clamp(${OVERLOAD_COLUMN_MIN_WIDTH}px, 35%, ${OVERLOAD_COLUMN_MAX_WIDTH}px)`
+].join(' ');
+
 export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
     scrollTop = 0,
     onScroll
 }) => {
-    const METRIC_COLUMN_WIDTH = 72;
-    const OVERLOAD_COLUMN_WIDTH = 170;
     const {
         workloadData,
+        actualStatus,
         resolveNextOverloadBar,
         resetHistogramSelectionCycle,
         resolveNextHistogramTask,
@@ -27,16 +41,10 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
     const scrollRef = React.useRef<HTMLDivElement>(null);
     const rowHeight = viewport.rowHeight * 2;
     const assignees = workloadData
-        ? Array.from(workloadData.assignees.values()).sort((a, b) => a.assigneeName.localeCompare(b.assigneeName))
+        ? Array.from(workloadData.assignees.values()).sort(compareWorkloadAssignees)
         : [];
     const hasAssignees = assignees.length > 0;
-
-    React.useEffect(() => {
-        if (!scrollRef.current) return;
-        if (Math.abs(scrollRef.current.scrollTop - scrollTop) > 1) {
-            scrollRef.current.scrollTop = scrollTop;
-        }
-    }, [scrollTop]);
+    const handleScroll = useWorkloadScrollSync(scrollRef, scrollTop, onScroll);
 
     if (!workloadData) {
         return <div style={{ padding: '10px', color: '#666', fontSize: '13px' }}>{i18n.t('label_loading') || 'Loading...'}</div>;
@@ -45,13 +53,15 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
     return (
         <div
             data-testid="workload-sidebar"
-            style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, width: '100%', height: '100%', borderTop: '1px solid #e0e0e0', backgroundColor: '#fafafa' }}
+            style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, width: '100%', height: '100%', boxSizing: 'border-box', borderTop: '1px solid #e0e0e0', backgroundColor: '#fafafa' }}
         >
             <div style={{
-                height: '40px',
+                height: `${WORKLOAD_HEADER_HEIGHT}px`,
+                flex: `0 0 ${WORKLOAD_HEADER_HEIGHT}px`,
+                boxSizing: 'border-box',
                 borderBottom: '1px solid #e0e0e0',
                 display: 'grid',
-                gridTemplateColumns: `minmax(0, 1fr) ${METRIC_COLUMN_WIDTH}px ${METRIC_COLUMN_WIDTH}px ${OVERLOAD_COLUMN_WIDTH}px`,
+                gridTemplateColumns: WORKLOAD_GRID_TEMPLATE,
                 alignItems: 'center',
                 padding: '0 16px',
                 fontWeight: 600,
@@ -59,8 +69,8 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                 color: '#666',
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px'
-            }}>
-                <div style={{ minWidth: 0 }}>
+            }} data-testid="workload-sidebar-header">
+                <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {i18n.t('label_assignee_plural') || 'Assignees'}
                 </div>
                 <div
@@ -80,14 +90,13 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
             <div
                 ref={scrollRef}
                 data-testid="workload-sidebar-scroll"
-                onScroll={(event) => onScroll?.(event.currentTarget.scrollTop)}
-                style={{ flex: 1, overflowY: hasAssignees ? 'auto' : 'hidden', overflowX: 'hidden', position: 'relative' }}
+                onScroll={handleScroll}
+                style={{ flex: 1, minHeight: 0, overflowY: hasAssignees ? 'auto' : 'hidden', overflowX: 'hidden', position: 'relative' }}
             >
                 {hasAssignees ? (
                     <div style={{ minHeight: `${assignees.length * rowHeight}px` }}>
                         {assignees.map((assignee) => {
-                            const hasOverload = Array.from(assignee.dailyWorkloads.values()).some(d => d.isOverload);
-                            const overloadCycleInfo = getOverloadCycleInfo(assignee.assigneeId);
+
                             return (
                                 <div
                                     key={assignee.assigneeId}
@@ -97,7 +106,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                         borderBottom: '1px solid #f0f0f0',
                                         padding: '8px 16px',
                                         display: 'grid',
-                                        gridTemplateColumns: `minmax(0, 1fr) ${METRIC_COLUMN_WIDTH}px ${METRIC_COLUMN_WIDTH}px ${OVERLOAD_COLUMN_WIDTH}px`,
+                                        gridTemplateColumns: WORKLOAD_GRID_TEMPLATE,
                                         gridTemplateRows: '1fr 1fr',
                                         alignItems: 'center',
                                         boxSizing: 'border-box'
@@ -121,40 +130,47 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                     </div>
                                     <div
                                         data-testid={`workload-sidebar-peak-${assignee.assigneeId}`}
-                                        style={{ gridColumn: '2 / 3', gridRow: '2 / 3', textAlign: 'right', fontSize: '12px', color: '#666' }}
+                                        style={{ gridColumn: '2 / 3', gridRow: '1 / 3', minWidth: 0, overflow: 'hidden', textAlign: 'right', fontSize: '12px', color: '#666', whiteSpace: 'nowrap' }}
                                     >
-                                        {assignee.peakLoad.toFixed(1)}h
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} aria-label={`${i18n.t('label_workload_planned')} ${assignee.plannedPeak.toFixed(1)}h`}>{i18n.t('label_workload_planned_short')} {assignee.plannedPeak.toFixed(1)}h</div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} aria-label={`${i18n.t('label_workload_actual')} ${actualStatus === 'ready' ? `${assignee.actualPeak.toFixed(1)}h` : '—'}`}>{i18n.t('label_workload_actual_short')} {actualStatus === 'ready' ? `${assignee.actualPeak.toFixed(1)}h` : '—'}</div>
                                     </div>
                                     <div
                                         data-testid={`workload-sidebar-total-${assignee.assigneeId}`}
-                                        style={{ gridColumn: '3 / 4', gridRow: '2 / 3', textAlign: 'right', fontSize: '12px', color: '#666' }}
+                                        style={{ gridColumn: '3 / 4', gridRow: '1 / 3', minWidth: 0, overflow: 'hidden', textAlign: 'right', fontSize: '12px', color: '#666', whiteSpace: 'nowrap' }}
                                     >
-                                        {assignee.totalLoad.toFixed(1)}h
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} aria-label={`${i18n.t('label_workload_planned')} ${assignee.plannedTotal.toFixed(1)}h`}>{i18n.t('label_workload_planned_short')} {assignee.plannedTotal.toFixed(1)}h</div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} aria-label={`${i18n.t('label_workload_actual')} ${actualStatus === 'ready' ? `${assignee.actualTotal.toFixed(1)}h` : '—'}`}>{i18n.t('label_workload_actual_short')} {actualStatus === 'ready' ? `${assignee.actualTotal.toFixed(1)}h` : '—'}</div>
                                     </div>
-                                    {hasOverload && (
+                                    {(['planned', 'actual'] as const).map(series => {
+                                        const hasOverload = Array.from(assignee.dailyWorkloads.values()).some(d => series === 'planned' ? d.isPlannedOverload : actualStatus === 'ready' && d.isActualOverload);
+                                        const overloadCycleInfo = getOverloadCycleInfo(assignee.assigneeId, series);
+                                        return hasOverload && (
                                         <div
-                                            data-testid={`overload-action-area-${assignee.assigneeId}`}
+                                            key={series}
+                                            data-testid={`${series === 'actual' ? 'actual-' : ''}overload-action-area-${assignee.assigneeId}`}
                                             style={{
                                                 gridColumn: '4 / 5',
-                                                gridRow: '1 / 3',
+                                                gridRow: series === 'planned' ? '1 / 2' : '2 / 3',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'flex-end',
-                                                gap: '6px',
-                                                width: `${OVERLOAD_COLUMN_WIDTH}px`,
+                                                gap: '4px',
+                                                width: '100%',
+                                                minWidth: 0,
                                                 justifySelf: 'end'
                                             }}
                                         >
                                             <button
                                                 type="button"
-                                                aria-label={`Focus overload histogram for ${assignee.assigneeName}`}
+                                                aria-label={`${i18n.t('label_workload_focus_overload', { name: assignee.assigneeName })} (${i18n.t(`label_workload_${series}`)})`}
                                                 onClick={() => {
-                                                    const selectedBar = resolveNextOverloadBar(assignee.assigneeId);
+                                                    const selectedBar = resolveNextOverloadBar(assignee.assigneeId, series);
                                                     if (!selectedBar) return;
 
                                                     suppressNextFocusedHistogramBarVerticalScroll(selectedBar);
                                                     resetHistogramSelectionCycle();
-                                                    const { taskId } = resolveNextHistogramTask(selectedBar.assigneeId, selectedBar.dateStr);
+                                                    const { taskId } = resolveNextHistogramTask(selectedBar.assigneeId, selectedBar.dateStr, series);
                                                     if (!taskId) return;
 
                                                     const result = useTaskStore.getState().focusTask(taskId);
@@ -163,20 +179,26 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                                     }
                                                 }}
                                                 style={{
-                                                    backgroundColor: '#fce8e6',
-                                                    color: '#d93025',
-                                                    padding: '2px 6px',
+                                                    backgroundColor: designTokens.controlBg,
+                                                    color: designTokens.taskDelayed,
+                                                    padding: '2px 4px',
                                                     borderRadius: '4px',
                                                     fontSize: '11px',
                                                     fontWeight: 600,
                                                     border: 'none',
-                                                    cursor: 'pointer'
+                                                    cursor: 'pointer',
+                                                    flex: '1 1 auto',
+                                                    minWidth: 0,
+                                                    maxWidth: '100%',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap'
                                                 }}
                                             >
-                                                OVERLOAD
+                                                {i18n.t(`label_workload_${series}_overload`)}
                                             </button>
                                             <span
-                                                data-testid={`overload-cycle-count-${assignee.assigneeId}`}
+                                                data-testid={`${series === 'actual' ? 'actual-' : ''}overload-cycle-count-${assignee.assigneeId}`}
                                                 style={{
                                                     width: '32px',
                                                     fontSize: '11px',
@@ -189,7 +211,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                                 {overloadCycleInfo ? `${overloadCycleInfo.current}/${overloadCycleInfo.total}` : '0/0'}
                                             </span>
                                         </div>
-                                    )}
+                                    ); })}
                                 </div>
                             );
                         })}

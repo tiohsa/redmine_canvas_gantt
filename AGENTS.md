@@ -1,226 +1,213 @@
 # AGENTS.md
 
-## Project Overview
+## Project
 
-Redmine Canvas Gantt is a Redmine plugin consisting of a Ruby on Rails backend and a React SPA (single-page application) located in the `spa/` directory.
+Redmine Canvas Gantt is a Redmine plugin with a Ruby on Rails backend and a React SPA under `spa/`.
 
-* **Languages**: Ruby for the backend, TypeScript for the frontend
-* **Frameworks/Libraries**: Redmine 6.0 / 6.1 / 7.0, React 19, Vite 8, Zustand 5
-* **Architecture**: Redmine plugin backend + SPA frontend
+- **Backend**: Ruby / Redmine 6.0, 6.1, 7.0
+- **Frontend**: TypeScript, React 19, Vite 8, Zustand 5
+- **Product behavior**: `README.md`
+- **UI / interaction authority**: `DESIGN.md`
+- **Known pitfalls**: `tasks/lessons.md`
+- **Backend test setup**: `tasks/backend-test-setup.md`
 
-## Source of Truth
+Use this file as the repository execution map. Read deeper docs only when relevant.
 
-* `README.md` and `README_ja.md` describe product behavior, supported workflows, and expected user-facing specifications.
-* `DESIGN.md` is the canonical reference for decisions related to UI, layout, spacing, typography, colors, components, shadows, and interactions.
+## Instruction Priority
 
-  * When making visual or interaction changes, always prioritize `DESIGN.md` and preserve consistency with it.
-  * If `DESIGN.md` conflicts with local conventions or simplification patterns, `DESIGN.md` takes precedence.
-* `tasks/lessons.md` records recurring implementation pitfalls and issues encountered in the past. Treat it as a set of project-specific guardrails.
-* `tasks/todo.md` is a working memo, not an authoritative specification.
+1. Current task requirements
+2. Critical invariants in this file
+3. `DESIGN.md`
+4. Existing architecture and repository conventions
+5. `README.md` / `tasks/lessons.md`
 
-## Development Setup
+If the task intentionally changes documented behavior, follow the task.
 
-### Backend / Redmine
+## Execution
 
-* Mount this repository as `plugins/redmine_canvas_gantt` within the Redmine application.
-* Start the local environment from the plugin root directory:
+Bias toward action.
+
+For implementation work:
+
+1. Inspect
+2. Identify the execution and state path
+3. Implement the smallest coherent fix
+4. Run targeted verification
+5. Fix regressions caused by the change
+6. Review the final diff
+7. Report results
+
+Do not ask for routine clarification when repository context provides a reasonable answer.
+
+If an optional analysis/indexing tool is unavailable, continue with direct repository inspection unless that tool is essential to correctness.
+
+## Critical Invariants
+
+### Task State
+
+All task mutations must flow through:
+
+`spa/src/stores/taskStore/`
+
+Preserve `ServerSnapshot`, `LocalPatch`, and `MutationOperation`.
+
+Do not introduce parallel dirty tracking or ad-hoc mutation paths.
+
+### Date-Only Values
+
+Preserve local-date semantics.
+
+Do not use `new Date('YYYY-MM-DD')` or `toISOString()` for date-only flows when timezone conversion can occur.
+
+### API Boundaries
+
+New direct API access must comply with:
+
+`spa/scripts/check-async-contract.mjs`
+
+Do not bypass established stores or API abstractions with isolated `fetch` calls.
+
+### i18n
+
+New frontend translation keys must be synchronized with:
+
+- `config/locales/*.yml`
+- `app/controllers/canvas_gantts_controller.rb`
+
+### Production Assets
+
+Production assets are generated under `assets/build/`.
+
+Files referenced by `assets/build/.vite/manifest.json` are tracked in Git.
+
+When production output changes, keep generated assets and the manifest synchronized.
+
+## Scope
+
+Make the smallest coherent change that fully solves the task.
+
+Do not:
+
+- refactor unrelated code;
+- add dependencies without need;
+- modify database migrations unless required;
+- change unrelated behavior;
+- create parallel mechanisms where an existing abstraction exists.
+
+Prefer fixing the root cause over retries, forced rerenders, duplicate synchronization, arbitrary delays, or symptom-only workarounds.
+
+Do not modify production behavior merely to satisfy a test whose environment assumptions are incorrect.
+
+## Git Safety
+
+Do not commit, amend, merge, rebase, push, create a PR, or alter remote branches unless explicitly requested.
+
+Preserve unrelated pre-existing working-tree changes.
+
+Do not reset, checkout, clean, or overwrite files outside the requested scope.
+
+Generated files required by the task may be updated, but do not create Git history merely to make a HEAD-based verification check pass.
+
+## Investigation
+
+Before modifying behavior, inspect as relevant:
+
+- implementation path;
+- authoritative state owner;
+- callers and consumers;
+- related tests;
+- `DESIGN.md`;
+- applicable `tasks/lessons.md`.
+
+For regressions, identify the causal path before applying a workaround.
+
+Do not infer root cause from a single failing test or visible symptom.
+
+## Verification
+
+Use verification proportional to the change.
+
+Prefer targeted checks during iteration. Broaden only when shared infrastructure, state management, dependency impact, or regression risk justifies it.
+
+When a check fails, classify the failure before changing code:
+
+1. **Regression** — caused by the current change
+2. **Pre-existing failure** — reproducible without the change
+3. **Environment failure** — missing runtime, dependency, locale, service, or configuration
+4. **Working-tree/Git-state constraint** — output is internally consistent but a check depends on committed HEAD state
+
+Fix regressions caused by the task.
+
+Do not alter product behavior to hide environment or pre-existing failures. Report such failures with the evidence needed to reproduce them.
+
+### Frontend
+
+From `spa/`:
 
 ```bash
-docker compose up -d --wait
+npx vitest run <path/to/test>
 ```
 
-* Redmine URL: `http://localhost:3000`
-* Load default data when necessary:
+or:
 
 ```bash
-docker compose exec -T -e REDMINE_LANG=en redmine bundle exec rake redmine:load_default_data
-docker compose exec -T redmine bundle exec rake db:fixtures:load
+npm run test -- --run
 ```
 
-### Frontend / SPA
-
-* Work within the `spa/` directory.
-* Install dependencies:
+When relevant:
 
 ```bash
-cd spa && npm ci
+npx tsc -b
+npm run lint
+npm run check:async-contract
+npm run build
 ```
 
-* Use Node.js `^20.19.0 || >=22.12.0` as specified by the `engines` field in `spa/package.json`. Treat `spa/package-lock.json` as the source of truth for dependencies and install them with `npm ci`. Do not mix package managers.
-* Start the Vite development server:
+After production builds:
 
-```bash
-cd spa && npm run dev
-```
+- inspect the Git diff;
+- verify the manifest references existing generated assets;
+- distinguish worktree consistency from checks that require generated files to already exist in `HEAD`.
 
-* To load frontend assets live, run Redmine in the development environment and set the environment variable `CANVAS_GANTT_USE_VITE_DEV_SERVER=1`. Canvas Gantt does not have a plugin settings page.
+### Backend
 
-## Build and Test Commands
+See:
 
-### Frontend (SPA)
+`tasks/backend-test-setup.md`
 
-* Build: `cd spa && npm run build`
-* Build watch mode: `cd spa && npm run build:watch`
-* Type check: `cd spa && npx tsc -b` (also included in `npm run build`)
-* Lint: `cd spa && npm run lint`
-* Build preview: `cd spa && npm run preview`
-* Distribution asset integrity: `cd spa && npm run check:build-artifacts`
-  This is a release/CI gate that verifies that the manifest and all referenced assets are already included in the current `HEAD`.
-* Async API boundary check: `cd spa && npm run check:async-contract`
-* Dependency lockfile supply-chain check: `cd spa && npm run security:supply-chain`
-
-### Frontend Tests (SPA Tests)
-
-* Unit tests: `cd spa && npm run test -- --run`
-* Watch mode: `cd spa && npm run test`
-* Example of running a single test file:
-
-```bash
-cd spa && npx vitest run src/components/GanttContainer.resize.test.tsx
-```
-
-* Standalone E2E tests: `cd spa && npm run test:e2e`
-* Headed E2E tests: `cd spa && npm run test:e2e:headed`
-* Redmine-integrated Playwright tests: `cd spa && npx playwright test -c playwright.redmine.config.ts`
-* Example of running the targeted compatibility suite against Redmine 6.0:
-
-```bash
-cd spa && npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts
-```
-
-### Backend Tests
-
-* There is no `Gemfile` inside the plugin directory, so do not run `bundle exec rspec` directly from the plugin directory.
-* Backend tests/specs must be run from the Redmine runtime environment.
-
-  * **Docker environment**:
-
-```bash
-docker compose up -d --wait --wait-timeout 600
-docker compose exec -T -u root redmine apt-get update
-docker compose exec -T -u root redmine apt-get install -y --no-install-recommends build-essential
-docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle config unset without
-docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle add rspec-rails --version '~> 8.0' --group test --skip-install
-docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle install --jobs 4 --retry 3
-docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle exec rspec plugins/redmine_canvas_gantt/spec
-```
-
-The official Redmine image does not include build tools, and `BUNDLE_WITHOUT=development:test` takes precedence over Bundler configuration. When running RSpec, install the required build tools as `root` and unset `BUNDLE_WITHOUT` for Bundler commands as shown above.
-
-Use `rspec-rails ~> 7.1` for Redmine 6.0/6.1 and `~> 8.0` for Redmine 7.0. If the container is recreated, repeat this setup.
-
-* **Non-Docker environment**: Run from the Redmine root directory.
+From the Redmine root:
 
 ```bash
 bundle exec rspec plugins/redmine_canvas_gantt/spec
 ```
 
-### Benchmark
+Prefer targeted specs first.
 
-* Local benchmark: `cd spa && npm run benchmark`
-* CI benchmark gate: `cd spa && npm run benchmark:ci`
+If the documented runtime is unavailable or incomplete, report the exact environment failure rather than treating the spec as a product failure.
 
-## CI/CD
+## Definition of Done
 
-* **CI workflow**: `.github/workflows/ci.yml`
-* CI runs frontend builds and distribution asset integrity checks, linting and async API boundary checks, unit tests under the default and multiple time zones, and benchmarks.
-* Backend specs and Redmine E2E tests run against Redmine 6.0.6, 6.1.2, and 7.0.0 images. Redmine 6.0 uses the targeted compatibility suite, while Redmine 6.1 and 7.0 run the full Playwright suite.
-* **Release workflow**: `.github/workflows/release.yml`
+A task is complete when:
 
-  * Runs only when a tag matching `v*` is pushed.
-  * Before release, it verifies that every file under `assets/build/` referenced by the manifest is tracked by Git and included in the target tag's tree.
-  * Creates a GitHub release including the generated changelog.
-  * Does not build, package, or upload artifacts such as VSIX files.
+- requested behavior is implemented;
+- repository invariants are preserved or intentionally changed;
+- relevant targeted verification passes;
+- regressions caused by the change are fixed;
+- generated assets are synchronized when applicable;
+- the final diff contains no accidental unrelated changes.
 
-## Code Style
+Update `tasks/lessons.md` only for reusable repository-specific lessons.
 
-* Write Ruby code idiomatically and follow Redmine and Rails conventions.
-* Use two spaces for indentation, `snake_case` for method and file names, and `CamelCase` for class and module names.
-* Keep frontend code small and testable. Prefer single-purpose helper functions over large inline blocks.
-* Follow the existing lint rules and strict TypeScript checks defined by `spa/eslint.config.js` and the TypeScript project configuration.
-* Unless explicitly requested, avoid broad automated refactoring. Keep changes minimal and scoped to the intended task.
+A task may still be reported as implementation-complete when an environment-dependent check cannot run, provided the limitation and remaining verification gap are explicit.
 
-## Design Governance
+## Final Response
 
-* Apply `DESIGN.md` consistently across DOM-based UI, canvas renderers, dialogs, popovers, and help screens.
-* Follow the defined design tokens for typography, spacing, border radius, shadows, and color usage rather than introducing independent design patterns.
-* When changing fonts, update CSS, inline styles, canvas `ctx.font`, and any sizing logic based on `measureText` together.
-* The canvas-based Gantt chart area must remain visually consistent with the surrounding SPA UI. Do not treat canvas text or color schemes as a separate design system.
+Keep the completion report concise:
 
-## Implementation Rules
+- what changed;
+- important implementation decisions;
+- verification performed;
+- failed or unavailable checks and their classification;
+- unresolved risks.
 
-* When adding a new frontend internationalization (i18n) key, always add it to both `config/locales/*.yml` and `app/controllers/canvas_gantts_controller.rb` so the SPA receives it correctly.
-* Preserve local-date semantics in UI flows that operate on date-only values. Do not mix local-date handling with `toISOString()` or `new Date('YYYY-MM-DD')`.
-* Changes to query, filter, URL, or `localStorage` state require regression coverage because shared-state precedence is easy to break.
-* UI whose visibility depends on project filters or other permissions must follow candidate lists supplied by the backend. Do not reconstruct hidden options by inferring them from task data.
-* Treat `ServerSnapshot`, operation-ID-based `LocalPatch`, and `MutationOperation` as the sources of truth for asynchronous task state. Do not independently update display entities or dirty state through separate paths; route changes through the state transitions and mutation queue under `spa/src/stores/taskStore/`.
-* API mutation/read call boundaries are protected by the allowlist in `spa/scripts/check-async-contract.mjs`. Before adding a new direct API call, integrate it into an existing service/store boundary. Update the allowlist and tests only when intentionally introducing a new boundary.
-* Business calendars must use the same resolution rules across backend and SPA date calculations, validation, and rendering. `examples/business_calendars/` contains configuration examples, while `tools/holiday_generator/` is a generation tool. Do not confuse company-specific customizations with managed generated files.
-
-## Recurring Implementation Notes
-
-* Do not determine the role of forms inside the `IssueIframeDialog` iframe solely from the `action` URL. Redmine's TimeEntry list `query_form` may also use `/time_entries` as its action, so first exclude `query_form` / `query-form`. Classify a TimeEntry Editor by `new_time_entry`, `edit_time_entry*`, the `new_time_entry` class, or the semantic structure of `time_entry[...]` fields. Centralize the classification logic in `spa/src/utils/issueDialogForms.ts` and add unit tests for each DOM pattern.
-* When changing iframe form classification, connect both the footer save button's target selection and the iframe's native `submit` listener to the same classifier. Fixing only one path causes inconsistent Timer save results between the save button and submissions triggered by Enter or an in-form button.
-* Do not determine Work Timer TimeEntry success from a fixed redirect pathname. Because `back_url` may redirect back to Canvas Gantt, combine the following signals: submission has started, navigation away from the TimeEntry Editor, a success flash is displayed, and no validation error is present. Use both the query-form regression coverage in `IssueIframeDialog.test.tsx` and the real Redmine lifecycle verification in `spa/tests/e2e-redmine/work-timer.pw.ts`.
-* Before starting compatibility E2E tests, inspect the existing Docker containers, images, and DB volumes. The Compose default is Redmine 7.0.0; use the `REDMINE_IMAGE` override documented in the README for 6.0.6 and 6.1.2. Do not run `down -v` or delete an existing environment solely for verification. Instead, explicitly specify the base URL for the target version when running tests.
-* If `.codegraph/` exists but `codegraph_status` returns a DB open error, do not repeat the same query. Record the failure and switch to direct file inspection once the relevant files have been narrowed down. Check whether initialization is required only when `.codegraph/` itself does not exist.
-
-## Security and Safety
-
-* Do not commit API keys, tokens, or confidential information.
-* Keep sensitive configuration in environment variables or Redmine's configuration facilities.
-* Respect `view_canvas_gantt` for access to Canvas Gantt and `manage_canvas_gantt_baseline` for baseline saving. Issue operations must use Redmine's standard permissions for the target Issue's Project.
-* Preserve and do not weaken the asset-path safety validation around `/plugin_assets/redmine_canvas_gantt/build/*`.
-* Do not add or upgrade dependencies, introduce Redmine DB migrations, change the permission model, make breaking changes to external calendar formats, release, or deploy unless explicitly requested.
-
-## Repository Layout
-
-```text
-redmine_canvas_gantt/
-├── init.rb
-├── app/
-│   ├── controllers/
-│   └── views/
-├── config/
-│   ├── locales/
-│   └── routes.rb
-├── lib/redmine_canvas_gantt/
-├── spec/
-├── assets/build/
-├── spa/
-├── examples/business_calendars/
-├── tools/holiday_generator/
-├── docker-compose.yml
-└── .github/workflows/
-    ├── ci.yml
-    └── release.yml
-```
-
-* `app/controllers/canvas_gantts_controller.rb`: Provides the main page, JSON endpoints, edit endpoints, related endpoints, and fallback asset-serving behavior.
-* `lib/redmine_canvas_gantt/data_payload_builder.rb`: Builds task, relation, version, status, and project payloads for the SPA.
-* `spa/`: Contains the React application, Zustand stores, Canvas renderer, API client, Vitest tests, and Playwright tests.
-* `cd spa && npm run build` writes frontend assets to `assets/build/`. These are generated artifacts, but because they are included in releases, the manifest, hashed JS/CSS files, fonts, and all referenced files are tracked in Git as a complete set.
-* Production asset URLs are resolved from the manifest by `lib/redmine_canvas_gantt/vite_asset_helper.rb`, and `CanvasGanttsController#asset` serves them with safety validation. `init.rb` does not link or copy them into `public/plugin_assets` at startup.
-
-## Working Rules & Agent Workflow
-
-* Always inspect and review the relevant source files before editing code.
-* Keep changes within the scope of the requested task and avoid unnecessary rewrites of unrelated code.
-* When behavior changes, always run the relevant tests or validation commands before considering the work complete.
-* When fixing a bug or changing a recurring implementation pattern, record the lesson in `tasks/lessons.md` as part of the task.
-* Preserve the user's uncommitted changes and do not revert out-of-scope diffs or generated artifacts. In particular, builds replace hashed files under `assets/build/`, so inspect the diff before and after running a build.
-* For frontend changes, run the following whenever reasonably possible:
-
-```bash
-cd spa && npm run build
-npm run lint
-npm run check:async-contract
-npm run test -- --run
-```
-
-For dependency changes, also run `npm run security:supply-chain`. For changes affecting performance or Redmine integration, also run the relevant benchmark or Playwright suite.
-
-* After a build, verify `assets/build/.vite/manifest.json` references, Git tracking status, removed old hashes, and newly added hashes as one consistent set. Do not treat the build as successful while leaving untracked generated artifacts behind.
-* `npm run check:build-artifacts` verifies that referenced files are already included in the current `HEAD` tree. Therefore, run it against a commit/tag candidate or in CI, rather than immediately after source changes in an uncommitted working tree.
-* For compatibility-impacting changes, account for the distinction between the Redmine 6.0 targeted suite and the Redmine 6.1/7.0 full E2E suites. At minimum, add and run the backend spec or Playwright test directly relevant to the change.
-* If any validation cannot be run, explicitly list the unexecuted command and the reason in the final report.
+Clearly distinguish implementation failures from environment or tooling limitations.

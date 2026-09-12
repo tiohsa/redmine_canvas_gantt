@@ -4,7 +4,7 @@ import { useUIStore } from '../stores/UIStore';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useTaskStore } from '../stores/TaskStore';
 import { useWorkloadStore } from '../stores/WorkloadStore';
-import { SIDEBAR_RESIZE_CURSOR } from '../constants';
+import { SIDEBAR_MIN_WIDTH, SIDEBAR_RESIZE_CURSOR, WORKLOAD_SIDEBAR_MIN_WIDTH } from '../constants';
 import type { Relation, Task } from '../types';
 
 const fetchDataMock = vi.fn().mockResolvedValue({
@@ -397,6 +397,147 @@ describe('GanttContainer Resize', () => {
         expect(setSidebarWidthSpy).toHaveBeenCalledWith(474);
     });
 
+    it('should clamp a narrow sidebar to the workload minimum when workload opens', () => {
+        const setSidebarWidthSpy = vi.fn();
+        useUIStore.setState({
+            sidebarWidth: SIDEBAR_MIN_WIDTH,
+            setSidebarWidth: setSidebarWidthSpy,
+            leftPaneVisible: true,
+            rightPaneVisible: true
+        });
+
+        render(<GanttContainer />);
+
+        const resizeHandle = screen.getByTestId('sidebar-resize-handle');
+        const ganttContainerDiv = resizeHandle.parentElement as HTMLElement;
+        vi.spyOn(ganttContainerDiv, 'getBoundingClientRect').mockReturnValue({
+            left: 0,
+            top: 0,
+            width: 1000,
+            height: 500,
+            bottom: 500,
+            right: 1000,
+            x: 0,
+            y: 0,
+            toJSON: () => { }
+        });
+
+        act(() => {
+            useWorkloadStore.setState({
+                ...useWorkloadStore.getState(),
+                workloadPaneVisible: true,
+                workloadData: {
+                    assignees: new Map(),
+                    plannedOverloadedAssigneeCount: 0,
+                    actualOverloadedAssigneeCount: 0,
+                    actualOverloadedDayCount: 0,
+                    plannedOverloadedDayCount: 0
+                }
+            });
+        });
+
+        expect(setSidebarWidthSpy).toHaveBeenCalledWith(WORKLOAD_SIDEBAR_MIN_WIDTH);
+    });
+
+    it('should use the workload minimum for sidebar drag and window resize', () => {
+        const setSidebarWidthSpy = vi.fn();
+        useUIStore.setState({
+            sidebarWidth: SIDEBAR_MIN_WIDTH,
+            setSidebarWidth: setSidebarWidthSpy,
+            leftPaneVisible: true,
+            rightPaneVisible: true
+        });
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadPaneVisible: true,
+            workloadData: {
+                assignees: new Map(),
+                plannedOverloadedAssigneeCount: 0,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 0
+            }
+        });
+
+        render(<GanttContainer />);
+
+        const resizeHandle = screen.getByTestId('sidebar-resize-handle');
+        const ganttContainerDiv = resizeHandle.parentElement as HTMLElement;
+        vi.spyOn(ganttContainerDiv, 'getBoundingClientRect').mockReturnValue({
+            left: 0,
+            top: 0,
+            width: 1000,
+            height: 500,
+            bottom: 500,
+            right: 1000,
+            x: 0,
+            y: 0,
+            toJSON: () => { }
+        });
+
+        fireEvent(window, new Event('resize'));
+        expect(setSidebarWidthSpy).toHaveBeenCalledWith(WORKLOAD_SIDEBAR_MIN_WIDTH);
+
+        setSidebarWidthSpy.mockClear();
+        fireEvent.mouseDown(resizeHandle);
+        fireEvent.mouseMove(document, { clientX: 200 });
+        fireEvent.mouseUp(document);
+        expect(setSidebarWidthSpy).toHaveBeenCalledWith(WORKLOAD_SIDEBAR_MIN_WIDTH);
+    });
+
+    it('keeps the clamped width when workload closes and allows normal manual shrinking', () => {
+        const initialSetSidebarWidth = useUIStore.getInitialState().setSidebarWidth;
+        useUIStore.setState({
+            sidebarWidth: SIDEBAR_MIN_WIDTH,
+            setSidebarWidth: initialSetSidebarWidth,
+            leftPaneVisible: true,
+            rightPaneVisible: true
+        });
+
+        render(<GanttContainer />);
+
+        const resizeHandle = screen.getByTestId('sidebar-resize-handle');
+        const ganttContainerDiv = resizeHandle.parentElement as HTMLElement;
+        vi.spyOn(ganttContainerDiv, 'getBoundingClientRect').mockReturnValue({
+            left: 0,
+            top: 0,
+            width: 1000,
+            height: 500,
+            bottom: 500,
+            right: 1000,
+            x: 0,
+            y: 0,
+            toJSON: () => { }
+        });
+
+        act(() => {
+            useWorkloadStore.setState({
+                ...useWorkloadStore.getState(),
+                workloadPaneVisible: true,
+                workloadData: {
+                    assignees: new Map(),
+                    plannedOverloadedAssigneeCount: 0,
+                    actualOverloadedAssigneeCount: 0,
+                    actualOverloadedDayCount: 0,
+                    plannedOverloadedDayCount: 0
+                }
+            });
+        });
+        expect(useUIStore.getState().sidebarWidth).toBe(WORKLOAD_SIDEBAR_MIN_WIDTH);
+
+        act(() => {
+            useWorkloadStore.setState({ workloadPaneVisible: false });
+        });
+        expect(useUIStore.getState().sidebarWidth).toBe(WORKLOAD_SIDEBAR_MIN_WIDTH);
+
+        act(() => {
+            fireEvent.mouseDown(resizeHandle);
+            fireEvent.mouseMove(document, { clientX: SIDEBAR_MIN_WIDTH });
+            fireEvent.mouseUp(document);
+        });
+        expect(useUIStore.getState().sidebarWidth).toBe(SIDEBAR_MIN_WIDTH);
+    });
+
     it('should hide right pane and resize handle when left pane is maximized', () => {
         useUIStore.setState({
             leftPaneVisible: true,
@@ -429,8 +570,10 @@ describe('GanttContainer Resize', () => {
             workloadPaneVisible: true,
             workloadData: {
                 assignees: new Map(),
-                overloadedAssigneeCount: 0,
-                overloadedDayCount: 0
+                plannedOverloadedAssigneeCount: 0,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 0
             }
         });
 
@@ -467,8 +610,10 @@ describe('GanttContainer Resize', () => {
             workloadPaneVisible: true,
             workloadData: {
                 assignees: new Map(),
-                overloadedAssigneeCount: 0,
-                overloadedDayCount: 0
+                plannedOverloadedAssigneeCount: 0,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 0
             }
         });
 
@@ -521,8 +666,10 @@ describe('GanttContainer Resize', () => {
                 workloadPaneVisible: true,
                 workloadData: {
                     assignees: new Map(),
-                    overloadedAssigneeCount: 0,
-                    overloadedDayCount: 0
+                    plannedOverloadedAssigneeCount: 0,
+                    actualOverloadedAssigneeCount: 0,
+                    actualOverloadedDayCount: 0,
+                    plannedOverloadedDayCount: 0
                 }
             });
         });

@@ -31,7 +31,7 @@ import { useBaselineStore } from '../stores/BaselineStore';
 import { designTokens } from '../styles/designTokens';
 import { resizeCanvasForDpr } from '../utils/canvasDpr';
 
-import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, BOTTOM_PADDING_PX, SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH, SIDEBAR_RESIZE_CURSOR } from '../constants';
+import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, BOTTOM_PADDING_PX, SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH, SIDEBAR_RESIZE_CURSOR, WORKLOAD_SIDEBAR_MIN_WIDTH } from '../constants';
 
 export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
     const WORKLOAD_DEFAULT_RATIO = 0.4;
@@ -107,6 +107,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         containerRef,
         leftPaneVisible: isSplitView,
         sidebarWidth,
+        minWidth: workloadPaneVisible ? WORKLOAD_SIDEBAR_MIN_WIDTH : undefined,
         setSidebarWidth,
         setSidebarResizing
     });

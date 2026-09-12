@@ -30,21 +30,28 @@ const buildWorkloadData = (entries: Array<{
         {
             assigneeId: entry.assigneeId,
             assigneeName: entry.assigneeName,
-            totalLoad: entry.tasks.length,
-            peakLoad: entry.tasks.length,
+            plannedTotal: entry.tasks.length,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: entry.tasks.length,
             dailyWorkloads: new Map([
                 [entry.dateStr, {
                     dateStr: entry.dateStr,
                     timestamp: START,
-                    totalLoad: entry.tasks.length,
-                    isOverload: false,
-                    contributingTasks: entry.tasks.map((task) => ({ task, dailyLoad: 1 }))
+                    plannedLoad: entry.tasks.length,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: entry.tasks.map((task) => ({ task, dailyLoad: 1 }))
                 }]
             ])
         }
     ])),
-    overloadedAssigneeCount: 0,
-    overloadedDayCount: 0
+    plannedOverloadedAssigneeCount: 0,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 0
 });
 
 const buildOverloadWorkloadData = () => ({
@@ -52,50 +59,66 @@ const buildOverloadWorkloadData = () => ({
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 24,
-            peakLoad: 12,
+            plannedTotal: 24,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 12,
             dailyWorkloads: new Map([
                 ['2026-01-05', {
                     dateStr: '2026-01-05',
                     timestamp: START + 4 * 24 * 60 * 60 * 1000,
-                    totalLoad: 12,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 12,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         { task: buildTask({ id: 'late', assignedToId: 1, assignedToName: 'Alice', estimatedHours: 12 }), dailyLoad: 12 }
                     ]
                 }],
                 ['2026-01-02', {
                     dateStr: '2026-01-02',
                     timestamp: START + 1 * 24 * 60 * 60 * 1000,
-                    totalLoad: 9,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 9,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         { task: buildTask({ id: 'early', assignedToId: 1, assignedToName: 'Alice', estimatedHours: 9 }), dailyLoad: 9 }
                     ]
                 }],
                 ['2026-01-04', {
                     dateStr: '2026-01-04',
                     timestamp: START + 3 * 24 * 60 * 60 * 1000,
-                    totalLoad: 10,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 10,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         { task: buildTask({ id: 'middle', assignedToId: 1, assignedToName: 'Alice', estimatedHours: 10 }), dailyLoad: 10 }
                     ]
                 }],
                 ['2026-01-03', {
                     dateStr: '2026-01-03',
                     timestamp: START + 2 * 24 * 60 * 60 * 1000,
-                    totalLoad: 2,
-                    isOverload: false,
-                    contributingTasks: [
+                    plannedLoad: 2,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: [
                         { task: buildTask({ id: 'normal', assignedToId: 1, assignedToName: 'Alice', estimatedHours: 2 }), dailyLoad: 2 }
                     ]
                 }]
             ])
         }]
     ]),
-    overloadedAssigneeCount: 1,
-    overloadedDayCount: 3
+    plannedOverloadedAssigneeCount: 1,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 3
 });
 
 describe('WorkloadStore histogram selection', () => {
@@ -306,28 +329,38 @@ describe('WorkloadStore histogram selection', () => {
                     [1, {
                         assigneeId: 1,
                         assigneeName: 'Alice',
-                        totalLoad: 2,
-                        peakLoad: 1,
+                        plannedTotal: 2,
+                        actualTotal: 0,
+                        actualPeak: 0,
+                        plannedPeak: 1,
                         dailyWorkloads: new Map([
                             ['2026-01-06', {
                                 dateStr: '2026-01-06',
                                 timestamp: START + 24 * 60 * 60 * 1000,
-                                totalLoad: 1,
-                                isOverload: false,
-                                contributingTasks: [{ task, dailyLoad: 1 }]
+                                plannedLoad: 1,
+                                actualHours: 0,
+                                actualContributions: [],
+                                isActualOverload: false,
+                                isPlannedOverload: false,
+                                plannedContributions: [{ task, dailyLoad: 1 }]
                             }],
                             ['2026-01-05', {
                                 dateStr: '2026-01-05',
                                 timestamp: START,
-                                totalLoad: 1,
-                                isOverload: false,
-                                contributingTasks: [{ task, dailyLoad: 1 }]
+                                plannedLoad: 1,
+                                actualHours: 0,
+                                actualContributions: [],
+                                isActualOverload: false,
+                                isPlannedOverload: false,
+                                plannedContributions: [{ task, dailyLoad: 1 }]
                             }]
                         ])
                     }]
                 ]),
-                overloadedAssigneeCount: 0,
-                overloadedDayCount: 0
+                plannedOverloadedAssigneeCount: 0,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 0
             }
         });
 
@@ -346,28 +379,38 @@ describe('WorkloadStore histogram selection', () => {
                     [1, {
                         assigneeId: 1,
                         assigneeName: 'Alice',
-                        totalLoad: 2,
-                        peakLoad: 1,
+                        plannedTotal: 2,
+                        actualTotal: 0,
+                        actualPeak: 0,
+                        plannedPeak: 1,
                         dailyWorkloads: new Map([
                             ['2026-01-05', {
                                 dateStr: '2026-01-05',
                                 timestamp: START,
-                                totalLoad: 1,
-                                isOverload: false,
-                                contributingTasks: [{ task, dailyLoad: 1 }]
+                                plannedLoad: 1,
+                                actualHours: 0,
+                                actualContributions: [],
+                                isActualOverload: false,
+                                isPlannedOverload: false,
+                                plannedContributions: [{ task, dailyLoad: 1 }]
                             }],
                             ['2026-01-06', {
                                 dateStr: '2026-01-06',
                                 timestamp: START + 24 * 60 * 60 * 1000,
-                                totalLoad: 1,
-                                isOverload: false,
-                                contributingTasks: [{ task, dailyLoad: 1 }]
+                                plannedLoad: 1,
+                                actualHours: 0,
+                                actualContributions: [],
+                                isActualOverload: false,
+                                isPlannedOverload: false,
+                                plannedContributions: [{ task, dailyLoad: 1 }]
                             }]
                         ])
                     }]
                 ]),
-                overloadedAssigneeCount: 0,
-                overloadedDayCount: 0
+                plannedOverloadedAssigneeCount: 0,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 0
             },
             focusedHistogramBar: { assigneeId: 1, dateStr: '2026-01-06' }
         });

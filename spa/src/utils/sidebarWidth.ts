@@ -7,7 +7,10 @@ import {
 
 export type SidebarWidthBounds = { min: number; max: number };
 
-export const computeSidebarWidthBounds = (containerWidth: number): SidebarWidthBounds | null => {
+export const computeSidebarWidthBounds = (
+    containerWidth: number,
+    minWidth: number = SIDEBAR_MIN_WIDTH
+): SidebarWidthBounds | null => {
     if (containerWidth <= 0) return null;
     const maxByRatio = Math.floor(containerWidth * SIDEBAR_MAX_WIDTH_RATIO);
     const maxByRemainingRightPane = Math.floor(
@@ -16,8 +19,8 @@ export const computeSidebarWidthBounds = (containerWidth: number): SidebarWidthB
     const max = Math.min(maxByRatio, maxByRemainingRightPane);
 
     return {
-        min: SIDEBAR_MIN_WIDTH,
-        max: Math.max(SIDEBAR_MIN_WIDTH, max)
+        min: minWidth,
+        max: Math.max(minWidth, max)
     };
 };
 

@@ -1,4 +1,8 @@
-import React, { useEffect, useRef, useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import type { WorkloadSeries } from '../../services/WorkloadLogicService';
+import { compareWorkloadAssignees } from '../../services/WorkloadLogicService';
+import { toCalendarDate } from '../../utils/dateOnly';
+import { designTokens } from '../../styles/designTokens';
+import React, { useEffect, useRef, useCallback, useLayoutEffect, useMemo, useState, useId } from 'react';
 import { i18n } from '../../utils/i18n';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
 import { useTaskStore } from '../../stores/TaskStore';
@@ -6,6 +10,8 @@ import { useUIStore } from '../../stores/UIStore';
 import { WorkloadRenderer } from '../../renderers/WorkloadRenderer';
 import { panViewportByPixels } from '../../engines/viewportPan';
 import { resizeCanvasForDpr } from '../../utils/canvasDpr';
+import { WORKLOAD_HEADER_HEIGHT } from '../../constants';
+import { useWorkloadScrollSync } from './workloadScrollSync';
 
 interface WorkloadCanvasPanelProps {
     scrollTop?: number;
@@ -15,6 +21,7 @@ interface WorkloadCanvasPanelProps {
 interface HistogramBarHit {
     assigneeId: number;
     dateStr: string;
+    series?: WorkloadSeries;
 }
 
 interface DragState {
@@ -35,7 +42,8 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
     scrollTop = 0,
     onScroll
 }) => {
-    const HEADER_HEIGHT = 40;
+    const descriptionId = useId();
+    const [hoveredBar, setHoveredBar] = useState<HistogramBarHit | null>(null);
     const FOCUS_PADDING_X = 24;
     const SCROLL_SYNC_TOLERANCE_PX = 3;
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -44,6 +52,8 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
     const renderEngine = useRef<WorkloadRenderer | null>(null);
     const {
         workloadData,
+        actualStatus,
+        setRange,
         capacityThreshold,
         focusedHistogramBar,
         setFocusedHistogramBar,
@@ -100,15 +110,17 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                 zoomLevel,
                 workloadData,
                 capacityThreshold,
+                showActual: actualStatus === 'ready',
                 verticalScroll: scrollTop,
                 hoveredAssigneeId: null,
                 hoveredDateStr: null,
                 focusedAssigneeId: focusedHistogramBar?.assigneeId ?? null,
                 focusedDateStr: focusedHistogramBar?.dateStr ?? null,
+                focusedSeries: focusedHistogramBar?.series,
                 getBarLabelInfo: useWorkloadStore.getState().getHistogramBarLabelInfo
             });
         }
-    }, [capacityThreshold, focusedHistogramBar, histogramViewport, scrollTop, workloadData, zoomLevel]);
+    }, [actualStatus, capacityThreshold, focusedHistogramBar, histogramViewport, scrollTop, workloadData, zoomLevel]);
 
     useEffect(() => {
         histogramViewportRef.current = histogramViewport;
@@ -142,6 +154,17 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         setIsPointerSuppressed((prev) => (prev === next ? prev : next));
     }, []);
 
+    const updateRange = useCallback(() => {
+        const width = viewportRef.current?.clientWidth || histogramViewport.width;
+        if (width <= 0 || histogramViewport.scale <= 0) return;
+        const start = histogramViewport.startDate + histogramViewport.scrollX / histogramViewport.scale;
+        setRange({ from: toCalendarDate(start), to: toCalendarDate(start + width / histogramViewport.scale - 1) });
+    }, [histogramViewport, setRange]);
+
+    useEffect(() => { updateRange(); }, [updateRange]);
+
+    const handleScroll = useWorkloadScrollSync(viewportRef, scrollTop, onScroll);
+
     const updateCanvasSize = useCallback(() => {
         if (!canvasRef.current) return;
 
@@ -150,7 +173,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         if (!viewportElement && !containerElement) return;
 
         const width = viewportElement?.clientWidth ?? containerElement?.clientWidth ?? 0;
-        const height = viewportElement?.clientHeight ?? Math.max(0, (containerElement?.clientHeight ?? 0) - HEADER_HEIGHT);
+        const height = viewportElement?.clientHeight ?? Math.max(0, (containerElement?.clientHeight ?? 0) - WORKLOAD_HEADER_HEIGHT);
         if (width > 0 && height > 0) {
             const ctx = canvasRef.current.getContext('2d');
             resizeCanvasForDpr(canvasRef.current, ctx, width, height);
@@ -163,6 +186,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         
         const resizeObserver = new ResizeObserver(() => {
             updateCanvasSize();
+            updateRange();
             renderCurrentState();
         });
         
@@ -174,23 +198,16 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         }
         
         return () => resizeObserver.disconnect();
-    }, [renderCurrentState, updateCanvasSize]);
+    }, [renderCurrentState, updateCanvasSize, updateRange]);
 
     useLayoutEffect(() => {
         updateCanvasSize();
         renderCurrentState();
-    }, [renderCurrentState, updateCanvasSize]);
+    }, [renderCurrentState, updateCanvasSize, updateRange]);
 
     useEffect(() => {
         renderCurrentState();
     }, [renderCurrentState]);
-
-    useEffect(() => {
-        if (!viewportRef.current) return;
-        if (Math.abs(viewportRef.current.scrollTop - scrollTop) > 1) {
-            viewportRef.current.scrollTop = scrollTop;
-        }
-    }, [scrollTop]);
 
     useEffect(() => {
         if (!focusedHistogramBar || !workloadData || !viewportRef.current) return;
@@ -202,7 +219,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
             return;
         }
 
-        const assignees = Array.from(workloadData.assignees.values()).sort((a, b) => a.assigneeName.localeCompare(b.assigneeName));
+        const assignees = Array.from(workloadData.assignees.values()).sort(compareWorkloadAssignees);
         const assigneeIndex = assignees.findIndex((assignee) => assignee.assigneeId === focusedHistogramBar.assigneeId);
         if (assigneeIndex < 0) return;
 
@@ -301,6 +318,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
             zoomLevel: interactionState.zoomLevel,
             workloadData: interactionState.workloadData,
             capacityThreshold: interactionState.capacityThreshold,
+            showActual: useWorkloadStore.getState().actualStatus === 'ready',
             verticalScroll: interactionState.scrollTop
         });
     }, []);
@@ -314,6 +332,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         }
 
         const hit = hitTestDailyBarAtClientPoint(clientX, clientY);
+        setHoveredBar(hit);
         setHistogramBarHoveredState(Boolean(hit));
     }, [hitTestDailyBarAtClientPoint, isScrollInteractionLocked, setHistogramBarHoveredState]);
 
@@ -368,6 +387,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         };
 
         const handleViewportMouseLeave = () => {
+            setHoveredBar(null);
             if (histogramBarHoveredRef.current) {
                 setHistogramBarHoveredState(false);
             }
@@ -420,7 +440,8 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
             const releasedHit = hitTestDailyBarAtClientPoint(event.clientX, event.clientY);
             if (!releasedHit ||
                 releasedHit.assigneeId !== pointerState.pressedBarHit.assigneeId ||
-                releasedHit.dateStr !== pointerState.pressedBarHit.dateStr) {
+                releasedHit.dateStr !== pointerState.pressedBarHit.dateStr ||
+                releasedHit.series !== pointerState.pressedBarHit.series) {
                 updateHoverState(event.clientX, event.clientY);
                 return;
             }
@@ -433,7 +454,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
             suppressFocusedBarScrollKeyRef.current = releasedHitKey;
             setFocusedHistogramBar(releasedHit);
 
-            const { taskId } = useWorkloadStore.getState().resolveNextHistogramTask(releasedHit.assigneeId, releasedHit.dateStr);
+            const { taskId } = useWorkloadStore.getState().resolveNextHistogramTask(releasedHit.assigneeId, releasedHit.dateStr, releasedHit.series);
             if (!taskId) {
                 updateHoverState(event.clientX, event.clientY);
                 return;
@@ -463,10 +484,22 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
         };
     }, [finishDrag, hitTestDailyBarAtClientPoint, isScrollInteractionLocked, setFocusedHistogramBar, setHistogramBarHoveredState, setPointerSuppressedState, updateHoverState]);
 
+    const dailyDescription = (assigneeId: number, dateStr: string) => {
+        const assignee = workloadData?.assignees.get(assigneeId);
+        const daily = assignee?.dailyWorkloads.get(dateStr);
+        return `${dateStr} ${assignee?.assigneeName ?? ''}\n${i18n.t('label_workload_planned')}: ${(daily?.plannedLoad ?? 0).toFixed(1)}h\n${i18n.t('label_workload_actual')}: ${actualStatus === 'ready' ? `${(daily?.actualHours ?? 0).toFixed(1)}h` : '—'}`;
+    };
+
+    const describedBar = hoveredBar ?? focusedHistogramBar;
+    const description = describedBar && workloadData?.assignees.get(describedBar.assigneeId)?.dailyWorkloads.has(describedBar.dateStr)
+        ? dailyDescription(describedBar.assigneeId, describedBar.dateStr)
+        : '';
+
     return (
-        <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', borderTop: '1px solid #e0e0e0', backgroundColor: '#ffffff' }}>
+        <div ref={containerRef} data-testid="workload-canvas-panel" style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', boxSizing: 'border-box', borderTop: '1px solid #e0e0e0', backgroundColor: '#ffffff' }}>
             <div style={{
-                height: '40px',
+                height: `${WORKLOAD_HEADER_HEIGHT}px`,
+                boxSizing: 'border-box',
                 borderBottom: '1px solid #e0e0e0',
                 display: 'flex',
                 alignItems: 'center',
@@ -478,16 +511,24 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px',
                 backgroundColor: '#fafafa'
-            }}>
-                <span>HISTOGRAM (DAILY WORKLOAD)</span>
+            }} data-testid="workload-canvas-header">
+                <span>{i18n.t('label_workload_histogram') || 'HISTOGRAM (DAILY WORKLOAD)'}</span>
+                <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 10 }}>
+                    <span>□ {i18n.t('label_workload_planned')}</span>
+                    <span>■ {i18n.t('label_workload_actual')}</span>
+                    <span>┄ {i18n.t('label_workload_capacity')} {capacityThreshold}h</span>
+                </span>
             </div>
+            {actualStatus === 'error' && <div role="alert" style={{ position: 'absolute', top: WORKLOAD_HEADER_HEIGHT, right: 8, zIndex: 2, background: designTokens.appBg, color: designTokens.taskDelayed, fontSize: 12 }}>{i18n.t('label_workload_actual_load_failed')}</div>}
+            {actualStatus === 'loading' && <span role="status" style={{ position: 'absolute', top: WORKLOAD_HEADER_HEIGHT, right: 8, zIndex: 2, fontSize: 12 }}>{i18n.t('label_workload_actual')} — {i18n.t('label_loading')}</span>}
+            {hoveredBar && <div role="tooltip" style={{ position: 'absolute', top: WORKLOAD_HEADER_HEIGHT, left: 8, zIndex: 3, pointerEvents: 'none', whiteSpace: 'pre-line', padding: 8, borderRadius: 8, background: designTokens.appBg, border: `1px solid ${designTokens.controlBorder}`, fontSize: 12 }}>{dailyDescription(hoveredBar.assigneeId, hoveredBar.dateStr)}</div>}
             <div
                 ref={viewportRef}
                 data-testid="workload-canvas-viewport"
-                onScroll={(event) => onScroll?.(event.currentTarget.scrollTop)}
+                onScroll={handleScroll}
                 style={{
                     position: 'absolute',
-                    top: HEADER_HEIGHT,
+                    top: WORKLOAD_HEADER_HEIGHT,
                     left: 0,
                     right: 0,
                     bottom: 0,
@@ -497,7 +538,7 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                 }}
             >
                 <div style={{ position: 'relative', minHeight: '100%', height: hasAssignees ? `${contentHeight}px` : '100%' }}>
-                    <canvas ref={canvasRef} data-testid="workload-canvas" style={{ position: 'sticky', top: 0, display: 'block', cursor }} />
+                    <canvas ref={canvasRef} tabIndex={0} aria-describedby={descriptionId} aria-label={i18n.t('label_workload_daily_details')} data-testid="workload-canvas" style={{ position: 'sticky', top: 0, display: 'block', cursor }} />
                 </div>
                 {!hasAssignees && (
                     <div style={{
@@ -517,6 +558,9 @@ export const WorkloadCanvasPanel: React.FC<WorkloadCanvasPanelProps> = ({
                         {i18n.t('label_no_workload_data_matches_filters') || 'No workload data matches the current filters.'}
                     </div>
                 )}
+            </div>
+            <div id={descriptionId} aria-live="polite" aria-atomic="true" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }}>
+                {description}
             </div>
         </div>
     );

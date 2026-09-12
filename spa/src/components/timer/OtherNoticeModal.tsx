@@ -27,6 +27,7 @@ export const OtherNoticeModal: React.FC = () => {
     if (!otherRunningNotice && !otherPendingNotice) return null;
 
     const tr = (key: string) => i18n.t(key) ?? '';
+    const confirmedPending = otherPendingNotice?.recordingPhase === 'confirmed';
 
     return (
         <div
@@ -108,10 +109,14 @@ export const OtherNoticeModal: React.FC = () => {
                             <WorkTimerIcon state="pending" size={24} />
                             <div>
                                 <div style={{ fontSize: '15px', fontWeight: 700, color: designTokens.warningFg }}>
-                                    {tr('label_timer_pending_work') || 'Unrecorded work time exists'}
+                                    {confirmedPending
+                                        ? (tr('label_timer_recording_confirmed') || 'Recorded; synchronization pending')
+                                        : (tr('label_timer_pending_work') || 'Unrecorded work time exists')}
                                 </div>
                                 <div style={{ fontSize: '13px', color: designTokens.textSecondary, marginTop: '4px' }}>
-                                    {(tr('label_timer_pending_other') || 'Unrecorded work time exists for #%{id} %{subject}. Record or discard it before starting a new timer.')
+                                    {(confirmedPending
+                                        ? (tr('label_timer_confirmed_other') || 'Work time for #%{id} %{subject} is recorded; synchronization is pending.')
+                                        : (tr('label_timer_pending_other') || 'Unrecorded work time exists for #%{id} %{subject}. Record or discard it before starting a new timer.'))
                                         .replace('%{id}', String(otherPendingNotice.issueId))
                                         .replace('%{subject}', otherPendingNotice.subject)}
                                 </div>
@@ -158,7 +163,9 @@ export const OtherNoticeModal: React.FC = () => {
                                     cursor: 'pointer'
                                 }}
                             >
-                                {tr('label_timer_record_time') || 'Record / Manage'}
+                                {confirmedPending
+                                    ? (tr('label_timer_retry_sync') || 'Retry synchronization')
+                                    : (tr('label_timer_record_time') || 'Record / Manage')}
                             </button>
                         </div>
                     </>

@@ -6,6 +6,15 @@ import { useWorkloadStore } from '../../stores/WorkloadStore';
 import type { WorkloadData } from '../../services/WorkloadLogicService';
 import type { Task } from '../../types';
 import { useUIStore } from '../../stores/UIStore';
+import { WORKLOAD_HEADER_HEIGHT } from '../../constants';
+
+const setScrollMetrics = (element: HTMLElement, { clientHeight, scrollHeight, scrollTop }: { clientHeight: number; scrollHeight: number; scrollTop: number }) => {
+    Object.defineProperties(element, {
+        clientHeight: { configurable: true, value: clientHeight },
+        scrollHeight: { configurable: true, value: scrollHeight },
+        scrollTop: { configurable: true, writable: true, value: scrollTop }
+    });
+};
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 const START = Date.UTC(2026, 0, 5, 12);
@@ -29,28 +38,38 @@ const buildWorkloadData = (): WorkloadData => ({
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 16,
-            peakLoad: 8,
+            plannedTotal: 16,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 8,
             dailyWorkloads: new Map([
                 ['2026-01-01', {
                     dateStr: '2026-01-01',
                     timestamp: 0,
-                    totalLoad: 8,
-                    isOverload: false,
-                    contributingTasks: []
+                    plannedLoad: 8,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: []
                 }],
                 ['2026-01-02', {
                     dateStr: '2026-01-02',
                     timestamp: ONE_DAY,
-                    totalLoad: 8,
-                    isOverload: false,
-                    contributingTasks: []
+                    plannedLoad: 8,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: []
                 }]
             ])
         }]
     ]),
-    overloadedAssigneeCount: 0,
-    overloadedDayCount: 0
+    plannedOverloadedAssigneeCount: 0,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 0
 });
 
 const buildOverloadWorkloadData = (): WorkloadData => ({
@@ -58,15 +77,20 @@ const buildOverloadWorkloadData = (): WorkloadData => ({
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 31,
-            peakLoad: 13,
+            plannedTotal: 31,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 13,
             dailyWorkloads: new Map([
                 ['2026-01-05', {
                     dateStr: '2026-01-05',
                     timestamp: ONE_DAY * 4,
-                    totalLoad: 13,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 13,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         {
                             task: buildTask({
                                 id: 'task-late',
@@ -85,9 +109,12 @@ const buildOverloadWorkloadData = (): WorkloadData => ({
                 ['2026-01-02', {
                     dateStr: '2026-01-02',
                     timestamp: ONE_DAY,
-                    totalLoad: 11,
-                    isOverload: true,
-                    contributingTasks: [
+                    plannedLoad: 11,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: true,
+                    plannedContributions: [
                         {
                             task: buildTask({
                                 id: 'task-early',
@@ -106,9 +133,12 @@ const buildOverloadWorkloadData = (): WorkloadData => ({
                 ['2026-01-04', {
                     dateStr: '2026-01-04',
                     timestamp: ONE_DAY * 3,
-                    totalLoad: 7,
-                    isOverload: false,
-                    contributingTasks: [
+                    plannedLoad: 7,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: [
                         {
                             task: buildTask({
                                 id: 'task-normal',
@@ -127,8 +157,10 @@ const buildOverloadWorkloadData = (): WorkloadData => ({
             ])
         }]
     ]),
-    overloadedAssigneeCount: 1,
-    overloadedDayCount: 2
+    plannedOverloadedAssigneeCount: 1,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 2
 });
 
 describe('WorkloadSidebar', () => {
@@ -143,6 +175,19 @@ describe('WorkloadSidebar', () => {
         }, true);
         useUIStore.setState(useUIStore.getInitialState(), true);
         useWorkloadStore.setState(useWorkloadStore.getInitialState(), true);
+    });
+
+    it('orders same-name rows by numeric assignee ID', () => {
+        const data = buildWorkloadData();
+        const assignee = data.assignees.get(1)!;
+        data.assignees = new Map([
+            [10, { ...assignee, assigneeId: 10 }],
+            [2, { ...assignee, assigneeId: 2 }]
+        ]);
+        useWorkloadStore.setState({ workloadData: data });
+        render(<WorkloadSidebar />);
+        expect(screen.getAllByTestId(/^workload-sidebar-row-/).map(row => row.dataset.testid))
+            .toEqual(['workload-sidebar-row-2', 'workload-sidebar-row-10']);
     });
 
     it('keeps assignees visible even when the gantt pane is vertically scrolled', () => {
@@ -169,6 +214,54 @@ describe('WorkloadSidebar', () => {
         expect(screen.getByText('Assignees')).toBeInTheDocument();
         expect(screen.getByTestId('workload-sidebar-header-peak')).toHaveTextContent('Peak');
         expect(screen.getByTestId('workload-sidebar-header-total')).toHaveTextContent('Total');
+    });
+
+    it('keeps the header and scroll viewport in the shared border-box geometry', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData()
+        });
+
+        render(<WorkloadSidebar />);
+
+        const root = screen.getByTestId('workload-sidebar');
+        const header = screen.getByTestId('workload-sidebar-header');
+        const scrollViewport = screen.getByTestId('workload-sidebar-scroll');
+
+        expect(root).toHaveStyle({ boxSizing: 'border-box' });
+        expect(header).toHaveStyle({
+            height: `${WORKLOAD_HEADER_HEIGHT}px`,
+            flex: `0 0 ${WORKLOAD_HEADER_HEIGHT}px`,
+            boxSizing: 'border-box'
+        });
+        expect(scrollViewport.style.minHeight).toBe('0');
+    });
+
+    it('keeps the responsive workload columns inside the default 300px sidebar', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData()
+        });
+
+        render(<WorkloadSidebar />);
+
+        const sidebarWidth = 300;
+        const horizontalPadding = 16 * 2;
+        const contentWidth = sidebarWidth - horizontalPadding;
+        const metricColumnWidth = 44;
+        const overloadColumnWidth = 124;
+
+        expect(contentWidth - metricColumnWidth * 2 - overloadColumnWidth).toBe(56);
+        expect(screen.getByTestId('workload-sidebar-header')).toHaveStyle({
+            gridTemplateColumns: 'minmax(0, 1fr) clamp(44px, 16%, 72px) clamp(44px, 16%, 72px) clamp(124px, 35%, 170px)',
+            padding: '0 16px'
+        });
+        expect(screen.getByTestId('workload-sidebar-row-1')).toHaveStyle({
+            gridTemplateColumns: 'minmax(0, 1fr) clamp(44px, 16%, 72px) clamp(44px, 16%, 72px) clamp(124px, 35%, 170px)'
+        });
+        expect(screen.getByText('Assignees')).toHaveStyle({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+        expect(screen.getByTestId('workload-sidebar-peak-1')).toHaveStyle({ minWidth: '0', overflow: 'hidden', whiteSpace: 'nowrap' });
+        expect(screen.getByTestId('workload-sidebar-peak-1').firstElementChild).toHaveStyle({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
     });
 
     it('stretches to fill the workload pane width', () => {
@@ -207,13 +300,47 @@ describe('WorkloadSidebar', () => {
         expect(handleScroll).toHaveBeenCalledWith(72);
     });
 
+    it('clamps and notifies the parent of the canonical scroll position', () => {
+        const handleScroll = vi.fn();
+        useWorkloadStore.setState({ workloadData: buildWorkloadData() });
+
+        const { rerender } = render(<WorkloadSidebar scrollTop={0} onScroll={handleScroll} />);
+        const scrollElement = screen.getByTestId('workload-sidebar-scroll');
+        setScrollMetrics(scrollElement, { clientHeight: 100, scrollHeight: 201, scrollTop: 0 });
+
+        rerender(<WorkloadSidebar scrollTop={999} onScroll={handleScroll} />);
+
+        expect(scrollElement.scrollTop).toBe(101);
+        expect(handleScroll).toHaveBeenCalledTimes(1);
+        expect(handleScroll).toHaveBeenCalledWith(101);
+        fireEvent.scroll(scrollElement);
+
+        expect(handleScroll).toHaveBeenCalledTimes(1);
+    });
+
+    it('notifies the parent for a user scroll', () => {
+        const handleScroll = vi.fn();
+        useWorkloadStore.setState({ workloadData: buildWorkloadData() });
+
+        render(<WorkloadSidebar onScroll={handleScroll} />);
+        const scrollElement = screen.getByTestId('workload-sidebar-scroll');
+        setScrollMetrics(scrollElement, { clientHeight: 100, scrollHeight: 201, scrollTop: 0 });
+        scrollElement.scrollTop = 72;
+
+        fireEvent.scroll(scrollElement);
+
+        expect(handleScroll).toHaveBeenCalledWith(72);
+    });
+
     it('shows an explicit empty state when no workload data matches the current filters', () => {
         useWorkloadStore.setState({
             ...useWorkloadStore.getState(),
             workloadData: {
                 assignees: new Map(),
-                overloadedAssigneeCount: 0,
-                overloadedDayCount: 0
+                plannedOverloadedAssigneeCount: 0,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 0
             }
         });
 
@@ -252,8 +379,9 @@ describe('WorkloadSidebar', () => {
 
         render(<WorkloadSidebar />);
 
-        const overloadControl = screen.getByRole('button', { name: 'Focus overload histogram for Alice' });
-        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '170px', justifyContent: 'flex-end' });
+        const overloadControl = screen.getByRole('button', { name: 'Focus overload histogram for Alice (Planned)' });
+        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '100%', minWidth: '0', justifyContent: 'flex-end', gap: '4px' });
+        expect(overloadControl).toHaveStyle({ padding: '2px 4px', minWidth: '0' });
         expect(screen.getByTestId('overload-cycle-count-1')).toHaveTextContent('1/2');
         fireEvent.click(overloadControl);
 
@@ -291,7 +419,7 @@ describe('WorkloadSidebar', () => {
 
         render(<WorkloadSidebar />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Focus overload histogram for Alice' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Focus overload histogram for Alice (Planned)' }));
 
         expect(useWorkloadStore.getState().focusedHistogramBar).toEqual({ assigneeId: 1, dateStr: '2026-01-02' });
         expect(useTaskStore.getState().selectedTaskId).toBeNull();
@@ -307,27 +435,34 @@ describe('WorkloadSidebar', () => {
                     [1, {
                         assigneeId: 1,
                         assigneeName: 'Alice',
-                        totalLoad: 8,
-                        peakLoad: 8,
+                        plannedTotal: 8,
+                        actualTotal: 0,
+                        actualPeak: 0,
+                        plannedPeak: 8,
                         dailyWorkloads: new Map([
                             ['2026-01-02', {
                                 dateStr: '2026-01-02',
                                 timestamp: ONE_DAY,
-                                totalLoad: 11,
-                                isOverload: true,
-                                contributingTasks: []
+                                plannedLoad: 11,
+                                actualHours: 0,
+                                actualContributions: [],
+                                isActualOverload: false,
+                                isPlannedOverload: true,
+                                plannedContributions: []
                             }]
                         ])
                     }]
                 ]),
-                overloadedAssigneeCount: 1,
-                overloadedDayCount: 1
+                plannedOverloadedAssigneeCount: 1,
+                actualOverloadedAssigneeCount: 0,
+                actualOverloadedDayCount: 0,
+                plannedOverloadedDayCount: 1
             }
         });
 
         render(<WorkloadSidebar />);
 
-        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '170px', justifyContent: 'flex-end' });
+        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '100%', minWidth: '0', justifyContent: 'flex-end', gap: '4px' });
         expect(screen.getByTestId('overload-cycle-count-1')).toHaveStyle({ visibility: 'hidden', width: '32px' });
     });
 
@@ -341,5 +476,40 @@ describe('WorkloadSidebar', () => {
 
         expect(screen.getByTestId('workload-sidebar-peak-1')).toHaveStyle({ textAlign: 'right' });
         expect(screen.getByTestId('workload-sidebar-total-1')).toHaveStyle({ textAlign: 'right' });
+    });
+});
+
+describe('actual workload metrics', () => {
+    it.each(['idle', 'loading', 'error', 'ready'] as const)('distinguishes actual %s from zero and shows two metric lines', actualStatus => {
+        const data = buildWorkloadData();
+        const assignee = data.assignees.get(1)!;
+        assignee.actualPeak = 9;
+        assignee.actualTotal = 12;
+        assignee.dailyWorkloads.get('2026-01-01')!.isActualOverload = true;
+        useWorkloadStore.setState({ ...useWorkloadStore.getInitialState(), workloadData: data, actualStatus }, true);
+        render(<WorkloadSidebar />);
+        const peak = screen.getByTestId('workload-sidebar-peak-1');
+        const total = screen.getByTestId('workload-sidebar-total-1');
+        expect(peak).toHaveTextContent('P 8.0h');
+        expect(total).toHaveTextContent('P 16.0h');
+        expect(peak).toHaveTextContent(actualStatus === 'ready' ? 'A 9.0h' : 'A —');
+        expect(total).toHaveTextContent(actualStatus === 'ready' ? 'A 12.0h' : 'A —');
+        expect(screen.queryByText('Actual overload') !== null).toBe(actualStatus === 'ready');
+    });
+
+    it('shows actual-only workers and both overload badges without adding columns', () => {
+        const data = buildWorkloadData();
+        const alice = data.assignees.get(1)!;
+        alice.actualPeak = 10;
+        alice.actualTotal = 10;
+        alice.dailyWorkloads.get('2026-01-01')!.isActualOverload = true;
+        alice.dailyWorkloads.get('2026-01-01')!.isPlannedOverload = true;
+        data.assignees.set(2, { assigneeId: 2, assigneeName: 'John', plannedTotal: 0, plannedPeak: 0,
+            actualTotal: 4, actualPeak: 4, dailyWorkloads: new Map() });
+        useWorkloadStore.setState({ ...useWorkloadStore.getInitialState(), workloadData: data, actualStatus: 'ready' }, true);
+        render(<WorkloadSidebar />);
+        expect(screen.getByText('Plan overload')).toBeVisible();
+        expect(screen.getByText('Actual overload')).toBeVisible();
+        expect(screen.getByTestId('workload-sidebar-total-2')).toHaveTextContent('P 0.0hA 4.0h');
     });
 });

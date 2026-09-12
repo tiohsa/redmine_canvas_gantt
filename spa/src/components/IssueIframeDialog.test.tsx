@@ -1,3 +1,4 @@
+import { useWorkloadStore } from '../stores/WorkloadStore';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { IssueIframeDialog } from './IssueIframeDialog';
@@ -1046,6 +1047,7 @@ describe('IssueIframeDialog', () => {
     });
 
     it('submits time entry form and clears timer session on successful redirect', async () => {
+        const actualRefresh = vi.spyOn(useWorkloadStore.getState(), 'refreshActual');
         const clearSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         useTimerStore.setState({
             session: {
@@ -1107,6 +1109,7 @@ describe('IssueIframeDialog', () => {
 
         await waitFor(() => {
             expect(clearSpy).toHaveBeenCalledWith(recordingContext);
+            expect(actualRefresh).toHaveBeenCalledTimes(1);
             expect(useTimerStore.getState().session).toBeNull();
             expect(useUIStore.getState().issueDialogUrl).toBeNull();
         });
@@ -1329,6 +1332,7 @@ describe('IssueIframeDialog', () => {
         ['permission error', 'You are not authorized to access this page'],
         ['iframe error', 'The embedded form failed to load']
     ])('keeps the pending timer after a TimeEntry %s', async (_caseName, errorMessage) => {
+        const actualRefresh = vi.spyOn(useWorkloadStore.getState(), 'refreshActual');
         const completeSpy = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
         const session = {
             version: 4 as const,
@@ -1375,6 +1379,7 @@ describe('IssueIframeDialog', () => {
 
         await waitFor(() => expect(screen.getByTestId('issue-dialog-error')).toHaveTextContent(errorMessage));
         expect(completeSpy).not.toHaveBeenCalled();
+        expect(actualRefresh).not.toHaveBeenCalled();
         expect(useTimerStore.getState().session?.sessionId).toBe(session.sessionId);
     });
 

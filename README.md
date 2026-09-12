@@ -182,7 +182,10 @@ See the [Timer Session architecture diagram](docs/architecture/timer-session-arc
 
 ### Workload, display settings, and export
 
-- The workload pane can show daily capacity, peak and total workload, and filters for leaf issues, closed issues, and today-onward focus.
+- The workload pane compares planned estimates and recorded Time Entries over the visible histogram date range. Peak and total cells show Planned and Actual separately; outlined and filled daily bars share the same capacity threshold and are never stacked.
+- Planned hours remain the estimate divided across all working days of the issue. Actual hours belong to the Time Entry worker, including workers with no planned hours. Closed-issue, leaf-issue, and today-onward filters apply to both series.
+- Click either series to cycle through its contributing issues. The legend, daily tooltip, and accessible text distinguish both series. Saving a time entry refreshes actuals; loading or failed actual data is shown as `—`, while planned data remains available.
+- Actual data respects Redmine Issue/Time Entry visibility and the current project/query scope. Requests are limited to the displayed period (up to 730 calendar dates, including both endpoints) and the configured collection budget; oversized results produce an error rather than partial totals.
 - Display settings are stored in the browser's `localStorage`, not on a Redmine user record. Project mode applies to that project; global mode applies across projects in that same browser profile. It does not change settings in other browser profiles, but anyone using the same browser profile will see them. Settings cover zoom level, view mode, chart position, progress line, task titles, hierarchy lines, orphan date points, version headers, baseline visibility, visible columns, column order, dependency-based organization, column widths, sidebar width, custom zoom scales, row height, and font size.
 - The configuration screen also supports tracker icon mapping with a JSON object that maps tracker IDs to icon kinds.
 - Auto save determines whether edits are committed immediately or kept pending until you save them manually.

@@ -361,7 +361,7 @@ jobs:
 
       - name: Run Redmine compatibility smoke test
         if: ${{ matrix.label == '6.0' && github.event_name == 'pull_request' }}
-        run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts tests/e2e-redmine/work-timer.pw.ts
+        run: npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/redmine-smoke.pw.ts tests/e2e-redmine/work-timer.pw.ts tests/e2e-redmine/workload-pane.pw.ts
 
       - name: Run business calendar E2E
         if: ${{ matrix.label == '6.0' && github.event_name == 'pull_request' }}

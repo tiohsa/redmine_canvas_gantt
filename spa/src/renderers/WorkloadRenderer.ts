@@ -2,7 +2,8 @@ import type { Viewport, ZoomLevel } from '../types';
 import { getGridScales } from '../utils/grid';
 import { canvasFonts, designTokens } from '../styles/designTokens';
 import { getCanvasLogicalSize, snapTextPosition, snapLinePosition } from '../utils/canvasDpr';
-import type { AssigneeWorkload, DailyWorkload, WorkloadData } from '../services/WorkloadLogicService';
+import type { AssigneeWorkload, DailyWorkload, WorkloadData, WorkloadSeries } from '../services/WorkloadLogicService';
+import { compareWorkloadAssignees } from '../services/WorkloadLogicService';
 import { calendarWeekday } from '../utils/dateOnly';
 
 export interface WorkloadRenderState {
@@ -11,11 +12,13 @@ export interface WorkloadRenderState {
     workloadData: WorkloadData | null;
     capacityThreshold: number;
     verticalScroll: number;
+    showActual?: boolean;
     hoveredAssigneeId: number | null;
     hoveredDateStr: string | null;
     focusedAssigneeId: number | null;
     focusedDateStr: string | null;
-    getBarLabelInfo?: (assigneeId: number, dateStr: string) => { current: number; total: number } | null;
+    focusedSeries?: WorkloadSeries;
+    getBarLabelInfo?: (assigneeId: number, dateStr: string, series?: WorkloadSeries) => { current: number; total: number } | null;
 }
 
 export interface WorkloadHitTestState {
@@ -24,6 +27,7 @@ export interface WorkloadHitTestState {
     workloadData: WorkloadData | null;
     capacityThreshold: number;
     verticalScroll: number;
+    showActual?: boolean;
     hoveredAssigneeId?: number | null;
     hoveredDateStr?: string | null;
     x?: number;
@@ -39,7 +43,7 @@ export class WorkloadRenderer {
     private static readonly BAR_COLOR_OVERLOAD = designTokens.taskDelayed;
     private static readonly MAX_EXPECTED_LOAD = 24; // For scaling the histogram
     private static readonly DAY_MS = 24 * 60 * 60 * 1000;
-    private static readonly LABEL_MIN_BAR_WIDTH = 22;
+    private static readonly LABEL_MIN_BAR_WIDTH = 16;
     private static readonly LABEL_TOP_PADDING = 6;
 
     constructor(canvas: HTMLCanvasElement) {
@@ -47,7 +51,7 @@ export class WorkloadRenderer {
     }
 
     private static getSortedAssignees(workloadData: WorkloadData): AssigneeWorkload[] {
-        return Array.from(workloadData.assignees.values()).sort((a, b) => a.assigneeName.localeCompare(b.assigneeName));
+        return Array.from(workloadData.assignees.values()).sort(compareWorkloadAssignees);
     }
 
     private static getDailyBarRect(params: {
@@ -58,8 +62,9 @@ export class WorkloadRenderer {
         assigneeIndex: number;
         assigneePeakLoad: number;
         daily: DailyWorkload;
+        series: WorkloadSeries;
     }): { x: number; y: number; width: number; height: number } | null {
-        const { canvasWidth, capacityThreshold, viewport, verticalScroll, assigneeIndex, assigneePeakLoad, daily } = params;
+        const { canvasWidth, capacityThreshold, viewport, verticalScroll, assigneeIndex, assigneePeakLoad, daily, series } = params;
         const rowHeight = viewport.rowHeight * 2;
         const rowY = assigneeIndex * rowHeight - verticalScroll;
 
@@ -76,21 +81,25 @@ export class WorkloadRenderer {
         );
         const startX = (daily.timestamp - viewport.startDate) * viewport.scale - viewport.scrollX;
         const endX = (daily.timestamp + WorkloadRenderer.DAY_MS - viewport.startDate) * viewport.scale - viewport.scrollX;
-        const barWidth = endX - startX - 2;
-        if (startX + barWidth <= 0 || startX >= canvasWidth) return null;
+        const dayWidth = endX - startX;
+        const barWidth = Math.max(0.1, (dayWidth - Math.min(3, dayWidth * 0.15)) / 2);
+        const load = series === 'planned' ? daily.plannedLoad : daily.actualHours;
+        if (load <= 0) return null;
+        const barX = startX + (series === 'actual' ? dayWidth / 2 : 0) + Math.min(1, dayWidth * 0.05);
+        if (barX + barWidth <= 0 || barX >= canvasWidth) return null;
 
-        const barHeight = (daily.totalLoad / maxGraphLoad) * rowHeight * 0.9;
+        const barHeight = (load / maxGraphLoad) * rowHeight * 0.9;
         const barY = rowY + rowHeight - barHeight;
 
         return {
-            x: Math.floor(startX + 1),
+            x: barX,
             y: Math.floor(barY),
-            width: Math.max(1, Math.floor(barWidth)),
+            width: barWidth,
             height: Math.ceil(barHeight)
         };
     }
 
-    public hitTestDailyBar(state: WorkloadHitTestState): { assigneeId: number; dateStr: string } | null {
+    public hitTestDailyBar(state: WorkloadHitTestState): { assigneeId: number; dateStr: string; series?: WorkloadSeries } | null {
         const { viewport, workloadData, capacityThreshold, verticalScroll } = state;
         const x = state.pointerX ?? state.x;
         const y = state.pointerY ?? state.y;
@@ -106,19 +115,23 @@ export class WorkloadRenderer {
             if (rowY + rowHeight < 0 || rowY > canvasHeight) continue;
 
             for (const daily of assignee.dailyWorkloads.values()) {
+              for (const series of ['planned', 'actual'] as const) {
+                if (series === 'actual' && state.showActual === false) continue;
                 const rect = WorkloadRenderer.getDailyBarRect({
                     canvasWidth,
                     capacityThreshold,
                     viewport,
                     verticalScroll,
                     assigneeIndex,
-                    assigneePeakLoad: assignee.peakLoad,
-                    daily
+                    assigneePeakLoad: Math.max(assignee.plannedPeak, state.showActual === false ? 0 : assignee.actualPeak),
+                    daily,
+                    series
                 });
                 if (!rect) continue;
                 if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height) {
-                    return { assigneeId: assignee.assigneeId, dateStr: daily.dateStr };
+                    return { assigneeId: assignee.assigneeId, dateStr: daily.dateStr, ...(series === 'actual' ? { series } : {}) };
                 }
+              }
             }
         }
 
@@ -211,8 +224,8 @@ export class WorkloadRenderer {
             }
 
             // Draw Threshold line
-            const maxGraphLoad = Math.max(capacityThreshold * 1.5, Math.ceil(assignee.peakLoad), WorkloadRenderer.MAX_EXPECTED_LOAD);
-            const thresholdY = snapLinePosition(rowY + rowHeight - (capacityThreshold / maxGraphLoad) * rowHeight);
+            const maxGraphLoad = Math.max(capacityThreshold * 1.5, Math.ceil(Math.max(assignee.plannedPeak, state.showActual === false ? 0 : assignee.actualPeak)), WorkloadRenderer.MAX_EXPECTED_LOAD);
+            const thresholdY = snapLinePosition(rowY + rowHeight - (capacityThreshold / maxGraphLoad) * rowHeight * 0.9);
             
             ctx.strokeStyle = designTokens.threshold;
             ctx.setLineDash([4, 4]);
@@ -225,20 +238,34 @@ export class WorkloadRenderer {
             // Draw bars
             // We only need to iterate over visible days
             assignee.dailyWorkloads.forEach((daily) => {
+              for (const series of ['planned', 'actual'] as const) {
+                if (series === 'actual' && state.showActual === false) continue;
                 const rect = WorkloadRenderer.getDailyBarRect({
                     canvasWidth: logicalWidth,
                     capacityThreshold,
                     viewport,
                     verticalScroll,
                     assigneeIndex: index,
-                    assigneePeakLoad: assignee.peakLoad,
-                    daily
+                    assigneePeakLoad: Math.max(assignee.plannedPeak, state.showActual === false ? 0 : assignee.actualPeak),
+                    daily,
+                    series
                 });
                 if (rect) {
-                    ctx.fillStyle = daily.isOverload ? WorkloadRenderer.BAR_COLOR_OVERLOAD : WorkloadRenderer.BAR_COLOR_NORMAL;
-                    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+                    const overload = series === 'planned' ? daily.isPlannedOverload : daily.isActualOverload;
+                    const color = overload ? WorkloadRenderer.BAR_COLOR_OVERLOAD : WorkloadRenderer.BAR_COLOR_NORMAL;
+                    ctx.fillStyle = color;
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 1;
+                    if (series === 'planned') {
+                        ctx.globalAlpha = 0.2;
+                        ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+                        ctx.globalAlpha = 1;
+                        ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+                    } else {
+                        ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+                    }
 
-                    const labelInfo = getBarLabelInfo?.(assignee.assigneeId, daily.dateStr) ?? null;
+                    const labelInfo = getBarLabelInfo?.(assignee.assigneeId, daily.dateStr, series) ?? null;
                     if (labelInfo && rect.width >= WorkloadRenderer.LABEL_MIN_BAR_WIDTH && rect.y > WorkloadRenderer.LABEL_TOP_PADDING + 10) {
                         ctx.fillStyle = designTokens.textSecondary;
                         ctx.font = canvasFonts.bodyStrong;
@@ -251,7 +278,7 @@ export class WorkloadRenderer {
                         );
                     }
 
-                    if (focusedAssigneeId === assignee.assigneeId && focusedDateStr === daily.dateStr) {
+                    if (focusedAssigneeId === assignee.assigneeId && focusedDateStr === daily.dateStr && (state.focusedSeries ?? 'planned') === series) {
                         ctx.strokeStyle = designTokens.focus;
                         ctx.lineWidth = 2;
                         ctx.setLineDash([4, 2]);
@@ -259,6 +286,7 @@ export class WorkloadRenderer {
                         ctx.setLineDash([]);
                     }
                 }
+              }
             });
         });
     }

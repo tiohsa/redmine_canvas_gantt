@@ -146,9 +146,9 @@ test('responds to a narrow embedded toolbar and preserves primary interactions',
   await page.getByTestId('relation-settings-menu-button').click();
   await expectPopupInViewport(page, 'relation-settings-menu');
   await page.getByTestId('relation-settings-menu-button').click();
-  await page.getByTitle('Workload').click();
+  await page.getByTestId('workload-menu-button').click();
   await expectPopupInViewport(page, 'workload-menu');
-  await page.getByTitle('Workload').click();
+  await page.getByTestId('workload-menu-button').click();
   await page.getByTestId('project-filter-menu-button').click();
   await expectPopupInViewport(page, 'project-menu');
   await page.getByTestId('project-filter-menu-button').click();

@@ -47,6 +47,23 @@ describe('apiClient.fetchQueries', () => {
 });
 
 describe('apiClient.fetchData', () => {
+    it('uses canonical has_physical_children even when children are absent from the payload', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ tasks: [
+                { id: 1, has_physical_children: true },
+                { id: 2, has_physical_children: false },
+                { id: 3, parent_id: 2, has_physical_children: false },
+                { id: 4 }
+            ] })
+        }));
+
+        const result = await apiClient.fetchData();
+
+        expect(result.tasks.map(task => task.hasPhysicalChildren)).toEqual([true, false, false, false]);
+    });
+
     afterEach(() => {
         vi.restoreAllMocks();
         delete window.RedmineCanvasGantt;
@@ -832,13 +849,13 @@ describe('mutation error classification', () => {
             status: 200,
             json: async () => ({
                 status: 'ok',
-                entity: { id: 42, subject: 'Saved', lock_version: 4 }
+                entity: { id: 42, subject: 'Saved', lock_version: 4, has_physical_children: true }
             })
         }) as unknown as typeof fetch);
 
         const result = await apiClient.updateTaskFields('42', { subject: 'Saved' });
 
-        expect(result.entity).toEqual({ id: '42', subject: 'Saved', lockVersion: 4 });
+        expect(result.entity).toEqual({ id: '42', subject: 'Saved', lockVersion: 4, hasPhysicalChildren: true });
         expect(result.entity).not.toHaveProperty('editable');
         expect(result.entity).not.toHaveProperty('rowIndex');
         expect(result.entity).not.toHaveProperty('hasChildren');

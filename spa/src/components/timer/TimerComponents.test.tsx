@@ -262,6 +262,36 @@ describe('Timer UI Components', () => {
             expect(recordTime).not.toHaveBeenCalled();
         });
 
+        it('offers only synchronization retry for a confirmed recording', () => {
+            const recordingAttempt = { id: 'confirmed-attempt', ownerTabId: 'other-tab', openedAt: Date.now(), phase: 'confirmed' as const };
+            const session = {
+                version: 4,
+                revision: 2,
+                sessionId: 'confirmed-session',
+                issueId: '123',
+                subject: 'API設計',
+                autoStop: false,
+                state: 'stopped_pending_record' as const,
+                recordingAttempt,
+                segments: [{ startedAt: Date.now() - 30 * 60 * 1000, stoppedAt: Date.now() }],
+                createdAt: Date.now() - 30 * 60 * 1000,
+                updatedAt: Date.now()
+            };
+            useTimerStore.setState({ session, pendingWorkModalOpen: true, isReady: true });
+            persistTimerSession(session);
+
+            render(<><GlobalTimer /><PendingWorkModal /></>);
+
+            expect(screen.getByTestId('global-timer-record-button')).toHaveTextContent('Retry synchronization');
+            expect(screen.getByTestId('pending-work-modal')).toHaveTextContent('Recorded; synchronization pending');
+            expect(screen.getByTestId('pending-work-confirmed-recovery')).toBeInTheDocument();
+            expect(screen.getByTestId('pending-work-retry-sync-button')).toBeInTheDocument();
+            expect(screen.queryByTestId('pending-work-record-button')).toBeNull();
+            expect(screen.queryByTestId('pending-work-recording-recovery')).toBeNull();
+            expect(screen.queryByTestId('pending-work-discard-button')).toBeNull();
+            expect(screen.queryByTestId('pending-work-resume-options')).toBeNull();
+        });
+
         it('requires explicit confirmation to resolve an unknown recording outcome', async () => {
             const session = {
                 version: 4,
@@ -594,6 +624,23 @@ describe('Timer UI Components', () => {
             fireEvent.click(screen.getByTestId('timer-notice-pending-action-button'));
             expect(useTimerStore.getState().otherPendingNotice).toBeNull();
             expect(useTimerStore.getState().pendingWorkModalOpen).toBe(true);
+        });
+
+        it('does not present confirmed work as recordable in the other-timer notice', () => {
+            useTimerStore.setState({
+                otherPendingNotice: {
+                    issueId: '999',
+                    subject: 'Other Issue',
+                    elapsedMs: 30 * 60 * 1000,
+                    recordingPhase: 'confirmed'
+                }
+            });
+
+            render(<OtherNoticeModal />);
+
+            expect(screen.getByTestId('timer-notice-modal')).toHaveTextContent('Recorded; synchronization pending');
+            expect(screen.getByTestId('timer-notice-pending-action-button')).toHaveTextContent('Retry synchronization');
+            expect(screen.getByTestId('timer-notice-modal')).not.toHaveTextContent('Record or discard');
         });
     });
 });

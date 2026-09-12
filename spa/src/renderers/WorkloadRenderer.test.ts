@@ -43,21 +43,28 @@ const buildWorkloadData = (timestamp: number): WorkloadData => ({
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 8,
-            peakLoad: 8,
+            plannedTotal: 8,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 8,
             dailyWorkloads: new Map([
                 ['2026-01-01', {
                     dateStr: '2026-01-01',
                     timestamp,
-                    totalLoad: 8,
-                    isOverload: false,
-                    contributingTasks: []
+                    plannedLoad: 8,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: []
                 }]
             ])
         }]
     ]),
-    overloadedAssigneeCount: 0,
-    overloadedDayCount: 0
+    plannedOverloadedAssigneeCount: 0,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 0
 });
 
 const buildTwoAssigneeWorkloadData = (timestamp: number): WorkloadData => ({
@@ -65,39 +72,66 @@ const buildTwoAssigneeWorkloadData = (timestamp: number): WorkloadData => ({
         [1, {
             assigneeId: 1,
             assigneeName: 'Alice',
-            totalLoad: 8,
-            peakLoad: 8,
+            plannedTotal: 8,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 8,
             dailyWorkloads: new Map([
                 ['2026-01-01', {
                     dateStr: '2026-01-01',
                     timestamp,
-                    totalLoad: 8,
-                    isOverload: false,
-                    contributingTasks: []
+                    plannedLoad: 8,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: []
                 }]
             ])
         }],
         [2, {
             assigneeId: 2,
             assigneeName: 'Bob',
-            totalLoad: 8,
-            peakLoad: 8,
+            plannedTotal: 8,
+            actualTotal: 0,
+            actualPeak: 0,
+            plannedPeak: 8,
             dailyWorkloads: new Map([
                 ['2026-01-01', {
                     dateStr: '2026-01-01',
                     timestamp,
-                    totalLoad: 8,
-                    isOverload: false,
-                    contributingTasks: []
+                    plannedLoad: 8,
+                    actualHours: 0,
+                    actualContributions: [],
+                    isActualOverload: false,
+                    isPlannedOverload: false,
+                    plannedContributions: []
                 }]
             ])
         }]
     ]),
-    overloadedAssigneeCount: 0,
-    overloadedDayCount: 0
+    plannedOverloadedAssigneeCount: 0,
+    actualOverloadedAssigneeCount: 0,
+    actualOverloadedDayCount: 0,
+    plannedOverloadedDayCount: 0
 });
 
 describe('WorkloadRenderer', () => {
+    it('hit tests same-name assignees in numeric ID order', () => {
+        const canvas = { width: 800, height: 240, getContext: () => createMockContext() } as unknown as HTMLCanvasElement;
+        const renderer = new WorkloadRenderer(canvas);
+        const data = buildWorkloadData(0);
+        const assignee = data.assignees.get(1)!;
+        data.assignees = new Map([
+            [10, { ...assignee, assigneeId: 10 }],
+            [2, { ...assignee, assigneeId: 2 }]
+        ]);
+        const state = { viewport: buildViewport({ scale: 10 / ONE_DAY }), zoomLevel: 2 as const,
+            workloadData: data, capacityThreshold: 8, verticalScroll: 0, pointerX: 3 };
+        expect(renderer.hitTestDailyBar({ ...state, pointerY: 54 })).toEqual({ assigneeId: 2, dateStr: '2026-01-01' });
+        expect(renderer.hitTestDailyBar({ ...state, pointerY: 126 })).toEqual({ assigneeId: 10, dateStr: '2026-01-01' });
+    });
+
     it('draws visible bars using the same horizontal scroll direction as the gantt viewport', () => {
         const ctx = createMockContext();
         const canvas = {
@@ -271,7 +305,7 @@ describe('WorkloadRenderer', () => {
             verticalScroll: 0,
             hoveredAssigneeId: null,
             hoveredDateStr: null,
-            pointerX: 6,
+            pointerX: 3,
             pointerY: 54
         });
 
@@ -294,7 +328,7 @@ describe('WorkloadRenderer', () => {
             verticalScroll: 72,
             hoveredAssigneeId: null,
             hoveredDateStr: null,
-            pointerX: 6,
+            pointerX: 3,
             pointerY: 54
         });
 
@@ -354,7 +388,7 @@ describe('WorkloadRenderer', () => {
         const renderer = new WorkloadRenderer(canvas);
 
         renderer.render({
-            viewport: buildViewport({ scale: 40 / ONE_DAY }),
+            viewport: buildViewport({ scale: 60 / ONE_DAY }),
             zoomLevel: 2,
             workloadData: buildWorkloadData(0),
             capacityThreshold: 8,
@@ -367,5 +401,100 @@ describe('WorkloadRenderer', () => {
         });
 
         expect(vi.mocked(ctx.fillText)).toHaveBeenCalledWith('1/3', expect.any(Number), expect.any(Number));
+    });
+});
+
+it('draws independent adjacent series with the same scale and threshold, and hit-tests each series', () => {
+    const ctx = createMockContext();
+    const canvas = { width: 800, height: 240, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    const renderer = new WorkloadRenderer(canvas);
+    const data = buildWorkloadData(0);
+    const assignee = data.assignees.get(1)!;
+    assignee.actualPeak = 8;
+    const daily = assignee.dailyWorkloads.get('2026-01-01')!;
+    daily.actualHours = 8;
+    const state = { viewport: buildViewport({ scale: 40 / ONE_DAY }), zoomLevel: 2 as const,
+        workloadData: data, capacityThreshold: 8, verticalScroll: 0,
+        hoveredAssigneeId: null, hoveredDateStr: null, focusedAssigneeId: null, focusedDateStr: null };
+    renderer.render(state);
+    const bars = vi.mocked(ctx.fillRect).mock.calls.filter(([, , width]) => width === 18.5);
+    expect(bars).toHaveLength(2);
+    expect(bars[0][1]).toBe(bars[1][1]);
+    expect(bars[0][3]).toBe(bars[1][3]);
+    expect(bars[0][0] + bars[0][2]).toBeLessThan(bars[1][0]);
+    expect(bars[0][1] + bars[0][3]).toBe(72);
+    expect(ctx.strokeRect).toHaveBeenCalledWith(...bars[0]);
+    expect(ctx.setLineDash).toHaveBeenCalledWith([4, 4]);
+    const lineY = vi.mocked(ctx.moveTo).mock.calls.find(([x, y]) => x === 0 && Math.abs(y - bars[0][1]) < 1)?.[1];
+    expect(lineY).toBeDefined();
+    expect(renderer.hitTestDailyBar({ ...state, pointerX: 5, pointerY: 60 })).toEqual({ assigneeId: 1, dateStr: '2026-01-01' });
+    expect(renderer.hitTestDailyBar({ ...state, pointerX: 25, pointerY: 60 })).toEqual({ assigneeId: 1, dateStr: '2026-01-01', series: 'actual' });
+    expect(renderer.hitTestDailyBar({ ...state, showActual: false, pointerX: 25, pointerY: 60 })).toBeNull();
+});
+
+it.each([24, 48])('keeps a hidden stale Actual peak out of the scale at %dh', (actualPeak) => {
+    const ctx = createMockContext();
+    const canvas = { width: 800, height: 240, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    const renderer = new WorkloadRenderer(canvas);
+    const data = buildWorkloadData(0);
+    data.assignees.get(1)!.actualPeak = actualPeak;
+    data.assignees.get(1)!.dailyWorkloads.get('2026-01-01')!.actualHours = actualPeak;
+    const state = {
+        viewport: buildViewport({ scale: 40 / ONE_DAY }),
+        zoomLevel: 2 as const,
+        workloadData: data,
+        capacityThreshold: 8,
+        verticalScroll: 0,
+        showActual: false,
+        hoveredAssigneeId: null,
+        hoveredDateStr: null,
+        focusedAssigneeId: 1,
+        focusedDateStr: '2026-01-01',
+        focusedSeries: 'actual' as const
+    };
+
+    renderer.render(state);
+
+    const plannedBar = vi.mocked(ctx.fillRect).mock.calls.find(([, , width]) => width === 18.5);
+    expect(plannedBar?.[3]).toBe(22);
+    expect(vi.mocked(ctx.moveTo).mock.calls).toContainEqual([0, 50.5]);
+    expect(renderer.hitTestDailyBar({ ...state, pointerX: 5, pointerY: 54 })).toEqual({ assigneeId: 1, dateStr: '2026-01-01' });
+    expect(renderer.hitTestDailyBar({ ...state, pointerX: 25, pointerY: 54 })).toBeNull();
+    // The hidden Actual series cannot receive a focus outline.
+    expect(vi.mocked(ctx.strokeRect)).toHaveBeenCalledTimes(1);
+});
+
+it.each([24, 48])('uses the ready Actual peak in the shared scale at %dh', (actualPeak) => {
+    const ctx = createMockContext();
+    const canvas = { width: 800, height: 240, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    const renderer = new WorkloadRenderer(canvas);
+    const data = buildWorkloadData(0);
+    const assignee = data.assignees.get(1)!;
+    assignee.actualPeak = actualPeak;
+    assignee.dailyWorkloads.get('2026-01-01')!.actualHours = actualPeak;
+    const state = {
+        viewport: buildViewport({ scale: 40 / ONE_DAY }),
+        zoomLevel: 2 as const,
+        workloadData: data,
+        capacityThreshold: 8,
+        verticalScroll: 0,
+        showActual: true,
+        hoveredAssigneeId: null,
+        hoveredDateStr: null,
+        focusedAssigneeId: null,
+        focusedDateStr: null
+    };
+
+    renderer.render(state);
+
+    const bars = vi.mocked(ctx.fillRect).mock.calls.filter(([, , width]) => width === 18.5);
+    expect(bars).toHaveLength(2);
+    expect(bars[0][3]).toBe(actualPeak === 24 ? 22 : 11);
+    expect(bars[1][3]).toBe(65);
+    expect(vi.mocked(ctx.moveTo).mock.calls).toContainEqual([0, actualPeak === 24 ? 50.5 : 61.5]);
+    expect(renderer.hitTestDailyBar({ ...state, pointerX: 25, pointerY: 40 })).toEqual({
+        assigneeId: 1,
+        dateStr: '2026-01-01',
+        series: 'actual'
     });
 });

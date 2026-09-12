@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SIDEBAR_MIN_WIDTH } from '../constants';
+import { SIDEBAR_MIN_WIDTH, WORKLOAD_SIDEBAR_MIN_WIDTH } from '../constants';
 import { clampSidebarWidthToBounds, computeSidebarWidthBounds } from './sidebarWidth';
 
 describe('computeSidebarWidthBounds', () => {
@@ -27,6 +27,20 @@ describe('computeSidebarWidthBounds', () => {
             max: SIDEBAR_MIN_WIDTH
         });
     });
+
+    it('Workload表示時は専用の最小幅を使う', () => {
+        expect(computeSidebarWidthBounds(1000, WORKLOAD_SIDEBAR_MIN_WIDTH)).toEqual({
+            min: WORKLOAD_SIDEBAR_MIN_WIDTH,
+            max: 674
+        });
+    });
+
+    it('Workload最小幅と右ペイン最小幅が競合する狭いコンテナでも有効なboundsを返す', () => {
+        expect(computeSidebarWidthBounds(300, WORKLOAD_SIDEBAR_MIN_WIDTH)).toEqual({
+            min: WORKLOAD_SIDEBAR_MIN_WIDTH,
+            max: WORKLOAD_SIDEBAR_MIN_WIDTH
+        });
+    });
 });
 
 describe('clampSidebarWidthToBounds', () => {
@@ -42,5 +56,12 @@ describe('clampSidebarWidthToBounds', () => {
 
     it('最大幅超過は最大幅に丸める', () => {
         expect(clampSidebarWidthToBounds(800, bounds)).toBe(674);
+    });
+
+    it('Workload表示時に既存の狭い幅を専用最小幅へ丸める', () => {
+        expect(clampSidebarWidthToBounds(200, {
+            min: WORKLOAD_SIDEBAR_MIN_WIDTH,
+            max: 674
+        })).toBe(WORKLOAD_SIDEBAR_MIN_WIDTH);
     });
 });
