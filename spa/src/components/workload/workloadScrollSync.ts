@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 
 export const WORKLOAD_SCROLL_SYNC_TOLERANCE_PX = 1;
 
@@ -22,37 +22,92 @@ export const useWorkloadScrollSync = (
 ): ((event: React.UIEvent<HTMLDivElement>) => void) => {
     const expectedExternalScrollTopRef = useRef<number | null>(null);
     const externalScrollFrameRef = useRef<number | null>(null);
+    const lastCanonicalClampRef = useRef<{ requested: number; clamped: number } | null>(null);
+    const lastSyncInputRef = useRef<{ requested: number; clientHeight: number; scrollHeight: number } | null>(null);
 
     useLayoutEffect(() => {
         const element = scrollRef.current;
         if (!element) return;
 
         const nextScrollTop = clampWorkloadScrollTop(scrollTop, element);
-        if (Math.abs(element.scrollTop - nextScrollTop) <= WORKLOAD_SCROLL_SYNC_TOLERANCE_PX) {
+        const wasClamped = scrollTop !== nextScrollTop;
+        const previousSyncInput = lastSyncInputRef.current;
+        const syncInput = {
+            requested: scrollTop,
+            clientHeight: element.clientHeight,
+            scrollHeight: element.scrollHeight
+        };
+        if (
+            previousSyncInput &&
+            previousSyncInput.requested === syncInput.requested &&
+            previousSyncInput.clientHeight === syncInput.clientHeight &&
+            previousSyncInput.scrollHeight === syncInput.scrollHeight
+        ) {
+            return;
+        }
+        lastSyncInputRef.current = syncInput;
+
+        const expectedExternalScrollTop = expectedExternalScrollTopRef.current;
+        if (
+            expectedExternalScrollTop !== null &&
+            Math.abs(expectedExternalScrollTop - nextScrollTop) > WORKLOAD_SCROLL_SYNC_TOLERANCE_PX
+        ) {
+            const frameId = externalScrollFrameRef.current;
+            if (frameId !== null) {
+                window.cancelAnimationFrame(frameId);
+            }
+            externalScrollFrameRef.current = null;
+            expectedExternalScrollTopRef.current = null;
+        }
+
+        const scheduleExpectedExternalScroll = () => {
+            if (externalScrollFrameRef.current !== null) {
+                window.cancelAnimationFrame(externalScrollFrameRef.current);
+            }
+
+            expectedExternalScrollTopRef.current = nextScrollTop;
+            const frameId = window.requestAnimationFrame(() => {
+                if (externalScrollFrameRef.current !== frameId) return;
+                expectedExternalScrollTopRef.current = null;
+                externalScrollFrameRef.current = null;
+            });
+            externalScrollFrameRef.current = frameId;
+        };
+
+        if (Math.abs(element.scrollTop - nextScrollTop) > WORKLOAD_SCROLL_SYNC_TOLERANCE_PX) {
+            scheduleExpectedExternalScroll();
+            element.scrollTop = nextScrollTop;
+        } else if (wasClamped && expectedExternalScrollTopRef.current === null) {
+            // The browser may have already clamped the DOM position before this effect runs.
+            scheduleExpectedExternalScroll();
+        }
+
+        if (!wasClamped) {
+            lastCanonicalClampRef.current = null;
             return;
         }
 
-        if (externalScrollFrameRef.current !== null) {
-            window.cancelAnimationFrame(externalScrollFrameRef.current);
+        const lastCanonicalClamp = lastCanonicalClampRef.current;
+        if (
+            onScroll &&
+            (!lastCanonicalClamp ||
+                lastCanonicalClamp.requested !== scrollTop ||
+                lastCanonicalClamp.clamped !== nextScrollTop)
+        ) {
+            lastCanonicalClampRef.current = {
+                requested: scrollTop,
+                clamped: nextScrollTop
+            };
+            onScroll(nextScrollTop);
         }
+    });
 
-        expectedExternalScrollTopRef.current = nextScrollTop;
-        element.scrollTop = nextScrollTop;
-
-        const frameId = window.requestAnimationFrame(() => {
-            if (externalScrollFrameRef.current !== frameId) return;
-            expectedExternalScrollTopRef.current = null;
-            externalScrollFrameRef.current = null;
-        });
-        externalScrollFrameRef.current = frameId;
-
-        return () => {
-            if (externalScrollFrameRef.current !== frameId) return;
-            window.cancelAnimationFrame(frameId);
-            expectedExternalScrollTopRef.current = null;
-            externalScrollFrameRef.current = null;
-        };
-    }, [scrollRef, scrollTop]);
+    useEffect(() => () => {
+        if (externalScrollFrameRef.current === null) return;
+        window.cancelAnimationFrame(externalScrollFrameRef.current);
+        externalScrollFrameRef.current = null;
+        expectedExternalScrollTopRef.current = null;
+    }, []);
 
     return useCallback((event: React.UIEvent<HTMLDivElement>) => {
         const nextScrollTop = event.currentTarget.scrollTop;

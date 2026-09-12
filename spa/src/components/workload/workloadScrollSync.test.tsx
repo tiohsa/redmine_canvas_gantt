@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import {
@@ -39,6 +39,62 @@ describe('workload scroll synchronization', () => {
         expect(clampWorkloadScrollTop(999, { clientHeight: 400, scrollHeight: 320 } as HTMLDivElement)).toBe(0);
     });
 
+    it.each([
+        {
+            scenario: 'content shrinks',
+            initialMetrics: { clientHeight: 100, scrollHeight: 1100, scrollTop: 0 },
+            reducedMetrics: { clientHeight: 100, scrollHeight: 201, scrollTop: 101 },
+            expectedScrollTop: 101
+        },
+        {
+            scenario: 'pane expands',
+            initialMetrics: { clientHeight: 100, scrollHeight: 1100, scrollTop: 0 },
+            reducedMetrics: { clientHeight: 999, scrollHeight: 1100, scrollTop: 101 },
+            expectedScrollTop: 101
+        }
+    ])('normalizes the parent when the max scroll decreases because $scenario', ({ initialMetrics, reducedMetrics, expectedScrollTop }) => {
+        const calls: number[] = [];
+        const Harness = ({ requestedScrollTop, layoutRevision }: { requestedScrollTop: number; layoutRevision: number }) => {
+            const [parentScrollTop, setParentScrollTop] = useState(requestedScrollTop);
+            useEffect(() => {
+                setParentScrollTop(requestedScrollTop);
+            }, [requestedScrollTop]);
+            return (
+                <div data-testid="harness" data-layout-revision={layoutRevision} data-parent-scroll-top={parentScrollTop}>
+                    <ScrollPane
+                        testId="pane"
+                        scrollTop={parentScrollTop}
+                        onScroll={(nextScrollTop) => {
+                            calls.push(nextScrollTop);
+                            setParentScrollTop(nextScrollTop);
+                        }}
+                    />
+                </div>
+            );
+        };
+
+        const { rerender } = render(<Harness requestedScrollTop={0} layoutRevision={0} />);
+        const pane = screen.getByTestId('pane');
+
+        setScrollMetrics(pane, initialMetrics.clientHeight, initialMetrics.scrollHeight, initialMetrics.scrollTop);
+        act(() => rerender(<Harness requestedScrollTop={999} layoutRevision={0} />));
+
+        setScrollMetrics(pane, reducedMetrics.clientHeight, reducedMetrics.scrollHeight, reducedMetrics.scrollTop);
+        act(() => rerender(<Harness requestedScrollTop={999} layoutRevision={1} />));
+
+        expect(pane.scrollTop).toBe(expectedScrollTop);
+        expect(screen.getByTestId('harness')).toHaveAttribute('data-parent-scroll-top', String(expectedScrollTop));
+        expect(calls).toEqual([expectedScrollTop]);
+
+        act(() => rerender(<Harness requestedScrollTop={999} layoutRevision={2} />));
+
+        expect(calls).toEqual([expectedScrollTop]);
+
+        fireEvent.scroll(pane);
+
+        expect(calls).toEqual([expectedScrollTop]);
+    });
+
     it('does not oscillate when the two panes have a one pixel max scroll difference', () => {
         const calls: Array<{ source: string; scrollTop: number }> = [];
         const Harness = () => {
@@ -77,12 +133,18 @@ describe('workload scroll synchronization', () => {
         });
 
         expect(canvas.scrollTop).toBe(100);
-        expect(calls).toEqual([{ source: 'sidebar', scrollTop: 101 }]);
+        expect(calls).toEqual([
+            { source: 'sidebar', scrollTop: 101 },
+            { source: 'canvas', scrollTop: 100 }
+        ]);
 
         act(() => {
             fireEvent.scroll(canvas);
         });
 
-        expect(calls).toEqual([{ source: 'sidebar', scrollTop: 101 }]);
+        expect(calls).toEqual([
+            { source: 'sidebar', scrollTop: 101 },
+            { source: 'canvas', scrollTop: 100 }
+        ]);
     });
 });

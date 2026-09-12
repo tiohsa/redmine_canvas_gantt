@@ -13,12 +13,21 @@ interface WorkloadSidebarProps {
     onScroll?: (scrollTop: number) => void;
 }
 
+const METRIC_COLUMN_MIN_WIDTH = 44;
+const METRIC_COLUMN_MAX_WIDTH = 72;
+const OVERLOAD_COLUMN_MIN_WIDTH = 124;
+const OVERLOAD_COLUMN_MAX_WIDTH = 170;
+const WORKLOAD_GRID_TEMPLATE = [
+    'minmax(0, 1fr)',
+    `clamp(${METRIC_COLUMN_MIN_WIDTH}px, 16%, ${METRIC_COLUMN_MAX_WIDTH}px)`,
+    `clamp(${METRIC_COLUMN_MIN_WIDTH}px, 16%, ${METRIC_COLUMN_MAX_WIDTH}px)`,
+    `clamp(${OVERLOAD_COLUMN_MIN_WIDTH}px, 35%, ${OVERLOAD_COLUMN_MAX_WIDTH}px)`
+].join(' ');
+
 export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
     scrollTop = 0,
     onScroll
 }) => {
-    const METRIC_COLUMN_WIDTH = 72;
-    const OVERLOAD_COLUMN_WIDTH = 170;
     const {
         workloadData,
         actualStatus,
@@ -52,7 +61,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                 boxSizing: 'border-box',
                 borderBottom: '1px solid #e0e0e0',
                 display: 'grid',
-                gridTemplateColumns: `minmax(0, 1fr) ${METRIC_COLUMN_WIDTH}px ${METRIC_COLUMN_WIDTH}px ${OVERLOAD_COLUMN_WIDTH}px`,
+                gridTemplateColumns: WORKLOAD_GRID_TEMPLATE,
                 alignItems: 'center',
                 padding: '0 16px',
                 fontWeight: 600,
@@ -61,7 +70,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px'
             }} data-testid="workload-sidebar-header">
-                <div style={{ minWidth: 0 }}>
+                <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {i18n.t('label_assignee_plural') || 'Assignees'}
                 </div>
                 <div
@@ -97,7 +106,7 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                         borderBottom: '1px solid #f0f0f0',
                                         padding: '8px 16px',
                                         display: 'grid',
-                                        gridTemplateColumns: `minmax(0, 1fr) ${METRIC_COLUMN_WIDTH}px ${METRIC_COLUMN_WIDTH}px ${OVERLOAD_COLUMN_WIDTH}px`,
+                                        gridTemplateColumns: WORKLOAD_GRID_TEMPLATE,
                                         gridTemplateRows: '1fr 1fr',
                                         alignItems: 'center',
                                         boxSizing: 'border-box'
@@ -121,17 +130,17 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                     </div>
                                     <div
                                         data-testid={`workload-sidebar-peak-${assignee.assigneeId}`}
-                                        style={{ gridColumn: '2 / 3', gridRow: '1 / 3', textAlign: 'right', fontSize: '12px', color: '#666' }}
+                                        style={{ gridColumn: '2 / 3', gridRow: '1 / 3', minWidth: 0, overflow: 'hidden', textAlign: 'right', fontSize: '12px', color: '#666', whiteSpace: 'nowrap' }}
                                     >
-                                        <div aria-label={`${i18n.t('label_workload_planned')} ${assignee.plannedPeak.toFixed(1)}h`}>{i18n.t('label_workload_planned_short')} {assignee.plannedPeak.toFixed(1)}h</div>
-                                        <div aria-label={`${i18n.t('label_workload_actual')} ${actualStatus === 'ready' ? `${assignee.actualPeak.toFixed(1)}h` : '—'}`}>{i18n.t('label_workload_actual_short')} {actualStatus === 'ready' ? `${assignee.actualPeak.toFixed(1)}h` : '—'}</div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} aria-label={`${i18n.t('label_workload_planned')} ${assignee.plannedPeak.toFixed(1)}h`}>{i18n.t('label_workload_planned_short')} {assignee.plannedPeak.toFixed(1)}h</div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} aria-label={`${i18n.t('label_workload_actual')} ${actualStatus === 'ready' ? `${assignee.actualPeak.toFixed(1)}h` : '—'}`}>{i18n.t('label_workload_actual_short')} {actualStatus === 'ready' ? `${assignee.actualPeak.toFixed(1)}h` : '—'}</div>
                                     </div>
                                     <div
                                         data-testid={`workload-sidebar-total-${assignee.assigneeId}`}
-                                        style={{ gridColumn: '3 / 4', gridRow: '1 / 3', textAlign: 'right', fontSize: '12px', color: '#666' }}
+                                        style={{ gridColumn: '3 / 4', gridRow: '1 / 3', minWidth: 0, overflow: 'hidden', textAlign: 'right', fontSize: '12px', color: '#666', whiteSpace: 'nowrap' }}
                                     >
-                                        <div aria-label={`${i18n.t('label_workload_planned')} ${assignee.plannedTotal.toFixed(1)}h`}>{i18n.t('label_workload_planned_short')} {assignee.plannedTotal.toFixed(1)}h</div>
-                                        <div aria-label={`${i18n.t('label_workload_actual')} ${actualStatus === 'ready' ? `${assignee.actualTotal.toFixed(1)}h` : '—'}`}>{i18n.t('label_workload_actual_short')} {actualStatus === 'ready' ? `${assignee.actualTotal.toFixed(1)}h` : '—'}</div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} aria-label={`${i18n.t('label_workload_planned')} ${assignee.plannedTotal.toFixed(1)}h`}>{i18n.t('label_workload_planned_short')} {assignee.plannedTotal.toFixed(1)}h</div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} aria-label={`${i18n.t('label_workload_actual')} ${actualStatus === 'ready' ? `${assignee.actualTotal.toFixed(1)}h` : '—'}`}>{i18n.t('label_workload_actual_short')} {actualStatus === 'ready' ? `${assignee.actualTotal.toFixed(1)}h` : '—'}</div>
                                     </div>
                                     {(['planned', 'actual'] as const).map(series => {
                                         const hasOverload = Array.from(assignee.dailyWorkloads.values()).some(d => series === 'planned' ? d.isPlannedOverload : actualStatus === 'ready' && d.isActualOverload);
@@ -146,8 +155,9 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'flex-end',
-                                                gap: '6px',
-                                                width: `${OVERLOAD_COLUMN_WIDTH}px`,
+                                                gap: '4px',
+                                                width: '100%',
+                                                minWidth: 0,
                                                 justifySelf: 'end'
                                             }}
                                         >
@@ -171,12 +181,18 @@ export const WorkloadSidebar: React.FC<WorkloadSidebarProps> = ({
                                                 style={{
                                                     backgroundColor: designTokens.controlBg,
                                                     color: designTokens.taskDelayed,
-                                                    padding: '2px 6px',
+                                                    padding: '2px 4px',
                                                     borderRadius: '4px',
                                                     fontSize: '11px',
                                                     fontWeight: 600,
                                                     border: 'none',
-                                                    cursor: 'pointer'
+                                                    cursor: 'pointer',
+                                                    flex: '1 1 auto',
+                                                    minWidth: 0,
+                                                    maxWidth: '100%',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap'
                                                 }}
                                             >
                                                 {i18n.t(`label_workload_${series}_overload`)}

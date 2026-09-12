@@ -237,6 +237,33 @@ describe('WorkloadSidebar', () => {
         expect(scrollViewport.style.minHeight).toBe('0');
     });
 
+    it('keeps the responsive workload columns inside the default 300px sidebar', () => {
+        useWorkloadStore.setState({
+            ...useWorkloadStore.getState(),
+            workloadData: buildWorkloadData()
+        });
+
+        render(<WorkloadSidebar />);
+
+        const sidebarWidth = 300;
+        const horizontalPadding = 16 * 2;
+        const contentWidth = sidebarWidth - horizontalPadding;
+        const metricColumnWidth = 44;
+        const overloadColumnWidth = 124;
+
+        expect(contentWidth - metricColumnWidth * 2 - overloadColumnWidth).toBe(56);
+        expect(screen.getByTestId('workload-sidebar-header')).toHaveStyle({
+            gridTemplateColumns: 'minmax(0, 1fr) clamp(44px, 16%, 72px) clamp(44px, 16%, 72px) clamp(124px, 35%, 170px)',
+            padding: '0 16px'
+        });
+        expect(screen.getByTestId('workload-sidebar-row-1')).toHaveStyle({
+            gridTemplateColumns: 'minmax(0, 1fr) clamp(44px, 16%, 72px) clamp(44px, 16%, 72px) clamp(124px, 35%, 170px)'
+        });
+        expect(screen.getByText('Assignees')).toHaveStyle({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+        expect(screen.getByTestId('workload-sidebar-peak-1')).toHaveStyle({ minWidth: '0', overflow: 'hidden', whiteSpace: 'nowrap' });
+        expect(screen.getByTestId('workload-sidebar-peak-1').firstElementChild).toHaveStyle({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+    });
+
     it('stretches to fill the workload pane width', () => {
         useWorkloadStore.setState({
             ...useWorkloadStore.getState(),
@@ -273,7 +300,7 @@ describe('WorkloadSidebar', () => {
         expect(handleScroll).toHaveBeenCalledWith(72);
     });
 
-    it('clamps and does not re-notify an externally applied scroll position', () => {
+    it('clamps and notifies the parent of the canonical scroll position', () => {
         const handleScroll = vi.fn();
         useWorkloadStore.setState({ workloadData: buildWorkloadData() });
 
@@ -284,9 +311,11 @@ describe('WorkloadSidebar', () => {
         rerender(<WorkloadSidebar scrollTop={999} onScroll={handleScroll} />);
 
         expect(scrollElement.scrollTop).toBe(101);
+        expect(handleScroll).toHaveBeenCalledTimes(1);
+        expect(handleScroll).toHaveBeenCalledWith(101);
         fireEvent.scroll(scrollElement);
 
-        expect(handleScroll).not.toHaveBeenCalled();
+        expect(handleScroll).toHaveBeenCalledTimes(1);
     });
 
     it('notifies the parent for a user scroll', () => {
@@ -351,7 +380,8 @@ describe('WorkloadSidebar', () => {
         render(<WorkloadSidebar />);
 
         const overloadControl = screen.getByRole('button', { name: 'Focus overload histogram for Alice (Planned)' });
-        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '170px', justifyContent: 'flex-end' });
+        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '100%', minWidth: '0', justifyContent: 'flex-end', gap: '4px' });
+        expect(overloadControl).toHaveStyle({ padding: '2px 4px', minWidth: '0' });
         expect(screen.getByTestId('overload-cycle-count-1')).toHaveTextContent('1/2');
         fireEvent.click(overloadControl);
 
@@ -432,7 +462,7 @@ describe('WorkloadSidebar', () => {
 
         render(<WorkloadSidebar />);
 
-        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '170px', justifyContent: 'flex-end' });
+        expect(screen.getByTestId('overload-action-area-1')).toHaveStyle({ width: '100%', minWidth: '0', justifyContent: 'flex-end', gap: '4px' });
         expect(screen.getByTestId('overload-cycle-count-1')).toHaveStyle({ visibility: 'hidden', width: '32px' });
     });
 

@@ -531,7 +531,7 @@ describe('WorkloadCanvasPanel', () => {
         expect(handleScroll).toHaveBeenCalledWith(48);
     });
 
-    it('clamps and does not re-notify an externally applied scroll position', () => {
+    it('clamps and notifies the parent of the canonical scroll position', () => {
         const handleScroll = vi.fn();
         const { rerender } = render(<WorkloadCanvasPanel scrollTop={0} onScroll={handleScroll} />);
         const viewportElement = screen.getByTestId('workload-canvas-viewport');
@@ -540,9 +540,11 @@ describe('WorkloadCanvasPanel', () => {
         rerender(<WorkloadCanvasPanel scrollTop={999} onScroll={handleScroll} />);
 
         expect(viewportElement.scrollTop).toBe(101);
+        expect(handleScroll).toHaveBeenCalledTimes(1);
+        expect(handleScroll).toHaveBeenCalledWith(101);
         fireEvent.scroll(viewportElement);
 
-        expect(handleScroll).not.toHaveBeenCalled();
+        expect(handleScroll).toHaveBeenCalledTimes(1);
     });
 
     it('notifies the parent for a user scroll', () => {
