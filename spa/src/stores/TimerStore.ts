@@ -222,7 +222,10 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
         await ensureTimerStoreReady();
         const readResult = readStoredTimerSession();
         if (readResult.outcome === 'storage_error') {
-            set({ startDialogTask: null });
+            useUIStore.getState().addNotification(
+                i18n.t('label_timer_storage_error') || 'Stored timer data could not be read. Existing data was preserved.',
+                'error'
+            );
             return false;
         }
         const canonicalSession = readResult.session;

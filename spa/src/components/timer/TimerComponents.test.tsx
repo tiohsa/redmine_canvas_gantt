@@ -262,7 +262,7 @@ describe('Timer UI Components', () => {
             expect(recordTime).not.toHaveBeenCalled();
         });
 
-        it('offers only synchronization retry for a confirmed recording', () => {
+        it('offers synchronization retry from the pending work modal for a confirmed recording', () => {
             const recordingAttempt = { id: 'confirmed-attempt', ownerTabId: 'other-tab', openedAt: Date.now(), phase: 'confirmed' as const };
             const session = {
                 version: 4,
@@ -279,6 +279,7 @@ describe('Timer UI Components', () => {
             };
             useTimerStore.setState({ session, pendingWorkModalOpen: true, isReady: true });
             persistTimerSession(session);
+            const completeTimerRecording = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording').mockResolvedValue();
 
             render(<><GlobalTimer /><PendingWorkModal /></>);
 
@@ -290,6 +291,35 @@ describe('Timer UI Components', () => {
             expect(screen.queryByTestId('pending-work-recording-recovery')).toBeNull();
             expect(screen.queryByTestId('pending-work-discard-button')).toBeNull();
             expect(screen.queryByTestId('pending-work-resume-options')).toBeNull();
+
+            fireEvent.click(screen.getByTestId('pending-work-retry-sync-button'));
+            expect(completeTimerRecording).toHaveBeenCalledWith(expect.objectContaining({
+                origin: 'timer',
+                sessionId: 'confirmed-session',
+                issueId: '123',
+                attemptId: 'confirmed-attempt',
+                ownerTabId: 'other-tab'
+            }));
+        });
+
+        it('opens pending work without retrying synchronization from the other-timer notice', () => {
+            useTimerStore.setState({
+                otherPendingNotice: {
+                    issueId: '999',
+                    subject: 'Other Issue',
+                    elapsedMs: 30 * 60 * 1000,
+                    recordingPhase: 'confirmed'
+                }
+            });
+            const completeTimerRecording = vi.spyOn(useTimerStore.getState(), 'completeTimerRecording');
+
+            render(<OtherNoticeModal />);
+
+            expect(screen.getByTestId('timer-notice-pending-action-button')).toHaveTextContent('Review synchronization');
+            fireEvent.click(screen.getByTestId('timer-notice-pending-action-button'));
+
+            expect(useTimerStore.getState().pendingWorkModalOpen).toBe(true);
+            expect(completeTimerRecording).not.toHaveBeenCalled();
         });
 
         it('requires explicit confirmation to resolve an unknown recording outcome', async () => {
@@ -639,7 +669,7 @@ describe('Timer UI Components', () => {
             render(<OtherNoticeModal />);
 
             expect(screen.getByTestId('timer-notice-modal')).toHaveTextContent('Recorded; synchronization pending');
-            expect(screen.getByTestId('timer-notice-pending-action-button')).toHaveTextContent('Retry synchronization');
+            expect(screen.getByTestId('timer-notice-pending-action-button')).toHaveTextContent('Review synchronization');
             expect(screen.getByTestId('timer-notice-modal')).not.toHaveTextContent('Record or discard');
         });
     });
