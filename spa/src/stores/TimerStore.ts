@@ -22,12 +22,14 @@ import {
     cancelTimerRecording,
     recoverTimerRecording,
     completeTimerRecording,
+    cleanupConfirmedTimerRecording,
     resolveUnknownTimerRecording,
     stopTimerSession
 } from '../domain/timer/timerDomain';
 import {
     acquireTimerSession,
     getCurrentTimerTabId,
+    getStorageScope,
     getTimerStorageKeys,
     loadStoredTimerPreferences,
     loadStoredTimerSession,
@@ -185,7 +187,12 @@ const recordingContextMatches = (session: TimerSession | null, context: TimerRec
         context.origin === 'timer' &&
         session.sessionId === context.sessionId &&
         String(session.issueId) === String(context.issueId) &&
-        session.recordingAttempt?.id === context.attemptId
+        session.recordingAttempt?.id === context.attemptId &&
+        (!context.ownerTabId || session.recordingAttempt.ownerTabId === context.ownerTabId) &&
+        (!context.scope || (
+            (context.scope.instanceKey === undefined || context.scope.instanceKey === getStorageScope().instanceKey) &&
+            (context.scope.userId === undefined || context.scope.userId === getStorageScope().userId)
+        ))
     )
 );
 
@@ -299,7 +306,9 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
                 origin: 'timer',
                 sessionId: nextSession.sessionId,
                 issueId: nextSession.issueId,
-                attemptId: nextSession.recordingAttempt.id
+                attemptId: nextSession.recordingAttempt.id,
+                ownerTabId: nextSession.recordingAttempt.ownerTabId,
+                scope: getStorageScope()
             }
         });
     },
@@ -340,7 +349,9 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
                 origin: 'timer',
                 sessionId: session.sessionId,
                 issueId: session.issueId,
-                attemptId: session.recordingAttempt.id
+                attemptId: session.recordingAttempt.id,
+                ownerTabId: session.recordingAttempt.ownerTabId,
+                scope: getStorageScope()
             }
         });
         set({ pendingWorkModalOpen: false });
@@ -363,7 +374,11 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             return markTimerRecordingValidationError(canonical!, context.attemptId);
         });
         updateSessionAndSchedule(result.session);
-        return Boolean(result.applied && result.session?.recordingAttempt?.phase === 'editing');
+        return Boolean(
+            result.session?.recordingAttempt?.phase === 'editing' &&
+            recordingContextMatches(result.session, context) &&
+            (result.applied || result.reason === 'unchanged')
+        );
     },
 
     markTimerRecordingUnknown: async (context) => {
@@ -403,6 +418,13 @@ export const useTimerStore = create<TimerStoreState>((set, get) => ({
             return completeTimerRecording(canonical!, context.attemptId);
         });
         updateSessionAndSchedule(result.session);
+        if (result.session?.recordingAttempt?.phase === 'confirmed') {
+            const cleanup = await mutateStoredTimerSession((canonical) => {
+                if (!recordingContextMatches(canonical, context)) return undefined;
+                return cleanupConfirmedTimerRecording(canonical!, context.attemptId);
+            });
+            updateSessionAndSchedule(cleanup.session);
+        }
         set({ pendingWorkModalOpen: false, otherRunningNotice: null, otherPendingNotice: null });
     },
 

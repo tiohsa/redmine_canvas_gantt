@@ -69,7 +69,8 @@ export const isValidTimerSession = (value: unknown): value is TimerSession => {
     if (candidate.version !== TIMER_SESSION_VERSION) return false;
     if (typeof candidate.sessionId !== 'string' || candidate.sessionId.trim() === '') return false;
     if (!Number.isInteger(candidate.revision) || (candidate.revision as number) < 1) return false;
-    if (candidate.issueId === undefined || candidate.issueId === null || candidate.issueId === '') return false;
+    if ((typeof candidate.issueId !== 'number' && typeof candidate.issueId !== 'string') ||
+        !Number.isSafeInteger(Number(candidate.issueId)) || Number(candidate.issueId) <= 0) return false;
     if (typeof candidate.subject !== 'string' || typeof candidate.autoStop !== 'boolean') return false;
     if (typeof candidate.createdAt !== 'number' || !Number.isFinite(candidate.createdAt)) return false;
     if (typeof candidate.updatedAt !== 'number' || !Number.isFinite(candidate.updatedAt)) return false;
@@ -85,7 +86,7 @@ export const isValidTimerSession = (value: unknown): value is TimerSession => {
             typeof attempt.id !== 'string' || attempt.id.trim() === '' ||
             typeof attempt.ownerTabId !== 'string' || attempt.ownerTabId.trim() === '' ||
             typeof attempt.openedAt !== 'number' || !Number.isFinite(attempt.openedAt) ||
-            !['editing', 'submitting', 'unknown'].includes(String(attempt.phase))
+            !['editing', 'submitting', 'confirmed', 'unknown'].includes(String(attempt.phase))
         ) return false;
     }
     if (candidate.userId !== undefined && (typeof candidate.userId !== 'number' || !Number.isFinite(candidate.userId))) return false;
@@ -98,7 +99,8 @@ const isValidTimerSessionBase = (value: unknown, version: number): value is Reco
     if (candidate.version !== version) return false;
     if (typeof candidate.sessionId !== 'string' || candidate.sessionId.trim() === '') return false;
     if (!Number.isInteger(candidate.revision) || (candidate.revision as number) < 1) return false;
-    if (candidate.issueId === undefined || candidate.issueId === null || candidate.issueId === '') return false;
+    if ((typeof candidate.issueId !== 'number' && typeof candidate.issueId !== 'string') ||
+        !Number.isSafeInteger(Number(candidate.issueId)) || Number(candidate.issueId) <= 0) return false;
     if (typeof candidate.subject !== 'string' || typeof candidate.autoStop !== 'boolean') return false;
     if (typeof candidate.createdAt !== 'number' || !Number.isFinite(candidate.createdAt)) return false;
     if (typeof candidate.updatedAt !== 'number' || !Number.isFinite(candidate.updatedAt)) return false;
@@ -136,7 +138,7 @@ export const migrateTimerSession = (value: unknown): TimerSession | null => {
         if (
             typeof attempt.id !== 'string' || attempt.id.trim() === '' ||
             typeof attempt.openedAt !== 'number' || !Number.isFinite(attempt.openedAt) ||
-            !['editing', 'submitting', 'unknown'].includes(String(attempt.phase))
+            !['editing', 'submitting', 'confirmed', 'unknown'].includes(String(attempt.phase))
         ) return null;
     }
 
@@ -168,16 +170,21 @@ export const isValidTimerPreferences = (value: unknown): value is TimerPreferenc
     return Boolean(value && typeof value === 'object' && typeof (value as Record<string, unknown>).autoStop === 'boolean');
 };
 
-const readStoredTimerSession = (scope: StorageScope): TimerSession | null => {
+const readStoredTimerSession = (scope: StorageScope, strict = false): TimerSession | null => {
     try {
         const raw = window.localStorage.getItem(getTimerStorageKeys(scope).session);
-        if (!raw) return null;
+        if (raw === null) return null;
         const parsed: unknown = JSON.parse(raw);
         const migrated = migrateTimerSession(parsed);
-        if (!migrated) return null;
-        if (scope.userId !== undefined && migrated.userId !== scope.userId) return null;
+        if (!migrated || (scope.userId !== undefined && migrated.userId !== undefined && migrated.userId !== scope.userId)) {
+            if (strict) throw new Error('Invalid timer session');
+            return null;
+        }
         return migrated;
-    } catch { return null; }
+    } catch (error) {
+        if (strict) throw error;
+        return null;
+    }
 };
 
 export const loadStoredTimerSession = (scope: StorageScope = getStorageScope(), now?: number): TimerSession | null => {
@@ -185,15 +192,16 @@ export const loadStoredTimerSession = (scope: StorageScope = getStorageScope(), 
     return readStoredTimerSession(scope);
 };
 
-export const persistTimerSession = (session: TimerSession | null, scope: StorageScope = getStorageScope()): void => {
+export const persistTimerSession = (session: TimerSession | null, scope: StorageScope = getStorageScope()): boolean => {
     try {
         const key = getTimerStorageKeys(scope).session;
         if (session === null) window.localStorage.removeItem(key);
         else window.localStorage.setItem(key, JSON.stringify(session));
-    } catch (error) { console.warn('Failed to persist timer session to localStorage', error); }
+        return true;
+    } catch (error) { console.warn('Failed to persist timer session to localStorage', error); return false; }
 };
 
-export const clearStoredTimerSession = (scope: StorageScope = getStorageScope()): void => persistTimerSession(null, scope);
+export const clearStoredTimerSession = (scope: StorageScope = getStorageScope()): void => { persistTimerSession(null, scope); };
 
 export const loadStoredTimerPreferences = (scope: StorageScope = getStorageScope()): TimerPreferences => {
     const fallback: TimerPreferences = { autoStop: false };
@@ -233,7 +241,7 @@ const withMutationLock = <T>(scope: StorageScope, callback: () => T): T | undefi
     }
 };
 
-export interface TimerMutationResult { applied: boolean; session: TimerSession | null; reason?: 'locked' | 'unchanged'; }
+export interface TimerMutationResult { applied: boolean; session: TimerSession | null; reason?: 'locked' | 'unchanged' | 'storage_error'; }
 export type TimerSessionMutation = (canonical: TimerSession | null) => TimerSession | null | undefined;
 
 const applyStoredTimerMutationUnlocked = (
@@ -241,15 +249,17 @@ const applyStoredTimerMutationUnlocked = (
     scope: StorageScope,
     now: number
 ): TimerMutationResult => {
-    const canonical = readStoredTimerSession(scope);
+    let canonical: TimerSession | null;
+    try { canonical = readStoredTimerSession(scope, true); }
+    catch { return { applied: false, session: null, reason: 'storage_error' }; }
     const next = mutation(canonical);
-    if (next === undefined) return { applied: false, session: canonical, reason: 'unchanged' };
+    if (next === undefined || next === canonical) return { applied: false, session: canonical, reason: 'unchanged' };
     if (next === null) {
-        persistTimerSession(null, scope);
+        if (!persistTimerSession(null, scope)) return { applied: false, session: canonical, reason: 'storage_error' };
         return { applied: true, session: null };
     }
     const persisted = { ...next, revision: canonical ? canonical.revision + 1 : 1, updatedAt: now };
-    persistTimerSession(persisted, scope);
+    if (!persistTimerSession(persisted, scope)) return { applied: false, session: canonical, reason: 'storage_error' };
     return { applied: true, session: persisted };
 };
 
@@ -320,17 +330,30 @@ export const mutateStoredTimerSession = async (
     scope: StorageScope = getStorageScope(),
     now: number = Date.now()
 ): Promise<TimerMutationResult> => {
+    // A backend failure after callback execution must not run the mutation twice.
+    let executed = false;
+    let result: TimerMutationResult;
+    const apply = () => {
+        if (!executed) {
+            executed = true;
+            result = applyStoredTimerMutationUnlocked(mutation, scope, now);
+        }
+        return result;
+    };
+    try {
     const lockManager = typeof navigator !== 'undefined' ? navigator.locks : undefined;
     if (lockManager) {
-        return lockManager.request(getTimerStorageKeys(scope).lock, { mode: 'exclusive' }, () => (
-            applyStoredTimerMutationUnlocked(mutation, scope, now)
-        ));
+        return await lockManager.request(getTimerStorageKeys(scope).lock, { mode: 'exclusive' }, apply);
     }
     if (typeof indexedDB !== 'undefined') {
-        const result = await withIndexedDbMutationLock(scope, () => applyStoredTimerMutationUnlocked(mutation, scope, now));
+        const result = await withIndexedDbMutationLock(scope, apply);
         if (result) return result;
+        if (executed) return { applied: false, session: readStoredTimerSession(scope), reason: 'storage_error' };
     }
     return applyStoredTimerMutation(mutation, scope, now);
+    } catch {
+        return { applied: false, session: readStoredTimerSession(scope), reason: 'storage_error' };
+    }
 };
 
 export interface AcquireSessionResult { acquired: boolean; session: TimerSession | null; conflictSession?: TimerSession; }

@@ -185,6 +185,33 @@ describe('TimerStore', () => {
         expect(window.localStorage.getItem(getTimerStorageKeys().session)).toBeNull();
     });
 
+    it('keeps confirmed state when cleanup fails and retries cleanup without another recording attempt', async () => {
+        await useTimerStore.getState().startTimer(mockTask, 30);
+        await useTimerStore.getState().stopTimer();
+        const pending = useTimerStore.getState().session!;
+        const context = {
+            origin: 'timer' as const,
+            sessionId: pending.sessionId,
+            issueId: pending.issueId,
+            attemptId: pending.recordingAttempt!.id,
+            ownerTabId: pending.recordingAttempt!.ownerTabId
+        };
+        await useTimerStore.getState().beginTimerRecordingSubmission(context);
+
+        const originalRemove = Storage.prototype.removeItem;
+        const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key: string) {
+            if (key === getTimerStorageKeys().session) throw new Error('cleanup denied');
+            originalRemove.call(this, key);
+        });
+
+        await useTimerStore.getState().completeTimerRecording(context);
+        expect(useTimerStore.getState().session?.recordingAttempt?.phase).toBe('confirmed');
+        remove.mockRestore();
+
+        await useTimerStore.getState().completeTimerRecording(context);
+        expect(useTimerStore.getState().session).toBeNull();
+    });
+
     it('does not clear a running session or a pending session owned by another recording attempt', async () => {
         await useTimerStore.getState().startTimer(mockTask, 30);
         const running = useTimerStore.getState().session!;

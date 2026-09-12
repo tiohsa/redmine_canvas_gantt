@@ -227,6 +227,8 @@ export const markTimerRecordingValidationError = (
     attemptId: string,
     now: number = Date.now()
 ): TimerSession | undefined => {
+    if (session.recordingAttempt?.id !== attemptId) return undefined;
+    if (session.recordingAttempt?.phase === 'editing') return session;
     if (session.recordingAttempt?.phase !== 'submitting') return undefined;
     const next = transitionRecording(session, attemptId, 'editing');
     return next ? { ...next, updatedAt: now } : undefined;
@@ -280,9 +282,18 @@ export const recoverTimerRecording = (
     return undefined;
 };
 
-export const completeTimerRecording = (session: TimerSession, attemptId: string): null | undefined => {
+export const completeTimerRecording = (session: TimerSession, attemptId: string, now: number = Date.now()): TimerSession | undefined => {
     if (session.state !== 'stopped_pending_record') return undefined;
-    if (session.recordingAttempt?.id !== attemptId || session.recordingAttempt.phase !== 'submitting') return undefined;
+    if (session.recordingAttempt?.id !== attemptId) return undefined;
+    if (session.recordingAttempt.phase === 'confirmed') return session;
+    if (session.recordingAttempt.phase !== 'submitting') return undefined;
+    const next = transitionRecording(session, attemptId, 'confirmed');
+    return next ? { ...next, updatedAt: now } : undefined;
+};
+
+export const cleanupConfirmedTimerRecording = (session: TimerSession, attemptId: string): null | undefined => {
+    if (session.state !== 'stopped_pending_record') return undefined;
+    if (session.recordingAttempt?.id !== attemptId || session.recordingAttempt.phase !== 'confirmed') return undefined;
     return null;
 };
 

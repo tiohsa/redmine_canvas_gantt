@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTimerStore } from '../../stores/TimerStore';
+import { getStorageScope } from '../../services/timerStorage';
 import { TIMER_INTERVAL_MINUTES } from '../../types/timer';
 import {
   calculateTimerElapsed,
@@ -22,6 +23,7 @@ export const PendingWorkModal: React.FC = () => {
   const discardTimer = useTimerStore(state => state.discardTimer);
   const recoverTimerRecording = useTimerStore(state => state.recoverTimerRecording);
   const resolveUnknownTimerRecording = useTimerStore(state => state.resolveUnknownTimerRecording);
+  const completeTimerRecording = useTimerStore(state => state.completeTimerRecording);
 
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
   const [unknownResolution, setUnknownResolution] = useState<'recorded' | 'unregistered' | null>(null);
@@ -59,7 +61,7 @@ export const PendingWorkModal: React.FC = () => {
   const recordingPhase = session.recordingAttempt?.phase;
   const isRecoverableRecording = Boolean(
     recordingPhase &&
-    recordingPhase !== 'unknown'
+    (recordingPhase === 'editing' || recordingPhase === 'submitting')
   );
   const unknownSecondaryButtonStyle: React.CSSProperties = {
     ...timerButtonLayout,
@@ -92,7 +94,9 @@ export const PendingWorkModal: React.FC = () => {
       origin: 'timer' as const,
       sessionId: session.sessionId,
       issueId: session.issueId,
-      attemptId: session.recordingAttempt.id
+      attemptId: session.recordingAttempt.id,
+      ownerTabId: session.recordingAttempt.ownerTabId,
+      scope: getStorageScope()
     };
     setUnknownResolution(null);
     void resolveUnknownTimerRecording(context, unknownResolution);
@@ -104,10 +108,24 @@ export const PendingWorkModal: React.FC = () => {
       origin: 'timer' as const,
       sessionId: session.sessionId,
       issueId: session.issueId,
-      attemptId: session.recordingAttempt.id
+      attemptId: session.recordingAttempt.id,
+      ownerTabId: session.recordingAttempt.ownerTabId,
+      scope: getStorageScope()
     };
     setIsRecoveryConfirmOpen(false);
     void recoverTimerRecording(context);
+  };
+
+  const handleRetrySynchronization = () => {
+    if (recordingPhase !== 'confirmed' || !session.recordingAttempt) return;
+    void completeTimerRecording({
+      origin: 'timer',
+      sessionId: session.sessionId,
+      issueId: session.issueId,
+      attemptId: session.recordingAttempt.id,
+      ownerTabId: session.recordingAttempt.ownerTabId,
+      scope: getStorageScope()
+    });
   };
 
   return (
@@ -319,6 +337,23 @@ export const PendingWorkModal: React.FC = () => {
               </button>
             </div>
           </div>
+        ) : recordingPhase === 'confirmed' ? (
+          <div data-testid="pending-work-confirmed-recovery" style={{
+            padding: '12px',
+            backgroundColor: designTokens.warningBg,
+            borderRadius: '12px',
+            border: `1px solid ${designTokens.warningFg}`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px'
+          }}>
+            <div style={{ color: designTokens.warningFg, fontSize: '12px', fontWeight: 600 }}>
+              {tr('label_timer_recording_confirmed') || 'Redmine recorded this work time. Timer synchronization is pending.'}
+            </div>
+            <button type="button" data-testid="pending-work-retry-sync-button" onClick={handleRetrySynchronization} style={unknownPrimaryButtonStyle}>
+              {tr('label_timer_retry_sync') || 'Retry synchronization'}
+            </button>
+          </div>
         ) : isRecoverableRecording ? (
           <div data-testid="pending-work-recording-reservation" style={{
             padding: '12px',
@@ -451,7 +486,7 @@ export const PendingWorkModal: React.FC = () => {
 
             {/* Footer Discard & Close */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', borderTop: `1px solid ${designTokens.borderSubtle}`, paddingTop: '12px' }}>
-              <button
+              {!recordingPhase && <button
                 type="button"
                 data-testid="pending-work-discard-button"
                 onClick={() => setIsDiscardConfirmOpen(true)}
@@ -469,7 +504,7 @@ export const PendingWorkModal: React.FC = () => {
                 }}
               >
                 🗑 {tr('label_timer_discard') || 'Discard'}
-              </button>
+              </button>}
 
               <button
                 type="button"

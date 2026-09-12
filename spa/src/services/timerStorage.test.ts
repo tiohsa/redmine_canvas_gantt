@@ -85,17 +85,21 @@ describe('Timer Storage & Persistence', () => {
         expect(isValidTimerSession(createSampleSession())).toBe(true);
     });
 
-    it('allows a recording attempt only while work is pending recording', () => {
-        const recordingAttempt = {
-            id: 'attempt-123',
-            ownerTabId: 'tab-123',
-            openedAt: baseTime,
-            phase: 'editing' as const
-        };
+    it('allows every shared recording phase only while work is pending recording', () => {
+        for (const phase of ['editing', 'submitting', 'confirmed', 'unknown'] as const) {
+            const recordingAttempt = {
+                id: `attempt-${phase}`,
+                ownerTabId: 'tab-123',
+                openedAt: baseTime,
+                phase
+            };
+            expect(isValidTimerSession(createSampleSession({ state: 'stopped_pending_record', recordingAttempt }))).toBe(true);
+            expect(isValidTimerSession(createSampleSession({ state: 'expired', recordingAttempt }))).toBe(false);
+        }
+    });
 
-        expect(isValidTimerSession(createSampleSession({ recordingAttempt }))).toBe(false);
-        expect(isValidTimerSession(createSampleSession({ state: 'expired', recordingAttempt }))).toBe(false);
-        expect(isValidTimerSession(createSampleSession({ state: 'stopped_pending_record', recordingAttempt }))).toBe(true);
+    it.each([undefined, null, '', 'abc', 0, -1, 'NaN', Infinity])('rejects invalid issueId %s', (issueId) => {
+        expect(isValidTimerSession(createSampleSession({ issueId: issueId as never }))).toBe(false);
     });
 
     it('does not restore session if userId belongs to a different user', () => {

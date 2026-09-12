@@ -47,6 +47,8 @@ export const GlobalTimer: React.FC = () => {
     const recordingPhase = session.recordingAttempt?.phase;
     const pendingPrimaryAction = session.recordingAttempt === undefined
         ? 'record'
+        : recordingPhase === 'confirmed'
+            ? 'sync'
         : recordingPhase === 'unknown'
             ? 'resolve'
             : 'recover';
@@ -148,6 +150,8 @@ export const GlobalTimer: React.FC = () => {
                         <span data-testid="global-timer-pending-text" style={{ display: 'block', color: designTokens.warningFg, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {session.recordingAttempt?.phase === 'unknown'
                                 ? (tr('label_timer_recording_unknown') || 'Recording result needs confirmation')
+                                : session.recordingAttempt?.phase === 'confirmed'
+                                    ? (tr('label_timer_recording_confirmed') || 'Recorded; synchronization pending')
                                 : (tr('label_timer_pending_work') || 'Unrecorded')}: {elapsedFormatted}
                         </span>
                     )}
@@ -294,6 +298,8 @@ export const GlobalTimer: React.FC = () => {
                         >
                             📝 {pendingPrimaryAction === 'record'
                                 ? (tr('label_timer_record_time') || 'Record')
+                                : pendingPrimaryAction === 'sync'
+                                    ? (tr('label_timer_retry_sync') || 'Retry synchronization')
                                 : pendingPrimaryAction === 'recover'
                                     ? (tr('label_timer_recording_recover') || 'Recover recording')
                                     : (tr('label_timer_recording_unknown') || 'Confirm recording result')}
