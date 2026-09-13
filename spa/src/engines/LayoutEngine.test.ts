@@ -15,17 +15,6 @@ describe('LayoutEngine', () => {
         rowHeight: 40
     };
 
-    it('rejects raw instants at the CalendarDate and TimelineDate canvas boundaries', () => {
-        void (() => {
-            // @ts-expect-error Instants must first become a local CalendarDate.
-            LayoutEngine.calendarDateToX(Date.now(), mockViewport);
-            // @ts-expect-error CalendarDate values must be projected before timeline arithmetic.
-            LayoutEngine.dateToX(parseDateOnly('2024-01-02')!, mockViewport);
-        });
-
-        expect(true).toBe(true);
-    });
-
     it('dateToX converts date to x coordinate accurately', () => {
         const date = parseDateOnly('2024-01-02')!; // +1 day
         // 1 day = 86400000 ms

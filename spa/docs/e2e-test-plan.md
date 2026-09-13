@@ -230,6 +230,5 @@ tests/e2e/
 ├── gantt-dependency.pw.ts   # 依存関係テスト
 ├── gantt-filters.pw.ts      # フィルタリングテスト
 ├── gantt-sidebar.pw.ts      # サイドバーテスト（既存）
-├── gantt-detail-panel.pw.ts # 詳細パネルテスト
 └── gantt-a11y.pw.ts         # アクセシビリティテスト
 ```
