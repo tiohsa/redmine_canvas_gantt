@@ -139,3 +139,18 @@ Do not expand into unrelated:
 Small adjacent changes are acceptable when required for correctness, consistency, or reliable validation.
 
 When a broader change appears desirable but is not necessary for the requested work, leave it out and report it separately.
+
+### API and i18n boundaries
+
+New direct API access must comply with
+`spa/scripts/check-async-contract.mjs`.
+Do not bypass existing stores or API abstractions.
+
+Keep new frontend translation keys synchronized with
+`config/locales/*.yml`, `app/controllers/canvas_gantts_controller.rb`,
+and the backend i18n payload.
+
+### Git safety
+
+Do not commit, amend, merge, rebase, reset, push, or alter remote branches unless explicitly requested.
+Preserve unrelated working-tree changes.

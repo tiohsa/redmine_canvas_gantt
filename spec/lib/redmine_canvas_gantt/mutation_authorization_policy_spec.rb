@@ -30,6 +30,20 @@ RSpec.describe RedmineCanvasGantt::MutationAuthorizationPolicy do
 
       expect(policy.can_create_subtask?(issue)).to be(true)
     end
+
+    it 'rejects subtask creation without issue creation permission' do
+      allow(user).to receive(:allowed_to?).with(:add_issues, project).and_return(false)
+      allow(user).to receive(:allowed_to?).with(:manage_subtasks, project).and_return(true)
+
+      expect(policy.can_create_subtask?(issue)).to be(false)
+    end
+
+    it 'rejects subtask creation without subtask management permission' do
+      allow(user).to receive(:allowed_to?).with(:add_issues, project).and_return(true)
+      allow(user).to receive(:allowed_to?).with(:manage_subtasks, project).and_return(false)
+
+      expect(policy.can_create_subtask?(issue)).to be(false)
+    end
   end
 
   describe '#can_delete_issue?' do
@@ -38,6 +52,13 @@ RSpec.describe RedmineCanvasGantt::MutationAuthorizationPolicy do
       allow(issue).to receive(:deletable?).and_return(true)
 
       expect(policy.can_delete_issue?(issue)).to be(true)
+    end
+
+    it 'rejects deletion when the issue is not deletable' do
+      allow(user).to receive(:allowed_to?).with(:delete_issues, project).and_return(true)
+      allow(issue).to receive(:deletable?).and_return(false)
+
+      expect(policy.can_delete_issue?(issue)).to be(false)
     end
   end
 end
