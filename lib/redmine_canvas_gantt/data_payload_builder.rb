@@ -1,11 +1,12 @@
 require 'set'
+require_relative 'mutation_authorization_policy'
 
 module RedmineCanvasGantt
   class DataPayloadBuilder
-    def initialize(custom_field_extractor:, current_user:, data_payload_budget: nil)
+    def initialize(custom_field_extractor:, current_user:, data_payload_budget: nil, authorization_policy: nil)
       @custom_field_extractor = custom_field_extractor
-      @current_user = current_user
       @data_payload_budget = data_payload_budget
+      @authorization_policy = authorization_policy || MutationAuthorizationPolicy.new(current_user: current_user)
     end
 
     def build(project:, permissions:, project_ids:, issues:, filter_option_projects:, filter_option_issues:, filter_option_trackers: nil, initial_state: nil, query_context: nil, warnings: [], baseline: nil, business_calendar: nil, relations: nil)
@@ -36,9 +37,9 @@ module RedmineCanvasGantt
       issues.each_with_index.map do |issue, idx|
         build_task_state(issue).merge(
           display_order: idx,
-          editable: @current_user.allowed_to?(:edit_issues, issue.project) && issue.editable?,
+          editable: @authorization_policy.can_edit_issue?(issue),
           can_log_time: can_log_time_by_project_id.fetch(issue.project_id) do
-            can_log_time_by_project_id[issue.project_id] = @current_user.allowed_to?(:log_time, issue.project)
+            can_log_time_by_project_id[issue.project_id] = @authorization_policy.can_log_time?(issue.project)
           end
         )
       end

@@ -1,13 +1,15 @@
+require_relative 'mutation_authorization_policy'
+
 module RedmineCanvasGantt
   class BulkSubtaskCreator
-    def initialize(current_user:, issue_class: Issue)
+    def initialize(current_user:, issue_class: Issue, authorization_policy: nil)
       @current_user = current_user
       @issue_class = issue_class
+      @authorization_policy = authorization_policy || MutationAuthorizationPolicy.new(current_user: current_user)
     end
 
     def allowed?(parent_issue)
-      @current_user.allowed_to?(:add_issues, parent_issue.project) &&
-        @current_user.allowed_to?(:manage_subtasks, parent_issue.project)
+      @authorization_policy.can_create_subtask?(parent_issue)
     end
 
     def call(parent_issue:, subjects: nil, subtasks: nil)

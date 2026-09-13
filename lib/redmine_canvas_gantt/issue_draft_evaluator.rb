@@ -1,4 +1,5 @@
 require_relative 'project_move_policy'
+require_relative 'mutation_authorization_policy'
 
 module RedmineCanvasGantt
   class IssueDraftEvaluator
@@ -36,10 +37,11 @@ module RedmineCanvasGantt
       category_id estimated_hours project_id tracker_id fixed_version_id parent_issue_id
     ].freeze
 
-    def initialize(current_user:, project_scope_ids:, project_class: Project)
+    def initialize(current_user:, project_scope_ids:, project_class: Project, authorization_policy: nil)
       @current_user = current_user
       @project_scope_ids = Array(project_scope_ids).map(&:to_i)
       @project_class = project_class
+      @authorization_policy = authorization_policy || MutationAuthorizationPolicy.new(current_user: current_user)
       @project_move_policy = ProjectMovePolicy.new(current_user: current_user)
     end
 
@@ -136,7 +138,7 @@ module RedmineCanvasGantt
 
       target = target_project || @project_class.visible.find_by(id: target_id)
       return violation('project_id', 'invalid_target', 'The target project is invalid.') unless target
-      unless @project_scope_ids.include?(target_id) && @current_user.allowed_to?(:add_issues, target)
+      unless @project_scope_ids.include?(target_id) && @authorization_policy.can_add_issue?(target)
         return violation('project_id', 'permission_denied', 'Permission denied.')
       end
 
