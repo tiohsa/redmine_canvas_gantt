@@ -432,6 +432,8 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'baseline_repository').to_s
 
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'actual_workload_builder').to_s
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'mutation_authorization_policy').to_s
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'issue_mutation_service').to_s
 
   helper RedmineCanvasGantt::ViteAssetHelper
   accept_api_auth :actual_workload, :data, :queries, :edit_meta, :edit_meta_preview, :update, :destroy_task, :bulk_create_subtasks, :create_relation, :update_relation, :destroy_relation, :save_baseline
@@ -599,7 +601,6 @@ class CanvasGanttsController < ApplicationController
     issue = Issue.visible.find(params[:id])
     return unless ensure_issue_in_scope(issue)
     return unless ensure_issue_editable(issue)
-    previous_parent_id = issue.parent_id
 
     task_attributes = permitted_task_params
     intent = draft_task_intent.merge(task_attributes.to_h.symbolize_keys)
@@ -609,31 +610,37 @@ class CanvasGanttsController < ApplicationController
     end
     intent = preprocess_draft_intent(issue, intent)
     return if performed?
-    evaluation = issue_draft_evaluator.evaluate(issue: issue, intent: intent)
-    unless evaluation.valid?
-      return render_draft_evaluation_failure(evaluation, issue)
-    end
 
-    if issue.save
-      if requested_parent_issue_id_provided? && issue.parent_id != requested_parent_issue_id
-        render json: { errors: [canvas_gantt_l(:error_canvas_gantt_parent_linkage_failed)], parent_id: issue.parent_id }, status: :unprocessable_entity
-        return
-      end
+    result = issue_mutation_service.update(
+      issue: issue,
+      intent: intent,
+      parent_issue_id_provided: requested_parent_issue_id_provided?,
+      requested_parent_issue_id: requested_parent_issue_id
+    )
 
+    case result.status
+    when :invalid
+      render_draft_evaluation_failure(result.evaluation, issue)
+    when :save_failed
+      render json: { errors: result.errors }, status: :unprocessable_entity
+    when :parent_linkage_failed
+      render json: {
+        errors: [canvas_gantt_l(:error_canvas_gantt_parent_linkage_failed)],
+        parent_id: issue.parent_id
+      }, status: :unprocessable_entity
+    when :ok
       render json: mutation_response(
         status: 'ok',
         completeness: 'partial',
         entity: data_payload_builder.build_task_state(issue),
         revision: issue.lock_version,
-        invalidated_entity_ids: [issue.id, previous_parent_id, issue.parent_id]
+        invalidated_entity_ids: [issue.id, result.previous_parent_id, issue.parent_id]
       ).merge(
         lock_version: issue.lock_version,
         task_id: issue.id,
         parent_id: issue.parent_id,
         sibling_position: 'tail'
       )
-    else
-      render json: { errors: issue.errors.full_messages }, status: :unprocessable_entity
     end
   rescue ActiveRecord::StaleObjectError
     remote_issue = Issue.visible.find_by(id: params[:id])
@@ -696,12 +703,11 @@ class CanvasGanttsController < ApplicationController
     return unless ensure_issue_in_scope(issue)
     return unless ensure_issue_deletable(issue)
 
-    parent_id = issue.parent_id
-    issue.destroy
+    result = issue_mutation_service.destroy(issue: issue)
     render json: mutation_response(
       status: 'ok',
       completeness: 'partial',
-      invalidated_entity_ids: [issue.id, parent_id],
+      invalidated_entity_ids: [issue.id, result.parent_id],
       deleted_entity_ids: [issue.id]
     )
   rescue ActiveRecord::RecordNotFound
@@ -909,17 +915,18 @@ class CanvasGanttsController < ApplicationController
   end
 
   def ensure_baseline_edit_permission
-    return true if User.current.allowed_to?(:manage_canvas_gantt_baseline, @project)
+    return true if mutation_authorization_policy.can_manage_baseline?(@project)
 
     render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
     false
   end
 
   def set_permissions
+    policy = mutation_authorization_policy
     @permissions ||= {
-      editable: User.current.allowed_to?(:edit_issues, @project),
-      viewable: User.current.allowed_to?(:view_canvas_gantt, @project),
-      baseline_editable: User.current.allowed_to?(:manage_canvas_gantt_baseline, @project)
+      editable: policy.can_edit_project?(@project),
+      viewable: policy.can_view_project?(@project),
+      baseline_editable: policy.can_manage_baseline?(@project)
     }
   end
 
@@ -1134,7 +1141,7 @@ class CanvasGanttsController < ApplicationController
   end
 
   def ensure_issue_deletable(issue)
-    return true if User.current.allowed_to?(:delete_issues, issue.project) && issue.deletable?
+    return true if mutation_authorization_policy.can_delete_issue?(issue)
 
     render json: { error: canvas_gantt_l(:error_canvas_gantt_permission_denied) }, status: :forbidden
     false
@@ -1237,7 +1244,7 @@ class CanvasGanttsController < ApplicationController
     target = Project.visible.find_by(id: target_project_id)
     return nil unless target
     return nil unless current_view_scope[:scope_project_ids].map(&:to_i).include?(target.id.to_i)
-    return nil unless User.current.allowed_to?(:add_issues, target)
+    return nil unless mutation_authorization_policy.can_add_issue?(target)
 
     target
   end
@@ -1294,7 +1301,7 @@ class CanvasGanttsController < ApplicationController
   end
 
   def issue_editable?(issue)
-    User.current.allowed_to?(:edit_issues, issue.project) && issue.editable?
+    mutation_authorization_policy.can_edit_issue?(issue)
   end
 
   def relation_non_working_week_days
@@ -1468,7 +1475,8 @@ class CanvasGanttsController < ApplicationController
     @data_payload_builder ||= RedmineCanvasGantt::DataPayloadBuilder.new(
       custom_field_extractor: custom_field_extractor,
       current_user: User.current,
-      data_payload_budget: data_payload_budget
+      data_payload_budget: data_payload_budget,
+      authorization_policy: mutation_authorization_policy
     )
   end
 
@@ -1523,7 +1531,8 @@ class CanvasGanttsController < ApplicationController
   def issue_draft_evaluator
     RedmineCanvasGantt::IssueDraftEvaluator.new(
       current_user: User.current,
-      project_scope_ids: current_view_scope[:scope_project_ids]
+      project_scope_ids: current_view_scope[:scope_project_ids],
+      authorization_policy: mutation_authorization_policy
     )
   end
 
@@ -1532,7 +1541,8 @@ class CanvasGanttsController < ApplicationController
       current_user: User.current,
       project_scope_ids: current_view_scope[:scope_project_ids],
       payload_builder: data_payload_builder,
-      calendar_resolver: business_calendar_resolver
+      calendar_resolver: business_calendar_resolver,
+      authorization_policy: mutation_authorization_policy
     )
   end
 
@@ -1580,11 +1590,26 @@ class CanvasGanttsController < ApplicationController
   end
 
   def bulk_subtask_creator
-    @bulk_subtask_creator ||= RedmineCanvasGantt::BulkSubtaskCreator.new(current_user: User.current)
+    @bulk_subtask_creator ||= RedmineCanvasGantt::BulkSubtaskCreator.new(
+      current_user: User.current,
+      authorization_policy: mutation_authorization_policy
+    )
   end
 
   def parent_issue_resolver
     @parent_issue_resolver ||= RedmineCanvasGantt::ParentIssueResolver.new
+  end
+
+  def mutation_authorization_policy
+    @mutation_authorization_policy ||= RedmineCanvasGantt::MutationAuthorizationPolicy.new(
+      current_user: User.current
+    )
+  end
+
+  def issue_mutation_service
+    @issue_mutation_service ||= RedmineCanvasGantt::IssueMutationService.new(
+      draft_evaluator: issue_draft_evaluator
+    )
   end
 
   def build_relations(issues)
@@ -1638,7 +1663,7 @@ class CanvasGanttsController < ApplicationController
     )
 
     capability_issue = evaluation&.issue || issue
-    editable = User.current.allowed_to?(:edit_issues, capability_issue.project) && capability_issue.editable?
+    editable = mutation_authorization_policy.can_edit_issue?(capability_issue)
     field_editable = build_field_editable(capability_issue, editable)
     custom_fields, custom_field_values = custom_field_extractor.extract_custom_fields(
       capability_issue,

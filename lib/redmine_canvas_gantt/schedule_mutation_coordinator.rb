@@ -2,6 +2,7 @@ require 'set'
 require_relative 'business_calendar_repository'
 require_relative 'project_calendar_resolver'
 require_relative 'schedule_calendar_context'
+require_relative 'mutation_authorization_policy'
 
 module RedmineCanvasGantt
   # Coordinates one Canvas schedule intent across every Issue it plans to
@@ -26,12 +27,13 @@ module RedmineCanvasGantt
     RESCHEDULE_EVENT = :reschedule
     MAX_ATTEMPTS = 3
 
-    def initialize(current_user:, project_scope_ids:, payload_builder:, evaluator: nil, calendar_resolver: nil)
+    def initialize(current_user:, project_scope_ids:, payload_builder:, evaluator: nil, calendar_resolver: nil, authorization_policy: nil)
       @current_user = current_user
       @project_scope_ids = Array(project_scope_ids).map(&:to_i)
       @payload_builder = payload_builder
       @evaluator = evaluator
       @calendar_resolver = calendar_resolver
+      @authorization_policy = authorization_policy || MutationAuthorizationPolicy.new(current_user: current_user)
     end
 
     def call(operation_id:, base_revisions:, changes:)
@@ -429,7 +431,7 @@ module RedmineCanvasGantt
     end
 
     def editable?(issue)
-      @current_user.allowed_to?(:edit_issues, issue.project) && issue.editable?
+      @authorization_policy.can_edit_issue?(issue)
     end
 
     def evaluator

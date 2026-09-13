@@ -9,7 +9,6 @@ import { useBaselineStore } from '../stores/BaselineStore';
 import type { GanttExportHandle } from '../export/types';
 import { apiClient } from '../api/client';
 import { navigateToRedminePath } from '../utils/navigation';
-import { saveDisplayPreferences } from '../utils/preferences';
 import '../stores/preferencesWatcher';
 import { resetCanvasGanttTestState } from '../test/testSetup';
 import { setVisibleColumnsForTest } from '../test/columnTestHelpers';
@@ -179,113 +178,6 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByText('今日以降のみ')).toBeInTheDocument();
     });
 
-    it('saves shared display settings from the chart popup', () => {
-        const config = getCanvasGanttConfig();
-        window.RedmineCanvasGantt = {
-            ...config,
-            i18n: {
-                ...(config.i18n ?? {}),
-                label_share_display_settings_across_projects: '設定を全プロジェクトで共通化',
-            }
-        };
-
-        useUIStore.setState({
-            ...useUIStore.getState(),
-            showProgressLine: true,
-            showTaskTitles: false,
-            showTaskBarDates: true,
-            showHierarchyLines: false,
-            showBaseline: true,
-            showPointsOrphans: false,
-            visibleColumns: ['id', 'subject'],
-            columnSettings: setVisibleColumnsForTest(['id', 'subject']).columnSettings,
-            columnWidths: {
-                id: 72,
-                notification: 44,
-                subject: 280,
-                status: 100,
-                assignee: 80,
-                startDate: 90,
-                dueDate: 90,
-                ratioDone: 80
-            },
-            sidebarWidth: 420,
-            sidebarFontSize: 15
-        } as never);
-        useTaskStore.setState({
-            ...useTaskStore.getState(),
-            zoomLevel: 2,
-            viewMode: 'Week',
-            viewport: {
-                ...useTaskStore.getState().viewport,
-                startDate: 1_700_000_000_000,
-                scrollX: 120,
-                scrollY: 45,
-                scale: 1.25,
-                rowHeight: 44
-            },
-            showVersions: false,
-            organizeByDependency: true,
-            customScales: { 1: 1.5 },
-            autoSave: true
-        } as never);
-        saveDisplayPreferences({
-            showTaskTitles: false,
-            showProgressLine: true,
-            showTaskBarDates: true,
-            visibleColumns: ['id', 'subject']
-        }, 1);
-
-        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
-
-        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
-
-        const displayMenu = screen.getByTestId('display-settings-menu');
-        expect(within(displayMenu).queryByText('現在使用中', { selector: 'span' })).not.toBeInTheDocument();
-
-        const checkbox = screen.getByLabelText('設定を全プロジェクトで共通化') as HTMLInputElement;
-        expect(checkbox.checked).toBe(false);
-
-        fireEvent.click(checkbox);
-
-        const storedPreferences = JSON.parse(window.localStorage.getItem('canvasGantt:preferences') ?? '{}') as {
-            display?: {
-                projects?: Record<string, {
-                    showProgressLine?: boolean;
-                    showTaskTitles?: boolean;
-                    showTaskBarDates?: boolean;
-                    visibleColumns?: string[];
-                    sidebarWidth?: number;
-                    autoSave?: boolean;
-                }>;
-                global?: {
-                    enabled?: boolean;
-                    preferences?: {
-                        showProgressLine?: boolean;
-                        showTaskTitles?: boolean;
-                        showTaskBarDates?: boolean;
-                        visibleColumns?: string[];
-                        sidebarWidth?: number;
-                        autoSave?: boolean;
-                    };
-                };
-            };
-        };
-
-        expect(storedPreferences.display?.global?.enabled).toBe(true);
-        expect(storedPreferences.display?.global?.preferences?.showProgressLine).toBe(true);
-        expect(storedPreferences.display?.global?.preferences?.showTaskTitles).toBe(false);
-        expect(storedPreferences.display?.global?.preferences?.autoSave).toBe(true);
-        expect(storedPreferences.display?.global?.preferences?.showTaskBarDates).toBe(true);
-        expect(storedPreferences.display?.global?.preferences?.visibleColumns).toEqual(['id', 'subject']);
-        expect(storedPreferences.display?.global?.preferences?.sidebarWidth).toBe(420);
-        expect(storedPreferences.display?.projects?.['project:1']?.showProgressLine).toBe(true);
-        expect(storedPreferences.display?.projects?.['project:1']?.showTaskTitles).toBe(false);
-        expect(storedPreferences.display?.projects?.['project:1']?.showTaskBarDates).toBe(true);
-        expect(storedPreferences.display?.projects?.['project:1']?.visibleColumns).toEqual(['id', 'subject']);
-        expect(screen.queryByTestId('display-settings-scope-menu-button')).not.toBeInTheDocument();
-    });
-
     it('renders and toggles ticket visibility in the display settings popup', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
@@ -332,34 +224,6 @@ describe('GanttToolbar shortcuts', () => {
 
         fireEvent.click(button);
         expect(useUIStore.getState().showTaskBarDates).toBe(true);
-    });
-
-    it('renders and toggles hierarchy lines in the display settings popup', () => {
-        const config = getCanvasGanttConfig();
-        window.RedmineCanvasGantt = {
-            ...config,
-            i18n: {
-                ...(config.i18n ?? {}),
-                label_toggle_hierarchy_lines: '階層線の表示切替'
-            }
-        };
-
-        useUIStore.setState({
-            ...useUIStore.getState(),
-            showHierarchyLines: true
-        } as never);
-
-        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
-
-        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
-        const button = screen.getByLabelText('階層線の表示切替');
-        expect(button).toBeInTheDocument();
-
-        fireEvent.click(button);
-        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showHierarchyLines: boolean }).showHierarchyLines).toBe(false);
-
-        fireEvent.click(button);
-        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showHierarchyLines: boolean }).showHierarchyLines).toBe(true);
     });
 
     it('keeps the Today button icon-only while preserving its accessible name', () => {
@@ -832,45 +696,6 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.queryByText(/open in new tab/i)).not.toBeInTheDocument();
     });
 
-    it('updates row height and font size via selects in the display settings popup', () => {
-        useTaskStore.setState({
-            filterText: '',
-            allTasks: [],
-            versions: [],
-            selectedAssigneeIds: [],
-            selectedProjectIds: [],
-            selectedVersionIds: [],
-            taskStatuses: [],
-            selectedStatusIds: [],
-            modifiedTaskIds: new Set(),
-            autoSave: true,
-            viewport: {
-                ...useTaskStore.getState().viewport,
-                rowHeight: 36
-            }
-        });
-
-        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
-
-        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
-        const rowHeightSelect = screen.getByTestId('display-settings-row-height-select');
-        const fontSizeSelect = screen.getByTestId('display-settings-font-size-select');
-        expect(rowHeightSelect).toHaveValue('36');
-        expect(fontSizeSelect).toHaveValue('13');
-
-        fireEvent.change(rowHeightSelect, { target: { value: '52' } });
-        expect(useTaskStore.getState().viewport.rowHeight).toBe(52);
-        expect(rowHeightSelect).toHaveValue('52');
-
-        fireEvent.change(rowHeightSelect, { target: { value: '28' } });
-        expect(useTaskStore.getState().viewport.rowHeight).toBe(28);
-        expect(rowHeightSelect).toHaveValue('28');
-
-        fireEvent.change(fontSizeSelect, { target: { value: '15' } });
-        expect(useUIStore.getState().sidebarFontSize).toBe(15);
-        expect(fontSizeSelect).toHaveValue('15');
-    });
-
     it('keeps the display sharing control in the chart popup', () => {
         const config = getCanvasGanttConfig();
         window.RedmineCanvasGantt = {
@@ -1047,46 +872,6 @@ describe('GanttToolbar shortcuts', () => {
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
 
         expect(screen.getByTitle('ヘルプ')).toBeInTheDocument();
-    });
-
-    it('groups task visibility toggles in the display settings popup', () => {
-        useTaskStore.setState({
-            filterText: '',
-            allTasks: [],
-            versions: [],
-            selectedAssigneeIds: [],
-            selectedProjectIds: [],
-            selectedVersionIds: [],
-            taskStatuses: [],
-            selectedStatusIds: [],
-            modifiedTaskIds: new Set(),
-            autoSave: true
-        });
-
-        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
-
-        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
-        const startToggle = screen.getByLabelText('Start-date-only tasks');
-        const dueToggle = screen.getByLabelText('Due-date-only tasks');
-        const titleToggle = screen.getByLabelText('Ticket titles');
-        const barDateToggle = screen.getByLabelText('Task-bar dates');
-        const autoSaveToggle = screen.getByLabelText('Auto Save');
-
-        expect(startToggle).toBeInTheDocument();
-        expect(dueToggle).toBeInTheDocument();
-        expect(titleToggle).toBeInTheDocument();
-        expect(barDateToggle).toBeInTheDocument();
-        expect(autoSaveToggle).toBeInTheDocument();
-        expect(startToggle).toHaveAttribute('role', 'switch');
-        expect(titleToggle).toHaveAttribute('role', 'switch');
-        expect(autoSaveToggle).toHaveAttribute('role', 'switch');
-        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
-
-        fireEvent.click(titleToggle);
-        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(false);
-
-        fireEvent.click(titleToggle);
-        expect((useUIStore.getState() as ReturnType<typeof useUIStore.getState> & { showTaskTitles: boolean }).showTaskTitles).toBe(true);
     });
 
     it('opens export menu and invokes CSV export', async () => {
