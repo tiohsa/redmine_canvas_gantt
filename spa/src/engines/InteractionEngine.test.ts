@@ -986,3 +986,73 @@ describe('InteractionEngine relation selection', () => {
         container.remove();
     });
 });
+
+describe('InteractionEngine context menu hit testing', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    it('uses the task under the pointer instead of the hovered task', () => {
+        setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const firstTask = baseTask({ id: 'first', rowIndex: 0, startDate: 0, dueDate: DAY_MS });
+        const secondTask = baseTask({ id: 'second', rowIndex: 1, startDate: DAY_MS * 4, dueDate: DAY_MS * 5 });
+        seedTasks([firstTask, secondTask], { hoveredTaskId: firstTask.id, contextMenu: null });
+
+        const bounds = LayoutEngine.getTaskBounds(secondTask, useTaskStore.getState().viewport, 'bar', 2);
+        container.dispatchEvent(new MouseEvent('contextmenu', {
+            clientX: bounds.x + bounds.width / 2,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true,
+            cancelable: true
+        }));
+
+        expect(useTaskStore.getState().contextMenu?.taskId).toBe(secondTask.id);
+
+        engine.detach();
+        container.remove();
+    });
+
+    it('opens from the center and edge of the actual task bar', () => {
+        setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'bar-task', rowIndex: 0, startDate: 0, dueDate: DAY_MS });
+        seedTasks([task], { contextMenu: null });
+        const bounds = LayoutEngine.getTaskBounds(task, useTaskStore.getState().viewport, 'bar', 2);
+
+        for (const x of [bounds.x + bounds.width / 2, bounds.x + bounds.width - 1]) {
+            container.dispatchEvent(new MouseEvent('contextmenu', {
+                clientX: x,
+                clientY: bounds.y + bounds.height / 2,
+                bubbles: true,
+                cancelable: true
+            }));
+            expect(useTaskStore.getState().contextMenu?.taskId).toBe(task.id);
+            useTaskStore.getState().setContextMenu(null);
+        }
+
+        engine.detach();
+        container.remove();
+    });
+
+    it('does not open a task menu outside the actual bar', () => {
+        setViewport({ scale: 10 / DAY_MS, rowHeight: 36 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'bar-task', rowIndex: 0, startDate: 0, dueDate: DAY_MS });
+        seedTasks([task], { hoveredTaskId: task.id, contextMenu: null });
+        const bounds = LayoutEngine.getTaskBounds(task, useTaskStore.getState().viewport, 'bar', 2);
+
+        container.dispatchEvent(new MouseEvent('contextmenu', {
+            clientX: bounds.x + bounds.width / 2,
+            clientY: bounds.y - 1,
+            bubbles: true,
+            cancelable: true
+        }));
+
+        expect(useTaskStore.getState().contextMenu).toBeNull();
+
+        engine.detach();
+        container.remove();
+    });
+});

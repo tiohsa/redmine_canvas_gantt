@@ -119,6 +119,62 @@ test('saves inline number editor on blur', async ({ page }) => {
   expect(payload.task?.done_ratio).toBe(70);
 });
 
+test('changes progress from the actual gantt bar context menu', async ({ page }) => {
+  const patchPayloads: unknown[] = [];
+  await setupMockApp(page, {
+    preferences: {
+      autoSave: true,
+      visibleColumns: ['id', 'subject', 'ratioDone'],
+      sidebarWidth: 700,
+    },
+    onPatchTask: (payload) => patchPayloads.push(payload),
+  });
+  await waitForInitialRender(page);
+
+  const point = await page.evaluate(async () => {
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    const [{ useTaskStore }, { LayoutEngine }] = await Promise.all([
+      import('/src/stores/TaskStore.ts'),
+      import('/src/engines/LayoutEngine.ts'),
+    ]);
+    useTaskStore.getState().updateViewport({
+      startDate: Date.parse('2026-02-01T00:00:00Z'),
+      scrollX: 0,
+      scrollY: 0,
+      scale: 10 / oneDayMs,
+    });
+    const state = useTaskStore.getState();
+    const task = state.tasks.find((candidate) => candidate.id === '101');
+    if (!task) throw new Error('Task 101 is not loaded');
+    const bounds = LayoutEngine.getTaskBounds(task, state.viewport, 'bar', state.zoomLevel);
+    return {
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y + bounds.height / 2,
+    };
+  });
+  const viewport = await page.getByTestId('gantt-viewport').boundingBox();
+  expect(viewport).not.toBeNull();
+  await page.evaluate(({ point, viewport }) => {
+    const pane = document.querySelector('[data-testid="gantt-viewport"]');
+    if (!(pane instanceof HTMLElement)) throw new Error('Gantt viewport is not available');
+    pane.dispatchEvent(new MouseEvent('contextmenu', {
+      clientX: viewport.x + point.x,
+      clientY: viewport.y + point.y,
+      button: 2,
+      buttons: 2,
+      bubbles: true,
+      cancelable: true,
+    }));
+  }, { point, viewport });
+  await expect(page.getByTestId('context-menu-progress')).toBeVisible();
+  await page.getByTestId('context-menu-progress').click();
+  await page.getByTestId('context-menu-progress-option-60').click();
+
+  await expect.poll(() => patchPayloads.length).toBeGreaterThan(0);
+  const payload = patchPayloads[0] as { task?: { done_ratio?: number } };
+  expect(payload.task?.done_ratio).toBe(60);
+});
+
 test('edits a non-descendant member project task inline', async ({ page }) => {
   const patchPayloads: unknown[] = [];
   await setupMockApp(page, {

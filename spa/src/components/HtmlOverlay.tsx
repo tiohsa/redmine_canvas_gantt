@@ -24,6 +24,10 @@ import { BaselineDiffPopover } from './BaselineDiffPopover';
 import { RelationEditorPopover, type RelationPopoverTarget } from './RelationEditorPopover';
 import { TaskContextMenu } from './TaskContextMenu';
 import { designTokens } from '../styles/designTokens';
+import { InlineEditService } from '../services/InlineEditService';
+import { useEditMetaStore } from '../stores/EditMetaStore';
+import type { InlineEditSettings } from '../types/editMeta';
+import { useSidebarInlineEdit } from './sidebar/useSidebarInlineEdit';
 
 const RELATION_POPOVER_OFFSET = 12;
 const PRIMARY_COLOR = designTokens.controlActiveFg;
@@ -70,6 +74,7 @@ export const HtmlOverlay: React.FC = () => {
     const draftRelation = useTaskStore(state => state.draftRelation);
     const permissions = useTaskStore(state => state.permissions);
     const setContextMenu = useTaskStore(state => state.setContextMenu);
+    const selectTask = useTaskStore(state => state.selectTask);
     const setDraftRelation = useTaskStore(state => state.setDraftRelation);
     const clearRelationSelection = useTaskStore(state => state.clearRelationSelection);
     const addRelation = useTaskStore(state => state.addRelation);
@@ -83,8 +88,11 @@ export const HtmlOverlay: React.FC = () => {
     const defaultRelationType = useUIStore(state => state.defaultRelationType);
     const autoCalculateDelay = useUIStore(state => state.autoCalculateDelay);
     const autoApplyDefaultRelation = useUIStore(state => state.autoApplyDefaultRelation);
+    const setActiveInlineEdit = useUIStore(state => state.setActiveInlineEdit);
     const showBaseline = useUIStore(state => state.showBaseline);
     const baselineSnapshot = useBaselineStore(state => state.snapshot);
+    const editMetaByTaskId = useEditMetaStore(state => state.metaByTaskId);
+    const fetchEditMeta = useEditMetaStore(state => state.fetchEditMeta);
 
     const overlayRef = React.useRef<HTMLDivElement>(null);
     const contextMenuRef = React.useRef<HTMLDivElement>(null);
@@ -94,6 +102,18 @@ export const HtmlOverlay: React.FC = () => {
     const dragDraftRef = React.useRef<typeof dragDraft>(null);
     const [menuPosition, setMenuPosition] = React.useState<{ x: number; y: number } | null>(null);
     const [relationPosition, setRelationPosition] = React.useState<{ x: number; y: number } | null>(null);
+
+    const inlineEditSettings = React.useMemo(
+        () => (window.RedmineCanvasGantt?.settings ?? {}) as InlineEditSettings,
+        []
+    );
+    const { isInlineEditEnabled, shouldEnableField } = useSidebarInlineEdit({
+        settings: inlineEditSettings,
+        editMetaByTaskId,
+        fetchEditMeta,
+        selectTask,
+        setActiveInlineEdit
+    });
 
     const taskById = React.useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
     const contextTask = contextMenu ? taskById.get(contextMenu.taskId) ?? null : null;
@@ -520,6 +540,18 @@ export const HtmlOverlay: React.FC = () => {
         }
     }, []);
 
+    const handleProgressChange = React.useCallback((taskId: string, value: number) => {
+        const task = useTaskStore.getState().allTasks.find((candidate) => candidate.id === taskId);
+        if (!task || task.ratioDone === value || !shouldEnableField('ratioDone', task)) return;
+
+        void InlineEditService.saveTaskFields({
+            taskId,
+            optimisticTaskUpdates: { ratioDone: value },
+            rollbackTaskUpdates: { ratioDone: task.ratioDone },
+            fields: { done_ratio: value }
+        }).catch(() => undefined);
+    }, [shouldEnableField]);
+
     const buildNewIssueUrl = React.useCallback((query?: URLSearchParams) => {
         const projectId = contextTask?.projectId || fallbackProjectId;
         const basePath = projectId ? `/projects/${projectId}/issues/new` : '/issues/new';
@@ -744,6 +776,16 @@ export const HtmlOverlay: React.FC = () => {
                     }}
                     getTaskLabel={getTaskLabel}
                     canAddChild={!contextTask?.isContextOnly}
+                    showProgressEdit={Boolean(
+                        contextTask?.editable &&
+                        isInlineEditEnabled('inline_edit_done_ratio', true)
+                    )}
+                    canEditProgress={Boolean(
+                        contextTask &&
+                        shouldEnableField('ratioDone', contextTask)
+                    )}
+                    progressValue={contextTask?.ratioDone}
+                    onProgressChange={(value) => handleProgressChange(contextMenu.taskId, value)}
                 />
             )}
         </>
