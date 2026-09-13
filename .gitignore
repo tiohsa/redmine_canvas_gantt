@@ -54,3 +54,4 @@ Thumbs.db
 .tokensave
 spa/bench/results/
 .agents/
+.codex/

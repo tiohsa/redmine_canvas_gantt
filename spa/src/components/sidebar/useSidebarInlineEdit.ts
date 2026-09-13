@@ -118,7 +118,10 @@ export const useSidebarInlineEdit = ({
         if (field === 'subject') return isInlineEditEnabled('inline_edit_subject', true);
         if (field === 'assignedToId') return isInlineEditEnabled('inline_edit_assigned_to', true);
         if (field === 'statusId') return isInlineEditEnabled('inline_edit_status', true);
-        if (field === 'ratioDone') return isInlineEditEnabled('inline_edit_done_ratio', true);
+        if (field === 'ratioDone') {
+            if (meta?.editable?.doneRatio === false) return false;
+            return isInlineEditEnabled('inline_edit_done_ratio', true);
+        }
         if (field === 'dueDate') return isInlineEditEnabled('inline_edit_due_date', true);
         if (field === 'startDate') return isInlineEditEnabled('inline_edit_start_date', true);
         if (field === 'estimatedHours') return isInlineEditEnabled('inline_edit_estimated_hours', true);

@@ -10,6 +10,8 @@ type TaskLabel = {
     subject: string;
 };
 
+const PROGRESS_OPTIONS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
 export type TaskContextMenuProps = {
     taskId: string;
     contextTask: Task | null;
@@ -25,6 +27,10 @@ export type TaskContextMenuProps = {
     onRemoveRelation: (relationId: string) => void;
     getTaskLabel: (taskId: string) => TaskLabel;
     canAddChild?: boolean;
+    showProgressEdit?: boolean;
+    canEditProgress?: boolean;
+    progressValue?: number;
+    onProgressChange?: (value: number) => void;
 };
 
 export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
@@ -41,8 +47,27 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
     onDelete,
     onRemoveRelation,
     getTaskLabel,
-    canAddChild = true
+    canAddChild = true,
+    showProgressEdit = false,
+    canEditProgress = false,
+    progressValue = 0,
+    onProgressChange
 }) => {
+    const [isProgressMenuOpen, setIsProgressMenuOpen] = React.useState(false);
+
+    React.useEffect(() => {
+        if (!showProgressEdit || !canEditProgress) setIsProgressMenuOpen(false);
+    }, [canEditProgress, showProgressEdit]);
+
+    React.useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') onClose();
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onClose]);
+
     const formatRelationLabel = React.useCallback((relation: Relation) => {
         return {
             from: getTaskLabel(relation.from),
@@ -70,6 +95,7 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
             />
             <div
                 ref={contextMenuRef}
+                role="menu"
                 style={{
                     position: 'fixed',
                     top: position?.y ?? 0,
@@ -127,6 +153,76 @@ export const TaskContextMenu: React.FC<TaskContextMenuProps> = ({
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                     {i18n.t('button_edit')}
                 </div>
+
+                {showProgressEdit && (
+                    <>
+                        <div
+                            className="menu-item"
+                            data-testid="context-menu-progress"
+                            role="menuitem"
+                            tabIndex={0}
+                            aria-disabled={!canEditProgress}
+                            aria-expanded={canEditProgress ? isProgressMenuOpen : undefined}
+                            aria-haspopup={canEditProgress ? 'menu' : undefined}
+                            onClick={() => {
+                                if (canEditProgress) setIsProgressMenuOpen((open) => !open);
+                            }}
+                            onKeyDown={(event) => {
+                                if ((event.key === 'Enter' || event.key === ' ') && canEditProgress) {
+                                    event.preventDefault();
+                                    setIsProgressMenuOpen((open) => !open);
+                                }
+                            }}
+                            style={{
+                                justifyContent: 'space-between',
+                                cursor: canEditProgress ? 'pointer' : 'not-allowed',
+                                opacity: canEditProgress ? 1 : 0.55
+                            }}
+                        >
+                            <span>{i18n.t('field_done_ratio') || 'Progress'}</span>
+                            <span>{progressValue}% <span aria-hidden="true">›</span></span>
+                        </div>
+
+                        {canEditProgress && isProgressMenuOpen && (
+                            <div
+                                data-testid="context-menu-progress-options"
+                                role="menu"
+                                style={{ padding: '2px 0 4px 24px' }}
+                            >
+                                {PROGRESS_OPTIONS.map((value) => {
+                                    const isCurrent = value === progressValue;
+                                    const selectProgress = () => {
+                                        onProgressChange?.(value);
+                                        setIsProgressMenuOpen(false);
+                                        onClose();
+                                    };
+
+                                    return (
+                                        <div
+                                            key={value}
+                                            className="menu-item"
+                                            data-testid={`context-menu-progress-option-${value}`}
+                                            role="menuitemradio"
+                                            aria-checked={isCurrent}
+                                            tabIndex={0}
+                                            onClick={selectProgress}
+                                            onKeyDown={(event) => {
+                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                    event.preventDefault();
+                                                    selectProgress();
+                                                }
+                                            }}
+                                            style={{ gap: 6, padding: '5px 12px' }}
+                                        >
+                                            <span aria-hidden="true" style={{ width: 12 }}>{isCurrent ? '✓' : ''}</span>
+                                            <span>{value}%</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </>
+                )}
 
                 {canAddChild && (
                     <div className="menu-item" data-testid="context-menu-add-child-task" onClick={() => onAddChild(taskId)}>

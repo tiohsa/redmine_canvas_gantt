@@ -162,6 +162,26 @@ export class InteractionEngine {
         );
     }
 
+    private isPointerWithinActualTaskBarBounds(task: Task, x: number, y: number): boolean {
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'bar', zoomLevel);
+        if (task.hasChildren && Number.isFinite(task.startDate) && Number.isFinite(task.dueDate)) {
+            const bodyHeight = Math.max(2, Math.floor(bounds.height / 2));
+            const bodyY = Math.floor(bounds.y + (bounds.height - bodyHeight) / 2);
+            return x >= bounds.x &&
+                x <= bounds.x + bounds.width &&
+                y >= bodyY &&
+                y <= bodyY + bodyHeight;
+        }
+
+        return (
+            x >= bounds.x &&
+            x <= bounds.x + bounds.width &&
+            y >= bounds.y &&
+            y <= bounds.y + bounds.height
+        );
+    }
+
     private getResizeRegionFromTarget(target: EventTarget | null): 'start' | 'end' | null {
         if (!(target instanceof Element)) return null;
         const handle = target.closest('.task-resize-handle');
@@ -472,9 +492,13 @@ export class InteractionEngine {
 
     private handleContextMenu = (e: MouseEvent) => {
         e.preventDefault();
-        const { hoveredTaskId, setContextMenu } = useTaskStore.getState();
-        if (hoveredTaskId) {
-            setContextMenu({ x: e.clientX, y: e.clientY, taskId: hoveredTaskId });
+        const { setContextMenu } = useTaskStore.getState();
+        const rect = this.container.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const hit = this.hitTest(x, y);
+        if (hit.task && this.isPointerWithinActualTaskBarBounds(hit.task, x, y)) {
+            setContextMenu({ x: e.clientX, y: e.clientY, taskId: hit.task.id });
         } else {
             setContextMenu(null);
         }
