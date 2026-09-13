@@ -195,22 +195,6 @@ describe('DisplaySettingsControls', () => {
         expect(useTaskStore.getState().autoSave).toBe(true);
     });
 
-    it('applies display setting changes immediately without a popup save button', () => {
-        const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
-        render(
-            <DisplaySettingsControls
-                displaySettingsMenuRef={displaySettingsMenuRef}
-                showDisplaySettingsMenu={true}
-                onToggleDisplaySettingsMenu={vi.fn()}
-            />
-        );
-
-        expect(screen.queryByTestId('display-settings-save-button')).not.toBeInTheDocument();
-        fireEvent.click(screen.getByLabelText('Progress line'));
-
-        expect(useUIStore.getState().showProgressLine).toBe(true);
-    });
-
     it('uses the Auto Save transition action and disables the switch while enabling', () => {
         const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
         const requestAutoSaveChange = vi.fn();

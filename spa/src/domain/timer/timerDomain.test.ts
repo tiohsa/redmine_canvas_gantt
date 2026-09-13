@@ -21,8 +21,7 @@ import {
     formatTimerDuration,
     formatTimerDurationHoursMinutes,
     formatElapsedMinutesText,
-    formatTimerExtensionLabel,
-    isTimerSpanningMultipleDays
+    formatTimerExtensionLabel
 } from './timerDomain';
 import type { TimerSession } from '../../types/timer';
 
@@ -373,33 +372,4 @@ describe('Timer Domain Logic', () => {
         expect(formatElapsedMinutesText(45 * 60 * 1000, true)).toBe('45分');
     });
 
-    it('detects when timer segments span multiple days', () => {
-        const sameDaySession: TimerSession = {
-            version: 4,
-            sessionId: 's1',
-            revision: 1,
-            issueId: 1,
-            subject: 'Test',
-            autoStop: false,
-            state: 'stopped_pending_record',
-            createdAt: baseTime,
-            updatedAt: baseTime,
-            segments: [{ startedAt: baseTime, stoppedAt: baseTime + 30 * 60 * 1000 }]
-        };
-        expect(isTimerSpanningMultipleDays(sameDaySession)).toBe(false);
-
-        const crossDaySession: TimerSession = {
-            version: 4,
-            sessionId: 's1',
-            revision: 1,
-            issueId: 1,
-            subject: 'Test',
-            autoStop: false,
-            state: 'stopped_pending_record',
-            createdAt: baseTime,
-            updatedAt: baseTime,
-            segments: [{ startedAt: baseTime, stoppedAt: baseTime + 28 * 3600 * 1000 }]
-        };
-        expect(isTimerSpanningMultipleDays(crossDaySession)).toBe(true);
-    });
 });

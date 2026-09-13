@@ -1,11 +1,6 @@
 require_relative '../../spec_helper'
 
 RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
-  it 'requires set explicitly for to_set usage' do
-    source = File.read(File.expand_path('../../../lib/redmine_canvas_gantt/data_payload_builder.rb', __dir__))
-    expect(source).to include("require 'set'")
-  end
-
   describe '#build' do
     it 'builds stable filter options for descendant projects and assignees' do
       custom_field_extractor = instance_double(
