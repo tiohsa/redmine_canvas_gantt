@@ -28,6 +28,7 @@ import { InlineEditService } from '../services/InlineEditService';
 import { useEditMetaStore } from '../stores/EditMetaStore';
 import type { InlineEditSettings } from '../types/editMeta';
 import { useSidebarInlineEdit } from './sidebar/useSidebarInlineEdit';
+import { isTaskVisibleByDate } from '../utils/taskRange';
 
 const RELATION_POPOVER_OFFSET = 12;
 const PRIMARY_COLOR = designTokens.controlActiveFg;
@@ -90,6 +91,8 @@ export const HtmlOverlay: React.FC = () => {
     const autoApplyDefaultRelation = useUIStore(state => state.autoApplyDefaultRelation);
     const setActiveInlineEdit = useUIStore(state => state.setActiveInlineEdit);
     const showBaseline = useUIStore(state => state.showBaseline);
+    const showStartDateOnly = useUIStore(state => state.showStartDateOnly);
+    const showDueDateOnly = useUIStore(state => state.showDueDateOnly);
     const baselineSnapshot = useBaselineStore(state => state.snapshot);
     const editMetaByTaskId = useEditMetaStore(state => state.metaByTaskId);
     const fetchEditMeta = useEditMetaStore(state => state.fetchEditMeta);
@@ -247,8 +250,10 @@ export const HtmlOverlay: React.FC = () => {
         const { viewport: currentViewport, tasks: currentTasks, rowCount: currentRowCount } = useTaskStore.getState();
         const [visibleStart, visibleEnd] = LayoutEngine.getVisibleRowRange(currentViewport, currentRowCount || currentTasks.length);
         const candidates = LayoutEngine.sliceTasksInRowRange(currentTasks, visibleStart, visibleEnd);
+        const displaySettings = useUIStore.getState();
 
         for (const task of candidates) {
+            if (!isTaskVisibleByDate(task, displaySettings)) continue;
             const bounds = LayoutEngine.getTaskBounds(task, currentViewport, 'hit', zoomLevel);
             if (x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height) {
                 return task;
@@ -591,6 +596,7 @@ export const HtmlOverlay: React.FC = () => {
                 style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
             >
                 {visibleTasks.map((task) => {
+                    if (!isTaskVisibleByDate(task, { showStartDateOnly, showDueDateOnly })) return null;
                     const isDependencyDragging = dragDraft !== null;
                     const showDependencyHandles = task.id === hoveredTaskId;
                     const canResizeStart = task.editable && !task.hasChildren && Number.isFinite(task.dueDate);

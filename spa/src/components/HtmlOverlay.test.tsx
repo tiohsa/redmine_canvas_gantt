@@ -83,7 +83,9 @@ describe('HtmlOverlay', () => {
         useUIStore.setState({
             ...useUIStore.getState(),
             issueDialogUrl: null,
-            notifications: []
+            notifications: [],
+            showStartDateOnly: true,
+            showDueDateOnly: true
         });
 
         useTaskStore.setState({
@@ -329,6 +331,66 @@ describe('HtmlOverlay', () => {
         expect(screen.getByTestId('task-resize-handle-start-due-only')).toHaveAttribute('data-task-id', 'due-only');
         expect(screen.getByTestId('task-resize-handle-start-due-only')).toHaveAttribute('data-region', 'start');
         expect(screen.queryByTestId('task-resize-handle-end-due-only')).not.toBeInTheDocument();
+    });
+
+    describe.each([
+        { name: 'start-only (undefined)', dates: { dueDate: undefined }, setting: 'showStartDateOnly' as const, otherSetting: 'showDueDateOnly' as const },
+        { name: 'start-only (NaN)', dates: { dueDate: Number.NaN }, setting: 'showStartDateOnly' as const, otherSetting: 'showDueDateOnly' as const },
+        { name: 'due-only (undefined)', dates: { startDate: undefined }, setting: 'showDueDateOnly' as const, otherSetting: 'showStartDateOnly' as const },
+        { name: 'due-only (NaN)', dates: { startDate: Number.NaN }, setting: 'showDueDateOnly' as const, otherSetting: 'showStartDateOnly' as const }
+    ])('$name visibility', ({ dates, setting, otherSetting }) => {
+        it.each(['hovered', 'selected'] as const)('updates handles for a %s point when its display setting changes', (activeState) => {
+            const pointTask = { ...task2, ...dates };
+            act(() => {
+                useTaskStore.getState().setTasks([pointTask]);
+                if (activeState === 'hovered') useTaskStore.getState().setHoveredTask(pointTask.id);
+                else useTaskStore.getState().selectTask(pointTask.id);
+            });
+            const { container } = render(<HtmlOverlay />);
+            expect(container.querySelectorAll('.task-resize-handle')).toHaveLength(1);
+            expect(container.querySelectorAll('.dependency-handle')).toHaveLength(activeState === 'hovered' ? 2 : 0);
+
+            act(() => { useUIStore.setState({ [setting]: false }); });
+            expect(container.querySelectorAll('.task-resize-handle, .dependency-handle')).toHaveLength(0);
+            expect(useTaskStore.getState()[activeState === 'hovered' ? 'hoveredTaskId' : 'selectedTaskId']).toBe(pointTask.id);
+
+            act(() => { useUIStore.setState({ [setting]: true, [otherSetting]: false }); });
+            expect(container.querySelectorAll('.task-resize-handle')).toHaveLength(1);
+            expect(container.querySelectorAll('.dependency-handle')).toHaveLength(activeState === 'hovered' ? 2 : 0);
+        });
+
+        it('does not accept a hidden point as a dependency drop target', () => {
+            const pointTask = { ...task2, ...dates };
+            act(() => {
+                useUIStore.setState({ [setting]: false, autoApplyDefaultRelation: false });
+                useTaskStore.getState().setTasks([task1, pointTask]);
+                useTaskStore.getState().setHoveredTask(task1.id);
+            });
+            const { container } = render(<HtmlOverlay />);
+            mockOverlayRect(container);
+            fireEvent.mouseDown(screen.getByTestId(`dependency-handle-right-${task1.id}`));
+            const arrangedTask = useTaskStore.getState().tasks.find(task => task.id === pointTask.id)!;
+            const bounds = LayoutEngine.getTaskBounds(arrangedTask, viewport, 'hit', 2);
+            fireEvent.mouseMove(window, { clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2 });
+            fireEvent.mouseUp(window);
+
+            expect(useTaskStore.getState().draftRelation).toBeNull();
+            expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+            expect(apiClient.createRelation).not.toHaveBeenCalled();
+        });
+    });
+
+    it('keeps normal task handles when both point display settings are disabled', () => {
+        act(() => {
+            useUIStore.setState({ showStartDateOnly: false, showDueDateOnly: false });
+            useTaskStore.getState().setTasks([task1]);
+            useTaskStore.getState().selectTask(task1.id);
+        });
+        const { container } = render(<HtmlOverlay />);
+        expect(container.querySelectorAll('.task-resize-handle')).toHaveLength(2);
+        act(() => { useTaskStore.getState().setHoveredTask(task1.id); });
+        expect(container.querySelectorAll('.task-resize-handle')).toHaveLength(2);
+        expect(container.querySelectorAll('.dependency-handle')).toHaveLength(2);
     });
 
     it('does not show resize handles for parent, read-only, or undated tasks', () => {

@@ -14,6 +14,7 @@ import {
 import { timelineToCalendarDate } from '../utils/dateOnly';
 import { diffWorkingDays, normalizeWorkingDate, shiftByWorkingDays } from '../utils/businessCalendar';
 import { panViewportByPixels } from './viewportPan';
+import { isTaskVisibleByDate } from '../utils/taskRange';
 
 type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
 const TASK_MOVE_CURSOR = 'move';
@@ -94,11 +95,13 @@ export class InteractionEngine {
 
     private hitTest(x: number, y: number): { task: Task | null; region: 'body' | 'start' | 'end' } {
         const { tasks, viewport, rowCount, zoomLevel } = useTaskStore.getState();
+        const displaySettings = useUIStore.getState();
 
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
         const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
 
         for (const t of visibleTasks) {
+            if (!isTaskVisibleByDate(t, displaySettings)) continue;
             const bounds = LayoutEngine.getTaskBounds(t, viewport, 'hit', zoomLevel);
             if (y < bounds.y || y > bounds.y + bounds.height) {
                 continue;
@@ -275,7 +278,9 @@ export class InteractionEngine {
 
         const handleTarget = this.getResizeHandleTarget(downTarget);
         const hit = this.hitTest(x, y);
-        const handleTask = handleTarget && useTaskStore.getState().tasks.find(task => task.id === handleTarget.taskId);
+        const handleTask = handleTarget && useTaskStore.getState().tasks.find(task => (
+            task.id === handleTarget.taskId && isTaskVisibleByDate(task, useUIStore.getState())
+        ));
         const handleRegion = handleTask ? handleTarget.region : null;
         const resolvedHit = handleTask && handleRegion ? { task: handleTask, region: handleRegion } : hit;
         const isResizeIntent = this.isResizeIntent(resolvedHit, handleRegion, x, y);
@@ -374,8 +379,10 @@ export class InteractionEngine {
                     const { tasks, rowCount, zoomLevel: currentZoom } = useTaskStore.getState();
                     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
                     const candidates = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
+                    const displaySettings = useUIStore.getState();
                     const HOVER_MARGIN = 20; // Enough to cover handle offset (12px) + handle size (10px)
                     for (const t of candidates) {
+                        if (!isTaskVisibleByDate(t, displaySettings)) continue;
                         const bounds = LayoutEngine.getTaskBounds(t, viewport, 'hit', currentZoom);
                         // Expand horizontally
                         if (x >= bounds.x - HOVER_MARGIN && x <= bounds.x + bounds.width + HOVER_MARGIN &&

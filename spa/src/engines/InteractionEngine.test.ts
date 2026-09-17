@@ -94,7 +94,81 @@ beforeEach(() => {
     vi.mocked(apiClient.updateTask).mockReset();
     vi.mocked(apiClient.scheduleMutation).mockReset();
     vi.mocked(apiClient.fetchData).mockReset();
-    useUIStore.setState({ isSidebarResizing: false });
+    useUIStore.setState({ isSidebarResizing: false, showStartDateOnly: true, showDueDateOnly: true });
+});
+
+describe('InteractionEngine point visibility', () => {
+    const day = 24 * 60 * 60 * 1000;
+
+    it.each([
+        { name: 'start-only (undefined)', dates: { dueDate: undefined }, visible: [true, true, false, false] },
+        { name: 'start-only (NaN)', dates: { dueDate: Number.NaN }, visible: [true, true, false, false] },
+        { name: 'due-only (undefined)', dates: { startDate: undefined }, visible: [true, false, true, false] },
+        { name: 'due-only (NaN)', dates: { startDate: Number.NaN }, visible: [true, false, true, false] },
+        { name: 'normal task', dates: {}, visible: [true, true, true, true] }
+    ])('respects live display settings for $name hit, expanded hover, and context interactions', ({ dates, visible }) => {
+        setViewport({ scale: 10 / day });
+        const task = baseTask({ startDate: day * 4, dueDate: day * 6, ...dates });
+        seedTasks([task], { selectedTaskId: null, hoveredTaskId: null, contextMenu: null });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const bounds = LayoutEngine.getTaskBounds(task, useTaskStore.getState().viewport, 'hit', 2);
+        const center = { clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2, bubbles: true };
+        try {
+            const settings = [[true, true], [true, false], [false, true], [false, false]];
+            settings.forEach(([showStartDateOnly, showDueDateOnly], index) => {
+                useUIStore.setState({ showStartDateOnly, showDueDateOnly });
+                const expectedId = visible[index] ? task.id : null;
+                // Begin with a stale hover/selection, as when toggling settings from the sidebar.
+                seedTasks([task], { hoveredTaskId: task.id, selectedTaskId: task.id });
+                window.dispatchEvent(new MouseEvent('mousemove', center));
+                expect(useTaskStore.getState().hoveredTaskId).toBe(expectedId);
+                expect(container.style.cursor).toBe(visible[index] ? 'move' : 'default');
+
+                for (const clientX of [bounds.x - 10, bounds.x + bounds.width + 10]) {
+                    useTaskStore.setState({ hoveredTaskId: null });
+                    window.dispatchEvent(new MouseEvent('mousemove', { ...center, clientX }));
+                    expect(useTaskStore.getState().hoveredTaskId).toBe(expectedId);
+                }
+
+                useTaskStore.setState({ contextMenu: { x: 0, y: 0, taskId: task.id } });
+                container.dispatchEvent(new MouseEvent('contextmenu', { ...center, cancelable: true }));
+                expect(useTaskStore.getState().contextMenu?.taskId ?? null).toBe(expectedId);
+
+                container.dispatchEvent(new MouseEvent('mousedown', center));
+                expect(useTaskStore.getState().selectedTaskId).toBe(expectedId);
+                window.dispatchEvent(new MouseEvent('mouseup', center));
+            });
+        } finally {
+            engine.detach();
+            container.remove();
+        }
+    });
+
+    it.each([
+        { dates: { dueDate: undefined }, region: 'end' },
+        { dates: { startDate: undefined }, region: 'start' }
+    ])('does not resolve a hidden point through a stale $region resize handle', ({ dates, region }) => {
+        setViewport({ scale: 10 / day });
+        const task = baseTask({ startDate: day * 4, dueDate: day * 6, ...dates });
+        seedTasks([task], { selectedTaskId: null });
+        useUIStore.setState({ showStartDateOnly: false, showDueDateOnly: false });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const handle = document.createElement('div');
+        handle.className = 'task-resize-handle';
+        handle.dataset.taskId = task.id;
+        handle.dataset.region = region;
+        container.appendChild(handle);
+        try {
+            handle.dispatchEvent(new MouseEvent('mousedown', { clientX: 300, clientY: 16, bubbles: true }));
+            expect(useTaskStore.getState().selectedTaskId).toBeNull();
+            window.dispatchEvent(new MouseEvent('mouseup'));
+        } finally {
+            engine.detach();
+            container.remove();
+        }
+    });
 });
 
 describe('InteractionEngine start-date creation and removal', () => {
