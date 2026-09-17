@@ -182,13 +182,14 @@ export class InteractionEngine {
         );
     }
 
-    private getResizeRegionFromTarget(target: EventTarget | null): 'start' | 'end' | null {
+    private getResizeHandleTarget(target: EventTarget | null): { taskId: string; region: 'start' | 'end' } | null {
         if (!(target instanceof Element)) return null;
         const handle = target.closest('.task-resize-handle');
         if (!handle) return null;
 
+        const taskId = handle.getAttribute('data-task-id');
         const region = handle.getAttribute('data-region');
-        return region === 'start' || region === 'end' ? region : null;
+        return taskId && (region === 'start' || region === 'end') ? { taskId, region } : null;
     }
 
     private snapToDate(timestamp: number): number {
@@ -272,9 +273,11 @@ export class InteractionEngine {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        const handleRegion = this.getResizeRegionFromTarget(downTarget);
+        const handleTarget = this.getResizeHandleTarget(downTarget);
         const hit = this.hitTest(x, y);
-        const resolvedHit = handleRegion && hit.task ? { ...hit, region: handleRegion } : hit;
+        const handleTask = handleTarget && useTaskStore.getState().tasks.find(task => task.id === handleTarget.taskId);
+        const handleRegion = handleTask ? handleTarget.region : null;
+        const resolvedHit = handleTask && handleRegion ? { task: handleTask, region: handleRegion } : hit;
         const isResizeIntent = this.isResizeIntent(resolvedHit, handleRegion, x, y);
         const relation = this.hitTestRelation(x, y);
         if (relation && !isResizeIntent && (!resolvedHit.task || !this.isPointerWithinActualTaskHitBounds(resolvedHit.task, x, y))) {
@@ -455,14 +458,27 @@ export class InteractionEngine {
                 updateTask(this.drag.taskId, { startDate: newStart });
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
-            const timeDelta = dx / viewport.scale;
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
-            const newEnd = normalizeWorkingDate(
-                this.snapToDate(this.drag.originalDueDate! + timeDelta),
-                'backward',
-                currentTask?.projectId
-            );
+            let candidateEnd: number;
+            if (Number.isFinite(this.drag.originalDueDate)) {
+                const timeDelta = dx / viewport.scale;
+                candidateEnd = this.snapToDate(this.drag.originalDueDate! + timeDelta);
+            } else if (Number.isFinite(this.drag.originalStartDate)) {
+                const pointerTimelineX = e.clientX - rect.left + viewport.scrollX;
+                candidateEnd = timelineToCalendarDate(LayoutEngine.xToDate(pointerTimelineX, viewport));
+            } else {
+                return;
+            }
 
+            // Only the pointer crossing the start date clears the due date, not calendar normalization.
+            if (candidateEnd < this.drag.originalStartDate!) {
+                if (Number.isFinite(currentTask?.dueDate)) {
+                    updateTask(this.drag.taskId, { dueDate: undefined });
+                }
+                return;
+            }
+
+            const newEnd = normalizeWorkingDate(candidateEnd, 'backward', currentTask?.projectId);
             if (currentTask && newEnd >= this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
                 updateTask(this.drag.taskId, { dueDate: newEnd });
             }

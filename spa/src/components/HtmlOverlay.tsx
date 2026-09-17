@@ -587,8 +587,7 @@ export const HtmlOverlay: React.FC = () => {
     const isResizableTask = React.useCallback((task: Task) => (
         task.editable &&
         !task.hasChildren &&
-        Number.isFinite(task.startDate) &&
-        Number.isFinite(task.dueDate)
+        Number.isFinite(task.startDate)
     ), []);
 
     return (
@@ -601,6 +600,8 @@ export const HtmlOverlay: React.FC = () => {
                     const isDependencyDragging = dragDraft !== null;
                     const showDependencyHandles = task.id === hoveredTaskId;
                     const showResizeHandles = !isDependencyDragging && isResizableTask(task) && (task.id === hoveredTaskId || task.id === selectedTaskId);
+                    const showStartResizeHandle = showResizeHandles && Number.isFinite(task.dueDate);
+                    const showEndResizeHandle = showResizeHandles;
                     if (!showDependencyHandles && !showResizeHandles) return null;
 
                     const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
@@ -645,8 +646,9 @@ export const HtmlOverlay: React.FC = () => {
                         <React.Fragment key={`handles-${task.id}`}>
                             {showResizeHandles && (
                                 <>
-                                    <div
+                                    {showStartResizeHandle && <div
                                         className="task-resize-handle"
+                                        data-task-id={task.id}
                                         data-region="start"
                                         data-testid={`task-resize-handle-start-${task.id}`}
                                         style={{ ...resizeHandleBaseStyle, left: bounds.x - resizeHandleWidth / 2 }}
@@ -655,9 +657,10 @@ export const HtmlOverlay: React.FC = () => {
                                             <span style={{ width: 1, height: 10, background: RESIZE_HANDLE_GRIP }} />
                                             <span style={{ width: 1, height: 10, background: RESIZE_HANDLE_GRIP }} />
                                         </div>
-                                    </div>
-                                    <div
+                                    </div>}
+                                    {showEndResizeHandle && <div
                                         className="task-resize-handle"
+                                        data-task-id={task.id}
                                         data-region="end"
                                         data-testid={`task-resize-handle-end-${task.id}`}
                                         style={{ ...resizeHandleBaseStyle, left: bounds.x + bounds.width - resizeHandleWidth / 2 }}
@@ -666,7 +669,7 @@ export const HtmlOverlay: React.FC = () => {
                                             <span style={{ width: 1, height: 10, background: RESIZE_HANDLE_GRIP }} />
                                             <span style={{ width: 1, height: 10, background: RESIZE_HANDLE_GRIP }} />
                                         </div>
-                                    </div>
+                                    </div>}
                                 </>
                             )}
                             {showDependencyHandles && (

@@ -616,6 +616,7 @@ describe('InteractionEngine cursor behavior', () => {
         const handle = document.createElement('div');
         handle.className = 'task-resize-handle';
         handle.setAttribute('data-region', 'start');
+        handle.setAttribute('data-task-id', task.id);
         container.appendChild(handle);
 
         const { viewport, zoomLevel } = useTaskStore.getState();
@@ -652,6 +653,7 @@ describe('InteractionEngine cursor behavior', () => {
         const handle = document.createElement('div');
         handle.className = 'task-resize-handle';
         handle.setAttribute('data-region', 'end');
+        handle.setAttribute('data-task-id', task.id);
         container.appendChild(handle);
 
         const { viewport, zoomLevel } = useTaskStore.getState();
@@ -669,6 +671,281 @@ describe('InteractionEngine cursor behavior', () => {
 
         expect(useTaskStore.getState().tasks[0].startDate).toBe(startDate);
         expect(formatDateOnly(useTaskStore.getState().tasks[0].dueDate)).toBe('2026-07-13');
+
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        engine.detach();
+        container.remove();
+    });
+
+    it('creates a due date from the outside half of a start-date-only end handle without panning', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const startDate = parseDateOnly('2026-07-01')!;
+        const dueDate = parseDateOnly('2026-07-11')!;
+        setViewport({ startDate, scrollX: 20, scrollY: 0, scale: 1 / DAY_MS });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'create-due-task', rowIndex: 0, startDate, dueDate: Number.NaN });
+        seedTasks([task]);
+
+        const handle = document.createElement('div');
+        handle.className = 'task-resize-handle';
+        handle.setAttribute('data-region', 'end');
+        handle.setAttribute('data-task-id', task.id);
+        const grip = document.createElement('span');
+        handle.appendChild(grip);
+        container.appendChild(handle);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        grip.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: bounds.x + bounds.width + 3,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+        window.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: LayoutEngine.calendarDateToX(dueDate, viewport) - viewport.scrollX,
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(useTaskStore.getState().tasks[0].startDate).toBe(startDate);
+        expect(formatDateOnly(useTaskStore.getState().tasks[0].dueDate)).toBe('2026-07-11');
+        expect(useTaskStore.getState().viewport).toEqual(viewport);
+
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        engine.detach();
+        container.remove();
+    });
+
+    it('does not create a due date before a start-date-only task start', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const startDate = parseDateOnly('2026-07-11')!;
+        setViewport({ startDate: parseDateOnly('2026-07-01')!, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'invalid-create-due-task', rowIndex: 0, startDate, dueDate: Number.NaN });
+        seedTasks([task]);
+
+        const handle = document.createElement('div');
+        handle.className = 'task-resize-handle';
+        handle.setAttribute('data-region', 'end');
+        handle.setAttribute('data-task-id', task.id);
+        container.appendChild(handle);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        handle.dispatchEvent(new MouseEvent('mousedown', { clientX: bounds.x + bounds.width, clientY: bounds.y + bounds.height / 2, bubbles: true }));
+        window.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: LayoutEngine.calendarDateToX(parseDateOnly('2026-07-10')!, viewport),
+            clientY: bounds.y + bounds.height / 2,
+            bubbles: true
+        }));
+
+        expect(useTaskStore.getState().tasks[0].startDate).toBe(startDate);
+        expect(Number.isFinite(useTaskStore.getState().tasks[0].dueDate)).toBe(false);
+
+        window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        engine.detach();
+        container.remove();
+    });
+
+    it.each([
+        { autoSave: false, restore: false },
+        { autoSave: true, restore: false },
+        { autoSave: false, restore: true },
+        { autoSave: true, restore: true }
+    ])('clears and optionally restores a related task due date in one drag ($autoSave autoSave, $restore restore)', async ({ autoSave, restore }) => {
+        const day = 24 * 60 * 60 * 1000;
+        const startDate = parseDateOnly('2026-07-01')!;
+        const dueDate = parseDateOnly('2026-07-11')!;
+        setViewport({ startDate, scrollX: 0, scrollY: 0, scale: 10 / day });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: `clear-due-${autoSave}-${restore}`, startDate, dueDate });
+        const successor = baseTask({ id: `${task.id}-successor`, rowIndex: 1, startDate: parseDateOnly('2026-07-20')!, dueDate: parseDateOnly('2026-07-21')! });
+        const relations: Relation[] = [{ id: `${task.id}-relation`, from: task.id, to: successor.id, type: 'precedes' }];
+        seedTasks([task, successor], { autoSave, relations });
+
+        let persistedTask = task;
+        vi.mocked(apiClient.scheduleMutation).mockImplementation(async changes => {
+            const change = changes.find(candidate => candidate.taskId === task.id)!;
+            expect(change.mutationFields).toEqual({ due_date: restore ? '2026-07-05' : null });
+            persistedTask = { ...(change.task as Task), lockVersion: 1 };
+            return { status: 'ok', operationId: 'test', entities: [], revisions: { [task.id]: 1 } };
+        });
+        vi.mocked(apiClient.fetchData).mockImplementation(async () => ({
+            tasks: [persistedTask, successor], relations, versions: [],
+            filterOptions: { projects: [], assignees: [] }, customFields: [], statuses: [],
+            project: { id: 'p1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        }));
+
+        try {
+            const { viewport, zoomLevel } = useTaskStore.getState();
+            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+            const pointerX = bounds.x + bounds.width;
+            const pointerY = bounds.y + bounds.height / 2;
+            container.dispatchEvent(new MouseEvent('mousedown', { clientX: pointerX, clientY: pointerY, bubbles: true }));
+            const moveTo = (candidate: string) => window.dispatchEvent(new MouseEvent('mousemove', {
+                clientX: pointerX + diffCalendarDays(dueDate, parseDateOnly(candidate)!) * 10,
+                clientY: pointerY, bubbles: true
+            }));
+
+            moveTo('2026-07-01');
+            expect(useTaskStore.getState().allTasks.find(t => t.id === task.id)?.dueDate).toBe(startDate);
+            moveTo('2026-06-30');
+            expect(useTaskStore.getState().allTasks.find(t => t.id === task.id)?.dueDate).toBeUndefined();
+            expect(useTaskStore.getState().allTasks.find(t => t.id === successor.id)).toEqual(successor);
+            expect(useTaskStore.getState().relations).toEqual(relations);
+            expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set([task.id]));
+            expect(apiClient.scheduleMutation).not.toHaveBeenCalled();
+
+            if (restore) {
+                moveTo('2026-07-05');
+                expect(formatDateOnly(useTaskStore.getState().allTasks.find(t => t.id === task.id)?.dueDate)).toBe('2026-07-05');
+            }
+            window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            if (!autoSave) {
+                expect(apiClient.scheduleMutation).not.toHaveBeenCalled();
+                await useTaskStore.getState().saveChanges();
+            }
+            await vi.waitFor(() => expect(useTaskStore.getState().modifiedTaskIds.has(task.id)).toBe(false));
+            expect(apiClient.scheduleMutation).toHaveBeenCalledTimes(1);
+            expect(persistedTask.startDate).toBe(startDate);
+            expect(persistedTask.dueDate).toBe(restore ? parseDateOnly('2026-07-05')! : undefined);
+            expect(useTaskStore.getState().relations).toEqual(relations);
+        } finally {
+            engine.detach();
+            container.remove();
+        }
+    });
+
+    it('can clear and recreate a newly created due date within the same drag', () => {
+        const day = 24 * 60 * 60 * 1000;
+        const startDate = parseDateOnly('2026-07-01')!;
+        setViewport({ startDate, scrollX: 0, scrollY: 0, scale: 10 / day });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'recreate-new-due', startDate, dueDate: undefined });
+        seedTasks([task]);
+        const handle = document.createElement('div');
+        handle.className = 'task-resize-handle';
+        handle.setAttribute('data-region', 'end');
+        handle.setAttribute('data-task-id', task.id);
+        container.appendChild(handle);
+
+        try {
+            const { viewport, zoomLevel } = useTaskStore.getState();
+            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+            const clientY = bounds.y + bounds.height / 2;
+            handle.dispatchEvent(new MouseEvent('mousedown', { clientX: bounds.x + bounds.width + 3, clientY, bubbles: true }));
+            for (const candidate of ['2026-07-05', '2026-06-30', '2026-07-03']) {
+                window.dispatchEvent(new MouseEvent('mousemove', {
+                    clientX: LayoutEngine.calendarDateToX(parseDateOnly(candidate)!, viewport), clientY, bubbles: true
+                }));
+                expect(formatDateOnly(useTaskStore.getState().tasks[0].dueDate)).toBe(candidate === '2026-06-30' ? null : candidate);
+                expect(useTaskStore.getState().tasks[0].startDate).toBe(startDate);
+            }
+            window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        } finally {
+            engine.detach();
+            container.remove();
+        }
+    });
+
+    it('does not clear a due date when only working-day normalization crosses the start date', () => {
+        const day = 24 * 60 * 60 * 1000;
+        const startDate = parseDateOnly('2027-01-02')!; // Saturday
+        const dueDate = parseDateOnly('2027-01-04')!; // Monday
+        configureBusinessCalendar({
+            status: 'ok', revision: 'test', defaultCalendarId: 'p1', projectCalendarIds: { p1: 'p1' },
+            calendars: { p1: { id: 'p1', name: 'P1', nonWorkingWeekDays: [0, 6], days: {} } }, warnings: []
+        });
+        setViewport({ startDate, scrollX: 0, scrollY: 0, scale: 10 / day });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'calendar-clear-due', startDate, dueDate });
+        seedTasks([task]);
+        try {
+            const { viewport, zoomLevel } = useTaskStore.getState();
+            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+            const clientX = bounds.x + bounds.width;
+            const clientY = bounds.y + bounds.height / 2;
+            container.dispatchEvent(new MouseEvent('mousedown', { clientX, clientY, bubbles: true }));
+            window.dispatchEvent(new MouseEvent('mousemove', { clientX: clientX - 10, clientY, bubbles: true }));
+            expect(useTaskStore.getState().tasks[0].dueDate).toBe(dueDate);
+            window.dispatchEvent(new MouseEvent('mousemove', { clientX: clientX - 30, clientY, bubbles: true }));
+            expect(useTaskStore.getState().tasks[0].dueDate).toBeUndefined();
+            window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        } finally {
+            configureBusinessCalendar(undefined);
+            engine.detach();
+            container.remove();
+        }
+    });
+
+    it('normalizes a newly created due date backward to a working day', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const startDate = parseDateOnly('2027-01-01')!;
+        configureBusinessCalendar({
+            status: 'ok',
+            revision: 'test',
+            defaultCalendarId: 'p1',
+            projectCalendarIds: { p1: 'p1' },
+            calendars: { p1: { id: 'p1', name: 'P1', nonWorkingWeekDays: [0, 6], days: {} } },
+            warnings: []
+        });
+
+        try {
+            setViewport({ startDate, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS });
+            const container = createContainer();
+            const engine = new InteractionEngine(container);
+            const task = baseTask({ id: 'working-create-due-task', projectId: 'p1', rowIndex: 0, startDate, dueDate: Number.NaN });
+            seedTasks([task]);
+
+            const handle = document.createElement('div');
+            handle.className = 'task-resize-handle';
+            handle.setAttribute('data-region', 'end');
+            handle.setAttribute('data-task-id', task.id);
+            container.appendChild(handle);
+
+            const { viewport, zoomLevel } = useTaskStore.getState();
+            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+            handle.dispatchEvent(new MouseEvent('mousedown', { clientX: bounds.x + bounds.width, clientY: bounds.y + bounds.height / 2, bubbles: true }));
+            window.dispatchEvent(new MouseEvent('mousemove', {
+                clientX: LayoutEngine.calendarDateToX(parseDateOnly('2027-01-02')!, viewport),
+                clientY: bounds.y + bounds.height / 2,
+                bubbles: true
+            }));
+
+            expect(formatDateOnly(useTaskStore.getState().tasks[0].dueDate)).toBe('2027-01-01');
+
+            window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            engine.detach();
+            container.remove();
+        } finally {
+            configureBusinessCalendar(undefined);
+        }
+    });
+
+    it('moves only the start date when dragging a start-date-only task body', () => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const startDate = parseDateOnly('2026-07-01')!;
+        setViewport({ startDate, scrollX: 0, scrollY: 0, scale: 1 / DAY_MS });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const task = baseTask({ id: 'move-start-only-task', rowIndex: 0, startDate, dueDate: Number.NaN });
+        seedTasks([task]);
+
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        const pointerX = bounds.x + bounds.width / 2;
+        const pointerY = bounds.y + bounds.height / 2;
+        container.dispatchEvent(new MouseEvent('mousedown', { clientX: pointerX, clientY: pointerY, bubbles: true }));
+        window.dispatchEvent(new MouseEvent('mousemove', { clientX: pointerX + 2, clientY: pointerY, bubbles: true }));
+
+        expect(formatDateOnly(useTaskStore.getState().tasks[0].startDate)).toBe('2026-07-03');
+        expect(Number.isFinite(useTaskStore.getState().tasks[0].dueDate)).toBe(false);
 
         window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         engine.detach();
@@ -921,6 +1198,7 @@ describe('InteractionEngine relation selection', () => {
         const handle = document.createElement('div');
         handle.className = 'task-resize-handle';
         handle.setAttribute('data-region', 'end');
+        handle.setAttribute('data-task-id', task1.id);
         container.appendChild(handle);
 
         const { viewport, zoomLevel } = useTaskStore.getState();

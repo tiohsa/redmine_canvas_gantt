@@ -202,7 +202,8 @@ describe('HtmlOverlay', () => {
 
         const startHandle = screen.getByTestId('task-resize-handle-start-1');
         expect(startHandle).toBeInTheDocument();
-        expect(screen.getByTestId('task-resize-handle-end-1')).toBeInTheDocument();
+        expect(startHandle).toHaveAttribute('data-task-id', '1');
+        expect(screen.getByTestId('task-resize-handle-end-1')).toHaveAttribute('data-task-id', '1');
         expect(startHandle.getAttribute('style')).toContain('background: rgba(26, 115, 232, 0.18)');
         expect(startHandle.getAttribute('style')).toContain('border: 1px solid rgba(26, 115, 232, 0.68)');
     });
@@ -302,16 +303,30 @@ describe('HtmlOverlay', () => {
         expect(screen.getByTestId('task-resize-handle-end-1')).toBeInTheDocument();
     });
 
-    it('does not show resize handles for parent, read-only, or single-date tasks', () => {
+    it('shows only an end resize handle for a start-date-only task', () => {
+        const startOnlyTask = { ...task2, id: 'start-only', dueDate: Number.NaN };
+
+        act(() => {
+            useTaskStore.getState().setTasks([startOnlyTask]);
+            useTaskStore.getState().setHoveredTask('start-only');
+        });
+
+        render(<HtmlOverlay />);
+
+        expect(screen.queryByTestId('task-resize-handle-start-start-only')).not.toBeInTheDocument();
+        expect(screen.getByTestId('task-resize-handle-end-start-only')).toHaveAttribute('data-task-id', 'start-only');
+    });
+
+    it('does not show resize handles for parent, read-only, or due-date-only tasks', () => {
         const parentTask = { ...task1, id: 'parent', hasChildren: true };
         const readonlyTask = { ...task2, id: 'readonly', editable: false, rowIndex: 1 };
-        const singleDateTask = { ...task2, id: 'single-date', rowIndex: 2, dueDate: Number.NaN };
+        const dueOnlyTask = { ...task2, id: 'due-only', rowIndex: 2, startDate: Number.NaN };
 
         act(() => {
             useTaskStore.setState({
                 ...useTaskStore.getState(),
-                allTasks: [parentTask, readonlyTask, singleDateTask],
-                tasks: [parentTask, readonlyTask, singleDateTask],
+                allTasks: [parentTask, readonlyTask, dueOnlyTask],
+                tasks: [parentTask, readonlyTask, dueOnlyTask],
                 layoutRows: [],
                 rowCount: 3,
                 hoveredTaskId: 'parent'
@@ -330,11 +345,11 @@ describe('HtmlOverlay', () => {
         expect(screen.queryByTestId('task-resize-handle-end-readonly')).not.toBeInTheDocument();
 
         act(() => {
-            useTaskStore.setState({ ...useTaskStore.getState(), hoveredTaskId: 'single-date' });
+            useTaskStore.setState({ ...useTaskStore.getState(), hoveredTaskId: 'due-only' });
         });
         rerender(<HtmlOverlay />);
-        expect(screen.queryByTestId('task-resize-handle-start-single-date')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('task-resize-handle-end-single-date')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-resize-handle-start-due-only')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-resize-handle-end-due-only')).not.toBeInTheDocument();
     });
 
 
