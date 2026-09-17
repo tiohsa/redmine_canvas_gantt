@@ -97,6 +97,163 @@ beforeEach(() => {
     useUIStore.setState({ isSidebarResizing: false });
 });
 
+describe('InteractionEngine start-date creation and removal', () => {
+    const day = 24 * 60 * 60 * 1000;
+    const dueDate = parseDateOnly('2026-09-24')!;
+    const startDate = parseDateOnly('2026-09-17')!;
+
+    const startDrag = (task: Task, overrides: Parameters<typeof seedTasks>[1] = {}, body = false) => {
+        setViewport({ startDate: Date.UTC(2026, 8, 1), scrollX: 20, scale: 10 / day });
+        seedTasks([task], overrides);
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const handle = document.createElement('div');
+        handle.className = 'task-resize-handle';
+        handle.dataset.region = 'start';
+        handle.dataset.taskId = task.id;
+        const grip = document.createElement('span');
+        handle.appendChild(grip);
+        container.appendChild(handle);
+        const { viewport, zoomLevel } = useTaskStore.getState();
+        const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+        const clientY = bounds.y + bounds.height / 2;
+        const clientX = body ? bounds.x + bounds.width / 2 : bounds.x - 3;
+        (body ? container : grip).dispatchEvent(new MouseEvent('mousedown', { clientX, clientY, bubbles: true }));
+        return {
+            viewport,
+            moveTo(candidate: string) {
+                const date = parseDateOnly(candidate)!;
+                const x = body
+                    ? clientX + diffCalendarDays(task.dueDate!, date) * 10
+                    : Number.isFinite(task.startDate)
+                        ? clientX + diffCalendarDays(task.startDate!, date) * 10
+                        : LayoutEngine.calendarDateToX(date, viewport) - viewport.scrollX;
+                window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY, bubbles: true }));
+            },
+            finish() { window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); },
+            dispose() { engine.detach(); container.remove(); }
+        };
+    };
+
+    it.each([undefined, Number.NaN])('creates, clears, and recreates startDate from an outside DOM handle (startDate=%s)', (missingStart) => {
+        const task = baseTask({ id: 'due-only-start', startDate: missingStart, dueDate });
+        const drag = startDrag(task);
+        try {
+            for (const candidate of ['2026-09-25', '2026-09-24', '2026-09-17', '2026-09-25', '2026-09-20']) {
+                drag.moveTo(candidate);
+                const current = useTaskStore.getState().tasks[0];
+                expect(formatDateOnly(current.startDate)).toBe(candidate === '2026-09-25' ? null : candidate);
+                expect(current.dueDate).toBe(dueDate);
+                expect(useTaskStore.getState().viewport).toEqual(drag.viewport);
+            }
+            drag.finish();
+        } finally { drag.dispose(); }
+    });
+
+    it('moves only dueDate when dragging the diamond body', () => {
+        const drag = startDrag(baseTask({ id: 'due-only-body', startDate: undefined, dueDate }), {}, true);
+        try {
+            drag.moveTo('2026-09-26');
+            expect(useTaskStore.getState().tasks[0].startDate).toBeUndefined();
+            expect(formatDateOnly(useTaskStore.getState().tasks[0].dueDate)).toBe('2026-09-26');
+            expect(useTaskStore.getState().viewport).toEqual(drag.viewport);
+            drag.finish();
+        } finally { drag.dispose(); }
+    });
+
+    it.each([
+        { autoSave: false, restore: false }, { autoSave: true, restore: false },
+        { autoSave: false, restore: true }, { autoSave: true, restore: true }
+    ])('persists startDate clear/recreation and preserves relations ($autoSave autoSave, $restore restore)', async ({ autoSave, restore }) => {
+        const task = baseTask({ id: `clear-start-${autoSave}-${restore}`, startDate, dueDate });
+        const predecessor = baseTask({ id: `${task.id}-predecessor`, rowIndex: 1, startDate: parseDateOnly('2026-09-01')!, dueDate: parseDateOnly('2026-09-02')! });
+        const relations: Relation[] = [{ id: `${task.id}-relation`, from: predecessor.id, to: task.id, type: 'precedes' }];
+        let persistedTask = task;
+        vi.mocked(apiClient.scheduleMutation).mockImplementation(async changes => {
+            expect(changes).toHaveLength(1);
+            expect(changes[0].mutationFields).toEqual({ start_date: restore ? '2026-09-20' : null });
+            persistedTask = { ...(changes[0].task as Task), lockVersion: 1 };
+            return { status: 'ok', operationId: 'test', entities: [], revisions: { [task.id]: 1 } };
+        });
+        vi.mocked(apiClient.fetchData).mockImplementation(async () => ({
+            tasks: [persistedTask, predecessor], relations, versions: [],
+            filterOptions: { projects: [], assignees: [] }, customFields: [], statuses: [],
+            project: { id: 'p1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        }));
+        const drag = startDrag(task, { autoSave, relations, tasks: [task, predecessor], allTasks: [task, predecessor], rowCount: 2 });
+        try {
+            drag.moveTo('2026-09-24');
+            expect(useTaskStore.getState().allTasks.find(t => t.id === task.id)?.startDate).toBe(dueDate);
+            drag.moveTo('2026-09-25');
+            expect(useTaskStore.getState().allTasks.find(t => t.id === task.id)?.startDate).toBeUndefined();
+            expect(useTaskStore.getState().allTasks.find(t => t.id === predecessor.id)).toEqual(predecessor);
+            expect(useTaskStore.getState().relations).toEqual(relations);
+            expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set([task.id]));
+            expect(apiClient.scheduleMutation).not.toHaveBeenCalled();
+            if (restore) {
+                drag.moveTo('2026-09-20');
+                expect(formatDateOnly(useTaskStore.getState().allTasks.find(t => t.id === task.id)?.startDate)).toBe('2026-09-20');
+            }
+            drag.finish();
+            if (!autoSave) {
+                expect(apiClient.scheduleMutation).not.toHaveBeenCalled();
+                await useTaskStore.getState().saveChanges();
+            }
+            await vi.waitFor(() => expect(useTaskStore.getState().modifiedTaskIds.has(task.id)).toBe(false));
+            expect(apiClient.scheduleMutation).toHaveBeenCalledTimes(1);
+            expect(apiClient.updateTask).not.toHaveBeenCalled();
+            expect(persistedTask.startDate).toBe(restore ? parseDateOnly('2026-09-20')! : undefined);
+            expect(persistedTask.dueDate).toBe(dueDate);
+            expect(useTaskStore.getState().relations).toEqual(relations);
+        } finally { drag.dispose(); }
+    });
+
+    it.each([false, true])('rolls back a rejected startDate change using BarOperation (clear=%s)', async (clear) => {
+        const task = baseTask({ id: `rejected-start-${clear}`, startDate: clear ? startDate : undefined, dueDate });
+        vi.mocked(apiClient.scheduleMutation).mockResolvedValue({
+            status: 'validation_error', operationId: 'test', entities: [], revisions: {}, errors: ['Invalid task dates']
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [task], relations: [], versions: [], filterOptions: { projects: [], assignees: [] },
+            statuses: [], customFields: [], project: { id: 'p1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        const drag = startDrag(task, { autoSave: true });
+        try {
+            drag.moveTo(clear ? '2026-09-25' : '2026-09-17');
+            expect(useTaskStore.getState().tasks[0].startDate).toBe(clear ? undefined : startDate);
+            drag.finish();
+            await vi.waitFor(() => expect(apiClient.scheduleMutation).toHaveBeenCalledTimes(1));
+            await vi.waitFor(() => expect(useTaskStore.getState().allTasks[0].startDate).toBe(task.startDate));
+            expect(useTaskStore.getState().allTasks[0].dueDate).toBe(dueDate);
+            expect(useTaskStore.getState().modifiedTaskIds.has(task.id)).toBe(false);
+        } finally { drag.dispose(); }
+    });
+
+    it.each([
+        { originalStart: undefined, due: '2026-09-24', candidate: '2026-09-19', expected: '2026-09-21' },
+        { originalStart: startDate, due: '2026-09-20', candidate: '2026-09-19', expected: '2026-09-17' },
+        { originalStart: undefined, due: '2026-09-20', candidate: '2026-09-19', expected: null }
+    ])('normalizes startDate forward without clearing or crossing dueDate ($expected)', ({ originalStart, due, candidate, expected }) => {
+        configureBusinessCalendar({
+            status: 'ok', revision: 'test', defaultCalendarId: 'p1', projectCalendarIds: { p1: 'p1' },
+            calendars: { p1: { id: 'p1', name: 'P1', nonWorkingWeekDays: [0, 6], days: {} } }, warnings: []
+        });
+        const task = baseTask({ id: 'working-start', startDate: originalStart, dueDate: parseDateOnly(due)! });
+        const drag = startDrag(task);
+        try {
+            drag.moveTo(candidate);
+            expect(formatDateOnly(useTaskStore.getState().tasks[0].startDate)).toBe(expected);
+            expect(useTaskStore.getState().tasks[0].dueDate).toBe(task.dueDate);
+            drag.finish();
+        } finally {
+            configureBusinessCalendar(undefined);
+            drag.dispose();
+        }
+    });
+});
+
 describe('InteractionEngine viewport panning', () => {
     it('ドラッグで左端(過去)へオーバースクロールしたら startDate をシフトする', () => {
         setViewport({ startDate: 1000, scrollX: 0, scale: 1 });

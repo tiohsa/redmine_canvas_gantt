@@ -446,14 +446,27 @@ export class InteractionEngine {
                 }
             }
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
-            const timeDelta = dx / viewport.scale;
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
-            const newStart = normalizeWorkingDate(
-                this.snapToDate(this.drag.originalStartDate! + timeDelta),
-                'forward',
-                currentTask?.projectId
-            );
+            let candidateStart: number;
+            if (Number.isFinite(this.drag.originalStartDate)) {
+                const timeDelta = dx / viewport.scale;
+                candidateStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
+            } else if (Number.isFinite(this.drag.originalDueDate)) {
+                const pointerTimelineX = e.clientX - rect.left + viewport.scrollX;
+                candidateStart = timelineToCalendarDate(LayoutEngine.xToDate(pointerTimelineX, viewport));
+            } else {
+                return;
+            }
 
+            // Only the pointer crossing the due date clears the start date, not calendar normalization.
+            if (candidateStart > this.drag.originalDueDate!) {
+                if (Number.isFinite(currentTask?.startDate)) {
+                    updateTask(this.drag.taskId, { startDate: undefined });
+                }
+                return;
+            }
+
+            const newStart = normalizeWorkingDate(candidateStart, 'forward', currentTask?.projectId);
             if (currentTask && newStart <= this.drag.originalDueDate! && currentTask.startDate !== newStart) {
                 updateTask(this.drag.taskId, { startDate: newStart });
             }

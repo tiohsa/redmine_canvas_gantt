@@ -7,7 +7,7 @@ import { hasPendingRelationConsistencyChanges } from '../stores/taskStore/draftI
 import { RelationType } from '../types/constraints';
 import { useUIStore } from '../stores/UIStore';
 import { useBaselineStore } from '../stores/BaselineStore';
-import type { DraftRelation, Relation, Task } from '../types';
+import type { DraftRelation, Relation } from '../types';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import { calculateBaselineDiff, formatBaselineCapturedAt, getBaselineTaskState } from '../utils/baseline';
 import {
@@ -584,12 +584,6 @@ export const HtmlOverlay: React.FC = () => {
         useTaskStore.getState().setContextMenu(null);
     }, [canDropToRoot, moveTaskToRoot]);
 
-    const isResizableTask = React.useCallback((task: Task) => (
-        task.editable &&
-        !task.hasChildren &&
-        Number.isFinite(task.startDate)
-    ), []);
-
     return (
         <>
             <div
@@ -599,9 +593,11 @@ export const HtmlOverlay: React.FC = () => {
                 {visibleTasks.map((task) => {
                     const isDependencyDragging = dragDraft !== null;
                     const showDependencyHandles = task.id === hoveredTaskId;
-                    const showResizeHandles = !isDependencyDragging && isResizableTask(task) && (task.id === hoveredTaskId || task.id === selectedTaskId);
-                    const showStartResizeHandle = showResizeHandles && Number.isFinite(task.dueDate);
-                    const showEndResizeHandle = showResizeHandles;
+                    const canResizeStart = task.editable && !task.hasChildren && Number.isFinite(task.dueDate);
+                    const canResizeEnd = task.editable && !task.hasChildren && Number.isFinite(task.startDate);
+                    const showResizeHandles = !isDependencyDragging && (canResizeStart || canResizeEnd) && (task.id === hoveredTaskId || task.id === selectedTaskId);
+                    const showStartResizeHandle = showResizeHandles && canResizeStart;
+                    const showEndResizeHandle = showResizeHandles && canResizeEnd;
                     if (!showDependencyHandles && !showResizeHandles) return null;
 
                     const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);

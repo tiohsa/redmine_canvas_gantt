@@ -317,16 +317,30 @@ describe('HtmlOverlay', () => {
         expect(screen.getByTestId('task-resize-handle-end-start-only')).toHaveAttribute('data-task-id', 'start-only');
     });
 
-    it('does not show resize handles for parent, read-only, or due-date-only tasks', () => {
+    it.each([undefined, Number.NaN])('shows only a start resize handle for a due-date-only task (startDate=%s)', (startDate) => {
+        const dueOnlyTask = { ...task2, id: 'due-only', startDate };
+        act(() => {
+            useTaskStore.getState().setTasks([dueOnlyTask]);
+            useTaskStore.getState().setHoveredTask('due-only');
+        });
+
+        render(<HtmlOverlay />);
+
+        expect(screen.getByTestId('task-resize-handle-start-due-only')).toHaveAttribute('data-task-id', 'due-only');
+        expect(screen.getByTestId('task-resize-handle-start-due-only')).toHaveAttribute('data-region', 'start');
+        expect(screen.queryByTestId('task-resize-handle-end-due-only')).not.toBeInTheDocument();
+    });
+
+    it('does not show resize handles for parent, read-only, or undated tasks', () => {
         const parentTask = { ...task1, id: 'parent', hasChildren: true };
         const readonlyTask = { ...task2, id: 'readonly', editable: false, rowIndex: 1 };
-        const dueOnlyTask = { ...task2, id: 'due-only', rowIndex: 2, startDate: Number.NaN };
+        const undatedTask = { ...task2, id: 'undated', rowIndex: 2, startDate: Number.NaN, dueDate: undefined };
 
         act(() => {
             useTaskStore.setState({
                 ...useTaskStore.getState(),
-                allTasks: [parentTask, readonlyTask, dueOnlyTask],
-                tasks: [parentTask, readonlyTask, dueOnlyTask],
+                allTasks: [parentTask, readonlyTask, undatedTask],
+                tasks: [parentTask, readonlyTask, undatedTask],
                 layoutRows: [],
                 rowCount: 3,
                 hoveredTaskId: 'parent'
@@ -345,11 +359,11 @@ describe('HtmlOverlay', () => {
         expect(screen.queryByTestId('task-resize-handle-end-readonly')).not.toBeInTheDocument();
 
         act(() => {
-            useTaskStore.setState({ ...useTaskStore.getState(), hoveredTaskId: 'due-only' });
+            useTaskStore.setState({ ...useTaskStore.getState(), hoveredTaskId: 'undated' });
         });
         rerender(<HtmlOverlay />);
-        expect(screen.queryByTestId('task-resize-handle-start-due-only')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('task-resize-handle-end-due-only')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-resize-handle-start-undated')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-resize-handle-end-undated')).not.toBeInTheDocument();
     });
 
 
