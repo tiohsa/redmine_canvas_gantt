@@ -196,6 +196,8 @@ class CanvasGanttsController < ApplicationController
     label_refresh_failed: :label_refresh_failed,
     label_project_candidates_load_failed: :label_project_candidates_load_failed,
     label_member_projects_only: :label_member_projects_only,
+    label_project_search_placeholder: :label_project_search_placeholder,
+    label_no_matching_projects: :label_no_matching_projects,
     label_selected_projects_outside_candidates: :label_selected_projects_outside_candidates,
     label_selected_trackers_outside_candidates: :label_selected_trackers_outside_candidates,
     label_relation_add_failed: :label_relation_add_failed,

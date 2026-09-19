@@ -796,6 +796,20 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(Setting).to receive(:non_working_week_days).and_return(['6', '7'])
     end
 
+    { en: ['Search projects...', 'No matching projects'],
+      ja: ['プロジェクトを検索', '一致するプロジェクトがありません'] }.each do |locale, labels|
+      it "publishes project candidate search labels in #{locale}" do
+        I18n.with_locale(locale) do
+          get :index, params: { project_id: 'demo' }
+
+          expect(response).to have_http_status(:ok)
+          i18n_payload = controller.instance_variable_get(:@i18n).stringify_keys
+          expect(i18n_payload['label_project_search_placeholder']).to eq(labels[0])
+          expect(i18n_payload['label_no_matching_projects']).to eq(labels[1])
+        end
+      end
+    end
+
     it 'includes row height labels in frontend i18n payload' do
       expect(Setting).not_to receive(:plugin_redmine_canvas_gantt)
 

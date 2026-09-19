@@ -78,6 +78,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     } = useUIStore();
     const baselineSaveStatus = useBaselineStore(state => state.saveStatus);
     const hasBaseline = useBaselineStore(state => state.hasBaseline);
+    const [projectSearchText, setProjectSearchText] = React.useState('');
+    const resetProjectSearch = React.useCallback(() => setProjectSearchText(''), []);
     const {
         queryMenuRef,
         columnMenuRef,
@@ -96,7 +98,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         toggleMenu,
         openMenuByKey,
         closeMenu
-    } = useToolbarMenuState();
+    } = useToolbarMenuState({ onProjectMenuClose: resetProjectSearch });
     const {
         workloadPaneVisible,
         toggleWorkloadPaneVisible,
@@ -442,6 +444,11 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const projects = React.useMemo(() => (
         [...(projectFilterLoading ? [] : filterOptions.projects)].sort((a, b) => a.name.localeCompare(b.name))
     ), [filterOptions.projects, projectFilterLoading]);
+
+    const visibleProjects = React.useMemo(() => {
+        const query = projectSearchText.trim().toLowerCase();
+        return query ? projects.filter((project) => project.name.toLowerCase().includes(query)) : projects;
+    }, [projects, projectSearchText]);
 
     const scopedProjectIds = React.useMemo(() => (
         new Set(selectedProjectIds.length > 0 ? selectedProjectIds : projectScopeOptions.map((project) => project.id))
@@ -1112,9 +1119,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                 boxShadow: designTokens.menuShadow,
                                 padding: '12px',
                                 zIndex: 20,
-                                minWidth: '200px',
-                                maxHeight: '300px',
-                                overflowY: 'auto'
+                                minWidth: '200px'
                             }}
                         >
                             <div style={{ fontWeight: 600, marginBottom: '8px', color: designTokens.controlFg }}>{i18n.t('label_project_plural') || 'Projects'}</div>
@@ -1135,6 +1140,23 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                 />
                                 <span>{i18n.t('label_member_projects_only') || 'Show member projects in filter'}</span>
                             </label>
+                            <input
+                                type="search"
+                                value={projectSearchText}
+                                onChange={(event) => setProjectSearchText(event.target.value)}
+                                aria-label={i18n.t('label_project_search_placeholder') || 'Search projects...'}
+                                placeholder={i18n.t('label_project_search_placeholder') || 'Search projects...'}
+                                style={{
+                                    width: '100%',
+                                    boxSizing: 'border-box',
+                                    padding: '6px 8px',
+                                    marginBottom: '8px',
+                                    border: `1px solid ${designTokens.controlBorder}`,
+                                    borderRadius: '4px',
+                                    background: designTokens.controlBg,
+                                    color: designTokens.controlFg
+                                }}
+                            />
                             {projectFilterLoading && (
                                 <div style={{ fontSize: '12px', color: designTokens.textMuted, marginBottom: '8px' }}>
                                     {i18n.t('label_loading') || 'Loading...'}
@@ -1150,16 +1172,23 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                     {i18n.t('label_selected_projects_outside_candidates') || 'Some selected projects are hidden from the current candidate list.'}
                                 </div>
                             )}
-                            {projects.map(project => (
-                                <label key={project.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedProjectIds.includes(project.id)}
-                                        onChange={() => toggleProject(project.id)}
-                                    />
-                                    {project.name}
-                                </label>
-                            ))}
+                            <div className="gantt-toolbar-project-candidate-list">
+                                {!projectFilterLoading && !projectFilterError && visibleProjects.length === 0 && (
+                                    <div style={{ fontSize: '12px', color: designTokens.textMuted }}>
+                                        {i18n.t('label_no_matching_projects') || 'No matching projects'}
+                                    </div>
+                                )}
+                                {visibleProjects.map(project => (
+                                    <label key={project.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedProjectIds.includes(project.id)}
+                                            onChange={() => toggleProject(project.id)}
+                                        />
+                                        {project.name}
+                                    </label>
+                                ))}
+                            </div>
                             <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, marginTop: '8px', paddingTop: '8px' }}>
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
                                     <input

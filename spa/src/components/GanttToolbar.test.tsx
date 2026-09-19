@@ -1479,6 +1479,208 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByLabelText('(No version)')).toBeChecked();
     });
 
+    describe('project candidate search', () => {
+        const projects = [
+            { id: 'p1', name: 'Project Alpha' },
+            { id: 'p2', name: 'Project Beta' },
+            { id: 'p3', name: 'Redmine Canvas Gantt' },
+            { id: 'p4', name: '製造管理' },
+            { id: 'p5', name: '製造システム' },
+            { id: 'p6', name: '営業システム' }
+        ];
+        const response = (candidates = projects) => ({
+            tasks: [], relations: [], versions: [], statuses: [], customFields: [],
+            filterOptions: { projects: candidates, assignees: [] },
+            project: { id: '1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        const openProjects = () => {
+            fireEvent.click(screen.getByTestId('project-filter-menu-button'));
+            return screen.getByRole('searchbox');
+        };
+        const search = (value: string) => fireEvent.change(screen.getByRole('searchbox'), { target: { value } });
+
+        beforeEach(() => {
+            useTaskStore.setState({
+                filterOptions: { projects, assignees: [] },
+                selectedProjectIds: [], memberProjectsOnly: false, groupByProject: false
+            });
+            vi.mocked(apiClient.fetchData).mockResolvedValue(response());
+        });
+
+        it.each(['canvas', 'CANVAS', '  canvas  '])('matches project names with %j', (query) => {
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            search(query);
+            expect(screen.getByLabelText('Redmine Canvas Gantt')).toBeInTheDocument();
+            projects.filter(({ id }) => id !== 'p3').forEach(({ name }) => {
+                expect(screen.queryByLabelText(name)).not.toBeInTheDocument();
+            });
+        });
+
+        it('matches Japanese names and restores all candidates for whitespace-only input', () => {
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            search('製造');
+            expect(screen.getByLabelText('製造管理')).toBeInTheDocument();
+            expect(screen.getByLabelText('製造システム')).toBeInTheDocument();
+            expect(screen.queryByLabelText('営業システム')).not.toBeInTheDocument();
+            expect(screen.queryByLabelText('Project Alpha')).not.toBeInTheDocument();
+            search('   ');
+            projects.forEach(({ name }) => expect(screen.getByLabelText(name)).toBeInTheDocument());
+        });
+
+        it('preserves hidden selections and adds a matching project through the existing store action', async () => {
+            useTaskStore.setState({ selectedProjectIds: ['p1', 'p2'] });
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            search('canvas');
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
+            fireEvent.click(screen.getByLabelText('Redmine Canvas Gantt'));
+            await waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2', 'p3']);
+            expect(screen.getByRole('searchbox')).toHaveValue('canvas');
+            search('');
+            ['Project Alpha', 'Project Beta', 'Redmine Canvas Gantt'].forEach((name) => {
+                expect(screen.getByLabelText(name)).toBeChecked();
+            });
+        });
+
+        it('uses all official candidates for Select All, including when there are no matches', async () => {
+            useTaskStore.setState({ selectedProjectIds: ['p3'] });
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            search('canvas');
+            expect(screen.getByLabelText('Select All')).not.toBeChecked();
+            fireEvent.click(screen.getByLabelText('Select All'));
+            await waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(expect.arrayContaining(projects.map(({ id }) => id)));
+            expect(useTaskStore.getState().selectedProjectIds).toHaveLength(projects.length);
+            expect(screen.getByLabelText('Select All')).toBeChecked();
+            search('no match');
+            expect(screen.getByLabelText('Select All')).toBeChecked();
+            fireEvent.click(screen.getByLabelText('Select All'));
+            await waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(2));
+            expect(useTaskStore.getState().selectedProjectIds).toEqual([]);
+        });
+
+        it('bases the outside-candidate warning on official candidates, not search matches', () => {
+            useTaskStore.setState({ selectedProjectIds: ['p1'], memberProjectsOnly: true });
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            search('canvas');
+            expect(screen.queryByText(/Some selected projects are hidden/)).not.toBeInTheDocument();
+            act(() => useTaskStore.setState({ selectedProjectIds: ['outside'] }));
+            expect(screen.getByText(/Some selected projects are hidden/)).toBeInTheDocument();
+        });
+
+        it('reapplies search to refreshed member candidates and prioritizes loading', async () => {
+            let resolve!: (value: ReturnType<typeof response>) => void;
+            vi.mocked(apiClient.fetchData).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            search('canvas');
+            fireEvent.click(screen.getByLabelText('Show member projects in filter'));
+            expect(screen.getByText('Loading...')).toBeInTheDocument();
+            expect(screen.queryByText('No matching projects')).not.toBeInTheDocument();
+            expect(screen.queryByLabelText('Redmine Canvas Gantt')).not.toBeInTheDocument();
+            await act(async () => resolve(response([
+                { id: 'p7', name: 'Canvas Member' }, projects[0]
+            ])));
+            expect(screen.getByRole('searchbox')).toHaveValue('canvas');
+            expect(screen.getByLabelText('Canvas Member')).toBeInTheDocument();
+            expect(screen.queryByLabelText('Project Alpha')).not.toBeInTheDocument();
+            expect(screen.queryByLabelText('Redmine Canvas Gantt')).not.toBeInTheDocument();
+            expect(apiClient.fetchData).toHaveBeenCalledWith(expect.objectContaining({
+                query: expect.objectContaining({ memberProjectsOnly: true })
+            }));
+        });
+
+        it('keeps load errors visible instead of showing no matches', async () => {
+            vi.mocked(apiClient.fetchData).mockRejectedValueOnce(new Error('Candidates unavailable'));
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            search('no match');
+            expect(screen.getByText('No matching projects')).toBeInTheDocument();
+            fireEvent.click(screen.getByLabelText('Show member projects in filter'));
+            expect(await screen.findByText('Candidates unavailable')).toBeInTheDocument();
+            expect(screen.queryByText('No matching projects')).not.toBeInTheDocument();
+            search('still no match');
+            expect(screen.getByText('Candidates unavailable')).toBeInTheDocument();
+            expect(screen.queryByText('No matching projects')).not.toBeInTheDocument();
+        });
+
+        it('keeps Clear and grouping independent of search and preserves the active indicator', async () => {
+            useTaskStore.setState({ selectedProjectIds: ['p1', 'p2'] });
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            const button = screen.getByTestId('project-filter-menu-button');
+            openProjects();
+            search('canvas');
+            fireEvent.click(screen.getByText('Clear'));
+            await waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
+            expect(useTaskStore.getState().selectedProjectIds).toEqual([]);
+            expect(button.querySelector('div')).toBeNull();
+            fireEvent.click(screen.getByLabelText('Group by project'));
+            expect(useTaskStore.getState().groupByProject).toBe(true);
+            expect(button.querySelector('div')).not.toBeNull();
+            fireEvent.click(screen.getByLabelText('Group by project'));
+            expect(useTaskStore.getState().groupByProject).toBe(false);
+            expect(button.querySelector('div')).toBeNull();
+            expect(screen.getByRole('searchbox')).toHaveValue('canvas');
+        });
+
+        it.each(['toggle', 'outside', 'other menu'])('resets search when closed by %s', (closeBy) => {
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            search('canvas');
+            if (closeBy === 'toggle') fireEvent.click(screen.getByTestId('project-filter-menu-button'));
+            if (closeBy === 'outside') fireEvent.mouseDown(document.body);
+            if (closeBy === 'other menu') fireEvent.click(screen.getByTestId('tracker-filter-menu-button'));
+            expect(screen.queryByTestId('project-menu')).not.toBeInTheDocument();
+            expect(openProjects()).toHaveValue('');
+            projects.forEach(({ name }) => expect(screen.getByLabelText(name)).toBeInTheDocument());
+        });
+
+        it('does not change saved-query state, URL, storage or API calls while searching', async () => {
+            useTaskStore.getState().applyResolvedQueryState({ queryId: 12, selectedProjectIds: ['p1', 'p2'] });
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            const stateBefore = useTaskStore.getState();
+            const urlBefore = window.location.href;
+            const storageBefore = { ...window.localStorage };
+            openProjects();
+            await act(async () => search('canvas'));
+            expect(useTaskStore.getState()).toBe(stateBefore);
+            expect(useTaskStore.getState().activeQueryId).toBe(12);
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
+            expect(window.location.href).toBe(urlBefore);
+            expect({ ...window.localStorage }).toEqual(storageBefore);
+            expect(apiClient.fetchData).not.toHaveBeenCalled();
+            expect(apiClient.fetchQueries).not.toHaveBeenCalled();
+        });
+
+        it('renders localized search and empty-state text with controls outside the candidate list', () => {
+            getCanvasGanttConfig().i18n = {
+                label_project_search_placeholder: 'プロジェクトを検索',
+                label_no_matching_projects: '一致するプロジェクトがありません'
+            };
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            const input = screen.getByRole('searchbox', { name: 'プロジェクトを検索' });
+            expect(input).toHaveAttribute('placeholder', 'プロジェクトを検索');
+            const menu = screen.getByTestId('project-menu');
+            const list = menu.querySelector('.gantt-toolbar-project-candidate-list');
+            expect(list).toContainElement(screen.getByLabelText('Project Alpha'));
+            [input, screen.getByLabelText('Select All'), screen.getByLabelText('Show member projects in filter'),
+                screen.getByLabelText('Group by project'), screen.getByText('Clear')].forEach((control) => {
+                expect(list).not.toContainElement(control);
+                expect(menu).toContainElement(control);
+            });
+            expect(menu.style.overflowY).toBe('');
+            search('no match');
+            expect(screen.getByText('一致するプロジェクトがありません')).toBeInTheDocument();
+        });
+    });
+
     it('keeps all descendant projects visible in the project filter menu after a project is selected', () => {
         useTaskStore.setState({
             filterText: '',

@@ -157,6 +157,8 @@ ja:
     label_refresh_failed: "データの更新に失敗しました"
     label_project_candidates_load_failed: "プロジェクト候補の取得に失敗しました"
     label_member_projects_only: "プロジェクトフィルタに所属プロジェクトを表示"
+    label_project_search_placeholder: "プロジェクトを検索"
+    label_no_matching_projects: "一致するプロジェクトがありません"
     label_selected_projects_outside_candidates: "現在選択中の一部プロジェクトは候補一覧には表示されません"
     label_selected_trackers_outside_candidates: "現在選択中の一部トラッカーは候補一覧には表示されません"
     label_relation_add_failed: "関連の作成に失敗しました"
