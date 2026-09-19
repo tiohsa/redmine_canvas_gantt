@@ -3206,6 +3206,105 @@ describe('TaskStore dependency grouping', () => {
     });
 });
 
+describe('TaskStore start-only scheduling', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        useUIStore.setState(useUIStore.getInitialState(), true);
+        vi.mocked(apiClient.updateTask).mockReset();
+        vi.mocked(apiClient.updateTask).mockResolvedValue({ status: 'ok', lockVersion: 1 });
+    });
+
+    const modes = [AutoScheduleMoveMode.Off, AutoScheduleMoveMode.ConstraintPush, AutoScheduleMoveMode.LinkedDownstreamShift];
+
+    describe.each([false, true])('autoSave=%s', (autoSave) => {
+        it.each(modes)('moves only the start date and saves no due date in %s mode', async (mode) => {
+            const { setTasks, setRelations, updateTask, saveChanges } = useTaskStore.getState();
+            useTaskStore.setState({ autoSave });
+            useUIStore.setState({ autoScheduleMoveMode: mode });
+            setTasks([
+                buildTask({ id: 'source', startDate: MONDAY, dueDate: MONDAY }),
+                buildTask({ id: 'point', startDate: TUESDAY, dueDate: undefined }),
+                buildTask({ id: 'successor', startDate: WEDNESDAY, dueDate: THURSDAY })
+            ]);
+            setRelations([
+                { id: 'incoming', from: 'source', to: 'point', type: 'precedes' },
+                { id: 'outgoing', from: 'point', to: 'successor', type: 'precedes' }
+            ]);
+
+            updateTask('point', { startDate: FRIDAY });
+
+            const state = useTaskStore.getState();
+            expect(state.allTasks.find(task => task.id === 'point')).toMatchObject({
+                startDate: FRIDAY, dueDate: undefined
+            });
+            expect(state.allTasks.find(task => task.id === 'successor')).toMatchObject({
+                startDate: WEDNESDAY, dueDate: THURSDAY
+            });
+            expect([...state.modifiedTaskIds]).toEqual(['point']);
+            expect(state.localTaskPatches.point).toEqual([
+                expect.objectContaining({ projection: { startDate: FRIDAY }, mutationIntent: { startDate: FRIDAY } })
+            ]);
+
+            // Both drag auto-save and the manual Save action use saveChanges.
+            expect(await saveChanges()).toEqual(new Map());
+
+            expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+            expect(apiClient.updateTask).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'point', startDate: FRIDAY, dueDate: undefined }),
+                expect.any(String),
+                { start_date: '2026-01-09' }
+            );
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'point')?.dueDate).toBeUndefined();
+        });
+
+        it.each(modes)('excludes a start-only successor from propagation in %s mode', (mode) => {
+            const { setTasks, setRelations, updateTask } = useTaskStore.getState();
+            useTaskStore.setState({ autoSave });
+            useUIStore.setState({ autoScheduleMoveMode: mode });
+            setTasks([
+                buildTask({ id: 'source', startDate: MONDAY, dueDate: MONDAY }),
+                buildTask({ id: 'point', startDate: TUESDAY, dueDate: undefined }),
+                buildTask({ id: 'successor', startDate: WEDNESDAY, dueDate: THURSDAY })
+            ]);
+            setRelations([
+                { id: 'incoming', from: 'point', to: 'source', type: 'follows' },
+                { id: 'outgoing', from: 'point', to: 'successor', type: 'precedes' }
+            ]);
+
+            updateTask('source', { startDate: THURSDAY, dueDate: THURSDAY });
+
+            const state = useTaskStore.getState();
+            expect(state.allTasks.find(task => task.id === 'point')).toMatchObject({
+                startDate: TUESDAY, dueDate: undefined
+            });
+            expect(state.allTasks.find(task => task.id === 'successor')).toMatchObject({
+                startDate: WEDNESDAY, dueDate: THURSDAY
+            });
+            expect([...state.modifiedTaskIds]).toEqual(['source']);
+            expect(state.localTaskPatches.point).toBeUndefined();
+        });
+    });
+
+    it('does not fill a start-only successor when adding or changing a dependency', () => {
+        const { setTasks, addRelation, replaceRelation } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'source', startDate: MONDAY, dueDate: THURSDAY }),
+            buildTask({ id: 'point', startDate: TUESDAY, dueDate: undefined })
+        ]);
+        const relation = { id: 'incoming', from: 'source', to: 'point', type: 'precedes' };
+
+        addRelation(relation);
+        replaceRelation({ ...relation, delay: 3 });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === 'point')).toMatchObject({
+            startDate: TUESDAY, dueDate: undefined
+        });
+        expect(state.modifiedTaskIds.size).toBe(0);
+        expect(state.localTaskPatches).toEqual({});
+    });
+});
+
 describe('TaskStore scheduling state and relation-driven recalculation', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);

@@ -462,6 +462,80 @@ describe('HtmlOverlay', () => {
         expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
     });
 
+    it.each([
+        { autoApply: true, autoSave: true },
+        { autoApply: true, autoSave: false },
+        { autoApply: false, autoSave: true },
+        { autoApply: false, autoSave: false }
+    ])('creates a start-only predecessor relation with autoApply=$autoApply, autoSave=$autoSave', async ({ autoApply, autoSave }) => {
+        const predecessor = { ...task1, dueDate: undefined };
+        const relation: Relation = { id: 'rel-start-only', from: '1', to: '2', type: RelationType.Precedes, delay: 1 };
+        vi.mocked(apiClient.createRelation).mockResolvedValue({ status: 'ok', ...relation });
+
+        act(() => {
+            useUIStore.setState({
+                autoApplyDefaultRelation: autoApply,
+                defaultRelationType: RelationType.Precedes,
+                autoCalculateDelay: true
+            });
+            useTaskStore.getState().setTasks([predecessor, task2]);
+            useTaskStore.setState({ autoSave });
+            useTaskStore.getState().setHoveredTask('1');
+        });
+
+        const { container } = render(<HtmlOverlay />);
+        mockOverlayRect(container);
+        fireEvent.mouseDown(container.querySelectorAll('.dependency-handle')[1]);
+        const arrangedTask2 = useTaskStore.getState().tasks.find(t => t.id === '2');
+        const bounds2 = LayoutEngine.getTaskBounds(arrangedTask2!, viewport, 'hit', 2);
+        fireEvent.mouseMove(window, { clientX: bounds2.x + 1, clientY: bounds2.y + 1 });
+        fireEvent.mouseUp(window);
+
+        if (!autoApply) {
+            expect(await screen.findByTestId('relation-delay-input')).toHaveValue('1');
+            expect(screen.queryByText('No auto calculation due to missing dates.')).not.toBeInTheDocument();
+            expect(apiClient.createRelation).not.toHaveBeenCalled();
+            fireEvent.click(screen.getByTestId('relation-save-button'));
+        }
+
+        await waitFor(() => {
+            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, 1, expect.stringMatching(/^mutation:/));
+            expect(useTaskStore.getState().relations).toEqual([relation]);
+        });
+        expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+        expect(useTaskStore.getState().tasks.find(t => t.id === '1')).toMatchObject({ startDate: 0, dueDate: undefined });
+    });
+
+    it('recalculates, validates and saves follows using the start-only predecessor', async () => {
+        const relation: Relation = { id: 'rel-follows', from: '2', to: '1', type: RelationType.Follows, delay: 0 };
+        vi.mocked(apiClient.updateRelation).mockResolvedValue({ status: 'ok', ...relation, delay: 1 });
+        act(() => {
+            useTaskStore.getState().setTasks([{ ...task1, dueDate: undefined }, task2]);
+            useTaskStore.getState().setRelations([relation]);
+            useTaskStore.getState().selectRelation(relation.id);
+        });
+
+        render(<HtmlOverlay />);
+        const relationTypeSelect = await screen.findByTestId('relation-type-select');
+        fireEvent.change(relationTypeSelect, { target: { value: RelationType.Relates } });
+        fireEvent.change(relationTypeSelect, { target: { value: RelationType.Precedes } });
+        const delayInput = screen.getByTestId('relation-delay-input');
+        expect(delayInput).toHaveValue('1');
+        expect(screen.queryByText('No auto calculation due to missing dates.')).not.toBeInTheDocument();
+
+        fireEvent.change(delayInput, { target: { value: '2' } });
+        fireEvent.click(screen.getByTestId('relation-save-button'));
+        expect(await screen.findByTestId('relation-error')).toHaveTextContent('Delay does not match the current task dates.');
+        expect(apiClient.updateRelation).not.toHaveBeenCalled();
+
+        fireEvent.change(delayInput, { target: { value: '1' } });
+        fireEvent.click(screen.getByTestId('relation-save-button'));
+        await waitFor(() => {
+            expect(apiClient.updateRelation).toHaveBeenCalledWith(relation.id, RelationType.Follows, 1, expect.stringMatching(/^mutation:/));
+            expect(useTaskStore.getState().relations).toEqual([{ ...relation, delay: 1 }]);
+        });
+    });
+
     it('blocks auto-applied relation creation when an endpoint has pending consistency intent', async () => {
         act(() => {
             useUIStore.setState({
@@ -677,7 +751,7 @@ describe('HtmlOverlay', () => {
 
         act(() => {
             useTaskStore.getState().setTasks([
-                { ...task1, dueDate: undefined },
+                { ...task1, startDate: undefined, dueDate: undefined },
                 task2
             ]);
             useTaskStore.getState().setDraftRelation({
