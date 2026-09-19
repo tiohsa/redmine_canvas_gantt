@@ -58,7 +58,10 @@ export class OverlayRenderer {
         const totalRows = rowCount || tasks.length;
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, totalRows);
 
-        const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
+        const visibleTasks = filterTasksVisibleByDate(
+            LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow),
+            { showStartDateOnly, showDueDateOnly }
+        );
         const bufferedTasks = LayoutEngine.sliceTasksInRowRange(
             tasks,
             Math.max(0, startRow - OverlayRenderer.DEPENDENCY_ROW_BUFFER),
