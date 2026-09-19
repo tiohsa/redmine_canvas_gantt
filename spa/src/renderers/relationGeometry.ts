@@ -62,8 +62,8 @@ export const buildRelationRoutePoints = (
     const toTask = context.taskById.get(normalizedRelation.to);
     if (!fromTask || !toTask) return null;
 
-    if (!Number.isFinite(fromTask.startDate) || !Number.isFinite(fromTask.dueDate) ||
-        !Number.isFinite(toTask.startDate) || !Number.isFinite(toTask.dueDate)) {
+    if ((!Number.isFinite(fromTask.startDate) && !Number.isFinite(fromTask.dueDate)) ||
+        (!Number.isFinite(toTask.startDate) && !Number.isFinite(toTask.dueDate))) {
         return null;
     }
 

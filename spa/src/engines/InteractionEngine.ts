@@ -14,6 +14,7 @@ import {
 import { timelineToCalendarDate } from '../utils/dateOnly';
 import { diffWorkingDays, normalizeWorkingDate, shiftByWorkingDays } from '../utils/businessCalendar';
 import { panViewportByPixels } from './viewportPan';
+import { filterTasksVisibleByDate, isTaskVisibleByDate } from '../utils/taskRange';
 
 type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
 const TASK_MOVE_CURSOR = 'move';
@@ -94,11 +95,13 @@ export class InteractionEngine {
 
     private hitTest(x: number, y: number): { task: Task | null; region: 'body' | 'start' | 'end' } {
         const { tasks, viewport, rowCount, zoomLevel } = useTaskStore.getState();
+        const displaySettings = useUIStore.getState();
 
         const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
         const visibleTasks = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
 
         for (const t of visibleTasks) {
+            if (!isTaskVisibleByDate(t, displaySettings)) continue;
             const bounds = LayoutEngine.getTaskBounds(t, viewport, 'hit', zoomLevel);
             if (y < bounds.y || y > bounds.y + bounds.height) {
                 continue;
@@ -182,13 +185,14 @@ export class InteractionEngine {
         );
     }
 
-    private getResizeRegionFromTarget(target: EventTarget | null): 'start' | 'end' | null {
+    private getResizeHandleTarget(target: EventTarget | null): { taskId: string; region: 'start' | 'end' } | null {
         if (!(target instanceof Element)) return null;
         const handle = target.closest('.task-resize-handle');
         if (!handle) return null;
 
+        const taskId = handle.getAttribute('data-task-id');
         const region = handle.getAttribute('data-region');
-        return region === 'start' || region === 'end' ? region : null;
+        return taskId && (region === 'start' || region === 'end') ? { taskId, region } : null;
     }
 
     private snapToDate(timestamp: number): number {
@@ -233,7 +237,11 @@ export class InteractionEngine {
             Math.max(0, startRow - RELATION_ROW_BUFFER),
             Math.min(totalRows - 1, endRow + RELATION_ROW_BUFFER)
         );
-        const context = buildRelationRenderContext(bufferedTasks, viewport, zoomLevel);
+        const context = buildRelationRenderContext(
+            filterTasksVisibleByDate(bufferedTasks, useUIStore.getState()),
+            viewport,
+            zoomLevel
+        );
         const worldPoint = {
             x: x + viewport.scrollX,
             y: y + viewport.scrollY
@@ -272,9 +280,13 @@ export class InteractionEngine {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        const handleRegion = this.getResizeRegionFromTarget(downTarget);
+        const handleTarget = this.getResizeHandleTarget(downTarget);
         const hit = this.hitTest(x, y);
-        const resolvedHit = handleRegion && hit.task ? { ...hit, region: handleRegion } : hit;
+        const handleTask = handleTarget && useTaskStore.getState().tasks.find(task => (
+            task.id === handleTarget.taskId && isTaskVisibleByDate(task, useUIStore.getState())
+        ));
+        const handleRegion = handleTask ? handleTarget.region : null;
+        const resolvedHit = handleTask && handleRegion ? { task: handleTask, region: handleRegion } : hit;
         const isResizeIntent = this.isResizeIntent(resolvedHit, handleRegion, x, y);
         const relation = this.hitTestRelation(x, y);
         if (relation && !isResizeIntent && (!resolvedHit.task || !this.isPointerWithinActualTaskHitBounds(resolvedHit.task, x, y))) {
@@ -371,8 +383,10 @@ export class InteractionEngine {
                     const { tasks, rowCount, zoomLevel: currentZoom } = useTaskStore.getState();
                     const [startRow, endRow] = LayoutEngine.getVisibleRowRange(viewport, rowCount || tasks.length);
                     const candidates = LayoutEngine.sliceTasksInRowRange(tasks, startRow, endRow);
+                    const displaySettings = useUIStore.getState();
                     const HOVER_MARGIN = 20; // Enough to cover handle offset (12px) + handle size (10px)
                     for (const t of candidates) {
+                        if (!isTaskVisibleByDate(t, displaySettings)) continue;
                         const bounds = LayoutEngine.getTaskBounds(t, viewport, 'hit', currentZoom);
                         // Expand horizontally
                         if (x >= bounds.x - HOVER_MARGIN && x <= bounds.x + bounds.width + HOVER_MARGIN &&
@@ -443,26 +457,52 @@ export class InteractionEngine {
                 }
             }
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
-            const timeDelta = dx / viewport.scale;
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
-            const newStart = normalizeWorkingDate(
-                this.snapToDate(this.drag.originalStartDate! + timeDelta),
-                'forward',
-                currentTask?.projectId
-            );
+            let candidateStart: number;
+            if (Number.isFinite(this.drag.originalStartDate)) {
+                const timeDelta = dx / viewport.scale;
+                candidateStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
+            } else if (Number.isFinite(this.drag.originalDueDate)) {
+                const pointerTimelineX = e.clientX - rect.left + viewport.scrollX;
+                candidateStart = timelineToCalendarDate(LayoutEngine.xToDate(pointerTimelineX, viewport));
+            } else {
+                return;
+            }
 
+            // Only the pointer crossing the due date clears the start date, not calendar normalization.
+            if (candidateStart > this.drag.originalDueDate!) {
+                if (Number.isFinite(currentTask?.startDate)) {
+                    updateTask(this.drag.taskId, { startDate: undefined });
+                }
+                return;
+            }
+
+            const newStart = normalizeWorkingDate(candidateStart, 'forward', currentTask?.projectId);
             if (currentTask && newStart <= this.drag.originalDueDate! && currentTask.startDate !== newStart) {
                 updateTask(this.drag.taskId, { startDate: newStart });
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
-            const timeDelta = dx / viewport.scale;
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
-            const newEnd = normalizeWorkingDate(
-                this.snapToDate(this.drag.originalDueDate! + timeDelta),
-                'backward',
-                currentTask?.projectId
-            );
+            let candidateEnd: number;
+            if (Number.isFinite(this.drag.originalDueDate)) {
+                const timeDelta = dx / viewport.scale;
+                candidateEnd = this.snapToDate(this.drag.originalDueDate! + timeDelta);
+            } else if (Number.isFinite(this.drag.originalStartDate)) {
+                const pointerTimelineX = e.clientX - rect.left + viewport.scrollX;
+                candidateEnd = timelineToCalendarDate(LayoutEngine.xToDate(pointerTimelineX, viewport));
+            } else {
+                return;
+            }
 
+            // Only the pointer crossing the start date clears the due date, not calendar normalization.
+            if (candidateEnd < this.drag.originalStartDate!) {
+                if (Number.isFinite(currentTask?.dueDate)) {
+                    updateTask(this.drag.taskId, { dueDate: undefined });
+                }
+                return;
+            }
+
+            const newEnd = normalizeWorkingDate(candidateEnd, 'backward', currentTask?.projectId);
             if (currentTask && newEnd >= this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
                 updateTask(this.drag.taskId, { dueDate: newEnd });
             }

@@ -1,5 +1,22 @@
 import type { Task } from '../types';
 
+export const isTaskVisibleByDate = (
+    task: Task,
+    settings: { showStartDateOnly: boolean; showDueDateOnly: boolean }
+): boolean => {
+    const hasStart = Number.isFinite(task.startDate);
+    const hasDue = Number.isFinite(task.dueDate);
+    if (hasStart && hasDue) return true;
+    if (hasStart) return settings.showStartDateOnly;
+    if (hasDue) return settings.showDueDateOnly;
+    return true;
+};
+
+export const filterTasksVisibleByDate = (
+    tasks: Task[],
+    settings: { showStartDateOnly: boolean; showDueDateOnly: boolean }
+): Task[] => tasks.filter((task) => isTaskVisibleByDate(task, settings));
+
 export const getMinFiniteStartDate = (tasks: Task[]): number | null => {
     let min: number | null = null;
     for (const task of tasks) {
@@ -19,4 +36,3 @@ export const getMaxFiniteDueDate = (tasks: Task[]): number | null => {
     }
     return max;
 };
-

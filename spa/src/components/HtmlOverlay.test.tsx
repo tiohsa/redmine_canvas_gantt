@@ -83,7 +83,9 @@ describe('HtmlOverlay', () => {
         useUIStore.setState({
             ...useUIStore.getState(),
             issueDialogUrl: null,
-            notifications: []
+            notifications: [],
+            showStartDateOnly: true,
+            showDueDateOnly: true
         });
 
         useTaskStore.setState({
@@ -202,7 +204,8 @@ describe('HtmlOverlay', () => {
 
         const startHandle = screen.getByTestId('task-resize-handle-start-1');
         expect(startHandle).toBeInTheDocument();
-        expect(screen.getByTestId('task-resize-handle-end-1')).toBeInTheDocument();
+        expect(startHandle).toHaveAttribute('data-task-id', '1');
+        expect(screen.getByTestId('task-resize-handle-end-1')).toHaveAttribute('data-task-id', '1');
         expect(startHandle.getAttribute('style')).toContain('background: rgba(26, 115, 232, 0.18)');
         expect(startHandle.getAttribute('style')).toContain('border: 1px solid rgba(26, 115, 232, 0.68)');
     });
@@ -302,16 +305,130 @@ describe('HtmlOverlay', () => {
         expect(screen.getByTestId('task-resize-handle-end-1')).toBeInTheDocument();
     });
 
-    it('does not show resize handles for parent, read-only, or single-date tasks', () => {
+    it('shows only an end resize handle for a start-date-only task', () => {
+        const startOnlyTask = { ...task2, id: 'start-only', dueDate: Number.NaN };
+
+        act(() => {
+            useTaskStore.getState().setTasks([startOnlyTask]);
+            useTaskStore.getState().setHoveredTask('start-only');
+        });
+
+        render(<HtmlOverlay />);
+
+        expect(screen.queryByTestId('task-resize-handle-start-start-only')).not.toBeInTheDocument();
+        expect(screen.getByTestId('task-resize-handle-end-start-only')).toHaveAttribute('data-task-id', 'start-only');
+    });
+
+    it.each([undefined, Number.NaN])('shows only a start resize handle for a due-date-only task (startDate=%s)', (startDate) => {
+        const dueOnlyTask = { ...task2, id: 'due-only', startDate };
+        act(() => {
+            useTaskStore.getState().setTasks([dueOnlyTask]);
+            useTaskStore.getState().setHoveredTask('due-only');
+        });
+
+        render(<HtmlOverlay />);
+
+        expect(screen.getByTestId('task-resize-handle-start-due-only')).toHaveAttribute('data-task-id', 'due-only');
+        expect(screen.getByTestId('task-resize-handle-start-due-only')).toHaveAttribute('data-region', 'start');
+        expect(screen.queryByTestId('task-resize-handle-end-due-only')).not.toBeInTheDocument();
+    });
+
+    describe.each([
+        { name: 'start-only (undefined)', dates: { dueDate: undefined }, setting: 'showStartDateOnly' as const, otherSetting: 'showDueDateOnly' as const },
+        { name: 'start-only (NaN)', dates: { dueDate: Number.NaN }, setting: 'showStartDateOnly' as const, otherSetting: 'showDueDateOnly' as const },
+        { name: 'due-only (undefined)', dates: { startDate: undefined }, setting: 'showDueDateOnly' as const, otherSetting: 'showStartDateOnly' as const },
+        { name: 'due-only (NaN)', dates: { startDate: Number.NaN }, setting: 'showDueDateOnly' as const, otherSetting: 'showStartDateOnly' as const }
+    ])('$name visibility', ({ dates, setting, otherSetting }) => {
+        it.each(['hovered', 'selected'] as const)('updates handles for a %s point when its display setting changes', (activeState) => {
+            const pointTask = { ...task2, ...dates };
+            act(() => {
+                useTaskStore.getState().setTasks([pointTask]);
+                if (activeState === 'hovered') useTaskStore.getState().setHoveredTask(pointTask.id);
+                else useTaskStore.getState().selectTask(pointTask.id);
+            });
+            const { container } = render(<HtmlOverlay />);
+            expect(container.querySelectorAll('.task-resize-handle')).toHaveLength(1);
+            expect(container.querySelectorAll('.dependency-handle')).toHaveLength(activeState === 'hovered' ? 2 : 0);
+
+            act(() => { useUIStore.setState({ [setting]: false }); });
+            expect(container.querySelectorAll('.task-resize-handle, .dependency-handle')).toHaveLength(0);
+            expect(useTaskStore.getState()[activeState === 'hovered' ? 'hoveredTaskId' : 'selectedTaskId']).toBe(pointTask.id);
+
+            act(() => { useUIStore.setState({ [setting]: true, [otherSetting]: false }); });
+            expect(container.querySelectorAll('.task-resize-handle')).toHaveLength(1);
+            expect(container.querySelectorAll('.dependency-handle')).toHaveLength(activeState === 'hovered' ? 2 : 0);
+        });
+
+        it('does not accept a hidden point as a dependency drop target', () => {
+            const pointTask = { ...task2, ...dates };
+            act(() => {
+                useUIStore.setState({ [setting]: false, autoApplyDefaultRelation: false });
+                useTaskStore.getState().setTasks([task1, pointTask]);
+                useTaskStore.getState().setHoveredTask(task1.id);
+            });
+            const { container } = render(<HtmlOverlay />);
+            mockOverlayRect(container);
+            fireEvent.mouseDown(screen.getByTestId(`dependency-handle-right-${task1.id}`));
+            const arrangedTask = useTaskStore.getState().tasks.find(task => task.id === pointTask.id)!;
+            const bounds = LayoutEngine.getTaskBounds(arrangedTask, viewport, 'hit', 2);
+            fireEvent.mouseMove(window, { clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2 });
+            fireEvent.mouseUp(window);
+
+            expect(useTaskStore.getState().draftRelation).toBeNull();
+            expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+            expect(apiClient.createRelation).not.toHaveBeenCalled();
+        });
+    });
+
+    it.each([
+        { name: 'start-only predecessor', dates: { dueDate: undefined }, relation: { from: 'hidden', to: '2' }, hiddenSettings: { showStartDateOnly: false, showDueDateOnly: true } },
+        { name: 'start-only successor', dates: { dueDate: undefined }, relation: { from: '2', to: 'hidden' }, hiddenSettings: { showStartDateOnly: false, showDueDateOnly: true } },
+        { name: 'due-only predecessor', dates: { startDate: undefined }, relation: { from: 'hidden', to: '2' }, hiddenSettings: { showStartDateOnly: true, showDueDateOnly: false } },
+        { name: 'due-only successor', dates: { startDate: undefined }, relation: { from: '2', to: 'hidden' }, hiddenSettings: { showStartDateOnly: true, showDueDateOnly: false } }
+    ])('hides and restores the relation popover for a hidden $name task', async ({ dates, relation, hiddenSettings }) => {
+        const hiddenTask = { ...task1, id: 'hidden', ...dates };
+        const persistedRelation: Relation = { id: 'rel-hidden', ...relation, type: RelationType.Precedes };
+
+        act(() => {
+            useTaskStore.getState().setTasks([hiddenTask, task2]);
+            useTaskStore.getState().setRelations([persistedRelation]);
+            useTaskStore.getState().selectRelation(persistedRelation.id);
+            useUIStore.setState(hiddenSettings);
+        });
+
+        render(<HtmlOverlay />);
+        expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+
+        act(() => {
+            useUIStore.setState({ showStartDateOnly: true, showDueDateOnly: true });
+        });
+
+        expect(await screen.findByTestId('relation-editor')).toBeInTheDocument();
+    });
+
+    it('keeps normal task handles when both point display settings are disabled', () => {
+        act(() => {
+            useUIStore.setState({ showStartDateOnly: false, showDueDateOnly: false });
+            useTaskStore.getState().setTasks([task1]);
+            useTaskStore.getState().selectTask(task1.id);
+        });
+        const { container } = render(<HtmlOverlay />);
+        expect(container.querySelectorAll('.task-resize-handle')).toHaveLength(2);
+        act(() => { useTaskStore.getState().setHoveredTask(task1.id); });
+        expect(container.querySelectorAll('.task-resize-handle')).toHaveLength(2);
+        expect(container.querySelectorAll('.dependency-handle')).toHaveLength(2);
+    });
+
+    it('does not show resize handles for parent, read-only, or undated tasks', () => {
         const parentTask = { ...task1, id: 'parent', hasChildren: true };
         const readonlyTask = { ...task2, id: 'readonly', editable: false, rowIndex: 1 };
-        const singleDateTask = { ...task2, id: 'single-date', rowIndex: 2, dueDate: Number.NaN };
+        const undatedTask = { ...task2, id: 'undated', rowIndex: 2, startDate: Number.NaN, dueDate: undefined };
 
         act(() => {
             useTaskStore.setState({
                 ...useTaskStore.getState(),
-                allTasks: [parentTask, readonlyTask, singleDateTask],
-                tasks: [parentTask, readonlyTask, singleDateTask],
+                allTasks: [parentTask, readonlyTask, undatedTask],
+                tasks: [parentTask, readonlyTask, undatedTask],
                 layoutRows: [],
                 rowCount: 3,
                 hoveredTaskId: 'parent'
@@ -330,11 +447,11 @@ describe('HtmlOverlay', () => {
         expect(screen.queryByTestId('task-resize-handle-end-readonly')).not.toBeInTheDocument();
 
         act(() => {
-            useTaskStore.setState({ ...useTaskStore.getState(), hoveredTaskId: 'single-date' });
+            useTaskStore.setState({ ...useTaskStore.getState(), hoveredTaskId: 'undated' });
         });
         rerender(<HtmlOverlay />);
-        expect(screen.queryByTestId('task-resize-handle-start-single-date')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('task-resize-handle-end-single-date')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-resize-handle-start-undated')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('task-resize-handle-end-undated')).not.toBeInTheDocument();
     });
 
 
@@ -369,6 +486,80 @@ describe('HtmlOverlay', () => {
             expect(useTaskStore.getState().relations).toEqual([relation]);
         });
         expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+    });
+
+    it.each([
+        { autoApply: true, autoSave: true },
+        { autoApply: true, autoSave: false },
+        { autoApply: false, autoSave: true },
+        { autoApply: false, autoSave: false }
+    ])('creates a start-only predecessor relation with autoApply=$autoApply, autoSave=$autoSave', async ({ autoApply, autoSave }) => {
+        const predecessor = { ...task1, dueDate: undefined };
+        const relation: Relation = { id: 'rel-start-only', from: '1', to: '2', type: RelationType.Precedes, delay: 1 };
+        vi.mocked(apiClient.createRelation).mockResolvedValue({ status: 'ok', ...relation });
+
+        act(() => {
+            useUIStore.setState({
+                autoApplyDefaultRelation: autoApply,
+                defaultRelationType: RelationType.Precedes,
+                autoCalculateDelay: true
+            });
+            useTaskStore.getState().setTasks([predecessor, task2]);
+            useTaskStore.setState({ autoSave });
+            useTaskStore.getState().setHoveredTask('1');
+        });
+
+        const { container } = render(<HtmlOverlay />);
+        mockOverlayRect(container);
+        fireEvent.mouseDown(container.querySelectorAll('.dependency-handle')[1]);
+        const arrangedTask2 = useTaskStore.getState().tasks.find(t => t.id === '2');
+        const bounds2 = LayoutEngine.getTaskBounds(arrangedTask2!, viewport, 'hit', 2);
+        fireEvent.mouseMove(window, { clientX: bounds2.x + 1, clientY: bounds2.y + 1 });
+        fireEvent.mouseUp(window);
+
+        if (!autoApply) {
+            expect(await screen.findByTestId('relation-delay-input')).toHaveValue('1');
+            expect(screen.queryByText('No auto calculation due to missing dates.')).not.toBeInTheDocument();
+            expect(apiClient.createRelation).not.toHaveBeenCalled();
+            fireEvent.click(screen.getByTestId('relation-save-button'));
+        }
+
+        await waitFor(() => {
+            expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, 1, expect.stringMatching(/^mutation:/));
+            expect(useTaskStore.getState().relations).toEqual([relation]);
+        });
+        expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+        expect(useTaskStore.getState().tasks.find(t => t.id === '1')).toMatchObject({ startDate: 0, dueDate: undefined });
+    });
+
+    it('recalculates, validates and saves follows using the start-only predecessor', async () => {
+        const relation: Relation = { id: 'rel-follows', from: '2', to: '1', type: RelationType.Follows, delay: 0 };
+        vi.mocked(apiClient.updateRelation).mockResolvedValue({ status: 'ok', ...relation, delay: 1 });
+        act(() => {
+            useTaskStore.getState().setTasks([{ ...task1, dueDate: undefined }, task2]);
+            useTaskStore.getState().setRelations([relation]);
+            useTaskStore.getState().selectRelation(relation.id);
+        });
+
+        render(<HtmlOverlay />);
+        const relationTypeSelect = await screen.findByTestId('relation-type-select');
+        fireEvent.change(relationTypeSelect, { target: { value: RelationType.Relates } });
+        fireEvent.change(relationTypeSelect, { target: { value: RelationType.Precedes } });
+        const delayInput = screen.getByTestId('relation-delay-input');
+        expect(delayInput).toHaveValue('1');
+        expect(screen.queryByText('No auto calculation due to missing dates.')).not.toBeInTheDocument();
+
+        fireEvent.change(delayInput, { target: { value: '2' } });
+        fireEvent.click(screen.getByTestId('relation-save-button'));
+        expect(await screen.findByTestId('relation-error')).toHaveTextContent('Delay does not match the current task dates.');
+        expect(apiClient.updateRelation).not.toHaveBeenCalled();
+
+        fireEvent.change(delayInput, { target: { value: '1' } });
+        fireEvent.click(screen.getByTestId('relation-save-button'));
+        await waitFor(() => {
+            expect(apiClient.updateRelation).toHaveBeenCalledWith(relation.id, RelationType.Follows, 1, expect.stringMatching(/^mutation:/));
+            expect(useTaskStore.getState().relations).toEqual([{ ...relation, delay: 1 }]);
+        });
     });
 
     it('blocks auto-applied relation creation when an endpoint has pending consistency intent', async () => {
@@ -586,7 +777,7 @@ describe('HtmlOverlay', () => {
 
         act(() => {
             useTaskStore.getState().setTasks([
-                { ...task1, dueDate: undefined },
+                { ...task1, startDate: undefined, dueDate: undefined },
                 task2
             ]);
             useTaskStore.getState().setDraftRelation({

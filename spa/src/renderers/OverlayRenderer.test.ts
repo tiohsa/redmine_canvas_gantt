@@ -61,7 +61,79 @@ const buildTask = (id: string, startDate: number, dueDate: number, rowIndex: num
     hasChildren: false
 });
 
+describe('OverlayRenderer selection highlight', () => {
+    it.each([
+        { name: 'hidden start-only', dates: { dueDate: undefined }, settings: { showStartDateOnly: false, showDueDateOnly: true }, visible: false },
+        { name: 'hidden due-only', dates: { startDate: undefined }, settings: { showStartDateOnly: true, showDueDateOnly: false }, visible: false },
+        { name: 'visible start-only', dates: { dueDate: undefined }, settings: { showStartDateOnly: true, showDueDateOnly: false }, visible: true },
+        { name: 'visible due-only', dates: { startDate: undefined }, settings: { showStartDateOnly: false, showDueDateOnly: true }, visible: true }
+    ])('respects date visibility for a $name task', ({ dates, settings, visible }) => {
+        const ctx = createMockContext();
+        const canvas = {
+            width: 1000,
+            height: 600,
+            getContext: vi.fn(() => ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+        const task = { ...buildTask('1', 0, ONE_DAY, 0), ...dates };
+        useUIStore.setState({ showProgressLine: false });
+
+        renderer.render({
+            viewport,
+            tasks: [task],
+            relations: [],
+            rowCount: 1,
+            zoomLevel: 2,
+            selectedTaskId: task.id,
+            selectedRelationId: null,
+            draftRelation: null,
+            ...settings
+        });
+
+        expect(ctx.strokeRect).toHaveBeenCalledTimes(visible ? 1 : 0);
+    });
+});
+
 describe('OverlayRenderer progress line', () => {
+    it.each([
+        { name: 'start-only', dates: { dueDate: undefined }, settings: { showStartDateOnly: false, showDueDateOnly: true } },
+        { name: 'due-only', dates: { startDate: undefined }, settings: { showStartDateOnly: true, showDueDateOnly: false } }
+    ])('skips a hidden $name task while drawing a visible normal task', ({ dates, settings }) => {
+        const today = parseDateOnly('2026-01-10')!;
+        const dateViewport = { ...viewport, startDate: addCalendarDays(today, -4) };
+        const tasks = [
+            { ...buildTask('1', addCalendarDays(today, -3), addCalendarDays(today, -2), 0), ...dates },
+            buildTask('2', addCalendarDays(today, -2), addCalendarDays(today, -1), 1)
+        ];
+        useTaskStore.setState({ taskStatuses: [{ id: 1, name: 'Open', isClosed: false }] });
+        useUIStore.setState({ showProgressLine: true });
+        const ctx = createMockContext();
+        const canvas = {
+            width: 1000,
+            height: 600,
+            getContext: vi.fn(() => ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+
+        renderer.render({
+            viewport: dateViewport,
+            tasks,
+            relations: [],
+            rowCount: tasks.length,
+            zoomLevel: 2,
+            selectedTaskId: null,
+            selectedRelationId: null,
+            draftRelation: null,
+            today,
+            ...settings
+        });
+
+        expect(vi.mocked(ctx.lineTo).mock.calls).toEqual([
+            [2, viewport.rowHeight * 1.5],
+            [5, canvas.height]
+        ]);
+    });
+
     it('passes through today line when due date is today', () => {
         const todayStart = fromLocalDate(new Date());
         const viewport = {
@@ -179,6 +251,74 @@ describe('OverlayRenderer today line', () => {
 });
 
 describe('OverlayRenderer dependencies', () => {
+    it.each([
+        { name: 'start-only', dates: { dueDate: undefined }, settings: { showStartDateOnly: false, showDueDateOnly: true } },
+        { name: 'due-only', dates: { startDate: undefined }, settings: { showStartDateOnly: true, showDueDateOnly: false } }
+    ])('does not draw a relation when its $name endpoint is hidden', ({ dates, settings }) => {
+        const ctx = createMockContext();
+        const canvas = {
+            width: 1000,
+            height: 600,
+            getContext: vi.fn(() => ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+        const tasks = [
+            { ...buildTask('1', 0, ONE_DAY, 0), ...dates },
+            buildTask('2', ONE_DAY * 4, ONE_DAY * 5, 1)
+        ];
+        const relation: Relation = { id: 'r1', from: '1', to: '2', type: RelationType.Precedes };
+
+        (renderer as unknown as {
+            drawDependencies: (
+                c: CanvasRenderingContext2D,
+                v: Viewport,
+                t: Task[],
+                r: Relation[],
+                d: null,
+                z: 0 | 1 | 2,
+                s: string | null,
+                settings: { showStartDateOnly: boolean; showDueDateOnly: boolean }
+            ) => void;
+        }).drawDependencies(ctx, viewport, tasks, [relation], null, 2, null, settings);
+
+        expect(ctx.stroke).not.toHaveBeenCalled();
+        expect(ctx.fill).not.toHaveBeenCalled();
+    });
+
+    it('draws a relation when a single-date endpoint is visible', () => {
+        const ctx = createMockContext();
+        const canvas = {
+            width: 1000,
+            height: 600,
+            getContext: vi.fn(() => ctx)
+        } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+        const tasks = [
+            { ...buildTask('1', 0, ONE_DAY, 0), dueDate: undefined },
+            buildTask('2', ONE_DAY * 4, ONE_DAY * 5, 1)
+        ];
+        const relation: Relation = { id: 'r1', from: '1', to: '2', type: RelationType.Precedes };
+
+        (renderer as unknown as {
+            drawDependencies: (
+                c: CanvasRenderingContext2D,
+                v: Viewport,
+                t: Task[],
+                r: Relation[],
+                d: null,
+                z: 0 | 1 | 2,
+                s: string | null,
+                settings: { showStartDateOnly: boolean; showDueDateOnly: boolean }
+            ) => void;
+        }).drawDependencies(ctx, viewport, tasks, [relation], null, 2, null, {
+            showStartDateOnly: true,
+            showDueDateOnly: true
+        });
+
+        expect(ctx.stroke).toHaveBeenCalled();
+        expect(ctx.fill).toHaveBeenCalledTimes(1);
+    });
+
     it('does not draw an arrowhead for relates relations', () => {
         const ctx = createMockContext();
         const canvas = {

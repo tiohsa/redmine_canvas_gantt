@@ -116,14 +116,19 @@ const resolveDelayEndpoints = (
         ? { predecessor: fromTask, successor: toTask }
         : { predecessor: toTask, successor: fromTask };
 
-const hasFiniteDelayBoundaryDates = (endpoints: DelayEndpoints): endpoints is {
-    predecessor: DelayTask & { dueDate: number };
-    successor: DelayTask & { startDate: number };
-} =>
-    endpoints.predecessor?.dueDate !== undefined &&
-    Number.isFinite(endpoints.predecessor.dueDate) &&
-    endpoints.successor?.startDate !== undefined &&
-    Number.isFinite(endpoints.successor.startDate);
+const resolveDelayBoundaryDates = ({ predecessor, successor }: DelayEndpoints) => {
+    // Redmine's scheduling boundary may fall back to start without assigning a due date.
+    const predecessorBoundary = Number.isFinite(predecessor?.dueDate)
+        ? predecessor?.dueDate
+        : predecessor?.startDate;
+    const successorStart = successor?.startDate;
+    if (predecessorBoundary === undefined || !Number.isFinite(predecessorBoundary) ||
+        successorStart === undefined || !Number.isFinite(successorStart)) {
+        return undefined;
+    }
+
+    return { predecessorBoundary, successorStart, successorProjectId: successor?.projectId };
+};
 
 const getAutoCalculationUnavailableMessage = (): string =>
     i18n.t('label_relation_delay_auto_calc_unavailable') || 'No auto calculation due to missing dates.';
@@ -140,24 +145,24 @@ export const calculateDelay = (
         return {};
     }
 
-    const endpoints = resolveDelayEndpoints(relationType, fromTask, toTask);
-    if (!hasFiniteDelayBoundaryDates(endpoints)) {
+    const dates = resolveDelayBoundaryDates(resolveDelayEndpoints(relationType, fromTask, toTask));
+    if (!dates) {
         return {
             message: getAutoCalculationUnavailableMessage()
         };
     }
 
-    const successorProjectId = endpoints.successor.projectId;
-    const minimumSuccessorStart = addWorkingDays(endpoints.predecessor.dueDate, 1, successorProjectId);
-    if (timelineToCalendarDate(endpoints.successor.startDate) < minimumSuccessorStart) {
+    const { predecessorBoundary, successorStart, successorProjectId } = dates;
+    const minimumSuccessorStart = addWorkingDays(predecessorBoundary, 1, successorProjectId);
+    if (timelineToCalendarDate(successorStart) < minimumSuccessorStart) {
         return {
             message: getAutoCalculationUnavailableMessage()
         };
     }
 
     const delay = diffWorkingDays(
-        endpoints.predecessor.dueDate,
-        endpoints.successor.startDate,
+        predecessorBoundary,
+        successorStart,
         successorProjectId
     ) - 1;
     return { delay };
@@ -173,17 +178,17 @@ export const validateRelationDelayConsistency = (
         return { valid: true };
     }
 
-    const endpoints = resolveDelayEndpoints(relationType, fromTask, toTask);
-    if (!hasFiniteDelayBoundaryDates(endpoints)) {
+    const dates = resolveDelayBoundaryDates(resolveDelayEndpoints(relationType, fromTask, toTask));
+    if (!dates) {
         return { valid: true };
     }
 
     const minimumSuccessorStart = addWorkingDays(
-        endpoints.predecessor.dueDate,
+        dates.predecessorBoundary,
         1 + delay,
-        endpoints.successor.projectId
+        dates.successorProjectId
     );
-    if (timelineToCalendarDate(endpoints.successor.startDate) >= minimumSuccessorStart) {
+    if (timelineToCalendarDate(dates.successorStart) >= minimumSuccessorStart) {
         return { valid: true };
     }
 
