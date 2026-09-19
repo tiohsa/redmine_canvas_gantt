@@ -53,3 +53,19 @@ RSpec.describe RedmineCanvasGantt::IssueScheduleCalendarPatch do
     expect(issue.due_date).to eq(Date.new(2027, 1, 14))
   end
 end
+
+RSpec.describe 'Redmine Issue#reschedule_on contract' do
+  it 'materializes due_date for a start-only issue using the real Issue class' do
+    issue = Issue.new(
+      start_date: Date.new(2027, 1, 4),
+      due_date: nil
+    )
+
+    expect(issue.working_duration).to eq(0)
+
+    issue.reschedule_on(Date.new(2027, 1, 11))
+
+    expect(issue.start_date).to be_present
+    expect(issue.due_date).to eq(issue.start_date)
+  end
+end

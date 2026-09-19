@@ -204,13 +204,17 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         zoomLevel,
         selectedTaskId,
         selectedRelationId,
-        draftRelation
+        draftRelation,
+        showStartDateOnly,
+        showDueDateOnly
     }), [
         draftRelation,
         relations,
         rowCount,
         selectedRelationId,
         selectedTaskId,
+        showDueDateOnly,
+        showStartDateOnly,
         tasks,
         viewport,
         zoomLevel

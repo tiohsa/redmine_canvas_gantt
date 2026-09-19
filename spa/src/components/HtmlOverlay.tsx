@@ -28,7 +28,7 @@ import { InlineEditService } from '../services/InlineEditService';
 import { useEditMetaStore } from '../stores/EditMetaStore';
 import type { InlineEditSettings } from '../types/editMeta';
 import { useSidebarInlineEdit } from './sidebar/useSidebarInlineEdit';
-import { isTaskVisibleByDate } from '../utils/taskRange';
+import { filterTasksVisibleByDate, isTaskVisibleByDate } from '../utils/taskRange';
 
 const RELATION_POPOVER_OFFSET = 12;
 const PRIMARY_COLOR = designTokens.controlActiveFg;
@@ -165,6 +165,15 @@ export const HtmlOverlay: React.FC = () => {
     const relationPopoverTarget = React.useMemo<RelationPopoverTarget | null>(() => {
         if (!activeRelation) return null;
 
+        const displaySettings = { showStartDateOnly, showDueDateOnly };
+        const fromTask = taskById.get(activeRelation.from);
+        const toTask = taskById.get(activeRelation.to);
+        if (!fromTask || !toTask ||
+            !isTaskVisibleByDate(fromTask, displaySettings) ||
+            !isTaskVisibleByDate(toTask, displaySettings)) {
+            return null;
+        }
+
         const editableView = toEditableRelationView(activeRelation);
         return {
             relation: activeRelation,
@@ -177,7 +186,7 @@ export const HtmlOverlay: React.FC = () => {
             from: getTaskLabel(editableView.fromId),
             to: getTaskLabel(editableView.toId)
         };
-    }, [activePersistedRelation, activeRelation, draftRelation, getTaskLabel]);
+    }, [activePersistedRelation, activeRelation, draftRelation, getTaskLabel, showDueDateOnly, showStartDateOnly, taskById]);
 
     const relationAnchor = React.useMemo(() => {
         if (!activeRelation) return null;
@@ -189,7 +198,11 @@ export const HtmlOverlay: React.FC = () => {
                 Math.max(0, startRow - 50),
                 Math.min(totalRows - 1, endRow + 50)
             );
-            const context = buildRelationRenderContext(bufferedTasks, viewport, zoomLevel);
+            const context = buildRelationRenderContext(
+                filterTasksVisibleByDate(bufferedTasks, { showStartDateOnly, showDueDateOnly }),
+                viewport,
+                zoomLevel
+            );
             const points = buildRelationRoutePoints(activeRelation, context, viewport);
             if (points) {
                 const midpoint = getPolylineMidpoint(points);
@@ -201,7 +214,7 @@ export const HtmlOverlay: React.FC = () => {
         }
 
         return draftRelation?.anchor ?? null;
-    }, [activeRelation, draftRelation, endRow, rowCount, startRow, tasks, viewport, zoomLevel]);
+    }, [activeRelation, draftRelation, endRow, rowCount, showDueDateOnly, showStartDateOnly, startRow, tasks, viewport, zoomLevel]);
 
     const activeBaselineTaskId = hoveredTaskId ?? selectedTaskId;
     const activeBaselineTask = React.useMemo(
@@ -422,8 +435,16 @@ export const HtmlOverlay: React.FC = () => {
 
     const relatedRelations = React.useMemo(() => {
         if (!contextMenu) return [];
-        return relations.filter((relation) => relation.from === contextMenu.taskId || relation.to === contextMenu.taskId);
-    }, [contextMenu, relations]);
+        const displaySettings = { showStartDateOnly, showDueDateOnly };
+        return relations.filter((relation) => {
+            if (relation.from !== contextMenu.taskId && relation.to !== contextMenu.taskId) return false;
+            const fromTask = taskById.get(relation.from);
+            const toTask = taskById.get(relation.to);
+            return !!fromTask && !!toTask &&
+                isTaskVisibleByDate(fromTask, displaySettings) &&
+                isTaskVisibleByDate(toTask, displaySettings);
+        });
+    }, [contextMenu, relations, showDueDateOnly, showStartDateOnly, taskById]);
 
     React.useEffect(() => {
         if (!contextMenu) {

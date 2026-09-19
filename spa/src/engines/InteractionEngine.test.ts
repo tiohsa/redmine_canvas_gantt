@@ -1215,6 +1215,49 @@ describe('InteractionEngine cursor behavior', () => {
 });
 
 describe('InteractionEngine relation selection', () => {
+    it.each([
+        { name: 'start-only', dates: { dueDate: undefined }, settings: { showStartDateOnly: false, showDueDateOnly: true } },
+        { name: 'due-only', dates: { startDate: undefined }, settings: { showStartDateOnly: true, showDueDateOnly: false } }
+    ])('does not select a relation connected to a hidden $name task', ({ dates, settings }) => {
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        useUIStore.setState(settings);
+        setViewport({ scale: 1 / DAY_MS, rowHeight: 36 });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+
+        const task1 = baseTask({ id: '1', rowIndex: 0, startDate: 0, dueDate: DAY_MS, ...dates });
+        const task2 = baseTask({ id: '2', rowIndex: 1, startDate: DAY_MS * 4, dueDate: DAY_MS * 5 });
+        const relation: Relation = { id: 'r1', from: '1', to: '2', type: RelationType.Precedes };
+
+        useTaskStore.setState({
+            allTasks: [task1, task2],
+            tasks: [task1, task2],
+            relations: [relation],
+            layoutRows: [],
+            rowCount: 2,
+            selectedTaskId: null,
+            selectedRelationId: null,
+            draftRelation: null
+        });
+
+        const { viewport, zoomLevel, tasks } = useTaskStore.getState();
+        const context = buildRelationRenderContext(tasks, viewport, zoomLevel);
+        const points = buildRelationRoutePoints(relation, context, viewport);
+        expect(points).toBeTruthy();
+        const midpoint = getPolylineMidpoint(points!);
+
+        container.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: midpoint.x - viewport.scrollX,
+            clientY: midpoint.y - viewport.scrollY,
+            bubbles: true
+        }));
+
+        expect(useTaskStore.getState().selectedRelationId).toBeNull();
+
+        engine.detach();
+        container.remove();
+    });
+
     it('selects a visible relation when clicking near its route', () => {
         const DAY_MS = 24 * 60 * 60 * 1000;
         setViewport({ scale: 1 / DAY_MS, rowHeight: 36 });

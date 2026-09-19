@@ -12,6 +12,7 @@ import {
 import { designTokens } from '../styles/designTokens';
 import { getCanvasLogicalSize } from '../utils/canvasDpr';
 import { todayCalendarDate, type CalendarDate } from '../utils/dateOnly';
+import { filterTasksVisibleByDate } from '../utils/taskRange';
 
 export type OverlayRenderState = {
     viewport: Viewport;
@@ -22,6 +23,8 @@ export type OverlayRenderState = {
     selectedTaskId: string | null;
     selectedRelationId: string | null;
     draftRelation: DraftRelation | null;
+    showStartDateOnly?: boolean;
+    showDueDateOnly?: boolean;
     today?: CalendarDate;
 };
 
@@ -42,6 +45,8 @@ export class OverlayRenderer {
         selectedTaskId,
         selectedRelationId,
         draftRelation,
+        showStartDateOnly = true,
+        showDueDateOnly = true,
         today = todayCalendarDate()
     }: OverlayRenderState) {
         const ctx = this.canvas.getContext('2d');
@@ -61,7 +66,16 @@ export class OverlayRenderer {
         );
 
         if (shouldRenderRelationsAtZoom(zoomLevel)) {
-            this.drawDependencies(ctx, viewport, bufferedTasks, relations, draftRelation, zoomLevel, selectedRelationId);
+            this.drawDependencies(
+                ctx,
+                viewport,
+                bufferedTasks,
+                relations,
+                draftRelation,
+                zoomLevel,
+                selectedRelationId,
+                { showStartDateOnly, showDueDateOnly }
+            );
         }
 
         // Draw selection highlight
@@ -177,9 +191,14 @@ export class OverlayRenderer {
         relations: Relation[],
         draftRelation: DraftRelation | null,
         zoomLevel: ZoomLevel,
-        selectedRelationId: string | null
+        selectedRelationId: string | null,
+        displaySettings: { showStartDateOnly: boolean; showDueDateOnly: boolean } = {
+            showStartDateOnly: true,
+            showDueDateOnly: true
+        }
     ) {
-        const context = buildRelationRenderContext(tasks, viewport, zoomLevel);
+        const visibleTasks = filterTasksVisibleByDate(tasks, displaySettings);
+        const context = buildRelationRenderContext(visibleTasks, viewport, zoomLevel);
         const drawableRelations = draftRelation ? [...relations, { id: '__draft__', ...draftRelation }] : relations;
 
         drawableRelations.forEach((relation) => {

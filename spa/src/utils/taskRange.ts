@@ -12,6 +12,11 @@ export const isTaskVisibleByDate = (
     return true;
 };
 
+export const filterTasksVisibleByDate = (
+    tasks: Task[],
+    settings: { showStartDateOnly: boolean; showDueDateOnly: boolean }
+): Task[] => tasks.filter((task) => isTaskVisibleByDate(task, settings));
+
 export const getMinFiniteStartDate = (tasks: Task[]): number | null => {
     let min: number | null = null;
     for (const task of tasks) {

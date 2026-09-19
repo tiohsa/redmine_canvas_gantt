@@ -380,6 +380,32 @@ describe('HtmlOverlay', () => {
         });
     });
 
+    it.each([
+        { name: 'start-only predecessor', dates: { dueDate: undefined }, relation: { from: 'hidden', to: '2' }, hiddenSettings: { showStartDateOnly: false, showDueDateOnly: true } },
+        { name: 'start-only successor', dates: { dueDate: undefined }, relation: { from: '2', to: 'hidden' }, hiddenSettings: { showStartDateOnly: false, showDueDateOnly: true } },
+        { name: 'due-only predecessor', dates: { startDate: undefined }, relation: { from: 'hidden', to: '2' }, hiddenSettings: { showStartDateOnly: true, showDueDateOnly: false } },
+        { name: 'due-only successor', dates: { startDate: undefined }, relation: { from: '2', to: 'hidden' }, hiddenSettings: { showStartDateOnly: true, showDueDateOnly: false } }
+    ])('hides and restores the relation popover for a hidden $name task', async ({ dates, relation, hiddenSettings }) => {
+        const hiddenTask = { ...task1, id: 'hidden', ...dates };
+        const persistedRelation: Relation = { id: 'rel-hidden', ...relation, type: RelationType.Precedes };
+
+        act(() => {
+            useTaskStore.getState().setTasks([hiddenTask, task2]);
+            useTaskStore.getState().setRelations([persistedRelation]);
+            useTaskStore.getState().selectRelation(persistedRelation.id);
+            useUIStore.setState(hiddenSettings);
+        });
+
+        render(<HtmlOverlay />);
+        expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+
+        act(() => {
+            useUIStore.setState({ showStartDateOnly: true, showDueDateOnly: true });
+        });
+
+        expect(await screen.findByTestId('relation-editor')).toBeInTheDocument();
+    });
+
     it('keeps normal task handles when both point display settings are disabled', () => {
         act(() => {
             useUIStore.setState({ showStartDateOnly: false, showDueDateOnly: false });

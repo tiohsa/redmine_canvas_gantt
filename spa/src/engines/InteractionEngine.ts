@@ -14,7 +14,7 @@ import {
 import { timelineToCalendarDate } from '../utils/dateOnly';
 import { diffWorkingDays, normalizeWorkingDate, shiftByWorkingDays } from '../utils/businessCalendar';
 import { panViewportByPixels } from './viewportPan';
-import { isTaskVisibleByDate } from '../utils/taskRange';
+import { filterTasksVisibleByDate, isTaskVisibleByDate } from '../utils/taskRange';
 
 type DragMode = 'none' | 'pan' | 'task-move' | 'task-resize-start' | 'task-resize-end';
 const TASK_MOVE_CURSOR = 'move';
@@ -237,7 +237,11 @@ export class InteractionEngine {
             Math.max(0, startRow - RELATION_ROW_BUFFER),
             Math.min(totalRows - 1, endRow + RELATION_ROW_BUFFER)
         );
-        const context = buildRelationRenderContext(bufferedTasks, viewport, zoomLevel);
+        const context = buildRelationRenderContext(
+            filterTasksVisibleByDate(bufferedTasks, useUIStore.getState()),
+            viewport,
+            zoomLevel
+        );
         const worldPoint = {
             x: x + viewport.scrollX,
             y: y + viewport.scrollY
