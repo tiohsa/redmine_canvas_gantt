@@ -871,7 +871,8 @@ const normalizeTaskDateUpdates = (task: Task, updates: Partial<Task>): Partial<T
                 dueDate: hasOwnField(updates, 'dueDate')
             },
             projectId: updates.projectId ?? task.projectId,
-            mode: 'legacy_unspecified'
+            mode: 'legacy_unspecified',
+            datePlacementMode: useUIStore.getState().datePlacementMode
         }
     );
     if (!normalized.valid) return { ...nextUpdates, startDate: task.startDate, dueDate: task.dueDate };

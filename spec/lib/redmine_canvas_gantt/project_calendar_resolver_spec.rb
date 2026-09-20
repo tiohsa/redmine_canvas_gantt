@@ -125,6 +125,31 @@ RSpec.describe RedmineCanvasGantt::ProjectCalendarResolver do
     )
   end
 
+  it 'preserves calendar-day endpoints while still validating their order' do
+    custom = calendar(
+      'custom',
+      days: { Date.new(2027, 1, 2) => { name: 'Company holiday', type: 'non_working' } }
+    )
+    repository = instance_double(
+      RedmineCanvasGantt::BusinessCalendarRepository,
+      snapshot: snapshot(default: 'custom', calendars: { 'custom' => custom })
+    )
+    resolver = described_class.new(repository: repository, fallback_non_working_week_days: [0, 6])
+    project = instance_double(Project, id: 1, identifier: 'project', ancestors: [])
+
+    expect(resolver.normalize_date_interval(
+      start_date: Date.new(2027, 1, 2),
+      due_date: Date.new(2027, 1, 3),
+      changed_fields: %i[start_date due_date],
+      project: project,
+      date_placement_mode: :calendar_days
+    )).to eq(
+      valid: true,
+      start_date: Date.new(2027, 1, 2),
+      due_date: Date.new(2027, 1, 3)
+    )
+  end
+
   it 'matches the shared frontend/backend interval vectors' do
     fixture_path = File.expand_path('../../../spa/src/utils/calendarDateIntervalVectors.json', __dir__)
     fixture = JSON.parse(File.read(fixture_path))

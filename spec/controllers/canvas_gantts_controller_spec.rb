@@ -68,7 +68,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
           due_date: '2027-01-04',
           changed_fields: %i[start_date due_date],
           project: project,
-          mode: :legacy_unspecified
+          mode: :legacy_unspecified,
+          date_placement_mode: :working_days
         )
         .and_return(
           valid: true,
@@ -114,7 +115,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
           due_date: '2027-01-04',
           changed_fields: %i[start_date due_date],
           project: project,
-          mode: :project_move
+          mode: :project_move,
+          date_placement_mode: :working_days
         ).and_return(valid: true, start_date: Date.new(2027, 1, 5), due_date: Date.new(2027, 1, 5))
 
       issue = instance_double(
@@ -133,6 +135,38 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(controller.send(:preprocess_draft_intent, issue, intent)).to eq(
         start_date: Date.new(2027, 1, 5),
         due_date: Date.new(2027, 1, 5)
+      )
+    end
+
+    it 'preserves calendar-day dates during direct edit preprocessing' do
+      resolver = instance_double(RedmineCanvasGantt::ProjectCalendarResolver)
+      allow(controller).to receive(:business_calendar_resolver).and_return(resolver)
+      allow(resolver).to receive(:normalize_date_interval)
+        .with(
+          start_date: '2027-01-02',
+          due_date: '2027-01-03',
+          changed_fields: %i[start_date due_date],
+          project: project,
+          mode: :legacy_unspecified,
+          date_placement_mode: :calendar_days
+        ).and_return(valid: true, start_date: Date.new(2027, 1, 2), due_date: Date.new(2027, 1, 3))
+
+      issue = instance_double(
+        Issue,
+        project: project,
+        project_id: project.id,
+        start_date: Date.new(2027, 1, 1),
+        due_date: Date.new(2027, 1, 4)
+      )
+      intent = {
+        start_date: '2027-01-02',
+        due_date: '2027-01-03',
+        date_placement_mode: 'calendar_days'
+      }
+
+      expect(controller.send(:preprocess_draft_intent, issue, intent)).to eq(
+        start_date: Date.new(2027, 1, 2),
+        due_date: Date.new(2027, 1, 3)
       )
     end
 

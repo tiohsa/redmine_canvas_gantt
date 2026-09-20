@@ -11,8 +11,9 @@ import {
     RELATION_HIT_TOLERANCE_PX,
     shouldRenderRelationsAtZoom
 } from '../renderers/relationGeometry';
-import { timelineToCalendarDate } from '../utils/dateOnly';
+import { addCalendarDays, diffCalendarDays, timelineToCalendarDate } from '../utils/dateOnly';
 import { diffWorkingDays, normalizeWorkingDate, shiftByWorkingDays } from '../utils/businessCalendar';
+import { DatePlacementMode } from '../types/constraints';
 import { panViewportByPixels } from './viewportPan';
 import { filterTasksVisibleByDate, isTaskVisibleByDate } from '../utils/taskRange';
 
@@ -415,16 +416,23 @@ export class InteractionEngine {
             const timeDelta = dx / viewport.scale;
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
             const projectId = currentTask?.projectId;
+            const datePlacementMode = useUIStore.getState().datePlacementMode;
 
             if (Number.isFinite(this.drag.originalStartDate) && Number.isFinite(this.drag.originalDueDate)) {
                 const candidateStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
-                const newStart = normalizeWorkingDate(candidateStart, 'forward', projectId);
-                const durationDays = diffWorkingDays(
-                    this.drag.originalStartDate!,
-                    this.drag.originalDueDate!,
-                    projectId
-                );
-                const newDue = shiftByWorkingDays(newStart, durationDays, projectId);
+                const newStart = datePlacementMode === DatePlacementMode.CalendarDays
+                    ? candidateStart
+                    : normalizeWorkingDate(candidateStart, 'forward', projectId);
+                const newDue = datePlacementMode === DatePlacementMode.CalendarDays
+                    ? addCalendarDays(
+                        this.drag.originalDueDate!,
+                        diffCalendarDays(this.drag.originalStartDate!, candidateStart)
+                    )
+                    : shiftByWorkingDays(
+                        newStart,
+                        diffWorkingDays(this.drag.originalStartDate!, this.drag.originalDueDate!, projectId),
+                        projectId
+                    );
 
                 if (currentTask && currentTask.startDate !== newStart) {
                     updateTask(this.drag.taskId, {
@@ -433,11 +441,10 @@ export class InteractionEngine {
                     });
                 }
             } else if (Number.isFinite(this.drag.originalStartDate)) {
-                const newStart = normalizeWorkingDate(
-                    this.snapToDate(this.drag.originalStartDate! + timeDelta),
-                    'forward',
-                    projectId
-                );
+                const candidateStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
+                const newStart = datePlacementMode === DatePlacementMode.CalendarDays
+                    ? candidateStart
+                    : normalizeWorkingDate(candidateStart, 'forward', projectId);
                 if (currentTask && currentTask.startDate !== newStart) {
                     updateTask(this.drag.taskId, {
                         startDate: newStart
@@ -445,11 +452,10 @@ export class InteractionEngine {
                 }
             } else if (Number.isFinite(this.drag.originalDueDate)) {
                 // Determine delta based on drag start
-                const newDue = normalizeWorkingDate(
-                    this.snapToDate(this.drag.originalDueDate! + timeDelta),
-                    'backward',
-                    projectId
-                );
+                const candidateDue = this.snapToDate(this.drag.originalDueDate! + timeDelta);
+                const newDue = datePlacementMode === DatePlacementMode.CalendarDays
+                    ? candidateDue
+                    : normalizeWorkingDate(candidateDue, 'backward', projectId);
                 if (currentTask && currentTask.dueDate !== newDue) {
                     updateTask(this.drag.taskId, {
                         dueDate: newDue
@@ -458,6 +464,7 @@ export class InteractionEngine {
             }
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
+            const datePlacementMode = useUIStore.getState().datePlacementMode;
             let candidateStart: number;
             if (Number.isFinite(this.drag.originalStartDate)) {
                 const timeDelta = dx / viewport.scale;
@@ -477,12 +484,15 @@ export class InteractionEngine {
                 return;
             }
 
-            const newStart = normalizeWorkingDate(candidateStart, 'forward', currentTask?.projectId);
+            const newStart = datePlacementMode === DatePlacementMode.CalendarDays
+                ? candidateStart
+                : normalizeWorkingDate(candidateStart, 'forward', currentTask?.projectId);
             if (currentTask && newStart <= this.drag.originalDueDate! && currentTask.startDate !== newStart) {
                 updateTask(this.drag.taskId, { startDate: newStart });
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
+            const datePlacementMode = useUIStore.getState().datePlacementMode;
             let candidateEnd: number;
             if (Number.isFinite(this.drag.originalDueDate)) {
                 const timeDelta = dx / viewport.scale;
@@ -502,7 +512,9 @@ export class InteractionEngine {
                 return;
             }
 
-            const newEnd = normalizeWorkingDate(candidateEnd, 'backward', currentTask?.projectId);
+            const newEnd = datePlacementMode === DatePlacementMode.CalendarDays
+                ? candidateEnd
+                : normalizeWorkingDate(candidateEnd, 'backward', currentTask?.projectId);
             if (currentTask && newEnd >= this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
                 updateTask(this.drag.taskId, { dueDate: newEnd });
             }

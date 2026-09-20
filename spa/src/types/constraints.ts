@@ -28,6 +28,17 @@ export const AutoScheduleMoveMode = {
 
 export type AutoScheduleMoveMode = typeof AutoScheduleMoveMode[keyof typeof AutoScheduleMoveMode];
 
+export const DatePlacementMode = {
+    WorkingDays: 'working_days',
+    CalendarDays: 'calendar_days'
+} as const;
+
+export type DatePlacementMode = typeof DatePlacementMode[keyof typeof DatePlacementMode];
+
+export const normalizeDatePlacementMode = (value: unknown): DatePlacementMode => (
+    value === DatePlacementMode.CalendarDays ? DatePlacementMode.CalendarDays : DatePlacementMode.WorkingDays
+);
+
 export const GANTT_RELATIONS = [
     RelationType.Precedes,
     RelationType.Follows,

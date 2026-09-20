@@ -742,6 +742,16 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.queryByTestId('display-settings-scope-menu-button')).not.toBeInTheDocument();
     });
 
+    it('places manual scheduling in the general settings popup', () => {
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTestId('display-settings-menu-button'));
+        expect(within(screen.getByTestId('display-settings-menu')).getByTestId('date-placement-mode-select')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByTestId('relation-settings-menu-button'));
+        expect(screen.queryByTestId('date-placement-mode-select')).not.toBeInTheDocument();
+    });
+
     it('saves relation settings from toolbar menu', () => {
         useTaskStore.setState({
             filterText: '',

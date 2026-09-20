@@ -4,7 +4,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { LayoutEngine } from './LayoutEngine';
 import type { Relation, Task } from '../types';
-import { RelationType } from '../types/constraints';
+import { DatePlacementMode, RelationType } from '../types/constraints';
 import { buildRelationRenderContext, buildRelationRoutePoints, getPolylineMidpoint } from '../renderers/relationGeometry';
 import { diffCalendarDays, formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
@@ -552,6 +552,64 @@ describe('InteractionEngine task updates', () => {
             engine.detach();
             container.remove();
         } finally {
+            configureBusinessCalendar(undefined);
+        }
+    });
+
+    it('moves a task by calendar-day delta without snapping its endpoints', () => {
+        const day = 24 * 60 * 60 * 1000;
+        configureBusinessCalendar({
+            status: 'ok',
+            revision: 'test',
+            defaultCalendarId: 'p1',
+            projectCalendarIds: { p1: 'p1' },
+            calendars: {
+                p1: { id: 'p1', name: 'P1', nonWorkingWeekDays: [0, 6], days: {} }
+            },
+            warnings: []
+        });
+        useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays });
+
+        try {
+            setViewport({
+                startDate: parseDateOnly('2027-01-01')!,
+                scrollX: 0,
+                scrollY: 0,
+                scale: 10 / day
+            });
+            const container = createContainer();
+            const engine = new InteractionEngine(container);
+            const task = baseTask({
+                id: 'calendar-task',
+                projectId: 'p1',
+                rowIndex: 0,
+                startDate: parseDateOnly('2027-01-01')!,
+                dueDate: parseDateOnly('2027-01-04')!
+            });
+            seedTasks([task]);
+
+            const { viewport, zoomLevel } = useTaskStore.getState();
+            const bounds = LayoutEngine.getTaskBounds(task, viewport, 'hit', zoomLevel);
+            container.dispatchEvent(new MouseEvent('mousedown', {
+                clientX: bounds.x + bounds.width / 2,
+                clientY: bounds.y + bounds.height / 2,
+                bubbles: true
+            }));
+            window.dispatchEvent(new MouseEvent('mousemove', {
+                clientX: bounds.x + bounds.width / 2 + 10,
+                clientY: bounds.y + bounds.height / 2,
+                bubbles: true
+            }));
+
+            const movedTask = useTaskStore.getState().allTasks[0];
+            expect(formatDateOnly(movedTask.startDate)).toBe('2027-01-02');
+            expect(formatDateOnly(movedTask.dueDate)).toBe('2027-01-05');
+
+            window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            engine.detach();
+            container.remove();
+        } finally {
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
             configureBusinessCalendar(undefined);
         }
     });

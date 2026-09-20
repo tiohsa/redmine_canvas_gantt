@@ -754,6 +754,60 @@ describe('mutation error classification', () => {
         });
     });
 
+    it('sends the date placement mode inside direct task mutations', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ lock_version: 4, task_id: 42 })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.updateTaskFields('42', { due_date: '2027-01-02' }, undefined, 'calendar_days');
+
+        const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+        expect(JSON.parse(String(request.body))).toEqual({
+            task: { due_date: '2027-01-02', date_placement_mode: 'calendar_days' }
+        });
+    });
+
+    it('sends the date placement mode with schedule mutations', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: 'ok', operation_id: 'schedule:42', entities: [], revisions: {} })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.scheduleMutation([
+            {
+                taskId: '42',
+                baseRevision: 3,
+                startDate: parseDateOnly('2027-01-02')!,
+                dueDate: parseDateOnly('2027-01-03')!
+            }
+        ], 'schedule:42', 'calendar_days');
+
+        const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+        expect(JSON.parse(String(request.body))).toEqual({
+            operation_id: 'schedule:42',
+            date_placement_mode: 'calendar_days',
+            base_revisions: { '42': 3 },
+            changes: [{ task_id: '42', start_date: '2027-01-02', due_date: '2027-01-03' }]
+        });
+    });
+
     it('classifies a malformed HTTP 409 as conflict without manufacturing view state', async () => {
         window.RedmineCanvasGantt = {
             projectId: 1,

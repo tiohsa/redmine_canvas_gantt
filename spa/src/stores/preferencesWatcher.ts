@@ -44,6 +44,7 @@ type GeneralPreferenceSnapshot = {
     autoCalculateDelay: UIStoreState['autoCalculateDelay'];
     autoApplyDefaultRelation: UIStoreState['autoApplyDefaultRelation'];
     autoScheduleMoveMode: UIStoreState['autoScheduleMoveMode'];
+    datePlacementMode: UIStoreState['datePlacementMode'];
 };
 
 type QueryPreferenceSnapshot = SharedQuerySyncState;
@@ -114,7 +115,8 @@ const selectGeneralPreferenceSnapshot = (
     defaultRelationType: uiState.defaultRelationType,
     autoCalculateDelay: uiState.autoCalculateDelay,
     autoApplyDefaultRelation: uiState.autoApplyDefaultRelation,
-    autoScheduleMoveMode: uiState.autoScheduleMoveMode
+    autoScheduleMoveMode: uiState.autoScheduleMoveMode,
+    datePlacementMode: uiState.datePlacementMode
 });
 
 const selectQueryPreferenceSnapshot = (
@@ -183,7 +185,8 @@ const persistGeneralPreferences = (taskState: TaskStoreState, uiState: UIStoreSt
         defaultRelationType: uiState.defaultRelationType,
         autoCalculateDelay: uiState.autoCalculateDelay,
         autoApplyDefaultRelation: uiState.autoApplyDefaultRelation,
-        autoScheduleMoveMode: uiState.autoScheduleMoveMode
+        autoScheduleMoveMode: uiState.autoScheduleMoveMode,
+        datePlacementMode: uiState.datePlacementMode
     }));
 };
 

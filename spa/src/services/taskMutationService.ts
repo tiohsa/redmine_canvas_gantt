@@ -4,6 +4,8 @@ import type { MutationMetadata, ScheduleMutationChange } from '../api/client';
 import { baselineProjectResourceKey, enqueueMutationOperation, enqueueScheduleMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
 import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
+import { useUIStore } from '../stores/UIStore';
+import { DatePlacementMode } from '../types/constraints';
 
 export type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
@@ -229,11 +231,10 @@ const executeTaskPatch = async (
     while (true) {
         const attemptFields = typeof fields === 'function' ? fields() : fields;
         try {
-            const result = await apiClient.updateTaskFields(
-                taskId,
-                attemptFields,
-                operationId
-            );
+            const datePlacementMode = useUIStore.getState().datePlacementMode;
+            const result = datePlacementMode === DatePlacementMode.CalendarDays
+                ? await apiClient.updateTaskFields(taskId, attemptFields, operationId, datePlacementMode)
+                : await apiClient.updateTaskFields(taskId, attemptFields, operationId);
             if (attempt > 0 && result.status === 'conflict' && result.entity && responseMatchesIntendedFields(attemptFields, result.entity)) {
                 return { ...result, status: 'ok' };
             }
@@ -284,7 +285,13 @@ export const taskMutationService = {
         changes: ScheduleMutationChange[]
     ) => enqueueScheduleMutationOperation(
             changes.map(change => change.taskId),
-            (context) => apiClient.scheduleMutation(changes, context?.operationId ?? `schedule:${Date.now()}`),
+            (context) => {
+                const operationId = context?.operationId ?? `schedule:${Date.now()}`;
+                const datePlacementMode = useUIStore.getState().datePlacementMode;
+                return datePlacementMode === DatePlacementMode.CalendarDays
+                    ? apiClient.scheduleMutation(changes, operationId, datePlacementMode)
+                    : apiClient.scheduleMutation(changes, operationId);
+            },
             changes.map(change => taskResourceKey(change.taskId))
         ),
 

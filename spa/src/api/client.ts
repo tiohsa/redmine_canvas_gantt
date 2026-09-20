@@ -19,6 +19,7 @@ import { normalizeQueryContext } from '../query/queryStateCodec';
 import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/baseline';
 import type { QueryContext } from '../query/types';
 import type { BusinessCalendarPayload } from '../types/businessCalendar';
+import type { DatePlacementMode } from '../types/constraints';
 import { getBusinessCalendarPayload, normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { sessionFetch } from './sessionFetch';
@@ -1130,14 +1131,20 @@ export const apiClient = {
         return parseMutationTaskResult(response);
     },
 
-    updateTaskFields: async (taskId: string, fields: Record<string, unknown>, operationId?: string): Promise<UpdateTaskResult> => {
+    updateTaskFields: async (taskId: string, fields: Record<string, unknown>, operationId?: string, datePlacementMode?: DatePlacementMode): Promise<UpdateTaskResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
         const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${taskId}.json?${query}`, {
             method: 'PATCH',
             headers: buildJsonHeaders(config, true),
-            body: JSON.stringify({ task: fields, ...(operationId ? { client_operation_id: operationId } : {}) })
+            body: JSON.stringify({
+                task: {
+                    ...fields,
+                    ...(datePlacementMode ? { date_placement_mode: datePlacementMode } : {})
+                },
+                ...(operationId ? { client_operation_id: operationId } : {})
+            })
         });
 
         if (response.status === 409) {
@@ -1152,7 +1159,7 @@ export const apiClient = {
         return parseMutationTaskResult(response);
     },
 
-    scheduleMutation: async (changes: ScheduleMutationChange[], operationId: string): Promise<ScheduleMutationResult> => {
+    scheduleMutation: async (changes: ScheduleMutationChange[], operationId: string, datePlacementMode?: DatePlacementMode): Promise<ScheduleMutationResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
         const response = await sessionFetch(`${getGlobalApiBase(config)}/schedule_mutation.json?${query}`, {
@@ -1160,6 +1167,7 @@ export const apiClient = {
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
                 operation_id: operationId,
+                ...(datePlacementMode ? { date_placement_mode: datePlacementMode } : {}),
                 base_revisions: Object.fromEntries(changes.map(change => [change.taskId, change.baseRevision])),
                 changes: changes.map(({ taskId, startDate, dueDate }) => ({
                     task_id: taskId,

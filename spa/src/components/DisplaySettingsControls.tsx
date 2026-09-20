@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { DatePlacementMode, type DatePlacementMode as DatePlacementModeValue } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import { i18n } from '../utils/i18n';
@@ -135,6 +136,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         setSidebarFontSize,
         displayPreferencesGlobalEnabled,
         setDisplayPreferencesGlobalEnabled,
+        datePlacementMode,
+        setDatePlacementMode,
         leftPaneVisible,
         rightPaneVisible,
         toggleLeftPane,
@@ -158,7 +161,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         || showDueDateOnly !== DEFAULT_DISPLAY_SETTINGS.showDueDateOnly
         || showTaskTitles !== DEFAULT_DISPLAY_SETTINGS.showTaskTitles
         || showTaskBarDates !== DEFAULT_DISPLAY_SETTINGS.showTaskBarDates
-        || showHierarchyLines !== DEFAULT_DISPLAY_SETTINGS.showHierarchyLines;
+        || showHierarchyLines !== DEFAULT_DISPLAY_SETTINGS.showHierarchyLines
+        || datePlacementMode !== DatePlacementMode.WorkingDays;
     const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
     const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
     const selectedPaneMode = isLeftPaneMaximized
@@ -305,6 +309,26 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                                 onChange={(event) => setShareAcrossProjects(event.target.checked)}
                                 label={i18n.t('label_share_display_settings_across_projects') || 'Share settings across all projects'}
                             />
+                        </div>
+
+                        <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, paddingTop: 8, marginBottom: 8 }}>
+                            <label style={{ display: 'grid', gap: 4 }}>
+                                <span>{i18n.t('label_manual_scheduling') || 'Manual scheduling'}</span>
+                                <select
+                                    data-testid="date-placement-mode-select"
+                                    aria-label={i18n.t('label_date_placement') || 'Date placement'}
+                                    value={datePlacementMode}
+                                    onChange={(event) => setDatePlacementMode(event.target.value as DatePlacementModeValue)}
+                                    style={{ height: 30, borderRadius: 6, border: `1px solid ${designTokens.controlBorderStrong}`, background: designTokens.controlBg, padding: '0 8px' }}
+                                >
+                                    <option value={DatePlacementMode.WorkingDays}>
+                                        {i18n.t('label_date_placement_working_days') || 'Snap to working days'}
+                                    </option>
+                                    <option value={DatePlacementMode.CalendarDays}>
+                                        {i18n.t('label_date_placement_calendar_days') || 'Allow any calendar day'}
+                                    </option>
+                                </select>
+                            </label>
                         </div>
 
                         <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginTop: 12, marginBottom: 4 }}>

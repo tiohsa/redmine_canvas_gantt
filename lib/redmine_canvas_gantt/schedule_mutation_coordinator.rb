@@ -36,7 +36,8 @@ module RedmineCanvasGantt
       @authorization_policy = authorization_policy || MutationAuthorizationPolicy.new(current_user: current_user)
     end
 
-    def call(operation_id:, base_revisions:, changes:)
+    def call(operation_id:, base_revisions:, changes:, date_placement_mode: :working_days)
+      date_placement_mode = normalize_date_placement_mode(date_placement_mode)
       normalized_changes = normalize_changes(changes)
       return failure('changes must contain at least one task') if normalized_changes.empty?
 
@@ -113,7 +114,30 @@ module RedmineCanvasGantt
               issue = issues_by_id.fetch(task_id)
               issue.reload
               change = changes_by_id.fetch(issue.id.to_i)
-              evaluation = evaluator.evaluate(issue: issue, intent: change.slice(*SCHEDULE_FIELDS))
+              normalized_interval = calendar_resolver.normalize_date_interval(
+                start_date: change.key?(:start_date) ? change[:start_date] : issue.start_date,
+                due_date: change.key?(:due_date) ? change[:due_date] : issue.due_date,
+                changed_fields: change.keys & SCHEDULE_FIELDS,
+                project: issue.project,
+                date_placement_mode: date_placement_mode
+              )
+              unless normalized_interval[:valid]
+                transaction_result = Result.new(
+                  status: :validation_error,
+                  operation_id: operation_id,
+                  entities: [],
+                  revisions: {},
+                  invalidated_entity_ids: [],
+                  errors: ['The requested task dates are invalid.']
+                )
+                raise ActiveRecord::Rollback
+              end
+
+              intent = change.slice(*SCHEDULE_FIELDS).tap do |fields|
+                fields[:start_date] = normalized_interval[:start_date] if fields.key?(:start_date)
+                fields[:due_date] = normalized_interval[:due_date] if fields.key?(:due_date)
+              end
+              evaluation = evaluator.evaluate(issue: issue, intent: intent)
               unless evaluation.valid? && issue.save
                 transaction_result = Result.new(
                   status: :validation_error,
@@ -428,6 +452,10 @@ module RedmineCanvasGantt
         parsed_revision = Integer(revision, exception: false)
         normalized[parsed_id] = parsed_revision if parsed_id&.positive? && parsed_revision && parsed_revision >= 0
       end
+    end
+
+    def normalize_date_placement_mode(value)
+      value.to_s == 'calendar_days' ? :calendar_days : :working_days
     end
 
     def editable?(issue)
