@@ -75,11 +75,12 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       start_date: Date.new(2027, 1, 1),
       due_date: Date.new(2027, 1, 4)
     )
+    base_revision = issue.reload.lock_version.to_i
     saturday = Date.new(2027, 1, 2)
 
     result = coordinator_with_weekday_calendar.call(
       operation_id: 'schedule:calendar-days-saturday',
-      base_revisions: { issue.id => issue.lock_version },
+      base_revisions: { issue.id => base_revision },
       changes: [{ task_id: issue.id, start_date: saturday.to_s }],
       date_placement_mode: :calendar_days
     )
@@ -94,10 +95,11 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       start_date: Date.new(2027, 1, 1),
       due_date: Date.new(2027, 1, 4)
     )
+    base_revision = issue.reload.lock_version.to_i
 
     result = coordinator_with_weekday_calendar.call(
       operation_id: 'schedule:working-days-saturday-start',
-      base_revisions: { issue.id => issue.lock_version },
+      base_revisions: { issue.id => base_revision },
       changes: [{ task_id: issue.id, start_date: '2027-01-02' }],
       date_placement_mode: :working_days
     )
@@ -113,17 +115,56 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       start_date: Date.new(2027, 1, 4),
       due_date: Date.new(2027, 1, 5)
     )
+    base_revision = issue.reload.lock_version.to_i
 
     result = coordinator_with_weekday_calendar.call(
       operation_id: 'schedule:working-days-due-only',
-      base_revisions: { issue.id => issue.lock_version },
-      changes: [{ task_id: issue.id, due_date: '2027-01-02' }],
+      base_revisions: { issue.id => base_revision },
+      changes: [{ task_id: issue.id, due_date: '2027-01-09' }],
       date_placement_mode: :working_days
     )
 
     expect(result.status).to eq(:ok), result.errors.inspect
     expect(issue.reload.start_date).to eq(Date.new(2027, 1, 4))
-    expect(issue.due_date).to eq(Date.new(2027, 1, 1))
+    expect(issue.due_date).to eq(Date.new(2027, 1, 8))
+  end
+
+  it 'keeps manual calendar-day weekend dates while callback rescheduling uses working days' do
+    predecessor = build_schedule_issue(
+      'Calendar-day callback predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 1)
+    )
+    successor = build_schedule_issue(
+      'Calendar-day callback successor',
+      start_date: Date.new(2027, 1, 5),
+      due_date: Date.new(2027, 1, 5)
+    )
+    IssueRelation.create!(
+      issue_from: predecessor,
+      issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    predecessor.reload
+    successor.reload
+
+    result = coordinator_with_weekday_calendar.call(
+      operation_id: 'schedule:calendar-days-callback-weekend',
+      base_revisions: { predecessor.id => predecessor.reload.lock_version.to_i },
+      changes: [{ task_id: predecessor.id, start_date: '2027-01-02', due_date: '2027-01-03' }],
+      date_placement_mode: :calendar_days
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(predecessor.reload).to have_attributes(
+      start_date: Date.new(2027, 1, 2),
+      due_date: Date.new(2027, 1, 3)
+    )
+    expect(successor.reload).to have_attributes(
+      start_date: Date.new(2027, 1, 4),
+      due_date: Date.new(2027, 1, 4)
+    )
   end
 
   def sql_query_count
@@ -368,7 +409,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       operation_id: 'schedule:callback-only-relation-causality',
       base_revisions: [successor, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
       changes: [
-        { task_id: successor.id, start_date: '2027-11-20', due_date: '2027-11-21' },
+        { task_id: successor.id, start_date: '2027-11-22', due_date: '2027-11-23' },
         { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
       ]
     )
@@ -376,8 +417,8 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(result.status).to eq(:ok)
     expect(predecessor.reload.start_date).to eq(Date.new(2027, 11, 1))
     expect(predecessor.due_date).to eq(Date.new(2027, 11, 2))
-    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 20))
-    expect(successor.due_date).to eq(Date.new(2027, 11, 21))
+    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 22))
+    expect(successor.due_date).to eq(Date.new(2027, 11, 23))
   end
 
   it 'orders an explicit leaf intent after a callback-only derived-parent reschedule' do
@@ -419,14 +460,14 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       operation_id: 'schedule:derived-parent-callback-causality',
       base_revisions: [planned_leaf, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
       changes: [
-        { task_id: planned_leaf.id, start_date: '2027-11-20', due_date: '2027-11-21' },
+        { task_id: planned_leaf.id, start_date: '2027-11-22', due_date: '2027-11-23' },
         { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
       ]
     )
 
     expect(result.status).to eq(:ok)
-    expect(planned_leaf.reload.start_date).to eq(Date.new(2027, 11, 20))
-    expect(planned_leaf.due_date).to eq(Date.new(2027, 11, 21))
+    expect(planned_leaf.reload.start_date).to eq(Date.new(2027, 11, 22))
+    expect(planned_leaf.due_date).to eq(Date.new(2027, 11, 23))
   ensure
     Setting.parent_issue_dates = previous_value if previous_value
   end
@@ -723,7 +764,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       operation_id: 'schedule:mixed-relation-derived-causality',
       base_revisions: [successor, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
       changes: [
-        { task_id: successor.id, start_date: '2027-11-20', due_date: '2027-11-21' },
+        { task_id: successor.id, start_date: '2027-11-22', due_date: '2027-11-23' },
         { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
       ]
     )
@@ -731,8 +772,8 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(result.status).to eq(:ok)
     expect(predecessor.reload.start_date).to eq(Date.new(2027, 11, 1))
     expect(predecessor.due_date).to eq(Date.new(2027, 11, 2))
-    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 20))
-    expect(successor.due_date).to eq(Date.new(2027, 11, 21))
+    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 22))
+    expect(successor.due_date).to eq(Date.new(2027, 11, 23))
 
     leaf.reload
     parent.reload

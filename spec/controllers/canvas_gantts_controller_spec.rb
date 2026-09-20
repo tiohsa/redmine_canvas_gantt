@@ -833,13 +833,20 @@ RSpec.describe CanvasGanttsController, type: :controller do
     { en: ['Search projects...', 'No matching projects'],
       ja: ['プロジェクトを検索', '一致するプロジェクトがありません'] }.each do |locale, labels|
       it "publishes project candidate search labels in #{locale}" do
-        I18n.with_locale(locale) do
-          get :index, params: { project_id: 'demo' }
+        previous_default_language = Setting.default_language
+        Setting.default_language = locale.to_s
 
-          expect(response).to have_http_status(:ok)
-          i18n_payload = controller.instance_variable_get(:@i18n).stringify_keys
-          expect(i18n_payload['label_project_search_placeholder']).to eq(labels[0])
-          expect(i18n_payload['label_no_matching_projects']).to eq(labels[1])
+        begin
+          I18n.with_locale(locale) do
+            get :index, params: { project_id: 'demo' }
+
+            expect(response).to have_http_status(:ok)
+            i18n_payload = controller.instance_variable_get(:@i18n).stringify_keys
+            expect(i18n_payload['label_project_search_placeholder']).to eq(labels[0])
+            expect(i18n_payload['label_no_matching_projects']).to eq(labels[1])
+          end
+        ensure
+          Setting.default_language = previous_default_language
         end
       end
     end
