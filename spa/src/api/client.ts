@@ -19,6 +19,7 @@ import { normalizeQueryContext } from '../query/queryStateCodec';
 import { normalizeBaselineSaveScope, parseBaselineDateValue } from '../utils/baseline';
 import type { QueryContext } from '../query/types';
 import type { BusinessCalendarPayload } from '../types/businessCalendar';
+import type { DatePlacementMode } from '../types/constraints';
 import { getBusinessCalendarPayload, normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { sessionFetch } from './sessionFetch';
@@ -95,6 +96,8 @@ export type ScheduleMutationChange = {
     dueDate?: number | null;
     task?: unknown;
     mutationFields?: Record<string, unknown>;
+    /** Task mutation context; serialized on this change, not on the request. */
+    datePlacementMode?: DatePlacementMode;
 };
 
 export type ScheduleMutationResult = MutationMetadata & {
@@ -1130,14 +1133,20 @@ export const apiClient = {
         return parseMutationTaskResult(response);
     },
 
-    updateTaskFields: async (taskId: string, fields: Record<string, unknown>, operationId?: string): Promise<UpdateTaskResult> => {
+    updateTaskFields: async (taskId: string, fields: Record<string, unknown>, operationId?: string, datePlacementMode?: DatePlacementMode): Promise<UpdateTaskResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
         const response = await sessionFetch(`${getGlobalApiBase(config)}/tasks/${taskId}.json?${query}`, {
             method: 'PATCH',
             headers: buildJsonHeaders(config, true),
-            body: JSON.stringify({ task: fields, ...(operationId ? { client_operation_id: operationId } : {}) })
+            body: JSON.stringify({
+                task: {
+                    ...fields,
+                    ...(datePlacementMode ? { date_placement_mode: datePlacementMode } : {})
+                },
+                ...(operationId ? { client_operation_id: operationId } : {})
+            })
         });
 
         if (response.status === 409) {
@@ -1161,8 +1170,9 @@ export const apiClient = {
             body: JSON.stringify({
                 operation_id: operationId,
                 base_revisions: Object.fromEntries(changes.map(change => [change.taskId, change.baseRevision])),
-                changes: changes.map(({ taskId, startDate, dueDate }) => ({
+                changes: changes.map(({ taskId, startDate, dueDate, datePlacementMode }) => ({
                     task_id: taskId,
+                    ...(datePlacementMode ? { date_placement_mode: datePlacementMode } : {}),
                     ...(startDate !== undefined ? { start_date: formatDateOnly(startDate) } : {}),
                     ...(dueDate !== undefined ? { due_date: formatDateOnly(dueDate) } : {})
                 }))

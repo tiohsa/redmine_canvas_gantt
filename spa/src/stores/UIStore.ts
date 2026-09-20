@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DefaultRelationType } from '../types/constraints';
+import { AutoScheduleMoveMode, RelationType, type AutoScheduleMoveMode as AutoScheduleMoveModeValue, type DatePlacementMode as DatePlacementModeValue, type DefaultRelationType, normalizeDatePlacementMode } from '../types/constraints';
 import { loadDisplayPreferencesWithSource, loadPreferences, type DisplayPreferencesSource, type StoredDisplayPreferences } from '../utils/preferences';
 import { buildRedmineUrl } from '../utils/redmineUrl';
 import {
@@ -65,6 +65,7 @@ interface UIState {
     autoCalculateDelay: boolean;
     autoApplyDefaultRelation: boolean;
     autoScheduleMoveMode: AutoScheduleMoveModeValue;
+    datePlacementMode: DatePlacementModeValue;
     sidebarFontSize: number;
     displayPreferencesSource: DisplayPreferencesSource;
     displayPreferencesGlobalEnabled: boolean;
@@ -108,6 +109,7 @@ interface UIState {
     setAutoCalculateDelay: (value: boolean) => void;
     setAutoApplyDefaultRelation: (value: boolean) => void;
     setAutoScheduleMoveMode: (value: AutoScheduleMoveModeValue) => void;
+    setDatePlacementMode: (value: DatePlacementModeValue) => void;
     setSidebarFontSize: (size: number) => void;
     setDisplayPreferencesGlobalEnabled: (enabled: boolean) => void;
     resetRelationPreferences: () => void;
@@ -208,6 +210,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     autoCalculateDelay: generalPreferences.autoCalculateDelay ?? true,
     autoApplyDefaultRelation: generalPreferences.autoApplyDefaultRelation ?? true,
     autoScheduleMoveMode: generalPreferences.autoScheduleMoveMode ?? AutoScheduleMoveMode.ConstraintPush,
+    datePlacementMode: normalizeDatePlacementMode(generalPreferences.datePlacementMode),
     sidebarFontSize: displayPreferences.sidebarFontSize ?? 13,
     displayPreferencesSource,
     displayPreferencesGlobalEnabled: loadedDisplayPreferences.globalEnabled,
@@ -368,6 +371,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     setAutoCalculateDelay: (value) => set(() => ({ autoCalculateDelay: value })),
     setAutoApplyDefaultRelation: (value) => set(() => ({ autoApplyDefaultRelation: value })),
     setAutoScheduleMoveMode: (value) => set(() => ({ autoScheduleMoveMode: value })),
+    setDatePlacementMode: (value) => set(() => ({ datePlacementMode: normalizeDatePlacementMode(value) })),
     setSidebarFontSize: (size) => set(() => ({ sidebarFontSize: size })),
     setDisplayPreferencesGlobalEnabled: (enabled) => set(() => ({ displayPreferencesGlobalEnabled: enabled })),
     resetRelationPreferences: () => set(() => ({

@@ -1,5 +1,5 @@
 import type { ViewMode, Viewport, ZoomLevel } from '../types';
-import type { AutoScheduleMoveMode } from '../types/constraints';
+import type { AutoScheduleMoveMode, DatePlacementMode } from '../types/constraints';
 import type { ColumnConfig } from '../components/sidebar/sidebarColumnSettings';
 
 type StoredViewport = Pick<Viewport, 'startDate' | 'scrollX' | 'scrollY' | 'scale'>;
@@ -31,6 +31,7 @@ export interface StoredPreferences {
     autoCalculateDelay?: boolean;
     autoApplyDefaultRelation?: boolean;
     autoScheduleMoveMode?: AutoScheduleMoveMode;
+    datePlacementMode?: DatePlacementMode;
     capacityThreshold?: number;
     leafIssuesOnly?: boolean;
     includeClosedIssues?: boolean;
@@ -72,6 +73,7 @@ export interface StoredGeneralPreferences {
     autoCalculateDelay?: boolean;
     autoApplyDefaultRelation?: boolean;
     autoScheduleMoveMode?: AutoScheduleMoveMode;
+    datePlacementMode?: DatePlacementMode;
     capacityThreshold?: number;
     leafIssuesOnly?: boolean;
     includeClosedIssues?: boolean;
@@ -117,6 +119,7 @@ export type GeneralPreferencesSnapshot = Pick<
     | 'autoCalculateDelay'
     | 'autoApplyDefaultRelation'
     | 'autoScheduleMoveMode'
+    | 'datePlacementMode'
     | 'capacityThreshold'
     | 'leafIssuesOnly'
     | 'includeClosedIssues'
@@ -148,6 +151,7 @@ const sanitizePreferences = (prefs: StoredPreferences): StoredPreferences => Obj
         autoCalculateDelay: prefs.autoCalculateDelay,
         autoApplyDefaultRelation: prefs.autoApplyDefaultRelation,
         autoScheduleMoveMode: prefs.autoScheduleMoveMode,
+        datePlacementMode: prefs.datePlacementMode,
         capacityThreshold: prefs.capacityThreshold,
         leafIssuesOnly: prefs.leafIssuesOnly,
         includeClosedIssues: prefs.includeClosedIssues,
@@ -192,6 +196,7 @@ const sanitizeGeneralPreferences = (prefs: StoredPreferences): StoredGeneralPref
         autoCalculateDelay: prefs.autoCalculateDelay,
         autoApplyDefaultRelation: prefs.autoApplyDefaultRelation,
         autoScheduleMoveMode: prefs.autoScheduleMoveMode,
+        datePlacementMode: prefs.datePlacementMode,
         capacityThreshold: prefs.capacityThreshold,
         leafIssuesOnly: prefs.leafIssuesOnly,
         includeClosedIssues: prefs.includeClosedIssues,

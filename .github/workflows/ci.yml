@@ -87,6 +87,9 @@ jobs:
       - name: Check async state contract boundaries
         run: npm run check:async-contract
 
+      - name: Check npm supply chain
+        run: npm run security
+
   test:
     name: test
     runs-on: ubuntu-latest

@@ -101,6 +101,13 @@ describe('Preferences storage', () => {
         expect(loaded.autoScheduleMoveMode).toBe('off');
     });
 
+    it('saves and loads the date placement mode', () => {
+        savePreferences({ datePlacementMode: 'calendar_days' }, 1);
+
+        expect(loadPreferences(1).datePlacementMode).toBe('calendar_days');
+        expect(loadPreferences(2).datePlacementMode).toBeUndefined();
+    });
+
     it('saves and loads baseline visibility preference', () => {
         saveDisplayPreferences({ showBaseline: true }, 1);
 

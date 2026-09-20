@@ -18,7 +18,11 @@ export type ToolbarMenuKey =
 
 type ToolbarMenuRefs = Record<ToolbarMenuKey, React.RefObject<HTMLDivElement | null>>;
 
-export const useToolbarMenuState = () => {
+type ToolbarMenuStateOptions = {
+    onProjectMenuClose?: () => void;
+};
+
+export const useToolbarMenuState = ({ onProjectMenuClose }: ToolbarMenuStateOptions = {}) => {
     const [openMenu, setOpenMenu] = React.useState<ToolbarMenuKey | null>(null);
 
     const queryRef = React.useRef<HTMLDivElement>(null);
@@ -60,32 +64,36 @@ export const useToolbarMenuState = () => {
             const target = event.target as Node;
             const activeMenu = refsByMenu[openMenu];
             if (activeMenu.current && !activeMenu.current.contains(target)) {
+                if (openMenu === 'project') onProjectMenuClose?.();
                 setOpenMenu(null);
             }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [openMenu, refsByMenu]);
+    }, [onProjectMenuClose, openMenu, refsByMenu]);
 
     const isMenuOpen = React.useCallback((menuKey: ToolbarMenuKey) => openMenu === menuKey, [openMenu]);
 
     const toggleMenu = React.useCallback((menuKey: ToolbarMenuKey) => {
+        if (openMenu === 'project') onProjectMenuClose?.();
         setOpenMenu((current) => current === menuKey ? null : menuKey);
-    }, []);
+    }, [onProjectMenuClose, openMenu]);
 
     const openMenuByKey = React.useCallback((menuKey: ToolbarMenuKey) => {
+        if (openMenu === 'project' && menuKey !== 'project') onProjectMenuClose?.();
         setOpenMenu(menuKey);
-    }, []);
+    }, [onProjectMenuClose, openMenu]);
 
     const closeMenu = React.useCallback((menuKey?: ToolbarMenuKey) => {
+        if (openMenu === 'project' && (!menuKey || menuKey === 'project')) onProjectMenuClose?.();
         setOpenMenu((current) => {
             if (menuKey && current !== menuKey) {
                 return current;
             }
             return null;
         });
-    }, []);
+    }, [onProjectMenuClose, openMenu]);
 
     return {
         queryMenuRef: queryRef,

@@ -4,11 +4,12 @@ import type { Task } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { apiClient } from '../api/client';
 import { useUIStore } from './UIStore';
-import { AutoScheduleMoveMode } from '../types/constraints';
+import { AutoScheduleMoveMode, DatePlacementMode } from '../types/constraints';
 import { loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
 import { WorkloadLogicService } from '../services/WorkloadLogicService';
 import { createReadContext } from './taskStore/stateContract';
+import { parseDateOnly } from '../utils/dateOnly';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -278,6 +279,219 @@ describe('TaskStore canonical mutation reconciliation', () => {
                 lockVersion: 3
             });
         } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it('keeps the date placement mode captured by a manual edit after the preference changes', async () => {
+        const original = buildTask({ id: 'captured-mode', dueDate: MONDAY, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok',
+            entities: [{ id: original.id, dueDate: FRIDAY, lockVersion: 2 }],
+            revisions: { [original.id]: 2 }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+
+        try {
+            useTaskStore.getState().setTasks([original]);
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays });
+            useTaskStore.getState().updateTask(original.id, { dueDate: FRIDAY });
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+
+            expect(useTaskStore.getState().localTaskPatches[original.id]?.[0]).toEqual(
+                expect.objectContaining({
+                    mutationContext: { datePlacementMode: DatePlacementMode.CalendarDays }
+                })
+            );
+
+            await useTaskStore.getState().saveChanges();
+
+            expect(scheduleMutation).toHaveBeenCalledWith(
+                [expect.objectContaining({ taskId: original.id, datePlacementMode: DatePlacementMode.CalendarDays })],
+                expect.any(String)
+            );
+        } finally {
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it('keeps working_days as the captured mode when the preference changes to calendar_days', async () => {
+        const original = buildTask({ id: 'captured-working-mode', dueDate: MONDAY, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok',
+            entities: [{ id: original.id, dueDate: TUESDAY, lockVersion: 2 }],
+            revisions: { [original.id]: 2 }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+
+        try {
+            useTaskStore.getState().setTasks([original]);
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+            useTaskStore.getState().updateTask(original.id, { dueDate: TUESDAY });
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays });
+
+            await useTaskStore.getState().saveChanges();
+
+            expect(scheduleMutation).toHaveBeenCalledWith(
+                [expect.objectContaining({ taskId: original.id, datePlacementMode: DatePlacementMode.WorkingDays })],
+                expect.any(String)
+            );
+            expect(scheduleMutation.mock.calls[0][2]).toBeUndefined();
+        } finally {
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it.each([
+        { derived: false, retry: false, priorManual: false },
+        { derived: false, retry: true, priorManual: false },
+        { derived: true, retry: false, priorManual: false },
+        { derived: true, retry: true, priorManual: true }
+    ].flatMap(scenario => [false, true].map(autoSave => ({ ...scenario, autoSave }))))('saves mixed task modes in one batch (dependency-derived=$derived, retry=$retry, prior-manual=$priorManual, auto-save=$autoSave)', async ({ derived, retry, priorManual, autoSave }) => {
+        const friday = parseDateOnly('2027-01-01')!;
+        const saturday = parseDateOnly('2027-01-02')!;
+        const monday = parseDateOnly('2027-01-04')!;
+        const originals = [
+            buildTask({ id: 'A', startDate: friday, dueDate: friday, lockVersion: 1 }),
+            buildTask({ id: 'B', startDate: friday, dueDate: friday, lockVersion: 3 })
+        ];
+        const previousUI = useUIStore.getState();
+        const scheduleMutation = vi.fn().mockImplementation(async () => ({
+            status: 'ok',
+            entities: useTaskStore.getState().allTasks.map(task => ({ ...task, lockVersion: task.lockVersion + 1 })),
+            revisions: { A: 2, B: 4 }
+        }));
+        if (retry) {
+            scheduleMutation.mockImplementationOnce(async () => {
+                useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+                throw new Error('response lost');
+            });
+        }
+        Object.defineProperty(apiClient, 'scheduleMutation', { value: scheduleMutation, configurable: true });
+        vi.mocked(apiClient.fetchData).mockImplementation(async () => buildApiData(useTaskStore.getState().allTasks));
+        if (retry) vi.mocked(apiClient.fetchData).mockResolvedValueOnce(buildApiData(originals));
+        configureBusinessCalendar({
+            defaultCalendarId: 'weekdays',
+            calendars: { weekdays: { id: 'weekdays', name: 'Weekdays', nonWorkingWeekDays: [0, 6], days: {} } }
+        });
+
+        try {
+            useTaskStore.setState({ autoSave });
+            useTaskStore.getState().setTasks(originals);
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays, autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+            if (priorManual) useTaskStore.getState().updateTask('B', { startDate: saturday, dueDate: saturday });
+            if (derived) useTaskStore.getState().setRelations([{ id: 'AB', from: 'A', to: 'B', type: 'precedes', delay: 0 }]);
+            useTaskStore.getState().updateTask('A', { startDate: saturday, dueDate: saturday });
+            if (!derived) {
+                useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+                useTaskStore.getState().updateTask('B', { startDate: monday, dueDate: monday });
+            }
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays });
+
+            expect(await useTaskStore.getState().saveChanges()).toEqual(new Map());
+
+            expect(scheduleMutation).toHaveBeenCalledTimes(retry ? 2 : 1);
+            for (const call of scheduleMutation.mock.calls) {
+                expect(call).toEqual([
+                    [
+                        expect.objectContaining({ taskId: 'A', startDate: saturday, dueDate: saturday, datePlacementMode: DatePlacementMode.CalendarDays }),
+                        expect.objectContaining({ taskId: 'B', startDate: monday, dueDate: monday, datePlacementMode: DatePlacementMode.WorkingDays })
+                    ],
+                    expect.any(String)
+                ]);
+            }
+        } finally {
+            useUIStore.setState(previousUI);
+            configureBusinessCalendar(null);
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it.each([false, true])('keeps the latest date mode on local conflict retry (dependency-derived=%s)', async (derived) => {
+        const friday = parseDateOnly('2027-01-01')!;
+        const saturday = parseDateOnly('2027-01-02')!;
+        const tasks = ['A', 'B'].map(id => buildTask({ id, startDate: friday, dueDate: friday, lockVersion: 1 }));
+        const previousUI = useUIStore.getState();
+        vi.mocked(apiClient.updateTaskFields).mockReset().mockResolvedValue({ status: 'ok', lockVersion: 3 });
+        configureBusinessCalendar({
+            defaultCalendarId: 'weekdays',
+            calendars: { weekdays: { id: 'weekdays', name: 'Weekdays', nonWorkingWeekDays: [0, 6], days: {} } }
+        });
+
+        try {
+            useTaskStore.getState().setTasks(tasks);
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays, autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+            useTaskStore.getState().updateTask('B', { startDate: saturday, dueDate: saturday });
+            if (derived) {
+                useTaskStore.getState().setRelations([{ id: 'AB', from: 'A', to: 'B', type: 'precedes', delay: 0 }]);
+                useTaskStore.getState().updateTask('A', { startDate: saturday, dueDate: saturday });
+            }
+            useTaskStore.getState().registerTaskConflict('B', 'Conflict', undefined, { ...tasks[1], lockVersion: 2 }, 2);
+            useUIStore.setState({ datePlacementMode: derived ? DatePlacementMode.CalendarDays : DatePlacementMode.WorkingDays });
+
+            await useTaskStore.getState().resolveTaskConflict('B', 'local');
+
+            expect(apiClient.updateTaskFields).toHaveBeenCalledExactlyOnceWith('B', {
+                start_date: derived ? '2027-01-04' : '2027-01-02',
+                due_date: derived ? '2027-01-04' : '2027-01-02',
+                lock_version: 2
+            }, expect.any(String), ...(derived ? [] : [DatePlacementMode.CalendarDays]));
+            expect(useTaskStore.getState().taskConflicts.B).toBeUndefined();
+        } finally {
+            useUIStore.setState(previousUI);
+            configureBusinessCalendar(null);
+        }
+    });
+
+    it('uses the latest date edit mode for the whole merged task interval, including an earlier start edit', async () => {
+        const friday = parseDateOnly('2027-01-01')!;
+        const saturday = parseDateOnly('2027-01-02')!;
+        const monday = parseDateOnly('2027-01-04')!;
+        const tuesday = parseDateOnly('2027-01-05')!;
+        const original = buildTask({ id: 'merged-mode', startDate: friday, dueDate: monday, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({ status: 'ok', entities: [], revisions: {} });
+        Object.defineProperty(apiClient, 'scheduleMutation', { value: scheduleMutation, configurable: true });
+        const previousUI = useUIStore.getState();
+        configureBusinessCalendar({
+            defaultCalendarId: 'weekdays',
+            calendars: { weekdays: { id: 'weekdays', name: 'Weekdays', nonWorkingWeekDays: [0, 6], days: {} } }
+        });
+
+        try {
+            useTaskStore.getState().setTasks([original]);
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays });
+            useTaskStore.getState().updateTask(original.id, { startDate: saturday });
+            const firstPatch = useTaskStore.getState().localTaskPatches[original.id][0];
+            expect(firstPatch.mutationIntent).toEqual({ startDate: saturday });
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+            useTaskStore.getState().updateTask(original.id, { dueDate: tuesday });
+            expect(useTaskStore.getState().localTaskPatches[original.id][0]).toEqual(firstPatch);
+            expect(firstPatch.mutationContext?.datePlacementMode).toBe(DatePlacementMode.CalendarDays);
+            // A later date edit normalizes the whole interval; preference alone does not.
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays });
+            useTaskStore.getState().updateTask(original.id, { subject: 'later non-date edit' });
+
+            await useTaskStore.getState().saveChanges();
+
+            expect(scheduleMutation).toHaveBeenCalledExactlyOnceWith([
+                expect.objectContaining({
+                    taskId: original.id, startDate: monday, dueDate: tuesday,
+                    datePlacementMode: DatePlacementMode.WorkingDays
+                })
+            ], expect.any(String));
+        } finally {
+            useUIStore.setState(previousUI);
+            configureBusinessCalendar(null);
             delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
         }
     });

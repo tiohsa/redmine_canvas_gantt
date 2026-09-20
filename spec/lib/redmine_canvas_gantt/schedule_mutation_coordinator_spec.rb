@@ -43,6 +43,169 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     )
   end
 
+  def weekday_calendar_resolver
+    calendar = RedmineCanvasGantt::BusinessCalendar.new(
+      id: 'spec-calendar',
+      name: 'Spec calendar',
+      non_working_week_days: [0, 6],
+      days: {}
+    )
+    snapshot = RedmineCanvasGantt::BusinessCalendarSnapshot.new(
+      status: 'ok',
+      revision: 'spec-revision',
+      default_calendar_id: 'spec-calendar',
+      project_calendars: {},
+      calendars: { 'spec-calendar' => calendar }
+    )
+    RedmineCanvasGantt::ProjectCalendarResolver.new(snapshot: snapshot, fallback_non_working_week_days: [0, 6])
+  end
+
+  def coordinator_with_weekday_calendar
+    described_class.new(
+      current_user: current_user,
+      project_scope_ids: [planned_issues.first.project_id],
+      payload_builder: payload_builder,
+      calendar_resolver: weekday_calendar_resolver
+    )
+  end
+
+  it 'preserves a weekend start date in calendar_days mode' do
+    issue = build_schedule_issue(
+      'Calendar-day Saturday',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 4)
+    )
+    base_revision = issue.reload.lock_version.to_i
+    saturday = Date.new(2027, 1, 2)
+
+    result = coordinator_with_weekday_calendar.call(
+      operation_id: 'schedule:calendar-days-saturday',
+      base_revisions: { issue.id => base_revision },
+      changes: [{ task_id: issue.id, start_date: saturday.to_s }],
+      date_placement_mode: :calendar_days
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(issue.reload.start_date).to eq(saturday)
+  end
+
+  it 'applies mixed change modes ahead of the request fallback in one transaction' do
+    issues = %w[Calendar Working].map do |name|
+      build_schedule_issue(name, start_date: Date.new(2027, 1, 1), due_date: Date.new(2027, 1, 4))
+    end
+
+    result = coordinator_with_weekday_calendar.call(
+      operation_id: 'schedule:mixed-modes',
+      base_revisions: issues.to_h { |issue| [issue.id, issue.reload.lock_version] },
+      changes: [
+        { task_id: issues[0].id, start_date: '2027-01-02', date_placement_mode: 'calendar_days' },
+        { task_id: issues[1].id, start_date: '2027-01-02', date_placement_mode: 'working_days' }
+      ],
+      date_placement_mode: :calendar_days
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(issues.map { |issue| issue.reload.start_date }).to eq([Date.new(2027, 1, 2), Date.new(2027, 1, 4)])
+    expect(result.entities.map { |entity| entity[:id] }).to contain_exactly(*issues.map(&:id))
+  end
+
+  [
+    ['default', {}, {}],
+    ['invalid change overrides calendar fallback', { date_placement_mode: 'unknown' }, { date_placement_mode: :calendar_days }],
+    ['invalid request fallback', {}, { date_placement_mode: 'unknown' }]
+  ].each do |name, change_context, request_context|
+    it "uses working days for #{name}" do
+      issue = build_schedule_issue(name, start_date: Date.new(2027, 1, 1), due_date: Date.new(2027, 1, 4))
+
+      result = coordinator_with_weekday_calendar.call(
+        operation_id: 'schedule:default-mode',
+        base_revisions: { issue.id => issue.reload.lock_version },
+        changes: [{ task_id: issue.id, start_date: '2027-01-02', **change_context }],
+        **request_context
+      )
+
+      expect(result.status).to eq(:ok), result.errors.inspect
+      expect(issue.reload.start_date).to eq(Date.new(2027, 1, 4))
+    end
+  end
+
+  it 'normalizes a weekend start date in working_days mode' do
+    issue = build_schedule_issue(
+      'Working-day Saturday start',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 4)
+    )
+    base_revision = issue.reload.lock_version.to_i
+
+    result = coordinator_with_weekday_calendar.call(
+      operation_id: 'schedule:working-days-saturday-start',
+      base_revisions: { issue.id => base_revision },
+      changes: [{ task_id: issue.id, start_date: '2027-01-02' }],
+      date_placement_mode: :working_days
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(issue.reload.start_date).to eq(Date.new(2027, 1, 4))
+    expect(issue.due_date).to eq(Date.new(2027, 1, 4))
+  end
+
+  it 'normalizes a due-only change against the existing start date' do
+    issue = build_schedule_issue(
+      'Working-day due only',
+      start_date: Date.new(2027, 1, 4),
+      due_date: Date.new(2027, 1, 5)
+    )
+    base_revision = issue.reload.lock_version.to_i
+
+    result = coordinator_with_weekday_calendar.call(
+      operation_id: 'schedule:working-days-due-only',
+      base_revisions: { issue.id => base_revision },
+      changes: [{ task_id: issue.id, due_date: '2027-01-09' }],
+      date_placement_mode: :working_days
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(issue.reload.start_date).to eq(Date.new(2027, 1, 4))
+    expect(issue.due_date).to eq(Date.new(2027, 1, 8))
+  end
+
+  it 'keeps manual calendar-day weekend dates while callback rescheduling uses working days' do
+    predecessor = build_schedule_issue(
+      'Calendar-day callback predecessor',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 1)
+    )
+    successor = build_schedule_issue(
+      'Calendar-day callback successor',
+      start_date: Date.new(2027, 1, 5),
+      due_date: Date.new(2027, 1, 5)
+    )
+    IssueRelation.create!(
+      issue_from: predecessor,
+      issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+    predecessor.reload
+    successor.reload
+
+    result = coordinator_with_weekday_calendar.call(
+      operation_id: 'schedule:calendar-days-callback-weekend',
+      base_revisions: { predecessor.id => predecessor.reload.lock_version.to_i },
+      changes: [{ task_id: predecessor.id, start_date: '2027-01-02', due_date: '2027-01-03', date_placement_mode: 'calendar_days' }]
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(predecessor.reload).to have_attributes(
+      start_date: Date.new(2027, 1, 2),
+      due_date: Date.new(2027, 1, 3)
+    )
+    expect(successor.reload).to have_attributes(
+      start_date: Date.new(2027, 1, 4),
+      due_date: Date.new(2027, 1, 4)
+    )
+  end
+
   def sql_query_count
     count = 0
     subscriber = lambda do |_name, _start, _finish, _id, payload|
@@ -285,7 +448,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       operation_id: 'schedule:callback-only-relation-causality',
       base_revisions: [successor, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
       changes: [
-        { task_id: successor.id, start_date: '2027-11-20', due_date: '2027-11-21' },
+        { task_id: successor.id, start_date: '2027-11-22', due_date: '2027-11-23' },
         { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
       ]
     )
@@ -293,8 +456,8 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(result.status).to eq(:ok)
     expect(predecessor.reload.start_date).to eq(Date.new(2027, 11, 1))
     expect(predecessor.due_date).to eq(Date.new(2027, 11, 2))
-    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 20))
-    expect(successor.due_date).to eq(Date.new(2027, 11, 21))
+    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 22))
+    expect(successor.due_date).to eq(Date.new(2027, 11, 23))
   end
 
   it 'orders an explicit leaf intent after a callback-only derived-parent reschedule' do
@@ -336,14 +499,14 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       operation_id: 'schedule:derived-parent-callback-causality',
       base_revisions: [planned_leaf, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
       changes: [
-        { task_id: planned_leaf.id, start_date: '2027-11-20', due_date: '2027-11-21' },
+        { task_id: planned_leaf.id, start_date: '2027-11-22', due_date: '2027-11-23' },
         { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
       ]
     )
 
     expect(result.status).to eq(:ok)
-    expect(planned_leaf.reload.start_date).to eq(Date.new(2027, 11, 20))
-    expect(planned_leaf.due_date).to eq(Date.new(2027, 11, 21))
+    expect(planned_leaf.reload.start_date).to eq(Date.new(2027, 11, 22))
+    expect(planned_leaf.due_date).to eq(Date.new(2027, 11, 23))
   ensure
     Setting.parent_issue_dates = previous_value if previous_value
   end
@@ -536,9 +699,9 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       operation_id: 'schedule:atomic-validation',
       base_revisions: planned.to_h { |issue| [issue.id, issue.lock_version] },
       changes: [
-        { task_id: issue_a.id, start_date: '2027-10-01', due_date: '2027-10-04' },
-        { task_id: issue_b.id, start_date: '2027-10-05', due_date: '2027-10-06' },
-        { task_id: issue_c.id, start_date: '2027-10-07', due_date: '2027-10-06' }
+        { task_id: issue_a.id, start_date: '2027-10-01', due_date: '2027-10-04', date_placement_mode: 'calendar_days' },
+        { task_id: issue_b.id, start_date: '2027-10-05', due_date: '2027-10-06', date_placement_mode: 'working_days' },
+        { task_id: issue_c.id, start_date: '2027-10-07', due_date: '2027-10-06', date_placement_mode: 'working_days' }
       ]
     )
 
@@ -640,7 +803,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       operation_id: 'schedule:mixed-relation-derived-causality',
       base_revisions: [successor, predecessor].to_h { |issue| [issue.id, issue.lock_version] },
       changes: [
-        { task_id: successor.id, start_date: '2027-11-20', due_date: '2027-11-21' },
+        { task_id: successor.id, start_date: '2027-11-22', due_date: '2027-11-23' },
         { task_id: predecessor.id, start_date: '2027-11-01', due_date: '2027-11-02' }
       ]
     )
@@ -648,8 +811,8 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(result.status).to eq(:ok)
     expect(predecessor.reload.start_date).to eq(Date.new(2027, 11, 1))
     expect(predecessor.due_date).to eq(Date.new(2027, 11, 2))
-    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 20))
-    expect(successor.due_date).to eq(Date.new(2027, 11, 21))
+    expect(successor.reload.start_date).to eq(Date.new(2027, 11, 22))
+    expect(successor.due_date).to eq(Date.new(2027, 11, 23))
 
     leaf.reload
     parent.reload

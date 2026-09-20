@@ -10,6 +10,7 @@ import {
     taskMutationFields,
     taskMutationService
 } from './taskMutationService';
+import { DatePlacementMode } from '../types/constraints';
 
 describe('taskMutationService mutation boundary', () => {
     afterEach(() => {
@@ -86,6 +87,36 @@ describe('taskMutationService mutation boundary', () => {
         expect(getMutationOperationRecords().find(record => record.operationId === operationId)?.outcome)
             .toBe('transient');
         expect(onSuccess).not.toHaveBeenCalled();
+    });
+
+    it('keeps the captured date placement mode across transient retries', async () => {
+        const updateTaskFields = vi.spyOn(apiClient, 'updateTaskFields')
+            .mockResolvedValueOnce({ status: 'transient_error', error: 'temporary failure' })
+            .mockResolvedValueOnce({ status: 'ok', lockVersion: 2 });
+
+        await taskMutationService.updateTaskFields(
+            'captured-mode-task',
+            { due_date: '2026-01-10' },
+            undefined,
+            DatePlacementMode.CalendarDays
+        );
+
+        expect(updateTaskFields.mock.calls).toHaveLength(2);
+        expect(updateTaskFields.mock.calls.every(([, , , mode]) => mode === DatePlacementMode.CalendarDays)).toBe(true);
+    });
+
+    it('forwards mixed task modes in one schedule operation without selecting a request mode', async () => {
+        const scheduleMutation = vi.spyOn(apiClient, 'scheduleMutation').mockResolvedValue({
+            status: 'ok', operationId: 'schedule:mixed', entities: [], revisions: {}
+        });
+        const changes = [
+            { taskId: 'A', baseRevision: 1, dueDate: null, datePlacementMode: DatePlacementMode.CalendarDays },
+            { taskId: 'B', baseRevision: 3, dueDate: null, datePlacementMode: DatePlacementMode.WorkingDays }
+        ];
+
+        await taskMutationService.scheduleMutation(changes);
+
+        expect(scheduleMutation).toHaveBeenCalledExactlyOnceWith(changes, expect.any(String));
     });
 
     it('bounds retries for a thrown non-bulk mutation error', async () => {

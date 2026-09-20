@@ -11,8 +11,9 @@ import {
     RELATION_HIT_TOLERANCE_PX,
     shouldRenderRelationsAtZoom
 } from '../renderers/relationGeometry';
-import { timelineToCalendarDate } from '../utils/dateOnly';
+import { addCalendarDays, diffCalendarDays, timelineToCalendarDate } from '../utils/dateOnly';
 import { diffWorkingDays, normalizeWorkingDate, shiftByWorkingDays } from '../utils/businessCalendar';
+import { DatePlacementMode, type DatePlacementMode as DatePlacementModeValue } from '../types/constraints';
 import { panViewportByPixels } from './viewportPan';
 import { filterTasksVisibleByDate, isTaskVisibleByDate } from '../utils/taskRange';
 
@@ -34,6 +35,7 @@ interface DragState {
     originalStartDate: number | undefined;
     originalDueDate: number | undefined;
     barOperationId: string | null;
+    datePlacementMode: DatePlacementModeValue;
 }
 
 export class InteractionEngine {
@@ -45,7 +47,8 @@ export class InteractionEngine {
         taskId: null,
         originalStartDate: undefined,
         originalDueDate: undefined,
-        barOperationId: null
+        barOperationId: null,
+        datePlacementMode: DatePlacementMode.WorkingDays
     };
 
     constructor(container: HTMLElement) {
@@ -315,7 +318,8 @@ export class InteractionEngine {
                     taskId: resolvedHit.task.id,
                     originalStartDate: resolvedHit.task.startDate,
                     originalDueDate: resolvedHit.task.dueDate,
-                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id)
+                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id),
+                    datePlacementMode: useUIStore.getState().datePlacementMode
                 };
             } else if (resolvedHit.region === 'start') {
                 this.drag = {
@@ -325,7 +329,8 @@ export class InteractionEngine {
                     taskId: resolvedHit.task.id,
                     originalStartDate: resolvedHit.task.startDate,
                     originalDueDate: resolvedHit.task.dueDate,
-                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id)
+                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id),
+                    datePlacementMode: useUIStore.getState().datePlacementMode
                 };
             } else if (resolvedHit.region === 'end') {
                 this.drag = {
@@ -335,7 +340,8 @@ export class InteractionEngine {
                     taskId: resolvedHit.task.id,
                     originalStartDate: resolvedHit.task.startDate,
                     originalDueDate: resolvedHit.task.dueDate,
-                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id)
+                    barOperationId: useTaskStore.getState().beginBarOperation(resolvedHit.task.id),
+                    datePlacementMode: useUIStore.getState().datePlacementMode
                 };
             }
         } else if (resolvedHit.task) {
@@ -351,7 +357,8 @@ export class InteractionEngine {
                 taskId: null,
                 originalStartDate: 0,
                 originalDueDate: 0,
-                barOperationId: null
+                barOperationId: null,
+                datePlacementMode: DatePlacementMode.WorkingDays
             };
         }
     };
@@ -415,49 +422,55 @@ export class InteractionEngine {
             const timeDelta = dx / viewport.scale;
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
             const projectId = currentTask?.projectId;
+            const datePlacementMode = this.drag.datePlacementMode;
 
             if (Number.isFinite(this.drag.originalStartDate) && Number.isFinite(this.drag.originalDueDate)) {
                 const candidateStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
-                const newStart = normalizeWorkingDate(candidateStart, 'forward', projectId);
-                const durationDays = diffWorkingDays(
-                    this.drag.originalStartDate!,
-                    this.drag.originalDueDate!,
-                    projectId
-                );
-                const newDue = shiftByWorkingDays(newStart, durationDays, projectId);
+                const newStart = datePlacementMode === DatePlacementMode.CalendarDays
+                    ? candidateStart
+                    : normalizeWorkingDate(candidateStart, 'forward', projectId);
+                const newDue = datePlacementMode === DatePlacementMode.CalendarDays
+                    ? addCalendarDays(
+                        this.drag.originalDueDate!,
+                        diffCalendarDays(this.drag.originalStartDate!, candidateStart)
+                    )
+                    : shiftByWorkingDays(
+                        newStart,
+                        diffWorkingDays(this.drag.originalStartDate!, this.drag.originalDueDate!, projectId),
+                        projectId
+                    );
 
                 if (currentTask && currentTask.startDate !== newStart) {
                     updateTask(this.drag.taskId, {
                         startDate: newStart,
                         dueDate: newDue
-                    });
+                    }, undefined, datePlacementMode);
                 }
             } else if (Number.isFinite(this.drag.originalStartDate)) {
-                const newStart = normalizeWorkingDate(
-                    this.snapToDate(this.drag.originalStartDate! + timeDelta),
-                    'forward',
-                    projectId
-                );
+                const candidateStart = this.snapToDate(this.drag.originalStartDate! + timeDelta);
+                const newStart = datePlacementMode === DatePlacementMode.CalendarDays
+                    ? candidateStart
+                    : normalizeWorkingDate(candidateStart, 'forward', projectId);
                 if (currentTask && currentTask.startDate !== newStart) {
                     updateTask(this.drag.taskId, {
                         startDate: newStart
-                    });
+                    }, undefined, datePlacementMode);
                 }
             } else if (Number.isFinite(this.drag.originalDueDate)) {
                 // Determine delta based on drag start
-                const newDue = normalizeWorkingDate(
-                    this.snapToDate(this.drag.originalDueDate! + timeDelta),
-                    'backward',
-                    projectId
-                );
+                const candidateDue = this.snapToDate(this.drag.originalDueDate! + timeDelta);
+                const newDue = datePlacementMode === DatePlacementMode.CalendarDays
+                    ? candidateDue
+                    : normalizeWorkingDate(candidateDue, 'backward', projectId);
                 if (currentTask && currentTask.dueDate !== newDue) {
                     updateTask(this.drag.taskId, {
                         dueDate: newDue
-                    });
+                    }, undefined, datePlacementMode);
                 }
             }
         } else if (this.drag.mode === 'task-resize-start' && this.drag.taskId) {
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
+            const datePlacementMode = this.drag.datePlacementMode;
             let candidateStart: number;
             if (Number.isFinite(this.drag.originalStartDate)) {
                 const timeDelta = dx / viewport.scale;
@@ -472,17 +485,20 @@ export class InteractionEngine {
             // Only the pointer crossing the due date clears the start date, not calendar normalization.
             if (candidateStart > this.drag.originalDueDate!) {
                 if (Number.isFinite(currentTask?.startDate)) {
-                    updateTask(this.drag.taskId, { startDate: undefined });
+                    updateTask(this.drag.taskId, { startDate: undefined }, undefined, datePlacementMode);
                 }
                 return;
             }
 
-            const newStart = normalizeWorkingDate(candidateStart, 'forward', currentTask?.projectId);
+            const newStart = datePlacementMode === DatePlacementMode.CalendarDays
+                ? candidateStart
+                : normalizeWorkingDate(candidateStart, 'forward', currentTask?.projectId);
             if (currentTask && newStart <= this.drag.originalDueDate! && currentTask.startDate !== newStart) {
-                updateTask(this.drag.taskId, { startDate: newStart });
+                updateTask(this.drag.taskId, { startDate: newStart }, undefined, datePlacementMode);
             }
         } else if (this.drag.mode === 'task-resize-end' && this.drag.taskId) {
             const currentTask = useTaskStore.getState().tasks.find(t => t.id === this.drag.taskId);
+            const datePlacementMode = this.drag.datePlacementMode;
             let candidateEnd: number;
             if (Number.isFinite(this.drag.originalDueDate)) {
                 const timeDelta = dx / viewport.scale;
@@ -497,14 +513,16 @@ export class InteractionEngine {
             // Only the pointer crossing the start date clears the due date, not calendar normalization.
             if (candidateEnd < this.drag.originalStartDate!) {
                 if (Number.isFinite(currentTask?.dueDate)) {
-                    updateTask(this.drag.taskId, { dueDate: undefined });
+                    updateTask(this.drag.taskId, { dueDate: undefined }, undefined, datePlacementMode);
                 }
                 return;
             }
 
-            const newEnd = normalizeWorkingDate(candidateEnd, 'backward', currentTask?.projectId);
+            const newEnd = datePlacementMode === DatePlacementMode.CalendarDays
+                ? candidateEnd
+                : normalizeWorkingDate(candidateEnd, 'backward', currentTask?.projectId);
             if (currentTask && newEnd >= this.drag.originalStartDate! && currentTask.dueDate !== newEnd) {
-                updateTask(this.drag.taskId, { dueDate: newEnd });
+                updateTask(this.drag.taskId, { dueDate: newEnd }, undefined, datePlacementMode);
             }
         }
     };
@@ -518,7 +536,16 @@ export class InteractionEngine {
         // Resume sorting (will trigger re-layout)
         useTaskStore.getState().setSortingSuspended(false);
 
-        this.drag = { mode: 'none', startX: 0, startY: 0, taskId: null, originalStartDate: undefined, originalDueDate: undefined, barOperationId: null };
+        this.drag = {
+            mode: 'none',
+            startX: 0,
+            startY: 0,
+            taskId: null,
+            originalStartDate: undefined,
+            originalDueDate: undefined,
+            barOperationId: null,
+            datePlacementMode: DatePlacementMode.WorkingDays
+        };
         this.container.style.cursor = DEFAULT_CURSOR;
 
         if (wasDragging && draggedTaskId) {

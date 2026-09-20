@@ -136,6 +136,34 @@ describe('businessCalendar', () => {
         });
     });
 
+    it('preserves non-working endpoints in calendar-days mode while validating the interval', () => {
+        expect(normalizeTaskDateInterval(
+            { startDate: timestamp('2027-01-02'), dueDate: timestamp('2027-01-03') },
+            {
+                changedFields: { startDate: true, dueDate: true },
+                projectId: '1',
+                mode: 'direct_edit',
+                datePlacementMode: 'calendar_days'
+            }
+        )).toEqual({
+            valid: true,
+            interval: {
+                startDate: timestamp('2027-01-02'),
+                dueDate: timestamp('2027-01-03')
+            }
+        });
+
+        expect(normalizeTaskDateInterval(
+            { startDate: timestamp('2027-01-03'), dueDate: timestamp('2027-01-02') },
+            {
+                changedFields: { startDate: true, dueDate: true },
+                projectId: '1',
+                mode: 'direct_edit',
+                datePlacementMode: 'calendar_days'
+            }
+        ).valid).toBe(false);
+    });
+
     it.each(intervalVectors.cases)('matches shared interval vector: $name', (testCase) => {
         configureBusinessCalendar(intervalVectors.calendarPayload);
 

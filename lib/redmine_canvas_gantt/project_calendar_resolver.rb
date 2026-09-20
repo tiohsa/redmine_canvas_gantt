@@ -2,6 +2,8 @@ require_relative 'business_calendar_repository'
 
 module RedmineCanvasGantt
   class ProjectCalendarResolver
+    DATE_PLACEMENT_MODES = %i[working_days calendar_days].freeze
+
     def initialize(repository: BusinessCalendarRepository.instance, fallback_non_working_week_days: nil, snapshot: nil)
       @repository = repository
       @snapshot = snapshot
@@ -77,9 +79,20 @@ module RedmineCanvasGantt
       normalize_working_date(date, direction: :backward, project: project)
     end
 
-    def normalize_date_interval(start_date:, due_date:, changed_fields:, project:, mode: :legacy_unspecified)
-      normalized_start = normalize_interval_endpoint(start_date, direction: :forward, project: project)
-      normalized_due = normalize_interval_endpoint(due_date, direction: :backward, project: project)
+    def normalize_date_interval(start_date:, due_date:, changed_fields:, project:, mode: :legacy_unspecified, date_placement_mode: :working_days)
+      placement_mode = normalize_date_placement_mode(date_placement_mode)
+      normalized_start = normalize_interval_endpoint(
+        start_date,
+        direction: :forward,
+        project: project,
+        date_placement_mode: placement_mode
+      )
+      normalized_due = normalize_interval_endpoint(
+        due_date,
+        direction: :backward,
+        project: project,
+        date_placement_mode: placement_mode
+      )
       result = { start_date: normalized_start, due_date: normalized_due }
 
       if normalized_start.is_a?(Date) && normalized_due.is_a?(Date) && normalized_start > normalized_due
@@ -145,13 +158,20 @@ module RedmineCanvasGantt
       (normalized.size >= 7 ? [] : normalized).freeze
     end
 
-    def normalize_interval_endpoint(value, direction:, project:)
+    def normalize_interval_endpoint(value, direction:, project:, date_placement_mode:)
       return value if value.blank?
 
       date = value.respond_to?(:to_date) ? value.to_date : Date.iso8601(value.to_s)
+      return date if date_placement_mode == :calendar_days
+
       normalize_working_date(date, direction: direction, project: project)
     rescue ArgumentError, Date::Error
       value
+    end
+
+    def normalize_date_placement_mode(value)
+      candidate = value.to_s.to_sym
+      DATE_PLACEMENT_MODES.include?(candidate) ? candidate : :working_days
     end
   end
 end

@@ -13,6 +13,7 @@ import {
     classifyMutationStatus
 } from '../../api/mutationOutcome';
 import type { MutationFailure, MutationOutcomeKind } from '../../api/mutationOutcome';
+import { DatePlacementMode, type DatePlacementMode as DatePlacementModeValue } from '../../types/constraints';
 import {
     localTaskFieldForMutationField,
     partitionTaskMutationFields,
@@ -51,6 +52,7 @@ export type ScheduleMutationRequest = {
     /** Internal test/reconciliation context; never serialized by the API client. */
     task?: Task;
     mutationFields?: TaskFields;
+    datePlacementMode?: DatePlacementModeValue;
 };
 
 export type ScheduleMutationResponse = {
@@ -325,7 +327,8 @@ export const saveModifiedTasks = async (
     preflightFailures: Map<string, string> = new Map(),
     mutationScheduling: Record<string, boolean> = {},
     scheduleMutation?: ScheduleMutationExecutor,
-    baseRevisions: Record<string, number> = {}
+    baseRevisions: Record<string, number> = {},
+    mutationDatePlacementModes: Record<string, DatePlacementModeValue> = {}
 ): Promise<SaveModifiedTasksResult> => {
     const mutableTaskById = new Map(tasks.map(task => [task.id, { ...task }]));
     const depthCache = new Map<string, number>();
@@ -372,7 +375,8 @@ export const saveModifiedTasks = async (
             baseRevision: baseRevisions[taskId] ?? mutableTaskById.get(taskId)?.lockVersion ?? 0,
             fields: mutationPartitions.get(taskId)!.scheduleFields,
             task: mutableTaskById.get(taskId),
-            mutationFields: mutationPartitions.get(taskId)!.scheduleFields
+            mutationFields: mutationPartitions.get(taskId)!.scheduleFields,
+            datePlacementMode: mutationDatePlacementModes[taskId] ?? DatePlacementMode.WorkingDays
         }));
         let scheduleResult: ScheduleMutationResponse = {
             status: 'transient_error',

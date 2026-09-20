@@ -196,6 +196,8 @@ class CanvasGanttsController < ApplicationController
     label_refresh_failed: :label_refresh_failed,
     label_project_candidates_load_failed: :label_project_candidates_load_failed,
     label_member_projects_only: :label_member_projects_only,
+    label_project_search_placeholder: :label_project_search_placeholder,
+    label_no_matching_projects: :label_no_matching_projects,
     label_selected_projects_outside_candidates: :label_selected_projects_outside_candidates,
     label_selected_trackers_outside_candidates: :label_selected_trackers_outside_candidates,
     label_relation_add_failed: :label_relation_add_failed,
@@ -215,6 +217,10 @@ class CanvasGanttsController < ApplicationController
     label_auto_schedule_move_mode_off: :label_auto_schedule_move_mode_off,
     label_auto_schedule_move_mode_constraint_push: :label_auto_schedule_move_mode_constraint_push,
     label_auto_schedule_move_mode_linked_shift: :label_auto_schedule_move_mode_linked_shift,
+    label_manual_scheduling: :label_manual_scheduling,
+    label_date_placement: :label_date_placement,
+    label_date_placement_working_days: :label_date_placement_working_days,
+    label_date_placement_calendar_days: :label_date_placement_calendar_days,
     label_auto_schedule_external_conflict: :label_auto_schedule_external_conflict,
     label_auto_schedule_permission_denied: :label_auto_schedule_permission_denied,
     label_relation_delay_auto_calc_unavailable: :label_relation_delay_auto_calc_unavailable,
@@ -671,8 +677,12 @@ class CanvasGanttsController < ApplicationController
     result = schedule_mutation_coordinator.call(
       operation_id: operation_id,
       base_revisions: params[:base_revisions] || {},
-      changes: params[:changes] || []
+      changes: params[:changes] || [],
+      date_placement_mode: parse_date_placement_mode(params[:date_placement_mode])
     )
+    errors = Array(result.errors).map do |error|
+      error == :invalid_dates ? canvas_gantt_l(:error_canvas_gantt_invalid_dates) : error
+    end
     response = {
       status: result.status.to_s,
       operation_id: operation_id,
@@ -680,7 +690,7 @@ class CanvasGanttsController < ApplicationController
       entities: result.entities,
       revisions: result.revisions,
       invalidated_entity_ids: result.invalidated_entity_ids,
-      **(result.errors.present? ? { errors: result.errors } : {}),
+      **(errors.present? ? { errors: errors } : {}),
       **(result.conflict ? { conflict: result.conflict } : {}),
       **(result.failure ? { failure: result.failure } : {})
     }
@@ -1165,6 +1175,7 @@ class CanvasGanttsController < ApplicationController
   def preprocess_draft_intent(issue, intent)
     normalized_intent = intent.to_h.symbolize_keys
     mode = normalized_intent.delete(:date_update_mode)
+    date_placement_mode = parse_date_placement_mode(normalized_intent.delete(:date_placement_mode))
     calendar_project = nil
     needs_authorized_target_context = normalized_intent.key?(:parent_issue_id) ||
                                       normalized_intent.key?(:start_date) ||
@@ -1195,13 +1206,14 @@ class CanvasGanttsController < ApplicationController
       normalized_intent,
       issue,
       project: calendar_project,
-      mode: parse_date_update_mode(mode)
+      mode: parse_date_update_mode(mode),
+      date_placement_mode: date_placement_mode
     )
 
     normalized_intent
   end
 
-  def normalize_task_date_attributes!(task_attributes, issue, project: issue.project, mode: requested_date_update_mode)
+  def normalize_task_date_attributes!(task_attributes, issue, project: issue.project, mode: requested_date_update_mode, date_placement_mode: requested_date_placement_mode)
     return true unless task_attributes.key?(:start_date) || task_attributes.key?(:due_date)
 
     start_value = task_attributes.key?(:start_date) ? task_attributes[:start_date] : issue.start_date
@@ -1211,7 +1223,8 @@ class CanvasGanttsController < ApplicationController
       due_date: due_value,
       changed_fields: task_attributes.slice(:start_date, :due_date).keys,
       project: project,
-      mode: mode
+      mode: mode,
+      date_placement_mode: date_placement_mode
     )
     unless normalized[:valid]
       render json: { errors: [canvas_gantt_l(:error_canvas_gantt_invalid_dates)] }, status: :unprocessable_entity
@@ -1231,9 +1244,17 @@ class CanvasGanttsController < ApplicationController
     parse_date_update_mode(params.dig(:task, :date_update_mode))
   end
 
+  def requested_date_placement_mode
+    parse_date_placement_mode(params.dig(:task, :date_placement_mode))
+  end
+
   def parse_date_update_mode(value)
     raw_mode = value.to_s
     %w[move resize_start resize_due direct_edit project_move legacy_unspecified].include?(raw_mode) ? raw_mode.to_sym : :legacy_unspecified
+  end
+
+  def parse_date_placement_mode(value)
+    value.to_s == 'calendar_days' ? :calendar_days : :working_days
   end
 
   def task_date_calendar_project(issue, task_attributes)

@@ -68,7 +68,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
           due_date: '2027-01-04',
           changed_fields: %i[start_date due_date],
           project: project,
-          mode: :legacy_unspecified
+          mode: :legacy_unspecified,
+          date_placement_mode: :working_days
         )
         .and_return(
           valid: true,
@@ -114,7 +115,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
           due_date: '2027-01-04',
           changed_fields: %i[start_date due_date],
           project: project,
-          mode: :project_move
+          mode: :project_move,
+          date_placement_mode: :working_days
         ).and_return(valid: true, start_date: Date.new(2027, 1, 5), due_date: Date.new(2027, 1, 5))
 
       issue = instance_double(
@@ -133,6 +135,38 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(controller.send(:preprocess_draft_intent, issue, intent)).to eq(
         start_date: Date.new(2027, 1, 5),
         due_date: Date.new(2027, 1, 5)
+      )
+    end
+
+    it 'preserves calendar-day dates during direct edit preprocessing' do
+      resolver = instance_double(RedmineCanvasGantt::ProjectCalendarResolver)
+      allow(controller).to receive(:business_calendar_resolver).and_return(resolver)
+      allow(resolver).to receive(:normalize_date_interval)
+        .with(
+          start_date: '2027-01-02',
+          due_date: '2027-01-03',
+          changed_fields: %i[start_date due_date],
+          project: project,
+          mode: :legacy_unspecified,
+          date_placement_mode: :calendar_days
+        ).and_return(valid: true, start_date: Date.new(2027, 1, 2), due_date: Date.new(2027, 1, 3))
+
+      issue = instance_double(
+        Issue,
+        project: project,
+        project_id: project.id,
+        start_date: Date.new(2027, 1, 1),
+        due_date: Date.new(2027, 1, 4)
+      )
+      intent = {
+        start_date: '2027-01-02',
+        due_date: '2027-01-03',
+        date_placement_mode: 'calendar_days'
+      }
+
+      expect(controller.send(:preprocess_draft_intent, issue, intent)).to eq(
+        start_date: Date.new(2027, 1, 2),
+        due_date: Date.new(2027, 1, 3)
       )
     end
 
@@ -794,6 +828,27 @@ RSpec.describe CanvasGanttsController, type: :controller do
         controller.instance_variable_set(:@permissions, { editable: false, viewable: true, baseline_editable: false })
       end
       allow(Setting).to receive(:non_working_week_days).and_return(['6', '7'])
+    end
+
+    { en: ['Search projects...', 'No matching projects'],
+      ja: ['プロジェクトを検索', '一致するプロジェクトがありません'] }.each do |locale, labels|
+      it "publishes project candidate search labels in #{locale}" do
+        previous_default_language = Setting.default_language
+        Setting.default_language = locale.to_s
+
+        begin
+          I18n.with_locale(locale) do
+            get :index, params: { project_id: 'demo' }
+
+            expect(response).to have_http_status(:ok)
+            i18n_payload = controller.instance_variable_get(:@i18n).stringify_keys
+            expect(i18n_payload['label_project_search_placeholder']).to eq(labels[0])
+            expect(i18n_payload['label_no_matching_projects']).to eq(labels[1])
+          end
+        ensure
+          Setting.default_language = previous_default_language
+        end
+      end
     end
 
     it 'includes row height labels in frontend i18n payload' do
@@ -2115,19 +2170,25 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
 
     it 'exposes a single operation boundary for a multi-issue schedule change' do
+      coordinator = controller.send(:schedule_mutation_coordinator)
       post :schedule_mutation,
            params: {
              project_id: 'demo',
              operation_id: 'schedule:test-a-b',
              base_revisions: { '10' => 1, '11' => 1 },
+             date_placement_mode: 'calendar_days',
              changes: [
-               { task_id: 10, start_date: '2027-01-04', due_date: '2027-01-05' },
-               { task_id: 11, start_date: '2027-01-06', due_date: '2027-01-07' }
+               { task_id: 10, start_date: '2027-01-04', due_date: '2027-01-05', date_placement_mode: 'calendar_days' },
+               { task_id: 11, start_date: '2027-01-06', due_date: '2027-01-07', date_placement_mode: 'working_days' }
              ]
            },
            format: :json
 
       expect(response).to have_http_status(:ok)
+      expect(coordinator).to have_received(:call) do |**args|
+        expect(args[:date_placement_mode]).to eq(:calendar_days)
+        expect(args[:changes].map { |change| change[:date_placement_mode] }).to eq(%w[calendar_days working_days])
+      end
       expect(JSON.parse(response.body)).to include(
         'status' => 'ok',
         'operation_id' => 'schedule:test-a-b',

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../types';
 import type { TaskFields } from '../../services/taskMutationService';
 import { enqueueMutationOperation, getMutationOperationRecords, getPendingMutationQueueSize, saveModifiedTasks } from './taskPersistence';
+import { DatePlacementMode } from '../../types/constraints';
 
 const buildTask = (overrides: Partial<Task>): Task => ({
     id: 'task',
@@ -26,6 +27,38 @@ const schedulingIntent = (taskIds: Array<string | Task>): Record<string, boolean
 );
 
 describe('saveModifiedTasks', () => {
+    it('keeps the schedule mutation mode through a response-loss retry', async () => {
+        const task = buildTask({ id: 'retry-mode', dueDate: 11, lockVersion: 1 });
+        const scheduleMutation = vi.fn()
+            .mockRejectedValueOnce(new Error('response lost'))
+            .mockResolvedValueOnce({
+                status: 'ok' as const,
+                entities: [{ id: task.id, dueDate: 11, lockVersion: 2 }],
+                revisions: { [task.id]: 2 }
+            });
+
+        await saveModifiedTasks(
+            [task],
+            [],
+            new Set([task.id]),
+            [],
+            vi.fn(),
+            vi.fn().mockResolvedValue({ tasks: [{ ...task, dueDate: 10 }] }),
+            undefined, undefined, undefined, undefined, undefined,
+            { [task.id]: { due_date: 11 } },
+            undefined,
+            { [task.id]: true },
+            scheduleMutation,
+            { [task.id]: 1 },
+            { [task.id]: DatePlacementMode.CalendarDays }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(2);
+        expect(scheduleMutation.mock.calls.every(([changes]) => (
+            changes[0].datePlacementMode === DatePlacementMode.CalendarDays
+        ))).toBe(true);
+    });
+
     it('partitions mixed schedule and residual fields and hands canonical revisions to generic mutation', async () => {
         const tasks = [
             buildTask({ id: 'A', subject: 'old subject', dueDate: 11, lockVersion: 1 }),

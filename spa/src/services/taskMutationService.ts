@@ -4,6 +4,8 @@ import type { MutationMetadata, ScheduleMutationChange } from '../api/client';
 import { baselineProjectResourceKey, enqueueMutationOperation, enqueueScheduleMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
 import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
+import { useUIStore } from '../stores/UIStore';
+import { DatePlacementMode } from '../types/constraints';
 
 export type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
@@ -223,17 +225,16 @@ export const buildBulkTaskMutationDelta = (
 const executeTaskPatch = async (
     taskId: string,
     fields: TaskFieldsFactory,
-    operationId?: string
+    operationId?: string,
+    datePlacementMode: DatePlacementMode = DatePlacementMode.WorkingDays
 ): Promise<Awaited<ReturnType<typeof apiClient.updateTaskFields>>> => {
     let attempt = 0;
     while (true) {
         const attemptFields = typeof fields === 'function' ? fields() : fields;
         try {
-            const result = await apiClient.updateTaskFields(
-                taskId,
-                attemptFields,
-                operationId
-            );
+            const result = datePlacementMode === DatePlacementMode.CalendarDays
+                ? await apiClient.updateTaskFields(taskId, attemptFields, operationId, datePlacementMode)
+                : await apiClient.updateTaskFields(taskId, attemptFields, operationId);
             if (attempt > 0 && result.status === 'conflict' && result.entity && responseMatchesIntendedFields(attemptFields, result.entity)) {
                 return { ...result, status: 'ok' };
             }
@@ -272,21 +273,30 @@ export const taskMutationService = {
     updateTaskFields: (
         taskId: string,
         fields: TaskFieldsFactory,
-        lifecycle?: MutationLifecycle<Awaited<ReturnType<typeof apiClient.updateTaskFields>>>
-    ) => enqueueMutationOperation(
-        [taskId],
-        (context) => executeTaskPatch(taskId, fields, context?.operationId),
-        lifecycle,
-        [taskResourceKey(taskId)]
-    ),
+        lifecycle?: MutationLifecycle<Awaited<ReturnType<typeof apiClient.updateTaskFields>>>,
+        datePlacementMode?: DatePlacementMode
+    ) => {
+        const capturedDatePlacementMode = datePlacementMode ?? useUIStore.getState().datePlacementMode;
+        return enqueueMutationOperation(
+            [taskId],
+            (context) => executeTaskPatch(taskId, fields, context?.operationId, capturedDatePlacementMode),
+            lifecycle,
+            [taskResourceKey(taskId)]
+        );
+    },
 
     scheduleMutation: (
         changes: ScheduleMutationChange[]
-    ) => enqueueScheduleMutationOperation(
+    ) => {
+        return enqueueScheduleMutationOperation(
             changes.map(change => change.taskId),
-            (context) => apiClient.scheduleMutation(changes, context?.operationId ?? `schedule:${Date.now()}`),
+            (context) => {
+                const operationId = context?.operationId ?? `schedule:${Date.now()}`;
+                return apiClient.scheduleMutation(changes, operationId);
+            },
             changes.map(change => taskResourceKey(change.taskId))
-        ),
+        );
+    },
 
     createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
         enqueueMutationOperation([fromId, toId], (context) => apiClient.createRelation(fromId, toId, type, delay, context?.operationId), undefined, [taskResourceKey(fromId), taskResourceKey(toId)])

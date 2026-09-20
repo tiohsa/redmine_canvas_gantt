@@ -11,6 +11,7 @@ import {
     timelineToCalendarDate
 } from './dateOnly';
 import { getNonWorkingWeekDays } from './nonWorkingWeekDays';
+import { DatePlacementMode, type DatePlacementMode as DatePlacementModeValue } from '../types/constraints';
 
 type UnknownRecord = Record<string, unknown>;
 export type ProjectCalendarArgument = string | number | Set<number> | null | undefined;
@@ -207,15 +208,21 @@ export const normalizeTaskDateInterval = (
         changedFields: { startDate?: boolean; dueDate?: boolean };
         projectId?: ProjectCalendarArgument;
         mode?: TaskDateIntervalMode;
+        datePlacementMode?: DatePlacementModeValue;
     }
 ): NormalizeTaskDateIntervalResult => {
     const startChanged = options.changedFields.startDate === true;
     const dueChanged = options.changedFields.dueDate === true;
+    const datePlacementMode = options.datePlacementMode ?? DatePlacementMode.WorkingDays;
     const startDate = Number.isFinite(interval.startDate)
-        ? normalizeWorkingDate(interval.startDate!, 'forward', options.projectId)
+        ? datePlacementMode === DatePlacementMode.CalendarDays
+            ? timelineToCalendarDate(interval.startDate!)
+            : normalizeWorkingDate(interval.startDate!, 'forward', options.projectId)
         : interval.startDate;
     const dueDate = Number.isFinite(interval.dueDate)
-        ? normalizeWorkingDate(interval.dueDate!, 'backward', options.projectId)
+        ? datePlacementMode === DatePlacementMode.CalendarDays
+            ? timelineToCalendarDate(interval.dueDate!)
+            : normalizeWorkingDate(interval.dueDate!, 'backward', options.projectId)
         : interval.dueDate;
     const normalized = { startDate, dueDate };
 
