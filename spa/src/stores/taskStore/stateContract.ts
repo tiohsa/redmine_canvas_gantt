@@ -4,6 +4,8 @@
  * these explicit contracts.
  */
 
+import type { DatePlacementMode as DatePlacementModeValue } from '../../types/constraints';
+
 export type ReadPurpose = 'initial_load' | 'refresh' | 'saved_query' | 'mutation_resync' | 'edit_meta' | 'saved_queries' | 'subtask_trackers';
 
 export type ReadContext = {
@@ -28,12 +30,17 @@ export type ServerSnapshot<T extends { id: string }> = {
     context: ReadContext | null;
 };
 
+export type MutationContext = {
+    datePlacementMode: DatePlacementModeValue;
+};
+
 export type LocalPatch<T extends { id: string }> = {
     entityId: string;
     projection: Partial<T>;
     mutationIntent: Partial<T>;
     generation: number;
     operationId: string;
+    mutationContext?: MutationContext;
 };
 
 export const hasLocalPatchOwnership = <T extends { id: string }>(

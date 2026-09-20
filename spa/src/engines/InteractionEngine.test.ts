@@ -538,6 +538,7 @@ describe('InteractionEngine task updates', () => {
                 clientY: bounds.y + bounds.height / 2,
                 bubbles: true
             }));
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
             window.dispatchEvent(new MouseEvent('mousemove', {
                 clientX: bounds.x + bounds.width / 2 + 10,
                 clientY: bounds.y + bounds.height / 2,

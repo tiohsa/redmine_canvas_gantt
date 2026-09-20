@@ -43,6 +43,89 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     )
   end
 
+  def weekday_calendar_resolver
+    calendar = RedmineCanvasGantt::BusinessCalendar.new(
+      id: 'spec-calendar',
+      name: 'Spec calendar',
+      non_working_week_days: [0, 6],
+      days: {}
+    )
+    snapshot = RedmineCanvasGantt::BusinessCalendarSnapshot.new(
+      status: 'ok',
+      revision: 'spec-revision',
+      default_calendar_id: 'spec-calendar',
+      project_calendars: {},
+      calendars: { 'spec-calendar' => calendar }
+    )
+    RedmineCanvasGantt::ProjectCalendarResolver.new(snapshot: snapshot, fallback_non_working_week_days: [0, 6])
+  end
+
+  def coordinator_with_weekday_calendar
+    described_class.new(
+      current_user: current_user,
+      project_scope_ids: [planned_issues.first.project_id],
+      payload_builder: payload_builder,
+      calendar_resolver: weekday_calendar_resolver
+    )
+  end
+
+  it 'preserves a weekend start date in calendar_days mode' do
+    issue = build_schedule_issue(
+      'Calendar-day Saturday',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 4)
+    )
+    saturday = Date.new(2027, 1, 2)
+
+    result = coordinator_with_weekday_calendar.call(
+      operation_id: 'schedule:calendar-days-saturday',
+      base_revisions: { issue.id => issue.lock_version },
+      changes: [{ task_id: issue.id, start_date: saturday.to_s }],
+      date_placement_mode: :calendar_days
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(issue.reload.start_date).to eq(saturday)
+  end
+
+  it 'normalizes a weekend start date in working_days mode' do
+    issue = build_schedule_issue(
+      'Working-day Saturday start',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 4)
+    )
+
+    result = coordinator_with_weekday_calendar.call(
+      operation_id: 'schedule:working-days-saturday-start',
+      base_revisions: { issue.id => issue.lock_version },
+      changes: [{ task_id: issue.id, start_date: '2027-01-02' }],
+      date_placement_mode: :working_days
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(issue.reload.start_date).to eq(Date.new(2027, 1, 4))
+    expect(issue.due_date).to eq(Date.new(2027, 1, 4))
+  end
+
+  it 'normalizes a due-only change against the existing start date' do
+    issue = build_schedule_issue(
+      'Working-day due only',
+      start_date: Date.new(2027, 1, 4),
+      due_date: Date.new(2027, 1, 5)
+    )
+
+    result = coordinator_with_weekday_calendar.call(
+      operation_id: 'schedule:working-days-due-only',
+      base_revisions: { issue.id => issue.lock_version },
+      changes: [{ task_id: issue.id, due_date: '2027-01-02' }],
+      date_placement_mode: :working_days
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(issue.reload.start_date).to eq(Date.new(2027, 1, 4))
+    expect(issue.due_date).to eq(Date.new(2027, 1, 1))
+  end
+
   def sql_query_count
     count = 0
     subscriber = lambda do |_name, _start, _finish, _id, payload|

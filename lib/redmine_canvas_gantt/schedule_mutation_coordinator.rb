@@ -128,7 +128,7 @@ module RedmineCanvasGantt
                   entities: [],
                   revisions: {},
                   invalidated_entity_ids: [],
-                  errors: ['The requested task dates are invalid.']
+                  errors: [:invalid_dates]
                 )
                 raise ActiveRecord::Rollback
               end

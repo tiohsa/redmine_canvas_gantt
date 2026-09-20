@@ -44,7 +44,7 @@ import { resolvedStateToQueryContext } from '../query/queryStateCodec';
 import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
-import { AutoScheduleMoveMode } from '../types/constraints';
+import { AutoScheduleMoveMode, type DatePlacementMode as DatePlacementModeValue } from '../types/constraints';
 import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/businessCalendar';
 import { fromLocalDate, parseDateOnly, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
@@ -284,7 +284,7 @@ interface TaskState {
     clearRelationSelection: () => void;
     setHoveredTask: (id: string | null) => void;
     setContextMenu: (menu: { x: number; y: number; taskId: string } | null) => void;
-    updateTask: (id: string, updates: Partial<Task>, mutationIntent?: Partial<Task>) => void;
+    updateTask: (id: string, updates: Partial<Task>, mutationIntent?: Partial<Task>, datePlacementMode?: DatePlacementModeValue) => void;
     beginBarOperation: (seedTaskId?: string) => string;
     endBarOperation: (operationId: string) => void;
     rollbackBarOperation: (operationId: string) => void;
@@ -856,7 +856,11 @@ const hasOwnField = (value: object, field: string): boolean => (
     Object.prototype.hasOwnProperty.call(value, field)
 );
 
-const normalizeTaskDateUpdates = (task: Task, updates: Partial<Task>): Partial<Task> => {
+const normalizeTaskDateUpdates = (
+    task: Task,
+    updates: Partial<Task>,
+    datePlacementMode?: DatePlacementModeValue
+): Partial<Task> => {
     if (!hasOwnField(updates, 'startDate') && !hasOwnField(updates, 'dueDate')) return updates;
 
     const nextUpdates = { ...updates };
@@ -872,7 +876,7 @@ const normalizeTaskDateUpdates = (task: Task, updates: Partial<Task>): Partial<T
             },
             projectId: updates.projectId ?? task.projectId,
             mode: 'legacy_unspecified',
-            datePlacementMode: useUIStore.getState().datePlacementMode
+            datePlacementMode: datePlacementMode ?? useUIStore.getState().datePlacementMode
         }
     );
     if (!normalized.valid) return { ...nextUpdates, startDate: task.startDate, dueDate: task.dueDate };
@@ -1660,7 +1664,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         };
     }),
 
-    updateTask: (id, updates, mutationIntent = updates) => set((state) => {
+    updateTask: (id, updates, mutationIntent = updates, datePlacementMode) => set((state) => {
         const task = state.allTasks.find(t => t.id === id);
         if (!task) return state;
 
@@ -1671,8 +1675,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         invalidateDataRequests();
 
-        const canonicalUpdates = normalizeTaskDateUpdates(task, updates);
-        const canonicalMutationIntent = normalizeTaskDateUpdates(task, mutationIntent);
+        const capturedDatePlacementMode = datePlacementMode ?? useUIStore.getState().datePlacementMode;
+        const canonicalUpdates = normalizeTaskDateUpdates(task, updates, capturedDatePlacementMode);
+        const canonicalMutationIntent = normalizeTaskDateUpdates(task, mutationIntent, capturedDatePlacementMode);
         const updatedTask = { ...task, ...canonicalUpdates };
         TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
 
@@ -1743,7 +1748,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
             nextEditGenerations[taskId] = (nextEditGenerations[taskId] ?? 0) + 1;
         });
         const nextLocalTaskPatches = { ...state.localTaskPatches };
-        const patchFor = (taskId: string, projectionFields: Partial<Task>, intentFields: Partial<Task>) => {
+        const patchFor = (
+            taskId: string,
+            projectionFields: Partial<Task>,
+            intentFields: Partial<Task>,
+            mutationDatePlacementMode?: DatePlacementModeValue
+        ) => {
             const projection = Object.fromEntries(
                 Object.entries(projectionFields).filter(([key]) => key !== 'lockVersion' && key !== 'id')
             ) as Partial<Task>;
@@ -1753,13 +1763,23 @@ export const useTaskStore = create<TaskState>((set, get) => {
             if (Object.keys(projection).length === 0 && Object.keys(persistenceIntent).length === 0) return;
             const generation = nextEditGenerations[taskId] ?? 0;
             const operationId = `edit:${taskId}:${generation}`;
+            const hasDateMutation = Object.keys(persistenceIntent).some(field => field === 'startDate' || field === 'dueDate');
             nextLocalTaskPatches[taskId] = [
                 ...(nextLocalTaskPatches[taskId] ?? []).filter(patch => patch.operationId !== operationId),
-                { entityId: taskId, projection, mutationIntent: persistenceIntent, generation, operationId }
+                {
+                    entityId: taskId,
+                    projection,
+                    mutationIntent: persistenceIntent,
+                    generation,
+                    operationId,
+                    ...(hasDateMutation && mutationDatePlacementMode
+                        ? { mutationContext: { datePlacementMode: mutationDatePlacementMode } }
+                        : {})
+                }
             ];
             if (Object.keys(persistenceIntent).length > 0) newModifiedIds.add(taskId);
         };
-        patchFor(id, canonicalUpdates, canonicalMutationIntent);
+        patchFor(id, canonicalUpdates, canonicalMutationIntent, capturedDatePlacementMode);
         pendingUpdates.forEach((fields, taskId) => patchFor(taskId, fields, fields));
 
         const changedFields = new Set([...Object.keys(canonicalUpdates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
@@ -2048,6 +2068,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
             const retryFields = (beforeRetry.localTaskPatches[id] ?? [])
                 .filter(patch => patch.generation <= retryGeneration)
                 .reduce<Partial<Task>>((fields, patch) => ({ ...fields, ...patch.mutationIntent }), {});
+            const retryDatePlacementMode = [...(beforeRetry.localTaskPatches[id] ?? [])]
+                .reverse()
+                .find(patch => (
+                    patch.generation <= retryGeneration &&
+                    Object.keys(patch.mutationIntent).some(field => field === 'startDate' || field === 'dueDate') &&
+                    patch.mutationContext?.datePlacementMode
+                ))
+                ?.mutationContext?.datePlacementMode;
             const retryTask = beforeRetry.allTasks.find(task => task.id === id);
             const maxRetryGeneration = Math.max(
                 retryGeneration,
@@ -2088,7 +2116,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             ...buildTaskPatchFieldsPayload(latestTask, retryFields),
                             lock_version: conflictRecord?.remoteRevision ?? remoteTask!.lockVersion
                         };
-                    });
+                    }, undefined, retryDatePlacementMode);
                     get().applyTaskMutationMetadata(id, result);
                     if (result.status === 'ok') {
                         const committedGenerations = [...new Set((get().localTaskPatches[id] ?? [])
@@ -2744,6 +2772,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const snapshotGenerations = { ...snapshot.editGenerations };
                 const snapshotTaskIds = new Set(snapshot.modifiedTaskIds);
                 const snapshotMutationFields: Record<string, TaskFields> = {};
+                const snapshotMutationDatePlacementModes: Record<string, DatePlacementModeValue> = {};
                 const snapshotMutationScheduling: Record<string, boolean> = {};
                 const unsupportedMutationFailures = new Map<string, string>();
                 snapshotTaskIds.forEach((taskId) => {
@@ -2752,9 +2781,17 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         return;
                     }
                     const task = snapshot.allTasks.find(candidate => candidate.id === taskId);
-                    const fields = (snapshot.localTaskPatches[taskId] ?? []).reduce<Partial<Task>>(
+                    const taskPatches = snapshot.localTaskPatches[taskId] ?? [];
+                    const fields = taskPatches.reduce<Partial<Task>>(
                         (owned, patch) => ({ ...owned, ...patch.mutationIntent }), {}
                     );
+                    const datePlacementMode = [...taskPatches]
+                        .reverse()
+                        .find(patch => (
+                            Object.keys(patch.mutationIntent).some(field => field === 'startDate' || field === 'dueDate') &&
+                            patch.mutationContext?.datePlacementMode
+                        ))
+                        ?.mutationContext?.datePlacementMode;
                     if (task) {
                         const changedFields = Object.keys(fields).filter(field => PERSISTABLE_TASK_FIELDS.includes(field as typeof PERSISTABLE_TASK_FIELDS[number]));
                         const intendedTask = { ...task, ...fields };
@@ -2771,6 +2808,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             );
                         } else {
                             snapshotMutationFields[taskId] = delta.fields;
+                            if (datePlacementMode) snapshotMutationDatePlacementModes[taskId] = datePlacementMode;
                             snapshotMutationScheduling[taskId] = Object.prototype.hasOwnProperty.call(delta.fields, 'start_date') ||
                                 Object.prototype.hasOwnProperty.call(delta.fields, 'due_date');
                         }
@@ -2881,10 +2919,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         baseRevision: change.baseRevision,
                         task: change.task,
                         mutationFields: change.mutationFields,
+                        ...(snapshotMutationDatePlacementModes[change.taskId]
+                            ? { datePlacementMode: snapshotMutationDatePlacementModes[change.taskId] }
+                            : {}),
                         ...(Object.prototype.hasOwnProperty.call(change.fields, 'start_date') ? { startDate: parseDateOnly(change.fields.start_date as string | null) } : {}),
                         ...(Object.prototype.hasOwnProperty.call(change.fields, 'due_date') ? { dueDate: parseDateOnly(change.fields.due_date as string | null) } : {})
                     }))) : undefined,
-                    snapshot.serverTaskSnapshot.revisions
+                    snapshot.serverTaskSnapshot.revisions,
+                    snapshotMutationDatePlacementModes
                 );
                 const { failures, savedTaskIds, settledFieldsByTask } = saveResult;
 

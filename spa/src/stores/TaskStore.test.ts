@@ -4,7 +4,7 @@ import type { Task } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { apiClient } from '../api/client';
 import { useUIStore } from './UIStore';
-import { AutoScheduleMoveMode } from '../types/constraints';
+import { AutoScheduleMoveMode, DatePlacementMode } from '../types/constraints';
 import { loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
 import { WorkloadLogicService } from '../services/WorkloadLogicService';
@@ -278,6 +278,76 @@ describe('TaskStore canonical mutation reconciliation', () => {
                 lockVersion: 3
             });
         } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it('keeps the date placement mode captured by a manual edit after the preference changes', async () => {
+        const original = buildTask({ id: 'captured-mode', dueDate: MONDAY, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok',
+            entities: [{ id: original.id, dueDate: FRIDAY, lockVersion: 2 }],
+            revisions: { [original.id]: 2 }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+
+        try {
+            useTaskStore.getState().setTasks([original]);
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays });
+            useTaskStore.getState().updateTask(original.id, { dueDate: FRIDAY });
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+
+            expect(useTaskStore.getState().localTaskPatches[original.id]?.[0]).toEqual(
+                expect.objectContaining({
+                    mutationContext: { datePlacementMode: DatePlacementMode.CalendarDays }
+                })
+            );
+
+            await useTaskStore.getState().saveChanges();
+
+            expect(scheduleMutation).toHaveBeenCalledWith(
+                expect.any(Array),
+                expect.any(String),
+                DatePlacementMode.CalendarDays
+            );
+        } finally {
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it('keeps working_days as the captured mode when the preference changes to calendar_days', async () => {
+        const original = buildTask({ id: 'captured-working-mode', dueDate: MONDAY, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok',
+            entities: [{ id: original.id, dueDate: TUESDAY, lockVersion: 2 }],
+            revisions: { [original.id]: 2 }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+
+        try {
+            useTaskStore.getState().setTasks([original]);
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
+            useTaskStore.getState().updateTask(original.id, { dueDate: TUESDAY });
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays });
+
+            await useTaskStore.getState().saveChanges();
+
+            expect(scheduleMutation).toHaveBeenCalledWith(
+                expect.any(Array),
+                expect.any(String)
+            );
+            expect(scheduleMutation.mock.calls[0][2]).toBeUndefined();
+        } finally {
+            useUIStore.setState({ datePlacementMode: DatePlacementMode.WorkingDays });
             delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
         }
     });

@@ -225,13 +225,13 @@ export const buildBulkTaskMutationDelta = (
 const executeTaskPatch = async (
     taskId: string,
     fields: TaskFieldsFactory,
-    operationId?: string
+    operationId?: string,
+    datePlacementMode: DatePlacementMode = DatePlacementMode.WorkingDays
 ): Promise<Awaited<ReturnType<typeof apiClient.updateTaskFields>>> => {
     let attempt = 0;
     while (true) {
         const attemptFields = typeof fields === 'function' ? fields() : fields;
         try {
-            const datePlacementMode = useUIStore.getState().datePlacementMode;
             const result = datePlacementMode === DatePlacementMode.CalendarDays
                 ? await apiClient.updateTaskFields(taskId, attemptFields, operationId, datePlacementMode)
                 : await apiClient.updateTaskFields(taskId, attemptFields, operationId);
@@ -273,27 +273,34 @@ export const taskMutationService = {
     updateTaskFields: (
         taskId: string,
         fields: TaskFieldsFactory,
-        lifecycle?: MutationLifecycle<Awaited<ReturnType<typeof apiClient.updateTaskFields>>>
-    ) => enqueueMutationOperation(
-        [taskId],
-        (context) => executeTaskPatch(taskId, fields, context?.operationId),
-        lifecycle,
-        [taskResourceKey(taskId)]
-    ),
+        lifecycle?: MutationLifecycle<Awaited<ReturnType<typeof apiClient.updateTaskFields>>>,
+        datePlacementMode?: DatePlacementMode
+    ) => {
+        const capturedDatePlacementMode = datePlacementMode ?? useUIStore.getState().datePlacementMode;
+        return enqueueMutationOperation(
+            [taskId],
+            (context) => executeTaskPatch(taskId, fields, context?.operationId, capturedDatePlacementMode),
+            lifecycle,
+            [taskResourceKey(taskId)]
+        );
+    },
 
     scheduleMutation: (
         changes: ScheduleMutationChange[]
-    ) => enqueueScheduleMutationOperation(
+    ) => {
+        const capturedDatePlacementMode = changes.find(change => change.datePlacementMode)?.datePlacementMode
+            ?? DatePlacementMode.WorkingDays;
+        return enqueueScheduleMutationOperation(
             changes.map(change => change.taskId),
             (context) => {
                 const operationId = context?.operationId ?? `schedule:${Date.now()}`;
-                const datePlacementMode = useUIStore.getState().datePlacementMode;
-                return datePlacementMode === DatePlacementMode.CalendarDays
-                    ? apiClient.scheduleMutation(changes, operationId, datePlacementMode)
+                return capturedDatePlacementMode === DatePlacementMode.CalendarDays
+                    ? apiClient.scheduleMutation(changes, operationId, capturedDatePlacementMode)
                     : apiClient.scheduleMutation(changes, operationId);
             },
             changes.map(change => taskResourceKey(change.taskId))
-        ),
+        );
+    },
 
     createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
         enqueueMutationOperation([fromId, toId], (context) => apiClient.createRelation(fromId, toId, type, delay, context?.operationId), undefined, [taskResourceKey(fromId), taskResourceKey(toId)])

@@ -19,9 +19,10 @@ export class InlineEditService {
         const { allTasks, updateTask, autoSave } = useTaskStore.getState();
         const current = allTasks.find((t) => t.id === taskId);
         if (!current) throw new Error(i18n.t('label_task_not_found') || 'Task not found');
+        const datePlacementMode = useUIStore.getState().datePlacementMode;
 
         if (Object.keys(optimisticTaskUpdates).length > 0) {
-            updateTask(taskId, optimisticTaskUpdates, materializedTaskUpdates(fields));
+            updateTask(taskId, optimisticTaskUpdates, materializedTaskUpdates(fields), datePlacementMode);
         }
         if (!autoSave) return;
 
@@ -90,7 +91,8 @@ export class InlineEditService {
                             useTaskStore.getState().rollbackTaskOperation(taskId, operationGeneration, rollbackTaskUpdates);
                         }
                     }
-                }
+                },
+                datePlacementMode
             );
         } catch (error) {
             const message = error instanceof Error ? error.message : (i18n.t('label_failed_to_save') || 'Failed to save');

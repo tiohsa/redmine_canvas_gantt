@@ -680,6 +680,9 @@ class CanvasGanttsController < ApplicationController
       changes: params[:changes] || [],
       date_placement_mode: parse_date_placement_mode(params[:date_placement_mode])
     )
+    errors = Array(result.errors).map do |error|
+      error == :invalid_dates ? canvas_gantt_l(:error_canvas_gantt_invalid_dates) : error
+    end
     response = {
       status: result.status.to_s,
       operation_id: operation_id,
@@ -687,7 +690,7 @@ class CanvasGanttsController < ApplicationController
       entities: result.entities,
       revisions: result.revisions,
       invalidated_entity_ids: result.invalidated_entity_ids,
-      **(result.errors.present? ? { errors: result.errors } : {}),
+      **(errors.present? ? { errors: errors } : {}),
       **(result.conflict ? { conflict: result.conflict } : {}),
       **(result.failure ? { failure: result.failure } : {})
     }

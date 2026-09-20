@@ -96,6 +96,8 @@ export type ScheduleMutationChange = {
     dueDate?: number | null;
     task?: unknown;
     mutationFields?: Record<string, unknown>;
+    /** Internal mutation context; serialized as the request-level mode. */
+    datePlacementMode?: DatePlacementMode;
 };
 
 export type ScheduleMutationResult = MutationMetadata & {
