@@ -173,8 +173,6 @@ Edge、Firefox、Safari を使用してください。Internet Explorer は対�
 - 画面上の作業時間は秒単位の表示に加えて `hh:mm` 形式でも表示します。登録時間はtimestampと計測Segmentから算出し、小数第2位へ丸めます。そのため極短時間は `0.00` でフォームが開く場合があり、入力可否はRedmine標準Validationに従います。
 - タイマー由来の作業時間フォームを編集中・送信中はPending Sessionを予約し、別タブからの再開・延長・破棄・新規記録を禁止します。所有タブが閉じて予約だけが残った場合は、別タブから明示的に復旧できます。送信中の予約を復旧した場合は不明状態として扱い、Redmineを確認した後に「記録済み」または「未登録」として解決します。保存結果を確認できない場合もSessionを保持します。
 
-[Timer Sessionアーキテクチャ図](docs/architecture/timer-session-architecture.png) に、Presentation、Application / State、Timer Domain、Browser Infrastructure、Redmine Serverの境界を示しています。
-
 ### ベースライン snapshot
 
 - ベースラインは比較専用機能であり、スケジューリングや CPM 計算の入力には使いません。
