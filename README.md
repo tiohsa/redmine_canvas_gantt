@@ -169,8 +169,6 @@ The cleanup task deletes the `plugin_redmine_canvas_gantt` row from Redmine's `s
 - The timer's measured work time is shown in `hh:mm` as well as the seconds-level display. Recorded hours are calculated from measured timestamp segments and rounded to two decimal places. Very short measurements may therefore open the form with `0.00`; Redmine validation remains authoritative.
 - While a timer-origin time entry is being edited or submitted, the pending session is reserved and cannot be resumed, extended, discarded, or recorded by another tab. If a reservation is stranded after its owner tab closes, another tab can explicitly recover it; a submission-phase recovery remains unknown until you check Redmine. If the save result cannot be confirmed, the session is retained as unknown until you explicitly mark it recorded or not registered after checking Redmine.
 
-See the [Timer Session architecture diagram](docs/architecture/timer-session-architecture.png) for the Presentation, Application/State, Timer Domain, Browser Infrastructure, and Redmine Server boundaries.
-
 ### Baseline snapshots
 
 - Baseline is comparison-only. It is not used for scheduling or CPM calculations.
