@@ -288,15 +288,11 @@ export const taskMutationService = {
     scheduleMutation: (
         changes: ScheduleMutationChange[]
     ) => {
-        const capturedDatePlacementMode = changes.find(change => change.datePlacementMode)?.datePlacementMode
-            ?? DatePlacementMode.WorkingDays;
         return enqueueScheduleMutationOperation(
             changes.map(change => change.taskId),
             (context) => {
                 const operationId = context?.operationId ?? `schedule:${Date.now()}`;
-                return capturedDatePlacementMode === DatePlacementMode.CalendarDays
-                    ? apiClient.scheduleMutation(changes, operationId, capturedDatePlacementMode)
-                    : apiClient.scheduleMutation(changes, operationId);
+                return apiClient.scheduleMutation(changes, operationId);
             },
             changes.map(change => taskResourceKey(change.taskId))
         );

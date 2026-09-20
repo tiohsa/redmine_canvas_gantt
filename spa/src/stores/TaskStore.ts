@@ -44,7 +44,7 @@ import { resolvedStateToQueryContext } from '../query/queryStateCodec';
 import { toBusinessQueryState } from '../query/resolvedQueryStateCodec';
 import type { SchedulingStateInfo } from '../scheduling/constraintGraph';
 import type { CriticalPathTaskMetrics } from '../scheduling/criticalPath';
-import { AutoScheduleMoveMode, type DatePlacementMode as DatePlacementModeValue } from '../types/constraints';
+import { AutoScheduleMoveMode, DatePlacementMode, type DatePlacementMode as DatePlacementModeValue } from '../types/constraints';
 import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/businessCalendar';
 import { fromLocalDate, parseDateOnly, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
@@ -2072,10 +2072,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 .reverse()
                 .find(patch => (
                     patch.generation <= retryGeneration &&
-                    Object.keys(patch.mutationIntent).some(field => field === 'startDate' || field === 'dueDate') &&
-                    patch.mutationContext?.datePlacementMode
+                    Object.keys(patch.mutationIntent).some(field => field === 'startDate' || field === 'dueDate')
                 ))
-                ?.mutationContext?.datePlacementMode;
+                ?.mutationContext?.datePlacementMode ?? DatePlacementMode.WorkingDays;
             const retryTask = beforeRetry.allTasks.find(task => task.id === id);
             const maxRetryGeneration = Math.max(
                 retryGeneration,
@@ -2785,11 +2784,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     const fields = taskPatches.reduce<Partial<Task>>(
                         (owned, patch) => ({ ...owned, ...patch.mutationIntent }), {}
                     );
+                    // The latest date edit owns the merged interval's mode.
+                    // Automatic patches have no manual context and use working days.
                     const datePlacementMode = [...taskPatches]
                         .reverse()
                         .find(patch => (
-                            Object.keys(patch.mutationIntent).some(field => field === 'startDate' || field === 'dueDate') &&
-                            patch.mutationContext?.datePlacementMode
+                            Object.keys(patch.mutationIntent).some(field => field === 'startDate' || field === 'dueDate')
                         ))
                         ?.mutationContext?.datePlacementMode;
                     if (task) {
@@ -2919,9 +2919,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         baseRevision: change.baseRevision,
                         task: change.task,
                         mutationFields: change.mutationFields,
-                        ...(snapshotMutationDatePlacementModes[change.taskId]
-                            ? { datePlacementMode: snapshotMutationDatePlacementModes[change.taskId] }
-                            : {}),
+                        datePlacementMode: change.datePlacementMode,
                         ...(Object.prototype.hasOwnProperty.call(change.fields, 'start_date') ? { startDate: parseDateOnly(change.fields.start_date as string | null) } : {}),
                         ...(Object.prototype.hasOwnProperty.call(change.fields, 'due_date') ? { dueDate: parseDateOnly(change.fields.due_date as string | null) } : {})
                     }))) : undefined,

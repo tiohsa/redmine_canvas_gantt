@@ -13,7 +13,7 @@ import {
     classifyMutationStatus
 } from '../../api/mutationOutcome';
 import type { MutationFailure, MutationOutcomeKind } from '../../api/mutationOutcome';
-import type { DatePlacementMode as DatePlacementModeValue } from '../../types/constraints';
+import { DatePlacementMode, type DatePlacementMode as DatePlacementModeValue } from '../../types/constraints';
 import {
     localTaskFieldForMutationField,
     partitionTaskMutationFields,
@@ -376,7 +376,7 @@ export const saveModifiedTasks = async (
             fields: mutationPartitions.get(taskId)!.scheduleFields,
             task: mutableTaskById.get(taskId),
             mutationFields: mutationPartitions.get(taskId)!.scheduleFields,
-            datePlacementMode: mutationDatePlacementModes[taskId]
+            datePlacementMode: mutationDatePlacementModes[taskId] ?? DatePlacementMode.WorkingDays
         }));
         let scheduleResult: ScheduleMutationResponse = {
             status: 'transient_error',

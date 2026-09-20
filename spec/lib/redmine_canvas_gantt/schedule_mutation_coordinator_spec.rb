@@ -89,6 +89,46 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(issue.reload.start_date).to eq(saturday)
   end
 
+  it 'applies mixed change modes ahead of the request fallback in one transaction' do
+    issues = %w[Calendar Working].map do |name|
+      build_schedule_issue(name, start_date: Date.new(2027, 1, 1), due_date: Date.new(2027, 1, 4))
+    end
+
+    result = coordinator_with_weekday_calendar.call(
+      operation_id: 'schedule:mixed-modes',
+      base_revisions: issues.to_h { |issue| [issue.id, issue.reload.lock_version] },
+      changes: [
+        { task_id: issues[0].id, start_date: '2027-01-02', date_placement_mode: 'calendar_days' },
+        { task_id: issues[1].id, start_date: '2027-01-02', date_placement_mode: 'working_days' }
+      ],
+      date_placement_mode: :calendar_days
+    )
+
+    expect(result.status).to eq(:ok), result.errors.inspect
+    expect(issues.map { |issue| issue.reload.start_date }).to eq([Date.new(2027, 1, 2), Date.new(2027, 1, 4)])
+    expect(result.entities.map { |entity| entity[:id] }).to contain_exactly(*issues.map(&:id))
+  end
+
+  [
+    ['default', {}, {}],
+    ['invalid change overrides calendar fallback', { date_placement_mode: 'unknown' }, { date_placement_mode: :calendar_days }],
+    ['invalid request fallback', {}, { date_placement_mode: 'unknown' }]
+  ].each do |name, change_context, request_context|
+    it "uses working days for #{name}" do
+      issue = build_schedule_issue(name, start_date: Date.new(2027, 1, 1), due_date: Date.new(2027, 1, 4))
+
+      result = coordinator_with_weekday_calendar.call(
+        operation_id: 'schedule:default-mode',
+        base_revisions: { issue.id => issue.reload.lock_version },
+        changes: [{ task_id: issue.id, start_date: '2027-01-02', **change_context }],
+        **request_context
+      )
+
+      expect(result.status).to eq(:ok), result.errors.inspect
+      expect(issue.reload.start_date).to eq(Date.new(2027, 1, 4))
+    end
+  end
+
   it 'normalizes a weekend start date in working_days mode' do
     issue = build_schedule_issue(
       'Working-day Saturday start',
@@ -152,8 +192,7 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     result = coordinator_with_weekday_calendar.call(
       operation_id: 'schedule:calendar-days-callback-weekend',
       base_revisions: { predecessor.id => predecessor.reload.lock_version.to_i },
-      changes: [{ task_id: predecessor.id, start_date: '2027-01-02', due_date: '2027-01-03' }],
-      date_placement_mode: :calendar_days
+      changes: [{ task_id: predecessor.id, start_date: '2027-01-02', due_date: '2027-01-03', date_placement_mode: 'calendar_days' }]
     )
 
     expect(result.status).to eq(:ok), result.errors.inspect
@@ -660,9 +699,9 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       operation_id: 'schedule:atomic-validation',
       base_revisions: planned.to_h { |issue| [issue.id, issue.lock_version] },
       changes: [
-        { task_id: issue_a.id, start_date: '2027-10-01', due_date: '2027-10-04' },
-        { task_id: issue_b.id, start_date: '2027-10-05', due_date: '2027-10-06' },
-        { task_id: issue_c.id, start_date: '2027-10-07', due_date: '2027-10-06' }
+        { task_id: issue_a.id, start_date: '2027-10-01', due_date: '2027-10-04', date_placement_mode: 'calendar_days' },
+        { task_id: issue_b.id, start_date: '2027-10-05', due_date: '2027-10-06', date_placement_mode: 'working_days' },
+        { task_id: issue_c.id, start_date: '2027-10-07', due_date: '2027-10-06', date_placement_mode: 'working_days' }
       ]
     )
 

@@ -96,7 +96,7 @@ export type ScheduleMutationChange = {
     dueDate?: number | null;
     task?: unknown;
     mutationFields?: Record<string, unknown>;
-    /** Internal mutation context; serialized as the request-level mode. */
+    /** Task mutation context; serialized on this change, not on the request. */
     datePlacementMode?: DatePlacementMode;
 };
 
@@ -1161,7 +1161,7 @@ export const apiClient = {
         return parseMutationTaskResult(response);
     },
 
-    scheduleMutation: async (changes: ScheduleMutationChange[], operationId: string, datePlacementMode?: DatePlacementMode): Promise<ScheduleMutationResult> => {
+    scheduleMutation: async (changes: ScheduleMutationChange[], operationId: string): Promise<ScheduleMutationResult> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
         const response = await sessionFetch(`${getGlobalApiBase(config)}/schedule_mutation.json?${query}`, {
@@ -1169,10 +1169,10 @@ export const apiClient = {
             headers: buildJsonHeaders(config, true),
             body: JSON.stringify({
                 operation_id: operationId,
-                ...(datePlacementMode ? { date_placement_mode: datePlacementMode } : {}),
                 base_revisions: Object.fromEntries(changes.map(change => [change.taskId, change.baseRevision])),
-                changes: changes.map(({ taskId, startDate, dueDate }) => ({
+                changes: changes.map(({ taskId, startDate, dueDate, datePlacementMode }) => ({
                     task_id: taskId,
+                    ...(datePlacementMode ? { date_placement_mode: datePlacementMode } : {}),
                     ...(startDate !== undefined ? { start_date: formatDateOnly(startDate) } : {}),
                     ...(dueDate !== undefined ? { due_date: formatDateOnly(dueDate) } : {})
                 }))

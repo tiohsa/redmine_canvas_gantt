@@ -105,6 +105,20 @@ describe('taskMutationService mutation boundary', () => {
         expect(updateTaskFields.mock.calls.every(([, , , mode]) => mode === DatePlacementMode.CalendarDays)).toBe(true);
     });
 
+    it('forwards mixed task modes in one schedule operation without selecting a request mode', async () => {
+        const scheduleMutation = vi.spyOn(apiClient, 'scheduleMutation').mockResolvedValue({
+            status: 'ok', operationId: 'schedule:mixed', entities: [], revisions: {}
+        });
+        const changes = [
+            { taskId: 'A', baseRevision: 1, dueDate: null, datePlacementMode: DatePlacementMode.CalendarDays },
+            { taskId: 'B', baseRevision: 3, dueDate: null, datePlacementMode: DatePlacementMode.WorkingDays }
+        ];
+
+        await taskMutationService.scheduleMutation(changes);
+
+        expect(scheduleMutation).toHaveBeenCalledExactlyOnceWith(changes, expect.any(String));
+    });
+
     it('bounds retries for a thrown non-bulk mutation error', async () => {
         const error = new ApiMutationError('transient_error', 'temporary failure', 503);
         const updateTaskFields = vi.spyOn(apiClient, 'updateTaskFields').mockRejectedValue(error);

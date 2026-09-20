@@ -2170,19 +2170,25 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
 
     it 'exposes a single operation boundary for a multi-issue schedule change' do
+      coordinator = controller.send(:schedule_mutation_coordinator)
       post :schedule_mutation,
            params: {
              project_id: 'demo',
              operation_id: 'schedule:test-a-b',
              base_revisions: { '10' => 1, '11' => 1 },
+             date_placement_mode: 'calendar_days',
              changes: [
-               { task_id: 10, start_date: '2027-01-04', due_date: '2027-01-05' },
-               { task_id: 11, start_date: '2027-01-06', due_date: '2027-01-07' }
+               { task_id: 10, start_date: '2027-01-04', due_date: '2027-01-05', date_placement_mode: 'calendar_days' },
+               { task_id: 11, start_date: '2027-01-06', due_date: '2027-01-07', date_placement_mode: 'working_days' }
              ]
            },
            format: :json
 
       expect(response).to have_http_status(:ok)
+      expect(coordinator).to have_received(:call) do |**args|
+        expect(args[:date_placement_mode]).to eq(:calendar_days)
+        expect(args[:changes].map { |change| change[:date_placement_mode] }).to eq(%w[calendar_days working_days])
+      end
       expect(JSON.parse(response.body)).to include(
         'status' => 'ok',
         'operation_id' => 'schedule:test-a-b',

@@ -37,7 +37,7 @@ module RedmineCanvasGantt
     end
 
     def call(operation_id:, base_revisions:, changes:, date_placement_mode: :working_days)
-      date_placement_mode = normalize_date_placement_mode(date_placement_mode)
+      request_date_placement_mode = normalize_date_placement_mode(date_placement_mode)
       normalized_changes = normalize_changes(changes)
       return failure('changes must contain at least one task') if normalized_changes.empty?
 
@@ -114,12 +114,15 @@ module RedmineCanvasGantt
               issue = issues_by_id.fetch(task_id)
               issue.reload
               change = changes_by_id.fetch(issue.id.to_i)
+              change_date_placement_mode = normalize_date_placement_mode(
+                change[:date_placement_mode] || request_date_placement_mode
+              )
               normalized_interval = calendar_resolver.normalize_date_interval(
                 start_date: change.key?(:start_date) ? change[:start_date] : issue.start_date,
                 due_date: change.key?(:due_date) ? change[:due_date] : issue.due_date,
                 changed_fields: change.keys & SCHEDULE_FIELDS,
                 project: issue.project,
-                date_placement_mode: date_placement_mode
+                date_placement_mode: change_date_placement_mode
               )
               unless normalized_interval[:valid]
                 transaction_result = Result.new(
@@ -222,7 +225,7 @@ module RedmineCanvasGantt
         end
         next if fields.empty?
 
-        { task_id: task_id, **fields }
+        { task_id: task_id, **fields, date_placement_mode: change[:date_placement_mode] }
       end
     end
 
