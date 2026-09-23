@@ -326,6 +326,11 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getAllByTestId('baseline-save-menu-button')).toHaveLength(1);
         expect(topButton.nextElementSibling).toContainElement(baselineButton);
         expect(baselineButton.querySelectorAll('svg')).toHaveLength(1);
+        const actionNeededButton = screen.getByTestId('action-needed-button');
+        expect(baselineButton.parentElement?.nextElementSibling).toBe(actionNeededButton);
+        expect(actionNeededButton).toHaveAttribute('aria-label', 'Action needed');
+        expect(actionNeededButton).toHaveTextContent('');
+        expect(actionNeededButton.querySelectorAll('svg')).toHaveLength(1);
 
         fireEvent.click(baselineButton);
         const baselineSaveMenu = await screen.findByTestId('baseline-save-menu');

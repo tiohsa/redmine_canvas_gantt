@@ -970,7 +970,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     )}
                 </div>
 
-                <ActionNeededControl />
                 <div ref={workloadMenuRef} className="gantt-toolbar-workload" style={{ position: 'relative' }}>
                     <button
                     onClick={() => toggleMenu('workload')}
@@ -1973,6 +1972,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     onSaveBaseline={(scope) => void handleSaveBaseline(scope)}
                     onToggleBaseline={() => toggleBaseline()}
                 />
+                <ActionNeededControl />
 
                 {hasPendingManualChanges && (
                     <>

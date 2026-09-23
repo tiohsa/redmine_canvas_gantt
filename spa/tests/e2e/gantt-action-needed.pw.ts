@@ -14,9 +14,11 @@ test('pages many loaded issues, preserves scope state, and focuses an unschedule
     useTaskStore.getState().setTasks(tasks);
     useTaskStore.setState({ dataReadStatus: 'ready', initialDataLoaded: true });
   });
-  await expect(page.getByTestId('action-needed-count')).toHaveText('80');
+  await expect(page.getByTestId('action-needed-button')).toHaveAttribute('aria-label', 'Action needed');
+  await expect(page.getByTestId('action-needed-button')).toHaveText('');
   await page.getByTestId('action-needed-button').click();
   await expect(page.getByRole('dialog', { name: 'Action needed' })).toContainText('Unplanned estimated hours: 160');
+  await expect(page.getByRole('dialog', { name: 'Action needed' }).locator('.action-needed-total')).toHaveText('80');
   const list = page.getByTestId('action-needed-list');
   await expect(list.locator('button')).toHaveCount(25);
   await page.getByRole('button', { name: '›' }).click();
@@ -32,7 +34,6 @@ test('pages many loaded issues, preserves scope state, and focuses an unschedule
     const { useTaskStore } = await import('/src/stores/TaskStore.ts');
     useTaskStore.setState({ dataReadStatus: 'loading' });
   });
-  await expect(page.getByTestId('action-needed-count')).toHaveCount(0);
   await page.getByTestId('action-needed-button').click();
   await expect(page.getByText('Loading current issues')).toBeVisible();
   await page.evaluate(async () => {
@@ -64,4 +65,44 @@ test('shows computed planned overload separately and opens its workload bar', as
     return useWorkloadStore.getState().focusedHistogramBar;
   });
   expect(focused).toMatchObject({ assigneeId: 10, dateStr: '2026-09-23' });
+});
+
+test('shows remaining overload days when the last page disappears', async ({ page }) => {
+  await waitForInitialRender(page);
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    const { useWorkloadStore } = await import('/src/stores/WorkloadStore.ts');
+    const issue = useTaskStore.getState().allTasks[0];
+    const days = Array.from({ length: 30 }, (_, index) => {
+      const dateStr = `2026-10-${String(index + 1).padStart(2, '0')}`;
+      return [dateStr, { dateStr, timestamp: index, plannedLoad: 10, isPlannedOverload: true,
+        plannedContributions: [{ task: issue, dailyLoad: 10 }], actualHours: 0,
+        actualContributions: [], isActualOverload: false }] as const;
+    });
+    useWorkloadStore.setState({ workloadPaneVisible: true, capacityThreshold: 8,
+      workloadData: { assignees: new Map([[10, { assigneeId: 10, assigneeName: 'Jane',
+        dailyWorkloads: new Map(days), plannedTotal: 300, plannedPeak: 10, actualTotal: 0, actualPeak: 0 }]]),
+      plannedOverloadedAssigneeCount: 1, plannedOverloadedDayCount: 30,
+      actualOverloadedAssigneeCount: 0, actualOverloadedDayCount: 0 } });
+  });
+
+  await page.getByTestId('action-needed-button').click();
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  const pagination = dialog.getByText('30 assignee-days').locator('..');
+  await pagination.getByRole('button', { name: '›' }).click();
+  await expect(dialog.getByRole('button', { name: /Jane · 2026-10-/ })).toHaveCount(5);
+
+  await page.evaluate(async () => {
+    const { useWorkloadStore } = await import('/src/stores/WorkloadStore.ts');
+    const data = useWorkloadStore.getState().workloadData!;
+    const assignee = data.assignees.get(10)!;
+    useWorkloadStore.setState({ workloadData: { ...data,
+      assignees: new Map([[10, { ...assignee,
+        dailyWorkloads: new Map([...assignee.dailyWorkloads].slice(0, 10)), plannedTotal: 100 }]]),
+      plannedOverloadedDayCount: 10 } });
+  });
+
+  await expect(dialog.getByRole('button', { name: /Jane · 2026-10-/ })).toHaveCount(10);
+  await expect(dialog.getByRole('button', { name: /Jane · 2026-10-01/ })).toBeVisible();
+  await expect(dialog.getByText('30 assignee-days')).toHaveCount(0);
 });

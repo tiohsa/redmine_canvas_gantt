@@ -1001,6 +1001,28 @@ export const useTaskStore = create<TaskState>((set, get) => {
     let auxiliaryReadGeneration = 0;
     let mutationResyncGeneration = 0;
     let activeReadContext: ReadContext | null = null;
+    let lastAppliedViewIdentity: string | null = null;
+    const currentViewIdentity = () => {
+        const state = get();
+        return createReadContext({
+            generation: 0,
+            projectId: state.currentProjectId,
+            query: toResolvedQueryStateFromStore(state),
+            scope: { showSubprojects: state.showSubprojects, memberProjectsOnly: state.memberProjectsOnly },
+            purpose: 'refresh'
+        }).contextId;
+    };
+    const settleSupersededRead = (context: ReadContext, viewIdentityAtStart: string) => {
+        if (activeReadContext !== context || get().dataReadStatus !== 'loading') return;
+        if (get().initialDataLoaded && lastAppliedViewIdentity === viewIdentityAtStart &&
+            currentViewIdentity() === viewIdentityAtStart) {
+            set({ dataReadStatus: 'ready' });
+        } else {
+            // The discarded response belonged to another view (or no view was loaded).
+            // Start a read for the current view while retaining local patches.
+            void get().refreshData().catch((error) => console.error('Failed to refresh data', error));
+        }
+    };
     const requestAndApplyData = async (
         fetchData: () => Promise<ApiData>,
         context: ReadContext
@@ -1008,6 +1030,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const readKey = context.contextId;
         const existing = inflightReads.get(readKey);
         if (existing) return existing;
+        const viewIdentityAtStart = currentViewIdentity();
         activeReadContext = context;
         set({ dataReadStatus: 'loading' });
         readLifecycleMetrics.requestsStarted += 1;
@@ -1038,6 +1061,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return await request;
         } finally {
             if (inflightReads.get(readKey) === request) inflightReads.delete(readKey);
+            if (context.generation !== dataRequestGeneration) settleSupersededRead(context, viewIdentityAtStart);
         }
     };
     const refreshCurrentData = async (purpose: 'refresh' | 'saved_query'): Promise<ReadApplyOutcome> => {
@@ -1056,6 +1080,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     };
     const fetchMutationResyncData = async (params: { query?: { selectedStatusIds?: number[] } }): Promise<ApiData> => {
         const state = get();
+        const viewIdentityAtStart = currentViewIdentity();
         const generation = ++dataRequestGeneration;
         const resyncGeneration = ++mutationResyncGeneration;
         readLifecycleMetrics.requestsStarted += 1;
@@ -1073,12 +1098,26 @@ export const useTaskStore = create<TaskState>((set, get) => {
             mergePolicy: 'preserve_dirty'
         });
         activeReadContext = context;
-        const data = await apiClient.fetchData({ query, queryContext: state.queryContext });
-        if (resyncGeneration !== mutationResyncGeneration || !canApplyReadResponse(activeReadContext, context)) {
-            readLifecycleMetrics.staleResponsesRejected += 1;
-            throw new Error('Superseded mutation resync');
+        set({ dataReadStatus: 'loading' });
+        try {
+            const data = await apiClient.fetchData({ query, queryContext: state.queryContext });
+            if (resyncGeneration !== mutationResyncGeneration || !canApplyReadResponse(activeReadContext, context)) {
+                readLifecycleMetrics.staleResponsesRejected += 1;
+                throw new Error('Superseded mutation resync');
+            }
+            if (currentViewIdentity() === viewIdentityAtStart &&
+                lastAppliedViewIdentity === viewIdentityAtStart && get().initialDataLoaded) {
+                set({ dataReadStatus: 'ready' });
+            } else {
+                void get().refreshData().catch((error) => console.error('Failed to refresh data', error));
+            }
+            return data;
+        } catch (error) {
+            if (activeReadContext === context && get().dataReadStatus === 'loading') {
+                set({ dataReadStatus: 'error' });
+            }
+            throw error;
         }
-        return data;
     };
 
     return ({
@@ -1347,6 +1386,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 'warning'
             );
         }
+        lastAppliedViewIdentity = currentViewIdentity();
     },
     setCustomFields: (customFields) => set((state) => {
         const derived = buildDerivedTaskState(state, { customFields });

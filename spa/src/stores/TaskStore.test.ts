@@ -1488,6 +1488,61 @@ describe('TaskStore API data application', () => {
         expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['old']);
     });
 
+    it('settles a superseded refresh after a local edit without losing the draft', async () => {
+        const original = buildTask({ id: '1', subject: 'Server' });
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce(buildApiData([original]));
+        await useTaskStore.getState().refreshData();
+
+        const delayed = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(delayed.promise);
+        const refresh = useTaskStore.getState().refreshData();
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+
+        useTaskStore.getState().updateTask('1', { subject: 'Draft' });
+        delayed.resolve(buildApiData([{ ...original, subject: 'Stale response' }]));
+        await expect(refresh).resolves.toEqual(expect.objectContaining({ status: 'superseded' }));
+
+        const state = useTaskStore.getState();
+        expect(state.dataReadStatus).toBe('ready');
+        expect(state.allTasks.find(task => task.id === '1')?.subject).toBe('Draft');
+        expect(state.localTaskPatches['1']?.at(-1)?.mutationIntent).toMatchObject({ subject: 'Draft' });
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(2);
+    });
+
+    it('settles the read status after a successful mutation resync', async () => {
+        const original = buildTask({ id: '1', subject: 'Server' });
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce(buildApiData([original]));
+        await useTaskStore.getState().refreshData();
+        useTaskStore.getState().registerTaskConflict('1', 'Conflict');
+
+        const delayed = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(delayed.promise);
+        const resolution = useTaskStore.getState().resolveTaskConflict('1', 'remote');
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+        delayed.resolve(buildApiData([{ ...original, subject: 'Remote', lockVersion: 2 }]));
+        await resolution;
+
+        expect(useTaskStore.getState().dataReadStatus).toBe('ready');
+        expect(useTaskStore.getState().allTasks.find(task => task.id === '1')?.subject).toBe('Remote');
+    });
+
+    it('settles the read status after a failed mutation resync', async () => {
+        const original = buildTask({ id: '1', subject: 'Server' });
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce(buildApiData([original]));
+        await useTaskStore.getState().refreshData();
+        useTaskStore.getState().registerTaskConflict('1', 'Conflict');
+
+        const delayed = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(delayed.promise);
+        const resolution = useTaskStore.getState().resolveTaskConflict('1', 'remote');
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+        delayed.reject(new Error('offline'));
+        await resolution;
+
+        expect(useTaskStore.getState().dataReadStatus).toBe('error');
+        expect(useTaskStore.getState().taskConflicts['1']).toBeDefined();
+    });
+
     it('applyApiData filters selectedProjectIds without mutating initialState', () => {
         const initialState = {
             groupBy: 'project' as const,
@@ -2084,6 +2139,22 @@ describe('TaskStore asynchronous state ownership', () => {
             expect.objectContaining({ status: 'applied' })
         ]);
         expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['new']);
+    });
+
+    it('keeps the newer refresh loading when an older response is discarded', async () => {
+        const first = deferred<ReturnType<typeof buildApiData>>();
+        const second = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+        const firstRefresh = useTaskStore.getState().refreshData();
+        const secondRefresh = useTaskStore.getState().refreshData();
+        first.resolve(buildApiData([buildTask({ id: 'old' })]));
+        await expect(firstRefresh).resolves.toEqual(expect.objectContaining({ status: 'superseded' }));
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+
+        second.resolve(buildApiData([buildTask({ id: 'new' })]));
+        await expect(secondRefresh).resolves.toEqual(expect.objectContaining({ status: 'applied' }));
+        expect(useTaskStore.getState().dataReadStatus).toBe('ready');
     });
 
     it('does not surface a superseded request rejection after a newer refresh wins', async () => {

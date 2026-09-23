@@ -881,6 +881,10 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(i18n_payload['label_leaf_issues_only']).to eq(canvas_gantt_t(:label_leaf_issues_only))
       expect(i18n_payload['label_include_closed_issues']).to eq(canvas_gantt_t(:label_include_closed_issues))
       expect(i18n_payload['label_today_onward_only']).to eq(canvas_gantt_t(:label_today_onward_only))
+      %w[label_conflict_intro label_conflict_badge label_conflict_use_remote_help label_conflict_retry_help
+         label_conflict_field_column label_conflict_local_column label_conflict_server_column].each do |key|
+        expect(i18n_payload[key]).to eq(canvas_gantt_t(key.to_sym))
+      end
       expect(i18n_payload['label_save_baseline_filtered']).to eq(canvas_gantt_t(:label_save_baseline_filtered))
       expect(i18n_payload['label_save_baseline_project']).to eq(canvas_gantt_t(:label_save_baseline_project))
       expect(i18n_payload['label_baseline_scope']).to eq(canvas_gantt_t(:label_baseline_scope))

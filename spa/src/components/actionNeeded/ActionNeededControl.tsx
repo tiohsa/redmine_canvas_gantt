@@ -6,8 +6,8 @@ import { useUIStore } from '../../stores/UIStore';
 import { todayCalendarDate, toLocalDisplayDate } from '../../utils/dateOnly';
 import { formatDate } from '../../utils/dateUtils';
 import { i18n } from '../../utils/i18n';
-import { designTokens } from '../../styles/designTokens';
 import { ACTION_REASON_ORDER, summarizeActionNeeded, type ActionReason } from './analysis';
+import './ActionNeededControl.css';
 
 const PAGE_SIZE = 25;
 const reasonKey: Record<ActionReason, string> = {
@@ -80,6 +80,8 @@ export const ActionNeededControl: React.FC = () => {
             .map(daily => ({ assigneeId: assignee.assigneeId, assigneeName: assignee.assigneeName, daily })))
         .sort((a, b) => a.daily.timestamp - b.daily.timestamp || a.assigneeName.localeCompare(b.assigneeName)) : null,
     [ready, workloadData, workloadPaneVisible]);
+    const overloadPageCount = Math.max(1, Math.ceil((overloads?.length ?? 0) / PAGE_SIZE));
+    const currentOverloadPage = Math.min(overloadPage, overloadPageCount - 1);
     const goToTask = (taskId: string) => {
         const result = focusTask(taskId);
         if (result.status !== 'ok') {
@@ -87,87 +89,138 @@ export const ActionNeededControl: React.FC = () => {
         } else setOpen(false);
     };
 
+    useEffect(() => {
+        if (!open) return;
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setOpen(false);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [open]);
+
     return <>
-        <button type="button" data-testid="action-needed-button" className="gantt-toolbar-labeled-button"
-            aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)}
-            style={{ border: `1px solid ${designTokens.controlBorder}`, borderRadius: 6, background: designTokens.controlBg,
-                color: designTokens.controlFg, minHeight: 32, padding: '0 8px', cursor: 'pointer' }}>
-            {i18n.t('label_action_needed') || 'Action needed'} {ready && <span data-testid="action-needed-count">{summary.items.length}</span>}
+        <button type="button" data-testid="action-needed-button" className="action-needed-trigger"
+            aria-label={i18n.t('label_action_needed') || 'Action needed'}
+            title={i18n.t('label_action_needed') || 'Action needed'}
+            aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v6" />
+                <circle cx="12" cy="17" r="0.75" fill="currentColor" stroke="none" />
+            </svg>
         </button>
-        {open && createPortal(<div role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setOpen(false); }}
-            style={{ position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
-            <section role="dialog" aria-modal="true" aria-label={i18n.t('label_action_needed') || 'Action needed'}
-                style={{ width: 'min(760px, 100%)', maxHeight: 'calc(100dvh - 24px)', minHeight: 0, display: 'flex', flexDirection: 'column',
-                    background: designTokens.controlBg, color: designTokens.textPrimary, borderRadius: 12, padding: 16, boxSizing: 'border-box', overflowWrap: 'anywhere' }}>
-                <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                    <strong>{i18n.t('label_action_needed') || 'Action needed'}</strong>
-                    <button type="button" onClick={() => setOpen(false)} aria-label={i18n.t('button_close') || 'Close'}>×</button>
+        {open && createPortal(<div className="action-needed-backdrop" role="presentation"
+            onMouseDown={event => { if (event.target === event.currentTarget) setOpen(false); }}>
+            <section className={`action-needed-dialog${ready ? ' action-needed-dialog-ready' : ''}`} role="dialog" aria-modal="true"
+                aria-label={i18n.t('label_action_needed') || 'Action needed'}>
+                <header className="action-needed-header">
+                    <span className="action-needed-header-icon" aria-hidden="true">!</span>
+                    <div className="action-needed-heading">
+                        <div className="action-needed-title-line">
+                            <h2>{i18n.t('label_action_needed') || 'Action needed'}</h2>
+                            {ready && <span className="action-needed-total">{summary.items.length}</span>}
+                        </div>
+                        <p>{i18n.t('label_action_loaded_scope') || 'Loaded, visible open issues matching the current query and filters'}</p>
+                        {modifiedTaskIds.size > 0 && <span className="action-needed-draft-note">{i18n.t('label_action_includes_drafts') || 'Includes unsaved changes'}</span>}
+                    </div>
+                    <button className="action-needed-close-icon" type="button" onClick={() => setOpen(false)}
+                        aria-label={i18n.t('button_close') || 'Close'}>×</button>
                 </header>
                 {ready ? <>
-                    <div style={{ margin: '8px 0' }}>
-                        {i18n.t('label_action_loaded_scope') || 'Loaded, visible open issues matching the current query and filters'}: {summary.items.length}
-                        {modifiedTaskIds.size > 0 && ` · ${i18n.t('label_action_includes_drafts') || 'Includes unsaved changes'}`}
+                    <div className="action-needed-metrics">
+                        <div className="action-needed-metric">
+                            <span className="action-needed-metric-icon" aria-hidden="true">☷</span>
+                            <div><span className="action-needed-metric-label">{i18n.t('label_action_needed') || 'Action needed'}</span>
+                                <strong>{summary.items.length}</strong></div>
+                        </div>
+                        <div className="action-needed-metric" title={i18n.t('label_action_unplanned_help') || ''}>
+                            <span className="action-needed-metric-icon" aria-hidden="true">◷</span>
+                            <div><span className="action-needed-metric-label">{i18n.t('label_action_unplanned_hours') || 'Unplanned estimated hours'}: </span>
+                                <strong>{summary.unplannedEstimatedHours}<small>h</small></strong></div>
+                        </div>
+                        <div className="action-needed-metric">
+                            <span className="action-needed-metric-icon" aria-hidden="true">✳</span>
+                            <div><span className="action-needed-metric-label">{i18n.t('label_action_missing_estimate') || 'Missing estimate'}</span>
+                                <strong>{summary.missingEstimateCount}</strong></div>
+                        </div>
                     </div>
-                    <div title={i18n.t('label_action_unplanned_help') || ''}>
-                        {i18n.t('label_action_unplanned_hours') || 'Unplanned estimated hours'}: {summary.unplannedEstimatedHours}
-                        {' · '}{i18n.t('label_action_missing_estimate') || 'Missing estimate'}: {summary.missingEstimateCount}
-                        <div style={{ fontSize: 12, color: designTokens.textMuted }}>{i18n.t('label_action_unplanned_help') || ''}</div>
-                    </div>
-                    <nav aria-label={i18n.t('label_action_filter') || 'Filter reasons'} style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '10px 0' }}>
+                    <p className="action-needed-metric-help">{i18n.t('label_action_unplanned_help') || ''}</p>
+                    <nav className="action-needed-filters" aria-label={i18n.t('label_action_filter') || 'Filter reasons'}>
                         {(['all', ...ACTION_REASON_ORDER] as const).map(value => <button key={value} type="button"
                             aria-pressed={reason === value} onClick={() => { setReason(value); setPage(0); }}>
-                            {value === 'all' ? (i18n.t('label_all') || 'All') : reasonLabel(value)} ({value === 'all' ? summary.items.length : summary.counts[value]})
+                            <span>{value === 'all' ? (i18n.t('label_all') || 'All') : reasonLabel(value)}</span>
+                            <span className="action-needed-filter-count">{value === 'all' ? summary.items.length : summary.counts[value]}</span>
                         </button>)}
                     </nav>
-                    <div data-testid="action-needed-list" style={{ overflowY: 'auto', minHeight: 0, flex: 1 }}>
+                    <div data-testid="action-needed-list" className="action-needed-list">
                         {shown.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map(({ task, reasons, schedulingMessage }) =>
-                            <div key={task.id} style={{ padding: '8px 0', borderTop: `1px solid ${designTokens.borderSubtle}` }}>
-                                <button type="button" onClick={() => goToTask(task.id)} style={{ textAlign: 'left', overflowWrap: 'anywhere' }}>
-                                    #{task.id} {task.subject}
-                                </button>
-                                <div style={{ fontSize: 12, color: designTokens.textMuted }}>
-                                    {reasons.map(reasonLabel).join(' · ')} · {i18n.t('field_start_date') || 'Start'}: {displayDate(task.startDate)}
-                                    {' · '}{i18n.t('field_due_date') || 'Due'}: {displayDate(task.dueDate)}
-                                    {' · '}{i18n.t('field_assigned_to') || 'Assignee'}: {task.assignedToId == null ? '-' : (assigneeNames.get(task.assignedToId) || `ID ${task.assignedToId}`)}
-                                    {' · '}{i18n.t('field_estimated_hours') || 'Estimate'}: {task.estimatedHours ?? '-'}
-                                    {schedulingMessage && ` · ${schedulingMessage}`}
-                                </div>
-                            </div>)}
+                            <button className="action-needed-row" key={task.id} type="button" onClick={() => goToTask(task.id)}>
+                                <span className="action-needed-row-top">
+                                    <span className="action-needed-issue-id">#{task.id}</span>
+                                    <strong className="action-needed-subject">{task.subject}</strong>
+                                    <span className="action-needed-reasons">{reasons.map(value => <span key={value} className={`action-needed-reason action-needed-reason-${value}`}>{reasonLabel(value)}</span>)}</span>
+                                    <span className="action-needed-chevron" aria-hidden="true">›</span>
+                                </span>
+                                <span className="action-needed-row-details">
+                                    <span>{i18n.t('field_start_date') || 'Start'}: {displayDate(task.startDate)}</span>
+                                    <span>{i18n.t('field_due_date') || 'Due'}: {displayDate(task.dueDate)}</span>
+                                    <span>{i18n.t('field_assigned_to') || 'Assignee'}: {task.assignedToId == null ? '-' : (assigneeNames.get(task.assignedToId) || `ID ${task.assignedToId}`)}</span>
+                                    <span>{i18n.t('field_estimated_hours') || 'Estimate'}: {task.estimatedHours == null ? '-' : `${task.estimatedHours}h`}</span>
+                                </span>
+                                {schedulingMessage && <span className="action-needed-scheduling-message">{schedulingMessage}</span>}
+                            </button>)}
+                        {shown.length === 0 && <p className="action-needed-empty">0 {i18n.t('label_action_needed') || 'Action needed'}</p>}
                     </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '8px 0' }}>
+                    <div className="action-needed-pagination">
                         <button type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>‹</button>
                         <span>{currentPage + 1} / {pageCount}</span>
                         <button type="button" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)}>›</button>
                     </div>
-                </> : <p>{readStatus === 'error' ? (i18n.t('label_action_load_failed') || 'Data could not be loaded') :
+                </> : <p className="action-needed-loading">{readStatus === 'error' ? (i18n.t('label_action_load_failed') || 'Data could not be loaded') :
                     (i18n.t('label_action_loading') || 'Loading current issues')}</p>}
-                <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, paddingTop: 8 }}>
-                    <strong>{i18n.t('label_action_planned_overload') || 'Planned overload'}</strong>
-                    <div style={{ fontSize: 12, color: designTokens.textMuted }}>
-                        {i18n.t('label_action_overload_scope') || 'Current workload range and settings'}
-                        {range && ` · ${displayDate(range.from)} – ${displayDate(range.to)}`} · {i18n.t('label_action_threshold') || 'Threshold'}: {capacityThreshold}h
-                        {' · '}{i18n.t('label_action_leaf_only') || 'Leaf only'}: {leafIssuesOnly ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No')}
+                <section className="action-needed-overload" aria-label={i18n.t('label_action_planned_overload') || 'Planned overload'}>
+                    <div className="action-needed-overload-header">
+                        <div className="action-needed-overload-heading">
+                            <span className="action-needed-overload-icon" aria-hidden="true">!</span>
+                            <div><h3>{i18n.t('label_action_planned_overload') || 'Planned overload'}</h3>
+                                <span>{i18n.t('label_action_overload_scope') || 'Current workload range and settings'}</span></div>
+                        </div>
+                        <div className="action-needed-overload-scope">
+                            {range && <span>{displayDate(range.from)} – {displayDate(range.to)}</span>}
+                            <span>{i18n.t('label_action_threshold') || 'Threshold'}: {capacityThreshold}h</span>
+                        </div>
+                    </div>
+                    <div className="action-needed-overload-settings">
+                        {i18n.t('label_action_leaf_only') || 'Leaf only'}: {leafIssuesOnly ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No')}
                         {' · '}{i18n.t('label_action_include_closed') || 'Include closed'}: {includeClosedIssues ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No')}
                         {' · '}{i18n.t('label_action_today_onward') || 'Today onward'}: {todayOnwardOnly ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No')}
                     </div>
-                    {overloads === null ? <button type="button" onClick={() => { setWorkloadPaneVisible(true); setOpen(false); }}>
+                    {overloads === null ? <button className="action-needed-open-workload" type="button" onClick={() => { setWorkloadPaneVisible(true); setOpen(false); }}>
                         {i18n.t('label_action_open_workload') || 'Open workload to calculate'}</button> :
-                        <div style={{ maxHeight: 110, overflowY: 'auto' }}>
-                            {overloads.length === 0 ? '0' : overloads.slice(overloadPage * PAGE_SIZE, (overloadPage + 1) * PAGE_SIZE).map(({ assigneeId, assigneeName, daily }) =>
-                                <button key={`${assigneeId}-${daily.dateStr}`} type="button" onClick={() => {
-                                    setFocusedHistogramBar({ assigneeId, dateStr: daily.dateStr }); setOpen(false);
-                                }} style={{ display: 'block', width: '100%', textAlign: 'left' }}>
-                                    {assigneeName} · {daily.dateStr} · {daily.plannedLoad}h / {capacityThreshold}h
-                                    {' · '}{daily.plannedContributions.map(contribution => `#${contribution.task.id}`).join(', ')}
-                                </button>)}
-                            {overloads.length > PAGE_SIZE && <div>
-                                {overloads.length} {i18n.t('label_action_overload_days') || 'assignee-days'}
-                                <button type="button" disabled={overloadPage === 0} onClick={() => setOverloadPage(overloadPage - 1)}>‹</button>
-                                {overloadPage + 1} / {Math.ceil(overloads.length / PAGE_SIZE)}
-                                <button type="button" disabled={(overloadPage + 1) * PAGE_SIZE >= overloads.length} onClick={() => setOverloadPage(overloadPage + 1)}>›</button>
+                        <div className="action-needed-overload-list">
+                            {overloads.length === 0 ? <p className="action-needed-empty">0 {i18n.t('label_action_overload_days') || 'assignee-days'}</p> :
+                                overloads.slice(currentOverloadPage * PAGE_SIZE, (currentOverloadPage + 1) * PAGE_SIZE).map(({ assigneeId, assigneeName, daily }) =>
+                                    <button className="action-needed-overload-row" key={`${assigneeId}-${daily.dateStr}`} type="button"
+                                        aria-label={`${assigneeName} · ${daily.dateStr} · ${daily.plannedLoad}h / ${capacityThreshold}h · ${daily.plannedContributions.map(contribution => `#${contribution.task.id}`).join(', ')}`}
+                                        onClick={() => {
+                                            setFocusedHistogramBar({ assigneeId, dateStr: daily.dateStr }); setOpen(false);
+                                        }}>
+                                        <span className="action-needed-overload-data"><strong>{assigneeName}</strong><span>{daily.dateStr}</span>
+                                            <span>{i18n.t('label_action_planned_overload') || 'Planned overload'} <b>{daily.plannedLoad}h</b> / {capacityThreshold}h</span>
+                                            <em>+{(daily.plannedLoad - capacityThreshold).toFixed(1)}h</em></span>
+                                        <span className="action-needed-overload-tasks">#{daily.plannedContributions.map(contribution => contribution.task.id).join(', #')}</span>
+                                        <span className="action-needed-chevron" aria-hidden="true">›</span>
+                                    </button>)}
+                            {overloads.length > PAGE_SIZE && <div className="action-needed-overload-pagination">
+                                <span>{overloads.length} {i18n.t('label_action_overload_days') || 'assignee-days'}</span>
+                                <button type="button" disabled={currentOverloadPage === 0} onClick={() => setOverloadPage(currentOverloadPage - 1)}>‹</button>
+                                <span>{currentOverloadPage + 1} / {overloadPageCount}</span>
+                                <button type="button" disabled={currentOverloadPage + 1 >= overloadPageCount} onClick={() => setOverloadPage(currentOverloadPage + 1)}>›</button>
                             </div>}
                         </div>}
-                </div>
+                </section>
+                <footer className="action-needed-footer"><button type="button" onClick={() => setOpen(false)}>{i18n.t('button_close') || 'Close'}</button></footer>
             </section>
         </div>, document.body)}
     </>;
