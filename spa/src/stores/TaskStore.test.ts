@@ -1446,7 +1446,7 @@ describe('TaskStore API data application', () => {
     expect(uiState.columnsExplicitInQuery).toBe(false);
   });
 
-  it('refreshData applies API data with one TaskStore state update', async () => {
+  it('refreshData reports loading and applies API data with one final state update', async () => {
         vi.mocked(apiClient.fetchData).mockResolvedValue({
             tasks: [buildTask({ id: 't1', projectId: 'p1', projectName: 'Project 1' })],
             relations: [],
@@ -1472,8 +1472,20 @@ describe('TaskStore API data application', () => {
         await useTaskStore.getState().refreshData();
         unsubscribe();
 
-        expect(notifications).toBe(1);
+        expect(notifications).toBe(2);
         expect(useTaskStore.getState().tasks.map(task => task.id)).toEqual(['t1']);
+    });
+
+    it('does not present a failed refresh as ready data', async () => {
+        let rejectRequest!: (error: Error) => void;
+        vi.mocked(apiClient.fetchData).mockImplementation(() => new Promise<Awaited<ReturnType<typeof apiClient.fetchData>>>((_, reject) => { rejectRequest = reject; }));
+        useTaskStore.setState({ allTasks: [buildTask({ id: 'old' })], initialDataLoaded: true, dataReadStatus: 'ready' });
+        const request = useTaskStore.getState().refreshData();
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+        rejectRequest(new Error('offline'));
+        await expect(request).rejects.toThrow('offline');
+        expect(useTaskStore.getState().dataReadStatus).toBe('error');
+        expect(useTaskStore.getState().allTasks.map(task => task.id)).toEqual(['old']);
     });
 
     it('applyApiData filters selectedProjectIds without mutating initialState', () => {

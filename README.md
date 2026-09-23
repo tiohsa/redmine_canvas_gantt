@@ -160,6 +160,10 @@ The cleanup task deletes the `plugin_redmine_canvas_gantt` row from Redmine's `s
    - Export the current view as PNG or CSV when the layout supports it.
    - Toggle full screen for more workspace when needed.
 
+CSV is intended for people opening it in spreadsheet applications. For untrusted text beginning with a formula marker (`=`, `+`, `-`, `@`, including full-width forms), a tab, or a line break, the export adds a leading tab inside a quoted CSV cell; it also checks past leading spaces and BOM. Numeric task columns remain numeric. This follows the [OWASP CSV Injection guidance](https://owasp.org/www-community/attacks/CSV_Injection) for Excel-oriented viewing. The tab becomes part of the cell data and can affect programmatic imports. A single-quote prefix may be removed when Excel saves and reopens CSV, so it is not used here. Spreadsheet behavior varies; this export cannot guarantee safety in every spreadsheet or import path.
+
+To verify in a spreadsheet, create test issues with subject `=1+1`, parent subject `+1+1`, custom field name `＠SUM(1)`, and custom field value `  -1+1`. Include a value with a quote, comma, and lone carriage return. Export CSV; inspect that dangerous text begins with a tab inside a quoted cell and that embedded quotes are doubled. Open it in the target Excel or Calc version, confirm that all values remain text and cells and rows stay intact, then save and reopen it to check again. Repeat for each supported import route. The automated serializer tests do not perform this spreadsheet check.
+
 ### Work Timer
 
 - Enable the **Work Timer** column from column settings. It is hidden by default and does not become a Redmine query column.

@@ -250,6 +250,7 @@ interface TaskState {
     autoSave: boolean;
     autoSaveTransition: 'idle' | 'enabling';
     initialDataLoaded: boolean;
+    dataReadStatus: 'idle' | 'loading' | 'ready' | 'error';
     activeReadContext: ReadContext | null;
     serverTaskSnapshot: ServerSnapshot<Task>;
     localTaskPatches: Record<string, Array<LocalPatch<Task>>>;
@@ -1008,6 +1009,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const existing = inflightReads.get(readKey);
         if (existing) return existing;
         activeReadContext = context;
+        set({ dataReadStatus: 'loading' });
         readLifecycleMetrics.requestsStarted += 1;
         readLifecycleMetrics.maxInflight = Math.max(readLifecycleMetrics.maxInflight, inflightReads.size + 1);
         const request = (async (): Promise<ReadApplyOutcome> => {
@@ -1027,6 +1029,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 return { status: 'superseded', context };
             }
             readLifecycleMetrics.failures += 1;
+            set({ dataReadStatus: 'error' });
             throw error;
         }
         })();
@@ -1133,6 +1136,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     autoSave: preferences.autoSave ?? false,
     autoSaveTransition: 'idle',
     initialDataLoaded: false,
+    dataReadStatus: 'idle',
     activeReadContext: null,
     serverTaskSnapshot: createServerSnapshot<Task>([]),
     localTaskPatches: {},
@@ -1308,7 +1312,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
         set((state) => {
             const result = buildApiDataPatch(data, state, readContext);
             querySyncState = result.querySyncState;
-            return { ...result.patch, activeReadContext: readContext ?? activeReadContext };
+            return { ...result.patch, activeReadContext: readContext ?? activeReadContext,
+                dataReadStatus: readContext ? 'ready' : state.dataReadStatus };
         });
         const isQueryBoundary = readContext?.purpose === 'initial_load' || readContext?.purpose === 'saved_query';
         const currentColumnSource = useUIStore.getState().columnStateSource;

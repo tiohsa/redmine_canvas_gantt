@@ -35,6 +35,7 @@ import { useToolbarShortcuts } from './gantt/useToolbarShortcuts';
 import { fontFamilies, designTokens } from '../styles/designTokens';
 import { toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import './GanttToolbar.css';
+import { ActionNeededControl } from './actionNeeded/ActionNeededControl';
 
 interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
@@ -969,6 +970,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     )}
                 </div>
 
+                <ActionNeededControl />
                 <div ref={workloadMenuRef} className="gantt-toolbar-workload" style={{ position: 'relative' }}>
                     <button
                     onClick={() => toggleMenu('workload')}
