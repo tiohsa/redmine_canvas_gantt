@@ -2173,6 +2173,43 @@ RSpec.describe CanvasGanttsController, type: :controller do
       )
     end
 
+    it 'forwards a read-only resolution review and serializes its guarded scope' do
+      coordinator = controller.send(:schedule_mutation_coordinator)
+      context = { token: 'reviewed-scope', task_ids: [10, 11], relations: [] }
+      allow(coordinator).to receive(:call).and_return(
+        RedmineCanvasGantt::ScheduleMutationCoordinator::Result.new(status: :ok,
+          entities: [], revisions: { 10 => 2, 11 => 3 }, invalidated_entity_ids: [], resolution_context: context)
+      )
+      post :schedule_mutation, params: { project_id: 'demo', operation_id: 'review',
+        resolution: { task_ids: [10], preview: true }, changes: [] }, format: :json
+      expect(response).to have_http_status(:ok)
+      expect(coordinator).to have_received(:call) do |**args|
+        expect(args[:resolution][:task_ids].map(&:to_i)).to eq([10])
+        expect(args[:resolution][:preview].to_s).to eq('true')
+      end
+      expect(JSON.parse(response.body)['resolution_context']).to eq(context.stringify_keys)
+    end
+
+    it 'serializes an adjusted dependent task without treating it as a conflict' do
+      adjustments = [{ task_id: 11, before_start_date: '2027-01-06', before_due_date: '2027-01-07',
+                       start_date: '2027-01-08', due_date: '2027-01-09' }]
+      allow(controller.send(:schedule_mutation_coordinator)).to receive(:call).and_return(
+        RedmineCanvasGantt::ScheduleMutationCoordinator::Result.new(
+          status: :validation_error, entities: [], revisions: {}, invalidated_entity_ids: [],
+          errors: ['Review the adjusted schedule before applying.'], adjustments: adjustments
+        )
+      )
+
+      post :schedule_mutation, params: { project_id: 'demo', operation_id: 'apply',
+        resolution: { task_ids: [10], token: 'pinned' },
+        changes: [{ task_id: 10, start_date: '2027-01-04' }] }, format: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      body = JSON.parse(response.body)
+      expect(body['adjustments']).to eq(adjustments.map(&:stringify_keys))
+      expect(body['conflicts']).to be_nil
+    end
+
     it 'exposes a single operation boundary for a multi-issue schedule change' do
       coordinator = controller.send(:schedule_mutation_coordinator)
       post :schedule_mutation,

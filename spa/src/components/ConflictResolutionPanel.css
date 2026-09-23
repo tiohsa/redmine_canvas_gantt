@@ -270,3 +270,12 @@
 
 .is-fullscreen .conflict-backdrop { top: 0; }
 .is-fullscreen .conflict-panel { top: 0; }
+
+.conflict-group { padding: 12px; margin: 12px 0; border: 1px solid var(--color-border-strong, #d6deea); border-radius: 8px; }
+.conflict-group button { margin: 4px 8px 4px 0; }
+.conflict-card-actions button[aria-pressed="true"] { background: var(--brand-6, #1456f0); color: #fff; }
+.conflict-group [role="alert"] { color: #b42318; }
+.conflict-group-plan { padding-left: 18px; overflow-wrap: anywhere; }
+
+.conflict-adjustments { margin: 12px 0; padding: 12px; border: 1px solid var(--color-border-strong, #d6deea); border-radius: 8px; background: #fff; }
+.conflict-adjustments ul { padding-left: 18px; overflow-wrap: anywhere; }

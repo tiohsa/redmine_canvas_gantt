@@ -57,6 +57,8 @@ Baseline snapshots are stored in Redmine's plugin settings (`Setting.plugin_redm
 
 Date changes in a batch are saved atomically. If another request has updated any of the issues, the entire batch is cancelled and every local draft is retained. The conflict panel lists all issues with revision conflicts; issues whose save was only cancelled with the batch remain unsaved without being marked as conflicts.
 
+For date conflicts, row buttons only select the server version or local dates. **Apply this group** validates and commits the original schedule operation together with its dependencies and hierarchy. Inconsistent combinations are blocked. The server also checks the final Redmine callback result and rolls back if it changes a selected date. If Redmine would adjust dates, the panel lists every affected issue, including dependencies without a conflict card, and requires **Accept adjusted dates and apply** before retrying. The retry succeeds only if the actual final dates match the approved adjustment. Changes to reviewed revisions, relations, delays, hierarchy or calendars require **Refresh comparison and reselect**. Failed applications preserve choices and drafts. Local choices apply only the reviewed date intent; later edits, other fields and unrelated drafts remain unsaved. Automatic and manual saving use the same resolution flow.
+
 ## Demo
 
 ![Canvas Gantt Demo](./docs/demo.gif)

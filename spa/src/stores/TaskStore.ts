@@ -70,6 +70,7 @@ import {
     type ServerSnapshot
 } from './taskStore/stateContract';
 import { selectConflictRemote, type SelectedConflictRemote } from './taskStore/conflictRemote';
+import { applyScheduleConflict, prepareScheduleConflict, scheduleConflictIds, selectScheduleConflict, type ScheduleConflictReview } from './taskStore/scheduleConflictResolution';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
@@ -103,6 +104,9 @@ export type TaskConflictRecord = {
     remoteEntity?: PersistedTaskState;
     remoteRevision?: number;
     remoteAvailability?: MutationRemoteAvailability;
+    scheduleOperation?: Record<string, number>;
+    scheduleReview?: ScheduleConflictReview;
+    scheduleChoice?: 'local' | 'remote';
 };
 
 const terminalTaskDeletionPatch = (
@@ -193,7 +197,7 @@ const queueRefreshData = (refreshData: () => Promise<ReadApplyOutcome>) => {
     });
 };
 
-interface TaskState {
+export interface TaskState {
     permissions: { editable: boolean; viewable: boolean; baselineEditable: boolean };
     allTasks: Task[];
     tasks: Task[];
@@ -303,6 +307,8 @@ interface TaskState {
     clearTaskTombstone: (id: string) => void;
     registerTaskConflict: (id: string, message: string, generation?: number, remoteEntity?: PersistedTaskState, remoteRevision?: number, remoteAvailability?: MutationRemoteAvailability) => void;
     resolveTaskConflict: (id: string, resolution: 'remote' | 'local' | 'dismiss') => Promise<void>;
+    prepareScheduleConflict: (id: string) => Promise<void>;
+    applyScheduleConflict: (id: string, acceptAdjustments?: boolean) => Promise<void>;
     updateViewport: (updates: Partial<Viewport>) => void;
     setRowHeight: (height: number) => void;
     setViewMode: (mode: ViewMode) => void;
@@ -2101,8 +2107,23 @@ export const useTaskStore = create<TaskState>((set, get) => {
         }
     })),
 
+    prepareScheduleConflict: async id => {
+        // Explicit re-review also refreshes the shared business calendar and
+        // its request header; a stale calendar must not strand this action.
+        await get().refreshData();
+        await prepareScheduleConflict(get, set, id);
+    },
+    applyScheduleConflict: (id, acceptAdjustments = false) => {
+        invalidateDataRequests();
+        return applyScheduleConflict(get, set,
+            (state, allTasks) => toDerivedTaskStatePatch(buildDerivedTaskState(state, { allTasks })), id, acceptAdjustments);
+    },
     resolveTaskConflict: async (id, resolution) => {
         if (resolution === 'dismiss') {
+            return;
+        }
+        if (scheduleConflictIds(get(), id).length) {
+            await selectScheduleConflict(get, set, id, resolution);
             return;
         }
 
@@ -2848,7 +2869,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const snapshotMutationScheduling: Record<string, boolean> = {};
                 const unsupportedMutationFailures = new Map<string, string>();
                 snapshotTaskIds.forEach((taskId) => {
-                    if (snapshot.taskConflicts[taskId]) {
+                    if (snapshot.taskConflicts[taskId] || Object.values(snapshot.taskConflicts).some(conflict =>
+                        conflict.scheduleOperation?.[taskId] !== undefined || conflict.scheduleReview?.taskIds.includes(taskId))) {
                         unsupportedMutationFailures.set(taskId, i18n.t('label_unresolved_task_conflict') || 'Resolve the task conflict before saving.');
                         return;
                     }
@@ -3182,7 +3204,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     set((state) => {
                         const taskConflicts = { ...state.taskConflicts };
                         conflictMessages.forEach(({ message, generation, remoteEntity, remoteRevision, remoteAvailability }, taskId) => {
-                            taskConflicts[taskId] = { taskId, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability };
+                            taskConflicts[taskId] = { taskId, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability,
+                                ...(snapshotMutationScheduling[taskId] ? { scheduleOperation: Object.fromEntries(
+                                    Object.keys(snapshotMutationScheduling).filter(key => snapshotMutationScheduling[key])
+                                        .map(key => [key, snapshotGenerations[key] ?? 0])
+                                ) } : {}) };
                         });
                         return { taskConflicts };
                     });

@@ -3,6 +3,7 @@ import { useTaskStore, derivedRecalculationCounters, resetDerivedRecalculationCo
 import type { Task } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { apiClient } from '../api/client';
+import { taskMutationService } from '../services/taskMutationService';
 import { useUIStore } from './UIStore';
 import { AutoScheduleMoveMode, DatePlacementMode } from '../types/constraints';
 import { loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
@@ -428,6 +429,11 @@ describe('TaskStore canonical mutation reconciliation', () => {
             calendars: { weekdays: { id: 'weekdays', name: 'Weekdays', nonWorkingWeekDays: [0, 6], days: {} } }
         });
 
+        const schedule = vi.spyOn(taskMutationService, 'scheduleMutation').mockImplementation(async (_changes, resolution) => {
+            const entities = tasks.map(task => ({ ...task, lockVersion: 2 }));
+            return { status: 'ok', operationId: 'review', entities, revisions: { A: 2, B: 2 },
+                ...(resolution?.preview ? { resolutionContext: { token: 'test', taskIds: ['A', 'B'], relations: useTaskStore.getState().relations } } : {}) };
+        });
         try {
             useTaskStore.getState().setTasks(tasks);
             useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays, autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
@@ -441,13 +447,17 @@ describe('TaskStore canonical mutation reconciliation', () => {
 
             await useTaskStore.getState().resolveTaskConflict('B', 'local');
 
-            expect(apiClient.updateTaskFields).toHaveBeenCalledExactlyOnceWith('B', {
-                start_date: derived ? '2027-01-04' : '2027-01-02',
-                due_date: derived ? '2027-01-04' : '2027-01-02',
-                lock_version: 2
-            }, expect.any(String), ...(derived ? [] : [DatePlacementMode.CalendarDays]));
+            expect(apiClient.updateTaskFields).not.toHaveBeenCalled();
+            await useTaskStore.getState().applyScheduleConflict('B');
+            expect(schedule).toHaveBeenCalledTimes(2);
+            expect(schedule.mock.calls[1][0]).toEqual([expect.objectContaining({
+                taskId: 'B', startDate: derived ? parseDateOnly('2027-01-04') : saturday,
+                dueDate: derived ? parseDateOnly('2027-01-04') : saturday,
+                baseRevision: 2, datePlacementMode: derived ? DatePlacementMode.WorkingDays : DatePlacementMode.CalendarDays
+            })]);
             expect(useTaskStore.getState().taskConflicts.B).toBeUndefined();
         } finally {
+            schedule.mockRestore();
             useUIStore.setState(previousUI);
             configureBusinessCalendar(null);
         }
@@ -2487,12 +2497,12 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.taskConflicts['task-1']).toBeDefined();
     });
 
-    it('cleans the settled bar operation when conflict resolution adopts the remote task', async () => {
-        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
-        const remoteTask = buildTask({ id: 'task-1', dueDate: FRIDAY, lockVersion: 2 });
+    it('cleans the settled bar operation when conflict resolution adopts the remote task (non-schedule fields)', async () => {
+        const localTask = buildTask({ id: 'task-1', ratioDone: 20 });
+        const remoteTask = buildTask({ id: 'task-1', ratioDone: 50, lockVersion: 2 });
         useTaskStore.getState().setTasks([localTask]);
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.setState({
             serverTaskSnapshot: {
@@ -2514,16 +2524,16 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.barOperations).toEqual({});
     });
 
-    it('settles only the resolved entity in a linked bar operation', async () => {
+    it('settles only the resolved entity in a linked bar operation (non-schedule fields)', async () => {
         const localTasks = [
-            buildTask({ id: 'task-a', dueDate: TUESDAY }),
-            buildTask({ id: 'task-b', dueDate: WEDNESDAY })
+            buildTask({ id: 'task-a', ratioDone: 20 }),
+            buildTask({ id: 'task-b', ratioDone: 30 })
         ];
-        const remoteTaskA = buildTask({ id: 'task-a', dueDate: FRIDAY, lockVersion: 2 });
+        const remoteTaskA = buildTask({ id: 'task-a', ratioDone: 50, lockVersion: 2 });
         useTaskStore.getState().setTasks(localTasks);
         const operationId = useTaskStore.getState().beginBarOperation('task-a');
-        useTaskStore.getState().updateTask('task-a', { dueDate: THURSDAY });
-        useTaskStore.getState().updateTask('task-b', { dueDate: FRIDAY });
+        useTaskStore.getState().updateTask('task-a', { ratioDone: 40 });
+        useTaskStore.getState().updateTask('task-b', { ratioDone: 50 });
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.setState({
             serverTaskSnapshot: {
@@ -2546,13 +2556,13 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.localTaskPatches['task-b']).toHaveLength(1);
     });
 
-    it('preserves later-generation patches when resolving an earlier remote conflict', async () => {
-        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
-        const remoteTask = buildTask({ id: 'task-1', dueDate: FRIDAY, lockVersion: 2 });
+    it('preserves later-generation patches when resolving an earlier remote conflict (non-schedule fields)', async () => {
+        const localTask = buildTask({ id: 'task-1', ratioDone: 20 });
+        const remoteTask = buildTask({ id: 'task-1', ratioDone: 50, lockVersion: 2 });
         useTaskStore.getState().setTasks([localTask]);
 
         const firstOperationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
         useTaskStore.getState().endBarOperation(firstOperationId);
         const conflictGeneration = useTaskStore.getState().editGenerations['task-1'];
 
@@ -2583,7 +2593,7 @@ describe('TaskStore asynchronous state ownership', () => {
 
         const state = useTaskStore.getState();
         expect(state.allTasks.find(task => task.id === 'task-1')).toMatchObject({
-            dueDate: FRIDAY,
+            ratioDone: 50,
             subject: 'later local edit'
         });
         expect(state.localTaskPatches['task-1']).toEqual([
@@ -2707,16 +2717,16 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(useTaskStore.getState().allTasks.find(task => task.id === local.id)?.subject).toBe('local intent');
     });
 
-    it('cleans the bar operation after a successful local conflict retry', async () => {
+    it('cleans the bar operation after a successful local conflict retry (non-schedule fields)', async () => {
         vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 2 });
-        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
+        const localTask = buildTask({ id: 'task-1', ratioDone: 20, lockVersion: 1 });
         useTaskStore.getState().applyApiData(buildApiData([localTask]));
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
         useTaskStore.getState().endBarOperation(operationId);
         useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
         vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
-            { ...localTask, dueDate: THURSDAY, lockVersion: 2 }
+            { ...localTask, ratioDone: 40, lockVersion: 2 }
         ]));
 
         await useTaskStore.getState().resolveTaskConflict('task-1', 'local');
@@ -2834,13 +2844,13 @@ describe('TaskStore asynchronous state ownership', () => {
         );
     });
 
-    it('settles the conflicted operation without removing a later operation after local retry', async () => {
+    it('settles the conflicted operation without removing a later operation after local retry (non-schedule fields)', async () => {
         vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 3 });
-        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
+        const localTask = buildTask({ id: 'task-1', ratioDone: 20, lockVersion: 1 });
         useTaskStore.getState().applyApiData(buildApiData([localTask]));
 
         const conflictedOperationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
         useTaskStore.getState().endBarOperation(conflictedOperationId);
         useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
 
@@ -2848,7 +2858,7 @@ describe('TaskStore asynchronous state ownership', () => {
         useTaskStore.getState().updateTask('task-1', { subject: 'later local edit' });
         useTaskStore.getState().endBarOperation(laterOperationId);
         vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
-            { ...localTask, dueDate: THURSDAY, subject: 'later local edit', lockVersion: 3 }
+            { ...localTask, ratioDone: 40, subject: 'later local edit', lockVersion: 3 }
         ]));
 
         await useTaskStore.getState().resolveTaskConflict('task-1', 'local');
@@ -2859,22 +2869,22 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.modifiedTaskIds.has('task-1')).toBe(false);
     });
 
-    it('settles every saved generation while preserving an edit created during local retry', async () => {
+    it('settles every saved generation while preserving an edit created during local retry (non-schedule fields)', async () => {
         const firstSaveRequest = deferred<{ status: 'ok'; lockVersion: number }>();
         vi.mocked(apiClient.updateTaskFields).mockReturnValueOnce(firstSaveRequest.promise);
-        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
+        const localTask = buildTask({ id: 'task-1', ratioDone: 20, lockVersion: 1 });
         useTaskStore.getState().applyApiData(buildApiData([localTask]));
 
         const operationIds = [1, 2, 3].map(() => {
             const operationId = useTaskStore.getState().beginBarOperation('task-1');
-            useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+            useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
             useTaskStore.getState().endBarOperation(operationId);
             return operationId;
         });
         const conflictGeneration = useTaskStore.getState().editGenerations['task-1'] - 2;
         useTaskStore.getState().registerTaskConflict('task-1', 'Conflict', conflictGeneration);
         vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
-            { ...localTask, dueDate: THURSDAY, lockVersion: 2 }
+            { ...localTask, ratioDone: 40, lockVersion: 2 }
         ]));
 
         const retry = useTaskStore.getState().resolveTaskConflict('task-1', 'local');
@@ -2909,12 +2919,12 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.taskConflicts['task-1']).toBeDefined();
     });
 
-    it('preserves task ownership when remote state is unavailable', async () => {
-        const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
+    it('preserves task ownership when remote state is unavailable (non-schedule fields)', async () => {
+        const localTask = buildTask({ id: 'task-1', ratioDone: 20 });
         useTaskStore.getState().setTasks([localTask]);
 
         const firstOperationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
         useTaskStore.getState().endBarOperation(firstOperationId);
         useTaskStore.getState().registerTaskConflict('task-1', 'Task no longer exists');
 
@@ -2931,10 +2941,10 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.barOperations).toHaveProperty(firstOperationId);
     });
 
-    it('keeps the active operation when remote state is unavailable', async () => {
-        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', dueDate: TUESDAY })]);
+    it('keeps the active operation when remote state is unavailable (non-schedule fields)', async () => {
+        useTaskStore.getState().setTasks([buildTask({ id: 'task-1', ratioDone: 20 })]);
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
-        useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
+        useTaskStore.getState().updateTask('task-1', { ratioDone: 40 });
         useTaskStore.getState().registerTaskConflict('task-1', 'Task no longer exists');
 
         expect(useTaskStore.getState().activeBarOperationId).toBe(operationId);

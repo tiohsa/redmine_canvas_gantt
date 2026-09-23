@@ -4,6 +4,7 @@ import { useUIStore } from '../stores/UIStore';
 import type { Task, PersistedTaskState } from '../types';
 import type { LocalPatch, ReadContext, ServerSnapshot } from '../stores/taskStore/stateContract';
 import { selectConflictRemote } from '../stores/taskStore/conflictRemote';
+import { scheduleConflictIds, scheduleConflictPlan } from '../stores/taskStore/scheduleConflictResolution';
 import { formatDate } from '../utils/dateUtils';
 import { parseDateOnly, toLocalDisplayDate } from '../utils/dateOnly';
 import { i18n } from '../utils/i18n';
@@ -54,7 +55,8 @@ const conflictComparison = (
     activeReadContext: ReadContext | null,
     readStatus: 'idle' | 'loading' | 'ready' | 'error'
 ) => {
-    const retryGeneration = patches.reduce((latest, patch) => Math.max(latest, patch.generation), conflict.generation ?? 0);
+    const retryGeneration = conflict.scheduleReview?.generations[conflict.taskId] ??
+        patches.reduce((latest, patch) => Math.max(latest, patch.generation), conflict.generation ?? 0);
     const intent = patches.filter(patch => patch.generation <= retryGeneration)
         .reduce<Partial<Task>>((fields, patch) => ({ ...fields, ...patch.mutationIntent }), {});
     const remote = selectConflictRemote(conflict, snapshot, activeReadContext, readStatus)?.entity;
@@ -85,6 +87,8 @@ const conflictComparison = (
 
 /** Keeps the current draft in TaskStore until one of the two explicit choices. */
 export const ConflictResolutionPanel: React.FC = () => {
+    const store = useTaskStore();
+    const [pending, setPending] = useState(false);
     const conflicts = useTaskStore(state => state.taskConflicts);
     const allTasks = useTaskStore(state => state.allTasks);
     const patches = useTaskStore(state => state.localTaskPatches);
@@ -114,12 +118,14 @@ export const ConflictResolutionPanel: React.FC = () => {
 
     if (entries.length === 0) return null;
     const choose = (id: string, resolution: 'local' | 'remote', index: number) => {
+        const grouped = scheduleConflictIds(store, id).length > 0;
+        if (grouped) setPending(true);
         focusAfterResolve.current = index;
         setClosedSignature(null);
         void resolveTaskConflict(id, resolution).catch((error: unknown) => {
             focusAfterResolve.current = null;
             useUIStore.getState().addNotification(error instanceof Error ? error.message : String(error), 'error');
-        });
+        }).finally(() => { if (grouped) setPending(false); });
     };
 
     if (!open) return <button type="button" className="conflict-reopen" data-testid="conflict-reopen"
@@ -153,6 +159,11 @@ export const ConflictResolutionPanel: React.FC = () => {
             </header>
             <div data-testid="conflict-scroll-list" className="conflict-panel-list rcg-scroll">
                 {entries.map((conflict, index) => {
+                    const groupIds = scheduleConflictIds(store, conflict.taskId);
+                    const grouped = groupIds.length > 0;
+                    const review = conflict.scheduleReview;
+                    const plan = review ? scheduleConflictPlan(store, review) : undefined;
+                    const busy = pending || review?.busy;
                     const localTask = taskById.get(conflict.taskId);
                     const comparison = conflictComparison(conflict, patches[conflict.taskId] ?? [], statuses, customFields, assignees,
                         snapshot, activeReadContext, readStatus);
@@ -165,6 +176,47 @@ export const ConflictResolutionPanel: React.FC = () => {
                                 <span className="conflict-card-badge">{i18n.t('label_conflict_badge') || 'Conflict'}</span>
                             </div>
                             <p className="conflict-card-message">{conflict.message}</p>
+                            {grouped && groupIds[0] === conflict.taskId && <div className="conflict-group" data-testid={`conflict-group-${conflict.taskId}`}>
+                                <strong>{i18n.t('label_conflict_schedule_group') || 'Schedule group'}: {(review?.taskIds ?? groupIds).map(id => `#${id}`).join(', ')}</strong>
+                                <p>{i18n.t('label_conflict_schedule_help') || 'Choose each version, then apply the group. Other drafts stay unsaved.'}</p>
+                                {plan && <ul className="conflict-group-plan">{plan.tasks.map(task => {
+                                    const member = conflicts[task.id];
+                                    const choice = member?.scheduleChoice;
+                                    const status = member && !choice ? (i18n.t('label_conflict_unselected') || 'Not selected')
+                                        : choice === 'local' || plan.changes.some(change => change.taskId === task.id)
+                                            ? (i18n.t('button_select_local') || 'Local dates')
+                                            : (i18n.t('label_conflict_server_column') || 'Server (confirmed)');
+                                    return <li key={task.id}>#{task.id}: {status} — {formatValue('startDate', task.startDate, true, task, statuses, assignees)}
+                                        {' – '}{formatValue('dueDate', task.dueDate, true, task, statuses, assignees)}</li>;
+                                })}</ul>}
+                                {(plan?.error || review?.error) && <p role="alert">{plan?.error || review?.error}</p>}
+                                {review?.adjustments?.values.length && <div className="conflict-adjustments" data-testid="conflict-adjustments">
+                                    <strong>{i18n.t('label_conflict_adjustments_title') || 'Redmine would change these dates'}</strong>
+                                    <p>{i18n.t('label_conflict_adjustments_help') || 'Review every change before applying. The current plan has not been saved.'}</p>
+                                    <ul>{review.adjustments.values.map(adjustment => <li key={adjustment.taskId}>
+                                        #{adjustment.taskId}: {formatValue('startDate', adjustment.beforeStartDate, true, undefined, statuses, assignees)}
+                                        {' – '}{formatValue('dueDate', adjustment.beforeDueDate, true, undefined, statuses, assignees)}
+                                        {' → '}{formatValue('startDate', adjustment.startDate, true, undefined, statuses, assignees)}
+                                        {' – '}{formatValue('dueDate', adjustment.dueDate, true, undefined, statuses, assignees)}
+                                    </li>)}</ul>
+                                    <button type="button" disabled={busy || plan?.incomplete || Boolean(plan?.error) ||
+                                        review.adjustments.planKey !== plan?.planKey}
+                                        data-testid={`conflict-accept-adjustments-${conflict.taskId}`}
+                                        onClick={() => void store.applyScheduleConflict(conflict.taskId, true)}>
+                                        {i18n.t('button_apply_conflict_adjustments') || 'Accept adjusted dates and apply'}
+                                    </button>
+                                </div>}
+                                <button type="button" disabled={busy || !review || plan?.incomplete || Boolean(plan?.error) || Boolean(review.adjustments?.values.length)}
+                                    data-testid={`conflict-apply-${conflict.taskId}`}
+                                    onClick={() => void store.applyScheduleConflict(conflict.taskId)}>
+                                    {i18n.t('button_apply_conflict_group') || 'Apply this group'}
+                                </button>
+                                <button type="button" disabled={busy} onClick={() => {
+                                    setPending(true);
+                                    void store.prepareScheduleConflict(conflict.taskId).catch(error =>
+                                        useUIStore.getState().addNotification(String(error), 'error')).finally(() => setPending(false));
+                                }}>{i18n.t('button_review_conflict_group') || 'Refresh comparison and reselect'}</button>
+                            </div>}
                             {comparison.length > 0 && <div className="conflict-comparison-wrap">
                                 <table className="conflict-comparison" aria-label={`${i18n.t('label_conflict_changed_fields') || 'Changed fields'} #${conflict.taskId}`}>
                                     <thead><tr>
@@ -181,13 +233,15 @@ export const ConflictResolutionPanel: React.FC = () => {
                             </div>}
                             <div className="conflict-card-actions">
                                 <div><button type="button" data-conflict-choice data-testid={`conflict-use-remote-${conflict.taskId}`}
+                                    disabled={busy} aria-pressed={grouped ? conflict.scheduleChoice === 'remote' : undefined}
                                     onClick={() => choose(conflict.taskId, 'remote', index)}>
-                                    {i18n.t('button_use_remote') || 'Use remote'}
-                                </button><span>{i18n.t('label_conflict_use_remote_help') || 'Apply the latest server values'}</span></div>
+                                    {grouped ? (i18n.t('button_select_remote') || 'Select server') : (i18n.t('button_use_remote') || 'Use remote')}
+                                </button><span>{grouped ? (i18n.t('label_conflict_selection_only') || 'Selection only; apply the group to confirm') : (i18n.t('label_conflict_use_remote_help') || 'Apply the latest server values')}</span></div>
                                 <div><button type="button" data-conflict-choice data-testid={`conflict-keep-local-${conflict.taskId}`}
+                                    disabled={busy} aria-pressed={grouped ? conflict.scheduleChoice === 'local' : undefined}
                                     onClick={() => choose(conflict.taskId, 'local', index)}>
-                                    {i18n.t('button_keep_local_retry') || 'Keep local & retry'}
-                                </button><span>{i18n.t('label_conflict_retry_help') || 'Try saving your changes again'}</span></div>
+                                    {grouped ? (i18n.t('button_select_local') || 'Select local dates') : (i18n.t('button_keep_local_retry') || 'Keep local & retry')}
+                                </button><span>{grouped ? (i18n.t('label_conflict_selection_only') || 'Selection only; apply the group to confirm') : (i18n.t('label_conflict_retry_help') || 'Try saving your changes again')}</span></div>
                             </div>
                         </article>
                     );

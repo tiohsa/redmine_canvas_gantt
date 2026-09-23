@@ -776,6 +776,43 @@ describe('mutation error classification', () => {
         });
     });
 
+    it('round trips a read-only schedule resolution scope separately from the write set', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({
+            status: 'ok', operation_id: 'review', entities: [{ id: 1, start_date: '2027-01-04', lock_version: 2 }], revisions: { 1: 2 },
+            resolution_context: { token: 'pinned', task_ids: [1, 2], relations: [{ id: 9, from: 1, to: 2, type: 'precedes', delay: 1 }] }
+        }) });
+        vi.stubGlobal('fetch', fetchMock);
+        const result = await apiClient.scheduleMutation([], 'review', { taskIds: ['1'], preview: true });
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({ operation_id: 'review', changes: [], base_revisions: {},
+            resolution: { task_ids: ['1'], preview: true } });
+        expect(result.resolutionContext).toEqual({ token: 'pinned', taskIds: ['1', '2'], relations: [{ id: '9', from: '1', to: '2', type: 'precedes', delay: 1 }] });
+        await apiClient.scheduleMutation([], 'all-server', { taskIds: ['1'], token: 'pinned' });
+        expect(JSON.parse(String(fetchMock.mock.calls[1][1].body)).resolution).toEqual({ task_ids: ['1'], token: 'pinned' });
+    });
+
+    it('round trips a read-only dependent date adjustment for explicit approval', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        const fetchMock = vi.fn().mockResolvedValueOnce({ ok: false, status: 422, json: async () => ({
+            status: 'validation_error', operation_id: 'apply', entities: [], revisions: {},
+            adjustments: [{ task_id: 2, before_start_date: '2027-01-06', before_due_date: '2027-01-07',
+                start_date: '2027-01-08', due_date: '2027-01-09' }]
+        }) }).mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+            status: 'ok', operation_id: 'approved', entities: [], revisions: {}
+        }) });
+        vi.stubGlobal('fetch', fetchMock);
+        const proposed = await apiClient.scheduleMutation([], 'apply', { taskIds: ['1'], token: 'pinned' });
+        expect(proposed.adjustments).toEqual([{ taskId: '2', beforeStartDate: parseDateOnly('2027-01-06'),
+            beforeDueDate: parseDateOnly('2027-01-07'), startDate: parseDateOnly('2027-01-08'),
+            dueDate: parseDateOnly('2027-01-09') }]);
+        await apiClient.scheduleMutation([], 'approved', { taskIds: ['1'], token: 'pinned',
+            acceptedAdjustments: proposed.adjustments });
+        expect(JSON.parse(String(fetchMock.mock.calls[1][1].body)).resolution).toEqual({
+            task_ids: ['1'], token: 'pinned',
+            accepted_adjustments: [{ task_id: '2', start_date: '2027-01-08', due_date: '2027-01-09' }]
+        });
+    });
+
     it('serializes each schedule change mode without a request-level mode', async () => {
         window.RedmineCanvasGantt = {
             projectId: 1,
