@@ -1,5 +1,6 @@
 import type { RefObject } from 'react';
 import { useEffect } from 'react';
+import { getActiveModalDialog } from '../../utils/modalDialog';
 
 import type { ToolbarMenuKey } from './useToolbarMenuState';
 
@@ -22,6 +23,7 @@ export const useToolbarShortcuts = ({
         if (!showFilterMenu) return;
 
         const requestId = window.requestAnimationFrame(() => {
+            if (getActiveModalDialog()) return;
             filterInputRef.current?.focus();
             filterInputRef.current?.select();
         });
@@ -31,7 +33,7 @@ export const useToolbarShortcuts = ({
 
     useEffect(() => {
         const handleGlobalKeyDown = (event: KeyboardEvent) => {
-            if (event.defaultPrevented) return;
+            if (event.defaultPrevented || getActiveModalDialog()) return;
 
             const key = event.key.toLowerCase();
 

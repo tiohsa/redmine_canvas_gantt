@@ -881,6 +881,10 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(i18n_payload['label_leaf_issues_only']).to eq(canvas_gantt_t(:label_leaf_issues_only))
       expect(i18n_payload['label_include_closed_issues']).to eq(canvas_gantt_t(:label_include_closed_issues))
       expect(i18n_payload['label_today_onward_only']).to eq(canvas_gantt_t(:label_today_onward_only))
+      %w[label_conflict_intro label_conflict_badge label_conflict_use_remote_help label_conflict_retry_help
+         label_conflict_field_column label_conflict_local_column label_conflict_server_column].each do |key|
+        expect(i18n_payload[key]).to eq(canvas_gantt_t(key.to_sym))
+      end
       expect(i18n_payload['label_save_baseline_filtered']).to eq(canvas_gantt_t(:label_save_baseline_filtered))
       expect(i18n_payload['label_save_baseline_project']).to eq(canvas_gantt_t(:label_save_baseline_project))
       expect(i18n_payload['label_baseline_scope']).to eq(canvas_gantt_t(:label_baseline_scope))
@@ -2169,6 +2173,43 @@ RSpec.describe CanvasGanttsController, type: :controller do
       )
     end
 
+    it 'forwards a read-only resolution review and serializes its guarded scope' do
+      coordinator = controller.send(:schedule_mutation_coordinator)
+      context = { token: 'reviewed-scope', task_ids: [10, 11], relations: [] }
+      allow(coordinator).to receive(:call).and_return(
+        RedmineCanvasGantt::ScheduleMutationCoordinator::Result.new(status: :ok,
+          entities: [], revisions: { 10 => 2, 11 => 3 }, invalidated_entity_ids: [], resolution_context: context)
+      )
+      post :schedule_mutation, params: { project_id: 'demo', operation_id: 'review',
+        resolution: { task_ids: [10], preview: true }, changes: [] }, format: :json
+      expect(response).to have_http_status(:ok)
+      expect(coordinator).to have_received(:call) do |**args|
+        expect(args[:resolution][:task_ids].map(&:to_i)).to eq([10])
+        expect(args[:resolution][:preview].to_s).to eq('true')
+      end
+      expect(JSON.parse(response.body)['resolution_context']).to eq(context.stringify_keys)
+    end
+
+    it 'serializes an adjusted dependent task without treating it as a conflict' do
+      adjustments = [{ task_id: 11, before_start_date: '2027-01-06', before_due_date: '2027-01-07',
+                       start_date: '2027-01-08', due_date: '2027-01-09' }]
+      allow(controller.send(:schedule_mutation_coordinator)).to receive(:call).and_return(
+        RedmineCanvasGantt::ScheduleMutationCoordinator::Result.new(
+          status: :validation_error, entities: [], revisions: {}, invalidated_entity_ids: [],
+          errors: ['Review the adjusted schedule before applying.'], adjustments: adjustments
+        )
+      )
+
+      post :schedule_mutation, params: { project_id: 'demo', operation_id: 'apply',
+        resolution: { task_ids: [10], token: 'pinned' },
+        changes: [{ task_id: 10, start_date: '2027-01-04' }] }, format: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      body = JSON.parse(response.body)
+      expect(body['adjustments']).to eq(adjustments.map(&:stringify_keys))
+      expect(body['conflicts']).to be_nil
+    end
+
     it 'exposes a single operation boundary for a multi-issue schedule change' do
       coordinator = controller.send(:schedule_mutation_coordinator)
       post :schedule_mutation,
@@ -2194,6 +2235,33 @@ RSpec.describe CanvasGanttsController, type: :controller do
         'operation_id' => 'schedule:test-a-b',
         'completeness' => 'complete'
       )
+    end
+
+    it 'serializes every schedule conflict with the legacy first-conflict field' do
+      conflicts = [10, 12].map { |id| { task_id: id, expected_revision: 1, actual_revision: 2 } }
+      allow(controller.send(:schedule_mutation_coordinator)).to receive(:call).and_return(
+        RedmineCanvasGantt::ScheduleMutationCoordinator::Result.new(
+          status: :conflict,
+          entities: [{ id: 10, lock_version: 2 }, { id: 12, lock_version: 2 }],
+          revisions: { 10 => 2, 12 => 2 },
+          invalidated_entity_ids: [10, 12],
+          conflict: conflicts.first,
+          conflicts: conflicts
+        )
+      )
+
+      post :schedule_mutation, params: {
+        project_id: 'demo', operation_id: 'schedule:conflicts',
+        base_revisions: { '10' => 1, '11' => 1, '12' => 1 },
+        changes: [10, 11, 12].map { |id| { task_id: id, start_date: '2027-03-01' } }
+      }, format: :json
+
+      expect(response).to have_http_status(:conflict)
+      body = JSON.parse(response.body)
+      expect(body['conflicts']).to eq(conflicts.map(&:stringify_keys))
+      expect(body['conflict']).to eq(body['conflicts'].first)
+      expect(body['entities'].map { |entity| entity['id'] }).to eq([10, 12])
+      expect(body['revisions']).to eq('10' => 2, '12' => 2)
     end
 
     it 'rejects a calendar-sensitive mutation when the client revision is stale' do

@@ -1,6 +1,6 @@
 import type { Relation } from '../types';
 import { apiClient } from '../api/client';
-import type { MutationMetadata, ScheduleMutationChange } from '../api/client';
+import type { MutationMetadata, ScheduleMutationChange, ScheduleResolutionRequest } from '../api/client';
 import { baselineProjectResourceKey, enqueueMutationOperation, enqueueScheduleMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
 import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
@@ -286,15 +286,16 @@ export const taskMutationService = {
     },
 
     scheduleMutation: (
-        changes: ScheduleMutationChange[]
+        changes: ScheduleMutationChange[],
+        resolution?: ScheduleResolutionRequest
     ) => {
         return enqueueScheduleMutationOperation(
-            changes.map(change => change.taskId),
+            [...new Set([...changes.map(change => change.taskId), ...(resolution?.taskIds ?? [])])],
             (context) => {
                 const operationId = context?.operationId ?? `schedule:${Date.now()}`;
-                return apiClient.scheduleMutation(changes, operationId);
+                return resolution ? apiClient.scheduleMutation(changes, operationId, resolution) : apiClient.scheduleMutation(changes, operationId);
             },
-            changes.map(change => taskResourceKey(change.taskId))
+            [...new Set([...changes.map(change => change.taskId), ...(resolution?.taskIds ?? [])])].map(taskResourceKey)
         );
     },
 

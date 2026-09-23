@@ -145,6 +145,40 @@ describe('saveModifiedTasks', () => {
         ]));
     });
 
+    it.each(['taskId', 'task_id'])('publishes all stale schedule entities using %s, without retrying the aborted plan', async (idKey) => {
+        const tasks = ['A', 'B', 'C'].map(id => buildTask({ id }));
+        const onConflict = vi.fn();
+        const updateTask = vi.fn();
+        const onTaskSaved = vi.fn();
+        const conflicts = ['A', 'C', 'C', 'outside-plan'].map(id => ({ [idKey]: id }));
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict',
+            errors: ['stale schedule'],
+            entities: [{ id: 'A', lockVersion: 2 }, { id: 'C', lockVersion: 3 }],
+            revisions: { A: 2, C: 3 },
+            conflict: conflicts[0],
+            conflicts
+        });
+
+        const result = await saveModifiedTasks(
+            tasks, [], new Set(['A', 'B', 'C']), [], updateTask, vi.fn(),
+            onTaskSaved, undefined, onConflict, undefined, undefined,
+            dueDateIntent(tasks), undefined, schedulingIntent(tasks), scheduleMutation,
+            { A: 1, B: 1, C: 1 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(1);
+        expect(scheduleMutation.mock.calls[0][0]).toHaveLength(3);
+        expect(updateTask).not.toHaveBeenCalled();
+        expect(onTaskSaved).not.toHaveBeenCalled();
+        expect(onConflict.mock.calls).toEqual([
+            ['A', 'stale schedule', { id: 'A', lockVersion: 2 }, 2],
+            ['C', 'stale schedule', { id: 'C', lockVersion: 3 }, 3]
+        ]);
+        expect([...result.failures.keys()]).toEqual(['A', 'B', 'C']);
+        expect(result.savedTaskIds.size).toBe(0);
+    });
+
     it('keeps topology conflicts at operation scope without publishing stale task conflicts', async () => {
         const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
         const onConflict = vi.fn();

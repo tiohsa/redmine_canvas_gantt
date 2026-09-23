@@ -1,4 +1,6 @@
 require 'set'
+require 'digest'
+require_relative 'constraint_graph'
 require_relative 'business_calendar_repository'
 require_relative 'project_calendar_resolver'
 require_relative 'schedule_calendar_context'
@@ -18,7 +20,10 @@ module RedmineCanvasGantt
       :invalidated_entity_ids,
       :errors,
       :conflict,
+      :conflicts,
       :failure,
+      :resolution_context,
+      :adjustments,
       keyword_init: true
     )
 
@@ -36,12 +41,17 @@ module RedmineCanvasGantt
       @authorization_policy = authorization_policy || MutationAuthorizationPolicy.new(current_user: current_user)
     end
 
-    def call(operation_id:, base_revisions:, changes:, date_placement_mode: :working_days)
+    def call(operation_id:, base_revisions:, changes:, date_placement_mode: :working_days, resolution: nil)
+      resolution = resolution.to_unsafe_h if resolution.respond_to?(:to_unsafe_h)
+      resolution = resolution&.symbolize_keys
       request_date_placement_mode = normalize_date_placement_mode(date_placement_mode)
       normalized_changes = normalize_changes(changes)
-      return failure('changes must contain at least one task') if normalized_changes.empty?
+      return failure('changes must contain at least one task') if normalized_changes.empty? && !resolution
 
       ids = normalized_changes.map { |change| change[:task_id] }.uniq.sort
+      seed_ids = resolution ? Array(resolution[:task_ids]).map(&:to_i).select(&:positive?).uniq.sort : ids
+      return failure('Resolution scope is required') if seed_ids.empty?
+      return failure('Changes must belong to the reviewed operation') if resolution && (ids - seed_ids).any?
       revisions = normalize_revisions(base_revisions)
       missing_revision_id = ids.find { |id| !revisions.key?(id) }
       return failure("Missing base revision for task #{missing_revision_id}") if missing_revision_id
@@ -54,7 +64,7 @@ module RedmineCanvasGantt
         topology_changed = false
 
         Issue.transaction do
-          scope_a = resolve_callback_scope(ids)
+          scope_a = resolution ? resolve_resolution_scope(seed_ids) : resolve_callback_scope(ids)
           lock_ids = scope_a[:ids].sort
           issues = Issue.where(id: lock_ids).order(:id).lock.to_a
           issues_by_id = issues.to_h { |issue| [issue.id.to_i, issue] }
@@ -62,7 +72,7 @@ module RedmineCanvasGantt
           # The second resolution is intentionally performed without adding
           # locks. If the reachable topology expanded after A, the attempt is
           # rolled back and the next attempt locks the new stable scope.
-          scope_b = resolve_callback_scope(ids)
+          scope_b = resolution ? resolve_resolution_scope(seed_ids) : resolve_callback_scope(ids)
           if callback_scope_changed?(scope_a, scope_b)
             topology_changed = true
             raise ActiveRecord::Rollback
@@ -85,15 +95,52 @@ module RedmineCanvasGantt
             raise ActiveRecord::Rollback
           end
 
-          stale_issue = planned_issues.find { |issue| issue.lock_version.to_i != revisions.fetch(issue.id.to_i) }
-          if stale_issue
-            transaction_result = conflict_result(operation_id, stale_issue, revisions.fetch(stale_issue.id.to_i))
-            raise ActiveRecord::Rollback
-          end
-
           unless planned_issues.all? { |issue| editable?(issue) }
             transaction_result = failure('Permission denied', status: :forbidden)
             raise ActiveRecord::Rollback
+          end
+
+          stale_issues = planned_issues.select { |issue| issue.lock_version.to_i != revisions.fetch(issue.id.to_i) }
+          if stale_issues.any?
+            transaction_result = conflict_result(operation_id, stale_issues, revisions)
+            raise ActiveRecord::Rollback
+          end
+
+          calendar_resolver = calendar_resolver_for_attempt
+          if resolution
+            # Read-only participants must also be visible, in scope and locked.
+            visible_ids = Issue.visible.where(id: lock_ids).pluck(:id)
+            unless (seed_ids - lock_ids).empty? && (lock_ids - visible_ids).empty? &&
+                issues.all? { |issue| @project_scope_ids.include?(issue.project_id.to_i) }
+              transaction_result = failure('Schedule scope is unavailable', status: :not_found)
+              raise ActiveRecord::Rollback
+            end
+            token = resolution_token(scope_b, issues, calendar_resolver)
+            if resolution[:preview].to_s == 'true'
+              transaction_result = Result.new(status: :ok, operation_id: operation_id,
+                entities: issues.map { |issue| @payload_builder.build_task_state(issue) },
+                revisions: issues.to_h { |issue| [issue.id, issue.lock_version] },
+                invalidated_entity_ids: [], errors: [],
+                resolution_context: { token: token, task_ids: lock_ids, relations: resolution_relations(lock_ids).map { |r|
+                  { id: r.id, from: r.issue_from_id, to: r.issue_to_id, type: r.relation_type, delay: r.delay }
+                } })
+              next
+            end
+            unless resolution[:token] == token
+              transaction_result = topology_conflict_result(operation_id)
+              raise ActiveRecord::Rollback
+            end
+            expected_dates = issues.to_h { |issue| [issue.id, issue.slice(:start_date, :due_date).symbolize_keys] }
+            normalized_changes.each do |change|
+              change.slice(*SCHEDULE_FIELDS).each do |field, value|
+                expected_dates.fetch(change[:task_id])[field] = value.present? ? Date.iso8601(value.to_s) : nil
+              end
+            end
+            errors = resolution_constraint_errors(issues, expected_dates, calendar_resolver)
+            unless errors.empty?
+              transaction_result = failure(errors.join('; '))
+              raise ActiveRecord::Rollback
+            end
           end
 
           apply_order = causal_apply_order(ids, scope_b[:event_edges])
@@ -103,7 +150,6 @@ module RedmineCanvasGantt
           end
           initial_revisions = issues_by_id.to_h { |id, issue| [id, issue.lock_version.to_i] }
           changes_by_id = normalized_changes.to_h { |change| [change[:task_id], change] }
-          calendar_resolver = calendar_resolver_for_attempt
 
           RedmineCanvasGantt::ScheduleCalendarContext.with(resolver: calendar_resolver) do
             # Locks are stable for deadlock avoidance, while applying the
@@ -156,16 +202,48 @@ module RedmineCanvasGantt
 
             # A callback may have observed a committed relation or hierarchy
             # change after B. Never return a partial success from this attempt.
-            scope_c = resolve_callback_scope(ids)
+            scope_c = resolution ? resolve_resolution_scope(seed_ids) : resolve_callback_scope(ids)
             if callback_scope_changed?(scope_b, scope_c)
               topology_changed = true
               raise ActiveRecord::Rollback
             end
 
             canonical = Issue.visible.where(id: scope_c[:ids].sort).order(:id).to_a
+            if resolution
+              # A valid draft is insufficient: Redmine callbacks may move a
+              # retained successor or a derived parent. Never silently accept it.
+              adjustments = canonical.filter_map do |issue|
+                expected = expected_dates.fetch(issue.id)
+                next if expected.all? { |field, value| issue.public_send(field) == value }
+
+                { task_id: issue.id,
+                  before_start_date: expected[:start_date]&.iso8601,
+                  before_due_date: expected[:due_date]&.iso8601,
+                  start_date: issue.start_date&.iso8601,
+                  due_date: issue.due_date&.iso8601 }
+              end
+              final_dates = canonical.to_h { |issue| [issue.id, issue.slice(:start_date, :due_date).symbolize_keys] }
+              errors = resolution_constraint_errors(canonical, final_dates, calendar_resolver)
+              canonical.each do |issue|
+                minimum = issue.soonest_start(true)
+                errors << "Task #{issue.id} must start on or after #{minimum}" if minimum && issue.start_date && issue.start_date < minimum
+                if issue.lock_version.to_i != initial_revisions.fetch(issue.id) && !editable?(issue)
+                  errors << 'Permission denied for a callback update'
+                end
+              end
+              approved = normalize_accepted_adjustments(resolution[:accepted_adjustments])
+              approved_matches = approved && approved == adjustments.map { |item| item.slice(:task_id, :start_date, :due_date) }.sort_by { |item| item[:task_id] }
+              if errors.any? || (adjustments.any? && !approved_matches) || (approved&.any? && !approved_matches)
+                transaction_result = Result.new(status: :validation_error, operation_id: operation_id,
+                  entities: [], revisions: {}, invalidated_entity_ids: [],
+                  errors: errors.any? ? errors : ['Review the adjusted schedule before applying.'],
+                  adjustments: errors.empty? ? adjustments : nil)
+                raise ActiveRecord::Rollback
+              end
+            end
             changed_ids = canonical.filter_map do |issue|
               id = issue.id.to_i
-              id if planned_id_set.include?(id) || issue.lock_version.to_i > initial_revisions.fetch(id, issue.lock_version.to_i)
+              id if resolution || planned_id_set.include?(id) || issue.lock_version.to_i > initial_revisions.fetch(id, issue.lock_version.to_i)
             end
             changed_id_set = changed_ids.to_set
             canonical = canonical.select { |issue| changed_id_set.include?(issue.id.to_i) }
@@ -186,12 +264,80 @@ module RedmineCanvasGantt
       end
     rescue ActiveRecord::StaleObjectError => error
       remote = Issue.visible.find_by(id: error.record&.id)
-      conflict_result(operation_id, remote, remote && revisions[remote.id.to_i])
+      conflict_result(operation_id, Array(remote), revisions)
     end
 
     private
 
     attr_reader :evaluator
+
+    def normalize_accepted_adjustments(value)
+      return nil if value.nil?
+
+      raw = value.respond_to?(:to_unsafe_h) ? value.to_unsafe_h.values : Array(value)
+      normalized = raw.filter_map do |entry|
+        entry = entry.to_unsafe_h if entry.respond_to?(:to_unsafe_h)
+        entry = entry.to_h.symbolize_keys
+        id = Integer(entry[:task_id], exception: false)
+        next unless id&.positive?
+
+        { task_id: id, start_date: entry[:start_date]&.to_s, due_date: entry[:due_date]&.to_s }
+      end
+      normalized.sort_by { |entry| entry[:task_id] }
+    end
+
+    # Validation closure is undirected and includes read-only intermediaries.
+    # Only precedes/follows are scheduling edges; other relation types are not.
+    def resolve_resolution_scope(seed_ids)
+      ids = seed_ids.to_set
+      loop do
+        previous = ids.dup
+        Issue.where(id: ids.to_a).pluck(:parent_id).compact.each { |id| ids.add(id) }
+        Issue.where(parent_id: ids.to_a).pluck(:id).each { |id| ids.add(id) }
+        resolution_relations(ids.to_a).each do |relation|
+          ids.add(relation.issue_from_id)
+          ids.add(relation.issue_to_id)
+        end
+        break if previous == ids
+      end
+      resolve_callback_scope(ids.to_a.sort)
+    end
+
+    def resolution_relations(ids)
+      IssueRelation.where(relation_type: %w[precedes follows])
+        .where('issue_from_id IN (?) OR issue_to_id IN (?)', ids, ids).order(:id).to_a
+    end
+
+    def resolution_token(scope, issues, calendar)
+      Digest::SHA256.hexdigest(JSON.generate([
+        @current_user.id, scope[:signature],
+        issues.map { |issue| [issue.id, issue.lock_version, issue.start_date, issue.due_date] },
+        calendar.payload(projects: issues.map(&:project).uniq), Setting.non_working_week_days,
+        Setting.parent_issue_dates
+      ]))
+    end
+
+    def resolution_constraint_errors(issues, dates, calendar)
+      by_id = issues.to_h { |issue| [issue.id.to_s, issue] }
+      graph = ConstraintGraph.new(relations: resolution_relations(issues.map(&:id)))
+      return ['Schedule dependency cycle'] if graph.cyclic?
+
+      errors = dates.filter_map do |id, interval|
+        if interval[:start_date] && interval[:due_date] && interval[:start_date] > interval[:due_date]
+          "Invalid dates for task #{id}"
+        end
+      end
+      graph.edges.each do |edge|
+        predecessor = dates[edge.predecessor_id.to_i]
+        successor = dates[edge.successor_id.to_i]
+        next unless predecessor && successor && predecessor[:due_date] && successor[:start_date]
+
+        earliest = calendar.add_working_days(predecessor[:due_date], edge.gap_days,
+          project: by_id.fetch(edge.successor_id).project)
+        errors << "Task #{edge.successor_id} must start on or after #{earliest}" if successor[:start_date] < earliest
+      end
+      errors
+    end
 
     def calendar_resolver_for_attempt
       return @calendar_resolver if @calendar_resolver
@@ -500,19 +646,23 @@ module RedmineCanvasGantt
       )
     end
 
-    def conflict_result(operation_id, issue, expected_revision)
+    def conflict_result(operation_id, issues, revisions)
+      conflicts = issues.map do |issue|
+        {
+          task_id: issue.id,
+          expected_revision: revisions[issue.id.to_i],
+          actual_revision: issue.lock_version
+        }
+      end
       Result.new(
         status: :conflict,
         operation_id: operation_id,
-        entities: issue ? [@payload_builder.build_task_state(issue)] : [],
-        revisions: issue ? { issue.id.to_i => issue.lock_version.to_i } : {},
-        invalidated_entity_ids: issue ? [issue.id] : [],
+        entities: issues.map { |issue| @payload_builder.build_task_state(issue) },
+        revisions: issues.to_h { |issue| [issue.id.to_i, issue.lock_version.to_i] },
+        invalidated_entity_ids: issues.map(&:id),
         errors: ['The issue was updated by another request.'],
-        conflict: {
-          task_id: issue&.id,
-          expected_revision: expected_revision,
-          actual_revision: issue&.lock_version
-        }
+        conflict: conflicts.first,
+        conflicts: conflicts
       )
     end
   end

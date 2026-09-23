@@ -69,6 +69,8 @@ import {
     type ReadContext,
     type ServerSnapshot
 } from './taskStore/stateContract';
+import { selectConflictRemote, type SelectedConflictRemote } from './taskStore/conflictRemote';
+import { applyScheduleConflict, prepareScheduleConflict, scheduleConflictIds, selectScheduleConflict, type ScheduleConflictReview } from './taskStore/scheduleConflictResolution';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
@@ -102,6 +104,9 @@ export type TaskConflictRecord = {
     remoteEntity?: PersistedTaskState;
     remoteRevision?: number;
     remoteAvailability?: MutationRemoteAvailability;
+    scheduleOperation?: Record<string, number>;
+    scheduleReview?: ScheduleConflictReview;
+    scheduleChoice?: 'local' | 'remote';
 };
 
 const terminalTaskDeletionPatch = (
@@ -192,7 +197,7 @@ const queueRefreshData = (refreshData: () => Promise<ReadApplyOutcome>) => {
     });
 };
 
-interface TaskState {
+export interface TaskState {
     permissions: { editable: boolean; viewable: boolean; baselineEditable: boolean };
     allTasks: Task[];
     tasks: Task[];
@@ -250,6 +255,7 @@ interface TaskState {
     autoSave: boolean;
     autoSaveTransition: 'idle' | 'enabling';
     initialDataLoaded: boolean;
+    dataReadStatus: 'idle' | 'loading' | 'ready' | 'error';
     activeReadContext: ReadContext | null;
     serverTaskSnapshot: ServerSnapshot<Task>;
     localTaskPatches: Record<string, Array<LocalPatch<Task>>>;
@@ -301,6 +307,8 @@ interface TaskState {
     clearTaskTombstone: (id: string) => void;
     registerTaskConflict: (id: string, message: string, generation?: number, remoteEntity?: PersistedTaskState, remoteRevision?: number, remoteAvailability?: MutationRemoteAvailability) => void;
     resolveTaskConflict: (id: string, resolution: 'remote' | 'local' | 'dismiss') => Promise<void>;
+    prepareScheduleConflict: (id: string) => Promise<void>;
+    applyScheduleConflict: (id: string, acceptAdjustments?: boolean) => Promise<void>;
     updateViewport: (updates: Partial<Viewport>) => void;
     setRowHeight: (height: number) => void;
     setViewMode: (mode: ViewMode) => void;
@@ -1000,6 +1008,28 @@ export const useTaskStore = create<TaskState>((set, get) => {
     let auxiliaryReadGeneration = 0;
     let mutationResyncGeneration = 0;
     let activeReadContext: ReadContext | null = null;
+    let lastAppliedViewIdentity: string | null = null;
+    const currentViewIdentity = () => {
+        const state = get();
+        return createReadContext({
+            generation: 0,
+            projectId: state.currentProjectId,
+            query: toResolvedQueryStateFromStore(state),
+            scope: { showSubprojects: state.showSubprojects, memberProjectsOnly: state.memberProjectsOnly },
+            purpose: 'refresh'
+        }).contextId;
+    };
+    const settleSupersededRead = (context: ReadContext, viewIdentityAtStart: string) => {
+        if (activeReadContext !== context || get().dataReadStatus !== 'loading') return;
+        if (get().initialDataLoaded && lastAppliedViewIdentity === viewIdentityAtStart &&
+            currentViewIdentity() === viewIdentityAtStart) {
+            set({ dataReadStatus: 'ready' });
+        } else {
+            // The discarded response belonged to another view (or no view was loaded).
+            // Start a read for the current view while retaining local patches.
+            void get().refreshData().catch((error) => console.error('Failed to refresh data', error));
+        }
+    };
     const requestAndApplyData = async (
         fetchData: () => Promise<ApiData>,
         context: ReadContext
@@ -1007,7 +1037,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const readKey = context.contextId;
         const existing = inflightReads.get(readKey);
         if (existing) return existing;
+        const viewIdentityAtStart = currentViewIdentity();
         activeReadContext = context;
+        set({ dataReadStatus: 'loading' });
         readLifecycleMetrics.requestsStarted += 1;
         readLifecycleMetrics.maxInflight = Math.max(readLifecycleMetrics.maxInflight, inflightReads.size + 1);
         const request = (async (): Promise<ReadApplyOutcome> => {
@@ -1027,6 +1059,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 return { status: 'superseded', context };
             }
             readLifecycleMetrics.failures += 1;
+            set({ dataReadStatus: 'error' });
             throw error;
         }
         })();
@@ -1035,6 +1068,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return await request;
         } finally {
             if (inflightReads.get(readKey) === request) inflightReads.delete(readKey);
+            if (context.generation !== dataRequestGeneration) settleSupersededRead(context, viewIdentityAtStart);
         }
     };
     const refreshCurrentData = async (purpose: 'refresh' | 'saved_query'): Promise<ReadApplyOutcome> => {
@@ -1053,6 +1087,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     };
     const fetchMutationResyncData = async (params: { query?: { selectedStatusIds?: number[] } }): Promise<ApiData> => {
         const state = get();
+        const viewIdentityAtStart = currentViewIdentity();
         const generation = ++dataRequestGeneration;
         const resyncGeneration = ++mutationResyncGeneration;
         readLifecycleMetrics.requestsStarted += 1;
@@ -1070,12 +1105,26 @@ export const useTaskStore = create<TaskState>((set, get) => {
             mergePolicy: 'preserve_dirty'
         });
         activeReadContext = context;
-        const data = await apiClient.fetchData({ query, queryContext: state.queryContext });
-        if (resyncGeneration !== mutationResyncGeneration || !canApplyReadResponse(activeReadContext, context)) {
-            readLifecycleMetrics.staleResponsesRejected += 1;
-            throw new Error('Superseded mutation resync');
+        set({ dataReadStatus: 'loading' });
+        try {
+            const data = await apiClient.fetchData({ query, queryContext: state.queryContext });
+            if (resyncGeneration !== mutationResyncGeneration || !canApplyReadResponse(activeReadContext, context)) {
+                readLifecycleMetrics.staleResponsesRejected += 1;
+                throw new Error('Superseded mutation resync');
+            }
+            if (currentViewIdentity() === viewIdentityAtStart &&
+                lastAppliedViewIdentity === viewIdentityAtStart && get().initialDataLoaded) {
+                set({ dataReadStatus: 'ready' });
+            } else {
+                void get().refreshData().catch((error) => console.error('Failed to refresh data', error));
+            }
+            return data;
+        } catch (error) {
+            if (activeReadContext === context && get().dataReadStatus === 'loading') {
+                set({ dataReadStatus: 'error' });
+            }
+            throw error;
         }
-        return data;
     };
 
     return ({
@@ -1133,6 +1182,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     autoSave: preferences.autoSave ?? false,
     autoSaveTransition: 'idle',
     initialDataLoaded: false,
+    dataReadStatus: 'idle',
     activeReadContext: null,
     serverTaskSnapshot: createServerSnapshot<Task>([]),
     localTaskPatches: {},
@@ -1308,7 +1358,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
         set((state) => {
             const result = buildApiDataPatch(data, state, readContext);
             querySyncState = result.querySyncState;
-            return { ...result.patch, activeReadContext: readContext ?? activeReadContext };
+            return { ...result.patch, activeReadContext: readContext ?? activeReadContext,
+                dataReadStatus: readContext ? 'ready' : state.dataReadStatus };
         });
         const isQueryBoundary = readContext?.purpose === 'initial_load' || readContext?.purpose === 'saved_query';
         const currentColumnSource = useUIStore.getState().columnStateSource;
@@ -1342,6 +1393,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 'warning'
             );
         }
+        lastAppliedViewIdentity = currentViewIdentity();
     },
     setCustomFields: (customFields) => set((state) => {
         const derived = buildDerivedTaskState(state, { customFields });
@@ -2055,14 +2107,30 @@ export const useTaskStore = create<TaskState>((set, get) => {
         }
     })),
 
+    prepareScheduleConflict: async id => {
+        // Explicit re-review also refreshes the shared business calendar and
+        // its request header; a stale calendar must not strand this action.
+        await get().refreshData();
+        await prepareScheduleConflict(get, set, id);
+    },
+    applyScheduleConflict: (id, acceptAdjustments = false) => {
+        invalidateDataRequests();
+        return applyScheduleConflict(get, set,
+            (state, allTasks) => toDerivedTaskStatePatch(buildDerivedTaskState(state, { allTasks })), id, acceptAdjustments);
+    },
     resolveTaskConflict: async (id, resolution) => {
         if (resolution === 'dismiss') {
+            return;
+        }
+        if (scheduleConflictIds(get(), id).length) {
+            await selectScheduleConflict(get, set, id, resolution);
             return;
         }
 
         if (resolution === 'local') {
             const beforeRetry = get();
             const conflictRecord = beforeRetry.taskConflicts[id];
+            if (!conflictRecord) return;
             const conflictGeneration = conflictRecord?.generation;
             const retryGeneration = beforeRetry.editGenerations[id] ?? conflictGeneration ?? 0;
             const retryFields = (beforeRetry.localTaskPatches[id] ?? [])
@@ -2083,37 +2151,46 @@ export const useTaskStore = create<TaskState>((set, get) => {
             const retryFieldNames = Object.keys(retryFields);
             const hasPersistedRetryFields = retryFieldNames.length > 0;
             const canRetryFieldsDirectly = retryTask && hasPersistedRetryFields && Object.keys(buildTaskPatchFieldsPayload(retryTask, retryFields)).length > 0;
+            let confirmedRemote = selectConflictRemote(
+                conflictRecord, beforeRetry.serverTaskSnapshot, beforeRetry.activeReadContext, beforeRetry.dataReadStatus
+            );
+            if (canRetryFieldsDirectly && !confirmedRemote) {
+                const viewIdentityAtRetry = currentViewIdentity();
+                const retryIsCurrent = () => get().taskConflicts[id] === conflictRecord &&
+                    currentViewIdentity() === viewIdentityAtRetry &&
+                    get().editGenerations[id] === beforeRetry.editGenerations[id];
+                try {
+                    const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: beforeRetry.selectedStatusIds } });
+                    if (!retryIsCurrent() || get().dataReadStatus !== 'ready') return;
+                    const entity = resyncData.tasks.find(task => task.id === id);
+                    if (!entity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
+                    confirmedRemote = { entity, revision: entity.lockVersion };
+                    get().applyApiData(resyncData);
+                } catch (error) {
+                    if (!retryIsCurrent() || get().dataReadStatus === 'loading') return;
+                    const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
+                    get().registerTaskConflict(id, conflictRecord.message || message, conflictRecord.generation,
+                        undefined, conflictRecord.remoteRevision, 'unavailable');
+                    useUIStore.getState().addNotification(message, 'error');
+                    return;
+                }
+            }
             set((state) => {
                 if (!state.taskConflicts[id]) return state;
                 const taskConflicts = { ...state.taskConflicts };
                 delete taskConflicts[id];
                 return { taskConflicts };
             });
-            if (canRetryFieldsDirectly) {
+            if (canRetryFieldsDirectly && confirmedRemote) {
                 try {
-                    let remoteTask = conflictRecord?.remoteEntity;
-                    let resyncData: Awaited<ReturnType<typeof fetchMutationResyncData>> | undefined;
-                    if (!remoteTask) {
-                        resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: get().selectedStatusIds } });
-                        remoteTask = resyncData.tasks.find(task => task.id === id);
-                    }
-                    if (!remoteTask) {
-                        get().registerTaskConflict(
-                            id,
-                            conflictRecord?.message || (i18n.t('label_conflict') || 'Conflict'),
-                            retryGeneration,
-                            undefined,
-                            conflictRecord?.remoteRevision
-                        );
-                        return;
-                    }
-                    if (resyncData) get().applyApiData(resyncData);
-                    else get().applyTaskMutationMetadata(id, { entity: remoteTask, revision: conflictRecord?.remoteRevision ?? remoteTask.lockVersion });
+                    // Pin the confirmed revision across queue waits and transport retries.
+                    const retryBaseRevision = confirmedRemote.revision;
+                    get().applyTaskMutationMetadata(id, confirmedRemote);
                     const result = await taskMutationService.updateTaskFields(id, () => {
                         const latestTask = get().allTasks.find(task => task.id === id) ?? retryTask;
                         return {
                             ...buildTaskPatchFieldsPayload(latestTask, retryFields),
-                            lock_version: conflictRecord?.remoteRevision ?? remoteTask!.lockVersion
+                            lock_version: retryBaseRevision
                         };
                     }, undefined, retryDatePlacementMode);
                     get().applyTaskMutationMetadata(id, result);
@@ -2170,15 +2247,26 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return;
         }
 
+        const initialState = get();
+        const initialConflict = initialState.taskConflicts[id];
+        if (!initialConflict) return;
+        const viewIdentityAtResolution = currentViewIdentity();
         invalidateDataRequests();
-        let remoteEntity = get().taskConflicts[id]?.remoteEntity;
-        if (!remoteEntity) {
+        let selectedRemote: SelectedConflictRemote | undefined = initialConflict && selectConflictRemote(
+            initialConflict, initialState.serverTaskSnapshot, initialState.activeReadContext, initialState.dataReadStatus
+        );
+        if (!selectedRemote) {
             try {
                 const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: get().selectedStatusIds } });
-                remoteEntity = resyncData.tasks.find(task => task.id === id);
+                if (get().taskConflicts[id] !== initialConflict ||
+                    currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus !== 'ready') return;
+                const remoteEntity = resyncData.tasks.find(task => task.id === id);
                 if (!remoteEntity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
                 get().applyApiData(resyncData);
+                selectedRemote = { entity: remoteEntity, revision: remoteEntity.lockVersion };
             } catch (error) {
+                if (get().taskConflicts[id] !== initialConflict ||
+                    currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus === 'loading') return;
                 const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
                 const conflict = get().taskConflicts[id];
                 get().registerTaskConflict(id, conflict?.message || message, conflict?.generation, undefined, conflict?.remoteRevision, 'unavailable');
@@ -2187,21 +2275,32 @@ export const useTaskStore = create<TaskState>((set, get) => {
             }
         }
 
-        const resolvedRemoteEntity = remoteEntity;
         set((state) => {
             const recordedConflictGeneration = state.taskConflicts[id]?.generation;
             const conflictGeneration = recordedConflictGeneration ?? state.editGenerations[id] ?? 0;
             const conflictRecord = state.taskConflicts[id];
+            if (!conflictRecord || (initialConflict && conflictRecord !== initialConflict)) return state;
+            const remoteChoice = selectConflictRemote(
+                conflictRecord, state.serverTaskSnapshot, state.activeReadContext, state.dataReadStatus
+            ) ?? selectedRemote;
+            if (!remoteChoice) return state;
             const currentTask = state.allTasks.find(task => task.id === id)
                 ?? state.serverTaskSnapshot.entitiesById[id];
             if (!currentTask) return state;
-            const remoteTask = { ...currentTask, ...resolvedRemoteEntity };
+            const remoteTask = {
+                ...(state.serverTaskSnapshot.entitiesById[id] ?? currentTask),
+                ...remoteChoice.entity
+            };
+            const serverTaskSnapshot = mergeServerEntity(state.serverTaskSnapshot, remoteTask, 'complete', remoteChoice.revision);
+            // A newer canonical revision must never be replaced by an older conflict response.
+            if (serverTaskSnapshot.revisions[id] > remoteChoice.revision) return state;
+            const canonicalTask = serverTaskSnapshot.entitiesById[id];
             const laterPatches = recordedConflictGeneration !== undefined
                 ? (state.localTaskPatches[id] ?? []).filter(patch => patch.generation > conflictGeneration)
                 : [];
             const resolvedTask = laterPatches.length > 0
-                ? applyLocalPatches(remoteTask, laterPatches)
-                : remoteTask;
+                ? applyLocalPatches(canonicalTask, laterPatches)
+                : canonicalTask;
             const allTasks = state.allTasks.some(task => task.id === id)
                 ? state.allTasks.map(task => task.id === id ? resolvedTask : task)
                 : [...state.allTasks, resolvedTask];
@@ -2225,12 +2324,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return {
                 allTasks,
                 ...toDerivedTaskStatePatch(derived),
-                serverTaskSnapshot: mergeServerEntity(
-                    state.serverTaskSnapshot,
-                    remoteTask,
-                    'complete',
-                    conflictRecord?.remoteRevision ?? remoteTask.lockVersion
-                ),
+                serverTaskSnapshot,
                 localTaskPatches,
                 modifiedTaskIds,
                 taskTombstones,
@@ -2775,7 +2869,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const snapshotMutationScheduling: Record<string, boolean> = {};
                 const unsupportedMutationFailures = new Map<string, string>();
                 snapshotTaskIds.forEach((taskId) => {
-                    if (snapshot.taskConflicts[taskId]) {
+                    if (snapshot.taskConflicts[taskId] || Object.values(snapshot.taskConflicts).some(conflict =>
+                        conflict.scheduleOperation?.[taskId] !== undefined || conflict.scheduleReview?.taskIds.includes(taskId))) {
                         unsupportedMutationFailures.set(taskId, i18n.t('label_unresolved_task_conflict') || 'Resolve the task conflict before saving.');
                         return;
                     }
@@ -3109,7 +3204,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     set((state) => {
                         const taskConflicts = { ...state.taskConflicts };
                         conflictMessages.forEach(({ message, generation, remoteEntity, remoteRevision, remoteAvailability }, taskId) => {
-                            taskConflicts[taskId] = { taskId, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability };
+                            taskConflicts[taskId] = { taskId, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability,
+                                ...(snapshotMutationScheduling[taskId] ? { scheduleOperation: Object.fromEntries(
+                                    Object.keys(snapshotMutationScheduling).filter(key => snapshotMutationScheduling[key])
+                                        .map(key => [key, snapshotGenerations[key] ?? 0])
+                                ) } : {}) };
                         });
                         return { taskConflicts };
                     });

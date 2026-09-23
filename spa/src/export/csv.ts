@@ -32,9 +32,20 @@ const formatDate = (value?: number) => {
     return formatDateOnly(value) ?? '';
 };
 
-const escapeCsv = (value: unknown) => {
-    const normalized = String(value ?? '');
-    if (normalized.includes('"') || normalized.includes(',') || normalized.includes('\n')) {
+// Spreadsheet-oriented CSV: a leading tab inside a quoted cell keeps Excel from
+// evaluating formula-like text. It changes the cell data and is not universal
+// protection for every spreadsheet or CSV import path.
+const protectSpreadsheetText = (value: unknown) => {
+    const text = String(value ?? '');
+    const firstMeaningful = text.replace(/^[\p{Zs}\uFEFF]*/u, '');
+    return /^[=+\-@＝＋－＠\t\r\n]/u.test(firstMeaningful) ? `\t${text}` : text;
+};
+
+const escapeCsv = (value: string | number) => {
+    const normalized = typeof value === 'number'
+        ? (Number.isFinite(value) ? String(value) : '')
+        : protectSpreadsheetText(value);
+    if (normalized.includes('"') || normalized.includes(',') || normalized.includes('\n') || normalized.includes('\r') || normalized.startsWith('\t')) {
         return `"${normalized.replaceAll('"', '""')}"`;
     }
     return normalized;

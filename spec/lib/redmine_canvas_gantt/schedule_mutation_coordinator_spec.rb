@@ -69,6 +69,126 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     )
   end
 
+  describe 'reviewed mixed conflict resolution with real Redmine callbacks' do
+    let(:resolver) { coordinator_with_weekday_calendar }
+    let(:a) { build_schedule_issue('Resolution A', start_date: Date.new(2027, 1, 4), due_date: Date.new(2027, 1, 5)) }
+    let(:b) { build_schedule_issue('Resolution B', start_date: Date.new(2027, 1, 6), due_date: Date.new(2027, 1, 7)) }
+    let!(:edge) { IssueRelation.create!(issue_from: a, issue_to: b, relation_type: 'precedes', delay: 0) }
+
+    def review(roots)
+      result = resolver.call(operation_id: 'review', base_revisions: {}, changes: [],
+        resolution: { task_ids: roots.map(&:id), preview: true })
+      expect(result.status).to eq(:ok), result.errors.inspect
+      result
+    end
+
+    def apply_review(context, roots, changes)
+      resolver.call(operation_id: 'apply-reviewed-plan', base_revisions: context.revisions,
+        changes: changes, resolution: { task_ids: roots.map(&:id), token: context.resolution_context[:token] })
+    end
+
+    def persisted(issues)
+      issues.map { |issue| issue.reload; [issue.start_date, issue.due_date, issue.lock_version, issue.journals.count] }
+    end
+
+    it 'rejects server A / local B when the chosen dates violate the dependency without changing either issue' do
+      context = review([a, b])
+      original = persisted([a, b])
+      result = apply_review(context, [a, b], [{ task_id: b.id, start_date: '2027-01-04', due_date: '2027-01-05' }])
+      expect(result.status).to eq(:validation_error)
+      expect(result.errors.join).to include("Task #{b.id} must start")
+      expect(persisted([a, b])).to eq(original)
+    end
+
+    it 'atomically applies a valid server A / local B combination and returns the read-only participant' do
+      context = review([a, b])
+      original_a = persisted([a])
+      result = apply_review(context, [a, b], [{ task_id: b.id, start_date: '2027-01-08', due_date: '2027-01-11' }])
+      expect(result.status).to eq(:ok), result.errors.inspect
+      expect(persisted([a])).to eq(original_a)
+      expect(b.reload.start_date).to eq(Date.new(2027, 1, 8))
+      expect(result.entities.map { |entity| entity[:id] }).to contain_exactly(a.id, b.id)
+    end
+
+    it 'offers a rolled-back adjustment for read-only B and applies it only after explicit acceptance' do
+      # Moving A earlier causes Redmine to pull B earlier. Both proposed dates
+      # satisfy the dependency, but the user retained B's confirmed dates.
+      context = review([a])
+      original = persisted([a, b])
+      change = { task_id: a.id, start_date: '2027-01-01', due_date: '2027-01-04' }
+      result = apply_review(context, [a], [change])
+      expect(result.status).to eq(:validation_error)
+      expect(result.adjustments).to contain_exactly(include(task_id: b.id, before_start_date: '2027-01-06', before_due_date: '2027-01-07'))
+      expect(persisted([a, b])).to eq(original)
+
+      accepted = resolver.call(operation_id: 'apply-approved-adjustment', base_revisions: context.revisions,
+        changes: [change], resolution: { task_ids: [a.id], token: context.resolution_context[:token],
+          accepted_adjustments: result.adjustments.map { |entry| entry.slice(:task_id, :start_date, :due_date) } })
+      expect(accepted.status).to eq(:ok), accepted.errors.inspect
+      expect(a.reload.start_date).to eq(Date.new(2027, 1, 1))
+      expect(b.reload.start_date.iso8601).to eq(result.adjustments.first[:start_date])
+      expect(accepted.entities.map { |entry| entry[:id] }).to include(b.id)
+    end
+
+    it 'rejects a different adjustment without changing either issue' do
+      context = review([a])
+      original = persisted([a, b])
+      result = resolver.call(operation_id: 'forged-adjustment', base_revisions: context.revisions,
+        changes: [{ task_id: a.id, start_date: '2027-01-01', due_date: '2027-01-04' }],
+        resolution: { task_ids: [a.id], token: context.resolution_context[:token],
+          accepted_adjustments: [{ task_id: b.id, start_date: '2027-01-01', due_date: '2027-01-02' }] })
+      expect(result.status).to eq(:validation_error)
+      expect(result.adjustments).to be_present
+      expect(persisted([a, b])).to eq(original)
+    end
+
+    it 'includes read-only B between A and C and does not update B' do
+      c = build_schedule_issue('Resolution C', start_date: Date.new(2027, 1, 8), due_date: Date.new(2027, 1, 11))
+      IssueRelation.create!(issue_from: b, issue_to: c, relation_type: 'precedes', delay: 0)
+      context = review([a, c])
+      expect(context.resolution_context[:task_ids]).to contain_exactly(a.id, b.id, c.id)
+      original = persisted([b])
+      result = apply_review(context, [a, c], [{ task_id: c.id, start_date: '2027-01-12', due_date: '2027-01-13' }])
+      expect(result.status).to eq(:ok), result.errors.inspect
+      expect(persisted([b])).to eq(original)
+    end
+
+    it 'discovers incoming predecessors even when only B belongs to the operation' do
+      context = review([b])
+      expect(context.resolution_context[:task_ids]).to contain_exactly(a.id, b.id)
+      result = apply_review(context, [b], [{ task_id: b.id, start_date: '2027-01-04', due_date: '2027-01-05' }])
+      expect(result.status).to eq(:validation_error)
+    end
+
+    %w[revision delay relation calendar].each do |change|
+      it "requires a new review when #{change} changes after selection" do
+        context = review([a, b])
+        case change
+        when 'revision' then a.reload.update!(subject: 'External update')
+        when 'delay' then edge.update_column(:delay, 1)
+        when 'relation' then edge.destroy!
+        end
+        # The resolver factory normally creates a fresh snapshot per attempt.
+        if change == 'calendar'
+          changed_calendar = weekday_calendar_resolver
+          allow(changed_calendar).to receive(:payload).and_return(revision: 'changed')
+          allow(resolver).to receive(:calendar_resolver_for_attempt).and_return(changed_calendar)
+        end
+        original = persisted([a, b])
+        result = apply_review(context, [a, b], [])
+        expect(result.status).to eq(:conflict)
+        expect(persisted([a, b])).to eq(original)
+      end
+    end
+
+    it 'allows all-server resolution without an issue save' do
+      context = review([a, b])
+      original = persisted([a, b])
+      expect(apply_review(context, [a, b], []).status).to eq(:ok)
+      expect(persisted([a, b])).to eq(original)
+    end
+  end
+
   it 'preserves a weekend start date in calendar_days mode' do
     issue = build_schedule_issue(
       'Calendar-day Saturday',
@@ -605,6 +725,38 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       .to eq(original_dates)
   end
 
+  it 'returns every stale revision while leaving the entire three-issue plan unchanged' do
+    issues = %w[A B C].map do |name|
+      build_schedule_issue("Batch conflict #{name}", start_date: Date.new(2027, 3, 1), due_date: Date.new(2027, 3, 2))
+    end
+    issues.each(&:reload)
+    base_revisions = issues.to_h { |issue| [issue.id, issue.lock_version] }
+    stale_issues = issues.values_at(0, 2)
+    stale_issues.each { |issue| issue.update!(subject: "External #{issue.subject}") }
+    original = issues.to_h do |issue|
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version, issue.journals.count]]
+    end
+
+    result = coordinator.call(
+      operation_id: 'schedule:multiple-conflicts',
+      base_revisions: base_revisions,
+      changes: issues.map { |issue| { task_id: issue.id, start_date: '2027-03-08', due_date: '2027-03-09' } }
+    )
+
+    expect(result.status).to eq(:conflict)
+    expect(result.conflicts).to eq(stale_issues.map do |issue|
+      { task_id: issue.id, expected_revision: base_revisions[issue.id], actual_revision: issue.lock_version }
+    end)
+    expect(result.conflict).to eq(result.conflicts.first)
+    expect(result.entities.map { |entity| entity[:id] }).to eq(stale_issues.map(&:id))
+    expect(result.revisions).to eq(stale_issues.to_h { |issue| [issue.id, issue.lock_version] })
+    expect(result.invalidated_entity_ids).to eq(stale_issues.map(&:id))
+    expect(issues.to_h do |issue|
+      issue.reload
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version, issue.journals.count]]
+    end).to eq(original)
+  end
+
   it 'rejects a later planned permission failure before evaluating or writing the first issue' do
     first, second = planned_issues
     original = planned_issues.to_h { |issue| [issue.id, [issue.start_date, issue.due_date, issue.lock_version]] }
@@ -635,6 +787,23 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(Issue.where(id: planned_issues.map(&:id)).to_h do |issue|
       [issue.id, [issue.start_date, issue.due_date, issue.lock_version]]
     end).to eq(original)
+  end
+
+  it 'checks permission before returning any stale task payloads' do
+    base_revisions = planned_issues.to_h { |issue| [issue.id, issue.lock_version] }
+    planned_issues.each { |issue| issue.update!(subject: "External #{issue.id}") }
+    allow(coordinator).to receive(:editable?) { |issue| issue.id != planned_issues.last.id }
+    expect(payload_builder).not_to receive(:build_task_state)
+
+    result = coordinator.call(
+      operation_id: 'schedule:unauthorized-conflicts',
+      base_revisions: base_revisions,
+      changes: planned_issues.map { |issue| { task_id: issue.id, start_date: '2027-03-01' } }
+    )
+
+    expect(result.status).to eq(:forbidden)
+    expect(result.entities).to be_empty
+    expect(result.conflicts).to be_nil
   end
 
   it 'returns an operation-level conflict after the bounded topology retry budget' do

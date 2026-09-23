@@ -55,6 +55,10 @@ Baseline snapshots are stored in Redmine's plugin settings (`Setting.plugin_redm
 - Display settings stored per project or shared across all projects in the same browser profile (not across Redmine users)
 - Version headers, progress line, hierarchy lines, orphan date points, task titles, and dependency-based organization
 
+Date changes in a batch are saved atomically. If another request has updated any of the issues, the entire batch is cancelled and every local draft is retained. The conflict panel lists all issues with revision conflicts; issues whose save was only cancelled with the batch remain unsaved without being marked as conflicts.
+
+For date conflicts, row buttons only select the server version or local dates. **Apply this group** validates and commits the original schedule operation together with its dependencies and hierarchy. Inconsistent combinations are blocked. The server also checks the final Redmine callback result and rolls back if it changes a selected date. If Redmine would adjust dates, the panel lists every affected issue, including dependencies without a conflict card, and requires **Accept adjusted dates and apply** before retrying. The retry succeeds only if the actual final dates match the approved adjustment. Changes to reviewed revisions, relations, delays, hierarchy or calendars require **Refresh comparison and reselect**. Failed applications preserve choices and drafts. Local choices apply only the reviewed date intent; later edits, other fields and unrelated drafts remain unsaved. Automatic and manual saving use the same resolution flow.
+
 ## Demo
 
 ![Canvas Gantt Demo](./docs/demo.gif)
@@ -159,6 +163,10 @@ The cleanup task deletes the `plugin_redmine_canvas_gantt` row from Redmine's `s
    - Use display settings to save and share UI preferences across projects.
    - Export the current view as PNG or CSV when the layout supports it.
    - Toggle full screen for more workspace when needed.
+
+CSV is intended for people opening it in spreadsheet applications. For untrusted text beginning with a formula marker (`=`, `+`, `-`, `@`, including full-width forms), a tab, or a line break, the export adds a leading tab inside a quoted CSV cell; it also checks past leading spaces and BOM. Numeric task columns remain numeric. This follows the [OWASP CSV Injection guidance](https://owasp.org/www-community/attacks/CSV_Injection) for Excel-oriented viewing. The tab becomes part of the cell data and can affect programmatic imports. A single-quote prefix may be removed when Excel saves and reopens CSV, so it is not used here. Spreadsheet behavior varies; this export cannot guarantee safety in every spreadsheet or import path.
+
+To verify in a spreadsheet, create test issues with subject `=1+1`, parent subject `+1+1`, custom field name `＠SUM(1)`, and custom field value `  -1+1`. Include a value with a quote, comma, and lone carriage return. Export CSV; inspect that dangerous text begins with a tab inside a quoted cell and that embedded quotes are doubled. Open it in the target Excel or Calc version, confirm that all values remain text and cells and rows stay intact, then save and reopen it to check again. Repeat for each supported import route. The automated serializer tests do not perform this spreadsheet check.
 
 ### Work Timer
 
