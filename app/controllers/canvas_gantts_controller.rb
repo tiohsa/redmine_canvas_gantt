@@ -727,6 +727,7 @@ class CanvasGanttsController < ApplicationController
       invalidated_entity_ids: result.invalidated_entity_ids,
       **(errors.present? ? { errors: errors } : {}),
       **(result.conflict ? { conflict: result.conflict } : {}),
+      **(result.conflicts ? { conflicts: result.conflicts } : {}),
       **(result.failure ? { failure: result.failure } : {})
     }
     render json: response, status: {

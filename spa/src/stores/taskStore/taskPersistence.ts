@@ -67,6 +67,7 @@ export type ScheduleMutationResponse = {
         expectedRevision?: number;
         actualRevision?: number;
     };
+    conflicts?: NonNullable<ScheduleMutationResponse['conflict']>[];
 };
 
 export type ScheduleMutationExecutor = (
@@ -471,10 +472,18 @@ export const saveModifiedTasks = async (
         } else {
             const message = scheduleResult.errors?.[0] || (scheduleResult.status === 'conflict' ? 'Conflict' : 'Failed to save schedule');
             const isScopeConflict = scheduleResult.failure?.resourceRole === 'scope';
-            const conflictTaskId = scheduleResult.conflict?.taskId ?? scheduleResult.conflict?.task_id;
-            if (!isScopeConflict && conflictTaskId !== undefined) {
-                scheduleConflictTaskIds.add(String(conflictTaskId));
-            } else if (!isScopeConflict &&
+            const conflicts = scheduleResult.conflicts ?? (scheduleResult.conflict ? [scheduleResult.conflict] : []);
+            if (!isScopeConflict && scheduleResult.status === 'conflict') {
+                conflicts.forEach(conflict => {
+                    const taskId = conflict.taskId ?? conflict.task_id;
+                    if (taskId != null && schedulingTaskIds.has(String(taskId))) {
+                        scheduleConflictTaskIds.add(String(taskId));
+                    }
+                });
+            }
+            if (!isScopeConflict &&
+                scheduleResult.conflicts === undefined &&
+                scheduleConflictTaskIds.size === 0 &&
                 scheduleResult.status === 'conflict' &&
                 !scheduleResult.failure?.resourceRole &&
                 schedulingTaskIds.size === 1) {

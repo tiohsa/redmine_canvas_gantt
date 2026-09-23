@@ -2200,6 +2200,33 @@ RSpec.describe CanvasGanttsController, type: :controller do
       )
     end
 
+    it 'serializes every schedule conflict with the legacy first-conflict field' do
+      conflicts = [10, 12].map { |id| { task_id: id, expected_revision: 1, actual_revision: 2 } }
+      allow(controller.send(:schedule_mutation_coordinator)).to receive(:call).and_return(
+        RedmineCanvasGantt::ScheduleMutationCoordinator::Result.new(
+          status: :conflict,
+          entities: [{ id: 10, lock_version: 2 }, { id: 12, lock_version: 2 }],
+          revisions: { 10 => 2, 12 => 2 },
+          invalidated_entity_ids: [10, 12],
+          conflict: conflicts.first,
+          conflicts: conflicts
+        )
+      )
+
+      post :schedule_mutation, params: {
+        project_id: 'demo', operation_id: 'schedule:conflicts',
+        base_revisions: { '10' => 1, '11' => 1, '12' => 1 },
+        changes: [10, 11, 12].map { |id| { task_id: id, start_date: '2027-03-01' } }
+      }, format: :json
+
+      expect(response).to have_http_status(:conflict)
+      body = JSON.parse(response.body)
+      expect(body['conflicts']).to eq(conflicts.map(&:stringify_keys))
+      expect(body['conflict']).to eq(body['conflicts'].first)
+      expect(body['entities'].map { |entity| entity['id'] }).to eq([10, 12])
+      expect(body['revisions']).to eq('10' => 2, '12' => 2)
+    end
+
     it 'rejects a calendar-sensitive mutation when the client revision is stale' do
       calendar_resolver = instance_double(
         RedmineCanvasGantt::ProjectCalendarResolver,

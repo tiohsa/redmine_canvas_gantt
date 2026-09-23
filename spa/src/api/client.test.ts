@@ -861,6 +861,43 @@ describe('mutation error classification', () => {
         expect(result.conflict).toEqual({ taskId: '42', expectedRevision: 1, actualRevision: 2 });
     });
 
+    it('normalizes every schedule conflict and its canonical entity from a 409 response', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 409,
+            json: async () => ({
+                status: 'conflict', operation_id: 'schedule:multiple',
+                entities: [{ id: 42, lock_version: 2 }, { id: 44, lock_version: 3 }],
+                revisions: { 42: 2, 44: 3 },
+                conflict: { task_id: 42, expected_revision: 1, actual_revision: 2 },
+                conflicts: [
+                    { task_id: 42, expected_revision: 1, actual_revision: 2 },
+                    { taskId: '44', expectedRevision: 1, actualRevision: 3 }
+                ]
+            })
+        }));
+
+        const result = await apiClient.scheduleMutation(
+            ['42', '43', '44'].map(taskId => ({ taskId, baseRevision: 1, dueDate: 11 })),
+            'schedule:multiple'
+        );
+
+        expect(result.status).toBe('conflict');
+        expect(result.conflicts).toEqual([
+            { taskId: '42', expectedRevision: 1, actualRevision: 2 },
+            { taskId: '44', expectedRevision: 1, actualRevision: 3 }
+        ]);
+        expect(result.conflict).toEqual(result.conflicts?.[0]);
+        expect(result.entities).toEqual([
+            expect.objectContaining({ id: '42', lockVersion: 2 }),
+            expect.objectContaining({ id: '44', lockVersion: 3 })
+        ]);
+        expect(result.revisions).toEqual({ 42: 2, 44: 3 });
+    });
+
     it('sends the configured business calendar revision with mutations', async () => {
         window.RedmineCanvasGantt = {
             projectId: 1,

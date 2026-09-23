@@ -100,17 +100,20 @@ export type ScheduleMutationChange = {
     datePlacementMode?: DatePlacementMode;
 };
 
+export type ScheduleMutationConflict = {
+    taskId?: string;
+    expectedRevision?: number;
+    actualRevision?: number;
+};
+
 export type ScheduleMutationResult = MutationMetadata & {
     status: MutationStatus;
     operationId: string;
     entities: PersistedTaskState[];
     revisions: Record<string, number>;
     errors?: string[];
-    conflict?: {
-        taskId?: string;
-        expectedRevision?: number;
-        actualRevision?: number;
-    };
+    conflict?: ScheduleMutationConflict;
+    conflicts?: ScheduleMutationConflict[];
 };
 
 interface BaselineSaveResult extends MutationMetadata {
@@ -350,6 +353,19 @@ const parseMutationTaskResult = async (response: Response): Promise<UpdateTaskRe
     };
 };
 
+const parseScheduleMutationConflict = (value: unknown): ScheduleMutationConflict | undefined => {
+    const raw = asRecord(value);
+    if (!raw) return undefined;
+    const taskId = raw.task_id ?? raw.taskId;
+    const expectedRevision = raw.expectedRevision ?? raw.expected_revision;
+    const actualRevision = raw.actualRevision ?? raw.actual_revision;
+    return {
+        ...(typeof taskId === 'string' || typeof taskId === 'number' ? { taskId: String(taskId) } : {}),
+        ...(typeof expectedRevision === 'number' ? { expectedRevision } : {}),
+        ...(typeof actualRevision === 'number' ? { actualRevision } : {})
+    };
+};
+
 const parseScheduleMutationResult = async (response: Response): Promise<ScheduleMutationResult> => {
     const data = asRecord(await response.json().catch(() => ({}))) ?? {};
     const rawEntities = Array.isArray(data.entities) ? data.entities : [];
@@ -366,23 +382,18 @@ const parseScheduleMutationResult = async (response: Response): Promise<Schedule
             ? rawStatus as MutationStatus
             : response.ok ? 'ok' : mutationStatusForHttp(response.status);
     const errors = Array.isArray(data.errors) ? data.errors.filter((error): error is string => typeof error === 'string') : undefined;
-    const rawConflict = asRecord(data.conflict);
-    const conflictTaskId = rawConflict?.task_id ?? rawConflict?.taskId;
+    const conflict = parseScheduleMutationConflict(data.conflict);
+    const conflicts = Array.isArray(data.conflicts)
+        ? data.conflicts.map(parseScheduleMutationConflict).filter((entry): entry is ScheduleMutationConflict => Boolean(entry))
+        : undefined;
     return {
         status,
         operationId: typeof data.operation_id === 'string' ? data.operation_id : '',
         entities,
         revisions,
         ...(errors && errors.length > 0 ? { errors } : {}),
-        ...(rawConflict ? {
-            conflict: {
-                ...(conflictTaskId !== undefined ? { taskId: String(conflictTaskId) } : {}),
-                ...(typeof rawConflict.expected_revision === 'number' ? { expectedRevision: rawConflict.expected_revision } : {}),
-                ...(typeof rawConflict.expectedRevision === 'number' ? { expectedRevision: rawConflict.expectedRevision } : {}),
-                ...(typeof rawConflict.actual_revision === 'number' ? { actualRevision: rawConflict.actual_revision } : {}),
-                ...(typeof rawConflict.actualRevision === 'number' ? { actualRevision: rawConflict.actualRevision } : {})
-            }
-        } : {}),
+        ...(conflict ? { conflict } : {}),
+        ...(conflicts ? { conflicts } : {}),
         ...parseMutationMetadata(data)
     };
 };

@@ -55,6 +55,8 @@ Baseline snapshots are stored in Redmine's plugin settings (`Setting.plugin_redm
 - Display settings stored per project or shared across all projects in the same browser profile (not across Redmine users)
 - Version headers, progress line, hierarchy lines, orphan date points, task titles, and dependency-based organization
 
+Date changes in a batch are saved atomically. If another request has updated any of the issues, the entire batch is cancelled and every local draft is retained. The conflict panel lists all issues with revision conflicts; issues whose save was only cancelled with the batch remain unsaved without being marked as conflicts.
+
 ## Demo
 
 ![Canvas Gantt Demo](./docs/demo.gif)

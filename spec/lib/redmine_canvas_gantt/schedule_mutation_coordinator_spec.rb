@@ -605,6 +605,38 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       .to eq(original_dates)
   end
 
+  it 'returns every stale revision while leaving the entire three-issue plan unchanged' do
+    issues = %w[A B C].map do |name|
+      build_schedule_issue("Batch conflict #{name}", start_date: Date.new(2027, 3, 1), due_date: Date.new(2027, 3, 2))
+    end
+    issues.each(&:reload)
+    base_revisions = issues.to_h { |issue| [issue.id, issue.lock_version] }
+    stale_issues = issues.values_at(0, 2)
+    stale_issues.each { |issue| issue.update!(subject: "External #{issue.subject}") }
+    original = issues.to_h do |issue|
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version, issue.journals.count]]
+    end
+
+    result = coordinator.call(
+      operation_id: 'schedule:multiple-conflicts',
+      base_revisions: base_revisions,
+      changes: issues.map { |issue| { task_id: issue.id, start_date: '2027-03-08', due_date: '2027-03-09' } }
+    )
+
+    expect(result.status).to eq(:conflict)
+    expect(result.conflicts).to eq(stale_issues.map do |issue|
+      { task_id: issue.id, expected_revision: base_revisions[issue.id], actual_revision: issue.lock_version }
+    end)
+    expect(result.conflict).to eq(result.conflicts.first)
+    expect(result.entities.map { |entity| entity[:id] }).to eq(stale_issues.map(&:id))
+    expect(result.revisions).to eq(stale_issues.to_h { |issue| [issue.id, issue.lock_version] })
+    expect(result.invalidated_entity_ids).to eq(stale_issues.map(&:id))
+    expect(issues.to_h do |issue|
+      issue.reload
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version, issue.journals.count]]
+    end).to eq(original)
+  end
+
   it 'rejects a later planned permission failure before evaluating or writing the first issue' do
     first, second = planned_issues
     original = planned_issues.to_h { |issue| [issue.id, [issue.start_date, issue.due_date, issue.lock_version]] }
@@ -635,6 +667,23 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(Issue.where(id: planned_issues.map(&:id)).to_h do |issue|
       [issue.id, [issue.start_date, issue.due_date, issue.lock_version]]
     end).to eq(original)
+  end
+
+  it 'checks permission before returning any stale task payloads' do
+    base_revisions = planned_issues.to_h { |issue| [issue.id, issue.lock_version] }
+    planned_issues.each { |issue| issue.update!(subject: "External #{issue.id}") }
+    allow(coordinator).to receive(:editable?) { |issue| issue.id != planned_issues.last.id }
+    expect(payload_builder).not_to receive(:build_task_state)
+
+    result = coordinator.call(
+      operation_id: 'schedule:unauthorized-conflicts',
+      base_revisions: base_revisions,
+      changes: planned_issues.map { |issue| { task_id: issue.id, start_date: '2027-03-01' } }
+    )
+
+    expect(result.status).to eq(:forbidden)
+    expect(result.entities).to be_empty
+    expect(result.conflicts).to be_nil
   end
 
   it 'returns an operation-level conflict after the bounded topology retry budget' do

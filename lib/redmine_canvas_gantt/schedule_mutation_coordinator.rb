@@ -18,6 +18,7 @@ module RedmineCanvasGantt
       :invalidated_entity_ids,
       :errors,
       :conflict,
+      :conflicts,
       :failure,
       keyword_init: true
     )
@@ -85,14 +86,14 @@ module RedmineCanvasGantt
             raise ActiveRecord::Rollback
           end
 
-          stale_issue = planned_issues.find { |issue| issue.lock_version.to_i != revisions.fetch(issue.id.to_i) }
-          if stale_issue
-            transaction_result = conflict_result(operation_id, stale_issue, revisions.fetch(stale_issue.id.to_i))
+          unless planned_issues.all? { |issue| editable?(issue) }
+            transaction_result = failure('Permission denied', status: :forbidden)
             raise ActiveRecord::Rollback
           end
 
-          unless planned_issues.all? { |issue| editable?(issue) }
-            transaction_result = failure('Permission denied', status: :forbidden)
+          stale_issues = planned_issues.select { |issue| issue.lock_version.to_i != revisions.fetch(issue.id.to_i) }
+          if stale_issues.any?
+            transaction_result = conflict_result(operation_id, stale_issues, revisions)
             raise ActiveRecord::Rollback
           end
 
@@ -186,7 +187,7 @@ module RedmineCanvasGantt
       end
     rescue ActiveRecord::StaleObjectError => error
       remote = Issue.visible.find_by(id: error.record&.id)
-      conflict_result(operation_id, remote, remote && revisions[remote.id.to_i])
+      conflict_result(operation_id, Array(remote), revisions)
     end
 
     private
@@ -500,19 +501,23 @@ module RedmineCanvasGantt
       )
     end
 
-    def conflict_result(operation_id, issue, expected_revision)
+    def conflict_result(operation_id, issues, revisions)
+      conflicts = issues.map do |issue|
+        {
+          task_id: issue.id,
+          expected_revision: revisions[issue.id.to_i],
+          actual_revision: issue.lock_version
+        }
+      end
       Result.new(
         status: :conflict,
         operation_id: operation_id,
-        entities: issue ? [@payload_builder.build_task_state(issue)] : [],
-        revisions: issue ? { issue.id.to_i => issue.lock_version.to_i } : {},
-        invalidated_entity_ids: issue ? [issue.id] : [],
+        entities: issues.map { |issue| @payload_builder.build_task_state(issue) },
+        revisions: issues.to_h { |issue| [issue.id.to_i, issue.lock_version.to_i] },
+        invalidated_entity_ids: issues.map(&:id),
         errors: ['The issue was updated by another request.'],
-        conflict: {
-          task_id: issue&.id,
-          expected_revision: expected_revision,
-          actual_revision: issue&.lock_version
-        }
+        conflict: conflicts.first,
+        conflicts: conflicts
       )
     end
   end
