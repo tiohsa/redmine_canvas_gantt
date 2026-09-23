@@ -283,6 +283,7 @@ class CanvasGanttsController < ApplicationController
     label_action_missing_dates: :label_action_missing_dates,
     label_action_unassigned: :label_action_unassigned,
     label_action_missing_estimate: :label_action_missing_estimate,
+    label_action_other_reasons: :label_action_other_reasons,
     label_action_loaded_scope: :label_action_loaded_scope,
     label_action_includes_drafts: :label_action_includes_drafts,
     label_action_unplanned_hours: :label_action_unplanned_hours,

@@ -7,7 +7,7 @@ import { todayCalendarDate, toLocalDisplayDate } from '../../utils/dateOnly';
 import { formatDate } from '../../utils/dateUtils';
 import { i18n } from '../../utils/i18n';
 import { getActiveModalDialog } from '../../utils/modalDialog';
-import { ACTION_REASON_ORDER, summarizeActionNeeded, type ActionReason } from './analysis';
+import { ACTION_REASON_ORDER, summarizeActionNeeded, type ActionItem, type ActionReason } from './analysis';
 import './ActionNeededControl.css';
 
 const PAGE_SIZE = 25;
@@ -18,6 +18,20 @@ const reasonKey: Record<ActionReason, string> = {
 };
 const reasonLabel = (reason: ActionReason) => i18n.t(reasonKey[reason]) || reason;
 const displayDate = (value?: number | null) => value == null ? '-' : formatDate(toLocalDisplayDate(value));
+const reasonDetail = ({ task, schedulingMessage }: ActionItem, primary: ActionReason, assigneeNames: Map<number, string>) => {
+    switch (primary) {
+        case 'constraint': return schedulingMessage || '';
+        case 'overdue': return `${i18n.t('field_due_date') || 'Due date'} ${displayDate(task.dueDate)}`;
+        case 'missingDates': {
+            const missing = [task.startDate == null && (i18n.t('field_start_date') || 'Start date'),
+                task.dueDate == null && (i18n.t('field_due_date') || 'Due date')].filter(Boolean);
+            return `${missing.join(' / ')}: ${i18n.t('label_not_set') || 'Not set'}`;
+        }
+        case 'unassigned': return task.dueDate == null ? '' : `${i18n.t('field_due_date') || 'Due date'} ${displayDate(task.dueDate)}`;
+        case 'missingEstimate': return task.assignedToId == null ? '' :
+            (assigneeNames.get(task.assignedToId) || `ID ${task.assignedToId}`);
+    }
+};
 
 const useCalendarToday = () => {
     const [today, setToday] = useState(todayCalendarDate);
@@ -40,7 +54,6 @@ export const ActionNeededControl: React.FC = () => {
     const dialogRef = useRef<HTMLElement>(null);
     const [reason, setReason] = useState<ActionReason | 'all'>('all');
     const [page, setPage] = useState(0);
-    const [overloadPage, setOverloadPage] = useState(0);
     const today = useCalendarToday();
     const allTasks = useTaskStore(state => state.allTasks);
     const statuses = useTaskStore(state => state.taskStatuses);
@@ -59,11 +72,6 @@ export const ActionNeededControl: React.FC = () => {
     const focusTask = useTaskStore(state => state.focusTask);
     const workloadData = useWorkloadStore(state => state.workloadData);
     const workloadPaneVisible = useWorkloadStore(state => state.workloadPaneVisible);
-    const capacityThreshold = useWorkloadStore(state => state.capacityThreshold);
-    const leafIssuesOnly = useWorkloadStore(state => state.leafIssuesOnly);
-    const includeClosedIssues = useWorkloadStore(state => state.includeClosedIssues);
-    const todayOnwardOnly = useWorkloadStore(state => state.todayOnwardOnly);
-    const range = useWorkloadStore(state => state.range);
     const setWorkloadPaneVisible = useWorkloadStore(state => state.setWorkloadPaneVisible);
     const setFocusedHistogramBar = useWorkloadStore(state => state.setFocusedHistogramBar);
 
@@ -72,8 +80,8 @@ export const ActionNeededControl: React.FC = () => {
         selectedTrackerIds, showSubprojects, currentProjectId
     }, today), [allTasks, statuses, scheduling, filterText, selectedAssigneeIds, selectedProjectIds,
         selectedVersionIds, selectedTrackerIds, showSubprojects, currentProjectId, today]);
-    const assigneeNames = useMemo(() => new Map(assignees.filter(option => option.id != null && option.name)
-        .map(option => [option.id, option.name])), [assignees]);
+    const assigneeNames = useMemo(() => new Map<number, string>(assignees.filter(option => option.id != null && option.name)
+        .map(option => [option.id!, option.name!])), [assignees]);
     const ready = initialDataLoaded && readStatus === 'ready';
     const loadState = ready ? 'ready' : readStatus === 'error' ? 'error' : 'loading';
     const actionLabel = i18n.t('label_action_needed') || 'Action needed';
@@ -82,13 +90,7 @@ export const ActionNeededControl: React.FC = () => {
     const shown = useMemo(() => reason === 'all' ? summary.items : summary.items.filter(item => item.reasons.includes(reason)), [summary, reason]);
     const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
     const currentPage = Math.min(page, pageCount - 1);
-    const overloads = useMemo(() => ready && workloadPaneVisible && workloadData ? [...workloadData.assignees.values()]
-        .flatMap(assignee => [...assignee.dailyWorkloads.values()].filter(daily => daily.isPlannedOverload)
-            .map(daily => ({ assigneeId: assignee.assigneeId, assigneeName: assignee.assigneeName, daily })))
-        .sort((a, b) => a.daily.timestamp - b.daily.timestamp || a.assigneeName.localeCompare(b.assigneeName)) : null,
-    [ready, workloadData, workloadPaneVisible]);
-    const overloadPageCount = Math.max(1, Math.ceil((overloads?.length ?? 0) / PAGE_SIZE));
-    const currentOverloadPage = Math.min(overloadPage, overloadPageCount - 1);
+    const overloadCount = ready && workloadPaneVisible && workloadData ? workloadData.plannedOverloadedDayCount : null;
     const goToTask = (taskId: string) => {
         const result = focusTask(taskId);
         if (result.status !== 'ok') {
@@ -157,17 +159,14 @@ export const ActionNeededControl: React.FC = () => {
                 <path d="M12 7v6" />
                 <circle cx="12" cy="17" r="0.75" fill="currentColor" stroke="none" />
             </svg>
-            {ready ? <span data-testid="action-needed-count" className="action-needed-trigger-count" aria-hidden="true">{summary.items.length}</span>
-                : <span data-testid="action-needed-status" className="action-needed-trigger-status" aria-hidden="true">
-                    {loadState === 'error' ? '!' : '…'}
-                </span>}
+            {(!ready || summary.items.length > 0) && <span data-testid="action-needed-indicator"
+                className={`action-needed-trigger-indicator action-needed-trigger-indicator-${loadState}`} aria-hidden="true" />}
         </button>
         {open && createPortal(<div className="action-needed-backdrop" role="presentation"
             onMouseDown={event => { if (event.target === event.currentTarget) setOpen(false); }}>
             <section ref={dialogRef} className={`action-needed-dialog${ready ? ' action-needed-dialog-ready' : ''}`}
                 role="dialog" aria-modal="true" aria-label={actionLabel}>
                 <header className="action-needed-header">
-                    <span className="action-needed-header-icon" aria-hidden="true">!</span>
                     <div className="action-needed-heading">
                         <div className="action-needed-title-line">
                             <h2>{i18n.t('label_action_needed') || 'Action needed'}</h2>
@@ -181,48 +180,35 @@ export const ActionNeededControl: React.FC = () => {
                 </header>
                 <div className="action-needed-body">
                 {ready ? <>
-                    <div className="action-needed-metrics">
-                        <div className="action-needed-metric">
-                            <span className="action-needed-metric-icon" aria-hidden="true">☷</span>
-                            <div><span className="action-needed-metric-label">{i18n.t('label_action_needed') || 'Action needed'}</span>
-                                <strong>{summary.items.length}</strong></div>
-                        </div>
-                        <div className="action-needed-metric" title={i18n.t('label_action_unplanned_help') || ''}>
-                            <span className="action-needed-metric-icon" aria-hidden="true">◷</span>
-                            <div><span className="action-needed-metric-label">{i18n.t('label_action_unplanned_hours') || 'Unplanned estimated hours'}: </span>
-                                <strong>{summary.unplannedEstimatedHours}<small>h</small></strong></div>
-                        </div>
-                        <div className="action-needed-metric">
-                            <span className="action-needed-metric-icon" aria-hidden="true">✳</span>
-                            <div><span className="action-needed-metric-label">{i18n.t('label_action_missing_estimate') || 'Missing estimate'}</span>
-                                <strong>{summary.missingEstimateCount}</strong></div>
-                        </div>
-                    </div>
-                    <p className="action-needed-metric-help">{i18n.t('label_action_unplanned_help') || ''}</p>
                     <nav className="action-needed-filters" aria-label={i18n.t('label_action_filter') || 'Filter reasons'}>
                         {(['all', ...ACTION_REASON_ORDER] as const).map(value => <button key={value} type="button"
                             aria-pressed={reason === value} onClick={() => { setReason(value); setPage(0); }}>
                             <span>{value === 'all' ? (i18n.t('label_all') || 'All') : reasonLabel(value)}</span>
+                            {' '}
                             <span className="action-needed-filter-count">{value === 'all' ? summary.items.length : summary.counts[value]}</span>
                         </button>)}
                     </nav>
                     <div data-testid="action-needed-list" className="action-needed-list">
-                        {shown.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map(({ task, reasons, schedulingMessage }) =>
-                            <button className="action-needed-row" key={task.id} type="button" onClick={() => goToTask(task.id)}>
+                        {shown.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map(item => {
+                            const { task, reasons } = item;
+                            const primary = ACTION_REASON_ORDER.find(value => reasons.includes(value))!;
+                            const detail = reasonDetail(item, primary, assigneeNames);
+                            const otherCount = reasons.length - 1;
+                            const otherLabel = (i18n.t('label_action_other_reasons') || 'and %{count} more').replace('%{count}', String(otherCount));
+                            return <button className="action-needed-row" key={task.id} type="button" onClick={() => goToTask(task.id)}
+                                aria-label={`#${task.id} ${task.subject}. ${reasons.map(reasonLabel).join(', ')}${detail ? `. ${detail}` : ''}`}
+                                title={reasons.map(reasonLabel).join(', ')}>
                                 <span className="action-needed-row-top">
                                     <span className="action-needed-issue-id">#{task.id}</span>
                                     <strong className="action-needed-subject">{task.subject}</strong>
-                                    <span className="action-needed-reasons">{reasons.map(value => <span key={value} className={`action-needed-reason action-needed-reason-${value}`}>{reasonLabel(value)}</span>)}</span>
                                     <span className="action-needed-chevron" aria-hidden="true">›</span>
                                 </span>
-                                <span className="action-needed-row-details">
-                                    <span>{i18n.t('field_start_date') || 'Start'}: {displayDate(task.startDate)}</span>
-                                    <span>{i18n.t('field_due_date') || 'Due'}: {displayDate(task.dueDate)}</span>
-                                    <span>{i18n.t('field_assigned_to') || 'Assignee'}: {task.assignedToId == null ? '-' : (assigneeNames.get(task.assignedToId) || `ID ${task.assignedToId}`)}</span>
-                                    <span>{i18n.t('field_estimated_hours') || 'Estimate'}: {task.estimatedHours == null ? '-' : `${task.estimatedHours}h`}</span>
+                                <span className="action-needed-row-summary">
+                                    <span className={`action-needed-primary action-needed-primary-${primary}`}>{reasonLabel(primary)}</span>
+                                    {detail && <span className="action-needed-detail"> · {detail}</span>}
+                                    {otherCount > 0 && <span className="action-needed-other"> · {otherLabel}</span>}
                                 </span>
-                                {schedulingMessage && <span className="action-needed-scheduling-message">{schedulingMessage}</span>}
-                            </button>)}
+                            </button>})}
                         {shown.length === 0 && <p className="action-needed-empty">0 {i18n.t('label_action_needed') || 'Action needed'}</p>}
                     </div>
                     <div className="action-needed-pagination">
@@ -232,49 +218,21 @@ export const ActionNeededControl: React.FC = () => {
                     </div>
                 </> : <p className="action-needed-loading">{readStatus === 'error' ? (i18n.t('label_action_load_failed') || 'Data could not be loaded') :
                     (i18n.t('label_action_loading') || 'Loading current issues')}</p>}
-                <section className="action-needed-overload" aria-label={i18n.t('label_action_planned_overload') || 'Planned overload'}>
-                    <div className="action-needed-overload-header">
-                        <div className="action-needed-overload-heading">
-                            <span className="action-needed-overload-icon" aria-hidden="true">!</span>
-                            <div><h3>{i18n.t('label_action_planned_overload') || 'Planned overload'}</h3>
-                                <span>{i18n.t('label_action_overload_scope') || 'Current workload range and settings'}</span></div>
-                        </div>
-                        <div className="action-needed-overload-scope">
-                            {range && <span>{displayDate(range.from)} – {displayDate(range.to)}</span>}
-                            <span>{i18n.t('label_action_threshold') || 'Threshold'}: {capacityThreshold}h</span>
-                        </div>
-                    </div>
-                    <div className="action-needed-overload-settings">
-                        {i18n.t('label_action_leaf_only') || 'Leaf only'}: {leafIssuesOnly ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No')}
-                        {' · '}{i18n.t('label_action_include_closed') || 'Include closed'}: {includeClosedIssues ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No')}
-                        {' · '}{i18n.t('label_action_today_onward') || 'Today onward'}: {todayOnwardOnly ? (i18n.t('label_yes') || 'Yes') : (i18n.t('label_no') || 'No')}
-                    </div>
-                    {overloads === null ? <button className="action-needed-open-workload" type="button" onClick={() => { setWorkloadPaneVisible(true); setOpen(false); }}>
-                        {i18n.t('label_action_open_workload') || 'Open workload to calculate'}</button> :
-                        <div className="action-needed-overload-list">
-                            {overloads.length === 0 ? <p className="action-needed-empty">0 {i18n.t('label_action_overload_days') || 'assignee-days'}</p> :
-                                overloads.slice(currentOverloadPage * PAGE_SIZE, (currentOverloadPage + 1) * PAGE_SIZE).map(({ assigneeId, assigneeName, daily }) =>
-                                    <button className="action-needed-overload-row" key={`${assigneeId}-${daily.dateStr}`} type="button"
-                                        aria-label={`${assigneeName} · ${daily.dateStr} · ${daily.plannedLoad}h / ${capacityThreshold}h · ${daily.plannedContributions.map(contribution => `#${contribution.task.id}`).join(', ')}`}
-                                        onClick={() => {
-                                            setFocusedHistogramBar({ assigneeId, dateStr: daily.dateStr }); setOpen(false);
-                                        }}>
-                                        <span className="action-needed-overload-data"><strong>{assigneeName}</strong><span>{daily.dateStr}</span>
-                                            <span>{i18n.t('label_action_planned_overload') || 'Planned overload'} <b>{daily.plannedLoad}h</b> / {capacityThreshold}h</span>
-                                            <em>+{(daily.plannedLoad - capacityThreshold).toFixed(1)}h</em></span>
-                                        <span className="action-needed-overload-tasks">#{daily.plannedContributions.map(contribution => contribution.task.id).join(', #')}</span>
-                                        <span className="action-needed-chevron" aria-hidden="true">›</span>
-                                    </button>)}
-                            {overloads.length > PAGE_SIZE && <div className="action-needed-overload-pagination">
-                                <span>{overloads.length} {i18n.t('label_action_overload_days') || 'assignee-days'}</span>
-                                <button type="button" disabled={currentOverloadPage === 0} onClick={() => setOverloadPage(currentOverloadPage - 1)}>‹</button>
-                                <span>{currentOverloadPage + 1} / {overloadPageCount}</span>
-                                <button type="button" disabled={currentOverloadPage + 1 >= overloadPageCount} onClick={() => setOverloadPage(currentOverloadPage + 1)}>›</button>
-                            </div>}
-                        </div>}
-                </section>
                 </div>
-                <footer className="action-needed-footer"><button type="button" onClick={() => setOpen(false)}>{i18n.t('button_close') || 'Close'}</button></footer>
+                <button className="action-needed-overload" type="button" onClick={() => {
+                    setFocusedHistogramBar(null);
+                    setWorkloadPaneVisible(true);
+                    setOpen(false);
+                }}>
+                    <span className="action-needed-overload-icon" aria-hidden="true">!</span>
+                    <span className="action-needed-overload-text">
+                        <strong>{i18n.t('label_action_planned_overload') || 'Planned overload'}
+                            {overloadCount !== null && ` ${overloadCount} ${i18n.t('label_action_overload_days') || 'assignee-days'}`}</strong>
+                        {' '}
+                        {overloadCount === null && <small>{i18n.t('label_action_open_workload') || 'Open workload to calculate'}</small>}
+                    </span>
+                    <span className="action-needed-chevron" aria-hidden="true">›</span>
+                </button>
             </section>
         </div>, document.body)}
     </>;

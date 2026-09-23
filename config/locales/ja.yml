@@ -224,6 +224,7 @@ ja:
     label_action_missing_dates: "日付不足"
     label_action_unassigned: "担当者未設定"
     label_action_missing_estimate: "予定工数未設定"
+    label_action_other_reasons: "他%{count}件"
     label_action_loaded_scope: "現在のクエリとフィルタに一致する、読み込み済みの未完了チケット"
     label_action_includes_drafts: "未保存の変更を含む"
     label_action_unplanned_hours: "未計画予定工数"

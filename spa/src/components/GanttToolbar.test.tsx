@@ -329,7 +329,7 @@ describe('GanttToolbar shortcuts', () => {
         const actionNeededButton = screen.getByTestId('action-needed-button');
         expect(baselineButton.parentElement?.nextElementSibling).toBe(actionNeededButton);
         expect(actionNeededButton).toHaveAttribute('data-load-state', 'loading');
-        expect(within(actionNeededButton).getByTestId('action-needed-status')).toHaveTextContent('…');
+        expect(within(actionNeededButton).getByTestId('action-needed-indicator')).toHaveClass('action-needed-trigger-indicator-loading');
         expect(actionNeededButton.querySelectorAll('svg')).toHaveLength(1);
 
         fireEvent.click(baselineButton);

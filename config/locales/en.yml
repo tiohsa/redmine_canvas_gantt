@@ -224,6 +224,7 @@ en:
     label_action_missing_dates: "Missing start or due date"
     label_action_unassigned: "No assignee"
     label_action_missing_estimate: "No estimated hours"
+    label_action_other_reasons: "and %{count} more"
     label_action_loaded_scope: "Loaded open issues matching the current query and filters"
     label_action_includes_drafts: "Includes unsaved changes"
     label_action_unplanned_hours: "Unplanned estimated hours"

@@ -4,6 +4,7 @@ import { defaultMockData, setupMockApp, waitForInitialRender } from './support/m
 test.beforeEach(async ({ page }) => { await setupMockApp(page); });
 
 test('pages many loaded issues, preserves scope state, and focuses an unscheduled read-only issue', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 720 });
   await waitForInitialRender(page);
   await page.evaluate(async () => {
     const { useTaskStore } = await import('/src/stores/TaskStore.ts');
@@ -15,12 +16,19 @@ test('pages many loaded issues, preserves scope state, and focuses an unschedule
     useTaskStore.setState({ dataReadStatus: 'ready', initialDataLoaded: true });
   });
   await expect(page.getByTestId('action-needed-button')).toHaveAttribute('aria-label', 'Action needed: 80');
-  await expect(page.getByTestId('action-needed-count')).toHaveText('80');
+  await expect(page.getByTestId('action-needed-indicator')).toHaveClass(/action-needed-trigger-indicator-ready/);
+  await expect(page.getByTestId('action-needed-button')).not.toContainText('80');
   await page.getByTestId('action-needed-button').click();
-  await expect(page.getByRole('dialog', { name: 'Action needed' })).toContainText('Unplanned estimated hours: 160');
-  await expect(page.getByRole('dialog', { name: 'Action needed' }).locator('.action-needed-total')).toHaveText('80');
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  await expect(dialog.locator('.action-needed-metrics')).toHaveCount(0);
+  await expect(dialog.locator('.action-needed-header-icon')).toHaveCount(0);
+  await expect(dialog.getByRole('navigation', { name: 'Filter by reason' })).toBeVisible();
+  expect(await dialog.locator('.action-needed-filters').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect(dialog.locator('.action-needed-total')).toHaveText('80');
   const list = page.getByTestId('action-needed-list');
   await expect(list.locator('button')).toHaveCount(25);
+  await expect(list.locator('button').first()).toContainText('Missing start or due date');
+  expect(await list.locator('button').first().evaluate(row => row.getBoundingClientRect().height)).toBeLessThan(75);
   await page.getByRole('button', { name: '›' }).click();
   await expect(list.locator('button').first()).toContainText('#1025');
   await list.locator('button').first().click();
@@ -35,7 +43,7 @@ test('pages many loaded issues, preserves scope state, and focuses an unschedule
     useTaskStore.setState({ dataReadStatus: 'loading' });
   });
   await expect(page.getByTestId('action-needed-button')).toHaveAttribute('data-load-state', 'loading');
-  await expect(page.getByTestId('action-needed-status')).toHaveText('…');
+  await expect(page.getByTestId('action-needed-indicator')).toHaveClass(/action-needed-trigger-indicator-loading/);
   await page.getByTestId('action-needed-button').click();
   await expect(page.getByText('Loading current issues')).toBeVisible();
   await page.evaluate(async () => {
@@ -44,13 +52,14 @@ test('pages many loaded issues, preserves scope state, and focuses an unschedule
   });
   await expect(page.getByText(/could not be loaded/)).toBeVisible();
   await expect(page.getByTestId('action-needed-button')).toHaveAttribute('data-load-state', 'error');
-  await expect(page.getByTestId('action-needed-status')).toHaveText('!');
+  await expect(page.getByTestId('action-needed-indicator')).toHaveClass(/action-needed-trigger-indicator-error/);
   await page.evaluate(async () => {
     const { useTaskStore } = await import('/src/stores/TaskStore.ts');
     useTaskStore.getState().setTasks([]);
     useTaskStore.setState({ dataReadStatus: 'ready' });
   });
-  await expect(page.getByTestId('action-needed-count')).toHaveText('0');
+  await expect(page.getByTestId('action-needed-button')).toHaveAttribute('aria-label', 'Action needed: 0');
+  await expect(page.getByTestId('action-needed-indicator')).toHaveCount(0);
 });
 
 test('keeps fullscreen open on Escape and traps focus inside the dialog', async ({ page }) => {
@@ -65,7 +74,7 @@ test('keeps fullscreen open on Escape and traps focus inside the dialog', async 
   const close = dialog.getByRole('button', { name: 'Close' }).first();
   await expect(close).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(dialog.getByRole('button', { name: 'Close' }).last()).toBeFocused();
+  await expect(dialog.getByRole('button', { name: /Planned overload/ })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(close).toBeFocused();
   await page.keyboard.press('Escape');
@@ -201,19 +210,26 @@ test('keeps the dialog header and close control visible while its body scrolls',
     const dialogBox = element.getBoundingClientRect();
     const headerBox = element.querySelector('.action-needed-header')!.getBoundingClientRect();
     const closeBox = element.querySelector('.action-needed-close-icon')!.getBoundingClientRect();
-    const footerBox = element.querySelector('.action-needed-footer')!.getBoundingClientRect();
     return { dialogTop: dialogBox.top, dialogBottom: dialogBox.bottom, headerTop: headerBox.top,
-      closeTop: closeBox.top, closeBottom: closeBox.bottom, footerBottom: footerBox.bottom,
-      dialogScrollTop: element.scrollTop };
+      closeTop: closeBox.top, closeBottom: closeBox.bottom,
+      dialogScrollTop: element.scrollTop, horizontalOverflow: element.scrollWidth > element.clientWidth };
   });
   expect(bounds.dialogScrollTop).toBe(0);
   expect(bounds.headerTop).toBeGreaterThanOrEqual(bounds.dialogTop);
   expect(bounds.closeTop).toBeGreaterThanOrEqual(bounds.dialogTop);
   expect(bounds.closeBottom).toBeLessThanOrEqual(bounds.dialogBottom);
-  expect(bounds.footerBottom).toBeLessThanOrEqual(bounds.dialogBottom);
+  expect(bounds.horizontalOverflow).toBe(false);
+  const expandedHeight = await dialog.evaluate(element => element.getBoundingClientRect().height);
+  await dialog.getByRole('button', { name: /Overdue\s*0/ }).click();
+  await expect(dialog.locator('.action-needed-row')).toHaveCount(0);
+  expect(await dialog.evaluate(element => element.getBoundingClientRect().height)).toBe(expandedHeight);
+  await dialog.getByRole('button', { name: /All\s*25/ }).click();
+  await expect(dialog.locator('.action-needed-list .action-needed-row').first()).toBeVisible();
+  await expect(dialog.locator('.action-needed-overload')).toBeVisible();
+  await expect(dialog.locator('.action-needed-footer')).toHaveCount(0);
 });
 
-test('shows computed planned overload separately and opens its workload bar', async ({ page }) => {
+test('shows a compact planned overload entry and opens the workload pane', async ({ page }) => {
   await waitForInitialRender(page);
   await page.evaluate(async () => {
     const { useTaskStore } = await import('/src/stores/TaskStore.ts');
@@ -227,52 +243,37 @@ test('shows computed planned overload separately and opens its workload bar', as
       plannedOverloadedAssigneeCount: 1, plannedOverloadedDayCount: 1, actualOverloadedAssigneeCount: 0, actualOverloadedDayCount: 0 } });
   });
   await page.getByTestId('action-needed-button').click();
-  const overload = page.getByRole('button', { name: /Jane · 2026-09-23 · 10h \/ 8h/ });
-  await expect(overload).toContainText('#101');
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  const overload = dialog.getByRole('button', { name: /Planned overload 1 assignee-days/ });
+  await expect(dialog.locator('.action-needed-overload-row')).toHaveCount(0);
+  await expect(dialog).not.toContainText('Jane');
+  await expect(dialog).not.toContainText('Threshold');
   await overload.click();
-  const focused = await page.evaluate(async () => {
+  await expect(dialog).toHaveCount(0);
+  const state = await page.evaluate(async () => {
     const { useWorkloadStore } = await import('/src/stores/WorkloadStore.ts');
-    return useWorkloadStore.getState().focusedHistogramBar;
+    return { visible: useWorkloadStore.getState().workloadPaneVisible,
+      focused: useWorkloadStore.getState().focusedHistogramBar };
   });
-  expect(focused).toMatchObject({ assigneeId: 10, dateStr: '2026-09-23' });
+  expect(state).toEqual({ visible: true, focused: null });
 });
 
-test('shows remaining overload days when the last page disappears', async ({ page }) => {
+test('shows one primary reason and a compact count for other reasons', async ({ page }) => {
   await waitForInitialRender(page);
   await page.evaluate(async () => {
     const { useTaskStore } = await import('/src/stores/TaskStore.ts');
-    const { useWorkloadStore } = await import('/src/stores/WorkloadStore.ts');
     const issue = useTaskStore.getState().allTasks[0];
-    const days = Array.from({ length: 30 }, (_, index) => {
-      const dateStr = `2026-10-${String(index + 1).padStart(2, '0')}`;
-      return [dateStr, { dateStr, timestamp: index, plannedLoad: 10, isPlannedOverload: true,
-        plannedContributions: [{ task: issue, dailyLoad: 10 }], actualHours: 0,
-        actualContributions: [], isActualOverload: false }] as const;
-    });
-    useWorkloadStore.setState({ workloadPaneVisible: true, capacityThreshold: 8,
-      workloadData: { assignees: new Map([[10, { assigneeId: 10, assigneeName: 'Jane',
-        dailyWorkloads: new Map(days), plannedTotal: 300, plannedPeak: 10, actualTotal: 0, actualPeak: 0 }]]),
-      plannedOverloadedAssigneeCount: 1, plannedOverloadedDayCount: 30,
-      actualOverloadedAssigneeCount: 0, actualOverloadedDayCount: 0 } });
+    useTaskStore.getState().setTasks([{ ...issue, id: '9001', subject: 'Three reasons',
+      startDate: new Date(2020, 8, 1).getTime(), dueDate: new Date(2020, 8, 22).getTime(),
+      assignedToId: null, estimatedHours: undefined }]);
+    useTaskStore.setState({ dataReadStatus: 'ready', initialDataLoaded: true });
   });
-
   await page.getByTestId('action-needed-button').click();
   const dialog = page.getByRole('dialog', { name: 'Action needed' });
-  const pagination = dialog.getByText('30 assignee-days').locator('..');
-  await pagination.getByRole('button', { name: '›' }).click();
-  await expect(dialog.getByRole('button', { name: /Jane · 2026-10-/ })).toHaveCount(5);
-
-  await page.evaluate(async () => {
-    const { useWorkloadStore } = await import('/src/stores/WorkloadStore.ts');
-    const data = useWorkloadStore.getState().workloadData!;
-    const assignee = data.assignees.get(10)!;
-    useWorkloadStore.setState({ workloadData: { ...data,
-      assignees: new Map([[10, { ...assignee,
-        dailyWorkloads: new Map([...assignee.dailyWorkloads].slice(0, 10)), plannedTotal: 100 }]]),
-      plannedOverloadedDayCount: 10 } });
-  });
-
-  await expect(dialog.getByRole('button', { name: /Jane · 2026-10-/ })).toHaveCount(10);
-  await expect(dialog.getByRole('button', { name: /Jane · 2026-10-01/ })).toBeVisible();
-  await expect(dialog.getByText('30 assignee-days')).toHaveCount(0);
+  const row = dialog.locator('.action-needed-row');
+  await expect(row).toContainText(/#9001\s*Three reasons/);
+  await expect(row).toContainText(/Overdue.*and 2 more/);
+  await expect(row).toHaveAttribute('aria-label', /Overdue, No assignee, No estimated hours/);
+  await expect(row.locator('.action-needed-primary')).toHaveCount(1);
+  await expect(row.locator('.action-needed-reason')).toHaveCount(0);
 });
