@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { setupMockApp, waitForInitialRender } from './support/mockApp';
+import { defaultMockData, setupMockApp, waitForInitialRender } from './support/mockApp';
 
 test.beforeEach(async ({ page }) => { await setupMockApp(page); });
 
@@ -72,6 +72,110 @@ test('keeps fullscreen open on Escape and traps focus inside the dialog', async 
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();
   await expect(page.locator('.app-container')).toHaveClass(/is-fullscreen/);
+});
+
+test('keeps Ctrl+F and typing out of the background filter while a dialog is open', async ({ page }) => {
+  await waitForInitialRender(page);
+  await page.keyboard.press('Control+f');
+  const filter = page.getByPlaceholder('Filter by subject...');
+  await filter.fill('login');
+  await page.getByTitle('Filter Tasks').click();
+  await expect(filter).toHaveCount(0);
+  await page.evaluate(async () => {
+    const { useUIStore } = await import('/src/stores/UIStore.ts');
+    useUIStore.getState().setFullScreen(true);
+  });
+  const trigger = page.getByTestId('action-needed-button');
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  const close = dialog.getByRole('button', { name: 'Close' }).first();
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Control+f');
+  await page.keyboard.type('backgroundMustStayUnchanged');
+  await expect(close).toBeFocused();
+  await expect(filter).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(page.locator('.app-container')).toHaveClass(/is-fullscreen/);
+  expect(await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    return useTaskStore.getState().filterText;
+  })).toBe('login');
+});
+
+test('preserves an open background filter until the modal closes', async ({ page }) => {
+  await waitForInitialRender(page);
+  await page.keyboard.press('Control+f');
+  const filter = page.getByPlaceholder('Filter by subject...');
+  await filter.fill('sidebar');
+  await page.evaluate(async () => {
+    const { useUIStore } = await import('/src/stores/UIStore.ts');
+    useUIStore.getState().setFullScreen(true);
+  });
+  const trigger = page.getByTestId('action-needed-button');
+  // Keyboard activation leaves the background menu open (no outside mousedown).
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  await page.keyboard.press('Control+f');
+  await expect(dialog.getByRole('button', { name: 'Close' }).first()).toBeFocused();
+  await page.keyboard.type('backgroundMustNotChange');
+  await expect(filter).toHaveValue('sidebar');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(filter).toHaveValue('sidebar');
+  await expect(page.locator('.app-container')).toHaveClass(/is-fullscreen/);
+  await page.keyboard.press('Escape');
+  await expect(filter).toHaveCount(0);
+  expect(await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    return useTaskStore.getState().filterText;
+  })).toBe('');
+});
+
+test('restores row focus during a delayed refresh and gives the dialog priority over fullscreen Escape', async ({ page }) => {
+  await waitForInitialRender(page);
+  await page.evaluate(async () => {
+    const { useUIStore } = await import('/src/stores/UIStore.ts');
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    useUIStore.getState().setFullScreen(true);
+    useTaskStore.getState().setFilterText('login');
+  });
+  let release!: () => void;
+  const responseGate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/canvas_gantt/data.json**', async route => {
+    await responseGate;
+    await route.fulfill({ json: defaultMockData });
+  });
+  const trigger = page.getByTestId('action-needed-button');
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  const row = dialog.locator('.action-needed-row').first();
+  await row.focus();
+  await expect(row).toBeFocused();
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    void useTaskStore.getState().refreshData();
+  });
+  await expect(dialog.getByText('Loading current issues')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Close' }).first()).toBeFocused();
+  await page.keyboard.press('Control+f');
+  await page.keyboard.type('mustNotEditTheFilter');
+  await expect(page.getByPlaceholder('Filter by subject...')).toHaveCount(0);
+  // Exercise Escape even if focus is lost outside React's dialog event path.
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(page.locator('.app-container')).toHaveClass(/is-fullscreen/);
+  expect(await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    return useTaskStore.getState().filterText;
+  })).toBe('login');
+  release();
+  await expect(trigger).toHaveAttribute('data-load-state', 'ready');
 });
 
 test('keeps the dialog header and close control visible while its body scrolls', async ({ page }) => {

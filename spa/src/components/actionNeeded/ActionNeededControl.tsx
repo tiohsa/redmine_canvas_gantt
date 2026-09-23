@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTaskStore } from '../../stores/TaskStore';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
@@ -6,6 +6,7 @@ import { useUIStore } from '../../stores/UIStore';
 import { todayCalendarDate, toLocalDisplayDate } from '../../utils/dateOnly';
 import { formatDate } from '../../utils/dateUtils';
 import { i18n } from '../../utils/i18n';
+import { getActiveModalDialog } from '../../utils/modalDialog';
 import { ACTION_REASON_ORDER, summarizeActionNeeded, type ActionReason } from './analysis';
 import './ActionNeededControl.css';
 
@@ -95,34 +96,54 @@ export const ActionNeededControl: React.FC = () => {
         } else setOpen(false);
     };
 
+    // A refresh, page change, or removed row can detach the focused element.
+    useLayoutEffect(() => {
+        const dialog = dialogRef.current;
+        if (open && dialog && getActiveModalDialog() === dialog &&
+            (!dialog.contains(document.activeElement) || document.activeElement?.matches(':disabled'))) {
+            dialog.querySelector<HTMLButtonElement>('.action-needed-close-icon')?.focus();
+        }
+    });
+
     useEffect(() => {
         if (!open) return;
-        dialogRef.current?.querySelector<HTMLButtonElement>('.action-needed-close-icon')?.focus();
+        const dialog = dialogRef.current;
+        const restoreFocus = () => {
+            if (dialog && getActiveModalDialog() === dialog && !dialog.contains(document.activeElement)) {
+                dialog.querySelector<HTMLButtonElement>('.action-needed-close-icon')?.focus();
+            }
+        };
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (!dialog || getActiveModalDialog() !== dialog) return;
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+                return;
+            }
+            restoreFocus();
+            if (event.key !== 'Tab') return;
+            const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+            if (buttons.length === 0) return;
+            const first = buttons[0];
+            const last = buttons[buttons.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        };
+        document.addEventListener('focusin', restoreFocus);
+        window.addEventListener('keydown', handleKeyDown, true);
+        const trigger = triggerRef.current;
         return () => {
-            if (triggerRef.current?.isConnected) triggerRef.current.focus();
+            document.removeEventListener('focusin', restoreFocus);
+            window.removeEventListener('keydown', handleKeyDown, true);
+            if (trigger?.isConnected) trigger.focus();
         };
     }, [open]);
-
-    const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            setOpen(false);
-            return;
-        }
-        if (event.key !== 'Tab') return;
-        const buttons = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
-        if (buttons.length === 0) return;
-        const first = buttons[0];
-        const last = buttons[buttons.length - 1];
-        if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
-            event.preventDefault();
-            last.focus();
-        } else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) {
-            event.preventDefault();
-            first.focus();
-        }
-    };
 
     return <>
         <button ref={triggerRef} type="button" data-testid="action-needed-button"
@@ -144,7 +165,7 @@ export const ActionNeededControl: React.FC = () => {
         {open && createPortal(<div className="action-needed-backdrop" role="presentation"
             onMouseDown={event => { if (event.target === event.currentTarget) setOpen(false); }}>
             <section ref={dialogRef} className={`action-needed-dialog${ready ? ' action-needed-dialog-ready' : ''}`}
-                role="dialog" aria-modal="true" aria-label={actionLabel} onKeyDown={handleDialogKeyDown}>
+                role="dialog" aria-modal="true" aria-label={actionLabel}>
                 <header className="action-needed-header">
                     <span className="action-needed-header-icon" aria-hidden="true">!</span>
                     <div className="action-needed-heading">

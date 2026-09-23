@@ -2109,6 +2109,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (resolution === 'local') {
             const beforeRetry = get();
             const conflictRecord = beforeRetry.taskConflicts[id];
+            if (!conflictRecord) return;
             const conflictGeneration = conflictRecord?.generation;
             const retryGeneration = beforeRetry.editGenerations[id] ?? conflictGeneration ?? 0;
             const retryFields = (beforeRetry.localTaskPatches[id] ?? [])
@@ -2129,37 +2130,46 @@ export const useTaskStore = create<TaskState>((set, get) => {
             const retryFieldNames = Object.keys(retryFields);
             const hasPersistedRetryFields = retryFieldNames.length > 0;
             const canRetryFieldsDirectly = retryTask && hasPersistedRetryFields && Object.keys(buildTaskPatchFieldsPayload(retryTask, retryFields)).length > 0;
+            let confirmedRemote = selectConflictRemote(
+                conflictRecord, beforeRetry.serverTaskSnapshot, beforeRetry.activeReadContext, beforeRetry.dataReadStatus
+            );
+            if (canRetryFieldsDirectly && !confirmedRemote) {
+                const viewIdentityAtRetry = currentViewIdentity();
+                const retryIsCurrent = () => get().taskConflicts[id] === conflictRecord &&
+                    currentViewIdentity() === viewIdentityAtRetry &&
+                    get().editGenerations[id] === beforeRetry.editGenerations[id];
+                try {
+                    const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: beforeRetry.selectedStatusIds } });
+                    if (!retryIsCurrent() || get().dataReadStatus !== 'ready') return;
+                    const entity = resyncData.tasks.find(task => task.id === id);
+                    if (!entity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
+                    confirmedRemote = { entity, revision: entity.lockVersion };
+                    get().applyApiData(resyncData);
+                } catch (error) {
+                    if (!retryIsCurrent() || get().dataReadStatus === 'loading') return;
+                    const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
+                    get().registerTaskConflict(id, conflictRecord.message || message, conflictRecord.generation,
+                        undefined, conflictRecord.remoteRevision, 'unavailable');
+                    useUIStore.getState().addNotification(message, 'error');
+                    return;
+                }
+            }
             set((state) => {
                 if (!state.taskConflicts[id]) return state;
                 const taskConflicts = { ...state.taskConflicts };
                 delete taskConflicts[id];
                 return { taskConflicts };
             });
-            if (canRetryFieldsDirectly) {
+            if (canRetryFieldsDirectly && confirmedRemote) {
                 try {
-                    let remoteTask = conflictRecord?.remoteEntity;
-                    let resyncData: Awaited<ReturnType<typeof fetchMutationResyncData>> | undefined;
-                    if (!remoteTask) {
-                        resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: get().selectedStatusIds } });
-                        remoteTask = resyncData.tasks.find(task => task.id === id);
-                    }
-                    if (!remoteTask) {
-                        get().registerTaskConflict(
-                            id,
-                            conflictRecord?.message || (i18n.t('label_conflict') || 'Conflict'),
-                            retryGeneration,
-                            undefined,
-                            conflictRecord?.remoteRevision
-                        );
-                        return;
-                    }
-                    if (resyncData) get().applyApiData(resyncData);
-                    else get().applyTaskMutationMetadata(id, { entity: remoteTask, revision: conflictRecord?.remoteRevision ?? remoteTask.lockVersion });
+                    // Pin the confirmed revision across queue waits and transport retries.
+                    const retryBaseRevision = confirmedRemote.revision;
+                    get().applyTaskMutationMetadata(id, confirmedRemote);
                     const result = await taskMutationService.updateTaskFields(id, () => {
                         const latestTask = get().allTasks.find(task => task.id === id) ?? retryTask;
                         return {
                             ...buildTaskPatchFieldsPayload(latestTask, retryFields),
-                            lock_version: conflictRecord?.remoteRevision ?? remoteTask!.lockVersion
+                            lock_version: retryBaseRevision
                         };
                     }, undefined, retryDatePlacementMode);
                     get().applyTaskMutationMetadata(id, result);

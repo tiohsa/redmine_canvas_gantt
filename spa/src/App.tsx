@@ -9,6 +9,7 @@ import { TimerStartModal } from './components/timer/TimerStartModal';
 import { PendingWorkModal } from './components/timer/PendingWorkModal';
 import { OtherNoticeModal } from './components/timer/OtherNoticeModal';
 import type { GanttExportHandle } from './export/types';
+import { getActiveModalDialog } from './utils/modalDialog';
 
 import { useUIStore } from './stores/UIStore';
 import './App.css';
@@ -34,7 +35,7 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) {
+      if (event.defaultPrevented || getActiveModalDialog()) {
         return;
       }
 

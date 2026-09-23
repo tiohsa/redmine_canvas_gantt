@@ -2614,10 +2614,103 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.barOperations[operationId]).toBeDefined();
     });
 
+    it.each([false, true].flatMap(autoSave => [false, true].map(laterServerEdit => ({ autoSave, laterServerEdit }))))(
+        'pins the displayed v3 for local retry (autoSave=$autoSave, laterServerEdit=$laterServerEdit)',
+        async ({ autoSave, laterServerEdit }) => {
+            const original = buildTask({ id: 'task-1', subject: 'original', lockVersion: 1 });
+            const other = buildTask({ id: 'task-2', subject: 'other', lockVersion: 1 });
+            const remoteV2 = { ...original, subject: 'remote v2', lockVersion: 2 };
+            const remoteV3 = { ...original, subject: 'remote v3', lockVersion: 3 };
+            const remoteV4 = { ...original, subject: 'later server edit', lockVersion: 4 };
+            const context = createReadContext({ generation: 1, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh' });
+            useTaskStore.getState().applyApiData(buildApiData([original, other]), context);
+            useTaskStore.setState({ autoSave });
+            useTaskStore.getState().updateTask(original.id, { subject: 'local intent' });
+            useTaskStore.getState().updateTask(other.id, { subject: 'unrelated draft' });
+            const otherPatches = useTaskStore.getState().localTaskPatches[other.id];
+            useTaskStore.getState().registerTaskConflict(original.id, 'Conflict',
+                useTaskStore.getState().editGenerations[original.id], remoteV2, 2);
+            useTaskStore.getState().applyApiData(buildApiData([remoteV3, other]), context);
+            vi.mocked(apiClient.updateTaskFields).mockImplementation(async (_id, fields) => {
+                expect(fields).toEqual({ subject: 'local intent', lock_version: 3 });
+                return laterServerEdit
+                    ? { status: 'conflict', entity: remoteV4, revision: 4 }
+                    : { status: 'ok', entity: { ...remoteV4, subject: 'local intent' }, revision: 4, lockVersion: 4 };
+            });
+
+            const retry = useTaskStore.getState().resolveTaskConflict(original.id, 'local');
+            // The queued payload must not pick up an update arriving after confirmation.
+            if (laterServerEdit) useTaskStore.getState().applyTaskMutationMetadata(original.id, { entity: remoteV4, revision: 4 });
+            await retry;
+
+            expect(apiClient.fetchData).not.toHaveBeenCalled();
+            expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1);
+            const state = useTaskStore.getState();
+            expect(state.localTaskPatches[other.id]).toEqual(otherPatches);
+            expect(state.allTasks.find(task => task.id === other.id)?.subject).toBe('unrelated draft');
+            expect(state.modifiedTaskIds.has(other.id)).toBe(true);
+            if (laterServerEdit) {
+                expect(state.taskConflicts[original.id]?.remoteRevision).toBe(4);
+                expect(state.modifiedTaskIds.has(original.id)).toBe(true);
+                expect(state.allTasks.find(task => task.id === original.id)?.subject).toBe('local intent');
+            } else {
+                expect(state.taskConflicts[original.id]).toBeUndefined();
+                expect(state.modifiedTaskIds.has(original.id)).toBe(false);
+            }
+        }
+    );
+
+    it.each(['edit', 'conflict', 'scope'] as const)('abandons local retry when %s changes during remote confirmation', async change => {
+        const original = buildTask({ id: 'task-1', subject: 'original', lockVersion: 1 });
+        const remote = { ...original, subject: 'remote', lockVersion: 2 };
+        useTaskStore.getState().applyApiData(buildApiData([original]));
+        useTaskStore.getState().updateTask(original.id, { subject: 'local intent' });
+        useTaskStore.getState().registerTaskConflict(original.id, 'Conflict');
+        const request = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(request.promise).mockResolvedValue(buildApiData([remote]));
+
+        const retry = useTaskStore.getState().resolveTaskConflict(original.id, 'local');
+        if (change === 'edit') useTaskStore.getState().updateTask(original.id, { subject: 'later draft' });
+        if (change === 'conflict') useTaskStore.getState().registerTaskConflict(original.id, 'Newer conflict', undefined, remote, 2);
+        if (change === 'scope') useTaskStore.setState({ selectedAssigneeIds: [99] });
+        const conflict = useTaskStore.getState().taskConflicts[original.id];
+        request.resolve(buildApiData([remote]));
+        await retry;
+
+        expect(apiClient.updateTaskFields).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().taskConflicts[original.id]).toBe(conflict);
+        expect(useTaskStore.getState().modifiedTaskIds.has(original.id)).toBe(true);
+        if (change === 'edit') expect(useTaskStore.getState().allTasks[0].subject).toBe('later draft');
+    });
+
+    it('keeps the confirmed revision fixed across transport retry after a newer server update', async () => {
+        const local = buildTask({ id: 'task-1', subject: 'original', lockVersion: 1 });
+        useTaskStore.getState().applyApiData(buildApiData([local]));
+        useTaskStore.getState().updateTask(local.id, { subject: 'local intent' });
+        useTaskStore.getState().registerTaskConflict(local.id, 'Conflict', undefined,
+            { ...local, subject: 'remote v2', lockVersion: 2 }, 2);
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...local, subject: 'remote v3', lockVersion: 3 }
+        ]));
+        await useTaskStore.getState().refreshData();
+        const remoteV4 = { ...local, subject: 'later server edit', lockVersion: 4 };
+        vi.mocked(apiClient.updateTaskFields).mockImplementationOnce(async () => {
+            useTaskStore.getState().applyTaskMutationMetadata(local.id, { entity: remoteV4, revision: 4 });
+            return { status: 'transient_error' };
+        }).mockResolvedValueOnce({ status: 'conflict', entity: remoteV4, revision: 4 });
+
+        await useTaskStore.getState().resolveTaskConflict(local.id, 'local');
+
+        expect(vi.mocked(apiClient.updateTaskFields).mock.calls.map(call => call[1].lock_version)).toEqual([3, 3]);
+        expect(useTaskStore.getState().taskConflicts[local.id].remoteRevision).toBe(4);
+        expect(useTaskStore.getState().modifiedTaskIds.has(local.id)).toBe(true);
+        expect(useTaskStore.getState().allTasks.find(task => task.id === local.id)?.subject).toBe('local intent');
+    });
+
     it('cleans the bar operation after a successful local conflict retry', async () => {
         vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 2 });
         const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
-        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().applyApiData(buildApiData([localTask]));
         const operationId = useTaskStore.getState().beginBarOperation('task-1');
         useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
         useTaskStore.getState().endBarOperation(operationId);
@@ -2635,7 +2728,7 @@ describe('TaskStore asynchronous state ownership', () => {
     it('preserves the source task and local intent when Keep Local retry loses a reference', async () => {
         useUIStore.setState(useUIStore.getInitialState(), true);
         const localTask = buildTask({ id: 'task-1', parentId: undefined, lockVersion: 1 });
-        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().applyApiData(buildApiData([localTask]));
         useTaskStore.getState().updateTask('task-1', { parentId: 'missing-parent' });
         const conflictGeneration = useTaskStore.getState().editGenerations['task-1'];
         useTaskStore.getState().registerTaskConflict(
@@ -2666,7 +2759,7 @@ describe('TaskStore asynchronous state ownership', () => {
     it('retries inline conflict resolution with the local field payload and current lock version', async () => {
         vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 3 });
         const localTask = buildTask({ id: 'task-1', statusId: 1, statusName: 'New', lockVersion: 1 });
-        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().applyApiData(buildApiData([localTask]));
         useTaskStore.getState().updateTask('task-1', { statusId: 2, statusName: 'In Progress' });
         useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
         vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
@@ -2698,7 +2791,7 @@ describe('TaskStore asynchronous state ownership', () => {
             statusId: 1,
             lockVersion: 1
         });
-        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().applyApiData(buildApiData([localTask]));
         useTaskStore.getState().updateTask(
             localTask.id,
             { projectId: '2', trackerId: 7, statusId: 4 },
@@ -2721,7 +2814,7 @@ describe('TaskStore asynchronous state ownership', () => {
     it('retries the intended value when the conflict projection differs', async () => {
         vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 3 });
         const localTask = buildTask({ id: 'task-1', subject: 'persisted', lockVersion: 1 });
-        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().applyApiData(buildApiData([localTask]));
         useTaskStore.getState().updateTask(
             localTask.id,
             { subject: 'server projection' },
@@ -2744,7 +2837,7 @@ describe('TaskStore asynchronous state ownership', () => {
     it('settles the conflicted operation without removing a later operation after local retry', async () => {
         vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 3 });
         const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
-        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().applyApiData(buildApiData([localTask]));
 
         const conflictedOperationId = useTaskStore.getState().beginBarOperation('task-1');
         useTaskStore.getState().updateTask('task-1', { dueDate: THURSDAY });
@@ -2770,7 +2863,7 @@ describe('TaskStore asynchronous state ownership', () => {
         const firstSaveRequest = deferred<{ status: 'ok'; lockVersion: number }>();
         vi.mocked(apiClient.updateTaskFields).mockReturnValueOnce(firstSaveRequest.promise);
         const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY, lockVersion: 1 });
-        useTaskStore.getState().setTasks([localTask]);
+        useTaskStore.getState().applyApiData(buildApiData([localTask]));
 
         const operationIds = [1, 2, 3].map(() => {
             const operationId = useTaskStore.getState().beginBarOperation('task-1');

@@ -11,7 +11,7 @@ type ConflictRemoteRecord = {
 
 export type SelectedConflictRemote = { entity: PersistedTaskState; revision: number };
 
-/** Select the same confirmed server value for comparison and Use Remote. */
+/** Select the same confirmed server value for comparison and both conflict resolutions. */
 export const selectConflictRemote = (
     conflict: ConflictRemoteRecord,
     snapshot: ServerSnapshot<Task>,
