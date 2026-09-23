@@ -121,6 +121,39 @@ describe('ConflictResolutionPanel', () => {
         expect(useTaskStore.getState().taskConflicts['1']).toBeUndefined();
     });
 
+    it('adopts the newer value shown in the same-scope comparison and keeps other drafts', () => {
+        const context = createReadContext({ generation: 2, projectId: '1', query: { queryId: 1 },
+            scope: { showSubprojects: true }, purpose: 'refresh' });
+        const other = { ...task('Other draft', 1), id: '2' };
+        useTaskStore.setState({
+            allTasks: [task('Local draft', 1), other],
+            tasks: [task('Local draft', 1), other],
+            serverTaskSnapshot: createServerSnapshot([task('Remote v3', 3), { ...other, subject: 'Other server' }], context),
+            activeReadContext: context,
+            dataReadStatus: 'ready',
+            localTaskPatches: {
+                '1': [{ entityId: '1', projection: { subject: 'Local draft' }, mutationIntent: { subject: 'Local draft' }, generation: 1, operationId: 'edit:1:1' }],
+                '2': [{ entityId: '2', projection: { subject: 'Other draft' }, mutationIntent: { subject: 'Other draft' }, generation: 1, operationId: 'edit:2:1' }]
+            },
+            modifiedTaskIds: new Set(['1', '2']),
+            taskConflicts: { '1': { taskId: '1', message: 'Conflict', detectedAt: 1, generation: 1,
+                remoteEntity: task('Remote v2', 2), remoteRevision: 2 } }
+        });
+
+        render(<ConflictResolutionPanel />);
+        expect(screen.getByRole('cell', { name: 'Remote v3' })).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId('conflict-use-remote-1'));
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(item => item.id === '1')?.subject).toBe('Remote v3');
+        expect(state.serverTaskSnapshot.entitiesById['1'].subject).toBe('Remote v3');
+        expect(state.serverTaskSnapshot.revisions['1']).toBe(3);
+        expect(state.localTaskPatches['1']).toBeUndefined();
+        expect(state.allTasks.find(item => item.id === '2')?.subject).toBe('Other draft');
+        expect(state.localTaskPatches['2']).toHaveLength(1);
+        expect(state.modifiedTaskIds.has('2')).toBe(true);
+    });
+
     it('compares current retry intent with only confirmed remote fields', () => {
         const patches = [
             { entityId: '1', projection: { subject: 'Projection', dueDate: 3 }, mutationIntent: { subject: 'At conflict', customFieldValues: { '99': '' } }, generation: 1, operationId: 'edit:1:1' },
@@ -139,6 +172,10 @@ describe('ConflictResolutionPanel', () => {
             remoteEntity: { id: '1', subject: 'Stale', lockVersion: 1 }, remoteRevision: 2 } } });
         rerender(<ConflictResolutionPanel />);
         expect(screen.getAllByRole('cell', { name: 'Not available' }).length).toBeGreaterThan(0);
+        act(() => useTaskStore.setState({ taskConflicts: { '1': { taskId: '1', message: 'Conflict', detectedAt: 1,
+            remoteEntity: { id: '1', subject: 'Unconfirmed', lockVersion: 2 }, remoteRevision: 2,
+            remoteAvailability: 'needs_refresh' } } }));
+        expect(screen.queryByRole('cell', { name: 'Unconfirmed' })).not.toBeInTheDocument();
     });
 
     it('uses a revision-checked snapshot only in the active read scope', () => {
@@ -147,7 +184,8 @@ describe('ConflictResolutionPanel', () => {
             localTaskPatches: { '1': [{ entityId: '1', projection: { subject: 'Local' }, mutationIntent: { subject: 'Local' }, generation: 1, operationId: 'edit:1:1' }] },
             serverTaskSnapshot: createServerSnapshot([task('Snapshot', 3)], context),
             activeReadContext: context, dataReadStatus: 'ready',
-            taskConflicts: { '1': { taskId: '1', message: 'Conflict', detectedAt: 1, remoteRevision: 2 } } });
+            taskConflicts: { '1': { taskId: '1', message: 'Conflict', detectedAt: 1,
+                remoteEntity: task('Response', 2), remoteRevision: 2 } } });
         render(<ConflictResolutionPanel />);
         expect(screen.getByRole('cell', { name: 'Snapshot' })).toBeInTheDocument();
         act(() => useTaskStore.setState({ activeReadContext: createReadContext({ generation: 3, projectId: '1', query: { queryId: 2 }, scope: { showSubprojects: true }, purpose: 'refresh' }) }));

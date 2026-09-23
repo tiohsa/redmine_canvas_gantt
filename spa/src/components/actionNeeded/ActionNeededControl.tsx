@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTaskStore } from '../../stores/TaskStore';
 import { useWorkloadStore } from '../../stores/WorkloadStore';
@@ -35,6 +35,8 @@ const useCalendarToday = () => {
 
 export const ActionNeededControl: React.FC = () => {
     const [open, setOpen] = useState(false);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const dialogRef = useRef<HTMLElement>(null);
     const [reason, setReason] = useState<ActionReason | 'all'>('all');
     const [page, setPage] = useState(0);
     const [overloadPage, setOverloadPage] = useState(0);
@@ -72,6 +74,10 @@ export const ActionNeededControl: React.FC = () => {
     const assigneeNames = useMemo(() => new Map(assignees.filter(option => option.id != null && option.name)
         .map(option => [option.id, option.name])), [assignees]);
     const ready = initialDataLoaded && readStatus === 'ready';
+    const loadState = ready ? 'ready' : readStatus === 'error' ? 'error' : 'loading';
+    const actionLabel = i18n.t('label_action_needed') || 'Action needed';
+    const loadLabel = loadState === 'error' ? (i18n.t('label_action_load_failed') || 'Data could not be loaded')
+        : (i18n.t('label_action_loading') || 'Loading current issues');
     const shown = useMemo(() => reason === 'all' ? summary.items : summary.items.filter(item => item.reasons.includes(reason)), [summary, reason]);
     const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
     const currentPage = Math.min(page, pageCount - 1);
@@ -91,17 +97,38 @@ export const ActionNeededControl: React.FC = () => {
 
     useEffect(() => {
         if (!open) return;
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setOpen(false);
+        dialogRef.current?.querySelector<HTMLButtonElement>('.action-needed-close-icon')?.focus();
+        return () => {
+            if (triggerRef.current?.isConnected) triggerRef.current.focus();
         };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
     }, [open]);
 
+    const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
+            return;
+        }
+        if (event.key !== 'Tab') return;
+        const buttons = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
+        if (buttons.length === 0) return;
+        const first = buttons[0];
+        const last = buttons[buttons.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) {
+            event.preventDefault();
+            first.focus();
+        }
+    };
+
     return <>
-        <button type="button" data-testid="action-needed-button" className="action-needed-trigger"
-            aria-label={i18n.t('label_action_needed') || 'Action needed'}
-            title={i18n.t('label_action_needed') || 'Action needed'}
+        <button ref={triggerRef} type="button" data-testid="action-needed-button"
+            data-load-state={loadState} className={`action-needed-trigger action-needed-trigger-${loadState}`}
+            aria-label={`${actionLabel}: ${ready ? summary.items.length : loadLabel}`}
+            title={`${actionLabel}: ${ready ? summary.items.length : loadLabel}`}
             aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
                 strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -109,11 +136,15 @@ export const ActionNeededControl: React.FC = () => {
                 <path d="M12 7v6" />
                 <circle cx="12" cy="17" r="0.75" fill="currentColor" stroke="none" />
             </svg>
+            {ready ? <span data-testid="action-needed-count" className="action-needed-trigger-count" aria-hidden="true">{summary.items.length}</span>
+                : <span data-testid="action-needed-status" className="action-needed-trigger-status" aria-hidden="true">
+                    {loadState === 'error' ? '!' : '…'}
+                </span>}
         </button>
         {open && createPortal(<div className="action-needed-backdrop" role="presentation"
             onMouseDown={event => { if (event.target === event.currentTarget) setOpen(false); }}>
-            <section className={`action-needed-dialog${ready ? ' action-needed-dialog-ready' : ''}`} role="dialog" aria-modal="true"
-                aria-label={i18n.t('label_action_needed') || 'Action needed'}>
+            <section ref={dialogRef} className={`action-needed-dialog${ready ? ' action-needed-dialog-ready' : ''}`}
+                role="dialog" aria-modal="true" aria-label={actionLabel} onKeyDown={handleDialogKeyDown}>
                 <header className="action-needed-header">
                     <span className="action-needed-header-icon" aria-hidden="true">!</span>
                     <div className="action-needed-heading">
@@ -127,6 +158,7 @@ export const ActionNeededControl: React.FC = () => {
                     <button className="action-needed-close-icon" type="button" onClick={() => setOpen(false)}
                         aria-label={i18n.t('button_close') || 'Close'}>×</button>
                 </header>
+                <div className="action-needed-body">
                 {ready ? <>
                     <div className="action-needed-metrics">
                         <div className="action-needed-metric">
@@ -220,6 +252,7 @@ export const ActionNeededControl: React.FC = () => {
                             </div>}
                         </div>}
                 </section>
+                </div>
                 <footer className="action-needed-footer"><button type="button" onClick={() => setOpen(false)}>{i18n.t('button_close') || 'Close'}</button></footer>
             </section>
         </div>, document.body)}

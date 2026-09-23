@@ -2401,6 +2401,92 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.taskTombstones['task-1']).toBeUndefined();
     });
 
+    it('fetches a newer remote value when a snapshot from another scope supersedes the conflict response', async () => {
+        const local = buildTask({ id: 'task-1', subject: 'local', lockVersion: 1 });
+        const response = buildTask({ id: 'task-1', subject: 'remote v2', lockVersion: 2 });
+        const snapshot = buildTask({ id: 'task-1', subject: 'remote v3', lockVersion: 3 });
+        const refreshed = buildTask({ id: 'task-1', subject: 'remote v4', lockVersion: 4 });
+        const otherScope = createReadContext({ generation: 1, projectId: 'p1', query: { queryId: 1 }, scope: {}, purpose: 'refresh' });
+        const activeScope = createReadContext({ generation: 2, projectId: 'p1', query: { queryId: 2 }, scope: {}, purpose: 'refresh' });
+        useTaskStore.getState().applyApiData(buildApiData([local]));
+        useTaskStore.setState({
+            serverTaskSnapshot: { entitiesById: { 'task-1': snapshot }, revisions: { 'task-1': 3 }, context: otherScope },
+            activeReadContext: activeScope,
+            dataReadStatus: 'ready'
+        });
+        useTaskStore.getState().registerTaskConflict('task-1', 'Conflict', undefined, response, 2);
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([refreshed]));
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
+
+        const state = useTaskStore.getState();
+        expect(apiClient.fetchData).toHaveBeenCalled();
+        expect(state.allTasks.find(task => task.id === 'task-1')?.subject).toBe('remote v4');
+        expect(state.serverTaskSnapshot.entitiesById['task-1'].subject).toBe('remote v4');
+        expect(state.serverTaskSnapshot.revisions['task-1']).toBe(4);
+        expect(state.taskConflicts['task-1']).toBeUndefined();
+    });
+
+    it('does not copy an unrelated local draft into a partial remote response', async () => {
+        const server = buildTask({ id: 'task-1', subject: 'server subject', dueDate: TUESDAY, lockVersion: 1 });
+        useTaskStore.getState().applyApiData(buildApiData([server]));
+        useTaskStore.getState().updateTask('task-1', { subject: 'local draft' });
+        const generation = useTaskStore.getState().editGenerations['task-1'];
+        useTaskStore.getState().registerTaskConflict('task-1', 'Conflict', generation,
+            { id: 'task-1', dueDate: FRIDAY, lockVersion: 2 }, 2);
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === 'task-1')).toMatchObject({
+            subject: 'server subject', dueDate: FRIDAY, lockVersion: 2
+        });
+        expect(state.serverTaskSnapshot.entitiesById['task-1']).toMatchObject({
+            subject: 'server subject', dueDate: FRIDAY, lockVersion: 2
+        });
+        expect(state.modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it('does not replace a newer conflict when an earlier remote refresh fails', async () => {
+        const local = buildTask({ id: 'task-1', subject: 'local', lockVersion: 1 });
+        const newerRemote = buildTask({ id: 'task-1', subject: 'newer remote', lockVersion: 3 });
+        useTaskStore.getState().applyApiData(buildApiData([local]));
+        useTaskStore.getState().registerTaskConflict('task-1', 'First conflict');
+        const request = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockReturnValue(request.promise);
+
+        const resolution = useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
+        useTaskStore.getState().registerTaskConflict('task-1', 'Newer conflict', undefined, newerRemote, 3);
+        request.reject(new Error('Old refresh failed'));
+        await resolution;
+
+        const conflict = useTaskStore.getState().taskConflicts['task-1'];
+        expect(conflict.message).toBe('Newer conflict');
+        expect(conflict.remoteEntity?.subject).toBe('newer remote');
+        expect(conflict.remoteAvailability).toBe('known');
+    });
+
+    it('does not apply a remote refresh from a view that changed while it was pending', async () => {
+        const local = buildTask({ id: 'task-1', subject: 'local', lockVersion: 1 });
+        const oldViewRemote = buildTask({ id: 'task-1', subject: 'old view remote', lockVersion: 2 });
+        const newViewRemote = buildTask({ id: 'task-1', subject: 'new view remote', lockVersion: 3 });
+        useTaskStore.getState().applyApiData(buildApiData([local]));
+        useTaskStore.getState().registerTaskConflict('task-1', 'Conflict');
+        const request = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockImplementationOnce(() => request.promise)
+            .mockResolvedValue(buildApiData([newViewRemote]));
+
+        const resolution = useTaskStore.getState().resolveTaskConflict('task-1', 'remote');
+        useTaskStore.getState().setSelectedAssigneeIds([99]);
+        request.resolve(buildApiData([oldViewRemote]));
+        await resolution;
+        await vi.waitFor(() => expect(useTaskStore.getState().dataReadStatus).toBe('ready'));
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === 'task-1')?.subject).toBe('new view remote');
+        expect(state.taskConflicts['task-1']).toBeDefined();
+    });
+
     it('cleans the settled bar operation when conflict resolution adopts the remote task', async () => {
         const localTask = buildTask({ id: 'task-1', dueDate: TUESDAY });
         const remoteTask = buildTask({ id: 'task-1', dueDate: FRIDAY, lockVersion: 2 });

@@ -14,8 +14,8 @@ test('pages many loaded issues, preserves scope state, and focuses an unschedule
     useTaskStore.getState().setTasks(tasks);
     useTaskStore.setState({ dataReadStatus: 'ready', initialDataLoaded: true });
   });
-  await expect(page.getByTestId('action-needed-button')).toHaveAttribute('aria-label', 'Action needed');
-  await expect(page.getByTestId('action-needed-button')).toHaveText('');
+  await expect(page.getByTestId('action-needed-button')).toHaveAttribute('aria-label', 'Action needed: 80');
+  await expect(page.getByTestId('action-needed-count')).toHaveText('80');
   await page.getByTestId('action-needed-button').click();
   await expect(page.getByRole('dialog', { name: 'Action needed' })).toContainText('Unplanned estimated hours: 160');
   await expect(page.getByRole('dialog', { name: 'Action needed' }).locator('.action-needed-total')).toHaveText('80');
@@ -34,6 +34,8 @@ test('pages many loaded issues, preserves scope state, and focuses an unschedule
     const { useTaskStore } = await import('/src/stores/TaskStore.ts');
     useTaskStore.setState({ dataReadStatus: 'loading' });
   });
+  await expect(page.getByTestId('action-needed-button')).toHaveAttribute('data-load-state', 'loading');
+  await expect(page.getByTestId('action-needed-status')).toHaveText('…');
   await page.getByTestId('action-needed-button').click();
   await expect(page.getByText('Loading current issues')).toBeVisible();
   await page.evaluate(async () => {
@@ -41,6 +43,70 @@ test('pages many loaded issues, preserves scope state, and focuses an unschedule
     useTaskStore.setState({ dataReadStatus: 'error' });
   });
   await expect(page.getByText(/could not be loaded/)).toBeVisible();
+  await expect(page.getByTestId('action-needed-button')).toHaveAttribute('data-load-state', 'error');
+  await expect(page.getByTestId('action-needed-status')).toHaveText('!');
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    useTaskStore.getState().setTasks([]);
+    useTaskStore.setState({ dataReadStatus: 'ready' });
+  });
+  await expect(page.getByTestId('action-needed-count')).toHaveText('0');
+});
+
+test('keeps fullscreen open on Escape and traps focus inside the dialog', async ({ page }) => {
+  await waitForInitialRender(page);
+  await page.evaluate(async () => {
+    const { useUIStore } = await import('/src/stores/UIStore.ts');
+    useUIStore.getState().setFullScreen(true);
+  });
+  const trigger = page.getByTestId('action-needed-button');
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  const close = dialog.getByRole('button', { name: 'Close' }).first();
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('button', { name: 'Close' }).last()).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(page.locator('.app-container')).toHaveClass(/is-fullscreen/);
+});
+
+test('keeps the dialog header and close control visible while its body scrolls', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 600 });
+  await waitForInitialRender(page);
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    const base = useTaskStore.getState().allTasks[0];
+    useTaskStore.getState().setTasks(Array.from({ length: 25 }, (_, index) => ({ ...base,
+      id: String(index + 1000), subject: `Needs plan ${index}`, startDate: undefined, dueDate: undefined,
+      assignedToId: null, estimatedHours: 2, hasPhysicalChildren: false, rowIndex: index })));
+    useTaskStore.setState({ dataReadStatus: 'ready', initialDataLoaded: true });
+  });
+  await page.getByTestId('action-needed-button').click();
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  const body = dialog.locator('.action-needed-body');
+  const scrollTop = await body.evaluate(element => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  expect(scrollTop).toBeGreaterThan(0);
+  const bounds = await dialog.evaluate(element => {
+    const dialogBox = element.getBoundingClientRect();
+    const headerBox = element.querySelector('.action-needed-header')!.getBoundingClientRect();
+    const closeBox = element.querySelector('.action-needed-close-icon')!.getBoundingClientRect();
+    const footerBox = element.querySelector('.action-needed-footer')!.getBoundingClientRect();
+    return { dialogTop: dialogBox.top, dialogBottom: dialogBox.bottom, headerTop: headerBox.top,
+      closeTop: closeBox.top, closeBottom: closeBox.bottom, footerBottom: footerBox.bottom,
+      dialogScrollTop: element.scrollTop };
+  });
+  expect(bounds.dialogScrollTop).toBe(0);
+  expect(bounds.headerTop).toBeGreaterThanOrEqual(bounds.dialogTop);
+  expect(bounds.closeTop).toBeGreaterThanOrEqual(bounds.dialogTop);
+  expect(bounds.closeBottom).toBeLessThanOrEqual(bounds.dialogBottom);
+  expect(bounds.footerBottom).toBeLessThanOrEqual(bounds.dialogBottom);
 });
 
 test('shows computed planned overload separately and opens its workload bar', async ({ page }) => {

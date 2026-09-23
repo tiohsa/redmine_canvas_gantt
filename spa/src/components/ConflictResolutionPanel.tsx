@@ -3,6 +3,7 @@ import { useTaskStore, type TaskConflictRecord } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
 import type { Task, PersistedTaskState } from '../types';
 import type { LocalPatch, ReadContext, ServerSnapshot } from '../stores/taskStore/stateContract';
+import { selectConflictRemote } from '../stores/taskStore/conflictRemote';
 import { formatDate } from '../utils/dateUtils';
 import { parseDateOnly, toLocalDisplayDate } from '../utils/dateOnly';
 import { i18n } from '../utils/i18n';
@@ -56,18 +57,7 @@ const conflictComparison = (
     const retryGeneration = patches.reduce((latest, patch) => Math.max(latest, patch.generation), conflict.generation ?? 0);
     const intent = patches.filter(patch => patch.generation <= retryGeneration)
         .reduce<Partial<Task>>((fields, patch) => ({ ...fields, ...patch.mutationIntent }), {});
-    const responseRemote = conflict.remoteEntity && (
-        conflict.remoteRevision === undefined || conflict.remoteEntity.lockVersion === undefined ||
-        conflict.remoteEntity.lockVersion === conflict.remoteRevision
-    ) ? conflict.remoteEntity : undefined;
-    const snapshotIsCurrent = readStatus === 'ready' && activeReadContext && snapshot.context &&
-        snapshot.context.projectId === activeReadContext.projectId &&
-        snapshot.context.queryIdentity === activeReadContext.queryIdentity &&
-        snapshot.context.scopeIdentity === activeReadContext.scopeIdentity;
-    const snapshotRemote = snapshotIsCurrent && conflict.remoteRevision !== undefined &&
-        (snapshot.revisions[conflict.taskId] ?? -1) >= conflict.remoteRevision
-        ? snapshot.entitiesById[conflict.taskId] : undefined;
-    const remote = snapshotRemote ?? responseRemote;
+    const remote = selectConflictRemote(conflict, snapshot, activeReadContext, readStatus)?.entity;
     const rows: Array<{ label: string; local: string; remote: string }> = [];
     Object.entries(intent).forEach(([field, value]) => {
         if (field === 'customFieldValues') {

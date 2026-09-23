@@ -69,6 +69,7 @@ import {
     type ReadContext,
     type ServerSnapshot
 } from './taskStore/stateContract';
+import { selectConflictRemote, type SelectedConflictRemote } from './taskStore/conflictRemote';
 import {
     readIssueQueryParamsFromUrl,
     replaceIssueQueryParamsInUrl,
@@ -2215,15 +2216,26 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return;
         }
 
+        const initialState = get();
+        const initialConflict = initialState.taskConflicts[id];
+        if (!initialConflict) return;
+        const viewIdentityAtResolution = currentViewIdentity();
         invalidateDataRequests();
-        let remoteEntity = get().taskConflicts[id]?.remoteEntity;
-        if (!remoteEntity) {
+        let selectedRemote: SelectedConflictRemote | undefined = initialConflict && selectConflictRemote(
+            initialConflict, initialState.serverTaskSnapshot, initialState.activeReadContext, initialState.dataReadStatus
+        );
+        if (!selectedRemote) {
             try {
                 const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: get().selectedStatusIds } });
-                remoteEntity = resyncData.tasks.find(task => task.id === id);
+                if (get().taskConflicts[id] !== initialConflict ||
+                    currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus !== 'ready') return;
+                const remoteEntity = resyncData.tasks.find(task => task.id === id);
                 if (!remoteEntity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
                 get().applyApiData(resyncData);
+                selectedRemote = { entity: remoteEntity, revision: remoteEntity.lockVersion };
             } catch (error) {
+                if (get().taskConflicts[id] !== initialConflict ||
+                    currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus === 'loading') return;
                 const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
                 const conflict = get().taskConflicts[id];
                 get().registerTaskConflict(id, conflict?.message || message, conflict?.generation, undefined, conflict?.remoteRevision, 'unavailable');
@@ -2232,21 +2244,32 @@ export const useTaskStore = create<TaskState>((set, get) => {
             }
         }
 
-        const resolvedRemoteEntity = remoteEntity;
         set((state) => {
             const recordedConflictGeneration = state.taskConflicts[id]?.generation;
             const conflictGeneration = recordedConflictGeneration ?? state.editGenerations[id] ?? 0;
             const conflictRecord = state.taskConflicts[id];
+            if (!conflictRecord || (initialConflict && conflictRecord !== initialConflict)) return state;
+            const remoteChoice = selectConflictRemote(
+                conflictRecord, state.serverTaskSnapshot, state.activeReadContext, state.dataReadStatus
+            ) ?? selectedRemote;
+            if (!remoteChoice) return state;
             const currentTask = state.allTasks.find(task => task.id === id)
                 ?? state.serverTaskSnapshot.entitiesById[id];
             if (!currentTask) return state;
-            const remoteTask = { ...currentTask, ...resolvedRemoteEntity };
+            const remoteTask = {
+                ...(state.serverTaskSnapshot.entitiesById[id] ?? currentTask),
+                ...remoteChoice.entity
+            };
+            const serverTaskSnapshot = mergeServerEntity(state.serverTaskSnapshot, remoteTask, 'complete', remoteChoice.revision);
+            // A newer canonical revision must never be replaced by an older conflict response.
+            if (serverTaskSnapshot.revisions[id] > remoteChoice.revision) return state;
+            const canonicalTask = serverTaskSnapshot.entitiesById[id];
             const laterPatches = recordedConflictGeneration !== undefined
                 ? (state.localTaskPatches[id] ?? []).filter(patch => patch.generation > conflictGeneration)
                 : [];
             const resolvedTask = laterPatches.length > 0
-                ? applyLocalPatches(remoteTask, laterPatches)
-                : remoteTask;
+                ? applyLocalPatches(canonicalTask, laterPatches)
+                : canonicalTask;
             const allTasks = state.allTasks.some(task => task.id === id)
                 ? state.allTasks.map(task => task.id === id ? resolvedTask : task)
                 : [...state.allTasks, resolvedTask];
@@ -2270,12 +2293,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return {
                 allTasks,
                 ...toDerivedTaskStatePatch(derived),
-                serverTaskSnapshot: mergeServerEntity(
-                    state.serverTaskSnapshot,
-                    remoteTask,
-                    'complete',
-                    conflictRecord?.remoteRevision ?? remoteTask.lockVersion
-                ),
+                serverTaskSnapshot,
                 localTaskPatches,
                 modifiedTaskIds,
                 taskTombstones,
