@@ -851,6 +851,26 @@ RSpec.describe CanvasGanttsController, type: :controller do
       end
     end
 
+    { en: ['Previous page', 'Next page'], ja: ['前のページ', '次のページ'] }.each do |locale, labels|
+      it "publishes action needed pagination labels in #{locale}" do
+        previous_default_language = Setting.default_language
+        Setting.default_language = locale.to_s
+
+        begin
+          I18n.with_locale(locale) do
+            get :index, params: { project_id: 'demo' }
+
+            expect(response).to have_http_status(:ok)
+            i18n_payload = controller.instance_variable_get(:@i18n).stringify_keys
+            expect(i18n_payload['label_action_previous_page']).to eq(labels[0])
+            expect(i18n_payload['label_action_next_page']).to eq(labels[1])
+          end
+        ensure
+          Setting.default_language = previous_default_language
+        end
+      end
+    end
+
     it 'includes row height labels in frontend i18n payload' do
       expect(Setting).not_to receive(:plugin_redmine_canvas_gantt)
 
