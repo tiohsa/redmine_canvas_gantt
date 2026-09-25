@@ -229,6 +229,85 @@ test('keeps the dialog header and close control visible while its body scrolls',
   await expect(dialog.locator('.action-needed-footer')).toHaveCount(0);
 });
 
+test('contains multiline rows and controls under Redmine 6 button styles', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 600 });
+  await waitForInitialRender(page);
+  await page.addStyleTag({ content: `
+    input, select, button { height: 24px; margin-top: 1px; margin-bottom: 1px; }
+  ` });
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    const base = useTaskStore.getState().allTasks[0];
+    const subjects = [
+      '期限超過の確認が必要な長い日本語のチケット件名'.repeat(3),
+      'UnbrokenEnglishSubject'.repeat(9),
+      `https://example.com/${'long-path-segment'.repeat(12)}`,
+    ];
+    useTaskStore.getState().setTasks(Array.from({ length: 25 }, (_, index) => ({ ...base,
+      id: String(index + 1000), subject: subjects[index % subjects.length],
+      startDate: undefined, dueDate: undefined, assignedToId: null,
+      estimatedHours: 2, hasPhysicalChildren: false, rowIndex: index })));
+    useTaskStore.setState({ dataReadStatus: 'ready', initialDataLoaded: true });
+  });
+  await page.getByTestId('action-needed-button').click();
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  const rows = dialog.locator('.action-needed-row');
+  await expect(rows).toHaveCount(25);
+
+  for (const width of [800, 360]) {
+    await page.setViewportSize({ width, height: 600 });
+    const overflow = await dialog.evaluate(element => {
+      const bounds = (node: Element) => node.getBoundingClientRect();
+      const outside = (inner: DOMRect, outer: DOMRect) =>
+        inner.left < outer.left - 1 || inner.right > outer.right + 1 ||
+        inner.top < outer.top - 1 || inner.bottom > outer.bottom + 1;
+      const list = element.querySelector('.action-needed-list')!;
+      const rowElements = Array.from(list.querySelectorAll('.action-needed-row'));
+      const problems: string[] = [];
+      rowElements.forEach((row, index) => {
+        const rowBox = bounds(row);
+        const subject = bounds(row.querySelector('.action-needed-subject')!);
+        const summary = bounds(row.querySelector('.action-needed-row-summary')!);
+        const chevron = bounds(row.querySelector('.action-needed-chevron')!);
+        if (outside(subject, rowBox) || outside(summary, rowBox)) problems.push(`row ${index} content`);
+        if (subject.right > chevron.left + 1) problems.push(`row ${index} chevron`);
+        if (index + 1 < rowElements.length && rowBox.bottom > bounds(rowElements[index + 1]).top + 1) {
+          problems.push(`row ${index} overlap`);
+        }
+      });
+      if (list.scrollWidth > list.clientWidth + 1) problems.push('list horizontal overflow');
+      const overload = element.querySelector('.action-needed-overload')!;
+      if (outside(bounds(overload.querySelector('.action-needed-overload-text')!), bounds(overload))) {
+        problems.push('overload text');
+      }
+      if (bounds(overload).right > bounds(element).right + 1) problems.push('overload horizontal overflow');
+      element.querySelectorAll('.action-needed-filters button').forEach((button, index) => {
+        if (outside(bounds(button.firstElementChild!), bounds(button))) problems.push(`filter ${index}`);
+      });
+      return problems;
+    });
+    expect(overflow, `layout at ${width}px`).toEqual([]);
+  }
+  // Simulate theme defaults separately from Redmine's standard button rule.
+  await page.addStyleTag({ content: 'button { box-sizing: content-box; white-space: nowrap; }' });
+  const themeOverflow = await dialog.evaluate(element => {
+    const list = element.querySelector('.action-needed-list')!;
+    const row = list.querySelector('.action-needed-row')!;
+    const subject = row.querySelector('.action-needed-subject')!.getBoundingClientRect();
+    const chevron = row.querySelector('.action-needed-chevron')!.getBoundingClientRect();
+    const overload = element.querySelector('.action-needed-overload')!;
+    return {
+      list: list.scrollWidth > list.clientWidth + 1,
+      row: row.getBoundingClientRect().right > list.getBoundingClientRect().right + 1,
+      subject: subject.right > chevron.left + 1,
+      overload: overload.getBoundingClientRect().right > element.getBoundingClientRect().right + 1,
+    };
+  });
+  expect(themeOverflow).toEqual({ list: false, row: false, subject: false, overload: false });
+  expect(await dialog.locator('.action-needed-close-icon').evaluate(node => node.getBoundingClientRect().height)).toBe(32);
+  expect(await dialog.locator('.action-needed-pagination button').first().evaluate(node => node.getBoundingClientRect().height)).toBe(26);
+});
+
 test('shows a compact planned overload entry and opens the workload pane', async ({ page }) => {
   await waitForInitialRender(page);
   await page.evaluate(async () => {
