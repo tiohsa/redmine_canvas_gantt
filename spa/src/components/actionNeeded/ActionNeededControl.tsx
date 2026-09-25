@@ -7,6 +7,7 @@ import { todayCalendarDate, toLocalDisplayDate } from '../../utils/dateOnly';
 import { formatDate } from '../../utils/dateUtils';
 import { i18n } from '../../utils/i18n';
 import { getActiveModalDialog } from '../../utils/modalDialog';
+import { buildRedmineUrl } from '../../utils/redmineUrl';
 import { ACTION_REASON_ORDER, summarizeActionNeeded, type ActionItem, type ActionReason } from './analysis';
 import './ActionNeededControl.css';
 
@@ -18,8 +19,8 @@ const reasonKey: Record<ActionReason, string> = {
 };
 const reasonLabel = (reason: ActionReason) => i18n.t(reasonKey[reason]) || reason;
 const displayDate = (value?: number | null) => value == null ? '-' : formatDate(toLocalDisplayDate(value));
-const reasonDetail = ({ task, schedulingMessage }: ActionItem, primary: ActionReason, assigneeNames: Map<number, string>) => {
-    switch (primary) {
+const reasonDetail = ({ task, schedulingMessage }: ActionItem, reason: ActionReason) => {
+    switch (reason) {
         case 'constraint': return schedulingMessage || '';
         case 'overdue': return `${i18n.t('field_due_date') || 'Due date'} ${displayDate(task.dueDate)}`;
         case 'missingDates': {
@@ -27,11 +28,15 @@ const reasonDetail = ({ task, schedulingMessage }: ActionItem, primary: ActionRe
                 task.dueDate == null && (i18n.t('field_due_date') || 'Due date')].filter(Boolean);
             return `${missing.join(' / ')}: ${i18n.t('label_not_set') || 'Not set'}`;
         }
-        case 'unassigned': return task.dueDate == null ? '' : `${i18n.t('field_due_date') || 'Due date'} ${displayDate(task.dueDate)}`;
-        case 'missingEstimate': return task.assignedToId == null ? '' :
-            (assigneeNames.get(task.assignedToId) || `ID ${task.assignedToId}`);
+        case 'unassigned': return `${i18n.t('field_assigned_to') || 'Assignee'}: ${i18n.t('label_not_set') || 'Not set'}`;
+        case 'missingEstimate': return `${i18n.t('field_estimated_hours') || 'Estimated time'}: ${i18n.t('label_not_set') || 'Not set'}`;
     }
 };
+
+const linkedConstraintMessage = (message: string) => message.split(/(#\d+)/g).map((part, index) => {
+    const id = /^#(\d+)$/.exec(part)?.[1];
+    return id ? <a key={index} href={buildRedmineUrl(`/issues/${id}`)} target="_blank" rel="noopener noreferrer">{part}</a> : part;
+});
 
 const useCalendarToday = () => {
     const [today, setToday] = useState(todayCalendarDate);
@@ -52,7 +57,13 @@ export const ActionNeededControl: React.FC = () => {
     const [open, setOpen] = useState(false);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const dialogRef = useRef<HTMLElement>(null);
+    const backRef = useRef<HTMLButtonElement>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
+    const returnToListFocusRef = useRef(false);
     const [reason, setReason] = useState<ActionReason | 'all'>('all');
+    const [search, setSearch] = useState('');
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
     const [page, setPage] = useState(0);
     const today = useCalendarToday();
     const allTasks = useTaskStore(state => state.allTasks);
@@ -87,9 +98,18 @@ export const ActionNeededControl: React.FC = () => {
     const actionLabel = i18n.t('label_action_needed') || 'Action needed';
     const loadLabel = loadState === 'error' ? (i18n.t('label_action_load_failed') || 'Data could not be loaded')
         : (i18n.t('label_action_loading') || 'Loading current issues');
-    const shown = useMemo(() => reason === 'all' ? summary.items : summary.items.filter(item => item.reasons.includes(reason)), [summary, reason]);
+    const searched = useMemo(() => {
+        const query = search.trim().toLocaleLowerCase();
+        return query ? summary.items.filter(({ task }) => task.id.includes(query) || task.subject.toLocaleLowerCase().includes(query)) : summary.items;
+    }, [summary, search]);
+    const counts = useMemo(() => Object.fromEntries(ACTION_REASON_ORDER.map(value =>
+        [value, searched.filter(item => item.reasons.includes(value)).length])) as Record<ActionReason, number>, [searched]);
+    const shown = useMemo(() => reason === 'all' ? searched : searched.filter(item => item.reasons.includes(reason)), [searched, reason]);
     const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
     const currentPage = Math.min(page, pageCount - 1);
+    const pageItems = shown.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+    const selected = pageItems.find(item => item.task.id === selectedId) ?? pageItems[0] ?? null;
+    const selectedTaskId = selected?.task.id;
     const overloadCount = ready && workloadPaneVisible && workloadData ? workloadData.plannedOverloadedDayCount : null;
     const goToTask = (taskId: string) => {
         const result = focusTask(taskId);
@@ -98,6 +118,14 @@ export const ActionNeededControl: React.FC = () => {
         } else setOpen(false);
     };
 
+    useLayoutEffect(() => {
+        if (!open || !window.matchMedia?.('(max-width: 767px)').matches) return;
+        if (mobileDetailsOpen && ready && selectedTaskId) backRef.current?.focus();
+        else if (returnToListFocusRef.current) {
+            returnToListFocusRef.current = false;
+            searchRef.current?.focus();
+        }
+    }, [open, mobileDetailsOpen, ready, selectedTaskId]);
     // A refresh, page change, or removed row can detach the focused element.
     useLayoutEffect(() => {
         const dialog = dialogRef.current;
@@ -125,10 +153,11 @@ export const ActionNeededControl: React.FC = () => {
             }
             restoreFocus();
             if (event.key !== 'Tab') return;
-            const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
-            if (buttons.length === 0) return;
-            const first = buttons[0];
-            const last = buttons[buttons.length - 1];
+            const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), a[href]'))
+                .filter(element => element.getClientRects().length > 0);
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
             if (event.shiftKey && document.activeElement === first) {
                 event.preventDefault();
                 last.focus();
@@ -168,10 +197,7 @@ export const ActionNeededControl: React.FC = () => {
                 role="dialog" aria-modal="true" aria-label={actionLabel}>
                 <header className="action-needed-header">
                     <div className="action-needed-heading">
-                        <div className="action-needed-title-line">
-                            <h2>{i18n.t('label_action_needed') || 'Action needed'}</h2>
-                            {ready && <span className="action-needed-total">{summary.items.length}</span>}
-                        </div>
+                        <h2>{i18n.t('label_action_needed') || 'Action needed'}</h2>
                         <p>{i18n.t('label_action_loaded_scope') || 'Loaded, visible open issues matching the current query and filters'}</p>
                         {modifiedTaskIds.size > 0 && <span className="action-needed-draft-note">{i18n.t('label_action_includes_drafts') || 'Includes unsaved changes'}</span>}
                     </div>
@@ -179,45 +205,64 @@ export const ActionNeededControl: React.FC = () => {
                         aria-label={i18n.t('button_close') || 'Close'}>×</button>
                 </header>
                 <div className="action-needed-body">
-                {ready ? <>
                     <nav className="action-needed-filters" aria-label={i18n.t('label_action_filter') || 'Filter reasons'}>
                         {(['all', ...ACTION_REASON_ORDER] as const).map(value => <button key={value} type="button"
-                            aria-pressed={reason === value} onClick={() => { setReason(value); setPage(0); }}>
+                            aria-pressed={reason === value} onClick={() => { setReason(value); setPage(0); setMobileDetailsOpen(false); }}>
                             <span>{value === 'all' ? (i18n.t('label_all') || 'All') : reasonLabel(value)}</span>
-                            {' '}
-                            <span className="action-needed-filter-count">{value === 'all' ? summary.items.length : summary.counts[value]}</span>
+                            <span className="action-needed-filter-count">{ready ? (value === 'all' ? searched.length : counts[value]) : '–'}</span>
                         </button>)}
                     </nav>
-                    <div data-testid="action-needed-list" className="action-needed-list">
-                        {shown.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map(item => {
-                            const { task, reasons } = item;
-                            const primary = ACTION_REASON_ORDER.find(value => reasons.includes(value))!;
-                            const detail = reasonDetail(item, primary, assigneeNames);
-                            const otherCount = reasons.length - 1;
-                            const otherLabel = (i18n.t('label_action_other_reasons') || 'and %{count} more').replace('%{count}', String(otherCount));
-                            return <button className="action-needed-row" key={task.id} type="button" onClick={() => goToTask(task.id)}
-                                aria-label={`#${task.id} ${task.subject}. ${reasons.map(reasonLabel).join(', ')}${detail ? `. ${detail}` : ''}`}
-                                title={reasons.map(reasonLabel).join(', ')}>
-                                <span className="action-needed-row-top">
-                                    <span className="action-needed-issue-id">#{task.id}</span>
-                                    <strong className="action-needed-subject">{task.subject}</strong>
-                                    <span className="action-needed-chevron" aria-hidden="true">›</span>
-                                </span>
-                                <span className="action-needed-row-summary">
-                                    <span className={`action-needed-primary action-needed-primary-${primary}`}>{reasonLabel(primary)}</span>
-                                    {detail && <span className="action-needed-detail"> · {detail}</span>}
-                                    {otherCount > 0 && <span className="action-needed-other"> · {otherLabel}</span>}
-                                </span>
-                            </button>})}
-                        {shown.length === 0 && <p className="action-needed-empty">0 {i18n.t('label_action_needed') || 'Action needed'}</p>}
+                    <div className={`action-needed-main${mobileDetailsOpen && selected && ready ? ' action-needed-main-details-open' : ''}`}>
+                        <div className="action-needed-list-pane">
+                            <label className="action-needed-search">
+                                <span className="action-needed-visually-hidden">{i18n.t('label_action_search') || 'Search issues'}</span>
+                                <input ref={searchRef} type="search" value={search} onChange={event => { setSearch(event.target.value); setPage(0); setMobileDetailsOpen(false); }}
+                                    placeholder={i18n.t('label_action_search') || 'Search issues'} />
+                            </label>
+                            <div data-testid="action-needed-list" className="action-needed-list">
+                                {!ready ? <p className="action-needed-loading" role="status">{readStatus === 'error' ? (i18n.t('label_action_load_failed') || 'Data could not be loaded') :
+                                    (i18n.t('label_action_loading') || 'Loading current issues')}</p> : pageItems.map(item => {
+                                    const { task, reasons } = item;
+                                    return <button className="action-needed-row" key={task.id} type="button"
+                                        aria-current={selected?.task.id === task.id ? 'true' : undefined}
+                                        onClick={() => { setSelectedId(task.id); setMobileDetailsOpen(true); }}
+                                        aria-label={`#${task.id} ${task.subject}. ${reasons.map(reasonLabel).join(', ')}`}>
+                                        <span className="action-needed-row-top">
+                                            <span className="action-needed-issue-id">#{task.id}</span>
+                                            <strong className="action-needed-subject">{task.subject}</strong>
+                                        </span>
+                                    </button>;
+                                })}
+                                {ready && shown.length === 0 && <p className="action-needed-empty">{i18n.t('label_action_no_matches') || 'No matching issues'}</p>}
+                            </div>
+                            {ready && shown.length > PAGE_SIZE && <div className="action-needed-pagination">
+                                <button type="button" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); setMobileDetailsOpen(false); }} aria-label="Previous page">‹</button>
+                                <span>{currentPage + 1} / {pageCount}</span>
+                                <button type="button" disabled={currentPage + 1 >= pageCount} onClick={() => { setPage(currentPage + 1); setMobileDetailsOpen(false); }} aria-label="Next page">›</button>
+                            </div>}
+                        </div>
+                        <aside className="action-needed-detail-pane" aria-label={i18n.t('label_action_details') || 'Issue details'}>
+                            {ready && selected && <>
+                                <button ref={backRef} type="button" className="action-needed-back" onClick={() => { returnToListFocusRef.current = true; setMobileDetailsOpen(false); }}>{i18n.t('label_action_back') || 'Back to list'}</button>
+                                <div className="action-needed-detail-heading"><span className="action-needed-issue-id">#{selected.task.id}</span><h3>{selected.task.subject}</h3></div>
+                                <p className="action-needed-reason-count">{(i18n.t('label_action_reason_count') || '%{count} reasons').replace('%{count}', String(selected.reasons.length))}</p>
+                                <ul className="action-needed-reasons">{selected.reasons.map(value => <li key={value}>
+                                    <span className={`action-needed-badge action-needed-badge-${value}`}>{reasonLabel(value)}</span>
+                                    {reasonDetail(selected, value) && <p>{value === 'constraint' ? linkedConstraintMessage(reasonDetail(selected, value)) : reasonDetail(selected, value)}</p>}
+                                </li>)}</ul>
+                                <dl className="action-needed-attributes">
+                                    <div><dt>{i18n.t('field_project') || 'Project'}</dt><dd>{selected.task.projectName || i18n.t('label_not_set') || 'Not set'}</dd></div>
+                                    <div><dt>{i18n.t('field_assigned_to') || 'Assignee'}</dt><dd>{selected.task.assignedToName || (selected.task.assignedToId != null ? assigneeNames.get(selected.task.assignedToId) : null) || i18n.t('label_not_set') || 'Not set'}</dd></div>
+                                    <div><dt>{i18n.t('field_start_date') || 'Start date'}</dt><dd>{selected.task.startDate == null ? (i18n.t('label_not_set') || 'Not set') : displayDate(selected.task.startDate)}</dd></div>
+                                    <div><dt>{i18n.t('field_due_date') || 'Due date'}</dt><dd>{selected.task.dueDate == null ? (i18n.t('label_not_set') || 'Not set') : displayDate(selected.task.dueDate)}</dd></div>
+                                </dl>
+                                <div className="action-needed-detail-actions">
+                                    <a href={buildRedmineUrl(`/issues/${selected.task.id}`)} target="_blank" rel="noopener noreferrer">{i18n.t('label_action_open_issue') || 'Open this issue'}</a>
+                                    <button type="button" onClick={() => goToTask(selected.task.id)}>{i18n.t('label_action_focus_gantt') || 'Show in Gantt'}</button>
+                                </div>
+                            </>}
+                        </aside>
                     </div>
-                    <div className="action-needed-pagination">
-                        <button type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>‹</button>
-                        <span>{currentPage + 1} / {pageCount}</span>
-                        <button type="button" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)}>›</button>
-                    </div>
-                </> : <p className="action-needed-loading">{readStatus === 'error' ? (i18n.t('label_action_load_failed') || 'Data could not be loaded') :
-                    (i18n.t('label_action_loading') || 'Loading current issues')}</p>}
                 </div>
                 <button className="action-needed-overload" type="button" onClick={() => {
                     setFocusedHistogramBar(null);
