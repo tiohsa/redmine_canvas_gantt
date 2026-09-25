@@ -25,7 +25,8 @@ describe('ActionNeededControl triage dialog', () => {
             label_action_search: 'Search issue ID or subject', label_action_no_matches: 'No matching issues',
             label_action_details: 'Issue details', label_action_back: 'Back to list',
             label_action_reason_count: '%{count} reasons', label_action_open_issue: 'Open this issue',
-            label_action_focus_gantt: 'Show in Gantt'
+            label_action_focus_gantt: 'Show in Gantt',
+            label_action_previous_page: 'Previous page', label_action_next_page: 'Next page'
         });
         useTaskStore.setState(useTaskStore.getInitialState(), true);
         useWorkloadStore.setState(useWorkloadStore.getInitialState(), true);
@@ -144,6 +145,54 @@ describe('ActionNeededControl triage dialog', () => {
         act(() => useTaskStore.setState({ dataReadStatus: 'ready' }));
         expect(within(dialog).getByLabelText('Issue details')).toHaveTextContent('Issue 1');
         expect(search).toHaveValue('Issue 1');
+    });
+
+    it('searches plain and prefixed IDs while preserving subject text and pagination', () => {
+        useTaskStore.setState({ allTasks: [
+            ...Array.from({ length: 30 }, (_, index) => task(String(1000 + index), { assignedToId: null })),
+            task('123', { subject: 'Alpha', assignedToId: null }),
+            task('9123', { subject: 'Beta', assignedToId: null }),
+            task('333', { subject: 'Issue 123', assignedToId: null }),
+            task('444', { subject: '日本語の課題', assignedToId: null }),
+            task('555', { subject: 'MiXeD English # note', assignedToId: null })
+        ] });
+        render(<ActionNeededControl />);
+        fireEvent.click(screen.getByTestId('action-needed-button'));
+        const dialog = screen.getByRole('dialog', { name: 'Action needed' });
+        const search = within(dialog).getByRole('searchbox');
+        const list = within(dialog).getByTestId('action-needed-list');
+        const detail = within(dialog).getByLabelText('Issue details');
+        expect(within(dialog).getByRole('button', { name: /All\s*35/ })).toBeInTheDocument();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Next page' }));
+        expect(within(dialog).getByText('2 / 2')).toBeInTheDocument();
+        expect(detail).toHaveTextContent('Issue 1021');
+
+        fireEvent.change(search, { target: { value: '#123' } });
+        expect(within(dialog).getByRole('button', { name: /All\s*2/ })).toBeInTheDocument();
+        expect(within(list).getByText('#123').closest('button')).toHaveAttribute('aria-current', 'true');
+        expect(list.querySelectorAll('.action-needed-row')).toHaveLength(2);
+        expect(detail).toHaveTextContent('Alpha');
+        fireEvent.change(search, { target: { value: '123' } });
+        expect(within(dialog).getByRole('button', { name: /All\s*3/ })).toBeInTheDocument();
+        fireEvent.change(search, { target: { value: 'Issue 123' } });
+        expect(list.querySelectorAll('.action-needed-row')).toHaveLength(1);
+        expect(detail).toHaveTextContent('Issue 123');
+        fireEvent.change(search, { target: { value: '日本語' } });
+        expect(detail).toHaveTextContent('日本語の課題');
+        fireEvent.change(search, { target: { value: 'mixed english' } });
+        expect(detail).toHaveTextContent('MiXeD English # note');
+        fireEvent.change(search, { target: { value: '#' } });
+        expect(list.querySelectorAll('.action-needed-row')).toHaveLength(1);
+        expect(detail).toHaveTextContent('MiXeD English # note');
+        fireEvent.change(search, { target: { value: '   ' } });
+        expect(within(dialog).getByRole('button', { name: /All\s*35/ })).toBeInTheDocument();
+        expect(within(dialog).getByText('1 / 2')).toBeInTheDocument();
+        fireEvent.change(search, { target: { value: '' } });
+        expect(within(dialog).getByRole('button', { name: /All\s*35/ })).toBeInTheDocument();
+        fireEvent.click(within(dialog).getByRole('button', { name: /No assignee\s*35/ }));
+        fireEvent.change(search, { target: { value: '#123' } });
+        expect(within(dialog).getByRole('button', { name: /No assignee\s*2/ })).toHaveAttribute('aria-pressed', 'true');
+        expect(detail).toHaveTextContent('Alpha');
     });
 
     it('switches to a separate detail view on narrow screens and preserves long subjects', () => {

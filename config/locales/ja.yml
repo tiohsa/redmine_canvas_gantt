@@ -122,6 +122,8 @@ ja:
     label_column_plural: "カラム"
     label_prev_month: "前の月"
     label_next_month: "次の月"
+    label_action_previous_page: "前のページ"
+    label_action_next_page: "次のページ"
     label_today: "今日"
     label_month: "月"
     label_week: "週"

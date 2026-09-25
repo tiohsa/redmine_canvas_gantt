@@ -100,7 +100,10 @@ export const ActionNeededControl: React.FC = () => {
         : (i18n.t('label_action_loading') || 'Loading current issues');
     const searched = useMemo(() => {
         const query = search.trim().toLocaleLowerCase();
-        return query ? summary.items.filter(({ task }) => task.id.includes(query) || task.subject.toLocaleLowerCase().includes(query)) : summary.items;
+        if (!query) return summary.items;
+        const idQuery = query.startsWith('#') ? query.slice(1) : query;
+        return summary.items.filter(({ task }) =>
+            (idQuery.length > 0 && task.id.includes(idQuery)) || task.subject.toLocaleLowerCase().includes(query));
     }, [summary, search]);
     const counts = useMemo(() => Object.fromEntries(ACTION_REASON_ORDER.map(value =>
         [value, searched.filter(item => item.reasons.includes(value)).length])) as Record<ActionReason, number>, [searched]);
@@ -236,9 +239,9 @@ export const ActionNeededControl: React.FC = () => {
                                 {ready && shown.length === 0 && <p className="action-needed-empty">{i18n.t('label_action_no_matches') || 'No matching issues'}</p>}
                             </div>
                             {ready && shown.length > PAGE_SIZE && <div className="action-needed-pagination">
-                                <button type="button" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); setMobileDetailsOpen(false); }} aria-label="Previous page">‹</button>
+                                <button type="button" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); setMobileDetailsOpen(false); }} aria-label={i18n.t('label_action_previous_page') || 'Previous page'}>‹</button>
                                 <span>{currentPage + 1} / {pageCount}</span>
-                                <button type="button" disabled={currentPage + 1 >= pageCount} onClick={() => { setPage(currentPage + 1); setMobileDetailsOpen(false); }} aria-label="Next page">›</button>
+                                <button type="button" disabled={currentPage + 1 >= pageCount} onClick={() => { setPage(currentPage + 1); setMobileDetailsOpen(false); }} aria-label={i18n.t('label_action_next_page') || 'Next page'}>›</button>
                             </div>}
                         </div>
                         <aside className="action-needed-detail-pane" aria-label={i18n.t('label_action_details') || 'Issue details'}>

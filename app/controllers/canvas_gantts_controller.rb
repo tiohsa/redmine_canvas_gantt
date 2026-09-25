@@ -53,6 +53,8 @@ class CanvasGanttsController < ApplicationController
     label_group_by_assignee: :label_group_by_assignee,
     label_prev_month: :label_prev_month,
     label_next_month: :label_next_month,
+    label_action_previous_page: :label_action_previous_page,
+    label_action_next_page: :label_action_next_page,
     label_today: :label_today,
     help_desc_zoom_wheel: :help_desc_zoom_wheel,
     button_top: :button_top,
