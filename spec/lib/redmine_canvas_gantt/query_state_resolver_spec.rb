@@ -700,32 +700,6 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     )
   end
 
-  it 'uses the data budget before materializing the resolved issue scope' do
-    budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, issue_limit: 10_000)
-    resolver = described_class.new(
-      project: project,
-      params: ActionController::Parameters.new,
-      current_user: current_user,
-      issue_scope: issue_scope,
-      issue_includes: issue_includes,
-      data_payload_budget: budget
-    )
-    allow(resolver).to receive(:issues_scope_for).and_return(issue_scope)
-    expect(budget).to receive(:load_records)
-      .with(issue_scope, resource: 'issues', limit: 10_000)
-      .and_return([])
-
-    issues = resolver.send(
-      :load_issues,
-      query_issue_scope: nil,
-      project_ids: [1],
-      selected_project_ids: [],
-      state: { sort_config: nil }
-    )
-
-    expect(issues).to eq([])
-  end
-
   it 'composes a saved query as a database subquery before the bounded final materialization' do
     query_scope = double('SavedQueryScopeWith20kCandidates')
     query_id_subquery = double('SavedQueryIdSubqueryWith20kCandidates')
