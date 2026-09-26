@@ -90,12 +90,65 @@ RSpec.describe RedmineCanvasGantt::IssueSelector do
   end
 
   it 'retains case-insensitive descending sorting after selection' do
-    alpha = double('Alpha', subject: 'alpha')
-    zulu = double('Zulu', subject: 'Zulu')
-    bravo = double('Bravo', subject: 'BRAVO')
+    alpha = double('Alpha', id: 3, subject: 'alpha')
+    zulu = double('Zulu', id: 1, subject: 'Zulu')
+    bravo = double('Bravo', id: 2, subject: 'BRAVO')
     allow(issue_scope).to receive(:to_a).and_return([alpha, zulu, bravo])
 
     expect(select_issues(state: state.merge(sort_config: { key: 'subject', direction: 'desc' })))
       .to eq([zulu, bravo, alpha])
+  end
+
+  it 'keeps unset dates last in both directions and uses issue id for equal dates' do
+    date = Date.new(2026, 9, 1)
+    later = double('Later', id: 3, due_date: date + 1)
+    equal_high = double('Equal high', id: 4, due_date: date)
+    missing = double('Missing', id: 2, due_date: nil)
+    equal_low = double('Equal low', id: 1, due_date: date)
+    allow(issue_scope).to receive(:to_a).and_return([later, equal_high, missing, equal_low])
+
+    expect(select_issues(state: state.merge(sort_config: { key: 'dueDate', direction: 'asc' })))
+      .to eq([equal_low, equal_high, later, missing])
+    expect(select_issues(state: state.merge(sort_config: { key: 'dueDate', direction: 'desc' })))
+      .to eq([later, equal_low, equal_high, missing])
+  end
+
+  it 'sorts equal case-folded names by issue id and tolerates missing relations' do
+    missing = double('Missing assignee', id: 1, assigned_to: nil)
+    beta = double('Beta', id: 3, assigned_to: double(name: 'beta'))
+    alpha_high = double('Alpha high', id: 4, assigned_to: double(name: 'ALPHA'))
+    alpha_low = double('Alpha low', id: 2, assigned_to: double(name: 'alpha'))
+    allow(issue_scope).to receive(:to_a).and_return([missing, beta, alpha_high, alpha_low])
+
+    expect(select_issues(state: state.merge(sort_config: { key: 'assignedToName', direction: 'asc' })))
+      .to eq([alpha_low, alpha_high, beta, missing])
+    expect(select_issues(state: state.merge(sort_config: { key: 'assignedToName', direction: 'desc' })))
+      .to eq([beta, alpha_low, alpha_high, missing])
+  end
+
+  it 'applies explicit none to the relation used by workload aggregation' do
+    expect(issue_scope).to receive(:where).with(id: []).and_return(issue_scope)
+    expect(issue_scope).to receive(:except).with(:includes, :order).and_return(issue_scope)
+    select_issues(scope_only: true, none_filters: [:status])
+  end
+
+  it 'uses one batch of hours for spent-hours sorting' do
+    low = double('Low hours', id: 2)
+    high = double('High hours', id: 1)
+    allow(issue_scope).to receive(:to_a).and_return([low, high])
+    expect(RedmineCanvasGantt::SpentHoursBatch).to receive(:for).with([low, high]).and_return(1 => 5.0, 2 => 1.0)
+
+    expect(select_issues(state: state.merge(sort_config: { key: 'spentHours', direction: 'desc' })))
+      .to eq([high, low])
+  end
+
+  it 'keeps unset timestamps last when sorting creation time' do
+    early = double('Early', id: 3, created_on: Time.utc(2026, 1, 1))
+    late = double('Late', id: 2, created_on: Time.utc(2026, 2, 1))
+    missing = double('Missing', id: 1, created_on: nil)
+    allow(issue_scope).to receive(:to_a).and_return([missing, late, early])
+
+    expect(select_issues(state: state.merge(sort_config: { key: 'createdOn', direction: 'desc' })))
+      .to eq([late, early, missing])
   end
 end

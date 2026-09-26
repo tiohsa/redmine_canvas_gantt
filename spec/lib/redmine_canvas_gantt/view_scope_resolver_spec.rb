@@ -11,10 +11,11 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
 
   before do
     allow(RedmineCanvasGantt::QueryStateResolver).to receive(:new).and_return(query_state_resolver)
+    allow(query_state_resolver).to receive(:bounded_project_ids).with(project_ids: [1, 2]).and_return([1, 2])
   end
 
   it 'resolves the operation project boundary without loading Issues' do
-    expect(RedmineCanvasGantt::QueryStateResolver).not_to receive(:new)
+    expect(query_state_resolver).to receive(:bounded_project_ids).with(project_ids: [1, 2]).and_return([2])
 
     result = described_class.new(
       project: project,
@@ -66,6 +67,7 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
 
   it 'still lets explicit project_ids narrow scope through QueryStateResolver' do
     params = ActionController::Parameters.new(member_projects_only: '1', project_ids: ['2'])
+    allow(query_state_resolver).to receive(:bounded_project_ids).and_return([2])
     allow(query_state_resolver).to receive(:resolve).with(project_ids: [2]).and_return(
       issues: [issue_a],
       initial_state: { selected_project_ids: ['2'] },
@@ -85,6 +87,7 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
 
   it 'uses canvas_project_ids as the Canvas scope without changing query parameters' do
     params = ActionController::Parameters.new(canvas_project_ids: ['2'])
+    allow(query_state_resolver).to receive(:bounded_project_ids).and_return([2])
     allow(query_state_resolver).to receive(:resolve).with(project_ids: [2]).and_return(
       issues: [issue_a],
       initial_state: { selected_project_ids: ['2'] },
@@ -103,6 +106,7 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
 
   it 'excludes explicit project_ids outside base_project_ids' do
     params = ActionController::Parameters.new(member_projects_only: '1', project_ids: %w[2 999])
+    allow(query_state_resolver).to receive(:bounded_project_ids).and_return([2])
     allow(query_state_resolver).to receive(:resolve).with(project_ids: [2]).and_return(
       issues: [issue_a],
       initial_state: {},
@@ -121,6 +125,7 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
 
   it 'treats project none as an explicit empty scope when member-project mode is off' do
     params = ActionController::Parameters.new(project_ids: ['none'])
+    allow(query_state_resolver).to receive(:bounded_project_ids).and_return([])
     allow(query_state_resolver).to receive(:resolve).with(project_ids: []).and_return(
       issues: [],
       initial_state: { selected_project_ids: [] },
@@ -140,6 +145,7 @@ RSpec.describe RedmineCanvasGantt::ViewScopeResolver do
 
   it 'treats project none as an explicit empty scope when member-project mode is on' do
     params = ActionController::Parameters.new(member_projects_only: '1', project_ids: ['none'])
+    allow(query_state_resolver).to receive(:bounded_project_ids).and_return([])
     allow(query_state_resolver).to receive(:resolve).with(project_ids: []).and_return(
       issues: [],
       initial_state: { selected_project_ids: [] },

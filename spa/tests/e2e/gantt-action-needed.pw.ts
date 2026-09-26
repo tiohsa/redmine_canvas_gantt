@@ -459,3 +459,74 @@ test('keeps reasons in the selected issue detail instead of the compact list row
   await expect(detail).toContainText('No assignee');
   await expect(detail).toContainText('No estimated hours');
 });
+
+test('keeps the compact dialog controls usable at 320px height and a 200% equivalent viewport', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'zoom geometry is checked in Chromium');
+  await page.setViewportSize({ width: 800, height: 320 });
+  await waitForInitialRender(page);
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    const base = useTaskStore.getState().allTasks[0];
+    useTaskStore.getState().setTasks([{ ...base, id: '9001',
+      subject: 'Very long issue subject '.repeat(35), startDate: new Date(2020, 8, 1).getTime(),
+      dueDate: new Date(2020, 8, 22).getTime(), assignedToId: null, estimatedHours: undefined }]);
+    useTaskStore.setState({ dataReadStatus: 'ready', initialDataLoaded: true });
+  });
+  await page.addStyleTag({ content: 'button { box-sizing: content-box; white-space: nowrap; }' });
+  await page.getByTestId('action-needed-button').click();
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  const search = dialog.getByRole('searchbox');
+  await expect(search).toBeVisible();
+  await search.fill('Very long');
+  await expect(dialog.locator('.action-needed-detail-pane')).toContainText('3 reasons');
+  await expect(dialog.locator('.action-needed-overload')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible();
+
+  // A 640×640 physical window at 200% browser zoom has a 320×320 CSS viewport.
+  await page.setViewportSize({ width: 320, height: 320 });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible();
+  await expect(dialog.locator('.action-needed-overload')).toBeVisible();
+  await dialog.locator('.action-needed-row').first().click();
+  await expect(dialog.locator('.action-needed-detail-pane')).toBeVisible();
+  await expect(dialog.locator('.action-needed-detail-pane')).toContainText('3 reasons');
+  await dialog.locator('.action-needed-detail-pane').getByRole('button', { name: 'Back to list' }).click();
+  await expect(search).toBeFocused();
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByTestId('action-needed-button').click();
+  await dialog.locator('.action-needed-overload').click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(async () => {
+    const { useWorkloadStore } = await import('/src/stores/WorkloadStore.ts');
+    return useWorkloadStore.getState().workloadPaneVisible;
+  })).toBe(true);
+});
+
+test('preserves mobile detail focus when refreshed data changes the selected issue', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 600 });
+  await waitForInitialRender(page);
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    const base = useTaskStore.getState().allTasks[0];
+    useTaskStore.getState().setTasks([{ ...base, id: '9001', subject: 'Initial issue',
+      startDate: undefined, dueDate: undefined, assignedToId: null }]);
+    useTaskStore.setState({ dataReadStatus: 'ready', initialDataLoaded: true });
+  });
+  await page.getByTestId('action-needed-button').click();
+  const dialog = page.getByRole('dialog', { name: 'Action needed' });
+  await dialog.locator('.action-needed-row').click();
+  const detail = dialog.locator('.action-needed-detail-pane');
+  const link = detail.getByRole('link', { name: 'Open this issue' });
+  await link.focus();
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    const base = useTaskStore.getState().allTasks[0];
+    useTaskStore.getState().setTasks([{ ...base, id: '9002', subject: 'Refreshed issue',
+      startDate: undefined, dueDate: undefined, assignedToId: null }]);
+  });
+  await expect(detail).toContainText('Refreshed issue');
+  await expect(link).toBeFocused();
+  await detail.getByRole('button', { name: 'Back to list' }).click();
+  await expect(dialog.getByRole('searchbox')).toBeFocused();
+});
