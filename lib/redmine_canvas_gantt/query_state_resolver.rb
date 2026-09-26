@@ -92,10 +92,14 @@ module RedmineCanvasGantt
 
       apply_request_overrides!(state)
 
-      issues = load_issues(
+      issues = IssueSelector.new(
+        issue_scope: @issue_scope,
+        issue_includes: @issue_includes,
+        data_payload_budget: @data_payload_budget
+      ).call(
         query_issue_scope: query_resolution.issue_scope,
-        project_ids: project_ids,
-        selected_project_ids: selected_project_ids,
+        project_ids: project_scope_ids(project_ids, selected_project_ids),
+        redmine_project_ids: @redmine_project_ids,
         state: state,
         scope_only: scope_only
       )
@@ -508,94 +512,10 @@ module RedmineCanvasGantt
                                       end
     end
 
-    def load_issues(query_issue_scope:, project_ids:, selected_project_ids:, state:, scope_only: false)
-      scope = issues_scope_for(
-        query_issue_scope: query_issue_scope,
-        project_ids: project_ids,
-        selected_project_ids: selected_project_ids,
-        state: state
-      )
-      return scope.except(:includes, :order) if scope_only
-      issues = if @data_payload_budget
-                 @data_payload_budget.load_records(
-                   scope,
-                   resource: 'issues',
-                   limit: @data_payload_budget.issue_limit
-                 )
-               else
-                 scope.to_a
-               end
-      sort_issues!(issues, state[:sort_config])
-      issues
-    end
-
-    def issues_scope_for(query_issue_scope:, project_ids:, selected_project_ids:, state:)
-      scope = @issue_scope.where(project_id: project_scope_ids(project_ids, selected_project_ids))
-      scope = scope.where(project_id: @redmine_project_ids) if @redmine_project_ids.present?
-      scope = scope.where(id: query_issue_scope) if query_issue_scope
-      scope = scope.where(status_id: state[:selected_status_ids]) if state[:selected_status_ids].present?
-      scope = apply_version_filter(scope, state[:selected_version_ids]) if state[:selected_version_ids].present?
-      scope = apply_assignee_filter(scope, state[:selected_assignee_ids]) if state[:selected_assignee_ids].present?
-      scope = scope.where(tracker_id: state[:selected_tracker_ids]) if state[:selected_tracker_ids].present?
-      scope.includes(*@issue_includes)
-    end
-
     def project_scope_ids(project_ids, selected_project_ids)
       return selected_project_ids if explicit_canvas_project_ids_param?
 
       selected_project_ids.presence || project_ids
-    end
-
-    def apply_assignee_filter(scope, selected_assignee_ids)
-      include_none = selected_assignee_ids.include?(nil)
-      numeric_ids = selected_assignee_ids.compact
-      return scope.where(assigned_to_id: nil) if include_none && numeric_ids.empty?
-      return scope.where(assigned_to_id: numeric_ids) unless include_none
-
-      scope.where(assigned_to_id: numeric_ids).or(scope.where(assigned_to_id: nil))
-    end
-
-    def apply_version_filter(scope, selected_version_ids)
-      include_none = selected_version_ids.include?('_none')
-      numeric_ids = selected_version_ids.filter_map { |id| Integer(id, exception: false) }
-
-      return scope.where(fixed_version_id: nil) if include_none && numeric_ids.empty?
-      return scope.where(fixed_version_id: numeric_ids) unless include_none
-
-      scope.where(fixed_version_id: numeric_ids).or(scope.where(fixed_version_id: nil))
-    end
-
-    def sort_issues!(issues, sort_config)
-      return if sort_config.blank?
-
-      issues.sort_by! do |issue|
-        value = issue_sort_value(issue, sort_config[:key])
-        [value.nil? ? 1 : 0, value]
-      end
-      issues.reverse! if sort_config[:direction] == 'desc'
-    end
-
-    def issue_sort_value(issue, key)
-      case key
-      when 'id' then issue.id
-      when 'subject' then issue.subject.to_s.downcase
-      when 'projectName' then issue.project&.name.to_s.downcase
-      when 'trackerName' then issue.tracker&.name.to_s.downcase
-      when 'statusId' then issue.status_id
-      when 'priorityId' then issue.priority_id
-      when 'assignedToName' then issue.assigned_to&.name.to_s.downcase
-      when 'authorName' then issue.author&.name.to_s.downcase
-      when 'startDate' then issue.start_date
-      when 'dueDate' then issue.due_date
-      when 'estimatedHours' then issue.estimated_hours
-      when 'ratioDone' then issue.done_ratio
-      when 'fixedVersionName' then issue.fixed_version&.name.to_s.downcase
-      when 'categoryName' then issue.category&.name.to_s.downcase
-      when 'createdOn' then issue.created_on
-      when 'updatedOn' then issue.updated_on
-      when 'spentHours' then issue.spent_hours
-      else issue.id
-      end
     end
 
     def resolve_selected_project_ids(fallback_project_ids)
