@@ -1,5 +1,6 @@
 require 'set'
 require_relative 'mutation_authorization_policy'
+require_relative 'spent_hours_batch'
 
 module RedmineCanvasGantt
   class DataPayloadBuilder
@@ -33,9 +34,10 @@ module RedmineCanvasGantt
 
     def build_tasks(issues)
       can_log_time_by_project_id = {}
+      spent_hours_by_issue_id = SpentHoursBatch.for(issues)
 
       issues.each_with_index.map do |issue, idx|
-        build_task_state(issue).merge(
+        build_task_state(issue, spent_hours: spent_hours_by_issue_id.fetch(issue.id, 0.0)).merge(
           display_order: idx,
           editable: @authorization_policy.can_edit_issue?(issue),
           can_log_time: can_log_time_by_project_id.fetch(issue.project_id) do
@@ -48,7 +50,7 @@ module RedmineCanvasGantt
     # Mutation responses must describe the persisted Issue only.  In
     # particular, display_order and other collection/layout values belong to
     # the current query and are not canonical entity state.
-    def build_task_state(issue)
+    def build_task_state(issue, spent_hours: issue.spent_hours)
       {
           id: issue.id,
           subject: issue.subject,
@@ -77,7 +79,7 @@ module RedmineCanvasGantt
           estimated_hours: issue.estimated_hours,
           created_on: issue.created_on,
           updated_on: issue.updated_on,
-          spent_hours: issue.spent_hours,
+          spent_hours: spent_hours,
           fixed_version_name: issue.fixed_version&.name,
           custom_field_values: @custom_field_extractor.build_task_custom_field_values(issue)
       }

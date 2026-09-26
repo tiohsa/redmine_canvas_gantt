@@ -179,6 +179,9 @@
 .action-needed-row-top { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
 .action-needed-issue-id { flex: none; color: var(--brand-6, #1456f0); font-weight: 600; }
 .action-needed-subject { flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
+@media (max-height: 400px) {
+    .action-needed-subject { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+}
 .action-needed-chevron { flex: none; margin-left: auto; color: var(--col-text04, #45515e); font-size: 20px; line-height: 1; }
 .action-needed-empty { margin: 0; padding: 16px; color: var(--col-text04, #45515e); text-align: center; }
 

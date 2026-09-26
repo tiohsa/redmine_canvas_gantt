@@ -57,6 +57,46 @@ RSpec.describe CanvasGanttsController, type: :controller do
     )
   end
 
+  it 'keeps child issues but excludes an unrelated visible project from data and actual workload' do
+    child = Project.create!(name: 'Canvas child', identifier: 'canvas-gantt-child', parent: project, is_public: true)
+    child.enable_module!(:issue_tracking)
+    child.enable_module!(:time_tracking)
+    child.enable_module!(:canvas_gantt)
+    child_issue = issue.copy
+    child_issue.project = child
+    child_issue.subject = 'Child scope issue'
+    child_issue.save!
+    outside_issue = Issue.find(4)
+    outside_issue.project.enable_module!(:time_tracking)
+    entry(hours: 2, user_id: 1, issue_id: child_issue.id)
+    entry(hours: 3, user_id: 1, issue_id: outside_issue.id)
+    selection = [child.id.to_s, outside_issue.project_id.to_s]
+
+    get :data, params: { project_id: project.id, format: :json, canvas_project_ids: selection }
+    expect(response).to have_http_status(:ok)
+    tasks = JSON.parse(response.body).fetch('tasks')
+    data_ids = tasks.map { |task| task.fetch('id') }
+    expect(data_ids).to include(child_issue.id)
+    expect(data_ids).not_to include(outside_issue.id)
+    expect(tasks.find { |task| task.fetch('id') == child_issue.id }.fetch('spent_hours')).to eq(2.0)
+
+    fetch_actual(canvas_project_ids: selection)
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch('entries').map { |row| row['issueId'] })
+      .to eq([child_issue.id.to_s])
+  end
+
+  it 'returns no data or actual workload for an explicit empty project selection' do
+    entry(hours: 2)
+    get :data, params: { project_id: project.id, format: :json, canvas_project_ids: ['none'] }
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch('tasks')).to eq([])
+
+    fetch_actual(canvas_project_ids: ['none'])
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch('entries')).to eq([])
+  end
+
   it 'rejects missing, reversed and excessive date ranges' do
     [ { from: '' }, { from: '2026-09-08' }, { to: '2040-01-01' } ].each do |params|
       fetch_actual(params)

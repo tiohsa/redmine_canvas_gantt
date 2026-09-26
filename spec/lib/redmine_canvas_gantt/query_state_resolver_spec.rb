@@ -51,6 +51,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
   end
 
   before do
+    allow(project).to receive_message_chain(:self_and_descendants, :pluck).with(:id).and_return([1, 2, 3])
     allow(IssueQuery).to receive(:find_by).with(id: '42').and_return(query)
     allow(query).to receive(:dup).and_return(working_query)
     allow(working_query).to receive(:filters=)
@@ -58,6 +59,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     allow(issue_scope).to receive(:where).and_return(issue_scope)
     allow(issue_scope).to receive(:includes).with(*issue_includes).and_return(issue_scope)
     allow(issue_scope).to receive(:to_a).and_return([])
+    allow(issue_scope).to receive(:except).and_return(issue_scope)
   end
 
   it 'extracts supported shared state and applies url overrides' do
@@ -75,7 +77,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       query_id: 42,
       selected_status_ids: [1, 2],
       selected_assignee_ids: [7],
-      selected_project_ids: ['9'],
+      selected_project_ids: [],
       member_projects_only: false,
       show_subprojects: false,
       sort_config: { key: 'subject', direction: 'desc' },
@@ -356,7 +358,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
 
     result = resolver.resolve(project_ids: [1, 2])
 
-    expect(result[:initial_state][:selected_project_ids]).to eq(%w[9 10 11 12])
+    expect(result[:initial_state][:selected_project_ids]).to eq([])
   end
 
   it 'treats Canvas project none as an explicit empty project selection without falling back to project scope' do
@@ -748,5 +750,85 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     )
 
     expect { resolver.resolve(project_ids: [1, 2]) }.to raise_error(overflow)
+  end
+
+  %w[status_id assigned_to_id project_id fixed_version_id tracker_id].each do |field|
+    it "treats an explicit empty #{field} equality as no matches" do
+      params = ActionController::Parameters.new(set_filter: '1', f: [field], op: { field => '=' }, v: { field => [] })
+      expect(issue_scope).to receive(:where).with(id: []).and_return(issue_scope)
+      result = described_class.new(project: project, params: params, current_user: current_user,
+        issue_scope: issue_scope, issue_includes: issue_includes).resolve(project_ids: [1, 2], scope_only: true)
+      expect(result[:query_context][:explicit_overrides].values).to include(mode: 'none')
+    end
+  end
+
+  { 'status_id' => :status, 'assigned_to_id' => :assignee,
+    'fixed_version_id' => :version, 'tracker_id' => :tracker }.each do |field, name|
+    it "keeps invalid #{field} values from widening a URL filter" do
+      resolve = ->(values) do
+        described_class.new(project: project,
+          params: ActionController::Parameters.new(field => values),
+          current_user: current_user, issue_scope: issue_scope,
+          issue_includes: issue_includes).resolve(project_ids: [1, 2])
+      end
+      expect(resolve.call(['invalid'])[:query_context][:explicit_overrides][name]).to eq(mode: 'none')
+      expect(resolve.call(['3', 'invalid'])[:query_context][:explicit_overrides][name])
+        .to eq(mode: 'subset', values: name == :version ? ['3'] : [3])
+    end
+
+    it "treats the standard #{field} all operator as unfiltered" do
+      params = ActionController::Parameters.new(set_filter: '1', f: [field], op: { field => '*' })
+      result = described_class.new(project: project, params: params, current_user: current_user,
+        issue_scope: issue_scope, issue_includes: issue_includes).resolve(project_ids: [1, 2])
+      expect(result[:query_context][:explicit_overrides][name]).to eq(mode: 'all')
+    end
+  end
+
+  it 'distinguishes an omitted filter, none, invalid ids and mixed ids' do
+    resolver = ->(params) do
+      described_class.new(project: project, params: ActionController::Parameters.new(params),
+        current_user: current_user, issue_scope: issue_scope, issue_includes: issue_includes)
+        .resolve(project_ids: [1, 2])
+    end
+    expect(resolver.call({})[:query_context][:explicit_overrides]).to eq({})
+    expect(resolver.call(status_id: ['none'])[:query_context][:explicit_overrides][:status]).to eq(mode: 'none')
+    expect(resolver.call(status_id: ['invalid'])[:query_context][:explicit_overrides][:status]).to eq(mode: 'none')
+    expect(resolver.call(status_id: ['3', 'invalid'])[:query_context][:explicit_overrides][:status])
+      .to eq(mode: 'subset', values: [3])
+    expect(resolver.call(assigned_to_id: ['none'])[:query_context][:explicit_overrides][:assignee])
+      .to eq(mode: 'subset', values: [nil])
+    expect(resolver.call(fixed_version_id: ['none'])[:query_context][:explicit_overrides][:version])
+      .to eq(mode: 'subset', values: ['_none'])
+  end
+
+  it 'bounds explicit project ids even when valid and outside ids are mixed' do
+    result = described_class.new(project: project,
+      params: ActionController::Parameters.new(canvas_project_ids: %w[2 999 invalid]),
+      current_user: current_user, issue_scope: issue_scope,
+      issue_includes: issue_includes).resolve(project_ids: [1, 2])
+    expect(result[:initial_state][:selected_project_ids]).to eq(['2'])
+  end
+
+  it 'lets an explicit empty URL filter replace a saved query selection with no matches' do
+    expect(working_query).to receive(:filters=).with(hash_excluding('status_id'))
+    expect(issue_scope).to receive(:where).with(id: []).and_return(issue_scope)
+    result = described_class.new(project: project,
+      params: ActionController::Parameters.new(query_id: '42', status_id: []),
+      current_user: current_user, issue_scope: issue_scope,
+      issue_includes: issue_includes).resolve(project_ids: [1, 2])
+    expect(result[:query_context][:explicit_overrides][:status]).to eq(mode: 'none')
+  end
+
+  it 'preserves Redmine-managed saved-query values while a different URL filter is applied' do
+    filters = { 'assigned_to_id' => { operator: '=', values: ['me'] } }
+    allow(working_query).to receive(:filters).and_return(filters)
+    expect(issue_scope).not_to receive(:where).with(id: [])
+
+    result = described_class.new(project: project,
+      params: ActionController::Parameters.new(query_id: '42', tracker_ids: ['3']),
+      current_user: current_user, issue_scope: issue_scope,
+      issue_includes: issue_includes).resolve(project_ids: [1, 2])
+
+    expect(result[:initial_state][:selected_tracker_ids]).to eq([3])
   end
 end

@@ -60,6 +60,7 @@ export const ActionNeededControl: React.FC = () => {
     const backRef = useRef<HTMLButtonElement>(null);
     const searchRef = useRef<HTMLInputElement>(null);
     const returnToListFocusRef = useRef(false);
+    const wasMobileDetailsOpenRef = useRef(false);
     const [reason, setReason] = useState<ActionReason | 'all'>('all');
     const [search, setSearch] = useState('');
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -122,9 +123,14 @@ export const ActionNeededControl: React.FC = () => {
     };
 
     useLayoutEffect(() => {
-        if (!open || !window.matchMedia?.('(max-width: 767px)').matches) return;
-        if (mobileDetailsOpen && ready && selectedTaskId) backRef.current?.focus();
-        else if (returnToListFocusRef.current) {
+        if (!open || !window.matchMedia?.('(max-width: 767px)').matches) {
+            wasMobileDetailsOpenRef.current = false;
+            return;
+        }
+        const justOpenedDetails = mobileDetailsOpen && !wasMobileDetailsOpenRef.current;
+        wasMobileDetailsOpenRef.current = mobileDetailsOpen;
+        if (justOpenedDetails && ready && selectedTaskId) backRef.current?.focus();
+        else if (!mobileDetailsOpen && returnToListFocusRef.current) {
             returnToListFocusRef.current = false;
             searchRef.current?.focus();
         }

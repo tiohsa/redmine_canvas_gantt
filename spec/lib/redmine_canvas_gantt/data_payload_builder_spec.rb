@@ -202,10 +202,13 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
         editable?: true
       )
 
+      allow(RedmineCanvasGantt::SpentHoursBatch).to receive(:for).and_return(101 => 2.5)
+
       tasks_100 = builder.build_tasks(Array.new(100, issue1))
       tasks_500 = builder.build_tasks(Array.new(500, issue1))
 
       expect(tasks_100.first[:can_log_time]).to eq(true)
+      expect(tasks_100.first[:spent_hours]).to eq(2.5)
       expect(tasks_500.last[:can_log_time]).to eq(true)
       expect(current_user).to have_received(:allowed_to?).with(:log_time, project1).twice
       expect(tasks_100.first[:has_physical_children]).to eq(false)
