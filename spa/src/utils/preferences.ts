@@ -392,7 +392,11 @@ export const loadDisplayPreferencesWithSource = (
     if (envelope.display.global.enabled) {
         return {
             source: 'global',
-            preferences: globalPreferences,
+            preferences: sanitizeDisplayPreferences({
+                ...globalPreferences,
+                // Candidate membership mode is always a personal project preference.
+                memberProjectsOnly: projectPreferences.memberProjectsOnly
+            }),
             globalEnabled: true
         };
     }

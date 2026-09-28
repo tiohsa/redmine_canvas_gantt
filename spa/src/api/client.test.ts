@@ -255,6 +255,81 @@ describe('apiClient.fetchData', () => {
     });
 });
 
+describe('apiClient.fetchData filter options', () => {
+    const task = {
+        id: 10,
+        project_id: 2,
+        project_name: 'Visible non-member project',
+        assigned_to_id: 7,
+        assigned_to_name: 'Alice'
+    };
+    const fallbackProjects = [{ id: '2', name: task.project_name }];
+    const fallbackAssignees = [{ id: 7, name: 'Alice', projectIds: ['2'] }];
+    const fetchWithOptions = (options: Record<string, unknown>) => {
+        window.RedmineCanvasGantt = {
+            projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ tasks: [task], ...options })
+        }));
+        return apiClient.fetchData();
+    };
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('keeps explicit empty projects and assignees authoritative with visible tasks', async () => {
+        const data = await fetchWithOptions({ filter_options: { projects: [], assignees: [] } });
+
+        expect(data.filterOptions).toEqual({ projects: [], assignees: [] });
+        expect(data.tasks).toEqual([expect.objectContaining({ id: '10', projectId: '2', assignedToId: 7 })]);
+    });
+
+    it.each([{}, { filter_options: {} }])('derives candidates for missing legacy fields: %j', async (payload) => {
+        const data = await fetchWithOptions(payload);
+
+        expect(data.filterOptions).toEqual({ projects: fallbackProjects, assignees: fallbackAssignees });
+        expect(data.filterOptions).not.toHaveProperty('trackers');
+    });
+
+    it.each([
+        { fields: { projects: [] }, expected: { projects: [], assignees: fallbackAssignees } },
+        { fields: { assignees: [] }, expected: { projects: fallbackProjects, assignees: [] } }
+    ])('falls back only for the missing field: $fields', async ({ fields, expected }) => {
+        const data = await fetchWithOptions({ filter_options: fields });
+
+        expect(data.filterOptions).toEqual(expected);
+    });
+
+    it.each(['projects', 'assignees'])('rejects malformed %s fields instead of deriving candidates', async (field) => {
+        for (const value of [null, undefined, {}, 'invalid', 1, false]) {
+            await expect(fetchWithOptions({ filter_options: { [field]: value } }))
+                .rejects.toThrow(`Invalid filter options response: ${field} must be an array`);
+        }
+    });
+
+    it.each([null, [], 'invalid', false].map(value => ({ value })))('rejects a malformed filter_options container: $value', async ({ value }) => {
+        await expect(fetchWithOptions({ filter_options: value }))
+            .rejects.toThrow('Invalid filter options response: expected an object');
+    });
+
+    it('does not derive candidates after discarding invalid entries from present arrays', async () => {
+        const data = await fetchWithOptions({ filter_options: { projects: [null, {}], assignees: [null, {}] } });
+
+        expect(data.filterOptions).toEqual({ projects: [], assignees: [] });
+    });
+
+    it.each([[], null, 'invalid'].map(trackers => ({ trackers })))('preserves existing optional tracker normalization: $trackers', async ({ trackers }) => {
+        const data = await fetchWithOptions({ filter_options: { projects: [], assignees: [], trackers } });
+
+        expect(data.filterOptions).toEqual({ projects: [], assignees: [], trackers: [] });
+    });
+});
+
 describe('apiClient.fetchEditMeta', () => {
     afterEach(() => {
         vi.restoreAllMocks();

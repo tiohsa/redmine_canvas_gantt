@@ -538,13 +538,11 @@ RSpec.describe CanvasGanttsController, type: :controller do
     let(:visible_scope) { double('ActiveRecord::Relation') }
     let(:member_active_scope) { double('ActiveRecord::Relation') }
     let(:tree_project_scope) { double('ActiveRecord::Relation') }
-    let(:tree_member_joined_scope) { double('ActiveRecord::Relation') }
-    let(:tree_member_filtered_scope) { double('ActiveRecord::Relation') }
-    let(:member_joined_scope) { double('ActiveRecord::Relation') }
+    let(:membership_scope) { double('ActiveRecord::Relation') }
+    let(:membership_project_ids) { double('ActiveRecord::Relation') }
     let(:member_filtered_scope) { double('ActiveRecord::Relation') }
     let(:member_tree_project) { double('ProjectOption', id: 1) }
     let(:descendant_project) { double('ProjectOption', id: 2) }
-    let(:member_project) { double('ProjectOption', id: 3) }
 
     before do
       budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, collection_limit: 10_000)
@@ -557,8 +555,6 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(Project).to receive(:visible).and_return(visible_scope)
       allow(visible_scope).to receive(:active).and_return(member_active_scope)
       allow(member_active_scope).to receive(:where).with(id: [1, 2]).and_return(tree_project_scope)
-      allow(tree_project_scope).to receive(:joins).with(:members).and_return(tree_member_joined_scope)
-      allow(member_active_scope).to receive(:joins).with(:members).and_return(member_joined_scope)
     end
 
     it 'returns all active visible projects in base scope when member_projects_only is false' do
@@ -575,10 +571,9 @@ RSpec.describe CanvasGanttsController, type: :controller do
       user = double('User', id: 7, group_ids: [11, 12], logged?: true, login: 'alice', admin?: false)
       allow(User).to receive(:current).and_return(user)
 
-      allow(tree_member_joined_scope).to receive(:where).with(
-        members: { user_id: [7, 11, 12] }
-      ).and_return(member_filtered_scope)
-      allow(member_filtered_scope).to receive(:distinct).and_return(member_filtered_scope)
+      expect(Member).to receive(:where).with(user_id: [7, 11, 12]).and_return(membership_scope)
+      expect(membership_scope).to receive(:select).with(:project_id).and_return(membership_project_ids)
+      expect(tree_project_scope).to receive(:where).with(id: membership_project_ids).and_return(member_filtered_scope)
       allow(member_filtered_scope).to receive(:to_a).and_return([member_tree_project])
 
       result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
@@ -598,10 +593,25 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
     it 'returns no projects when memberProjectsOnly is enabled and current user is unavailable' do
       allow(User).to receive(:current).and_return(nil)
+      expect(Member).not_to receive(:where)
 
       result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
 
       expect(result).to eq([])
+    end
+
+    it 'normalizes and deduplicates the user and group membership IDs' do
+      allow(User).to receive(:current).and_return(double('User', id: 7, group_ids: ['11', 11, 7, 0, -1]))
+
+      expect(controller.send(:member_candidate_ids)).to eq([7, 11])
+    end
+
+    it 'supports users exposing groups without group_ids' do
+      groups = double('groups')
+      allow(User).to receive(:current).and_return(double('User', id: 7, groups: groups))
+      expect(groups).to receive(:pluck).with(:id).once.and_return([11, 12])
+
+      2.times { expect(controller.send(:member_candidate_ids)).to eq([7, 11, 12]) }
     end
   end
 

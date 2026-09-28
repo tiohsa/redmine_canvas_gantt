@@ -60,10 +60,11 @@ export const useInitialGanttData = ({
             const initialRawSearch = initialSharedQueryState.source === 'url'
                 ? window.location.search
                 : undefined;
-            const apiRawSearch = initialRawSearch && memberProjectsOnly
+            const apiRawSearch = initialRawSearch
                 ? (() => {
                     const params = new URLSearchParams(initialRawSearch);
-                    params.set('member_projects_only', '1');
+                    params.delete('member_projects_only');
+                    if (memberProjectsOnly) params.set('member_projects_only', '1');
                     return `?${params.toString()}`;
                 })()
                 : initialRawSearch;

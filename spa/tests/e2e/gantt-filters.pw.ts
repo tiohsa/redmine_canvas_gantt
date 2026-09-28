@@ -94,7 +94,8 @@ test('reloads member project candidates and prunes hidden project selections', a
   await page.getByTitle('Filter by project').click();
   await page.getByLabel('Alpha').check();
   await page.getByLabel('Beta').check();
-        await page.getByLabel('Show member projects in filter').check();
+  await page.getByLabel('Show member projects in filter').click();
+  await expect(page.getByLabel('Show member projects in filter')).toBeChecked();
 
   await expect
     .poll(() => dataRequests.some((search) => new URLSearchParams(search).get('member_projects_only') === '1'))

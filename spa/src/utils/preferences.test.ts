@@ -122,6 +122,16 @@ describe('Preferences storage', () => {
         expect(loadPreferences(2).memberProjectsOnly).toBeUndefined();
     });
 
+    it('keeps memberProjectsOnly project scoped when global display preferences are enabled', () => {
+        saveDisplayPreferences({ memberProjectsOnly: true }, 1);
+        saveDisplayPreferences({ memberProjectsOnly: false }, 2);
+        saveGlobalDisplayPreferences({ zoomLevel: 2, memberProjectsOnly: true }, true);
+
+        expect(loadPreferences(1)).toMatchObject({ zoomLevel: 2, memberProjectsOnly: true });
+        expect(loadPreferences(2)).toMatchObject({ zoomLevel: 2, memberProjectsOnly: false });
+        expect(loadPreferences(3).memberProjectsOnly).toBeUndefined();
+    });
+
     it('normalizes legacy mutually enabled version layout preferences', () => {
         saveDisplayPreferences({ showVersions: true, organizeByDependency: true }, 1);
 

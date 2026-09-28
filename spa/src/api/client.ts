@@ -639,9 +639,20 @@ const deriveFilterOptionsFromTasks = (tasks: Task[]): FilterOptions => {
 
 const parseFilterOptions = (value: unknown, tasks: Task[]): FilterOptions => {
     const fallback = deriveFilterOptionsFromTasks(tasks);
+    if (value === undefined) return fallback;
     const record = asRecord(value);
-    if (!record) return fallback;
+    if (!record || Array.isArray(value)) {
+        throw new Error('Invalid filter options response: expected an object');
+    }
 
+    const hasProjects = Object.prototype.hasOwnProperty.call(record, 'projects');
+    const hasAssignees = Object.prototype.hasOwnProperty.call(record, 'assignees');
+    if (hasProjects && !Array.isArray(record.projects)) {
+        throw new Error('Invalid filter options response: projects must be an array');
+    }
+    if (hasAssignees && !Array.isArray(record.assignees)) {
+        throw new Error('Invalid filter options response: assignees must be an array');
+    }
     const projectsRaw = Array.isArray(record.projects) ? record.projects : [];
     const assigneesRaw = Array.isArray(record.assignees) ? record.assignees : [];
     const hasTrackers = Object.prototype.hasOwnProperty.call(record, 'trackers');
@@ -652,8 +663,8 @@ const parseFilterOptions = (value: unknown, tasks: Task[]): FilterOptions => {
     const trackers = trackersRaw.map(parseFilterTrackerOption).filter((entry): entry is FilterTrackerOption => entry !== null);
 
     return {
-        projects: projects.length > 0 ? projects : fallback.projects,
-        assignees: assignees.length > 0 ? assignees : fallback.assignees,
+        projects: hasProjects ? projects : fallback.projects,
+        assignees: hasAssignees ? assignees : fallback.assignees,
         ...(hasTrackers ? { trackers } : {})
     };
 };

@@ -330,6 +330,21 @@ describe('useInitialGanttData persistence', () => {
         expect(new URL(window.location.href).searchParams.get('member_projects_only')).toBeNull();
     });
 
+    it('ignores a shared candidate flag while applying its saved query with the personal preference off', async () => {
+        window.history.replaceState({}, '', '?query_id=12&member_projects_only=1');
+        useTaskStore.setState({ memberProjectsOnly: false });
+
+        render(<Harness />);
+
+        await waitFor(() => expect(fetchDataMock).toHaveBeenCalledWith(expect.objectContaining({
+            rawSearch: '?query_id=12',
+            query: expect.objectContaining({ queryId: 12 })
+        })));
+        await waitFor(() => expect(useTaskStore.getState().activeQueryId).toBe(12));
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+        expect(new URL(window.location.href).searchParams.has('member_projects_only')).toBe(false);
+    });
+
     it('adds the restored member project preference to a shared-query API request only', async () => {
         window.history.replaceState({}, '', '/projects/ecookbook/canvas_gantt?query_id=12&group_by=project');
         useTaskStore.setState({ memberProjectsOnly: true });

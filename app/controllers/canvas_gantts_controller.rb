@@ -1072,20 +1072,15 @@ class CanvasGanttsController < ApplicationController
   end
 
   def filter_option_projects(project_ids, member_projects_only: false)
-    scope = if member_projects_only
-              if User.current&.admin?
-                Project.visible.active.where(id: candidate_project_ids(project_ids))
-              else
-                return [] if member_candidate_ids.empty?
+    scope = Project.visible.active.where(id: candidate_project_ids(project_ids))
+    if member_projects_only && !User.current&.admin?
+      ids = member_candidate_ids
+      return [] if ids.empty?
 
-                Project.visible.active.where(id: candidate_project_ids(project_ids))
-                  .joins(:members)
-                  .where(members: { user_id: member_candidate_ids })
-                  .distinct
-              end
-            else
-              Project.visible.active.where(id: candidate_project_ids(project_ids))
-            end
+      # Project#members excludes group principals. Query their Member rows
+      # directly, retaining the visible, active project tree as the outer scope.
+      scope = scope.where(id: Member.where(user_id: ids).select(:project_id))
+    end
     data_payload_budget.load_records(
       scope,
       resource: 'projects',

@@ -46,7 +46,7 @@ interface GanttToolbarProps {
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange, exportRef }) => {
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, groupByAssignee, setGroupByAssignee,
-        filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
+        filterText, setFilterText, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, projectSelectionExplicit, setSelectedProjectIds, selectedTrackerIds, setSelectedTrackerIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
         taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
         modifiedTaskIds, saveChanges, discardChanges, autoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
@@ -54,6 +54,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         clearSavedQuery: clearSavedQueryFromStore,
         savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries, queryContext
     } = useTaskStore();
+    const dataReadStatus = useTaskStore((state) => state.dataReadStatus);
     const {
         showBaseline,
         toggleBaseline,
@@ -117,8 +118,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [draftAutoCalculateDelay, setDraftAutoCalculateDelay] = React.useState<boolean>(autoCalculateDelay);
     const [draftAutoApplyDefaultRelation, setDraftAutoApplyDefaultRelation] = React.useState<boolean>(autoApplyDefaultRelation);
     const [draftAutoScheduleMoveMode, setDraftAutoScheduleMoveMode] = React.useState<AutoScheduleMoveModeValue>(autoScheduleMoveMode);
-    const [projectFilterLoading, setProjectFilterLoading] = React.useState(false);
-    const [projectFilterError, setProjectFilterError] = React.useState<string | null>(null);
+    const [pendingMemberProjectsOnly, setPendingMemberProjectsOnly] = React.useState<boolean | null>(null);
     const [pendingSavedQueryId, setPendingSavedQueryId] = React.useState<number | null>(null);
     const filterInputRef = React.useRef<HTMLInputElement>(null);
     const columnMenuContentRef = React.useRef<HTMLDivElement>(null);
@@ -163,6 +163,12 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         setDraftAutoApplyDefaultRelation(autoApplyDefaultRelation);
         setDraftAutoScheduleMoveMode(autoScheduleMoveMode);
     }, [autoApplyDefaultRelation, autoCalculateDelay, autoScheduleMoveMode, defaultRelationType, showRelationSettingsMenu]);
+
+    React.useEffect(() => {
+        if (dataReadStatus !== 'loading') {
+            setPendingMemberProjectsOnly(null);
+        }
+    }, [dataReadStatus]);
 
     const handleSaveRelationSettings = () => {
         setDefaultRelationType(draftRelationType);
@@ -405,46 +411,17 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     });
     const effectiveVisibleColumns = effectiveColumnSettings.filter((entry) => entry.visible).map((entry) => entry.key);
 
-    const fallbackProjects = React.useMemo(() => {
-        const map = new Map<string, string>();
-        allTasks.forEach((task) => {
-            if (task.projectId && task.projectName) {
-                map.set(task.projectId, task.projectName);
-            }
-        });
-        return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    }, [allTasks]);
-
-    const fallbackAssignees = React.useMemo(() => {
-        const map = new Map<number | null, { name: string | null; projectIds: Set<string> }>();
-        allTasks.forEach((task) => {
-            const assigneeId = task.assignedToId ?? null;
-            const entry = map.get(assigneeId) ?? {
-                name: assigneeId === null ? null : (task.assignedToName ?? null),
-                projectIds: new Set<string>()
-            };
-            if (assigneeId !== null && entry.name === null && task.assignedToName) {
-                entry.name = task.assignedToName;
-            }
-            if (task.projectId) {
-                entry.projectIds.add(task.projectId);
-            }
-            map.set(assigneeId, entry);
-        });
-        return Array.from(map.entries()).map(([id, entry]) => ({
-            id,
-            name: entry.name,
-            projectIds: Array.from(entry.projectIds)
-        }));
-    }, [allTasks]);
-
-    const assigneeOptions = filterOptions.assignees.length > 0 ? filterOptions.assignees : fallbackAssignees;
-    const projectScopeOptions = filterOptions.projects.length > 0 ? filterOptions.projects : fallbackProjects;
+    const assigneeOptions = filterOptions.assignees;
+    const projectScopeOptions = filterOptions.projects;
     const trackerOptions = React.useMemo(() => filterOptions.trackers ?? [], [filterOptions.trackers]);
+    const projectFilterLoading = dataReadStatus === 'loading';
+    const projectFilterError = dataReadStatus === 'error'
+        ? (i18n.t('label_project_candidates_load_failed') || 'Failed to load project candidates')
+        : null;
 
     const projects = React.useMemo(() => (
-        [...(projectFilterLoading ? [] : filterOptions.projects)].sort((a, b) => a.name.localeCompare(b.name))
-    ), [filterOptions.projects, projectFilterLoading]);
+        [...filterOptions.projects].sort((a, b) => a.name.localeCompare(b.name))
+    ), [filterOptions.projects]);
 
     const visibleProjects = React.useMemo(() => {
         const query = projectSearchText.trim().toLowerCase();
@@ -515,18 +492,11 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         setSelectedTrackerIds(toggleAllSelectionValues(isAllTrackersSelected, trackers.map((tracker) => tracker.id)));
     };
 
-    const handleMemberProjectsOnlyToggle = async (enabled: boolean) => {
-        setProjectFilterError(null);
-        setProjectFilterLoading(true);
-        try {
-            await setMemberProjectsOnly(enabled);
-        } catch (error) {
-            setProjectFilterError(error instanceof Error
-                ? error.message
-                : (i18n.t('label_project_candidates_load_failed') || 'Failed to load project candidates'));
-        } finally {
-            setProjectFilterLoading(false);
-        }
+    const handleMemberProjectsOnlyToggle = (enabled: boolean) => {
+        setPendingMemberProjectsOnly(enabled);
+        void setMemberProjectsOnly(enabled).catch(() => {
+            // The store exposes current read failures through dataReadStatus and suppresses superseded failures.
+        });
     };
 
     const projectOptionIds = React.useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
@@ -1135,7 +1105,9 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 0 8px', color: designTokens.textSecondary, cursor: 'pointer', borderBottom: `1px solid ${designTokens.borderSubtle}`, marginBottom: '8px' }}>
                                 <input
                                     type="checkbox"
-                                    checked={memberProjectsOnly}
+                                    checked={dataReadStatus === 'loading'
+                                        ? (pendingMemberProjectsOnly ?? memberProjectsOnly)
+                                        : memberProjectsOnly}
                                     onChange={(event) => { void handleMemberProjectsOnlyToggle(event.target.checked); }}
                                     aria-label={i18n.t('label_member_projects_only') || 'Show member projects in filter'}
                                 />

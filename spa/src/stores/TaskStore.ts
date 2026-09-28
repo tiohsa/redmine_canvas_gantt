@@ -574,6 +574,7 @@ type ApiDataPatchResult = {
 };
 
 const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadContext): ApiDataPatchResult => {
+    const requestedMode = (readContext?.scope as { memberProjectsOnly?: boolean } | undefined)?.memberProjectsOnly;
     const filterOptions = data.filterOptions ?? EMPTY_FILTER_OPTIONS;
     const customFields = data.customFields ?? [];
     const versions = data.versions ?? [];
@@ -610,7 +611,8 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
             : (data.initialState?.canvasProjectIds !== undefined
                 ? { canvasProjectIds: data.initialState.canvasProjectIds }
                 : {})),
-        memberProjectsOnly: state.memberProjectsOnly,
+        // Candidate data and its confirmed mode are committed in the same update.
+        memberProjectsOnly: requestedMode ?? state.memberProjectsOnly,
         // showSubprojects is Canvas scope state, not a Redmine Query filter.
         showSubprojects: state.showSubprojects
     };
@@ -1071,10 +1073,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
             if (context.generation !== dataRequestGeneration) settleSupersededRead(context, viewIdentityAtStart);
         }
     };
-    const refreshCurrentData = async (purpose: 'refresh' | 'saved_query'): Promise<ReadApplyOutcome> => {
+    const refreshCurrentData = async (
+        purpose: 'refresh' | 'saved_query',
+        memberProjectsOnly = get().memberProjectsOnly
+    ): Promise<ReadApplyOutcome> => {
         const state = get();
-        const query = toResolvedQueryStateFromStore(state);
-        const scope = { showSubprojects: state.showSubprojects, memberProjectsOnly: state.memberProjectsOnly };
+        const query = toResolvedQueryStateFromStore({ ...state, memberProjectsOnly });
+        const scope = { showSubprojects: state.showSubprojects, memberProjectsOnly };
         const generation = ++dataRequestGeneration;
         const context = createReadContext({
             generation,
@@ -1353,6 +1358,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return nextState;
     }),
     applyApiData: (data, readContext) => {
+        const previousMode = get().memberProjectsOnly;
         const businessCalendar = configureBusinessCalendar(data.businessCalendar);
         let querySyncState: SharedQuerySyncState | null = null;
         set((state) => {
@@ -1361,6 +1367,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return { ...result.patch, activeReadContext: readContext ?? activeReadContext,
                 dataReadStatus: readContext ? 'ready' : state.dataReadStatus };
         });
+        const confirmedState = get();
+        if (confirmedState.memberProjectsOnly !== previousMode) {
+            saveDisplayPreferences({ memberProjectsOnly: confirmedState.memberProjectsOnly }, confirmedState.currentProjectId);
+        }
         const isQueryBoundary = readContext?.purpose === 'initial_load' || readContext?.purpose === 'saved_query';
         const currentColumnSource = useUIStore.getState().columnStateSource;
         const shouldApplyQueryColumns = data.initialState?.visibleColumns?.length && (
@@ -2638,13 +2648,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
     }),
     setMemberProjectsOnly: async (enabled) => {
         const current = get();
-        if (current.memberProjectsOnly === enabled) return;
-
-        invalidateDataRequests();
-        set({ memberProjectsOnly: enabled });
-        saveDisplayPreferences({ memberProjectsOnly: enabled }, current.currentProjectId);
-        syncSharedQueryState({ ...get(), memberProjectsOnly: enabled });
-        await get().refreshData();
+        // Even the confirmed value can cancel a different mode still in flight.
+        if (current.memberProjectsOnly === enabled && current.dataReadStatus !== 'loading') return;
+        await refreshCurrentData('refresh', enabled);
     },
 
     scrollToTask: (taskId: string) => set((state) => {
@@ -2773,7 +2779,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             generation,
             projectId: state.currentProjectId,
             query: params.query ?? params.initialState ?? {},
-            scope: { rawSearch: params.rawSearch, queryContext: params.queryContext },
+            scope: { rawSearch: params.rawSearch, queryContext: params.queryContext, memberProjectsOnly: state.memberProjectsOnly },
             purpose: 'initial_load'
         });
         await requestAndApplyData(async () => {
