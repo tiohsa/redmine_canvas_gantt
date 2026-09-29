@@ -92,6 +92,120 @@ RSpec.describe CanvasGanttsController, type: :controller do
       .to eq([child_issue.id.to_s])
   end
 
+  it 'shows all member candidates without reading external tasks until explicitly selected' do
+    outside_issue = Issue.find(4)
+    outside_project = outside_issue.project
+    outside_project.update_column(:status, Project::STATUS_ACTIVE)
+    outside_project.enable_module!(:canvas_gantt)
+    tree_project_ids = project.self_and_descendants.pluck(:id).map(&:to_s)
+
+    get :data, params: { project_id: project.id, format: :json, member_projects_only: '1' }
+
+    expect(response).to have_http_status(:ok)
+    body = JSON.parse(response.body)
+    expect(body.fetch('tasks').map { |task| task.fetch('id') }).not_to include(outside_issue.id)
+    expect(body.fetch('project_scope')).to eq(
+      'root_project_id' => project.id.to_s,
+      'candidate_mode' => 'member_all',
+      'selection_explicit' => false,
+      'selected_project_ids' => [],
+      'effective_project_ids' => tree_project_ids
+    )
+    candidate = body.fetch('filter_options').fetch('projects').find do |option|
+      option.fetch('id') == outside_project.id
+    end
+    expect(candidate).to include(
+      'identifier' => outside_project.identifier,
+      'selectable' => true
+    )
+
+    get :data, params: {
+      project_id: project.id,
+      format: :json,
+      member_projects_only: '1',
+      canvas_project_ids: [outside_project.id.to_s]
+    }
+
+    expect(response).to have_http_status(:ok)
+    body = JSON.parse(response.body)
+    expect(body.fetch('tasks').map { |task| task.fetch('id') }).to include(outside_issue.id)
+    expect(body.fetch('project_scope')).to include(
+      'selection_explicit' => true,
+      'selected_project_ids' => [outside_project.id.to_s],
+      'effective_project_ids' => [outside_project.id.to_s]
+    )
+
+    get :data, params: {
+      project_id: project.id,
+      format: :json,
+      canvas_project_ids: [outside_project.id.to_s]
+    }
+
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch('tasks').map { |task| task.fetch('id') })
+      .not_to include(outside_issue.id)
+  end
+
+  it 'requires explicit member mode and a server-authorized project scope for cross-root writes' do
+    outside_issue = Issue.find(4)
+    outside_project = outside_issue.project
+    outside_project.update_column(:status, Project::STATUS_ACTIVE)
+    outside_project.enable_module!(:canvas_gantt)
+    original_subject = outside_issue.subject
+    attributes = ->(subject) { { subject: subject, lock_version: outside_issue.reload.lock_version } }
+
+    patch :update, params: {
+      project_id: project.id,
+      id: outside_issue.id,
+      format: :json,
+      canvas_project_ids: [outside_project.id.to_s],
+      task: attributes.call('URL only scope')
+    }
+    expect(response).to have_http_status(:not_found)
+    expect(outside_issue.reload.subject).to eq(original_subject)
+
+    patch :update, params: {
+      project_id: project.id,
+      id: outside_issue.id,
+      format: :json,
+      member_projects_only: '1',
+      task: attributes.call('Mode without selection')
+    }
+    expect(response).to have_http_status(:not_found)
+    expect(outside_issue.reload.subject).to eq(original_subject)
+
+    patch :update, params: {
+      project_id: project.id,
+      id: outside_issue.id,
+      format: :json,
+      member_projects_only: '1',
+      canvas_project_ids: [outside_project.id.to_s],
+      task: attributes.call('Authorized cross-root edit')
+    }
+
+    expect(response).to have_http_status(:ok)
+    expect(outside_issue.reload.subject).to eq('Authorized cross-root edit')
+  end
+
+  it 'keeps filtered baseline snapshots inside the root project tree' do
+    outside_issue = Issue.find(4)
+    outside_project = outside_issue.project
+    outside_project.update_column(:status, Project::STATUS_ACTIVE)
+    outside_project.enable_module!(:canvas_gantt)
+
+    post :save_baseline, params: {
+      project_id: project.id,
+      format: :json,
+      scope: 'filtered',
+      member_projects_only: '1',
+      canvas_project_ids: [outside_project.id.to_s]
+    }
+
+    expect(response).to have_http_status(:ok)
+    task_states = JSON.parse(response.body).fetch('baseline').fetch('tasks_by_issue_id')
+    expect(task_states.keys).not_to include(outside_issue.id.to_s)
+  end
+
   it 'returns no data or actual workload for an explicit empty project selection' do
     entry(hours: 2)
     get :data, params: { project_id: project.id, format: :json, canvas_project_ids: ['none'] }

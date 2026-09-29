@@ -1,3 +1,7 @@
+# frozen_string_literal: true
+
+require_relative 'project_scope_policy'
+
 module RedmineCanvasGantt
   class QueryStateResolver
     QueryResolution = Struct.new(:issue_scope, :query, :query_id, keyword_init: true)
@@ -69,21 +73,33 @@ module RedmineCanvasGantt
       'subproject_id' => %w[* !*]
     }.freeze
 
-    def initialize(project:, params:, current_user:, issue_scope:, issue_includes:, data_payload_budget: nil)
+    def initialize(project:, params:, current_user:, issue_scope:, issue_includes:, data_payload_budget: nil,
+                   allow_cross_root: true, project_scope_policy: nil)
       @project = project
       @params = params
       @current_user = current_user
       @issue_scope = issue_scope
       @issue_includes = issue_includes
       @data_payload_budget = data_payload_budget
+      @allow_cross_root = allow_cross_root
+      @project_scope_policy = project_scope_policy
       @warnings = []
     end
 
     def resolve(project_ids:, scope_only: false)
       state = default_state
-      selected_project_ids = resolve_selected_project_ids(allowed_project_ids(project_ids))
       state[:show_subprojects] = resolve_show_subprojects
       state[:member_projects_only] = resolve_member_projects_only
+      tree_project_ids = tree_project_ids_for(project_ids)
+      allowed_ids = if explicit_canvas_project_ids_param?
+                      allowed_project_ids(tree_project_ids, member_projects_only: state[:member_projects_only])
+                    else
+                      tree_project_ids
+                    end
+      selected_project_ids = resolve_selected_project_ids(
+        allowed_ids,
+        tree_project_ids: tree_project_ids
+      )
 
       query_resolution = resolve_query_resolution
       state.merge!(state_from_query(query_resolution.query)) if query_resolution.query
@@ -115,6 +131,11 @@ module RedmineCanvasGantt
         issues: issues,
         spent_hours_by_issue_id: selector.spent_hours_by_issue_id,
         initial_state: state,
+        effective_project_ids: selected_project_ids,
+        project_scope: project_scope_metadata(
+          selected_project_ids: selected_project_ids,
+          member_projects_only: state[:member_projects_only]
+        ),
         query_context: query_context(query_resolution),
         warnings: @warnings
       }
@@ -123,21 +144,52 @@ module RedmineCanvasGantt
     # The URL selection is constrained once, before it reaches any Issue scope.
     # Operation endpoints use this same boundary without applying view filters.
     def bounded_project_ids(project_ids:)
-      allowed_ids = allowed_project_ids(project_ids)
-      raw = if @params.key?(:canvas_project_ids) || @params.key?('canvas_project_ids')
-              @params[:canvas_project_ids]
-            elsif @params.key?(:project_ids) || @params.key?('project_ids')
-              @params[:project_ids]
-            end
-      return allowed_ids if raw.nil? && !explicit_canvas_project_ids_param?
+      tree_ids = tree_project_ids_for(project_ids)
+      return default_project_ids(tree_ids) unless explicit_canvas_project_ids_param?
 
-      parse_project_id_list(raw) & allowed_ids
+      parse_project_id_list(raw_project_selection) & allowed_project_ids(
+        tree_ids,
+        member_projects_only: resolve_member_projects_only
+      )
+    end
+
+    def validate_project_selection!
+      RedmineCanvasGantt::ProjectScopePolicy::PROJECT_SELECTION_PARAMS.each do |key|
+        next unless @params.key?(key) || @params.key?(key.to_sym)
+
+        parse_project_id_list(@params[key])
+      end
+      true
     end
 
     private
 
-    def allowed_project_ids(project_ids)
-      Array(project_ids).map(&:to_i) & (@descendant_project_ids ||= @project.self_and_descendants.pluck(:id))
+    def allowed_project_ids(tree_project_ids, member_projects_only:)
+      return tree_project_ids unless @allow_cross_root
+
+      project_scope_policy.allowed_issue_project_ids(
+        mode: project_scope_policy.mode_for(member_projects_only),
+        descendant_project_ids: tree_project_ids
+      )
+    end
+
+    def tree_project_ids_for(project_ids)
+      Array(project_ids).map(&:to_i).uniq & (@descendant_project_ids ||= @project.self_and_descendants.pluck(:id).map(&:to_i))
+    end
+
+    def default_project_ids(tree_project_ids)
+      resolve_show_subprojects ? tree_project_ids : [@project.id.to_i] & tree_project_ids
+    end
+
+    def project_scope_metadata(selected_project_ids:, member_projects_only:)
+      explicit = explicit_canvas_project_ids_param?
+      {
+        root_project_id: @project.id.to_s,
+        candidate_mode: project_scope_policy.mode_for(member_projects_only),
+        selection_explicit: explicit,
+        selected_project_ids: explicit ? selected_project_ids.map(&:to_s) : [],
+        effective_project_ids: selected_project_ids.map(&:to_s)
+      }
     end
 
     def empty_saved_query_filters(query, overrides)
@@ -543,12 +595,10 @@ module RedmineCanvasGantt
                                       end
     end
 
-    def resolve_selected_project_ids(fallback_project_ids)
-      return bounded_project_ids(project_ids: fallback_project_ids) if explicit_canvas_project_ids_param?
+    def resolve_selected_project_ids(allowed_ids, tree_project_ids:)
+      return parse_project_id_list(raw_project_selection) & allowed_ids if explicit_canvas_project_ids_param?
 
-      show_subprojects = resolve_show_subprojects
-      return [@project.id] & fallback_project_ids unless show_subprojects
-      fallback_project_ids
+      default_project_ids(tree_project_ids)
     end
 
     def resolve_show_subprojects
@@ -583,13 +633,7 @@ module RedmineCanvasGantt
     end
 
     def parse_project_id_list(values)
-      tokens = split_list_values(values)
-      return [] if tokens.empty?
-      return [] if tokens.all? { |value| none_marker?(value) }
-
-      project_ids = tokens.reject { |value| none_marker?(value) }
-                          .filter_map { |value| value.to_i if integer_string?(value) }
-      project_ids.uniq
+      RedmineCanvasGantt::ProjectScopePolicy.parse_project_id_list(values)
     end
 
     def parse_integer_or_none_list(values)
@@ -665,8 +709,22 @@ module RedmineCanvasGantt
     end
 
     def explicit_canvas_project_ids_param?
-      @params.key?(:canvas_project_ids) || @params.key?('canvas_project_ids') ||
-        @params.key?(:project_ids) || @params.key?('project_ids')
+      project_scope_policy.selection_explicit?(@params)
+    end
+
+    def raw_project_selection
+      if @params.key?(:canvas_project_ids) || @params.key?('canvas_project_ids')
+        @params[:canvas_project_ids]
+      elsif @params.key?(:project_ids) || @params.key?('project_ids')
+        @params[:project_ids]
+      end
+    end
+
+    def project_scope_policy
+      @project_scope_policy ||= RedmineCanvasGantt::ProjectScopePolicy.new(
+        project: @project,
+        current_user: @current_user
+      )
     end
 
     def split_list_values(values)

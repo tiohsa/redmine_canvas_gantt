@@ -24,6 +24,7 @@ import { getBusinessCalendarPayload, normalizeBusinessCalendarPayload } from '..
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { sessionFetch } from './sessionFetch';
 import { decodeMutationFailure, type MutationFailure, type MutationStatusValue } from './mutationOutcome';
+import { getConfirmedProjectScope, type ConfirmedProjectScope } from './projectScopeContext';
 
 export {
     classifyMutationError,
@@ -78,6 +79,7 @@ interface ApiData {
     queryContext?: QueryContext;
     warnings?: string[];
     businessCalendar?: BusinessCalendarPayload;
+    projectScope?: ConfirmedProjectScope;
 }
 
 export interface MutationMetadata {
@@ -213,6 +215,15 @@ const getGlobalApiBase = (config: RedmineCanvasGanttConfig): string => {
 const buildViewContextQuery = (config: RedmineCanvasGanttConfig): string => {
     const params = new URLSearchParams(window.location.search);
     params.set('canvas_project_id', String(config.projectId));
+    const confirmedProjectScope = getConfirmedProjectScope();
+    if (confirmedProjectScope?.rootProjectId === String(config.projectId)) {
+        params.set('member_projects_only', confirmedProjectScope.mode === 'member_all' ? '1' : '0');
+        params.delete('canvas_project_ids');
+        params.delete('project_ids');
+        if (confirmedProjectScope.selectionExplicit) {
+            params.set('canvas_project_ids', confirmedProjectScope.selectedProjectIds.join(','));
+        }
+    }
     return params.toString();
 };
 
@@ -560,7 +571,31 @@ const parseFilterProjectOption = (value: unknown): FilterProjectOption | null =>
     const id = record.id;
     const name = record.name;
     if ((typeof id !== 'number' && typeof id !== 'string') || typeof name !== 'string') return null;
-    return { id: String(id), name };
+    return {
+        id: String(id), name,
+        identifier: typeof record.identifier === 'string' ? record.identifier : undefined,
+        path: typeof record.path === 'string' ? record.path : undefined,
+        selectable: typeof record.selectable === 'boolean' ? record.selectable : undefined,
+        disabledReason: typeof record.disabled_reason === 'string' ? record.disabled_reason : undefined
+    };
+};
+
+const parseProjectScope = (value: unknown): ConfirmedProjectScope | undefined => {
+    const record = asRecord(value);
+    if (!record || (record.candidate_mode !== 'current_tree' && record.candidate_mode !== 'member_all') ||
+        (typeof record.root_project_id !== 'string' && typeof record.root_project_id !== 'number') ||
+        typeof record.selection_explicit !== 'boolean' ||
+        !Array.isArray(record.selected_project_ids) || !Array.isArray(record.effective_project_ids)) return undefined;
+    const ids = (values: unknown[]): string[] => values
+        .filter((id): id is string | number => typeof id === 'string' || typeof id === 'number')
+        .map(String);
+    return {
+        rootProjectId: String(record.root_project_id),
+        mode: record.candidate_mode,
+        selectionExplicit: record.selection_explicit,
+        selectedProjectIds: ids(record.selected_project_ids),
+        effectiveProjectIds: ids(record.effective_project_ids)
+    };
 };
 
 const parseFilterAssigneeOption = (value: unknown): FilterAssigneeOption | null => {
@@ -937,7 +972,8 @@ export const apiClient = {
             initialState: parseResolvedQueryState(data.initial_state),
             queryContext: data.query_context === undefined ? undefined : normalizeQueryContext(data.query_context),
             warnings: mergedWarnings,
-            businessCalendar
+            businessCalendar,
+            projectScope: parseProjectScope(data.project_scope)
         };
     },
 

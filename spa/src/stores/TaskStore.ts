@@ -49,6 +49,7 @@ import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/b
 import { fromLocalDate, parseDateOnly, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
 import type { MutationMetadata } from '../api/client';
+import { setConfirmedProjectScope, type ConfirmedProjectScope } from '../api/projectScopeContext';
 import { classifyMutationSourceDisposition } from '../api/mutationOutcome';
 import type { MutationRemoteAvailability } from '../api/mutationOutcome';
 import { buildTaskMutationDelta, BULK_TASK_FIELDS, PERSISTABLE_TASK_FIELDS, taskMutationFields, taskMutationService, type TaskFields } from '../services/taskMutationService';
@@ -242,6 +243,8 @@ export interface TaskState {
     selectedVersionIds: string[];
     selectedTrackerIds: number[];
     memberProjectsOnly: boolean;
+    confirmedProjectScope: ConfirmedProjectScope | null;
+    inactiveExternalProjectIds: string[];
 
     sortConfig: SortConfig;
     customScales: Record<number, number>;
@@ -575,6 +578,7 @@ type ApiDataPatchResult = {
 
 const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadContext): ApiDataPatchResult => {
     const requestedMode = (readContext?.scope as { memberProjectsOnly?: boolean } | undefined)?.memberProjectsOnly;
+    const confirmedScope = data.projectScope;
     const filterOptions = data.filterOptions ?? EMPTY_FILTER_OPTIONS;
     const customFields = data.customFields ?? [];
     const versions = data.versions ?? [];
@@ -606,13 +610,15 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
             : {}),
         // A Saved Query can define Redmine's project_id filter, but it must not
         // replace the independent Canvas project scope.
-        ...(state.projectSelectionExplicit
+        ...(confirmedScope
+            ? { canvasProjectIds: confirmedScope.selectedProjectIds }
+            : state.projectSelectionExplicit
             ? { canvasProjectIds: state.selectedProjectIds }
             : (data.initialState?.canvasProjectIds !== undefined
                 ? { canvasProjectIds: data.initialState.canvasProjectIds }
                 : {})),
         // Candidate data and its confirmed mode are committed in the same update.
-        memberProjectsOnly: requestedMode ?? state.memberProjectsOnly,
+        memberProjectsOnly: confirmedScope ? confirmedScope.mode === 'member_all' : (requestedMode ?? state.memberProjectsOnly),
         // showSubprojects is Canvas scope state, not a Redmine Query filter.
         showSubprojects: state.showSubprojects
     };
@@ -649,7 +655,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
         selectedStatusIds: queryState.selectedStatusIds,
         selectedAssigneeIds: queryState.selectedAssigneeIds,
         selectedProjectIds: queryState.selectedProjectIds,
-        projectSelectionExplicit: state.projectSelectionExplicit || nextResolved.canvasProjectIds !== undefined,
+        projectSelectionExplicit: confirmedScope?.selectionExplicit ?? (state.projectSelectionExplicit || nextResolved.canvasProjectIds !== undefined),
         selectedVersionIds: queryState.selectedVersionIds,
         selectedTrackerIds: queryState.selectedTrackerIds,
         memberProjectsOnly: queryState.memberProjectsOnly,
@@ -671,6 +677,11 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
             relations,
             versions,
             filterOptions,
+            confirmedProjectScope: confirmedScope ?? null,
+            inactiveExternalProjectIds: confirmedScope && confirmedScope.mode === 'current_tree' && state.memberProjectsOnly
+                ? [...new Set([...state.inactiveExternalProjectIds,
+                    ...state.selectedProjectIds.filter((id) => !confirmedScope.selectedProjectIds.includes(id))])]
+                : state.inactiveExternalProjectIds,
             customFields,
             taskStatuses: data.statuses ?? [],
             permissions: data.permissions ?? DEFAULT_PERMISSIONS,
@@ -1177,6 +1188,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
     selectedVersionIds: [],
     selectedTrackerIds: [],
     memberProjectsOnly: preferences.memberProjectsOnly ?? false,
+    confirmedProjectScope: null,
+    inactiveExternalProjectIds: [],
     sortConfig: { key: 'startDate', direction: 'asc' },
     customScales: preferences.customScales ?? {},
     currentProjectId: window.RedmineCanvasGantt?.projectId?.toString() || null,
@@ -1368,6 +1381,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 dataReadStatus: readContext ? 'ready' : state.dataReadStatus };
         });
         const confirmedState = get();
+        setConfirmedProjectScope(confirmedState.confirmedProjectScope);
         if (confirmedState.memberProjectsOnly !== previousMode) {
             saveDisplayPreferences({ memberProjectsOnly: confirmedState.memberProjectsOnly }, confirmedState.currentProjectId);
         }
@@ -2608,7 +2622,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
         };
-        syncSharedQueryState({ ...state, ...nextState });
+        // Keep a tentative selection out of shared URLs until the server normalizes it.
+        if (!state.confirmedProjectScope) syncSharedQueryState({ ...state, ...nextState });
         queueRefreshData(get().refreshData);
         return nextState;
     }),

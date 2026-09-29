@@ -1304,6 +1304,43 @@ describe('TaskStore member project candidate lifecycle', () => {
         vi.mocked(apiClient.fetchData).mockReset();
     });
 
+    it('uses normalized server selection and parks external IDs when switching off', () => {
+        useTaskStore.setState({ selectedProjectIds: ['p1', 'p2', 'denied'], projectSelectionExplicit: true, memberProjectsOnly: true });
+        useTaskStore.getState().applyApiData({
+            ...buildApiData([]),
+            projectScope: {
+                rootProjectId: 'p1', mode: 'member_all', selectionExplicit: true,
+                selectedProjectIds: ['p1', 'p2'], effectiveProjectIds: ['p1', 'p2']
+            }
+        });
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
+
+        useTaskStore.getState().applyApiData({
+            ...buildApiData([]),
+            projectScope: {
+                rootProjectId: 'p1', mode: 'current_tree', selectionExplicit: true,
+                selectedProjectIds: ['p1'], effectiveProjectIds: ['p1']
+            }
+        });
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']);
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+    });
+
+    it('keeps an implicit server scope out of the shared project selection', () => {
+        useTaskStore.setState({ selectedProjectIds: ['stale'], projectSelectionExplicit: true });
+        useTaskStore.getState().applyApiData({
+            ...buildApiData([]),
+            projectScope: {
+                rootProjectId: 'p1', mode: 'current_tree', selectionExplicit: false,
+                selectedProjectIds: [], effectiveProjectIds: ['p1']
+            }
+        });
+        expect(useTaskStore.getState().selectedProjectIds).toEqual([]);
+        expect(useTaskStore.getState().projectSelectionExplicit).toBe(false);
+        expect(loadLastUsedSharedQueryState('p1') ?? {}).not.toHaveProperty('canvasProjectIds');
+    });
+
     it('commits and persists the mode together with the latest candidates after success', async () => {
         const request = deferred<ReturnType<typeof buildApiData>>();
         vi.mocked(apiClient.fetchData).mockReturnValueOnce(request.promise);

@@ -55,6 +55,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries, queryContext
     } = useTaskStore();
     const dataReadStatus = useTaskStore((state) => state.dataReadStatus);
+    const confirmedProjectScope = useTaskStore((state) => state.confirmedProjectScope);
+    const inactiveExternalProjectIds = useTaskStore((state) => state.inactiveExternalProjectIds);
     const {
         showBaseline,
         toggleBaseline,
@@ -119,6 +121,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [draftAutoApplyDefaultRelation, setDraftAutoApplyDefaultRelation] = React.useState<boolean>(autoApplyDefaultRelation);
     const [draftAutoScheduleMoveMode, setDraftAutoScheduleMoveMode] = React.useState<AutoScheduleMoveModeValue>(autoScheduleMoveMode);
     const [pendingMemberProjectsOnly, setPendingMemberProjectsOnly] = React.useState<boolean | null>(null);
+    const [failedMemberProjectsOnly, setFailedMemberProjectsOnly] = React.useState<boolean | null>(null);
     const [pendingSavedQueryId, setPendingSavedQueryId] = React.useState<number | null>(null);
     const filterInputRef = React.useRef<HTMLInputElement>(null);
     const columnMenuContentRef = React.useRef<HTMLDivElement>(null);
@@ -168,6 +171,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         if (dataReadStatus !== 'loading') {
             setPendingMemberProjectsOnly(null);
         }
+        if (dataReadStatus === 'ready') setFailedMemberProjectsOnly(null);
     }, [dataReadStatus]);
 
     const handleSaveRelationSettings = () => {
@@ -412,16 +416,23 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const effectiveVisibleColumns = effectiveColumnSettings.filter((entry) => entry.visible).map((entry) => entry.key);
 
     const assigneeOptions = filterOptions.assignees;
-    const projectScopeOptions = filterOptions.projects;
     const trackerOptions = React.useMemo(() => filterOptions.trackers ?? [], [filterOptions.trackers]);
     const projectFilterLoading = dataReadStatus === 'loading';
-    const projectFilterError = dataReadStatus === 'error'
+    const projectFilterError = failedMemberProjectsOnly !== null
         ? (i18n.t('label_project_candidates_load_failed') || 'Failed to load project candidates')
         : null;
 
     const projects = React.useMemo(() => (
-        [...filterOptions.projects].sort((a, b) => a.name.localeCompare(b.name))
+        [...filterOptions.projects].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
     ), [filterOptions.projects]);
+    const duplicateProjectNames = React.useMemo(() => {
+        const counts = new Map<string, number>();
+        projects.forEach((project) => counts.set(project.name, (counts.get(project.name) ?? 0) + 1));
+        return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
+    }, [projects]);
+    const projectDisableReason = (reason?: string) => reason === 'missing_canvas_gantt_permission'
+        ? (i18n.t('error_canvas_gantt_permission_denied') || 'Canvas Gantt permission required')
+        : reason;
 
     const visibleProjects = React.useMemo(() => {
         const query = projectSearchText.trim().toLowerCase();
@@ -429,8 +440,9 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     }, [projects, projectSearchText]);
 
     const scopedProjectIds = React.useMemo(() => (
-        new Set(selectedProjectIds.length > 0 ? selectedProjectIds : projectScopeOptions.map((project) => project.id))
-    ), [projectScopeOptions, selectedProjectIds]);
+        new Set(confirmedProjectScope?.effectiveProjectIds ??
+            (selectedProjectIds.length > 0 ? selectedProjectIds : filterOptions.projects.map((project) => project.id)))
+    ), [confirmedProjectScope, filterOptions.projects, selectedProjectIds]);
 
     const assignees = React.useMemo(() => {
         const selectedAssigneeIdSet = new Set(selectedAssigneeIds);
@@ -466,10 +478,14 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         setSelectedProjectIds(toggleSelectionValue(selectedProjectIds, id));
     };
 
-    const isAllProjectsSelected = projects.length > 0 && projects.every((project) => selectedProjectIds.includes(project.id));
+    const selectableVisibleProjects = visibleProjects.filter((project) => project.selectable !== false);
+    const isAllProjectsSelected = selectableVisibleProjects.length > 0 && selectableVisibleProjects.every((project) => selectedProjectIds.includes(project.id));
 
     const toggleAllProjects = () => {
-        setSelectedProjectIds(toggleAllSelectionValues(isAllProjectsSelected, projects.map(p => p.id)));
+        const visibleIds = new Set(selectableVisibleProjects.map((project) => project.id));
+        setSelectedProjectIds(isAllProjectsSelected
+            ? selectedProjectIds.filter((id) => !visibleIds.has(id))
+            : [...new Set([...selectedProjectIds, ...visibleIds])]);
     };
 
     const trackers = React.useMemo(() => {
@@ -494,14 +510,15 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
 
     const handleMemberProjectsOnlyToggle = (enabled: boolean) => {
         setPendingMemberProjectsOnly(enabled);
+        setFailedMemberProjectsOnly(null);
         void setMemberProjectsOnly(enabled).catch(() => {
-            // The store exposes current read failures through dataReadStatus and suppresses superseded failures.
+            setFailedMemberProjectsOnly(enabled);
         });
     };
 
     const projectOptionIds = React.useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
-    const hasSelectedProjectsOutsideCandidates = memberProjectsOnly
-        && selectedProjectIds.some((selectedProjectId) => !projectOptionIds.has(selectedProjectId));
+    const hasSelectedProjectsOutsideCandidates = inactiveExternalProjectIds.length > 0
+        || selectedProjectIds.some((selectedProjectId) => !projectOptionIds.has(selectedProjectId));
     const trackerOptionIds = React.useMemo(() => new Set(trackers.map((tracker) => tracker.id)), [trackers]);
     const hasSelectedTrackersOutsideCandidates = selectedTrackerIds.some((selectedTrackerId) => !trackerOptionIds.has(selectedTrackerId));
 
@@ -1099,6 +1116,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                     type="checkbox"
                                     checked={isAllProjectsSelected}
                                     onChange={toggleAllProjects}
+                                    disabled={projectFilterLoading || selectableVisibleProjects.length === 0}
                                 />
                                 <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
                             </label>
@@ -1138,6 +1156,9 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             {projectFilterError && (
                                 <div style={{ fontSize: '12px', color: designTokens.errorFg, marginBottom: '8px' }}>
                                     {projectFilterError}
+                                    <button type="button" onClick={() => handleMemberProjectsOnlyToggle(failedMemberProjectsOnly!)}>
+                                        {i18n.t('label_retry') || 'Retry'}
+                                    </button>
                                 </div>
                             )}
                             {hasSelectedProjectsOutsideCandidates && (
@@ -1148,17 +1169,28 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <div className="gantt-toolbar-project-candidate-list">
                                 {!projectFilterLoading && !projectFilterError && visibleProjects.length === 0 && (
                                     <div style={{ fontSize: '12px', color: designTokens.textMuted }}>
-                                        {i18n.t('label_no_matching_projects') || 'No matching projects'}
+                                        {projects.length === 0
+                                            ? (i18n.t('label_no_projects') || 'No projects available')
+                                            : (i18n.t('label_no_matching_projects') || 'No matching projects')}
                                     </div>
                                 )}
                                 {visibleProjects.map(project => (
-                                    <label key={project.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
+                                    <label key={project.id} title={projectDisableReason(project.disabledReason)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: projectFilterLoading || project.selectable === false ? 'not-allowed' : 'pointer' }}>
                                         <input
                                             type="checkbox"
                                             checked={selectedProjectIds.includes(project.id)}
                                             onChange={() => toggleProject(project.id)}
+                                            disabled={projectFilterLoading || project.selectable === false}
                                         />
                                         {project.name}
+                                        {(project.path || project.identifier || duplicateProjectNames.has(project.name)) && (
+                                            <small style={{ color: designTokens.textMuted }}>
+                                                {' '}({project.path || project.identifier || project.id})
+                                            </small>
+                                        )}
+                                        {project.selectable === false && project.disabledReason && (
+                                            <small style={{ color: designTokens.textMuted }}>{projectDisableReason(project.disabledReason)}</small>
+                                        )}
                                     </label>
                                 ))}
                             </div>
@@ -1174,6 +1206,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             </div>
                             <button
                                 onClick={() => setSelectedProjectIds([])}
+                                disabled={projectFilterLoading}
                                 style={{
                                     marginTop: '8px',
                                     border: 'none',

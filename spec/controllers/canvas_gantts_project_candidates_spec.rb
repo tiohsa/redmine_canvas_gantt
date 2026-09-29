@@ -9,6 +9,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
   before do
     User.current = user
+    controller.instance_variable_set(:@project, root)
     group.users << user
   end
 
@@ -26,90 +27,91 @@ RSpec.describe CanvasGanttsController, type: :controller do
     Member.insert_all!([{ project_id: project.id, user_id: principal.id, created_on: Time.current }])
   end
 
-  def candidates(projects, member_only: true)
-    controller.send(:filter_option_projects, projects.map(&:id), member_projects_only: member_only).map(&:id)
+  def candidates(member_only: true)
+    controller.send(:filter_option_projects, [], member_projects_only: member_only)
+      .map { |option| option.fetch(:id) }
   end
 
-  it 'includes direct and group-only memberships once, excluding nonmembers' do
+  it 'includes direct and group-only memberships across project roots without duplicates' do
     direct = candidate_project('candidate-direct')
-    grouped = candidate_project('candidate-group')
+    grouped = candidate_project('candidate-group', parent: nil)
     both = candidate_project('candidate-both')
-    nonmember = candidate_project('candidate-nonmember')
+    nonmember = candidate_project('candidate-nonmember', parent: nil)
     membership(direct, user)
     membership(grouped, group)
     membership(both, user)
     membership(both, group)
 
     expect(Member.where(project_id: grouped.id, user_id: user.id)).not_to exist
-    expect(candidates([direct, grouped, both, nonmember])).to contain_exactly(direct.id, grouped.id, both.id)
+    expect(candidates).to include(direct.id, grouped.id, both.id)
+    expect(candidates.count(both.id)).to eq(1)
+    expect(candidates).not_to include(nonmember.id)
+    expect(candidates(member_only: false)).to include(direct.id)
+    expect(candidates(member_only: false)).not_to include(grouped.id)
   end
 
-  it 'returns an empty candidate result when only nonmember projects are visible' do
-    nonmember = candidate_project('candidate-empty')
-
-    expect(candidates([nonmember])).to eq([])
-    expect(candidates([nonmember], member_only: false)).to eq([nonmember.id])
-  end
-
-  it 'includes group membership established through Redmine role inheritance' do
-    project = candidate_project('candidate-inherited')
-    Member.create!(project: project, principal: group, roles: [Role.find(1)])
-
-    expect(candidates([project])).to eq([project.id])
-  end
-
-  it 'preserves active, visible, and supplied project tree boundaries for group members' do
-    included = candidate_project('candidate-included')
+  it 'keeps closed, archived, and invisible projects out of candidates for members and admins' do
+    active = candidate_project('candidate-active')
     archived = candidate_project('candidate-archived')
-    hidden = candidate_project('candidate-hidden', is_public: false)
+    closed = candidate_project('candidate-closed', parent: nil, status: Project::STATUS_CLOSED)
+    hidden = candidate_project('candidate-hidden', parent: nil, is_public: false)
     outside = candidate_project('candidate-outside', parent: nil)
-    [included, archived, hidden, outside].each { |project| membership(project, group) }
+    [active, archived, closed, hidden, outside].each { |project| membership(project, group) }
     archived.update_column(:status, Project::STATUS_ARCHIVED)
 
-    expect(Project.visible.where(id: hidden.id)).not_to exist
-    expect(candidates([included, archived, hidden])).to eq([included.id])
-  end
+    expect(candidates).to include(active.id, outside.id)
+    expect(candidates).not_to include(archived.id, closed.id, hidden.id)
+    expect(candidates(member_only: false)).to include(active.id)
+    expect(candidates(member_only: false)).not_to include(outside.id, archived.id, closed.id, hidden.id)
 
-  it 'returns all active visible projects in the supplied tree for administrators' do
     User.current = User.find(1)
-    included = candidate_project('candidate-admin')
-    archived = candidate_project('candidate-admin-archived')
-    outside = candidate_project('candidate-admin-outside', parent: nil)
-    archived.update_column(:status, Project::STATUS_ARCHIVED)
-
     expect(User.current).to be_admin
-    expect(candidates([included, archived])).to eq([included.id])
-    expect(candidates([included, archived])).not_to include(outside.id)
+    expect(candidates).to include(active.id, outside.id)
+    expect(candidates).not_to include(archived.id, closed.id, hidden.id)
+    expect(candidates(member_only: false)).not_to include(outside.id, archived.id, closed.id, hidden.id)
   end
 
-  it 'loads group candidates in one project query without per-project membership queries' do
-    projects = Array.new(3) { |index| candidate_project("candidate-query-#{index}") }
-    projects.each { |project| membership(project, group) }
-    controller.send(:member_candidate_ids)
-    Project.visible.to_sql # Warm Redmine's permission caches before counting.
+  it 'marks cross-root projects selectable only when the target project grants Canvas access' do
+    in_tree = candidate_project('candidate-in-tree')
+    permitted = candidate_project('candidate-permitted', parent: nil)
+    denied = candidate_project('candidate-denied', parent: nil)
+    membership(in_tree, user)
+    membership(denied, user)
+    permitted.enable_module!(:canvas_gantt)
+    denied.enable_module!(:issue_tracking)
+
+    role = Role.find(1)
+    role.update!(permissions: role.permissions | [:view_canvas_gantt])
+    User.current = User.find(user.id)
+    Member.create!(project: permitted, user: user, roles: [role])
+
+    options = controller.send(:filter_option_projects, [], member_projects_only: true).index_by { |option| option[:id] }
+
+    expect(options.fetch(in_tree.id)).to include(selectable: true)
+    expect(options.fetch(permitted.id)).to include(selectable: true)
+    expect(options.fetch(denied.id)).to include(
+      selectable: false,
+      disabled_reason: 'missing_canvas_gantt_permission'
+    )
+
+    allowed_ids = controller.send(:project_scope_policy).allowed_issue_project_ids(mode: 'member_all')
+    expect(allowed_ids).to include(root.id, in_tree.id, permitted.id)
+    expect(allowed_ids).not_to include(denied.id)
+  end
+
+  it 'uses a bounded number of project queries as candidate count grows' do
+    User.current = User.find(1)
+    projects = Array.new(4) { |index| candidate_project("candidate-query-#{index}", parent: nil) }
     queries = []
     subscriber = lambda do |_name, _start, _finish, _id, payload|
       queries << payload[:sql] if payload[:sql].match?(/\ASELECT/i) && !payload[:cached]
     end
 
     ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
-      expect(candidates(projects)).to match_array(projects.map(&:id))
+      expect(candidates).to include(*projects.map(&:id))
     end
 
-    expect(queries.size).to eq(1)
-  end
-
-  it 'accepts the collection limit and raises the existing error when group candidates exceed it' do
-    projects = Array.new(3) { |index| candidate_project("candidate-budget-#{index}") }
-    projects.each { |project| membership(project, group) }
-    budget = RedmineCanvasGantt::DataPayloadBudget.new(
-      environment: { 'REDMINE_CANVAS_GANTT_MAX_DATA_COLLECTION_ITEMS' => '2' }
-    )
-    allow(controller).to receive(:data_payload_budget).and_return(budget)
-
-    expect(candidates(projects.take(2))).to match_array(projects.take(2).map(&:id))
-    expect { candidates(projects) }.to raise_error(RedmineCanvasGantt::DataPayloadBudget::Exceeded) { |error|
-      expect([error.resource, error.limit, error.actual]).to eq(['projects', 2, 3])
-    }
+    project_queries = queries.count { |sql| sql.match?(/\bFROM\s+["`]?projects\b/i) }
+    expect(project_queries).to be <= 2
   end
 end

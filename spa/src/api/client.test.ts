@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from './client';
+import { setConfirmedProjectScope } from './projectScopeContext';
 import { addCalendarDays, diffCalendarDays, formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { TaskLogicService } from '../services/TaskLogicService';
@@ -47,6 +48,32 @@ describe('apiClient.fetchQueries', () => {
 });
 
 describe('apiClient.fetchData', () => {
+    it('parses the confirmed project scope and candidate permissions', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                tasks: [], filter_options: { projects: [
+                    { id: 205, name: 'Operations', identifier: 'ops', selectable: false, disabled_reason: 'Canvas access required' }
+                ], assignees: [] },
+                project_scope: {
+                    root_project_id: '1', candidate_mode: 'member_all', selection_explicit: true,
+                    selected_project_ids: ['1'], effective_project_ids: ['1']
+                }
+            })
+        }));
+
+        const result = await apiClient.fetchData();
+        expect(result.projectScope).toEqual({
+            rootProjectId: '1', mode: 'member_all', selectionExplicit: true,
+            selectedProjectIds: ['1'], effectiveProjectIds: ['1']
+        });
+        expect(result.filterOptions.projects).toEqual([{
+            id: '205', name: 'Operations', identifier: 'ops', path: undefined,
+            selectable: false, disabledReason: 'Canvas access required'
+        }]);
+    });
+
     it('uses canonical has_physical_children even when children are absent from the payload', async () => {
         window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
@@ -748,6 +775,7 @@ describe('apiClient.saveBaseline', () => {
 describe('apiClient.deleteTask', () => {
     afterEach(() => {
         vi.restoreAllMocks();
+        setConfirmedProjectScope(null);
         delete window.RedmineCanvasGantt;
     });
 
@@ -772,6 +800,22 @@ describe('apiClient.deleteTask', () => {
         const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
         expect(new Headers(requestInit.headers).get('X-CSRF-Token')).toBe('token');
         expect(result).toEqual({ status: 'ok' });
+    });
+
+    it('sends the server-confirmed cross-project scope with a mutation', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        setConfirmedProjectScope({
+            rootProjectId: '1', mode: 'member_all', selectionExplicit: true,
+            selectedProjectIds: ['1', '205'], effectiveProjectIds: ['1', '205']
+        });
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.deleteTask('42');
+
+        const url = new URL(fetchMock.mock.calls[0][0], 'http://localhost');
+        expect(url.searchParams.get('member_projects_only')).toBe('1');
+        expect(url.searchParams.get('canvas_project_ids')).toBe('1,205');
     });
 });
 

@@ -112,6 +112,8 @@ class CanvasGanttsController < ApplicationController
     label_task_details_for: :label_task_details_for,
     label_bulk_subtask_count_success: :label_bulk_subtask_count_success,
     label_bulk_subtask_count_failed: :label_bulk_subtask_count_failed,
+    label_retry: :label_retry,
+    label_no_projects: :label_no_projects,
     label_no_workload_data_matches_filters: :label_no_workload_data_matches_filters,
     label_gantt_chart_task_list: :label_gantt_chart_task_list,
     label_task_aria_label: :label_task_aria_label,
@@ -489,6 +491,7 @@ class CanvasGanttsController < ApplicationController
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'bulk_subtask_creator').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'parent_issue_resolver').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'issue_selector').to_s
+  require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'project_scope_policy').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'query_state_resolver').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'view_scope_resolver').to_s
   require_dependency Rails.root.join('plugins', 'redmine_canvas_gantt', 'lib', 'redmine_canvas_gantt', 'baseline_task_state').to_s
@@ -508,6 +511,7 @@ class CanvasGanttsController < ApplicationController
   # the feature gated by this permission. Individual Issue operations perform
   # their own standard Redmine authorization below.
   before_action :ensure_view_permission
+  before_action :validate_project_scope_params
   before_action :ensure_business_calendar_revision,
                 if: :business_calendar_revision_required?
   skip_forgery_protection only: [:asset]
@@ -537,6 +541,7 @@ class CanvasGanttsController < ApplicationController
     begin
       project_ids = descendant_project_ids
       resolved_query = query_state_resolver.resolve(project_ids: project_ids)
+      effective_project_ids = resolved_query.fetch(:effective_project_ids)
       baseline_load = baseline_repository.load(project_id: @project.id)
       member_projects_only = resolved_query[:initial_state].fetch(:member_projects_only, false)
 
@@ -544,7 +549,7 @@ class CanvasGanttsController < ApplicationController
       payload = data_payload_builder.build(
         project: @project,
         permissions: @permissions,
-        project_ids: project_ids,
+        project_ids: effective_project_ids,
         issues: resolved_query[:issues],
         spent_hours_by_issue_id: resolved_query[:spent_hours_by_issue_id],
         relations: relations,
@@ -552,18 +557,21 @@ class CanvasGanttsController < ApplicationController
           filter_option_projects(project_ids, member_projects_only: member_projects_only),
           resource: 'projects'
         ),
-        filter_option_issues: filter_option_issues(project_ids),
+        filter_option_issues: filter_option_issues(effective_project_ids),
         filter_option_trackers: bounded_data_collection(
-          filter_option_trackers(project_ids),
+          filter_option_trackers(effective_project_ids),
           resource: 'trackers'
         ),
         initial_state: resolved_query[:initial_state],
         query_context: resolved_query[:query_context],
         warnings: resolved_query[:warnings] + baseline_load.warnings,
         baseline: visible_baseline_snapshot(baseline_load.snapshot, project_ids),
-        business_calendar: business_calendar_resolver.payload(projects: business_calendar_projects(project_ids))
+        business_calendar: business_calendar_resolver.payload(projects: business_calendar_projects(effective_project_ids))
       )
+      payload[:project_scope] = resolved_query.fetch(:project_scope)
       render body: data_payload_budget.encode_json(payload), content_type: 'application/json'
+    rescue ActionController::ParameterMissing, ArgumentError => e
+      render json: { error: e.message }, status: :unprocessable_entity
     rescue RedmineCanvasGantt::DataPayloadBudget::Exceeded => e
       render_data_payload_limit(e)
     rescue => e
@@ -729,6 +737,11 @@ class CanvasGanttsController < ApplicationController
 
   # POST /projects/:project_id/canvas_gantt/schedule_mutation.json
   def schedule_mutation
+    if (current_view_scope[:scope_project_ids].map(&:to_i) - descendant_project_ids.map(&:to_i)).any?
+      render json: { status: 'forbidden', error: canvas_gantt_l(:error_canvas_gantt_cross_project_scheduling_unsupported) }, status: :forbidden
+      return
+    end
+
     operation_id = params[:operation_id].to_s
     if operation_id.blank?
       render json: { error: 'operation_id is required' }, status: :unprocessable_entity
@@ -850,6 +863,7 @@ class CanvasGanttsController < ApplicationController
     issue_from = Issue.visible.find(relation_params[:issue_from_id])
     issue_to = Issue.visible.find(relation_params[:issue_to_id])
     return unless ensure_relation_createable!(issue_from, issue_to)
+    return if reject_cross_root_relation(issue_from, issue_to)
 
     relation = IssueRelation.new(
       issue_from: issue_from,
@@ -878,6 +892,7 @@ class CanvasGanttsController < ApplicationController
     relation = IssueRelation.find(params[:id])
     return unless ensure_relation_editable!(relation)
     issue_from, issue_to = @authorized_relation_endpoints
+    return if reject_cross_root_relation(issue_from, issue_to)
 
     save_relation_change(
       relation: relation,
@@ -972,6 +987,12 @@ class CanvasGanttsController < ApplicationController
     false
   end
 
+  def validate_project_scope_params
+    query_state_resolver.validate_project_selection!
+  rescue ArgumentError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  end
+
   def resolve_canvas_project
     if request.path_parameters[:project_id].present?
       find_project_by_project_id
@@ -1055,7 +1076,7 @@ class CanvasGanttsController < ApplicationController
     if scope == 'project'
       [baseline_project_issues(project_ids), []]
     else
-      resolved_query = query_state_resolver.resolve(project_ids: project_ids)
+      resolved_query = baseline_query_state_resolver.resolve(project_ids: project_ids)
       [resolved_query[:issues], resolved_query[:warnings]]
     end
   end
@@ -1071,21 +1092,33 @@ class CanvasGanttsController < ApplicationController
     )
   end
 
-  def filter_option_projects(project_ids, member_projects_only: false)
-    scope = Project.visible.active.where(id: candidate_project_ids(project_ids))
-    if member_projects_only && !User.current&.admin?
-      ids = member_candidate_ids
-      return [] if ids.empty?
+  def baseline_query_state_resolver
+    @baseline_query_state_resolver ||= RedmineCanvasGantt::QueryStateResolver.new(
+      project: @project,
+      params: params,
+      current_user: User.current,
+      issue_scope: Issue.visible,
+      issue_includes: DATA_ISSUE_INCLUDES,
+      data_payload_budget: data_payload_budget,
+      allow_cross_root: false
+    )
+  end
 
-      # Project#members excludes group principals. Query their Member rows
-      # directly, retaining the visible, active project tree as the outer scope.
-      scope = scope.where(id: Member.where(user_id: ids).select(:project_id))
-    end
-    data_payload_budget.load_records(
-      scope,
+  def project_scope_policy
+    @project_scope_policy ||= RedmineCanvasGantt::ProjectScopePolicy.new(
+      project: @project,
+      current_user: User.current
+    )
+  end
+
+  def filter_option_projects(_project_ids, member_projects_only: false)
+    mode = project_scope_policy.mode_for(member_projects_only)
+    projects = data_payload_budget.load_records(
+      project_scope_policy.candidate_projects(mode: mode),
       resource: 'projects',
       limit: data_payload_budget.collection_limit
     )
+    project_scope_policy.candidate_options(projects: projects, mode: mode)
   end
 
   def filter_option_issues(project_ids)
@@ -1148,40 +1181,6 @@ class CanvasGanttsController < ApplicationController
         **(remote_availability ? { remote_availability: remote_availability } : {})
       }
     ).merge(error: error)
-  end
-
-  def member_candidate_ids
-    @member_candidate_ids ||= begin
-      user_id = User.current&.id
-      if user_id
-        ([user_id] + current_user_group_ids).map(&:to_i).select(&:positive?).uniq
-      else
-        []
-      end
-    end
-  end
-
-  def current_user_group_ids
-    @current_user_group_ids ||= begin
-      user = User.current
-
-      if user.nil?
-        []
-      elsif user.respond_to?(:group_ids)
-        Array(user.group_ids).map(&:to_i).uniq
-      elsif user.respond_to?(:groups)
-        user.groups.pluck(:id)
-      else
-        []
-      end
-    end
-  end
-
-  def candidate_project_ids(project_ids)
-    Array(project_ids)
-      .map(&:to_i)
-      .select(&:positive?)
-      .uniq
   end
 
   def saved_query_public?(query)
@@ -1332,6 +1331,13 @@ class CanvasGanttsController < ApplicationController
 
   def relation_params
     params.require(:relation).permit(:issue_from_id, :issue_to_id, :relation_type, :delay)
+  end
+
+  def reject_cross_root_relation(issue_from, issue_to)
+    return false if issue_from.project.root.id == issue_to.project.root.id
+
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_cross_root_relation_unsupported) }, status: :unprocessable_entity
+    true
   end
 
   def ensure_relation_editable!(relation)
@@ -1664,7 +1670,7 @@ class CanvasGanttsController < ApplicationController
 
   def business_calendar_projects(project_ids)
     data_payload_budget.load_records(
-      Project.where(id: project_ids),
+      Project.visible.where(id: project_ids),
       resource: 'business_calendar_projects',
       limit: data_payload_budget.collection_limit
     )

@@ -344,6 +344,17 @@ RSpec.describe CanvasGanttsController, type: :controller do
       )
     end
 
+    it 'returns 422 for malformed explicit project IDs' do
+      allow(controller).to receive(:set_permissions) do
+        controller.instance_variable_set(:@permissions, { editable: true, viewable: true, baseline_editable: true })
+      end
+
+      get :data, params: { project_id: 'demo', canvas_project_ids: %w[1 invalid] }, format: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(JSON.parse(response.body)).to eq('error' => 'Invalid project IDs')
+    end
+
     it 'returns data payload with expected top-level keys' do
       payload_builder = instance_double(RedmineCanvasGantt::DataPayloadBuilder)
       baseline_repository = instance_double(RedmineCanvasGantt::BaselineRepository)
@@ -371,6 +382,14 @@ RSpec.describe CanvasGanttsController, type: :controller do
       issue = double('Issue', id: 10, project_id: 1)
       allow(resolver).to receive(:resolve).and_return({
         issues: [issue],
+        effective_project_ids: [1, 2],
+        project_scope: {
+          root_project_id: '1',
+          candidate_mode: 'current_tree',
+          selection_explicit: false,
+          selected_project_ids: [],
+          effective_project_ids: %w[1 2]
+        },
         initial_state: { query_id: 7 },
         query_context: { query_id: 7, explicit_overrides: {} },
         warnings: ['Invalid query_id ignored']
@@ -415,7 +434,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
-      expect(body.keys).to contain_exactly('tasks', 'custom_fields', 'relations', 'versions', 'filter_options', 'statuses', 'project', 'permissions', 'initial_state', 'query_context', 'baseline', 'warnings')
+      expect(body.keys).to contain_exactly('tasks', 'custom_fields', 'relations', 'versions', 'filter_options', 'statuses', 'project', 'permissions', 'initial_state', 'query_context', 'baseline', 'warnings', 'project_scope')
       expect(body['permissions']).to eq('editable' => true, 'viewable' => true, 'baseline_editable' => true)
       expect(body['filter_options']).to eq(
         'projects' => [{ 'id' => 1, 'name' => 'Demo' }],
@@ -423,6 +442,13 @@ RSpec.describe CanvasGanttsController, type: :controller do
       )
       expect(body['baseline']).to include('snapshot_id' => 'baseline-1', 'project_id' => 1)
       expect(body['warnings']).to contain_exactly('Invalid query_id ignored', 'Baseline warning')
+      expect(body['project_scope']).to eq(
+        'root_project_id' => '1',
+        'candidate_mode' => 'current_tree',
+        'selection_explicit' => false,
+        'selected_project_ids' => [],
+        'effective_project_ids' => %w[1 2]
+      )
     end
 
     it 'filters project candidates before building the data payload' do
@@ -443,6 +469,14 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:baseline_repository).and_return(baseline_repository)
       allow(resolver).to receive(:resolve).and_return({
         issues: [issue],
+        effective_project_ids: [1, 2],
+        project_scope: {
+          root_project_id: '1',
+          candidate_mode: 'member_all',
+          selection_explicit: false,
+          selected_project_ids: [],
+          effective_project_ids: %w[1 2]
+        },
         initial_state: { query_id: 7, member_projects_only: true },
         query_context: { query_id: 7, explicit_overrides: {} },
         warnings: []
@@ -535,83 +569,22 @@ RSpec.describe CanvasGanttsController, type: :controller do
   end
 
   describe '#filter_option_projects' do
-    let(:visible_scope) { double('ActiveRecord::Relation') }
-    let(:member_active_scope) { double('ActiveRecord::Relation') }
-    let(:tree_project_scope) { double('ActiveRecord::Relation') }
-    let(:membership_scope) { double('ActiveRecord::Relation') }
-    let(:membership_project_ids) { double('ActiveRecord::Relation') }
-    let(:member_filtered_scope) { double('ActiveRecord::Relation') }
-    let(:member_tree_project) { double('ProjectOption', id: 1) }
-    let(:descendant_project) { double('ProjectOption', id: 2) }
-
-    before do
+    it 'delegates candidate resolution and emits candidate metadata through the shared policy' do
       budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, collection_limit: 10_000)
+      policy = instance_double(RedmineCanvasGantt::ProjectScopePolicy)
+      project_relation = double('candidate project relation')
+      project_records = [double('Project')]
+      candidate_options = [{ id: 2, name: 'External', identifier: 'external', selectable: true }]
       allow(controller).to receive(:data_payload_budget).and_return(budget)
-      allow(budget).to receive(:load_records) do |scope, resource:, limit:|
-        expect(resource).to eq('projects')
-        expect(limit).to eq(10_000)
-        scope.to_a
-      end
-      allow(Project).to receive(:visible).and_return(visible_scope)
-      allow(visible_scope).to receive(:active).and_return(member_active_scope)
-      allow(member_active_scope).to receive(:where).with(id: [1, 2]).and_return(tree_project_scope)
-    end
+      allow(controller).to receive(:project_scope_policy).and_return(policy)
+      allow(policy).to receive(:mode_for).with(true).and_return('member_all')
+      expect(policy).to receive(:candidate_projects).with(mode: 'member_all').and_return(project_relation)
+      expect(budget).to receive(:load_records).with(project_relation, resource: 'projects', limit: 10_000)
+        .and_return(project_records)
+      expect(policy).to receive(:candidate_options).with(projects: project_records, mode: 'member_all')
+        .and_return(candidate_options)
 
-    it 'returns all active visible projects in base scope when member_projects_only is false' do
-      user = double('User', id: 7, group_ids: [11, 12], logged?: true, login: 'alice')
-      allow(User).to receive(:current).and_return(user)
-      allow(tree_project_scope).to receive(:to_a).and_return([member_tree_project, descendant_project])
-
-      result = controller.send(:filter_option_projects, [1, 2], member_projects_only: false)
-
-      expect(result).to eq([member_tree_project, descendant_project])
-    end
-
-    it 'returns only projects where current user is a member when memberProjectsOnly is enabled' do
-      user = double('User', id: 7, group_ids: [11, 12], logged?: true, login: 'alice', admin?: false)
-      allow(User).to receive(:current).and_return(user)
-
-      expect(Member).to receive(:where).with(user_id: [7, 11, 12]).and_return(membership_scope)
-      expect(membership_scope).to receive(:select).with(:project_id).and_return(membership_project_ids)
-      expect(tree_project_scope).to receive(:where).with(id: membership_project_ids).and_return(member_filtered_scope)
-      allow(member_filtered_scope).to receive(:to_a).and_return([member_tree_project])
-
-      result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
-
-      expect(result).to eq([member_tree_project])
-    end
-
-    it 'returns all active visible projects when current user is admin even if memberProjectsOnly is enabled' do
-      user = double('User', id: 7, logged?: true, login: 'admin', admin?: true)
-      allow(User).to receive(:current).and_return(user)
-      allow(tree_project_scope).to receive(:to_a).and_return([member_tree_project, descendant_project])
-
-      result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
-
-      expect(result).to eq([member_tree_project, descendant_project])
-    end
-
-    it 'returns no projects when memberProjectsOnly is enabled and current user is unavailable' do
-      allow(User).to receive(:current).and_return(nil)
-      expect(Member).not_to receive(:where)
-
-      result = controller.send(:filter_option_projects, [1, 2], member_projects_only: true)
-
-      expect(result).to eq([])
-    end
-
-    it 'normalizes and deduplicates the user and group membership IDs' do
-      allow(User).to receive(:current).and_return(double('User', id: 7, group_ids: ['11', 11, 7, 0, -1]))
-
-      expect(controller.send(:member_candidate_ids)).to eq([7, 11])
-    end
-
-    it 'supports users exposing groups without group_ids' do
-      groups = double('groups')
-      allow(User).to receive(:current).and_return(double('User', id: 7, groups: groups))
-      expect(groups).to receive(:pluck).with(:id).once.and_return([11, 12])
-
-      2.times { expect(controller.send(:member_candidate_ids)).to eq([7, 11, 12]) }
+      expect(controller.send(:filter_option_projects, [1, 2], member_projects_only: true)).to eq(candidate_options)
     end
   end
 
@@ -688,6 +661,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     before do
       allow(controller).to receive(:baseline_repository).and_return(baseline_repository)
       allow(controller).to receive(:query_state_resolver).and_return(resolver)
+      allow(controller).to receive(:baseline_query_state_resolver).and_return(resolver)
       allow(controller).to receive(:descendant_project_ids).and_return([1])
       allow(User).to receive(:current).and_return(current_user)
       allow(current_user).to receive(:allowed_to?).and_return(false)
@@ -1737,6 +1711,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
     let(:issue_to) { instance_double(Issue, id: 11, project_id: 2, project: project_to, editable?: true, relations: []) }
 
     before do
+      allow(project_from).to receive(:root).and_return(project)
+      allow(project_to).to receive(:root).and_return(project)
       allow(User).to receive(:current).and_return(current_user)
       allow(current_user).to receive(:allowed_to?).and_return(false)
       allow(controller).to receive(:set_permissions) do
@@ -1767,6 +1743,14 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(relation).to receive(:delay) { current_delay }
       allow(relation).to receive(:relation_type=) { |value| current_type = value }
       allow(relation).to receive(:delay=) { |value| current_delay = value }
+    end
+
+    it 'rejects updates to a relation between different project roots' do
+      allow(project_to).to receive(:root).and_return(instance_double(Project, id: 99))
+
+      patch :update_relation, params: { project_id: 'demo', id: '77', relation: { relation_type: 'precedes', delay: '0' } }, format: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
     end
 
     it 'updates a relation and returns the canonical payload' do
@@ -1914,6 +1898,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     let(:relation) { instance_double(IssueRelation, id: 88, issue_from_id: 10, issue_to_id: 11, relation_type: 'precedes', delay: 2, save: true) }
 
     before do
+      allow(issue_project).to receive(:root).and_return(issue_project)
       allow(User).to receive(:current).and_return(current_user)
       allow(current_user).to receive(:allowed_to?).and_return(false)
       allow(controller).to receive(:set_permissions) do
@@ -2186,6 +2171,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
   describe 'POST #schedule_mutation' do
     before do
+      allow(controller).to receive(:descendant_project_ids).and_return([1])
+      allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [1])
       allow(controller).to receive(:set_permissions) do
         controller.instance_variable_set(:@permissions, { editable: true, viewable: true })
       end
@@ -2201,6 +2188,16 @@ RSpec.describe CanvasGanttsController, type: :controller do
           )
         )
       )
+    end
+
+    it 'rejects schedule changes while an external project is selected' do
+      allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [1, 205])
+      expect(controller).not_to receive(:schedule_mutation_coordinator)
+
+      post :schedule_mutation, params: { project_id: 'demo', operation_id: 'cross-root', changes: [] }, format: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(JSON.parse(response.body)).to include('status' => 'forbidden')
     end
 
     it 'forwards a read-only resolution review and serializes its guarded scope' do

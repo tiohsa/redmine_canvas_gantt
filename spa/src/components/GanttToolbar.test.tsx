@@ -1574,6 +1574,20 @@ describe('GanttToolbar shortcuts', () => {
             projects.forEach(({ name }) => expect(screen.getByLabelText(name)).toBeInTheDocument());
         });
 
+        it('identifies duplicate names and disables candidates rejected by the server', () => {
+            useTaskStore.setState({
+                filterOptions: { projects: [
+                    { id: 'p1', name: 'Operations', identifier: 'root-a', selectable: true },
+                    { id: 'p2', name: 'Operations', identifier: 'root-b', selectable: false, disabledReason: 'Canvas access required' }
+                ], assignees: [] }
+            });
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            expect(screen.getByLabelText(/Operations.*root-a/)).toBeEnabled();
+            expect(screen.getByLabelText(/Operations.*root-b/)).toBeDisabled();
+            expect(screen.getByText('Canvas access required')).toBeInTheDocument();
+        });
+
         it('preserves hidden selections and adds a matching project through the existing store action', async () => {
             useTaskStore.setState({ selectedProjectIds: ['p1', 'p2'] });
             render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
@@ -1590,22 +1604,25 @@ describe('GanttToolbar shortcuts', () => {
             });
         });
 
-        it('uses all official candidates for Select All, including when there are no matches', async () => {
-            useTaskStore.setState({ selectedProjectIds: ['p3'] });
+        it('selects only visible candidates and leaves hidden selections unchanged', async () => {
+            useTaskStore.setState({ selectedProjectIds: ['p1'] });
             render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
             openProjects();
             search('canvas');
             expect(screen.getByLabelText('Select All')).not.toBeChecked();
             fireEvent.click(screen.getByLabelText('Select All'));
             await waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
-            expect(useTaskStore.getState().selectedProjectIds).toEqual(expect.arrayContaining(projects.map(({ id }) => id)));
-            expect(useTaskStore.getState().selectedProjectIds).toHaveLength(projects.length);
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p3']);
             expect(screen.getByLabelText('Select All')).toBeChecked();
             search('no match');
-            expect(screen.getByLabelText('Select All')).toBeChecked();
+            expect(screen.getByLabelText('Select All')).not.toBeChecked();
+            expect(screen.getByLabelText('Select All')).toBeDisabled();
             fireEvent.click(screen.getByLabelText('Select All'));
-            await waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(2));
-            expect(useTaskStore.getState().selectedProjectIds).toEqual([]);
+            expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p3']);
+            search('canvas');
+            fireEvent.click(screen.getByLabelText('Select All'));
+            await waitFor(() => expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']));
         });
 
         it('bases the outside-candidate warning on official candidates, not search matches', () => {
@@ -1653,6 +1670,10 @@ describe('GanttToolbar shortcuts', () => {
             search('still no match');
             expect(screen.getByText('Failed to load project candidates')).toBeInTheDocument();
             expect(screen.queryByText('No matching projects')).not.toBeInTheDocument();
+            vi.mocked(apiClient.fetchData).mockResolvedValueOnce(response(projects, true));
+            fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+            await waitFor(() => expect(useTaskStore.getState().memberProjectsOnly).toBe(true));
+            expect(screen.queryByText('Failed to load project candidates')).not.toBeInTheDocument();
         });
 
         it.each(['resolve', 'reject'] as const)(

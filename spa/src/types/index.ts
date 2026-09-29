@@ -97,6 +97,10 @@ export interface SavedQuery {
 export interface FilterProjectOption {
     id: string;
     name: string;
+    identifier?: string;
+    path?: string;
+    selectable?: boolean;
+    disabledReason?: string;
 }
 
 export interface FilterAssigneeOption {

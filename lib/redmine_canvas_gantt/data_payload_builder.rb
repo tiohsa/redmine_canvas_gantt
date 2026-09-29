@@ -140,7 +140,14 @@ module RedmineCanvasGantt
 
     def build_project_options(projects)
       projects
-        .map { |entry| { id: entry.id, name: entry.name } }
+        .map do |entry|
+          if entry.is_a?(Hash)
+            option = entry.symbolize_keys.slice(:id, :name, :identifier, :path, :selectable, :disabled_reason)
+            option.compact
+          else
+            { id: entry.id, name: entry.name }
+          end
+        end
         .sort_by { |entry| entry[:name].to_s.downcase }
     end
 
