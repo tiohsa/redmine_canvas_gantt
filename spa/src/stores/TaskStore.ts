@@ -278,7 +278,7 @@ export interface TaskState {
     setCustomFields: (fields: CustomFieldMeta[]) => void;
     setPermissions: (permissions: { editable: boolean; viewable: boolean; baselineEditable: boolean }) => void;
     restoreActiveQueryId: (queryId: number | null) => void;
-    restoreCanvasScope: (state?: ResolvedQueryState) => void;
+    restoreCanvasScope: (state?: ResolvedQueryState, inactiveExternalProjectIds?: string[]) => void;
     restoreExplicitGroupByOverride: (groupBy: ResolvedQueryState['groupBy'] | undefined) => void;
     applyResolvedQueryState: (state?: ResolvedQueryState) => void;
     applyApiData: (data: ApiData, readContext?: ReadContext) => void;
@@ -623,6 +623,13 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
         showSubprojects: state.showSubprojects
     };
 
+    const inactiveExternalProjectIds = confirmedScope?.mode === 'member_all'
+        ? []
+        : confirmedScope && state.memberProjectsOnly
+            ? [...new Set([...state.inactiveExternalProjectIds,
+                ...state.selectedProjectIds.filter((id) => !confirmedScope.selectedProjectIds.includes(id))])]
+            : state.inactiveExternalProjectIds;
+
     const queryState = toBusinessQueryState(nextResolved);
     const queryContext = data.queryContext ?? (data.initialState ? resolvedStateToQueryContext(nextResolved) : state.queryContext);
     const sortConfig = queryState.sortConfig ?? { key: 'startDate', direction: 'asc' };
@@ -656,6 +663,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
         selectedAssigneeIds: queryState.selectedAssigneeIds,
         selectedProjectIds: queryState.selectedProjectIds,
         projectSelectionExplicit: confirmedScope?.selectionExplicit ?? (state.projectSelectionExplicit || nextResolved.canvasProjectIds !== undefined),
+        inactiveExternalProjectIds,
         selectedVersionIds: queryState.selectedVersionIds,
         selectedTrackerIds: queryState.selectedTrackerIds,
         memberProjectsOnly: queryState.memberProjectsOnly,
@@ -678,10 +686,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
             versions,
             filterOptions,
             confirmedProjectScope: confirmedScope ?? null,
-            inactiveExternalProjectIds: confirmedScope && confirmedScope.mode === 'current_tree' && state.memberProjectsOnly
-                ? [...new Set([...state.inactiveExternalProjectIds,
-                    ...state.selectedProjectIds.filter((id) => !confirmedScope.selectedProjectIds.includes(id))])]
-                : state.inactiveExternalProjectIds,
+            inactiveExternalProjectIds,
             customFields,
             taskStatuses: data.statuses ?? [],
             permissions: data.permissions ?? DEFAULT_PERMISSIONS,
@@ -1090,6 +1095,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
     ): Promise<ReadApplyOutcome> => {
         const state = get();
         const query = toResolvedQueryStateFromStore({ ...state, memberProjectsOnly });
+        // Restore selections outside the current tree when their candidates are shown again.
+        if (memberProjectsOnly && !state.memberProjectsOnly && state.inactiveExternalProjectIds.length > 0 &&
+            state.projectSelectionExplicit) {
+            query.canvasProjectIds = [...new Set([...state.selectedProjectIds, ...state.inactiveExternalProjectIds])];
+        }
         const scope = { showSubprojects: state.showSubprojects, memberProjectsOnly };
         const generation = ++dataRequestGeneration;
         const context = createReadContext({
@@ -1299,7 +1309,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const queryContext = { ...get().queryContext, baseQueryId: queryId };
         set({ activeQueryId: queryId, ...queryContextPatch(queryContext) });
     },
-    restoreCanvasScope: (resolved) => set((state) => {
+    restoreCanvasScope: (resolved, inactiveExternalProjectIds) => set((state) => {
         const showSubprojects = resolved?.showSubprojects ?? state.showSubprojects;
         const selectedProjectIds = resolved?.canvasProjectIds
             ?? resolved?.selectedProjectIds
@@ -1316,6 +1326,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             showSubprojects,
             selectedProjectIds,
             projectSelectionExplicit,
+            inactiveExternalProjectIds: inactiveExternalProjectIds ?? [],
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount
@@ -1356,6 +1367,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             projectSelectionExplicit: resolved?.canvasProjectIds !== undefined
                 || resolved?.selectedProjectIds !== undefined
                 || state.projectSelectionExplicit,
+            inactiveExternalProjectIds: state.inactiveExternalProjectIds,
             selectedVersionIds,
             selectedTrackerIds,
             groupByProject,

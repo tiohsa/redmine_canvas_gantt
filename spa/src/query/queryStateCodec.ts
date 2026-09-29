@@ -16,6 +16,7 @@ export interface SharedQueryProjectStateV3 {
     scopeState: {
         showSubprojects: boolean;
         canvasProjectIds?: string[];
+        inactiveExternalProjectIds?: string[];
     };
     queryContext: QueryContext;
     sharedViewState: PersistedSharedViewState;
@@ -289,7 +290,10 @@ export const projectStateFromResolvedQueryState = (
 export const cloneProjectState = (state: SharedQueryProjectStateV3): SharedQueryProjectStateV3 => ({
     scopeState: {
         showSubprojects: state.scopeState.showSubprojects,
-        ...(state.scopeState.canvasProjectIds ? { canvasProjectIds: [...state.scopeState.canvasProjectIds] } : {})
+        ...(state.scopeState.canvasProjectIds ? { canvasProjectIds: [...state.scopeState.canvasProjectIds] } : {}),
+        ...(state.scopeState.inactiveExternalProjectIds?.length
+            ? { inactiveExternalProjectIds: [...state.scopeState.inactiveExternalProjectIds] }
+            : {})
     },
     queryContext: {
         baseQueryId: state.queryContext.baseQueryId,

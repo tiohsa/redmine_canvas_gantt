@@ -13,6 +13,7 @@ export type SharedQuerySyncState = {
     selectedAssigneeIds: (number | null)[];
     selectedProjectIds: string[];
     projectSelectionExplicit: boolean;
+    inactiveExternalProjectIds?: string[];
     selectedVersionIds: string[];
     selectedTrackerIds: number[];
     memberProjectsOnly: boolean;
@@ -46,7 +47,10 @@ export const syncSharedQueryState = (state: SharedQuerySyncState) => {
     saveLastUsedSharedQueryProjectState({
         scopeState: {
             showSubprojects: effectiveState.showSubprojects,
-            ...(effectiveState.projectSelectionExplicit ? { canvasProjectIds: [...effectiveState.selectedProjectIds] } : {})
+            ...(effectiveState.projectSelectionExplicit ? { canvasProjectIds: [...effectiveState.selectedProjectIds] } : {}),
+            ...(effectiveState.inactiveExternalProjectIds?.length
+                ? { inactiveExternalProjectIds: [...effectiveState.inactiveExternalProjectIds] }
+                : {})
         },
         queryContext: {
             ...state.queryContext,

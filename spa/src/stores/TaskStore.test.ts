@@ -6,7 +6,7 @@ import { apiClient } from '../api/client';
 import { taskMutationService } from '../services/taskMutationService';
 import { useUIStore } from './UIStore';
 import { AutoScheduleMoveMode, DatePlacementMode } from '../types/constraints';
-import { loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
+import { loadLastUsedSharedQueryProjectState, loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
 import { WorkloadLogicService } from '../services/WorkloadLogicService';
 import { createReadContext } from './taskStore/stateContract';
@@ -1325,6 +1325,43 @@ describe('TaskStore member project candidate lifecycle', () => {
         expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
         expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']);
         expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+    });
+
+    it('restores checked external projects when member projects are shown again', async () => {
+        const scopedResponse = (mode: 'member_all' | 'current_tree', selectedProjectIds: string[]) => ({
+            ...buildApiData([]),
+            filterOptions: {
+                projects: selectedProjectIds.map((id) => ({ id, name: id })), assignees: []
+            },
+            projectScope: {
+                rootProjectId: 'p1', mode, selectionExplicit: true,
+                selectedProjectIds, effectiveProjectIds: selectedProjectIds
+            }
+        });
+        useTaskStore.getState().applyApiData(scopedResponse('member_all', ['p1', 'p2']));
+
+        vi.mocked(apiClient.fetchData)
+            .mockResolvedValueOnce(scopedResponse('current_tree', ['p1']))
+            .mockResolvedValueOnce(scopedResponse('current_tree', ['p1']))
+            .mockResolvedValueOnce(scopedResponse('member_all', ['p1', 'p2']));
+
+        await useTaskStore.getState().setMemberProjectsOnly(false);
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']);
+        expect(loadLastUsedSharedQueryProjectState()?.scopeState).toMatchObject({
+            canvasProjectIds: ['p1'], inactiveExternalProjectIds: ['p2']
+        });
+
+        await useTaskStore.getState().refreshData();
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']);
+
+        await useTaskStore.getState().setMemberProjectsOnly(true);
+        expect(apiClient.fetchData).toHaveBeenLastCalledWith(expect.objectContaining({
+            query: expect.objectContaining({ memberProjectsOnly: true, canvasProjectIds: ['p1', 'p2'] })
+        }));
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual([]);
+        expect(loadLastUsedSharedQueryProjectState()?.scopeState.inactiveExternalProjectIds).toBeUndefined();
     });
 
     it('keeps an implicit server scope out of the shared project selection', () => {

@@ -5,7 +5,7 @@ import { useInitialGanttData } from './useInitialGanttData';
 import { GanttToolbar } from '../GanttToolbar';
 import { useTaskStore } from '../../stores/TaskStore';
 import { resetCanvasGanttTestState } from '../../test/testSetup';
-import { saveLastUsedSharedQueryState } from '../../utils/sharedQueryState';
+import { saveLastUsedSharedQueryProjectState, saveLastUsedSharedQueryState } from '../../utils/sharedQueryState';
 import type { GanttExportHandle } from '../../export/types';
 
 const fetchDataMock = vi.fn();
@@ -132,6 +132,49 @@ describe('useInitialGanttData persistence', () => {
 
         const url = new URL(window.location.href);
         expect(url.searchParams.getAll('canvas_project_ids[]')).toEqual(['none']);
+    });
+
+    it('restores hidden checked projects after a reload with member projects hidden', async () => {
+        saveLastUsedSharedQueryProjectState({
+            scopeState: {
+                showSubprojects: true,
+                canvasProjectIds: ['p1'],
+                inactiveExternalProjectIds: ['p2']
+            },
+            queryContext: { baseQueryId: null, overrides: {} },
+            sharedViewState: {}
+        });
+        window.history.replaceState({}, '', '/projects/ecookbook/canvas_gantt?canvas_project_ids%5B%5D=p1');
+        fetchDataMock.mockImplementation(async (args?: { query?: { memberProjectsOnly?: boolean } }) => {
+            const memberProjectsOnly = args?.query?.memberProjectsOnly === true;
+            const selectedProjectIds = memberProjectsOnly ? ['p1', 'p2'] : ['p1'];
+            return {
+                tasks: [], relations: [], versions: [], statuses: [], customFields: [],
+                filterOptions: {
+                    projects: selectedProjectIds.map((id) => ({ id, name: id === 'p1' ? 'Alpha' : 'Beta' })),
+                    assignees: []
+                },
+                permissions: { editable: true, viewable: true, baselineEditable: true },
+                projectScope: {
+                    rootProjectId: 'p1', mode: memberProjectsOnly ? 'member_all' : 'current_tree',
+                    selectionExplicit: true, selectedProjectIds, effectiveProjectIds: selectedProjectIds
+                }
+            };
+        });
+
+        render(<>
+            <Harness />
+            <GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />
+        </>);
+
+        await waitFor(() => expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']));
+        fireEvent.click(screen.getByTitle('Filter by project'));
+        fireEvent.click(screen.getByLabelText('Show member projects in filter'));
+
+        await waitFor(() => expect(screen.getByLabelText('Beta')).toBeChecked());
+        expect(fetchDataMock).toHaveBeenLastCalledWith(expect.objectContaining({
+            query: expect.objectContaining({ canvasProjectIds: ['p1', 'p2'], memberProjectsOnly: true })
+        }));
     });
 
     it('restores a stored saved query id before initial data resolves and checks its radio', async () => {

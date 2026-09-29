@@ -32,6 +32,9 @@ const isEnvelopeV1 = (value: unknown): value is SharedQueryEnvelopeV1 => {
 export const isSharedQueryProjectState = (value: unknown): value is SharedQueryProjectStateV3 => {
     if (!isRecord(value) || !isRecord(value.scopeState)) return false;
     if (typeof value.scopeState.showSubprojects !== 'boolean') return false;
+    if (value.scopeState.inactiveExternalProjectIds !== undefined &&
+        (!Array.isArray(value.scopeState.inactiveExternalProjectIds) ||
+            !value.scopeState.inactiveExternalProjectIds.every((id) => typeof id === 'string'))) return false;
     return isRecord(value.queryContext) && isRecord(value.sharedViewState);
 };
 

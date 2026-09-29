@@ -45,7 +45,17 @@ export const useInitialGanttData = ({
             }
 
             useTaskStore.getState().restoreActiveQueryId(initialSharedQueryState.state.queryId ?? null);
-            useTaskStore.getState().restoreCanvasScope(initialSharedQueryState.state);
+            const storedProjectIds = storedProjectState?.scopeState.canvasProjectIds;
+            const initialProjectIds = initialSharedQueryState.state.canvasProjectIds;
+            const restoresStoredScope = storedProjectIds !== undefined && initialProjectIds !== undefined &&
+                storedProjectIds.length === initialProjectIds.length &&
+                storedProjectIds.every((id, index) => id === initialProjectIds[index]);
+            useTaskStore.getState().restoreCanvasScope(
+                initialSharedQueryState.state,
+                !useTaskStore.getState().memberProjectsOnly && restoresStoredScope
+                    ? storedProjectState?.scopeState.inactiveExternalProjectIds
+                    : undefined
+            );
             const groupByWasExplicit = initialSharedQueryState.source === 'storage'
                 ? initialSharedQueryState.state.groupBy !== undefined
                 : initialSharedQueryState.source === 'url' && new URLSearchParams(window.location.search).has('group_by');
