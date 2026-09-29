@@ -988,7 +988,7 @@ class CanvasGanttsController < ApplicationController
   end
 
   def validate_project_scope_params
-    query_state_resolver.validate_project_selection!
+    RedmineCanvasGantt::ProjectScopePolicy.validate_project_selection!(params)
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_entity
   end

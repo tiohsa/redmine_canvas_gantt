@@ -825,6 +825,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
 
     policy = instance_double(RedmineCanvasGantt::ProjectScopePolicy)
     allow(policy).to receive(:mode_for) { |enabled| enabled ? 'member_all' : 'current_tree' }
+    allow(policy).to receive(:selection_explicit?).and_return(true)
     expect(policy).to receive(:allowed_issue_project_ids)
       .with(mode: 'member_all', descendant_project_ids: [1, 2, 3])
       .and_return([1, 2, 3, 5])

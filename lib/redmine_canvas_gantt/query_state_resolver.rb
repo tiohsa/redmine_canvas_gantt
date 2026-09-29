@@ -154,12 +154,7 @@ module RedmineCanvasGantt
     end
 
     def validate_project_selection!
-      RedmineCanvasGantt::ProjectScopePolicy::PROJECT_SELECTION_PARAMS.each do |key|
-        next unless @params.key?(key) || @params.key?(key.to_sym)
-
-        parse_project_id_list(@params[key])
-      end
-      true
+      RedmineCanvasGantt::ProjectScopePolicy.validate_project_selection!(@params)
     end
 
     private

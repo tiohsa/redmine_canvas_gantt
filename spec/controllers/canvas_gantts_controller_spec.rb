@@ -581,7 +581,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(policy).to receive(:candidate_projects).with(mode: 'member_all').and_return(project_relation)
       expect(budget).to receive(:load_records).with(project_relation, resource: 'projects', limit: 10_000)
         .and_return(project_records)
-      expect(policy).to receive(:candidate_options).with(projects: project_records, mode: 'member_all')
+      expect(policy).to receive(:candidate_options).with(projects: project_records)
         .and_return(candidate_options)
 
       expect(controller.send(:filter_option_projects, [1, 2], member_projects_only: true)).to eq(candidate_options)

@@ -74,6 +74,15 @@ module RedmineCanvasGantt
       tokens.reject { |token| %w[none _none].include?(token) }.map(&:to_i).uniq
     end
 
+    def self.validate_project_selection!(params)
+      PROJECT_SELECTION_PARAMS.each do |key|
+        next unless params.key?(key) || params.key?(key.to_sym)
+
+        parse_project_id_list(params[key])
+      end
+      true
+    end
+
     PROJECT_SELECTION_PARAMS = %w[canvas_project_ids project_ids].freeze
 
     private

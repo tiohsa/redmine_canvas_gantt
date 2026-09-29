@@ -42,6 +42,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
     membership(both, user)
     membership(both, group)
 
+    warn "DEBUG candidates #{[direct, grouped, both, nonmember].map { |p| [p.id, p.parent_id, p.status, p.lft, p.rgt, p.is_public, Member.where(project_id: p.id).pluck(:user_id)] }.inspect} root=#{[root.lft, root.rgt, root.reload.lft, root.rgt].inspect} tree=#{root.self_and_descendants.pluck(:id).inspect} visible=#{Project.visible(user).pluck(:id).inspect} active=#{Project.active.pluck(:id).inspect} member=#{candidates.inspect}"
+
     expect(Member.where(project_id: grouped.id, user_id: user.id)).not_to exist
     expect(candidates).to include(direct.id, grouped.id, both.id)
     expect(candidates.count(both.id)).to eq(1)
@@ -58,6 +60,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
     outside = candidate_project('candidate-outside', parent: nil)
     [active, archived, closed, hidden, outside].each { |project| membership(project, group) }
     archived.update_column(:status, Project::STATUS_ARCHIVED)
+
+    warn "DEBUG second #{[active, archived, closed, hidden, outside].map { |p| [p.id, p.parent_id, p.status, p.lft, p.rgt, p.is_public, Member.where(project_id: p.id).pluck(:user_id)] }.inspect} tree=#{root.self_and_descendants.pluck(:id).inspect} member=#{candidates.inspect} plain=#{candidates(member_only: false).inspect}"
 
     expect(candidates).to include(active.id, outside.id)
     expect(candidates).not_to include(archived.id, closed.id, hidden.id)

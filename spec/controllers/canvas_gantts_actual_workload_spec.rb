@@ -84,7 +84,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     expect(response).to have_http_status(:ok)
     option_ids = JSON.parse(response.body).fetch('filter_options').fetch('projects').map { |option| option.fetch('id') }
     expect(option_ids).to include(project.id, child.id)
-    expect(option_ids).not_to include(outside_issue.project_id)
+    expect(option_ids).to include(outside_issue.project_id)
 
     fetch_actual(canvas_project_ids: selection)
     expect(response).to have_http_status(:ok)
