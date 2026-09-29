@@ -92,11 +92,13 @@ RSpec.describe CanvasGanttsController, type: :controller do
       .to eq([child_issue.id.to_s])
   end
 
-  it 'shows all member candidates without reading external tasks until explicitly selected' do
+  it 'shows member candidates without target Canvas access and reads only explicitly selected external tasks' do
     outside_issue = Issue.find(4)
     outside_project = outside_issue.project
     outside_project.update_column(:status, Project::STATUS_ACTIVE)
-    outside_project.enable_module!(:canvas_gantt)
+    outside_project.enable_module!(:time_tracking)
+    expect(User.current.allowed_to?(:view_canvas_gantt, outside_project)).to be(false)
+    entry(hours: 3, user_id: 1, issue_id: outside_issue.id)
     tree_project_ids = project.self_and_descendants.pluck(:id).map(&:to_s)
 
     get :data, params: { project_id: project.id, format: :json, member_projects_only: '1' }
@@ -134,6 +136,12 @@ RSpec.describe CanvasGanttsController, type: :controller do
       'selected_project_ids' => [outside_project.id.to_s],
       'effective_project_ids' => [outside_project.id.to_s]
     )
+    expect(body.fetch('tasks').find { |task| task.fetch('id') == outside_issue.id }.fetch('spent_hours')).to eq(3.0)
+
+    fetch_actual(member_projects_only: '1', canvas_project_ids: [outside_project.id.to_s])
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch('entries').map { |row| row.fetch('issueId') })
+      .to eq([outside_issue.id.to_s])
 
     get :data, params: {
       project_id: project.id,
@@ -150,7 +158,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     outside_issue = Issue.find(4)
     outside_project = outside_issue.project
     outside_project.update_column(:status, Project::STATUS_ACTIVE)
-    outside_project.enable_module!(:canvas_gantt)
+    expect(User.current.allowed_to?(:view_canvas_gantt, outside_project)).to be(false)
     original_subject = outside_issue.subject
     attributes = ->(subject) { { subject: subject, lock_version: outside_issue.reload.lock_version } }
 

@@ -1,16 +1,12 @@
 # frozen_string_literal: true
 
-require 'set'
-
 module RedmineCanvasGantt
   # Resolves the project candidates shown by Canvas Gantt and the project IDs
   # that may be used for issue reads and operations. Project visibility and
-  # activity always bound the candidate set; cross-root issue access also
-  # requires the target project's Canvas Gantt permission.
+  # activity always bound the candidate set.
   class ProjectScopePolicy
     CURRENT_TREE = 'current_tree'.freeze
     MEMBER_ALL = 'member_all'.freeze
-    CROSS_ROOT_PERMISSION_REASON = 'missing_canvas_gantt_permission'.freeze
 
     def initialize(project:, current_user:)
       @project = project
@@ -33,44 +29,26 @@ module RedmineCanvasGantt
       end
     end
 
-    def candidate_options(projects:, mode:)
-      records = Array(projects)
-      return [] if records.empty?
-
-      candidate_mode = normalize_mode(mode)
-      tree_ids = descendant_project_ids.to_set
-      permitted_ids = if candidate_mode == MEMBER_ALL
-                        external_ids = records.map(&:id).reject { |id| tree_ids.include?(id.to_i) }
-                        permitted_candidate_ids(external_ids)
-                      else
-                        Set.new
-                      end
-
-      records.map do |project|
-        in_current_tree = tree_ids.include?(project.id.to_i)
-        selectable = candidate_mode == CURRENT_TREE || in_current_tree || permitted_ids.include?(project.id.to_i)
-        option = {
+    def candidate_options(projects:)
+      Array(projects).map do |project|
+        {
           id: project.id,
           name: project.name,
           identifier: project.identifier,
-          selectable: selectable
+          selectable: true
         }
-        option[:disabled_reason] = CROSS_ROOT_PERMISSION_REASON unless selectable
-        option
       end
     end
 
     # Root and descendant project scope remains the existing Canvas boundary.
     # Only an explicitly selected, visible, active member project outside that
-    # tree can extend issue access, and its target-side plugin permission is
-    # checked from current Redmine roles on every request.
+    # tree can extend issue access.
     def allowed_issue_project_ids(mode:, descendant_project_ids: self.descendant_project_ids)
       tree_ids = Array(descendant_project_ids).map(&:to_i).uniq & self.descendant_project_ids
       return tree_ids unless normalize_mode(mode) == MEMBER_ALL && @current_user
 
       external_ids = candidate_projects(mode: MEMBER_ALL)
         .where.not(id: tree_ids)
-        .where(Project.allowed_to_condition(@current_user, :view_canvas_gantt))
         .pluck(:id)
       (tree_ids + external_ids.map(&:to_i)).uniq
     end
@@ -131,14 +109,6 @@ module RedmineCanvasGantt
                   end
 
       ([@current_user.id] + group_ids).map(&:to_i).select(&:positive?).uniq
-    end
-
-    def permitted_candidate_ids(project_ids)
-      return Set.new if project_ids.empty? || !@current_user
-
-      Project.where(id: project_ids)
-        .where(Project.allowed_to_condition(@current_user, :view_canvas_gantt))
-        .pluck(:id).map(&:to_i).to_set
     end
   end
 end

@@ -430,10 +430,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         projects.forEach((project) => counts.set(project.name, (counts.get(project.name) ?? 0) + 1));
         return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
     }, [projects]);
-    const projectDisableReason = (reason?: string) => reason === 'missing_canvas_gantt_permission'
-        ? (i18n.t('error_canvas_gantt_permission_denied') || 'Canvas Gantt permission required')
-        : reason;
-
     const visibleProjects = React.useMemo(() => {
         const query = projectSearchText.trim().toLowerCase();
         return query ? projects.filter((project) => project.name.toLowerCase().includes(query)) : projects;
@@ -1107,7 +1103,8 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                 boxShadow: designTokens.menuShadow,
                                 padding: '12px',
                                 zIndex: 20,
-                                minWidth: '200px'
+                                width: 'min(400px, calc(100vw - 24px))',
+                                boxSizing: 'border-box'
                             }}
                         >
                             <div style={{ fontWeight: 600, marginBottom: '8px', color: designTokens.controlFg }}>{i18n.t('label_project_plural') || 'Projects'}</div>
@@ -1175,7 +1172,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                     </div>
                                 )}
                                 {visibleProjects.map(project => (
-                                    <label key={project.id} title={projectDisableReason(project.disabledReason)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: projectFilterLoading || project.selectable === false ? 'not-allowed' : 'pointer' }}>
+                                    <label key={project.id} title={project.disabledReason} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: projectFilterLoading || project.selectable === false ? 'not-allowed' : 'pointer' }}>
                                         <input
                                             type="checkbox"
                                             checked={selectedProjectIds.includes(project.id)}
@@ -1189,7 +1186,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                             </small>
                                         )}
                                         {project.selectable === false && project.disabledReason && (
-                                            <small style={{ color: designTokens.textMuted }}>{projectDisableReason(project.disabledReason)}</small>
+                                            <small style={{ color: designTokens.textMuted }}>{project.disabledReason}</small>
                                         )}
                                     </label>
                                 ))}

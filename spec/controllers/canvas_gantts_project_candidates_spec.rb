@@ -71,32 +71,30 @@ RSpec.describe CanvasGanttsController, type: :controller do
     expect(candidates(member_only: false)).not_to include(outside.id, archived.id, closed.id, hidden.id)
   end
 
-  it 'marks cross-root projects selectable only when the target project grants Canvas access' do
+  it 'allows visible member projects outside the tree without target Canvas access' do
     in_tree = candidate_project('candidate-in-tree')
     permitted = candidate_project('candidate-permitted', parent: nil)
     denied = candidate_project('candidate-denied', parent: nil)
-    membership(in_tree, user)
-    membership(denied, user)
     permitted.enable_module!(:canvas_gantt)
     denied.enable_module!(:issue_tracking)
 
     role = Role.find(1)
     role.update!(permissions: role.permissions | [:view_canvas_gantt])
     User.current = User.find(user.id)
-    Member.create!(project: permitted, user: user, roles: [role])
+    [in_tree, permitted, denied].each do |project|
+      Member.create!(project: project, user: user, roles: [role])
+    end
+    expect(User.current.allowed_to?(:view_canvas_gantt, denied)).to be(false)
 
     options = controller.send(:filter_option_projects, [], member_projects_only: true).index_by { |option| option[:id] }
 
     expect(options.fetch(in_tree.id)).to include(selectable: true)
     expect(options.fetch(permitted.id)).to include(selectable: true)
-    expect(options.fetch(denied.id)).to include(
-      selectable: false,
-      disabled_reason: 'missing_canvas_gantt_permission'
-    )
+    expect(options.fetch(denied.id)).to include(selectable: true)
+    expect(options.fetch(denied.id)).not_to have_key(:disabled_reason)
 
     allowed_ids = controller.send(:project_scope_policy).allowed_issue_project_ids(mode: 'member_all')
-    expect(allowed_ids).to include(root.id, in_tree.id, permitted.id)
-    expect(allowed_ids).not_to include(denied.id)
+    expect(allowed_ids).to include(root.id, in_tree.id, permitted.id, denied.id)
   end
 
   it 'uses a bounded number of project queries as candidate count grows' do

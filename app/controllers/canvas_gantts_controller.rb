@@ -1118,7 +1118,7 @@ class CanvasGanttsController < ApplicationController
       resource: 'projects',
       limit: data_payload_budget.collection_limit
     )
-    project_scope_policy.candidate_options(projects: projects, mode: mode)
+    project_scope_policy.candidate_options(projects: projects)
   end
 
   def filter_option_issues(project_ids)
