@@ -425,11 +425,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const projects = React.useMemo(() => (
         [...filterOptions.projects].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
     ), [filterOptions.projects]);
-    const duplicateProjectNames = React.useMemo(() => {
-        const counts = new Map<string, number>();
-        projects.forEach((project) => counts.set(project.name, (counts.get(project.name) ?? 0) + 1));
-        return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
-    }, [projects]);
     const visibleProjects = React.useMemo(() => {
         const query = projectSearchText.trim().toLowerCase();
         return query ? projects.filter((project) => project.name.toLowerCase().includes(query)) : projects;
@@ -1180,11 +1175,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                             disabled={projectFilterLoading || project.selectable === false}
                                         />
                                         {project.name}
-                                        {(project.path || project.identifier || duplicateProjectNames.has(project.name)) && (
-                                            <small style={{ color: designTokens.textMuted }}>
-                                                {' '}({project.path || project.identifier || project.id})
-                                            </small>
-                                        )}
                                         {project.selectable === false && project.disabledReason && (
                                             <small style={{ color: designTokens.textMuted }}>{project.disabledReason}</small>
                                         )}

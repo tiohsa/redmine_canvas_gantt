@@ -1574,17 +1574,18 @@ describe('GanttToolbar shortcuts', () => {
             projects.forEach(({ name }) => expect(screen.getByLabelText(name)).toBeInTheDocument());
         });
 
-        it('identifies duplicate names and disables candidates rejected by the server', () => {
+        it('shows project names without paths or IDs and disables candidates rejected by the server', () => {
             useTaskStore.setState({
                 filterOptions: { projects: [
-                    { id: 'p1', name: 'Operations', identifier: 'root-a', selectable: true },
+                    { id: 'p1', name: 'Operations', path: 'Parent / Operations', identifier: 'root-a', selectable: true },
                     { id: 'p2', name: 'Operations', identifier: 'root-b', selectable: false, disabledReason: 'Canvas access required' }
                 ], assignees: [] }
             });
             render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
             openProjects();
-            expect(screen.getByLabelText(/Operations.*root-a/)).toBeEnabled();
-            expect(screen.getByLabelText(/Operations.*root-b/)).toBeDisabled();
+            expect(screen.getByLabelText('Operations')).toBeEnabled();
+            expect(screen.getByLabelText(/Operations.*Canvas access required/)).toBeDisabled();
+            expect(screen.getByTestId('project-menu')).not.toHaveTextContent(/Parent \/ Operations|root-a|root-b|\(p[12]\)/);
             expect(screen.getByText('Canvas access required')).toBeInTheDocument();
         });
 
