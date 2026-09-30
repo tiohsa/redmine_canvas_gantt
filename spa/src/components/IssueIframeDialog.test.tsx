@@ -285,9 +285,15 @@ describe('IssueIframeDialog', () => {
         });
     });
 
-    it('uses the current iframe Issue as the bulk parent after navigation', async () => {
+    it.each([10, 1_000, 10_000])('keeps tracker lookup bounded with %i visible tasks', async (taskCount) => {
         useUIStore.setState({ issueDialogUrl: '/issues/123', queryDialogUrl: null });
-        useTaskStore.setState({ tasks: [], allTasks: [] });
+        useTaskStore.setState({
+            tasks: Array.from({ length: taskCount }, (_, index) => ({
+                id: index === 0 ? '456' : String(index + 1_000), subject: `Issue ${index + 1}`, ratioDone: 0, statusId: 1,
+                lockVersion: 0, editable: true, rowIndex: index, hasChildren: false
+            })),
+            allTasks: []
+        });
         vi.clearAllMocks();
 
         const { container } = render(<IssueIframeDialog />);
@@ -305,8 +311,43 @@ describe('IssueIframeDialog', () => {
         await waitFor(() => {
             expect(screen.getByText('Bulk Ticket Creation')).toBeInTheDocument();
             expect(screen.getByText('Issue #456')).toBeInTheDocument();
-            expect(apiClient.getSubtaskTrackers).toHaveBeenCalledWith('456', expect.any(Array));
+            expect(apiClient.getSubtaskTrackers).toHaveBeenCalledWith('456');
         });
+    });
+
+    it('shows the Redmine page when iframe style enhancement throws', async () => {
+        vi.mocked(applyIssueDialogStyles).mockImplementation(() => { throw new Error('style failure'); });
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: { location: { href: 'http://example.com/issues/123/edit' }, document: doc },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => expect(iframe).not.toHaveClass('issue-iframe-loading'));
+    });
+
+    it('shows the Redmine page when iframe observer setup throws', async () => {
+        const { container } = render(<IssueIframeDialog />);
+        const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+        const doc = document.implementation.createHTMLDocument('iframe');
+        Object.defineProperty(iframe, 'contentWindow', {
+            value: {
+                location: { href: 'http://example.com/issues/123/edit' },
+                document: doc,
+                ResizeObserver: class { constructor() { throw new Error('observer failure'); } }
+            },
+            configurable: true
+        });
+        Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+        fireEvent.load(iframe);
+
+        await waitFor(() => expect(iframe).not.toHaveClass('issue-iframe-loading'));
     });
 
     it('does not refetch trackers when the same Issue changes URL representation', async () => {

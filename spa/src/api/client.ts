@@ -24,6 +24,7 @@ import { getBusinessCalendarPayload, normalizeBusinessCalendarPayload } from '..
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { sessionFetch } from './sessionFetch';
 import { decodeMutationFailure, type MutationFailure, type MutationStatusValue } from './mutationOutcome';
+import { getConfirmedProjectScope, type ConfirmedProjectScope } from './projectScopeContext';
 
 export {
     classifyMutationError,
@@ -78,6 +79,7 @@ interface ApiData {
     queryContext?: QueryContext;
     warnings?: string[];
     businessCalendar?: BusinessCalendarPayload;
+    projectScope?: ConfirmedProjectScope;
 }
 
 export interface MutationMetadata {
@@ -149,6 +151,18 @@ export class ApiMutationError extends Error {
     }
 }
 
+export class ApiResponseError extends Error {
+    readonly httpStatus: number;
+    readonly code?: string;
+
+    constructor(message: string, httpStatus: number, code?: string) {
+        super(message);
+        this.name = 'ApiResponseError';
+        this.httpStatus = httpStatus;
+        this.code = code;
+    }
+}
+
 interface UpdateTaskResult extends MutationMetadata {
     status: MutationStatus;
     entity?: PersistedTaskState;
@@ -213,6 +227,15 @@ const getGlobalApiBase = (config: RedmineCanvasGanttConfig): string => {
 const buildViewContextQuery = (config: RedmineCanvasGanttConfig): string => {
     const params = new URLSearchParams(window.location.search);
     params.set('canvas_project_id', String(config.projectId));
+    const confirmedProjectScope = getConfirmedProjectScope();
+    if (confirmedProjectScope?.rootProjectId === String(config.projectId)) {
+        params.set('member_projects_only', confirmedProjectScope.mode === 'member_all' ? '1' : '0');
+        params.delete('canvas_project_ids');
+        params.delete('project_ids');
+        if (confirmedProjectScope.selectionExplicit) {
+            params.set('canvas_project_ids', confirmedProjectScope.selectedProjectIds.join(','));
+        }
+    }
     return params.toString();
 };
 
@@ -239,6 +262,21 @@ const parseErrorMessage = async (response: Response): Promise<string> => {
     }
 
     return response.statusText;
+};
+
+const parseApiResponseError = async (response: Response): Promise<ApiResponseError> => {
+    const record = asRecord(await response.json().catch(() => ({} as UnknownRecord))) ?? {};
+    const errors = Array.isArray(record.errors) && record.errors.every(error => typeof error === 'string')
+        ? record.errors.join(', ')
+        : undefined;
+    const message = typeof record.error === 'string' && record.error
+        ? record.error
+        : errors || response.statusText;
+    return new ApiResponseError(
+        message,
+        response.status,
+        typeof record.code === 'string' ? record.code : undefined
+    );
 };
 
 const mutationStatusForHttp = (status: number): Exclude<MutationStatus, 'ok'> => {
@@ -560,7 +598,32 @@ const parseFilterProjectOption = (value: unknown): FilterProjectOption | null =>
     const id = record.id;
     const name = record.name;
     if ((typeof id !== 'number' && typeof id !== 'string') || typeof name !== 'string') return null;
-    return { id: String(id), name };
+    return {
+        id: String(id), name,
+        identifier: typeof record.identifier === 'string' ? record.identifier : undefined,
+        path: typeof record.path === 'string' ? record.path : undefined,
+        selectable: typeof record.selectable === 'boolean' ? record.selectable : undefined,
+        disabledReason: typeof record.disabled_reason === 'string' ? record.disabled_reason : undefined
+    };
+};
+
+const parseProjectScope = (value: unknown): ConfirmedProjectScope | undefined => {
+    const record = asRecord(value);
+    if (!record || (record.candidate_mode !== 'current_tree' && record.candidate_mode !== 'member_all') ||
+        (typeof record.root_project_id !== 'string' && typeof record.root_project_id !== 'number') ||
+        typeof record.selection_explicit !== 'boolean' ||
+        !Array.isArray(record.selected_project_ids) || !Array.isArray(record.effective_project_ids)) return undefined;
+    const ids = (values: unknown[]): string[] => values
+        .filter((id): id is string | number => typeof id === 'string' || typeof id === 'number')
+        .map(String);
+    return {
+        rootProjectId: String(record.root_project_id),
+        mode: record.candidate_mode,
+        selectionExplicit: record.selection_explicit,
+        selectedProjectIds: ids(record.selected_project_ids),
+        effectiveProjectIds: ids(record.effective_project_ids),
+        ...(typeof record.scheduling_allowed === 'boolean' ? { schedulingAllowed: record.scheduling_allowed } : {})
+    };
 };
 
 const parseFilterAssigneeOption = (value: unknown): FilterAssigneeOption | null => {
@@ -606,42 +669,35 @@ const parseFilterTrackerOption = (value: unknown): FilterTrackerOption | null =>
 
 const deriveFilterOptionsFromTasks = (tasks: Task[]): FilterOptions => {
     const projects = new Map<string, string>();
-    const assignees = new Map<number | null, { name: string | null; projectIds: Set<string> }>();
 
     tasks.forEach((task) => {
         if (task.projectId && task.projectName) {
             projects.set(task.projectId, task.projectName);
         }
-
-        const assigneeId = task.assignedToId ?? null;
-        const entry = assignees.get(assigneeId) ?? {
-            name: assigneeId === null ? null : (task.assignedToName ?? null),
-            projectIds: new Set<string>()
-        };
-        if (assigneeId !== null && entry.name === null && task.assignedToName) {
-            entry.name = task.assignedToName;
-        }
-        if (task.projectId) {
-            entry.projectIds.add(task.projectId);
-        }
-        assignees.set(assigneeId, entry);
     });
 
     return {
         projects: Array.from(projects.entries()).map(([id, name]) => ({ id, name })),
-        assignees: Array.from(assignees.entries()).map(([id, entry]) => ({
-            id,
-            name: entry.name,
-            projectIds: Array.from(entry.projectIds)
-        }))
+        assignees: []
     };
 };
 
 const parseFilterOptions = (value: unknown, tasks: Task[]): FilterOptions => {
     const fallback = deriveFilterOptionsFromTasks(tasks);
+    if (value === undefined) return fallback;
     const record = asRecord(value);
-    if (!record) return fallback;
+    if (!record || Array.isArray(value)) {
+        throw new Error('Invalid filter options response: expected an object');
+    }
 
+    const hasProjects = Object.prototype.hasOwnProperty.call(record, 'projects');
+    const hasAssignees = Object.prototype.hasOwnProperty.call(record, 'assignees');
+    if (hasProjects && !Array.isArray(record.projects)) {
+        throw new Error('Invalid filter options response: projects must be an array');
+    }
+    if (hasAssignees && !Array.isArray(record.assignees)) {
+        throw new Error('Invalid filter options response: assignees must be an array');
+    }
     const projectsRaw = Array.isArray(record.projects) ? record.projects : [];
     const assigneesRaw = Array.isArray(record.assignees) ? record.assignees : [];
     const hasTrackers = Object.prototype.hasOwnProperty.call(record, 'trackers');
@@ -652,8 +708,8 @@ const parseFilterOptions = (value: unknown, tasks: Task[]): FilterOptions => {
     const trackers = trackersRaw.map(parseFilterTrackerOption).filter((entry): entry is FilterTrackerOption => entry !== null);
 
     return {
-        projects: projects.length > 0 ? projects : fallback.projects,
-        assignees: assignees.length > 0 ? assignees : fallback.assignees,
+        projects: hasProjects ? projects : fallback.projects,
+        assignees: hasAssignees ? assignees : fallback.assignees,
         ...(hasTrackers ? { trackers } : {})
     };
 };
@@ -797,9 +853,7 @@ export const apiClient = {
             headers: buildJsonHeaders(config)
         });
 
-        if (!response.ok) {
-            throw new Error(await parseErrorMessage(response));
-        }
+        if (!response.ok) throw await parseApiResponseError(response);
 
         const payload = await response.json();
         const data = asRecord(payload) ?? {};
@@ -926,7 +980,8 @@ export const apiClient = {
             initialState: parseResolvedQueryState(data.initial_state),
             queryContext: data.query_context === undefined ? undefined : normalizeQueryContext(data.query_context),
             warnings: mergedWarnings,
-            businessCalendar
+            businessCalendar,
+            projectScope: parseProjectScope(data.project_scope)
         };
     },
 
@@ -1303,11 +1358,11 @@ export const apiClient = {
         return { status: 'ok', ...parseMutationMetadata(payload) };
     },
 
-    getSubtaskTrackers: async (parentId: string, operationIssueIds: string[] = []): Promise<Array<{ id: number; name: string }>> => {
+    getSubtaskTrackers: async (parentId: string): Promise<Array<{ id: number; name: string }>> => {
         const config = getConfig();
         const query = new URLSearchParams(buildViewContextQuery(config));
         query.set('parent_issue_id', parentId);
-        operationIssueIds.forEach(id => query.append('operation_issue_ids[]', id));
+        query.append('operation_issue_ids[]', parentId);
         const response = await sessionFetch(`${getGlobalApiBase(config)}/subtasks/trackers.json?${query.toString()}`, {
             headers: buildJsonHeaders(config)
         });

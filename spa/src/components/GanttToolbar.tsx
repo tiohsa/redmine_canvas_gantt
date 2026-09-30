@@ -46,7 +46,7 @@ interface GanttToolbarProps {
 export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange, exportRef }) => {
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, groupByAssignee, setGroupByAssignee,
-        filterText, setFilterText, allTasks, versions, selectedAssigneeIds, setSelectedAssigneeIds,
+        filterText, setFilterText, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, projectSelectionExplicit, setSelectedProjectIds, selectedTrackerIds, setSelectedTrackerIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
         taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
         modifiedTaskIds, saveChanges, discardChanges, autoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
@@ -54,6 +54,9 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
         clearSavedQuery: clearSavedQueryFromStore,
         savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries, queryContext
     } = useTaskStore();
+    const dataReadStatus = useTaskStore((state) => state.dataReadStatus);
+    const confirmedProjectScope = useTaskStore((state) => state.confirmedProjectScope);
+    const inactiveExternalProjectIds = useTaskStore((state) => state.inactiveExternalProjectIds);
     const {
         showBaseline,
         toggleBaseline,
@@ -117,8 +120,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const [draftAutoCalculateDelay, setDraftAutoCalculateDelay] = React.useState<boolean>(autoCalculateDelay);
     const [draftAutoApplyDefaultRelation, setDraftAutoApplyDefaultRelation] = React.useState<boolean>(autoApplyDefaultRelation);
     const [draftAutoScheduleMoveMode, setDraftAutoScheduleMoveMode] = React.useState<AutoScheduleMoveModeValue>(autoScheduleMoveMode);
-    const [projectFilterLoading, setProjectFilterLoading] = React.useState(false);
-    const [projectFilterError, setProjectFilterError] = React.useState<string | null>(null);
+    const [pendingMemberProjectsOnly, setPendingMemberProjectsOnly] = React.useState<boolean | null>(null);
+    const [failedMemberProjectsOnly, setFailedMemberProjectsOnly] = React.useState<boolean | null>(null);
     const [pendingSavedQueryId, setPendingSavedQueryId] = React.useState<number | null>(null);
     const filterInputRef = React.useRef<HTMLInputElement>(null);
     const columnMenuContentRef = React.useRef<HTMLDivElement>(null);
@@ -163,6 +166,13 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         setDraftAutoApplyDefaultRelation(autoApplyDefaultRelation);
         setDraftAutoScheduleMoveMode(autoScheduleMoveMode);
     }, [autoApplyDefaultRelation, autoCalculateDelay, autoScheduleMoveMode, defaultRelationType, showRelationSettingsMenu]);
+
+    React.useEffect(() => {
+        if (dataReadStatus !== 'loading') {
+            setPendingMemberProjectsOnly(null);
+        }
+        if (dataReadStatus === 'ready') setFailedMemberProjectsOnly(null);
+    }, [dataReadStatus]);
 
     const handleSaveRelationSettings = () => {
         setDefaultRelationType(draftRelationType);
@@ -405,55 +415,30 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     });
     const effectiveVisibleColumns = effectiveColumnSettings.filter((entry) => entry.visible).map((entry) => entry.key);
 
-    const fallbackProjects = React.useMemo(() => {
-        const map = new Map<string, string>();
-        allTasks.forEach((task) => {
-            if (task.projectId && task.projectName) {
-                map.set(task.projectId, task.projectName);
-            }
-        });
-        return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    }, [allTasks]);
-
-    const fallbackAssignees = React.useMemo(() => {
-        const map = new Map<number | null, { name: string | null; projectIds: Set<string> }>();
-        allTasks.forEach((task) => {
-            const assigneeId = task.assignedToId ?? null;
-            const entry = map.get(assigneeId) ?? {
-                name: assigneeId === null ? null : (task.assignedToName ?? null),
-                projectIds: new Set<string>()
-            };
-            if (assigneeId !== null && entry.name === null && task.assignedToName) {
-                entry.name = task.assignedToName;
-            }
-            if (task.projectId) {
-                entry.projectIds.add(task.projectId);
-            }
-            map.set(assigneeId, entry);
-        });
-        return Array.from(map.entries()).map(([id, entry]) => ({
-            id,
-            name: entry.name,
-            projectIds: Array.from(entry.projectIds)
-        }));
-    }, [allTasks]);
-
-    const assigneeOptions = filterOptions.assignees.length > 0 ? filterOptions.assignees : fallbackAssignees;
-    const projectScopeOptions = filterOptions.projects.length > 0 ? filterOptions.projects : fallbackProjects;
+    const assigneeOptions = filterOptions.assignees;
     const trackerOptions = React.useMemo(() => filterOptions.trackers ?? [], [filterOptions.trackers]);
+    const projectFilterLoading = dataReadStatus === 'loading';
+    const projectFilterError = failedMemberProjectsOnly !== null
+        ? (i18n.t('label_project_candidates_load_failed') || 'Failed to load project candidates')
+        : null;
 
     const projects = React.useMemo(() => (
-        [...(projectFilterLoading ? [] : filterOptions.projects)].sort((a, b) => a.name.localeCompare(b.name))
-    ), [filterOptions.projects, projectFilterLoading]);
-
+        [...filterOptions.projects].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+    ), [filterOptions.projects]);
+    const duplicateProjectNames = React.useMemo(() => {
+        const counts = new Map<string, number>();
+        projects.forEach(project => counts.set(project.name, (counts.get(project.name) ?? 0) + 1));
+        return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
+    }, [projects]);
     const visibleProjects = React.useMemo(() => {
         const query = projectSearchText.trim().toLowerCase();
-        return query ? projects.filter((project) => project.name.toLowerCase().includes(query)) : projects;
+        return query ? projects.filter((project) => project.name.toLowerCase().includes(query) || (project.identifier ?? '').toLowerCase().includes(query)) : projects;
     }, [projects, projectSearchText]);
 
     const scopedProjectIds = React.useMemo(() => (
-        new Set(selectedProjectIds.length > 0 ? selectedProjectIds : projectScopeOptions.map((project) => project.id))
-    ), [projectScopeOptions, selectedProjectIds]);
+        new Set(confirmedProjectScope?.effectiveProjectIds ??
+            (selectedProjectIds.length > 0 ? selectedProjectIds : filterOptions.projects.map((project) => project.id)))
+    ), [confirmedProjectScope, filterOptions.projects, selectedProjectIds]);
 
     const assignees = React.useMemo(() => {
         const selectedAssigneeIdSet = new Set(selectedAssigneeIds);
@@ -489,10 +474,14 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         setSelectedProjectIds(toggleSelectionValue(selectedProjectIds, id));
     };
 
-    const isAllProjectsSelected = projects.length > 0 && projects.every((project) => selectedProjectIds.includes(project.id));
+    const selectableVisibleProjects = visibleProjects.filter((project) => project.selectable !== false);
+    const isAllProjectsSelected = selectableVisibleProjects.length > 0 && selectableVisibleProjects.every((project) => selectedProjectIds.includes(project.id));
 
     const toggleAllProjects = () => {
-        setSelectedProjectIds(toggleAllSelectionValues(isAllProjectsSelected, projects.map(p => p.id)));
+        const visibleIds = new Set(selectableVisibleProjects.map((project) => project.id));
+        setSelectedProjectIds(isAllProjectsSelected
+            ? selectedProjectIds.filter((id) => !visibleIds.has(id))
+            : [...new Set([...selectedProjectIds, ...visibleIds])]);
     };
 
     const trackers = React.useMemo(() => {
@@ -515,34 +504,28 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
         setSelectedTrackerIds(toggleAllSelectionValues(isAllTrackersSelected, trackers.map((tracker) => tracker.id)));
     };
 
-    const handleMemberProjectsOnlyToggle = async (enabled: boolean) => {
-        setProjectFilterError(null);
-        setProjectFilterLoading(true);
-        try {
-            await setMemberProjectsOnly(enabled);
-        } catch (error) {
-            setProjectFilterError(error instanceof Error
-                ? error.message
-                : (i18n.t('label_project_candidates_load_failed') || 'Failed to load project candidates'));
-        } finally {
-            setProjectFilterLoading(false);
-        }
+    const handleMemberProjectsOnlyToggle = (enabled: boolean) => {
+        setPendingMemberProjectsOnly(enabled);
+        setFailedMemberProjectsOnly(null);
+        void setMemberProjectsOnly(enabled).catch(() => {
+            setFailedMemberProjectsOnly(enabled);
+        });
     };
 
     const projectOptionIds = React.useMemo(() => new Set(projects.map((project) => project.id)), [projects]);
-    const hasSelectedProjectsOutsideCandidates = memberProjectsOnly
-        && selectedProjectIds.some((selectedProjectId) => !projectOptionIds.has(selectedProjectId));
+    const hasSelectedProjectsOutsideCandidates = inactiveExternalProjectIds.length > 0
+        || selectedProjectIds.some((selectedProjectId) => !projectOptionIds.has(selectedProjectId));
     const trackerOptionIds = React.useMemo(() => new Set(trackers.map((tracker) => tracker.id)), [trackers]);
     const hasSelectedTrackersOutsideCandidates = selectedTrackerIds.some((selectedTrackerId) => !trackerOptionIds.has(selectedTrackerId));
 
     const versionsList = React.useMemo(() => (
         versions
             .filter((version) => (
-                (version.status !== 'closed' && scopedProjectIds.has(version.projectId)) ||
+                version.status !== 'closed' ||
                 selectedVersionIds.includes(version.id)
             ))
             .sort((a, b) => a.name.localeCompare(b.name))
-    ), [scopedProjectIds, selectedVersionIds, versions]);
+    ), [selectedVersionIds, versions]);
 
     const toggleVersion = (id: string) => {
         setSelectedVersionIds(toggleSelectionValue(selectedVersionIds, id));
@@ -1120,7 +1103,8 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                 boxShadow: designTokens.menuShadow,
                                 padding: '12px',
                                 zIndex: 20,
-                                minWidth: '200px'
+                                width: 'min(400px, calc(100vw - 24px))',
+                                boxSizing: 'border-box'
                             }}
                         >
                             <div style={{ fontWeight: 600, marginBottom: '8px', color: designTokens.controlFg }}>{i18n.t('label_project_plural') || 'Projects'}</div>
@@ -1129,13 +1113,16 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                     type="checkbox"
                                     checked={isAllProjectsSelected}
                                     onChange={toggleAllProjects}
+                                    disabled={projectFilterLoading || selectableVisibleProjects.length === 0}
                                 />
                                 <span style={{ fontWeight: 500 }}>{i18n.t('label_all_select') || 'Select All'}</span>
                             </label>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 0 8px', color: designTokens.textSecondary, cursor: 'pointer', borderBottom: `1px solid ${designTokens.borderSubtle}`, marginBottom: '8px' }}>
                                 <input
                                     type="checkbox"
-                                    checked={memberProjectsOnly}
+                                    checked={dataReadStatus === 'loading'
+                                        ? (pendingMemberProjectsOnly ?? memberProjectsOnly)
+                                        : memberProjectsOnly}
                                     onChange={(event) => { void handleMemberProjectsOnlyToggle(event.target.checked); }}
                                     aria-label={i18n.t('label_member_projects_only') || 'Show member projects in filter'}
                                 />
@@ -1166,6 +1153,9 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             {projectFilterError && (
                                 <div style={{ fontSize: '12px', color: designTokens.errorFg, marginBottom: '8px' }}>
                                     {projectFilterError}
+                                    <button type="button" onClick={() => handleMemberProjectsOnlyToggle(failedMemberProjectsOnly!)}>
+                                        {i18n.t('label_retry') || 'Retry'}
+                                    </button>
                                 </div>
                             )}
                             {hasSelectedProjectsOutsideCandidates && (
@@ -1176,17 +1166,23 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             <div className="gantt-toolbar-project-candidate-list">
                                 {!projectFilterLoading && !projectFilterError && visibleProjects.length === 0 && (
                                     <div style={{ fontSize: '12px', color: designTokens.textMuted }}>
-                                        {i18n.t('label_no_matching_projects') || 'No matching projects'}
+                                        {projects.length === 0
+                                            ? (i18n.t('label_no_projects') || 'No projects available')
+                                            : (i18n.t('label_no_matching_projects') || 'No matching projects')}
                                     </div>
                                 )}
                                 {visibleProjects.map(project => (
-                                    <label key={project.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: 'pointer' }}>
+                                    <label key={project.id} title={project.disabledReason} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', color: designTokens.textSecondary, cursor: projectFilterLoading || project.selectable === false ? 'not-allowed' : 'pointer' }}>
                                         <input
                                             type="checkbox"
                                             checked={selectedProjectIds.includes(project.id)}
                                             onChange={() => toggleProject(project.id)}
+                                            disabled={projectFilterLoading || project.selectable === false}
                                         />
-                                        {project.name}
+                                        {project.name}{duplicateProjectNames.has(project.name) && project.identifier ? ` （${project.identifier}）` : ''}
+                                        {project.selectable === false && project.disabledReason && (
+                                            <small style={{ color: designTokens.textMuted }}>{project.disabledReason}</small>
+                                        )}
                                     </label>
                                 ))}
                             </div>
@@ -1202,6 +1198,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                             </div>
                             <button
                                 onClick={() => setSelectedProjectIds([])}
+                                disabled={projectFilterLoading}
                                 style={{
                                     marginTop: '8px',
                                     border: 'none',

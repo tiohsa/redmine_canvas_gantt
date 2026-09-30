@@ -10,8 +10,8 @@ module RedmineCanvasGantt
     end
 
     def resolve
-      resolved_scope_project_ids = project_scope_ids
-      query_resolution = query_state_resolver.resolve(project_ids: resolved_scope_project_ids)
+      query_resolution = query_state_resolver.resolve(project_ids: descendant_project_ids)
+      resolved_scope_project_ids = query_resolution.fetch(:effective_project_ids)
       issues = query_resolution[:issues]
       issue_ids = issues.map(&:id).to_set
       visible_project_ids = issues.map(&:project_id).uniq

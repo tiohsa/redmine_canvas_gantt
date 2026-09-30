@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiClient } from './client';
+import { ApiResponseError, apiClient } from './client';
+import { setConfirmedProjectScope } from './projectScopeContext';
 import { addCalendarDays, diffCalendarDays, formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { TaskLogicService } from '../services/TaskLogicService';
@@ -47,6 +48,56 @@ describe('apiClient.fetchQueries', () => {
 });
 
 describe('apiClient.fetchData', () => {
+    it('preserves the semantic code for the data payload limit response', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 413,
+            statusText: 'Payload Too Large',
+            json: async () => ({ error: 'Canvas Gantt data exceeds the configured safety limit.', code: 'canvas_gantt_payload_limit' })
+        }));
+
+        let failure: unknown;
+        try {
+            await apiClient.fetchData();
+        } catch (error) {
+            failure = error;
+        }
+        expect(failure).toBeInstanceOf(ApiResponseError);
+        expect(failure).toMatchObject({
+            name: 'ApiResponseError',
+            httpStatus: 413,
+            code: 'canvas_gantt_payload_limit',
+            message: 'Canvas Gantt data exceeds the configured safety limit.'
+        });
+    });
+
+    it('parses the confirmed project scope and candidate permissions', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                tasks: [], filter_options: { projects: [
+                    { id: 205, name: 'Operations', identifier: 'ops', selectable: false, disabled_reason: 'Canvas access required' }
+                ], assignees: [] },
+                project_scope: {
+                    root_project_id: '1', candidate_mode: 'member_all', selection_explicit: true,
+                    selected_project_ids: ['1'], effective_project_ids: ['1'], scheduling_allowed: true
+                }
+            })
+        }));
+
+        const result = await apiClient.fetchData();
+        expect(result.projectScope).toEqual({
+            rootProjectId: '1', mode: 'member_all', selectionExplicit: true,
+            selectedProjectIds: ['1'], effectiveProjectIds: ['1'], schedulingAllowed: true
+        });
+        expect(result.filterOptions.projects).toEqual([{
+            id: '205', name: 'Operations', identifier: 'ops', path: undefined,
+            selectable: false, disabledReason: 'Canvas access required'
+        }]);
+    });
+
     it('uses canonical has_physical_children even when children are absent from the payload', async () => {
         window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
@@ -252,6 +303,99 @@ describe('apiClient.fetchData', () => {
                 }
             }
         });
+    });
+});
+
+describe('apiClient.getSubtaskTrackers', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('sends only the parent issue as operation scope', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ trackers: [] }) });
+        vi.stubGlobal('fetch', fetchMock);
+
+        await apiClient.getSubtaskTrackers('42');
+
+        const requestUrl = new URL(String(fetchMock.mock.calls[0][0]), window.location.origin);
+        expect(requestUrl.searchParams.getAll('operation_issue_ids[]')).toEqual(['42']);
+        expect(requestUrl.searchParams.get('parent_issue_id')).toBe('42');
+    });
+});
+
+describe('apiClient.fetchData filter options', () => {
+    const task = {
+        id: 10,
+        project_id: 2,
+        project_name: 'Visible non-member project',
+        assigned_to_id: 7,
+        assigned_to_name: 'Alice'
+    };
+    const fallbackProjects = [{ id: '2', name: task.project_name }];
+    const fetchWithOptions = (options: Record<string, unknown>) => {
+        window.RedmineCanvasGantt = {
+            projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ tasks: [task], ...options })
+        }));
+        return apiClient.fetchData();
+    };
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('keeps explicit empty projects and assignees authoritative with visible tasks', async () => {
+        const data = await fetchWithOptions({ filter_options: { projects: [], assignees: [] } });
+
+        expect(data.filterOptions).toEqual({ projects: [], assignees: [] });
+        expect(data.tasks).toEqual([expect.objectContaining({ id: '10', projectId: '2', assignedToId: 7 })]);
+    });
+
+    it.each([{}, { filter_options: {} }])('does not derive assignee candidates from displayed tasks: %j', async (payload) => {
+        const data = await fetchWithOptions(payload);
+
+        expect(data.filterOptions).toEqual({ projects: fallbackProjects, assignees: [] });
+        expect(data.filterOptions).not.toHaveProperty('trackers');
+    });
+
+    it.each([
+        { fields: { projects: [] }, expected: { projects: [], assignees: [] } },
+        { fields: { assignees: [] }, expected: { projects: fallbackProjects, assignees: [] } }
+    ])('falls back only for the missing field: $fields', async ({ fields, expected }) => {
+        const data = await fetchWithOptions({ filter_options: fields });
+
+        expect(data.filterOptions).toEqual(expected);
+    });
+
+    it.each(['projects', 'assignees'])('rejects malformed %s fields instead of deriving candidates', async (field) => {
+        for (const value of [null, undefined, {}, 'invalid', 1, false]) {
+            await expect(fetchWithOptions({ filter_options: { [field]: value } }))
+                .rejects.toThrow(`Invalid filter options response: ${field} must be an array`);
+        }
+    });
+
+    it.each([null, [], 'invalid', false].map(value => ({ value })))('rejects a malformed filter_options container: $value', async ({ value }) => {
+        await expect(fetchWithOptions({ filter_options: value }))
+            .rejects.toThrow('Invalid filter options response: expected an object');
+    });
+
+    it('does not derive candidates after discarding invalid entries from present arrays', async () => {
+        const data = await fetchWithOptions({ filter_options: { projects: [null, {}], assignees: [null, {}] } });
+
+        expect(data.filterOptions).toEqual({ projects: [], assignees: [] });
+    });
+
+    it.each([[], null, 'invalid'].map(trackers => ({ trackers })))('preserves existing optional tracker normalization: $trackers', async ({ trackers }) => {
+        const data = await fetchWithOptions({ filter_options: { projects: [], assignees: [], trackers } });
+
+        expect(data.filterOptions).toEqual({ projects: [], assignees: [], trackers: [] });
     });
 });
 
@@ -673,6 +817,7 @@ describe('apiClient.saveBaseline', () => {
 describe('apiClient.deleteTask', () => {
     afterEach(() => {
         vi.restoreAllMocks();
+        setConfirmedProjectScope(null);
         delete window.RedmineCanvasGantt;
     });
 
@@ -697,6 +842,22 @@ describe('apiClient.deleteTask', () => {
         const requestInit = fetchMock.mock.calls[0][1] as RequestInit;
         expect(new Headers(requestInit.headers).get('X-CSRF-Token')).toBe('token');
         expect(result).toEqual({ status: 'ok' });
+    });
+
+    it('sends the server-confirmed cross-project scope with a mutation', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        setConfirmedProjectScope({
+            rootProjectId: '1', mode: 'member_all', selectionExplicit: true,
+            selectedProjectIds: ['1', '205'], effectiveProjectIds: ['1', '205']
+        });
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.deleteTask('42');
+
+        const url = new URL(fetchMock.mock.calls[0][0], 'http://localhost');
+        expect(url.searchParams.get('member_projects_only')).toBe('1');
+        expect(url.searchParams.get('canvas_project_ids')).toBe('1,205');
     });
 });
 

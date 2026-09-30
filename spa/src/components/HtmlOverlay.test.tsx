@@ -194,6 +194,21 @@ describe('HtmlOverlay', () => {
         });
     });
 
+    it('shows date and dependency handles when external projects are selected', () => {
+        useTaskStore.getState().setTasks([task1, task2]);
+        useTaskStore.getState().setHoveredTask('1');
+        useTaskStore.setState({ confirmedProjectScope: {
+            rootProjectId: '1', mode: 'member_all', selectionExplicit: true,
+            selectedProjectIds: ['1', '205'], effectiveProjectIds: ['1', '205'], schedulingAllowed: false
+        } });
+        render(<HtmlOverlay />);
+        expect(screen.getByTestId('task-resize-handle-start-1')).toBeInTheDocument();
+        expect(screen.getByTestId('task-resize-handle-end-1')).toBeInTheDocument();
+        expect(screen.getByTestId('dependency-handle-left-1')).toBeInTheDocument();
+        expect(screen.getByTestId('dependency-handle-right-1')).toBeInTheDocument();
+        act(() => useTaskStore.setState({ confirmedProjectScope: null }));
+    });
+
     it('shows resize handles for a hovered editable leaf task', () => {
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);

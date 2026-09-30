@@ -803,10 +803,65 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
 
   it 'bounds explicit project ids even when valid and outside ids are mixed' do
     result = described_class.new(project: project,
-      params: ActionController::Parameters.new(canvas_project_ids: %w[2 999 invalid]),
+      params: ActionController::Parameters.new(canvas_project_ids: %w[2 999]),
       current_user: current_user, issue_scope: issue_scope,
       issue_includes: issue_includes).resolve(project_ids: [1, 2])
     expect(result[:initial_state][:selected_project_ids]).to eq(['2'])
+  end
+
+  it 'returns project scope metadata that separates implicit defaults from explicit selections' do
+    implicit = described_class.new(project: project,
+      params: ActionController::Parameters.new(member_projects_only: '1', show_subprojects: '0'),
+      current_user: current_user, issue_scope: issue_scope,
+      issue_includes: issue_includes).resolve(project_ids: [1, 2])
+
+    expect(implicit[:project_scope]).to eq(
+      root_project_id: '1',
+      candidate_mode: 'member_all',
+      selection_explicit: false,
+      selected_project_ids: [],
+      effective_project_ids: ['1'],
+      scheduling_allowed: true
+    )
+
+    policy = instance_double(RedmineCanvasGantt::ProjectScopePolicy)
+    allow(policy).to receive(:mode_for) { |enabled| enabled ? 'member_all' : 'current_tree' }
+    allow(policy).to receive(:selection_explicit?).and_return(true)
+    expect(policy).to receive(:allowed_issue_project_ids)
+      .with(mode: 'member_all', descendant_project_ids: [1, 2], requested_project_ids: [2, 5, 999])
+      .and_return([1, 2, 3, 5])
+    explicit = described_class.new(project: project,
+      params: ActionController::Parameters.new(member_projects_only: '1', canvas_project_ids: %w[2 5 999]),
+      current_user: current_user, issue_scope: issue_scope,
+      issue_includes: issue_includes, project_scope_policy: policy).resolve(project_ids: [1, 2])
+
+    expect(explicit[:initial_state][:selected_project_ids]).to eq(%w[2 5])
+    expect(explicit[:project_scope]).to eq(
+      root_project_id: '1',
+      candidate_mode: 'member_all',
+      selection_explicit: true,
+      selected_project_ids: %w[2 5],
+      effective_project_ids: %w[2 5],
+      scheduling_allowed: true
+    )
+  end
+
+  it 'raises on malformed project IDs instead of silently widening the selection' do
+    resolver = described_class.new(project: project,
+      params: ActionController::Parameters.new(canvas_project_ids: %w[2 invalid]),
+      current_user: current_user, issue_scope: issue_scope,
+      issue_includes: issue_includes)
+
+    expect { resolver.resolve(project_ids: [1, 2]) }.to raise_error(ArgumentError, 'Invalid project IDs')
+  end
+
+  it 'accepts a request without a project selection parameter' do
+    resolver = described_class.new(project: project,
+      params: ActionController::Parameters.new,
+      current_user: current_user, issue_scope: issue_scope,
+      issue_includes: issue_includes)
+
+    expect(resolver.validate_project_selection!).to be(true)
   end
 
   it 'lets an explicit empty URL filter replace a saved query selection with no matches' do

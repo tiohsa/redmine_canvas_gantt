@@ -83,6 +83,8 @@ ja:
     label_task_details_for: "%{subject} の詳細"
     label_bulk_subtask_count_success: "%{count} 件のチケットを作成しました。"
     label_bulk_subtask_count_failed: "%{count} 件のチケット登録に失敗しました。"
+    label_retry: "再試行"
+    label_no_projects: "プロジェクトがありません"
     label_project_plural: "プロジェクト"
     label_version_plural: "バージョン"
     label_dependency_edit_mode: "依存関係編集"

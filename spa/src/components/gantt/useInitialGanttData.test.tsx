@@ -4,8 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useInitialGanttData } from './useInitialGanttData';
 import { GanttToolbar } from '../GanttToolbar';
 import { useTaskStore } from '../../stores/TaskStore';
+import { useUIStore } from '../../stores/UIStore';
 import { resetCanvasGanttTestState } from '../../test/testSetup';
-import { saveLastUsedSharedQueryState } from '../../utils/sharedQueryState';
+import { saveLastUsedSharedQueryProjectState, saveLastUsedSharedQueryState } from '../../utils/sharedQueryState';
 import type { GanttExportHandle } from '../../export/types';
 
 const fetchDataMock = vi.fn();
@@ -109,6 +110,22 @@ describe('useInitialGanttData persistence', () => {
         expect(url.searchParams.get('show_subprojects')).toBe('0');
     });
 
+    it('notifies the user when initial data exceeds the payload limit', async () => {
+        const payloadLimitError = Object.assign(new Error('Canvas Gantt data exceeds the configured safety limit.'), {
+            code: 'canvas_gantt_payload_limit'
+        });
+        fetchDataMock.mockRejectedValue(payloadLimitError);
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(useUIStore.getState().notifications).toContainEqual(expect.objectContaining({
+                message: expect.stringMatching(/too much data|絞り込み|configured safety limit/i),
+                type: 'error'
+            }));
+        });
+    });
+
     it('restores an explicit empty project selection from storage on a bare canvas gantt URL', async () => {
         saveLastUsedSharedQueryState({
             canvasProjectIds: []
@@ -132,6 +149,49 @@ describe('useInitialGanttData persistence', () => {
 
         const url = new URL(window.location.href);
         expect(url.searchParams.getAll('canvas_project_ids[]')).toEqual(['none']);
+    });
+
+    it('restores hidden checked projects after a reload with member projects hidden', async () => {
+        saveLastUsedSharedQueryProjectState({
+            scopeState: {
+                showSubprojects: true,
+                canvasProjectIds: ['p1'],
+                inactiveExternalProjectIds: ['p2']
+            },
+            queryContext: { baseQueryId: null, overrides: {} },
+            sharedViewState: {}
+        });
+        window.history.replaceState({}, '', '/projects/ecookbook/canvas_gantt?canvas_project_ids%5B%5D=p1');
+        fetchDataMock.mockImplementation(async (args?: { query?: { memberProjectsOnly?: boolean } }) => {
+            const memberProjectsOnly = args?.query?.memberProjectsOnly === true;
+            const selectedProjectIds = memberProjectsOnly ? ['p1', 'p2'] : ['p1'];
+            return {
+                tasks: [], relations: [], versions: [], statuses: [], customFields: [],
+                filterOptions: {
+                    projects: selectedProjectIds.map((id) => ({ id, name: id === 'p1' ? 'Alpha' : 'Beta' })),
+                    assignees: []
+                },
+                permissions: { editable: true, viewable: true, baselineEditable: true },
+                projectScope: {
+                    rootProjectId: 'p1', mode: memberProjectsOnly ? 'member_all' : 'current_tree',
+                    selectionExplicit: true, selectedProjectIds, effectiveProjectIds: selectedProjectIds
+                }
+            };
+        });
+
+        render(<>
+            <Harness />
+            <GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />
+        </>);
+
+        await waitFor(() => expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']));
+        fireEvent.click(screen.getByTitle('Filter by project'));
+        fireEvent.click(screen.getByLabelText('Show member projects in filter'));
+
+        await waitFor(() => expect(screen.getByLabelText('Beta')).toBeChecked());
+        expect(fetchDataMock).toHaveBeenLastCalledWith(expect.objectContaining({
+            query: expect.objectContaining({ canvasProjectIds: ['p1', 'p2'], memberProjectsOnly: true })
+        }));
     });
 
     it('restores a stored saved query id before initial data resolves and checks its radio', async () => {
@@ -328,6 +388,21 @@ describe('useInitialGanttData persistence', () => {
         });
 
         expect(new URL(window.location.href).searchParams.get('member_projects_only')).toBeNull();
+    });
+
+    it('ignores a shared candidate flag while applying its saved query with the personal preference off', async () => {
+        window.history.replaceState({}, '', '?query_id=12&member_projects_only=1');
+        useTaskStore.setState({ memberProjectsOnly: false });
+
+        render(<Harness />);
+
+        await waitFor(() => expect(fetchDataMock).toHaveBeenCalledWith(expect.objectContaining({
+            rawSearch: '?query_id=12',
+            query: expect.objectContaining({ queryId: 12 })
+        })));
+        await waitFor(() => expect(useTaskStore.getState().activeQueryId).toBe(12));
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+        expect(new URL(window.location.href).searchParams.has('member_projects_only')).toBe(false);
     });
 
     it('adds the restored member project preference to a shared-query API request only', async () => {

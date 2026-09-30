@@ -4,6 +4,7 @@ import { resolvedStateToSharedViewState } from '../../query/queryStateCodec';
 import { replaceIssueQueryParamsInUrl, toResolvedQueryStateFromStore } from '../../utils/queryParams';
 import { saveLastUsedSharedQueryProjectState } from '../../utils/sharedQueryState';
 import { useUIStore } from '../UIStore';
+import type { ConfirmedProjectScope } from '../../api/projectScopeContext';
 
 export type SharedQuerySyncState = {
     activeQueryId: number | null;
@@ -12,6 +13,7 @@ export type SharedQuerySyncState = {
     selectedAssigneeIds: (number | null)[];
     selectedProjectIds: string[];
     projectSelectionExplicit: boolean;
+    inactiveExternalProjectIds?: string[];
     selectedVersionIds: string[];
     selectedTrackerIds: number[];
     memberProjectsOnly: boolean;
@@ -21,23 +23,34 @@ export type SharedQuerySyncState = {
     showSubprojects: boolean;
     visibleColumns?: string[];
     columnsExplicitInQuery?: boolean;
+    confirmedProjectScope?: ConfirmedProjectScope | null;
 };
 
 export const syncSharedQueryState = (state: SharedQuerySyncState) => {
     const uiState = useUIStore.getState();
-    const effectiveState: SharedQuerySyncState = state.columnsExplicitInQuery === undefined
+    const stateWithConfirmedSelection: SharedQuerySyncState = state.confirmedProjectScope
         ? {
             ...state,
+            selectedProjectIds: state.confirmedProjectScope.selectedProjectIds,
+            projectSelectionExplicit: state.confirmedProjectScope.selectionExplicit
+        }
+        : state;
+    const effectiveState: SharedQuerySyncState = state.columnsExplicitInQuery === undefined
+        ? {
+            ...stateWithConfirmedSelection,
             visibleColumns: uiState.columnsExplicitInQuery ? uiState.visibleColumns : undefined,
             columnsExplicitInQuery: uiState.columnsExplicitInQuery
         }
-        : state;
+        : stateWithConfirmedSelection;
     const resolvedState = toResolvedQueryStateFromStore(effectiveState);
     replaceIssueQueryParamsInUrl(resolvedState, effectiveState.queryContext);
     saveLastUsedSharedQueryProjectState({
         scopeState: {
-            showSubprojects: state.showSubprojects,
-            ...(state.projectSelectionExplicit ? { canvasProjectIds: [...state.selectedProjectIds] } : {})
+            showSubprojects: effectiveState.showSubprojects,
+            ...(effectiveState.projectSelectionExplicit ? { canvasProjectIds: [...effectiveState.selectedProjectIds] } : {}),
+            ...(effectiveState.inactiveExternalProjectIds?.length
+                ? { inactiveExternalProjectIds: [...effectiveState.inactiveExternalProjectIds] }
+                : {})
         },
         queryContext: {
             ...state.queryContext,

@@ -331,7 +331,6 @@ export const HtmlOverlay: React.FC = () => {
 
         dragDraftRef.current = null;
         setDragDraft(null);
-
         const { fromId, targetId, start, pointer, startSide } = currentDraft;
         if (!targetId || targetId === fromId) return;
 

@@ -97,6 +97,33 @@ beforeEach(() => {
     useUIStore.setState({ isSidebarResizing: false, showStartDateOnly: true, showDueDateOnly: true });
 });
 
+describe('InteractionEngine external project scheduling', () => {
+    it.each([0.5, 0.01, 0.99])('allows editing at bar fraction %s', (fraction) => {
+        const day = 24 * 60 * 60 * 1000;
+        setViewport({ startDate: 0, scale: 20 / day });
+        const task = baseTask({ startDate: 0, dueDate: 10 * day });
+        seedTasks([task], { confirmedProjectScope: {
+            rootProjectId: 'p1', mode: 'member_all', selectionExplicit: true,
+            selectedProjectIds: ['p1', 'p2'], effectiveProjectIds: ['p1', 'p2'], schedulingAllowed: false
+        } });
+        const container = createContainer();
+        const engine = new InteractionEngine(container);
+        const bounds = LayoutEngine.getTaskBounds(task, useTaskStore.getState().viewport, 'hit', 2);
+        const pointer = { clientX: bounds.x + bounds.width * fraction, clientY: bounds.y + bounds.height / 2, bubbles: true };
+        try {
+            container.dispatchEvent(new MouseEvent('mousedown', pointer));
+            window.dispatchEvent(new MouseEvent('mousemove', { ...pointer, clientX: pointer.clientX + 50 }));
+            window.dispatchEvent(new MouseEvent('mouseup', pointer));
+            expect(useTaskStore.getState().selectedTaskId).toBe(task.id);
+            expect(useTaskStore.getState().modifiedTaskIds).toContain(task.id);
+        } finally {
+            engine.detach();
+            container.remove();
+            useTaskStore.setState({ confirmedProjectScope: null });
+        }
+    });
+});
+
 describe('InteractionEngine point visibility', () => {
     const day = 24 * 60 * 60 * 1000;
 

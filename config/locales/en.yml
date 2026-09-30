@@ -83,6 +83,8 @@ en:
     label_task_details_for: "Details for: %{subject}"
     label_bulk_subtask_count_success: "%{count} tasks created."
     label_bulk_subtask_count_failed: "%{count} tasks failed."
+    label_retry: "Retry"
+    label_no_projects: "No projects"
     label_project_plural: "Projects"
     label_version_plural: "Versions"
     label_dependency_edit_mode: "Dependency edit"

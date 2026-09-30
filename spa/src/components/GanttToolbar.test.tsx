@@ -1254,6 +1254,13 @@ describe('GanttToolbar shortcuts', () => {
                 { id: '1', subject: 'Task 1', projectId: 'p1', projectName: 'Alpha', assignedToId: 10, assignedToName: 'User A', statusId: 1, lockVersion: 0, editable: true, rowIndex: 0, hasChildren: false },
                 { id: '2', subject: 'Task 2', projectId: 'p1', projectName: 'Alpha', assignedToId: 11, assignedToName: 'User B', statusId: 1, lockVersion: 0, editable: true, rowIndex: 1, hasChildren: false }
             ] as never,
+            filterOptions: {
+                projects: [{ id: 'p1', name: 'Alpha' }],
+                assignees: [
+                    { id: 10, name: 'User A', projectIds: ['p1'] },
+                    { id: 11, name: 'User B', projectIds: ['p1'] }
+                ]
+            },
             versions: [],
             selectedAssigneeIds: [],
             selectedProjectIds: [],
@@ -1503,17 +1510,39 @@ describe('GanttToolbar shortcuts', () => {
             { id: 'p5', name: '製造システム' },
             { id: 'p6', name: '営業システム' }
         ];
-        const response = (candidates = projects) => ({
+        const response = (candidates = projects, memberProjectsOnly?: boolean) => ({
             tasks: [], relations: [], versions: [], statuses: [], customFields: [],
             filterOptions: { projects: candidates, assignees: [] },
             project: { id: '1', name: 'Project' },
-            permissions: { editable: true, viewable: true, baselineEditable: true }
+            permissions: { editable: true, viewable: true, baselineEditable: true },
+            ...(memberProjectsOnly === undefined ? {} : { initialState: { memberProjectsOnly } })
         });
         const openProjects = () => {
             fireEvent.click(screen.getByTestId('project-filter-menu-button'));
             return screen.getByRole('searchbox');
         };
         const search = (value: string) => fireEvent.change(screen.getByRole('searchbox'), { target: { value } });
+        const deferredResponse = () => {
+            let resolve!: (value: ReturnType<typeof response>) => void;
+            let reject!: (reason?: unknown) => void;
+            const promise = new Promise<ReturnType<typeof response>>((resolvePromise, rejectPromise) => {
+                resolve = resolvePromise;
+                reject = rejectPromise;
+            });
+            return { promise, resolve, reject };
+        };
+        const captureToggleRequests = () => {
+            const requests: Promise<unknown>[] = [];
+            const setMemberProjectsOnly = useTaskStore.getState().setMemberProjectsOnly;
+            useTaskStore.setState({
+                setMemberProjectsOnly: (enabled) => {
+                    const request = setMemberProjectsOnly(enabled);
+                    requests.push(request);
+                    return request;
+                }
+            });
+            return requests;
+        };
 
         beforeEach(() => {
             useTaskStore.setState({
@@ -1545,6 +1574,38 @@ describe('GanttToolbar shortcuts', () => {
             projects.forEach(({ name }) => expect(screen.getByLabelText(name)).toBeInTheDocument());
         });
 
+        it('disambiguates duplicate names with identifiers and searches identifiers', () => {
+            useTaskStore.setState({
+                filterOptions: { projects: [
+                    { id: 'p1', name: 'Operations', path: 'Parent / Operations', identifier: 'root-a', selectable: true },
+                    { id: 'p2', name: 'Operations', identifier: 'root-b', selectable: false, disabledReason: 'Canvas access required' }
+                ], assignees: [] }
+            });
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+            expect(screen.getByLabelText('Operations （root-a）')).toBeEnabled();
+            expect(screen.getByLabelText(/Operations.*Canvas access required/)).toBeDisabled();
+            expect(screen.getByTestId('project-menu')).not.toHaveTextContent(/Parent \/ Operations|\(p[12]\)/);
+            expect(screen.getByText('Canvas access required')).toBeInTheDocument();
+            search(' ROOT-A ');
+            expect(screen.getByLabelText('Operations （root-a）')).toBeInTheDocument();
+            expect(screen.queryByLabelText(/Operations.*root-b/)).not.toBeInTheDocument();
+        });
+
+        it('does not show a scheduling restriction when external projects are selected', () => {
+            useTaskStore.setState({ confirmedProjectScope: {
+                rootProjectId: 'p1', mode: 'member_all', selectionExplicit: true,
+                selectedProjectIds: ['p1', 'p2'], effectiveProjectIds: ['p1', 'p2'], schedulingAllowed: false
+            } });
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            expect(screen.queryByTestId('cross-project-scheduling-notice')).not.toBeInTheDocument();
+            act(() => useTaskStore.setState({ confirmedProjectScope: {
+                rootProjectId: 'p1', mode: 'current_tree', selectionExplicit: true,
+                selectedProjectIds: ['p1'], effectiveProjectIds: ['p1'], schedulingAllowed: true
+            } }));
+            expect(screen.queryByTestId('cross-project-scheduling-notice')).not.toBeInTheDocument();
+        });
+
         it('preserves hidden selections and adds a matching project through the existing store action', async () => {
             useTaskStore.setState({ selectedProjectIds: ['p1', 'p2'] });
             render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
@@ -1561,22 +1622,25 @@ describe('GanttToolbar shortcuts', () => {
             });
         });
 
-        it('uses all official candidates for Select All, including when there are no matches', async () => {
-            useTaskStore.setState({ selectedProjectIds: ['p3'] });
+        it('selects only visible candidates and leaves hidden selections unchanged', async () => {
+            useTaskStore.setState({ selectedProjectIds: ['p1'] });
             render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
             openProjects();
             search('canvas');
             expect(screen.getByLabelText('Select All')).not.toBeChecked();
             fireEvent.click(screen.getByLabelText('Select All'));
             await waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
-            expect(useTaskStore.getState().selectedProjectIds).toEqual(expect.arrayContaining(projects.map(({ id }) => id)));
-            expect(useTaskStore.getState().selectedProjectIds).toHaveLength(projects.length);
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p3']);
             expect(screen.getByLabelText('Select All')).toBeChecked();
             search('no match');
-            expect(screen.getByLabelText('Select All')).toBeChecked();
+            expect(screen.getByLabelText('Select All')).not.toBeChecked();
+            expect(screen.getByLabelText('Select All')).toBeDisabled();
             fireEvent.click(screen.getByLabelText('Select All'));
-            await waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(2));
-            expect(useTaskStore.getState().selectedProjectIds).toEqual([]);
+            expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+            expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p3']);
+            search('canvas');
+            fireEvent.click(screen.getByLabelText('Select All'));
+            await waitFor(() => expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']));
         });
 
         it('bases the outside-candidate warning on official candidates, not search matches', () => {
@@ -1598,7 +1662,7 @@ describe('GanttToolbar shortcuts', () => {
             fireEvent.click(screen.getByLabelText('Show member projects in filter'));
             expect(screen.getByText('Loading...')).toBeInTheDocument();
             expect(screen.queryByText('No matching projects')).not.toBeInTheDocument();
-            expect(screen.queryByLabelText('Redmine Canvas Gantt')).not.toBeInTheDocument();
+            expect(screen.getByLabelText('Redmine Canvas Gantt')).toBeInTheDocument();
             await act(async () => resolve(response([
                 { id: 'p7', name: 'Canvas Member' }, projects[0]
             ])));
@@ -1618,11 +1682,116 @@ describe('GanttToolbar shortcuts', () => {
             search('no match');
             expect(screen.getByText('No matching projects')).toBeInTheDocument();
             fireEvent.click(screen.getByLabelText('Show member projects in filter'));
-            expect(await screen.findByText('Candidates unavailable')).toBeInTheDocument();
+            expect(await screen.findByText('Failed to load project candidates')).toBeInTheDocument();
+            expect(screen.queryByText('Candidates unavailable')).not.toBeInTheDocument();
             expect(screen.queryByText('No matching projects')).not.toBeInTheDocument();
             search('still no match');
-            expect(screen.getByText('Candidates unavailable')).toBeInTheDocument();
+            expect(screen.getByText('Failed to load project candidates')).toBeInTheDocument();
             expect(screen.queryByText('No matching projects')).not.toBeInTheDocument();
+            vi.mocked(apiClient.fetchData).mockResolvedValueOnce(response(projects, true));
+            fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+            await waitFor(() => expect(useTaskStore.getState().memberProjectsOnly).toBe(true));
+            expect(screen.queryByText('Failed to load project candidates')).not.toBeInTheDocument();
+        });
+
+        it.each(['resolve', 'reject'] as const)(
+            'keeps a newer refresh visible when a superseded toggle later %s',
+            async (lateResult) => {
+                const toggleA = deferredResponse();
+                const refreshedProjects = [{ id: 'p7', name: 'Confirmed refresh candidate' }];
+                vi.mocked(apiClient.fetchData)
+                    .mockReturnValueOnce(toggleA.promise)
+                    .mockResolvedValueOnce(response(refreshedProjects, false));
+                const toggleRequests = captureToggleRequests();
+                render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+                openProjects();
+
+                fireEvent.click(screen.getByLabelText('Show member projects in filter'));
+                expect(toggleRequests).toHaveLength(1);
+                expect(screen.getByText('Loading...')).toBeInTheDocument();
+                expect(screen.getByLabelText('Project Alpha')).toBeInTheDocument();
+
+                const refreshB = useTaskStore.getState().refreshData();
+                await waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(2));
+                await act(async () => {
+                    await refreshB;
+                });
+
+                expect(useTaskStore.getState().dataReadStatus).toBe('ready');
+                expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+                expect(screen.getByLabelText('Confirmed refresh candidate')).toBeInTheDocument();
+                expect(screen.queryByLabelText('Project Alpha')).not.toBeInTheDocument();
+                expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+
+                await act(async () => {
+                    if (lateResult === 'resolve') {
+                        toggleA.resolve(response([{ id: 'p8', name: 'Late stale candidate' }], true));
+                    } else {
+                        toggleA.reject(new Error('Stale candidate request failed'));
+                    }
+                    await toggleRequests[0];
+                });
+
+                expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+                expect(screen.getByLabelText('Confirmed refresh candidate')).toBeInTheDocument();
+                expect(screen.queryByLabelText('Late stale candidate')).not.toBeInTheDocument();
+                expect(screen.queryByText('Stale candidate request failed')).not.toBeInTheDocument();
+                expect(screen.queryByText('Failed to load project candidates')).not.toBeInTheDocument();
+                expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+            }
+        );
+
+        it('allows reversing a pending member-project mode toggle and keeps the latest mode response', async () => {
+            const toggleA = deferredResponse();
+            const toggleB = deferredResponse();
+            vi.mocked(apiClient.fetchData)
+                .mockReturnValueOnce(toggleA.promise)
+                .mockReturnValueOnce(toggleB.promise);
+            const toggleRequests = captureToggleRequests();
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            openProjects();
+
+            const memberProjectsToggle = screen.getByLabelText('Show member projects in filter');
+            fireEvent.click(memberProjectsToggle);
+            expect(screen.getByLabelText('Show member projects in filter')).toBeChecked();
+            expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+            fireEvent.click(screen.getByLabelText('Show member projects in filter'));
+            await waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(2));
+            expect(toggleRequests).toHaveLength(2);
+            expect(screen.getByLabelText('Show member projects in filter')).not.toBeChecked();
+            expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+            expect(apiClient.fetchData).toHaveBeenNthCalledWith(1, expect.objectContaining({
+                query: expect.objectContaining({ memberProjectsOnly: true })
+            }));
+            expect(apiClient.fetchData).toHaveBeenNthCalledWith(2, expect.objectContaining({
+                query: expect.objectContaining({ memberProjectsOnly: false })
+            }));
+            expect(screen.getByText('Loading...')).toBeInTheDocument();
+            expect(screen.getByLabelText('Project Alpha')).toBeInTheDocument();
+
+            await act(async () => {
+                toggleA.resolve(response([{ id: 'p8', name: 'Stale toggle candidate' }], true));
+                await toggleRequests[0];
+            });
+
+            expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+            expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+            expect(screen.getByLabelText('Show member projects in filter')).not.toBeChecked();
+            expect(screen.getByText('Loading...')).toBeInTheDocument();
+            expect(screen.getByLabelText('Project Alpha')).toBeInTheDocument();
+            expect(screen.queryByLabelText('Stale toggle candidate')).not.toBeInTheDocument();
+
+            await act(async () => {
+                toggleB.resolve(response([{ id: 'p7', name: 'Newest toggle candidate' }], false));
+                await toggleRequests[1];
+            });
+
+            expect(useTaskStore.getState().dataReadStatus).toBe('ready');
+            expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+            expect(screen.getByLabelText('Show member projects in filter')).not.toBeChecked();
+            expect(screen.getByLabelText('Newest toggle candidate')).toBeInTheDocument();
+            expect(screen.queryByLabelText('Project Alpha')).not.toBeInTheDocument();
+            expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
         });
 
         it('keeps Clear and grouping independent of search and preserves the active indicator', async () => {
@@ -1811,7 +1980,88 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.queryByText('Beta')).not.toBeInTheDocument();
     });
 
-    it('scopes assignee and version options by selected projects while keeping selected out-of-scope entries visible', () => {
+    it('keeps empty server candidates empty while preserving selections and project headers', () => {
+        useTaskStore.setState({
+            allTasks: [{
+                id: '1', subject: 'Visible task', projectId: 'p1', projectName: 'Alpha',
+                assignedToId: 10, assignedToName: 'User A', ratioDone: 0, statusId: 1,
+                lockVersion: 0, editable: true, rowIndex: 0, hasChildren: false
+            }],
+            filterOptions: { projects: [], assignees: [] },
+            selectedProjectIds: ['p1'],
+            selectedAssigneeIds: [10],
+            selectedVersionIds: [],
+            memberProjectsOnly: true,
+            groupByProject: false,
+            showSubprojects: true
+        });
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTitle('Filter by project'));
+        expect(screen.queryByLabelText('Alpha')).not.toBeInTheDocument();
+        expect(screen.getByText(/Some selected projects are hidden/)).toBeInTheDocument();
+        fireEvent.click(screen.getByLabelText('Group by project'));
+
+        expect(useTaskStore.getState().layoutRows).toEqual(expect.arrayContaining([
+            expect.objectContaining({ type: 'header', projectId: 'p1', projectName: 'Alpha' }),
+            expect.objectContaining({ type: 'task', taskId: '1' })
+        ]));
+
+        fireEvent.click(screen.getByTitle('Assignee Filter'));
+        expect(screen.queryByLabelText('User A')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Select All')).not.toBeChecked();
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(useTaskStore.getState().selectedAssigneeIds).toEqual([10]);
+        expect(apiClient.fetchData).not.toHaveBeenCalled();
+    });
+
+    it('uses the backend version candidates without inferring availability from owner project', () => {
+        useTaskStore.setState({
+            allTasks: [{
+                id: '1', subject: 'Visible task', projectId: 'p1', projectName: 'Alpha',
+                assignedToId: 10, assignedToName: 'User A', ratioDone: 0, statusId: 1,
+                lockVersion: 0, editable: true, rowIndex: 0, hasChildren: false
+            }],
+            filterOptions: {
+                projects: [],
+                assignees: [
+                    { id: 10, name: 'User A', projectIds: ['p1'] },
+                    { id: 20, name: 'Selected User', projectIds: ['p2'] }
+                ],
+                trackers: [
+                    { id: 1, name: 'Bug', projectIds: ['p1'] },
+                    { id: 2, name: 'Selected Tracker', projectIds: ['p2'] }
+                ]
+            },
+            versions: [
+                { id: 'v1', name: 'Version 1', projectId: 'p1', status: 'open' },
+                { id: 'v2', name: 'Selected Version', projectId: 'p2', status: 'open' }
+            ],
+            selectedProjectIds: [],
+            selectedAssigneeIds: [20],
+            selectedVersionIds: ['v2'],
+            selectedTrackerIds: [2]
+        });
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTitle('Assignee Filter'));
+        expect(screen.queryByLabelText('User A')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Selected User')).toBeChecked();
+
+        fireEvent.click(screen.getByTitle('Filter by version'));
+        expect(screen.getByLabelText('Version 1')).toBeInTheDocument();
+        expect(screen.getByLabelText('Selected Version')).toBeChecked();
+
+        fireEvent.click(screen.getByTestId('tracker-filter-menu-button'));
+        expect(screen.queryByLabelText('Bug')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Selected Tracker')).toBeChecked();
+        expect(useTaskStore.getState().selectedProjectIds).toEqual([]);
+        expect(useTaskStore.getState().selectedAssigneeIds).toEqual([20]);
+        expect(useTaskStore.getState().selectedVersionIds).toEqual(['v2']);
+        expect(useTaskStore.getState().selectedTrackerIds).toEqual([2]);
+    });
+
+    it('scopes assignee options by selected projects and trusts the backend version candidate set', () => {
         useTaskStore.setState({
             filterText: '',
             allTasks: [
@@ -1865,7 +2115,7 @@ describe('GanttToolbar shortcuts', () => {
         fireEvent.click(screen.getByTitle('Filter by version'));
         expect(screen.getByText('Version 1')).toBeInTheDocument();
         expect(screen.getByText('Version 2')).toBeInTheDocument();
-        expect(screen.queryByText('Version 3')).not.toBeInTheDocument();
+        expect(screen.getByText('Version 3')).toBeInTheDocument();
     });
 
     it('scopes tracker candidates by projects without dropping a selected out-of-scope tracker', () => {
@@ -1907,6 +2157,44 @@ describe('GanttToolbar shortcuts', () => {
 
         expect(useTaskStore.getState().selectedTrackerIds).toEqual([20, 10]);
         expect(useTaskStore.getState().selectedStatusIds).toEqual([1]);
+    });
+
+    it('keeps assignee, tracker, and version filters usable while data is loading', () => {
+        useTaskStore.setState({
+            dataReadStatus: 'loading',
+            filterText: '',
+            allTasks: [] as never,
+            filterOptions: {
+                projects: [{ id: 'p1', name: 'Alpha' }],
+                assignees: [{ id: 10, name: 'User A', projectIds: ['p1'] }],
+                trackers: [{ id: 20, name: 'Bug', projectIds: ['p1'] }]
+            },
+            versions: [{ id: 'v1', name: 'Version 1', projectId: 'owner-p2', status: 'open' }],
+            selectedAssigneeIds: [],
+            selectedProjectIds: ['p1'],
+            selectedVersionIds: [],
+            selectedTrackerIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTitle('Assignee Filter'));
+        expect(screen.getByLabelText('User A')).not.toBeDisabled();
+        fireEvent.click(screen.getByLabelText('User A'));
+        fireEvent.click(screen.getByTestId('tracker-filter-menu-button'));
+        expect(screen.getByLabelText('Bug')).not.toBeDisabled();
+        fireEvent.click(screen.getByLabelText('Bug'));
+        fireEvent.click(screen.getByTitle('Filter by version'));
+        expect(screen.getByLabelText('Version 1')).not.toBeDisabled();
+        fireEvent.click(screen.getByLabelText('Version 1'));
+
+        expect(useTaskStore.getState().selectedAssigneeIds).toEqual([10]);
+        expect(useTaskStore.getState().selectedTrackerIds).toEqual([20]);
+        expect(useTaskStore.getState().selectedVersionIds).toEqual(['v1']);
     });
 
     it('toggles the project select-all checkbox between all projects and no explicit project selection after refresh', async () => {

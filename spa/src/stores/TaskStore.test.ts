@@ -6,11 +6,12 @@ import { apiClient } from '../api/client';
 import { taskMutationService } from '../services/taskMutationService';
 import { useUIStore } from './UIStore';
 import { AutoScheduleMoveMode, DatePlacementMode } from '../types/constraints';
-import { loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
+import { loadLastUsedSharedQueryProjectState, loadLastUsedSharedQueryState } from '../utils/sharedQueryState';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
 import { WorkloadLogicService } from '../services/WorkloadLogicService';
 import { createReadContext } from './taskStore/stateContract';
 import { parseDateOnly } from '../utils/dateOnly';
+import { loadPreferences, saveDisplayPreferences } from '../utils/preferences';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -358,13 +359,13 @@ describe('TaskStore canonical mutation reconciliation', () => {
         { derived: false, retry: true, priorManual: false },
         { derived: true, retry: false, priorManual: false },
         { derived: true, retry: true, priorManual: true }
-    ].flatMap(scenario => [false, true].map(autoSave => ({ ...scenario, autoSave }))))('saves mixed task modes in one batch (dependency-derived=$derived, retry=$retry, prior-manual=$priorManual, auto-save=$autoSave)', async ({ derived, retry, priorManual, autoSave }) => {
+    ].flatMap(scenario => [false, true].map(autoSave => ({ ...scenario, autoSave }))))('saves mixed task modes for selected external projects in one batch (dependency-derived=$derived, retry=$retry, prior-manual=$priorManual, auto-save=$autoSave)', async ({ derived, retry, priorManual, autoSave }) => {
         const friday = parseDateOnly('2027-01-01')!;
         const saturday = parseDateOnly('2027-01-02')!;
         const monday = parseDateOnly('2027-01-04')!;
         const originals = [
-            buildTask({ id: 'A', startDate: friday, dueDate: friday, lockVersion: 1 }),
-            buildTask({ id: 'B', startDate: friday, dueDate: friday, lockVersion: 3 })
+            buildTask({ id: 'A', projectId: 'external-project', startDate: friday, dueDate: friday, lockVersion: 1 }),
+            buildTask({ id: 'B', projectId: 'external-project', startDate: friday, dueDate: friday, lockVersion: 3 })
         ];
         const previousUI = useUIStore.getState();
         const scheduleMutation = vi.fn().mockImplementation(async () => ({
@@ -387,7 +388,14 @@ describe('TaskStore canonical mutation reconciliation', () => {
         });
 
         try {
-            useTaskStore.setState({ autoSave });
+            useTaskStore.setState({
+                autoSave,
+                confirmedProjectScope: {
+                    rootProjectId: 'opened-project', mode: 'member_all', selectionExplicit: true,
+                    selectedProjectIds: ['opened-project', 'external-project'],
+                    effectiveProjectIds: ['opened-project', 'external-project'], schedulingAllowed: false
+                }
+            });
             useTaskStore.getState().setTasks(originals);
             useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays, autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
             if (priorManual) useTaskStore.getState().updateTask('B', { startDate: saturday, dueDate: saturday });
@@ -412,6 +420,7 @@ describe('TaskStore canonical mutation reconciliation', () => {
                 ]);
             }
         } finally {
+            useTaskStore.setState({ confirmedProjectScope: null });
             useUIStore.setState(previousUI);
             configureBusinessCalendar(null);
             delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
@@ -1291,6 +1300,189 @@ describe('TaskStore shared query persistence', () => {
             groupBy: null,
             canvasProjectIds: ['p1', 'p2']
         });
+    });
+});
+
+describe('TaskStore member project candidate lifecycle', () => {
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        useTaskStore.setState({ currentProjectId: 'p1', memberProjectsOnly: false });
+        localStorage.clear();
+        saveDisplayPreferences({ memberProjectsOnly: false }, 'p1');
+        vi.mocked(apiClient.fetchData).mockReset();
+    });
+
+    it('uses normalized server selection and parks external IDs when switching off', () => {
+        useTaskStore.setState({ selectedProjectIds: ['p1', 'p2', 'denied'], projectSelectionExplicit: true, memberProjectsOnly: true });
+        useTaskStore.getState().applyApiData({
+            ...buildApiData([]),
+            projectScope: {
+                rootProjectId: 'p1', mode: 'member_all', selectionExplicit: true,
+                selectedProjectIds: ['p1', 'p2'], effectiveProjectIds: ['p1', 'p2']
+            }
+        });
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
+
+        useTaskStore.getState().applyApiData({
+            ...buildApiData([]),
+            projectScope: {
+                rootProjectId: 'p1', mode: 'current_tree', selectionExplicit: true,
+                selectedProjectIds: ['p1'], effectiveProjectIds: ['p1']
+            }
+        });
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']);
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+    });
+
+    it('restores checked external projects when member projects are shown again', async () => {
+        const scopedResponse = (mode: 'member_all' | 'current_tree', selectedProjectIds: string[]) => ({
+            ...buildApiData([]),
+            filterOptions: {
+                projects: selectedProjectIds.map((id) => ({ id, name: id })), assignees: []
+            },
+            projectScope: {
+                rootProjectId: 'p1', mode, selectionExplicit: true,
+                selectedProjectIds, effectiveProjectIds: selectedProjectIds
+            }
+        });
+        useTaskStore.getState().applyApiData(scopedResponse('member_all', ['p1', 'p2']));
+
+        vi.mocked(apiClient.fetchData)
+            .mockResolvedValueOnce(scopedResponse('current_tree', ['p1']))
+            .mockResolvedValueOnce(scopedResponse('current_tree', ['p1']))
+            .mockResolvedValueOnce(scopedResponse('member_all', ['p1', 'p2']));
+
+        await useTaskStore.getState().setMemberProjectsOnly(false);
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1']);
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']);
+        expect(loadLastUsedSharedQueryProjectState()?.scopeState).toMatchObject({
+            canvasProjectIds: ['p1'], inactiveExternalProjectIds: ['p2']
+        });
+
+        await useTaskStore.getState().refreshData();
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']);
+
+        await useTaskStore.getState().setMemberProjectsOnly(true);
+        expect(apiClient.fetchData).toHaveBeenLastCalledWith(expect.objectContaining({
+            query: expect.objectContaining({ memberProjectsOnly: true, canvasProjectIds: ['p1', 'p2'] })
+        }));
+        expect(useTaskStore.getState().selectedProjectIds).toEqual(['p1', 'p2']);
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual([]);
+        expect(loadLastUsedSharedQueryProjectState()?.scopeState.inactiveExternalProjectIds).toBeUndefined();
+    });
+
+    it.each([{ ids: [] as string[] }, { ids: ['p1'] }])('discards parked projects after an explicit selection change to $ids', async ({ ids }) => {
+        const scopedResponse = (mode: 'member_all' | 'current_tree', selectedProjectIds: string[]) => ({
+            ...buildApiData([]),
+            projectScope: {
+                rootProjectId: 'p1', mode, selectionExplicit: true,
+                selectedProjectIds, effectiveProjectIds: selectedProjectIds
+            }
+        });
+        useTaskStore.getState().applyApiData(scopedResponse('member_all', ['p1', 'p2']));
+        vi.mocked(apiClient.fetchData).mockResolvedValue(scopedResponse('current_tree', ['p1']));
+        await useTaskStore.getState().setMemberProjectsOnly(false);
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']);
+
+        useTaskStore.getState().setSelectedProjectIds(ids);
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual([]);
+        vi.mocked(apiClient.fetchData).mockResolvedValue(scopedResponse('current_tree', ids));
+        await useTaskStore.getState().refreshData();
+        vi.mocked(apiClient.fetchData).mockResolvedValue(scopedResponse('member_all', ids));
+        await useTaskStore.getState().setMemberProjectsOnly(true);
+
+        expect(apiClient.fetchData).toHaveBeenLastCalledWith(expect.objectContaining({
+            query: expect.objectContaining({ memberProjectsOnly: true, canvasProjectIds: ids })
+        }));
+        expect(useTaskStore.getState().selectedProjectIds).not.toContain('p2');
+        expect(loadLastUsedSharedQueryProjectState()?.scopeState.inactiveExternalProjectIds).toBeUndefined();
+    });
+
+    it('keeps an implicit server scope out of the shared project selection', () => {
+        useTaskStore.setState({ selectedProjectIds: ['stale'], projectSelectionExplicit: true });
+        useTaskStore.getState().applyApiData({
+            ...buildApiData([]),
+            projectScope: {
+                rootProjectId: 'p1', mode: 'current_tree', selectionExplicit: false,
+                selectedProjectIds: [], effectiveProjectIds: ['p1']
+            }
+        });
+        expect(useTaskStore.getState().selectedProjectIds).toEqual([]);
+        expect(useTaskStore.getState().projectSelectionExplicit).toBe(false);
+        expect(loadLastUsedSharedQueryState('p1') ?? {}).not.toHaveProperty('canvasProjectIds');
+    });
+
+    it('commits and persists the mode together with the latest candidates after success', async () => {
+        const request = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(request.promise);
+        const operation = useTaskStore.getState().setMemberProjectsOnly(true);
+
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+        expect(loadPreferences('p1').memberProjectsOnly).toBe(false);
+        expect(apiClient.fetchData).toHaveBeenCalledWith(expect.objectContaining({
+            query: expect.objectContaining({ memberProjectsOnly: true })
+        }));
+
+        request.resolve(buildApiData([]));
+        await operation;
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(true);
+        expect(useTaskStore.getState().filterOptions.projects).toEqual([]);
+        expect(loadPreferences('p1').memberProjectsOnly).toBe(true);
+        expect(loadLastUsedSharedQueryState() ?? {}).not.toHaveProperty('memberProjectsOnly');
+    });
+
+    it('keeps the confirmed mode and candidates on failure and permits retry', async () => {
+        const previous = { projects: [{ id: 'p1', name: 'Project' }], assignees: [] };
+        useTaskStore.setState({ filterOptions: previous });
+        vi.mocked(apiClient.fetchData).mockRejectedValueOnce(new Error('offline'));
+
+        await expect(useTaskStore.getState().setMemberProjectsOnly(true)).rejects.toThrow('offline');
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+        expect(useTaskStore.getState().filterOptions).toEqual(previous);
+        expect(loadPreferences('p1').memberProjectsOnly).toBe(false);
+        expect(useTaskStore.getState().dataReadStatus).toBe('error');
+
+        vi.mocked(apiClient.fetchData).mockResolvedValueOnce(buildApiData([]));
+        await useTaskStore.getState().setMemberProjectsOnly(true);
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(true);
+        expect(loadPreferences('p1').memberProjectsOnly).toBe(true);
+    });
+
+    it.each(['success', 'failure'] as const)('ignores stale switch %s while a reverse switch is loading', async (result) => {
+        const first = deferred<ReturnType<typeof buildApiData>>();
+        const second = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+        const firstOperation = useTaskStore.getState().setMemberProjectsOnly(true);
+        const secondOperation = useTaskStore.getState().setMemberProjectsOnly(false);
+
+        if (result === 'success') first.resolve(buildApiData([]));
+        else first.reject(new Error('stale failure'));
+        await firstOperation;
+        expect(useTaskStore.getState().dataReadStatus).toBe('loading');
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+        expect(loadPreferences('p1').memberProjectsOnly).toBe(false);
+
+        second.resolve(buildApiData([]));
+        await secondOperation;
+        expect(useTaskStore.getState().dataReadStatus).toBe('ready');
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+    });
+
+    it.each(['success', 'failure'] as const)('ignores stale switch %s after a filter refresh succeeds', async (result) => {
+        const first = deferred<ReturnType<typeof buildApiData>>();
+        const filtered = buildApiData([buildTask({ id: 'filtered', assignedToId: 10, projectId: 'p1' })]);
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(first.promise).mockResolvedValueOnce(filtered);
+        const operation = useTaskStore.getState().setMemberProjectsOnly(true);
+        useTaskStore.getState().setSelectedAssigneeIds([10]);
+        await vi.waitFor(() => expect(useTaskStore.getState().dataReadStatus).toBe('ready'));
+
+        if (result === 'success') first.resolve(buildApiData([]));
+        else first.reject(new Error('stale failure'));
+        await operation;
+        expect(useTaskStore.getState().allTasks).toEqual(filtered.tasks);
+        expect(useTaskStore.getState().memberProjectsOnly).toBe(false);
+        expect(loadPreferences('p1').memberProjectsOnly).toBe(false);
     });
 });
 
