@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiClient } from './client';
+import { ApiResponseError, apiClient } from './client';
 import { setConfirmedProjectScope } from './projectScopeContext';
 import { addCalendarDays, diffCalendarDays, formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { LayoutEngine } from '../engines/LayoutEngine';
@@ -48,6 +48,30 @@ describe('apiClient.fetchQueries', () => {
 });
 
 describe('apiClient.fetchData', () => {
+    it('preserves the semantic code for the data payload limit response', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 413,
+            statusText: 'Payload Too Large',
+            json: async () => ({ error: 'Canvas Gantt data exceeds the configured safety limit.', code: 'canvas_gantt_payload_limit' })
+        }));
+
+        let failure: unknown;
+        try {
+            await apiClient.fetchData();
+        } catch (error) {
+            failure = error;
+        }
+        expect(failure).toBeInstanceOf(ApiResponseError);
+        expect(failure).toMatchObject({
+            name: 'ApiResponseError',
+            httpStatus: 413,
+            code: 'canvas_gantt_payload_limit',
+            message: 'Canvas Gantt data exceeds the configured safety limit.'
+        });
+    });
+
     it('parses the confirmed project scope and candidate permissions', async () => {
         window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
@@ -279,6 +303,25 @@ describe('apiClient.fetchData', () => {
                 }
             }
         });
+    });
+});
+
+describe('apiClient.getSubtaskTrackers', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('sends only the parent issue as operation scope', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token' };
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ trackers: [] }) });
+        vi.stubGlobal('fetch', fetchMock);
+
+        await apiClient.getSubtaskTrackers('42');
+
+        const requestUrl = new URL(String(fetchMock.mock.calls[0][0]), window.location.origin);
+        expect(requestUrl.searchParams.getAll('operation_issue_ids[]')).toEqual(['42']);
+        expect(requestUrl.searchParams.get('parent_issue_id')).toBe('42');
     });
 });
 

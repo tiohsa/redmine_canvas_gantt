@@ -814,8 +814,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(Setting).to receive(:non_working_week_days).and_return(['6', '7'])
     end
 
-    { en: ['Search projects...', 'No matching projects'],
-      ja: ['プロジェクトを検索', '一致するプロジェクトがありません'] }.each do |locale, labels|
+    { en: ['Search projects...', 'No matching projects', 'Canvas Gantt data exceeds the configured safety limit. Narrow the filters or ask an administrator to review the limit.'],
+      ja: ['プロジェクトを検索', '一致するプロジェクトがありません', 'Canvas Gantt のデータが設定された安全上限を超えています。絞り込みを狭めるか、管理者に上限の確認を依頼してください。'] }.each do |locale, labels|
       it "publishes project candidate search labels in #{locale}" do
         previous_default_language = Setting.default_language
         Setting.default_language = locale.to_s
@@ -828,6 +828,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
             i18n_payload = controller.instance_variable_get(:@i18n).stringify_keys
             expect(i18n_payload['label_project_search_placeholder']).to eq(labels[0])
             expect(i18n_payload['label_no_matching_projects']).to eq(labels[1])
+            expect(i18n_payload['error_canvas_gantt_data_scope_too_large']).to eq(labels[2])
           end
         ensure
           Setting.default_language = previous_default_language

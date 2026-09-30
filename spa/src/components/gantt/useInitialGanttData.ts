@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTaskStore } from '../../stores/TaskStore';
 import { useUIStore } from '../../stores/UIStore';
+import { i18n } from '../../utils/i18n';
 import { getMinFiniteStartDate } from '../../utils/taskRange';
 import type { Viewport } from '../../types';
 import { replaceIssueQueryParamsInUrl, resolveInitialSharedQueryState } from '../../utils/queryParams';
@@ -110,6 +111,16 @@ export const useInitialGanttData = ({
             }
         };
 
-        void loadInitialData().catch(err => console.error('Failed to load Gantt data', err));
+        void loadInitialData().catch((err: unknown) => {
+            const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined;
+            if (code === 'canvas_gantt_payload_limit') {
+                const message = i18n.t('error_canvas_gantt_data_scope_too_large') ||
+                    (err instanceof Error && err.message) ||
+                    'Canvas Gantt data exceeds the configured safety limit. Narrow the filters and try again.';
+                useUIStore.getState().addNotification(message, 'error');
+                return;
+            }
+            console.error('Failed to load Gantt data', err);
+        });
     }, [updateViewport, viewportFromStorage]);
 };

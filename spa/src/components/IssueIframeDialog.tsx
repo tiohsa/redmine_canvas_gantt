@@ -368,6 +368,9 @@ export const IssueIframeDialog: React.FC = () => {
             const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
             if (!doc) return;
 
+            // Redmine's document is the core experience; Canvas enhancements are optional.
+            setIsIframeLoaded(true);
+
             const currentUrl = iframe.contentWindow?.location.href || '';
             setCurrentIframeUrl(currentUrl || null);
             const urlParsed = new URL(currentUrl, window.location.origin);
@@ -389,8 +392,6 @@ export const IssueIframeDialog: React.FC = () => {
                 setDialogMode('issue-show');
             }
             bindIframeSizeObservers(doc);
-
-            setIsIframeLoaded(true);
 
             const iframeWindow = iframe.contentWindow;
             if (iframeWindow && typeof iframeWindow.addEventListener === 'function') {
@@ -730,19 +731,16 @@ export const IssueIframeDialog: React.FC = () => {
     React.useEffect(() => {
         if (!shouldShowBulkSubtasks || !parentId) return;
 
-        const operationIssueIds = useTaskStore.getState().tasks
-            .filter(task => !task.isContextOnly)
-            .map(task => task.id);
         const context = createReadContext({
             generation: ++trackerReadGenerationRef.current,
             projectId: useTaskStore.getState().currentProjectId,
-            query: { parentId, operationIssueIds },
+            query: { parentId },
             scope: { dialog: 'bulk_subtasks', parentId },
             purpose: 'subtask_trackers',
             mergePolicy: 'replace'
         });
         trackerReadContextRef.current = context;
-        void apiClient.getSubtaskTrackers(parentId, operationIssueIds)
+        void apiClient.getSubtaskTrackers(parentId)
             .then(options => {
                 if (canApplyReadResponse(trackerReadContextRef.current, context) && options.length > 0) setTrackerOptions(options);
             })

@@ -61,7 +61,31 @@ describe('BulkSubtaskCreator', () => {
         }));
     });
 
-    it('sends only operation-scope tasks and excludes context-only parents', async () => {
+    it('sends only the target parent in operation scope with many visible tasks', async () => {
+        vi.mocked(apiClient.bulkCreateSubtasks).mockResolvedValue({
+            status: 'ok', successCount: 1, failCount: 0, results: []
+        });
+        useTaskStore.setState({
+            tasks: Array.from({ length: 5_000 }, (_, index) => ({
+                id: String(index + 1), subject: `Issue ${index + 1}`, ratioDone: 0, statusId: 1,
+                lockVersion: 0, editable: true, rowIndex: index, hasChildren: false
+            }))
+        });
+
+        render(<BulkSubtaskCreator parentId="100" />);
+        fireEvent.click(screen.getByText('Bulk Ticket Creation'));
+        fireEvent.change(screen.getByPlaceholderText('Enter one ticket subject per line...'), {
+            target: { value: 'Task A' }
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+        await waitFor(() => expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledTimes(1));
+        expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledWith({
+            parentId: '100', subjects: ['Task A'], operationIssueIds: ['100']
+        }, expect.stringMatching(/^mutation:/));
+    });
+
+    it('sends the target parent as the operation scope', async () => {
         vi.mocked(apiClient.bulkCreateSubtasks).mockResolvedValue({
             status: 'ok',
             successCount: 1,
@@ -90,7 +114,7 @@ describe('BulkSubtaskCreator', () => {
         expect(apiClient.bulkCreateSubtasks).toHaveBeenCalledWith({
             parentId: '100',
             subjects: ['Task A'],
-            operationIssueIds: ['101']
+            operationIssueIds: ['100']
         }, expect.stringMatching(/^mutation:/));
     });
 
@@ -156,7 +180,7 @@ describe('BulkSubtaskCreator', () => {
                     { subject: 'Task A', tracker_id: 2 },
                     { subject: 'Task B', tracker_id: 2 }
                 ],
-                operationIssueIds: []
+                operationIssueIds: ['100']
             }, expect.stringMatching(/^mutation:/));
         });
     });
@@ -252,7 +276,7 @@ describe('BulkSubtaskCreator', () => {
             {
                 parentId: '100',
                 subtasks: [{ subject: 'Task A', tracker_id: 1 }, { subject: 'Task B', tracker_id: 2 }],
-                operationIssueIds: []
+                operationIssueIds: ['100']
             },
             expect.stringMatching(/^mutation:/)
         ));

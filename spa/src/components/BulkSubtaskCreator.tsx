@@ -92,11 +92,6 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
         const [loading, setLoading] = React.useState(false);
         const [completed, setCompleted] = React.useState(false);
         const addNotification = useUIStore(state => state.addNotification);
-        const tasks = useTaskStore(state => state.tasks);
-        const operationIssueIds = React.useMemo(
-            () => tasks.filter(task => !task.isContextOnly).map(task => task.id),
-            [tasks]
-        );
         const hasSubjects = React.useCallback(() => rows.some(row => row.subject.trim().length > 0), [rows]);
         React.useEffect(() => {
             onContentChange?.(hasSubjects());
@@ -129,13 +124,10 @@ export const BulkSubtaskCreator = React.forwardRef<BulkSubtaskCreatorHandle, Bul
                 }
 
                 const bulkPayload = subtasks.some(row => row.tracker_id) ? { subtasks } : { subjects: subtasks.map(row => row.subject) };
-                const operationIssueIdsForRequest = newParentId && !operationIssueIds.includes(targetParentId)
-                    ? [...operationIssueIds, targetParentId]
-                    : operationIssueIds;
                 const result = await taskMutationService.bulkCreateSubtasks({
                     parentId: targetParentId,
                     ...bulkPayload,
-                    operationIssueIds: operationIssueIdsForRequest
+                    operationIssueIds: [targetParentId]
                 });
                 successCount = result.successCount;
                 failCount = result.failCount;

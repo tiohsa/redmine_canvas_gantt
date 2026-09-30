@@ -151,6 +151,18 @@ export class ApiMutationError extends Error {
     }
 }
 
+export class ApiResponseError extends Error {
+    readonly httpStatus: number;
+    readonly code?: string;
+
+    constructor(message: string, httpStatus: number, code?: string) {
+        super(message);
+        this.name = 'ApiResponseError';
+        this.httpStatus = httpStatus;
+        this.code = code;
+    }
+}
+
 interface UpdateTaskResult extends MutationMetadata {
     status: MutationStatus;
     entity?: PersistedTaskState;
@@ -250,6 +262,21 @@ const parseErrorMessage = async (response: Response): Promise<string> => {
     }
 
     return response.statusText;
+};
+
+const parseApiResponseError = async (response: Response): Promise<ApiResponseError> => {
+    const record = asRecord(await response.json().catch(() => ({} as UnknownRecord))) ?? {};
+    const errors = Array.isArray(record.errors) && record.errors.every(error => typeof error === 'string')
+        ? record.errors.join(', ')
+        : undefined;
+    const message = typeof record.error === 'string' && record.error
+        ? record.error
+        : errors || response.statusText;
+    return new ApiResponseError(
+        message,
+        response.status,
+        typeof record.code === 'string' ? record.code : undefined
+    );
 };
 
 const mutationStatusForHttp = (status: number): Exclude<MutationStatus, 'ok'> => {
@@ -844,9 +871,7 @@ export const apiClient = {
             headers: buildJsonHeaders(config)
         });
 
-        if (!response.ok) {
-            throw new Error(await parseErrorMessage(response));
-        }
+        if (!response.ok) throw await parseApiResponseError(response);
 
         const payload = await response.json();
         const data = asRecord(payload) ?? {};
@@ -1351,11 +1376,11 @@ export const apiClient = {
         return { status: 'ok', ...parseMutationMetadata(payload) };
     },
 
-    getSubtaskTrackers: async (parentId: string, operationIssueIds: string[] = []): Promise<Array<{ id: number; name: string }>> => {
+    getSubtaskTrackers: async (parentId: string): Promise<Array<{ id: number; name: string }>> => {
         const config = getConfig();
         const query = new URLSearchParams(buildViewContextQuery(config));
         query.set('parent_issue_id', parentId);
-        operationIssueIds.forEach(id => query.append('operation_issue_ids[]', id));
+        query.append('operation_issue_ids[]', parentId);
         const response = await sessionFetch(`${getGlobalApiBase(config)}/subtasks/trackers.json?${query.toString()}`, {
             headers: buildJsonHeaders(config)
         });

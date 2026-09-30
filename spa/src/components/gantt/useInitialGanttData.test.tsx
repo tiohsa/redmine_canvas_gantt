@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useInitialGanttData } from './useInitialGanttData';
 import { GanttToolbar } from '../GanttToolbar';
 import { useTaskStore } from '../../stores/TaskStore';
+import { useUIStore } from '../../stores/UIStore';
 import { resetCanvasGanttTestState } from '../../test/testSetup';
 import { saveLastUsedSharedQueryProjectState, saveLastUsedSharedQueryState } from '../../utils/sharedQueryState';
 import type { GanttExportHandle } from '../../export/types';
@@ -107,6 +108,22 @@ describe('useInitialGanttData persistence', () => {
         expect(url.searchParams.getAll('fixed_version_ids[]')).toEqual(['none', 'v2']);
         expect(url.searchParams.get('group_by')).toBe('assigned_to');
         expect(url.searchParams.get('show_subprojects')).toBe('0');
+    });
+
+    it('notifies the user when initial data exceeds the payload limit', async () => {
+        const payloadLimitError = Object.assign(new Error('Canvas Gantt data exceeds the configured safety limit.'), {
+            code: 'canvas_gantt_payload_limit'
+        });
+        fetchDataMock.mockRejectedValue(payloadLimitError);
+
+        render(<Harness />);
+
+        await waitFor(() => {
+            expect(useUIStore.getState().notifications).toContainEqual(expect.objectContaining({
+                message: expect.stringMatching(/too much data|絞り込み|configured safety limit/i),
+                type: 'error'
+            }));
+        });
     });
 
     it('restores an explicit empty project selection from storage on a bare canvas gantt URL', async () => {

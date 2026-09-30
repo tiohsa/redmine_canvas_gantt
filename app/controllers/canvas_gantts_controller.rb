@@ -214,6 +214,7 @@ class CanvasGanttsController < ApplicationController
     label_relation_type_precedes: :label_relation_type_precedes,
     label_relation_type_relates: :label_relation_type_relates,
     label_relation_type_blocks: :label_relation_type_blocks,
+    error_canvas_gantt_data_scope_too_large: :error_canvas_gantt_data_scope_too_large,
     label_relation_create: :label_relation_create,
     label_relation_type: :label_relation_type,
     label_relation_auto_calculate_delay: :label_relation_auto_calculate_delay,
