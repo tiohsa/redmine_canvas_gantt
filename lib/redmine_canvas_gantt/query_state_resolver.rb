@@ -185,7 +185,7 @@ module RedmineCanvasGantt
         selection_explicit: explicit,
         selected_project_ids: explicit ? selected_project_ids.map(&:to_s) : [],
         effective_project_ids: selected_project_ids.map(&:to_s),
-        scheduling_allowed: (selected_project_ids.map(&:to_i) - tree_project_ids_for(selected_project_ids)).empty?
+        scheduling_allowed: true
       }
     end
 

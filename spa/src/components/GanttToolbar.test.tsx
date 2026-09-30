@@ -1592,13 +1592,13 @@ describe('GanttToolbar shortcuts', () => {
             expect(screen.queryByLabelText(/Operations.*root-b/)).not.toBeInTheDocument();
         });
 
-        it('shows scheduling restrictions before interaction when external projects are selected', () => {
+        it('does not show a scheduling restriction when external projects are selected', () => {
             useTaskStore.setState({ confirmedProjectScope: {
                 rootProjectId: 'p1', mode: 'member_all', selectionExplicit: true,
                 selectedProjectIds: ['p1', 'p2'], effectiveProjectIds: ['p1', 'p2'], schedulingAllowed: false
             } });
             render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
-            expect(screen.getByTestId('cross-project-scheduling-notice')).toHaveTextContent(/Date dragging, resizing, and dependency creation are unavailable/);
+            expect(screen.queryByTestId('cross-project-scheduling-notice')).not.toBeInTheDocument();
             act(() => useTaskStore.setState({ confirmedProjectScope: {
                 rootProjectId: 'p1', mode: 'current_tree', selectionExplicit: true,
                 selectedProjectIds: ['p1'], effectiveProjectIds: ['p1'], schedulingAllowed: true

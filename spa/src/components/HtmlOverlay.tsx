@@ -74,7 +74,6 @@ export const HtmlOverlay: React.FC = () => {
     const selectedRelationId = useTaskStore(state => state.selectedRelationId);
     const draftRelation = useTaskStore(state => state.draftRelation);
     const permissions = useTaskStore(state => state.permissions);
-    const schedulingAllowed = useTaskStore(state => state.confirmedProjectScope?.schedulingAllowed !== false);
     const setContextMenu = useTaskStore(state => state.setContextMenu);
     const selectTask = useTaskStore(state => state.selectTask);
     const setDraftRelation = useTaskStore(state => state.setDraftRelation);
@@ -287,7 +286,6 @@ export const HtmlOverlay: React.FC = () => {
     }, [hitTestTask, setDragDraftState, toLocalPoint]);
 
     const handleCreateRelation = React.useCallback(async (relation: DraftRelation, rawType: string, delay?: number) => {
-        if (useTaskStore.getState().confirmedProjectScope?.schedulingAllowed === false) return;
         const { autoSave, localTaskPatches } = useTaskStore.getState();
         if (!autoSave && hasPendingRelationConsistencyChanges(localTaskPatches, [relation.from, relation.to])) {
             throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
@@ -333,8 +331,6 @@ export const HtmlOverlay: React.FC = () => {
 
         dragDraftRef.current = null;
         setDragDraft(null);
-        if (useTaskStore.getState().confirmedProjectScope?.schedulingAllowed === false) return;
-
         const { fromId, targetId, start, pointer, startSide } = currentDraft;
         if (!targetId || targetId === fromId) return;
 
@@ -379,7 +375,6 @@ export const HtmlOverlay: React.FC = () => {
     }, [autoApplyDefaultRelation, autoCalculateDelay, defaultRelationType, handleCreateRelation, handleMouseMove, relations, setDraftRelation, taskById]);
 
     const startDraft = React.useCallback((taskId: string, x: number, y: number, startSide: 'left' | 'right') => {
-        if (useTaskStore.getState().confirmedProjectScope?.schedulingAllowed === false) return;
         const startPoint = { x, y };
         setDragDraftState({ fromId: taskId, start: startPoint, pointer: startPoint, startSide });
         window.addEventListener('mousemove', handleMouseMove);
@@ -623,9 +618,9 @@ export const HtmlOverlay: React.FC = () => {
                 {visibleTasks.map((task) => {
                     if (!isTaskVisibleByDate(task, { showStartDateOnly, showDueDateOnly })) return null;
                     const isDependencyDragging = dragDraft !== null;
-                    const showDependencyHandles = schedulingAllowed && task.id === hoveredTaskId;
-                    const canResizeStart = schedulingAllowed && task.editable && !task.hasChildren && Number.isFinite(task.dueDate);
-                    const canResizeEnd = schedulingAllowed && task.editable && !task.hasChildren && Number.isFinite(task.startDate);
+                    const showDependencyHandles = task.id === hoveredTaskId;
+                    const canResizeStart = task.editable && !task.hasChildren && Number.isFinite(task.dueDate);
+                    const canResizeEnd = task.editable && !task.hasChildren && Number.isFinite(task.startDate);
                     const showResizeHandles = !isDependencyDragging && (canResizeStart || canResizeEnd) && (task.id === hoveredTaskId || task.id === selectedTaskId);
                     const showStartResizeHandle = showResizeHandles && canResizeStart;
                     const showEndResizeHandle = showResizeHandles && canResizeEnd;
@@ -758,7 +753,7 @@ export const HtmlOverlay: React.FC = () => {
                 />
             )}
 
-            {relationPopoverTarget && (!relationPopoverTarget.isDraft || schedulingAllowed) && (
+            {relationPopoverTarget && (
                 <RelationEditorPopover
                     popoverRef={relationMenuRef}
                     target={relationPopoverTarget}

@@ -94,5 +94,40 @@ RSpec.describe RedmineCanvasGantt::RelationChangeValidator do
         project: successor_project
       )
     end
+
+    it 'validates cross-project delay with the successor project’s configured calendar' do
+      predecessor_calendar = RedmineCanvasGantt::BusinessCalendar.new(
+        id: 'predecessor', name: 'Predecessor', non_working_week_days: [0, 6],
+        days: { Date.new(2027, 1, 4) => { name: 'Local holiday', type: 'non_working' } }
+      )
+      successor_calendar = RedmineCanvasGantt::BusinessCalendar.new(
+        id: 'successor', name: 'Successor', non_working_week_days: [0, 6], days: {}
+      )
+      snapshot = RedmineCanvasGantt::BusinessCalendarSnapshot.new(
+        status: 'ok', revision: 'test', default_calendar_id: 'predecessor',
+        project_calendars: { 'successor' => 'successor' },
+        calendars: { 'predecessor' => predecessor_calendar, 'successor' => successor_calendar }
+      )
+      calendar_service = RedmineCanvasGantt::ProjectCalendarResolver.new(
+        snapshot: snapshot, fallback_non_working_week_days: [0, 6]
+      )
+      predecessor_project = instance_double(Project, id: 1, identifier: 'predecessor', ancestors: [])
+      successor_project = instance_double(Project, id: 2, identifier: 'successor', ancestors: [])
+      issue_from = instance_double(Issue, due_date: Date.new(2027, 1, 1), start_date: nil, project: predecessor_project)
+      issue_to = instance_double(Issue, due_date: nil, start_date: Date.new(2027, 1, 4), project: successor_project)
+      validator = described_class.new(calendar_service: calendar_service)
+
+      result = validator.validate!(
+        issue_from: issue_from,
+        issue_to: issue_to,
+        relation_type: 'precedes',
+        delay: 0,
+        existing_relations: [],
+        candidate_relation: { id: 1, from: 10, to: 11, type: 'precedes', delay: 0 },
+        error_renderer: error_renderer
+      )
+
+      expect(result).to be(true)
+    end
   end
 end

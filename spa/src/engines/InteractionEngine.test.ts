@@ -98,7 +98,7 @@ beforeEach(() => {
 });
 
 describe('InteractionEngine external project scheduling', () => {
-    it.each([0.5, 0.01, 0.99])('selects without moving or resizing at bar fraction %s', (fraction) => {
+    it.each([0.5, 0.01, 0.99])('allows editing at bar fraction %s', (fraction) => {
         const day = 24 * 60 * 60 * 1000;
         setViewport({ startDate: 0, scale: 20 / day });
         const task = baseTask({ startDate: 0, dueDate: 10 * day });
@@ -115,9 +115,7 @@ describe('InteractionEngine external project scheduling', () => {
             window.dispatchEvent(new MouseEvent('mousemove', { ...pointer, clientX: pointer.clientX + 50 }));
             window.dispatchEvent(new MouseEvent('mouseup', pointer));
             expect(useTaskStore.getState().selectedTaskId).toBe(task.id);
-            expect(useTaskStore.getState().allTasks[0]).toMatchObject({ startDate: task.startDate, dueDate: task.dueDate });
-            expect(useTaskStore.getState().modifiedTaskIds.size).toBe(0);
-            expect(useTaskStore.getState().barOperations).toEqual({});
+            expect(useTaskStore.getState().modifiedTaskIds).toContain(task.id);
         } finally {
             engine.detach();
             container.remove();

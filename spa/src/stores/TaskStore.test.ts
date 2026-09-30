@@ -359,13 +359,13 @@ describe('TaskStore canonical mutation reconciliation', () => {
         { derived: false, retry: true, priorManual: false },
         { derived: true, retry: false, priorManual: false },
         { derived: true, retry: true, priorManual: true }
-    ].flatMap(scenario => [false, true].map(autoSave => ({ ...scenario, autoSave }))))('saves mixed task modes in one batch (dependency-derived=$derived, retry=$retry, prior-manual=$priorManual, auto-save=$autoSave)', async ({ derived, retry, priorManual, autoSave }) => {
+    ].flatMap(scenario => [false, true].map(autoSave => ({ ...scenario, autoSave }))))('saves mixed task modes for selected external projects in one batch (dependency-derived=$derived, retry=$retry, prior-manual=$priorManual, auto-save=$autoSave)', async ({ derived, retry, priorManual, autoSave }) => {
         const friday = parseDateOnly('2027-01-01')!;
         const saturday = parseDateOnly('2027-01-02')!;
         const monday = parseDateOnly('2027-01-04')!;
         const originals = [
-            buildTask({ id: 'A', startDate: friday, dueDate: friday, lockVersion: 1 }),
-            buildTask({ id: 'B', startDate: friday, dueDate: friday, lockVersion: 3 })
+            buildTask({ id: 'A', projectId: 'external-project', startDate: friday, dueDate: friday, lockVersion: 1 }),
+            buildTask({ id: 'B', projectId: 'external-project', startDate: friday, dueDate: friday, lockVersion: 3 })
         ];
         const previousUI = useUIStore.getState();
         const scheduleMutation = vi.fn().mockImplementation(async () => ({
@@ -388,7 +388,14 @@ describe('TaskStore canonical mutation reconciliation', () => {
         });
 
         try {
-            useTaskStore.setState({ autoSave });
+            useTaskStore.setState({
+                autoSave,
+                confirmedProjectScope: {
+                    rootProjectId: 'opened-project', mode: 'member_all', selectionExplicit: true,
+                    selectedProjectIds: ['opened-project', 'external-project'],
+                    effectiveProjectIds: ['opened-project', 'external-project'], schedulingAllowed: false
+                }
+            });
             useTaskStore.getState().setTasks(originals);
             useUIStore.setState({ datePlacementMode: DatePlacementMode.CalendarDays, autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
             if (priorManual) useTaskStore.getState().updateTask('B', { startDate: saturday, dueDate: saturday });
@@ -413,6 +420,7 @@ describe('TaskStore canonical mutation reconciliation', () => {
                 ]);
             }
         } finally {
+            useTaskStore.setState({ confirmedProjectScope: null });
             useUIStore.setState(previousUI);
             configureBusinessCalendar(null);
             delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;

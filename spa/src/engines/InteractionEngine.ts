@@ -221,7 +221,7 @@ export class InteractionEngine {
 
         if (!hit.task) return DEFAULT_CURSOR;
         if (hit.task.hasChildren) return TASK_DISABLED_PARENT_CURSOR;
-        if (!hit.task.editable || useTaskStore.getState().confirmedProjectScope?.schedulingAllowed === false) return DEFAULT_CURSOR;
+        if (!hit.task.editable) return DEFAULT_CURSOR;
         if (hit.region === 'start' || hit.region === 'end') return TASK_RESIZE_CURSOR;
         if (hit.relation) return 'pointer';
         return TASK_MOVE_CURSOR;
@@ -297,7 +297,7 @@ export class InteractionEngine {
             return;
         }
 
-        if (resolvedHit.task && resolvedHit.task.editable && useTaskStore.getState().confirmedProjectScope?.schedulingAllowed !== false) {
+        if (resolvedHit.task && resolvedHit.task.editable) {
             // Check if parent task
             if (resolvedHit.task.hasChildren) {
                 useTaskStore.getState().selectTask(resolvedHit.task.id);

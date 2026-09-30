@@ -82,7 +82,7 @@ describe('apiClient.fetchData', () => {
                 ], assignees: [] },
                 project_scope: {
                     root_project_id: '1', candidate_mode: 'member_all', selection_explicit: true,
-                    selected_project_ids: ['1'], effective_project_ids: ['1'], scheduling_allowed: false
+                    selected_project_ids: ['1'], effective_project_ids: ['1'], scheduling_allowed: true
                 }
             })
         }));
@@ -90,7 +90,7 @@ describe('apiClient.fetchData', () => {
         const result = await apiClient.fetchData();
         expect(result.projectScope).toEqual({
             rootProjectId: '1', mode: 'member_all', selectionExplicit: true,
-            selectedProjectIds: ['1'], effectiveProjectIds: ['1'], schedulingAllowed: false
+            selectedProjectIds: ['1'], effectiveProjectIds: ['1'], schedulingAllowed: true
         });
         expect(result.filterOptions.projects).toEqual([{
             id: '205', name: 'Operations', identifier: 'ops', path: undefined,

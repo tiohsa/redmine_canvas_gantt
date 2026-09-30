@@ -136,7 +136,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       'selection_explicit' => true,
       'selected_project_ids' => [outside_project.id.to_s],
       'effective_project_ids' => [outside_project.id.to_s],
-      'scheduling_allowed' => false
+      'scheduling_allowed' => true
     )
     expect(body.fetch('tasks').find { |task| task.fetch('id') == outside_issue.id }.fetch('spent_hours')).to eq(3.0)
 

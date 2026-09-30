@@ -194,7 +194,7 @@ describe('HtmlOverlay', () => {
         });
     });
 
-    it('hides date and dependency handles when the server disallows scheduling', () => {
+    it('shows date and dependency handles when external projects are selected', () => {
         useTaskStore.getState().setTasks([task1, task2]);
         useTaskStore.getState().setHoveredTask('1');
         useTaskStore.setState({ confirmedProjectScope: {
@@ -202,10 +202,10 @@ describe('HtmlOverlay', () => {
             selectedProjectIds: ['1', '205'], effectiveProjectIds: ['1', '205'], schedulingAllowed: false
         } });
         render(<HtmlOverlay />);
-        expect(screen.queryByTestId('task-resize-handle-start-1')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('task-resize-handle-end-1')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('dependency-handle-left-1')).not.toBeInTheDocument();
-        expect(screen.queryByTestId('dependency-handle-right-1')).not.toBeInTheDocument();
+        expect(screen.getByTestId('task-resize-handle-start-1')).toBeInTheDocument();
+        expect(screen.getByTestId('task-resize-handle-end-1')).toBeInTheDocument();
+        expect(screen.getByTestId('dependency-handle-left-1')).toBeInTheDocument();
+        expect(screen.getByTestId('dependency-handle-right-1')).toBeInTheDocument();
         act(() => useTaskStore.setState({ confirmedProjectScope: null }));
     });
 

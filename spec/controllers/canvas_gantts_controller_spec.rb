@@ -1917,12 +1917,13 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(relation).to receive(:delay=) { |value| current_delay = value }
     end
 
-    it 'rejects updates to a relation between different project roots' do
+    it 'updates a relation between different project roots when Redmine permits it' do
       allow(project_to).to receive(:root).and_return(instance_double(Project, id: 99))
+      allow(Setting).to receive(:cross_project_issue_relations?).and_return(true)
 
       patch :update_relation, params: { project_id: 'demo', id: '77', relation: { relation_type: 'precedes', delay: '0' } }, format: :json
 
-      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response).to have_http_status(:ok)
     end
 
     it 'updates a relation and returns the canonical payload' do
@@ -2126,6 +2127,22 @@ RSpec.describe CanvasGanttsController, type: :controller do
           'delay' => 2
         }
       )
+    end
+
+    it 'creates a relation between different project roots when Redmine permits it' do
+      external_project = instance_double(Project, id: 2, root: instance_double(Project, id: 99))
+      allow(issue_project).to receive(:root).and_return(issue_project)
+      allow(issue_to).to receive(:project).and_return(external_project)
+      allow(issue_to).to receive(:project_id).and_return(2)
+      allow(Setting).to receive(:cross_project_issue_relations?).and_return(true)
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, external_project).and_return(true)
+
+      post :create_relation,
+           params: { project_id: 'demo', relation: { issue_from_id: '10', issue_to_id: '11', relation_type: 'precedes', delay: '2' } },
+           format: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).fetch('relation')).to include('from' => 10, 'to' => 11)
     end
 
     it 'rejects relation creation when delay does not match current task dates' do
@@ -2400,14 +2417,16 @@ RSpec.describe CanvasGanttsController, type: :controller do
       )
     end
 
-    it 'rejects schedule changes while an external project is selected' do
+    it 'forwards schedule changes while external projects are selected' do
       allow(controller).to receive(:current_view_scope).and_return(scope_project_ids: [1, 205])
-      expect(controller).not_to receive(:schedule_mutation_coordinator)
+      coordinator = controller.send(:schedule_mutation_coordinator)
+      result = coordinator.call(operation_id: 'cross-root', base_revisions: {}, changes: [], resolution: nil, date_placement_mode: nil)
+      expect(coordinator).to receive(:call).with(hash_including(operation_id: 'cross-root')).and_return(result)
 
       post :schedule_mutation, params: { project_id: 'demo', operation_id: 'cross-root', changes: [] }, format: :json
 
-      expect(response).to have_http_status(:forbidden)
-      expect(JSON.parse(response.body)).to include('status' => 'forbidden')
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to include('status' => 'ok')
     end
 
     it 'forwards a read-only resolution review and serializes its guarded scope' do

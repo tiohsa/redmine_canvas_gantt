@@ -842,7 +842,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       selection_explicit: true,
       selected_project_ids: %w[2 5],
       effective_project_ids: %w[2 5],
-      scheduling_allowed: false
+      scheduling_allowed: true
     )
   end
 

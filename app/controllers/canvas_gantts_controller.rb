@@ -199,7 +199,6 @@ class CanvasGanttsController < ApplicationController
     label_chart_short: :label_chart_short,
     label_refresh_failed: :label_refresh_failed,
     label_project_candidates_load_failed: :label_project_candidates_load_failed,
-    label_cross_project_scheduling_notice: :label_cross_project_scheduling_notice,
     label_member_projects_only: :label_member_projects_only,
     label_project_search_placeholder: :label_project_search_placeholder,
     label_no_matching_projects: :label_no_matching_projects,
@@ -742,11 +741,6 @@ class CanvasGanttsController < ApplicationController
 
   # POST /projects/:project_id/canvas_gantt/schedule_mutation.json
   def schedule_mutation
-    if (current_view_scope[:scope_project_ids].map(&:to_i) - descendant_project_ids.map(&:to_i)).any?
-      render json: { status: 'forbidden', error: canvas_gantt_l(:error_canvas_gantt_cross_project_scheduling_unsupported) }, status: :forbidden
-      return
-    end
-
     operation_id = params[:operation_id].to_s
     if operation_id.blank?
       render json: { error: 'operation_id is required' }, status: :unprocessable_entity
@@ -868,7 +862,6 @@ class CanvasGanttsController < ApplicationController
     issue_from = Issue.visible.find(relation_params[:issue_from_id])
     issue_to = Issue.visible.find(relation_params[:issue_to_id])
     return unless ensure_relation_createable!(issue_from, issue_to)
-    return if reject_cross_root_relation(issue_from, issue_to)
 
     relation = IssueRelation.new(
       issue_from: issue_from,
@@ -899,7 +892,6 @@ class CanvasGanttsController < ApplicationController
     relation = IssueRelation.find(params[:id])
     return unless ensure_relation_editable!(relation)
     issue_from, issue_to = @authorized_relation_endpoints
-    return if reject_cross_root_relation(issue_from, issue_to)
 
     save_relation_change(
       relation: relation,
@@ -1355,13 +1347,6 @@ class CanvasGanttsController < ApplicationController
 
   def relation_params
     params.require(:relation).permit(:issue_from_id, :issue_to_id, :relation_type, :delay)
-  end
-
-  def reject_cross_root_relation(issue_from, issue_to)
-    return false if issue_from.project.root.id == issue_to.project.root.id
-
-    render json: { error: canvas_gantt_l(:error_canvas_gantt_cross_root_relation_unsupported) }, status: :unprocessable_entity
-    true
   end
 
   def ensure_relation_editable!(relation)

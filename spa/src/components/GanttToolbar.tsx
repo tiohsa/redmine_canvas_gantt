@@ -589,11 +589,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     ];
     return (
         <div className="gantt-toolbar-container">
-          {confirmedProjectScope?.schedulingAllowed === false && (
-            <div role="status" data-testid="cross-project-scheduling-notice" style={{ padding: '8px 12px', color: designTokens.textSecondary }}>
-              {i18n.t('label_cross_project_scheduling_notice') || 'External projects are selected. Date dragging, resizing, and dependency creation are unavailable. Deselect external projects to enable them.'}
-            </div>
-          )}
           <div className={`gantt-toolbar${hasPendingManualChanges ? ' gantt-toolbar--dirty' : ''}`} style={{
             display: 'flex',
             alignItems: 'center',
