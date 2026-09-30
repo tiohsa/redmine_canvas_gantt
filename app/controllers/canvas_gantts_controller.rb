@@ -1123,8 +1123,13 @@ class CanvasGanttsController < ApplicationController
   end
 
   def filter_option_assignees(project_ids)
-    project_scope = Project.where(id: project_ids)
-    principals = Principal.member_of(project_scope)
+    visible_projects = Project.visible(User.current).active.where(id: project_ids).to_a
+    visible_project_ids = visible_projects.map(&:id)
+    principals = Principal.member_of(visible_projects).visible(User.current)
+    locked_users = User.where(status: User::STATUS_LOCKED)
+      .where(id: Member.where(project_id: visible_project_ids).select(:user_id))
+    principals = Principal.where(id: principals.select(:id))
+      .or(Principal.where(id: locked_users.select(:id)))
     principals = principals.where(type: 'User') unless Setting.issue_group_assignment?
 
     if Setting.issue_group_assignment?
@@ -1132,9 +1137,10 @@ class CanvasGanttsController < ApplicationController
       principals = principals.where.not(id: built_in_group_ids)
     end
 
-    candidate_principal_ids = principals.sorted.limit(data_payload_budget.collection_limit + 1).pluck(:id)
-    data_payload_budget.ensure_count!(candidate_principal_ids, resource: 'assignees')
-    memberships = Member.where(project_id: project_ids, user_id: candidate_principal_ids)
+    principal_limit = data_payload_budget.collection_limit - 1
+    candidate_principal_ids = principals.sorted.limit(principal_limit + 1).pluck(:id)
+    data_payload_budget.ensure_count!(candidate_principal_ids, resource: 'assignees', limit: principal_limit)
+    memberships = Member.where(project_id: visible_project_ids, user_id: candidate_principal_ids)
       .distinct
       .pluck(:user_id, :project_id)
 
@@ -1149,18 +1155,23 @@ class CanvasGanttsController < ApplicationController
 
       { id: entry[:id], name: principal.name, project_ids: entry[:project_ids].to_a.sort }
     end
-    candidates << { id: nil, name: nil, project_ids: Array(project_ids).map(&:to_s).sort }
+    candidates << { id: nil, name: nil, project_ids: visible_project_ids.map(&:to_s).sort }
+    data_payload_budget.ensure_count!(candidates, resource: 'assignees')
     candidates.sort_by { |entry| [entry[:id].nil? ? 0 : 1, entry[:name].to_s.downcase] }
   end
 
   def filter_option_trackers(project_ids)
     grouped = {}
-    Project.where(id: project_ids).each do |project|
-      project.trackers.visible(User.current).each do |tracker|
-        (grouped[tracker.id] ||= { id: tracker.id, name: tracker.name, project_ids: Set.new })[:project_ids] << project.id.to_s
-        data_payload_budget.ensure_count!(grouped, resource: 'trackers')
-      end
+    visible_project_ids = Project.visible(User.current).active.where(id: project_ids).pluck(:id)
+    rows = Tracker.visible(User.current)
+      .joins(:projects)
+      .where(projects: { id: visible_project_ids })
+      .sorted
+      .pluck("#{Tracker.table_name}.id", "#{Tracker.table_name}.name", "#{Project.table_name}.id", "#{Tracker.table_name}.position")
+    rows.each do |tracker_id, tracker_name, project_id, _tracker_position|
+      (grouped[tracker_id] ||= { id: tracker_id, name: tracker_name, project_ids: Set.new })[:project_ids] << project_id.to_s
     end
+    data_payload_budget.ensure_count!(grouped, resource: 'trackers')
     grouped.values.map { |entry| entry.merge(project_ids: entry[:project_ids].to_a.sort) }
   end
 

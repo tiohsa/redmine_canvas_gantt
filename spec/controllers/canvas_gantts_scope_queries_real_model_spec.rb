@@ -74,7 +74,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect { controller.send(:filter_option_assignees, [first_project.id, second_project.id]) }
         .to raise_error(RedmineCanvasGantt::DataPayloadBudget::Exceeded) { |error|
           expect(error.resource).to eq('assignees')
-          expect(error.limit).to eq(1)
+          expect(error.limit).to eq(0)
         }
     end
 

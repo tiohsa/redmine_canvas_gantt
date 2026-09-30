@@ -1,7 +1,8 @@
 require_relative '../spec_helper'
 
 RSpec.describe CanvasGanttsController, type: :controller do
-  fixtures :projects, :users, :roles, :members, :member_roles, :enabled_modules
+  fixtures :projects, :users, :roles, :members, :member_roles, :enabled_modules,
+           :trackers, :issue_statuses, :issues
 
   let(:user) { User.find(2) }
   let(:root) { Project.find(1) }
@@ -69,6 +70,49 @@ RSpec.describe CanvasGanttsController, type: :controller do
     expect(candidates).to include(active.id, outside.id, hidden.id)
     expect(candidates).not_to include(archived.id, closed.id)
     expect(candidates(member_only: false)).not_to include(outside.id, archived.id, closed.id, hidden.id)
+  end
+
+  it 'uses visible project memberships for assignees and adds Locked members without historical assignees' do
+    visible = candidate_project('assignee-visible')
+    hidden = candidate_project('assignee-hidden', parent: nil, is_public: false)
+    active_member = User.create!(
+      login: 'assignee-visible-member', firstname: 'Active', lastname: 'Member',
+      mail: 'assignee-active@example.test', status: User::STATUS_ACTIVE,
+      password: 'password123', password_confirmation: 'password123'
+    )
+    locked_member = User.create!(
+      login: 'assignee-locked-member', firstname: 'Locked', lastname: 'Member',
+      mail: 'assignee-locked@example.test', status: User::STATUS_LOCKED,
+      password: 'password123', password_confirmation: 'password123'
+    )
+    hidden_only_member = User.create!(
+      login: 'assignee-hidden-member', firstname: 'Hidden', lastname: 'Member',
+      mail: 'assignee-hidden@example.test', status: User::STATUS_ACTIVE,
+      password: 'password123', password_confirmation: 'password123'
+    )
+    [active_member, locked_member].each { |principal| membership(visible, principal) }
+    membership(hidden, hidden_only_member)
+    source = Issue.find(1)
+    historical_nonmember = User.create!(
+      login: 'assignee-history-only', firstname: 'History', lastname: 'Only',
+      mail: 'assignee-history@example.test', status: User::STATUS_ACTIVE,
+      password: 'password123', password_confirmation: 'password123'
+    )
+    historical_issue = Issue.create!(
+      project: visible, tracker: source.tracker, status: source.status, author: user,
+      subject: 'Historical non-member assignment'
+    )
+    historical_issue.update_column(:assigned_to_id, historical_nonmember.id)
+    allow(Setting).to receive(:issue_group_assignment?).and_return(false)
+    expect(Issue).not_to receive(:visible)
+
+    options = controller.send(:filter_option_assignees, [visible.id, hidden.id])
+
+    expect(options.map { |option| option[:id] }).to contain_exactly(nil, active_member.id, locked_member.id)
+    expect(options).to include(
+      { id: locked_member.id, name: locked_member.name, project_ids: [visible.id.to_s] }
+    )
+    expect(options.map { |option| option[:project_ids] }.flatten.uniq).to eq([visible.id.to_s])
   end
 
   it 'allows visible member projects outside the tree without target Canvas access' do

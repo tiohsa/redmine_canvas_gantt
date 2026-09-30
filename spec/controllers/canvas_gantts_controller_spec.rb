@@ -651,89 +651,167 @@ RSpec.describe CanvasGanttsController, type: :controller do
   end
 
   describe '#filter_option_assignees' do
-    it 'uses project membership rather than Issue rows and retains active, locked, and unassigned candidates' do
-      project_scope = double('effective projects')
-      principal_scope = double('project members')
-      sorted_principals = double('sorted project members')
-      limited_principals = double('bounded project members')
-      member_scope = double('membership rows')
-      distinct_memberships = double('distinct membership rows')
-      active_user = double('active member', id: 10, name: 'Alice')
-      locked_user = double('locked member', id: 11, name: 'Locked User')
-      budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, collection_limit: 10)
-      allow(controller).to receive(:data_payload_budget).and_return(budget)
-      allow(Project).to receive(:where).with(id: [1]).and_return(project_scope)
-      allow(Principal).to receive(:member_of).with(project_scope).and_return(principal_scope)
-      allow(Setting).to receive(:issue_group_assignment?).and_return(false)
-      allow(principal_scope).to receive(:where).with(type: 'User').and_return(principal_scope)
-      allow(principal_scope).to receive(:sorted).and_return(sorted_principals)
-      allow(sorted_principals).to receive(:limit).with(11).and_return(limited_principals)
-      allow(limited_principals).to receive(:pluck).with(:id).and_return([10, 11])
-      expect(budget).to receive(:ensure_count!).with([10, 11], resource: 'assignees')
-      allow(Member).to receive(:where).with(project_id: [1], user_id: [10, 11]).and_return(member_scope)
-      allow(member_scope).to receive(:distinct).and_return(distinct_memberships)
-      allow(distinct_memberships).to receive(:pluck).with(:user_id, :project_id).and_return([[10, 1], [11, 1]])
-      allow(Principal).to receive(:where).with(id: [10, 11]).and_return([active_user, locked_user])
-      expect(Issue).not_to receive(:visible)
+    def stub_visible_assignee_scopes(project_ids:, standard_ids:, locked_ids:, memberships:, principals:, limit: 10)
+      candidate_ids = (standard_ids + locked_ids).uniq
+      current_user = User.current
+      visible_scope = double('visible projects')
+      active_scope = double('visible active projects')
+      visible_project = double('visible effective project', id: project_ids.first)
+      allow(Project).to receive(:visible).with(current_user).and_return(visible_scope)
+      allow(visible_scope).to receive(:active).and_return(active_scope)
+      allow(active_scope).to receive(:where).with(id: project_ids).and_return(active_scope)
+      allow(active_scope).to receive(:to_a).and_return([visible_project])
 
-      expect(controller.send(:filter_option_assignees, [1])).to eq([
+      standard_scope = double('Redmine-visible project members')
+      standard_visible = double('standard visible principals')
+      standard_id_scope = double('standard principal IDs')
+      allow(Principal).to receive(:member_of).with([visible_project]).and_return(standard_scope)
+      allow(standard_scope).to receive(:visible).with(current_user).and_return(standard_visible)
+      allow(standard_visible).to receive(:select).with(:id).and_return(standard_id_scope)
+
+      project_members = double('visible project membership subquery')
+      locked_membership_scope = double('locked user membership scope')
+      locked_id_scope = double('locked user IDs')
+      allow(Member).to receive(:where).with(project_id: [project_ids.first]).and_return(project_members)
+      allow(project_members).to receive(:select).with(:user_id).and_return(project_members)
+      locked_scope = double('locked users')
+      locked_member_scope = double('locked project members')
+      allow(User).to receive(:where).with(status: User::STATUS_LOCKED).and_return(locked_scope)
+      allow(locked_scope).to receive(:where).with(id: project_members).and_return(locked_member_scope)
+      allow(locked_member_scope).to receive(:select).with(:id).and_return(locked_id_scope)
+
+      standard_union = double('standard principal ID query')
+      locked_union = double('locked principal ID query')
+      combined = double('bounded principal candidates')
+      allow(Principal).to receive(:where).with(id: standard_id_scope).and_return(standard_union)
+      allow(Principal).to receive(:where).with(id: locked_id_scope).and_return(locked_union)
+      allow(standard_union).to receive(:or).with(locked_union).and_return(combined)
+      sorted = double('sorted principal candidates')
+      limited = double('limited principal candidates')
+      allow(combined).to receive(:where).with(type: 'User').and_return(combined)
+      allow(combined).to receive(:sorted).and_return(sorted)
+      allow(sorted).to receive(:limit).with(limit).and_return(limited)
+      allow(limited).to receive(:pluck).with(:id).and_return(candidate_ids)
+
+      member_scope = double('candidate memberships')
+      distinct_scope = double('distinct candidate memberships')
+      allow(Member).to receive(:where).with(project_id: [project_ids.first], user_id: candidate_ids).and_return(member_scope)
+      allow(member_scope).to receive(:distinct).and_return(distinct_scope)
+      allow(distinct_scope).to receive(:pluck).with(:user_id, :project_id).and_return(memberships)
+      allow(Principal).to receive(:where).with(id: memberships.map(&:first).uniq).and_return(principals)
+
+      budget = RedmineCanvasGantt::DataPayloadBudget.new(
+        environment: { 'REDMINE_CANVAS_GANTT_MAX_DATA_COLLECTION_ITEMS' => limit.to_s }
+      )
+      allow(controller).to receive(:data_payload_budget).and_return(budget)
+      [budget, combined]
+    end
+
+    it 'bounds membership and Unassigned to visible active Projects and includes their Locked Users' do
+      alice = double('active member', id: 10, name: 'Alice')
+      locked = double('locked member', id: 11, name: 'Locked User')
+      budget, = stub_visible_assignee_scopes(
+        project_ids: [1, 2], standard_ids: [10], locked_ids: [11],
+        memberships: [[10, 1], [11, 1]], principals: [alice, locked], limit: 10
+      )
+      allow(Setting).to receive(:issue_group_assignment?).and_return(false)
+      expect(budget).to receive(:ensure_count!).with([10, 11], resource: 'assignees', limit: 9)
+      expect(budget).to receive(:ensure_count!).with(
+        [{ id: 10, name: 'Alice', project_ids: ['1'] }, { id: 11, name: 'Locked User', project_ids: ['1'] },
+         { id: nil, name: nil, project_ids: ['1'] }], resource: 'assignees'
+      )
+
+      expect(controller.send(:filter_option_assignees, [1, 2])).to eq([
         { id: nil, name: nil, project_ids: ['1'] },
         { id: 10, name: 'Alice', project_ids: ['1'] },
         { id: 11, name: 'Locked User', project_ids: ['1'] }
       ])
     end
 
-    it 'allows assignable regular Groups only when group assignment is enabled' do
-      project_scope = double('effective projects')
-      principal_scope = double('all project principals')
-      principal_where = double('principal exclusion query')
+    it 'keeps regular Groups behind Redmine group assignment and excludes built-in Groups' do
+      group = double('regular group', id: 20, name: 'Developers')
+      _budget, combined = stub_visible_assignee_scopes(
+        project_ids: [1], standard_ids: [20], locked_ids: [],
+        memberships: [[20, 1]], principals: [group], limit: 10
+      )
       assignable_groups = double('assignable groups')
-      built_in_group_subquery = double('built-in group IDs')
-      group_filter = double('exclude built-in groups')
-      principals_without_builtins = double('assignable principals')
-      sorted_principals = double('sorted assignable principals')
-      limited_principals = double('bounded assignable principals')
-      member_scope = double('membership rows')
-      normal_group = double('regular group', id: 20, name: 'Developers')
-      budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, collection_limit: 10)
-
-      allow(controller).to receive(:data_payload_budget).and_return(budget)
-      allow(Project).to receive(:where).with(id: [1]).and_return(project_scope)
-      allow(Principal).to receive(:member_of).with(project_scope).and_return(principal_scope)
+      built_in_group_ids = double('built-in Group IDs')
       allow(Setting).to receive(:issue_group_assignment?).and_return(true)
       allow(Group).to receive(:givable).and_return(assignable_groups)
-      allow(assignable_groups).to receive(:select).with(:id).and_return(built_in_group_subquery)
-      allow(Group).to receive(:where).and_return(group_filter)
-      allow(group_filter).to receive(:not).with(id: built_in_group_subquery).and_return(principals_without_builtins)
-      allow(principals_without_builtins).to receive(:select).with(:id).and_return(built_in_group_subquery)
-      allow(principal_scope).to receive(:where).and_return(principal_where)
-      allow(principal_where).to receive(:not).with(id: built_in_group_subquery).and_return(principals_without_builtins)
-      allow(principals_without_builtins).to receive(:sorted).and_return(sorted_principals)
-      allow(sorted_principals).to receive(:limit).with(11).and_return(limited_principals)
-      allow(limited_principals).to receive(:pluck).with(:id).and_return([20])
-      allow(budget).to receive(:ensure_count!).with([20], resource: 'assignees').and_return([20])
-      allow(Member).to receive(:where).with(project_id: [1], user_id: [20]).and_return(member_scope)
-      allow(member_scope).to receive(:distinct).and_return(member_scope)
-      allow(member_scope).to receive(:pluck).with(:user_id, :project_id).and_return([[20, 1]])
-      allow(Principal).to receive(:where).with(id: [20]).and_return([normal_group])
-      expect(Issue).not_to receive(:visible)
+      allow(assignable_groups).to receive(:select).with(:id).and_return(built_in_group_ids)
+      principal_exclusion = double('principal group exclusion')
+      group_exclusion = double('built-in group exclusion')
+      group_subquery = double('built-in group subquery')
+      allow(Group).to receive(:where).and_return(group_exclusion)
+      allow(group_exclusion).to receive(:not).with(id: built_in_group_ids).and_return(group_subquery)
+      allow(group_subquery).to receive(:select).with(:id).and_return(built_in_group_ids)
+      allow(combined).to receive(:where).and_return(principal_exclusion)
+      allow(principal_exclusion).to receive(:not).with(id: built_in_group_ids).and_return(combined)
 
       expect(controller.send(:filter_option_assignees, [1])).to eq([
         { id: nil, name: nil, project_ids: ['1'] },
         { id: 20, name: 'Developers', project_ids: ['1'] }
       ])
     end
+
+    it 'counts Unassigned against the collection limit and probes one principal beyond the remaining budget' do
+      alice = double('active member', id: 10, name: 'Alice')
+      budget, = stub_visible_assignee_scopes(
+        project_ids: [1], standard_ids: [10], locked_ids: [],
+        memberships: [[10, 1]], principals: [alice], limit: 2
+      )
+      allow(Setting).to receive(:issue_group_assignment?).and_return(false)
+      expect(budget).to receive(:ensure_count!).with([10], resource: 'assignees', limit: 1).and_call_original
+      expect(budget).to receive(:ensure_count!).with(
+        [{ id: 10, name: 'Alice', project_ids: ['1'] }, { id: nil, name: nil, project_ids: ['1'] }],
+        resource: 'assignees'
+      ).and_call_original
+
+      expect(controller.send(:filter_option_assignees, [1])).to contain_exactly(
+        { id: nil, name: nil, project_ids: ['1'] }, { id: 10, name: 'Alice', project_ids: ['1'] }
+      )
+    end
+
+    it 'rejects two principals plus Unassigned when the collection limit is two' do
+      alice = double('active member', id: 10, name: 'Alice')
+      bob = double('active member', id: 12, name: 'Bob')
+      budget, = stub_visible_assignee_scopes(
+        project_ids: [1], standard_ids: [10, 12], locked_ids: [],
+        memberships: [[10, 1], [12, 1]], principals: [alice, bob], limit: 2
+      )
+      allow(Setting).to receive(:issue_group_assignment?).and_return(false)
+      expect(budget).to receive(:ensure_count!).with([10, 12], resource: 'assignees', limit: 1)
+        .and_call_original
+
+      expect { controller.send(:filter_option_assignees, [1]) }
+        .to raise_error(RedmineCanvasGantt::DataPayloadBudget::Exceeded) { |error|
+          expect(error.resource).to eq('assignees')
+          expect(error.limit).to eq(1)
+          expect(error.actual).to eq(2)
+        }
+    end
   end
 
   describe '#filter_option_trackers' do
-    it 'returns enabled visible Project trackers even when there are no Issues' do
+    it 'loads configured visible Trackers in one batch even when there are no Issues' do
       tracker = double('configured tracker', id: 3, name: 'Unused Tracker')
-      tracker_scope = double('project tracker scope', visible: [tracker])
-      project = double('effective project', id: 1, trackers: tracker_scope)
+      visible_projects = double('visible active projects')
+      allow(Project).to receive(:visible).with(User.current).and_return(visible_projects)
+      allow(visible_projects).to receive(:active).and_return(visible_projects)
+      allow(visible_projects).to receive(:where).with(id: [1]).and_return(visible_projects)
+      allow(visible_projects).to receive(:pluck).with(:id).and_return([1])
+      tracker_scope = double('visible Trackers')
+      joined_trackers = double('Trackers joined to Projects')
+      project_trackers = double('configured project Trackers')
+      sorted_trackers = double('sorted configured Trackers')
+      allow(Tracker).to receive(:visible).with(User.current).and_return(tracker_scope)
+      allow(tracker_scope).to receive(:joins).with(:projects).and_return(joined_trackers)
+      allow(joined_trackers).to receive(:where).with(projects: { id: [1] }).and_return(project_trackers)
+      allow(project_trackers).to receive(:sorted).and_return(sorted_trackers)
+      allow(sorted_trackers).to receive(:pluck).with('trackers.id', 'trackers.name', 'projects.id', 'trackers.position')
+        .and_return([[3, 'Unused Tracker', 1, 2]])
       budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, collection_limit: 10)
       allow(controller).to receive(:data_payload_budget).and_return(budget)
-      allow(Project).to receive(:where).with(id: [1]).and_return([project])
-      allow(User).to receive(:current).and_return(double('current user'))
       expect(budget).to receive(:ensure_count!).with({
         3 => { id: 3, name: 'Unused Tracker', project_ids: Set['1'] }
       }, resource: 'trackers')
@@ -742,6 +820,70 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(controller.send(:filter_option_trackers, [1])).to eq([
         { id: 3, name: 'Unused Tracker', project_ids: ['1'] }
       ])
+    end
+
+    it 'returns configured Trackers in position order instead of name order' do
+      previous_user = User.current
+      User.current = User.find(1)
+      earlier_position = Tracker.find(1)
+      later_position = Tracker.find(2)
+      earlier_position.update_columns(name: 'Z positioned first', position: 1)
+      later_position.update_columns(name: 'A positioned second', position: 2)
+      project = Project.create!(
+        name: 'Tracker position ordering',
+        identifier: "tracker-position-order-#{SecureRandom.hex(3)}",
+        is_public: true
+      )
+      project.trackers = [earlier_position, later_position]
+
+      options = described_class.new.send(:filter_option_trackers, [project.id])
+
+      expect(options.map { |entry| entry[:id] }).to eq([earlier_position.id, later_position.id])
+      expect(options.map { |entry| entry[:name] }).to eq(['Z positioned first', 'A positioned second'])
+    ensure
+      User.current = previous_user
+    end
+
+    it 'keeps Tracker SQL query count flat and selects the ordered DISTINCT position column' do
+      previous_user = User.current
+      User.current = User.find(1)
+      tracker = Tracker.find(1)
+      measurements = [10, 100].map do |count|
+        projects = Array.new(count) do |index|
+          Project.create!(
+            name: "Tracker batch query #{count}-#{index}",
+            identifier: "tracker-batch-#{count}-#{index}-#{SecureRandom.hex(3)}",
+            is_public: true
+          ).tap { |project| project.trackers = [tracker] }
+        end
+        project_ids = projects.map(&:id)
+        statements = []
+        subscriber = lambda do |_name, _start, _finish, _id, payload|
+          sql = payload[:sql].to_s
+          statements << sql if !payload[:cached] && sql.match?(/\A\s*(SELECT|WITH)\b/i)
+        end
+        ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+          options = described_class.new.send(:filter_option_trackers, project_ids)
+          expect(options).to contain_exactly({
+            id: tracker.id, name: tracker.name, project_ids: project_ids.map(&:to_s).sort
+          })
+        end
+        [count, statements.length, statements]
+      end
+
+      expect(measurements.first[1]).to be > 0
+      expect(measurements.last[1]).to be <= measurements.first[1] + 1
+
+      tracker_sql = measurements.first[2].find do |sql|
+        sql.match?(/\ASELECT\s+DISTINCT\b/i) && sql.match?(/\bFROM\s+["`]?trackers["`]?\b/i)
+      end
+      expect(tracker_sql).to be_present
+      projection = tracker_sql.match(/\ASELECT\s+DISTINCT\s+(.*?)\s+FROM\b/im)&.captures&.first
+      expect(projection).to match(/["`]?trackers["`]?\s*\.\s*["`]?position["`]?/i)
+      order_by = tracker_sql.match(/\bORDER\s+BY\s+(.*?)(?:\s+LIMIT\b|\s+FOR\s+|\z)/im)&.captures&.first
+      expect(order_by).to match(/["`]?trackers["`]?\s*\.\s*["`]?position["`]?/i)
+    ensure
+      User.current = previous_user
     end
   end
 

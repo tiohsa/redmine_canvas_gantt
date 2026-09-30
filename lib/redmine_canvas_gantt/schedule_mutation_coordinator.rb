@@ -208,6 +208,17 @@ module RedmineCanvasGantt
               raise ActiveRecord::Rollback
             end
 
+            callback_authorization_status = callback_change_authorization_status(
+              scope_ids: scope_c[:ids], initial_revisions: initial_revisions
+            )
+            if callback_authorization_status
+              transaction_result = failure(
+                callback_authorization_status == :forbidden ? 'Permission denied' : 'Schedule scope is unavailable',
+                status: callback_authorization_status
+              )
+              raise ActiveRecord::Rollback
+            end
+
             canonical = Issue.visible.where(id: scope_c[:ids].sort).order(:id).to_a
             if resolution
               # A valid draft is insufficient: Redmine callbacks may move a
@@ -227,9 +238,6 @@ module RedmineCanvasGantt
               canonical.each do |issue|
                 minimum = issue.soonest_start(true)
                 errors << "Task #{issue.id} must start on or after #{minimum}" if minimum && issue.start_date && issue.start_date < minimum
-                if issue.lock_version.to_i != initial_revisions.fetch(issue.id) && !editable?(issue)
-                  errors << 'Permission denied for a callback update'
-                end
               end
               approved = normalize_accepted_adjustments(resolution[:accepted_adjustments])
               approved_matches = approved && approved == adjustments.map { |item| item.slice(:task_id, :start_date, :due_date) }.sort_by { |item| item[:task_id] }
@@ -352,6 +360,24 @@ module RedmineCanvasGantt
 
     def callback_scope_changed?(left, right)
       left[:signature] != right[:signature]
+    end
+
+    # Redmine callbacks can persist related issues that were not explicitly
+    # included in the Canvas plan. Authorize only records whose lock_version
+    # changed during this transaction; read-only graph intermediaries remain
+    # valid participants without requiring edit permission.
+    def callback_change_authorization_status(scope_ids:, initial_revisions:)
+      changed_issues = Issue.where(id: scope_ids).to_a.select do |issue|
+        issue.lock_version.to_i != initial_revisions.fetch(issue.id.to_i, issue.lock_version.to_i)
+      end
+      return nil if changed_issues.empty?
+
+      return :not_found if changed_issues.any? { |issue| !@project_scope_ids.include?(issue.project_id.to_i) }
+
+      visible_ids = Issue.visible.where(id: changed_issues.map(&:id)).pluck(:id).map(&:to_i).to_set
+      return :not_found unless visible_ids == changed_issues.map { |issue| issue.id.to_i }.to_set
+
+      :forbidden unless changed_issues.all? { |issue| editable?(issue) }
     end
 
     def normalize_changes(changes)

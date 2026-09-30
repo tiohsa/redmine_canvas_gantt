@@ -32,11 +32,11 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
 
   before { User.current = current_user }
 
-  def build_schedule_issue(subject, start_date:, due_date:, parent: nil)
+  def build_schedule_issue(subject, start_date:, due_date:, parent: nil, project: nil)
     source = Issue.find(1)
     Issue.create!(
-      project: source.project,
-      tracker: source.tracker,
+      project: project || source.project,
+      tracker: project&.trackers&.first || source.tracker,
       status: source.status,
       author: current_user,
       subject: subject,
@@ -131,6 +131,20 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
       expect(a.reload.start_date).to eq(Date.new(2027, 1, 1))
       expect(b.reload.start_date.iso8601).to eq(result.adjustments.first[:start_date])
       expect(accepted.entities.map { |entry| entry[:id] }).to include(b.id)
+    end
+
+    it 'rejects and rolls back a callback-only changed read-only Issue during resolution' do
+      context = review([a])
+      original = persisted([a, b])
+      allow(resolver).to receive(:editable?) { |issue| issue.id != b.id }
+      change = { task_id: a.id, start_date: '2027-01-01', due_date: '2027-01-04' }
+
+      result = apply_review(context, [a], [change])
+
+      expect(result.status).to eq(:forbidden)
+      expect(result.errors).to include('Permission denied')
+      expect(result.entities).to be_empty
+      expect(persisted([a, b])).to eq(original)
     end
 
     it 'rejects a different adjustment without changing either issue' do
@@ -807,6 +821,112 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(result.status).to eq(:forbidden)
     expect(result.entities).to be_empty
     expect(result.conflicts).to be_nil
+  end
+
+  it 'rolls back a callback-only successor change when the successor is not editable' do
+    predecessor = build_schedule_issue(
+      'Unauthorized callback predecessor',
+      start_date: Date.new(2027, 3, 1), due_date: Date.new(2027, 3, 2)
+    )
+    successor = build_schedule_issue(
+      'Unauthorized callback successor',
+      start_date: Date.new(2027, 3, 3), due_date: Date.new(2027, 3, 4)
+    )
+    IssueRelation.create!(issue_from: predecessor, issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES, delay: 0)
+    predecessor.reload
+    successor.reload
+    original = [predecessor, successor].to_h do |issue|
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version]]
+    end
+    allow(coordinator).to receive(:editable?) { |issue| issue.id != successor.id }
+
+    result = coordinator.call(
+      operation_id: 'schedule:unauthorized-callback-successor',
+      base_revisions: { predecessor.id => predecessor.lock_version },
+      changes: [{ task_id: predecessor.id, start_date: '2027-03-08', due_date: '2027-03-09' }]
+    )
+
+    expect(result.status).to eq(:forbidden)
+    expect(result.entities).to be_empty
+    expect([predecessor, successor].to_h do |issue|
+      issue.reload
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version]]
+    end).to eq(original)
+  end
+
+  it 'rolls back a real callback when its changed successor is outside Canvas scope' do
+    source_project = Issue.find(1).project
+    external_project = Project.create!(
+      name: 'Callback authorization external project',
+      identifier: "callback-auth-#{SecureRandom.hex(4)}"
+    )
+    predecessor = build_schedule_issue(
+      'Scoped callback predecessor', start_date: Date.new(2027, 3, 1), due_date: Date.new(2027, 3, 2),
+      project: source_project
+    )
+    successor = build_schedule_issue(
+      'Out of scope callback successor', start_date: Date.new(2027, 3, 3), due_date: Date.new(2027, 3, 4),
+      project: external_project
+    )
+    allow(Setting).to receive(:cross_project_issue_relations?).and_return(true)
+    IssueRelation.create!(issue_from: predecessor, issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES, delay: 0)
+    [predecessor, successor].each(&:reload)
+    original = [predecessor, successor].to_h do |issue|
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version]]
+    end
+    scoped_coordinator = described_class.new(
+      current_user: current_user,
+      project_scope_ids: [source_project.id],
+      payload_builder: payload_builder
+    )
+
+    result = scoped_coordinator.call(
+      operation_id: 'schedule:out-of-scope-callback',
+      base_revisions: { predecessor.id => predecessor.lock_version },
+      changes: [{ task_id: predecessor.id, start_date: '2027-03-08', due_date: '2027-03-09' }]
+    )
+
+    expect(result.status).to eq(:not_found)
+    expect(result.entities).to be_empty
+    expect(result.errors.join).not_to include(successor.id.to_s)
+    expect([predecessor, successor].to_h do |issue|
+      issue.reload
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version]]
+    end).to eq(original)
+  end
+
+  it 'rolls back a real callback when its changed successor is invisible' do
+    predecessor = build_schedule_issue(
+      'Visible callback predecessor', start_date: Date.new(2027, 3, 1), due_date: Date.new(2027, 3, 2)
+    )
+    successor = build_schedule_issue(
+      'Invisible callback successor', start_date: Date.new(2027, 3, 3), due_date: Date.new(2027, 3, 4)
+    )
+    IssueRelation.create!(issue_from: predecessor, issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES, delay: 0)
+    [predecessor, successor].each(&:reload)
+    original = [predecessor, successor].to_h do |issue|
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version]]
+    end
+    allow(Issue).to receive(:visible).and_wrap_original do |original_visible, *args|
+      original_visible.call(*args).where.not(id: successor.id)
+    end
+
+    result = coordinator.call(
+      operation_id: 'schedule:invisible-callback',
+      base_revisions: { predecessor.id => predecessor.lock_version },
+      changes: [{ task_id: predecessor.id, start_date: '2027-03-08', due_date: '2027-03-09' }]
+    )
+
+    expect(result.status).to eq(:not_found)
+    expect(result.entities).to be_empty
+    expect(result.errors.join).not_to include(successor.id.to_s)
+    expect([predecessor, successor].to_h do |issue|
+      issue.reload
+      [issue.id, [issue.start_date, issue.due_date, issue.lock_version]]
+    end).to eq(original)
   end
 
   it 'returns an operation-level conflict after the bounded topology retry budget' do
