@@ -820,14 +820,15 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       candidate_mode: 'member_all',
       selection_explicit: false,
       selected_project_ids: [],
-      effective_project_ids: ['1']
+      effective_project_ids: ['1'],
+      scheduling_allowed: true
     )
 
     policy = instance_double(RedmineCanvasGantt::ProjectScopePolicy)
     allow(policy).to receive(:mode_for) { |enabled| enabled ? 'member_all' : 'current_tree' }
     allow(policy).to receive(:selection_explicit?).and_return(true)
     expect(policy).to receive(:allowed_issue_project_ids)
-      .with(mode: 'member_all', descendant_project_ids: [1, 2, 3])
+      .with(mode: 'member_all', descendant_project_ids: [1, 2], requested_project_ids: [2, 5, 999])
       .and_return([1, 2, 3, 5])
     explicit = described_class.new(project: project,
       params: ActionController::Parameters.new(member_projects_only: '1', canvas_project_ids: %w[2 5 999]),
@@ -840,7 +841,8 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
       candidate_mode: 'member_all',
       selection_explicit: true,
       selected_project_ids: %w[2 5],
-      effective_project_ids: %w[2 5]
+      effective_project_ids: %w[2 5],
+      scheduling_allowed: false
     )
   end
 

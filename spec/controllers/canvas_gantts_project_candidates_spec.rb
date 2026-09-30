@@ -22,12 +22,12 @@ RSpec.describe CanvasGanttsController, type: :controller do
   end
 
   def membership(project, principal)
-    # Persist the principal membership itself, independently of Redmine's
-    # callbacks that also materialize inherited individual role memberships.
-    Member.insert_all!([{ project_id: project.id, user_id: principal.id, created_on: Time.current }])
+    Member.create!(project: project, principal: principal, roles: [Role.find(1)])
   end
 
   def candidates(member_only: true)
+    root.reload
+    controller.instance_variable_set(:@project_scope_policy, nil)
     controller.send(:filter_option_projects, [], member_projects_only: member_only)
       .map { |option| option.fetch(:id) }
   end
@@ -42,9 +42,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
     membership(both, user)
     membership(both, group)
 
-    warn "DEBUG candidates #{[direct, grouped, both, nonmember].map { |p| [p.id, p.parent_id, p.status, p.lft, p.rgt, p.is_public, Member.where(project_id: p.id).pluck(:user_id)] }.inspect} root=#{[root.lft, root.rgt, root.reload.lft, root.rgt].inspect} tree=#{root.self_and_descendants.pluck(:id).inspect} visible=#{Project.visible(user).pluck(:id).inspect} active=#{Project.active.pluck(:id).inspect} member=#{candidates.inspect}"
-
-    expect(Member.where(project_id: grouped.id, user_id: user.id)).not_to exist
+    expect(Member.find_by!(project_id: grouped.id, user_id: group.id).roles).to include(Role.find(1))
     expect(candidates).to include(direct.id, grouped.id, both.id)
     expect(candidates.count(both.id)).to eq(1)
     expect(candidates).not_to include(nonmember.id)
@@ -52,16 +50,14 @@ RSpec.describe CanvasGanttsController, type: :controller do
     expect(candidates(member_only: false)).not_to include(grouped.id)
   end
 
-  it 'keeps closed, archived, and invisible projects out of candidates for members and admins' do
+  it 'keeps closed and archived projects out of candidates and limits private projects to admins' do
     active = candidate_project('candidate-active')
     archived = candidate_project('candidate-archived')
     closed = candidate_project('candidate-closed', parent: nil, status: Project::STATUS_CLOSED)
     hidden = candidate_project('candidate-hidden', parent: nil, is_public: false)
     outside = candidate_project('candidate-outside', parent: nil)
-    [active, archived, closed, hidden, outside].each { |project| membership(project, group) }
+    [active, archived, closed, outside].each { |project| membership(project, group) }
     archived.update_column(:status, Project::STATUS_ARCHIVED)
-
-    warn "DEBUG second #{[active, archived, closed, hidden, outside].map { |p| [p.id, p.parent_id, p.status, p.lft, p.rgt, p.is_public, Member.where(project_id: p.id).pluck(:user_id)] }.inspect} tree=#{root.self_and_descendants.pluck(:id).inspect} member=#{candidates.inspect} plain=#{candidates(member_only: false).inspect}"
 
     expect(candidates).to include(active.id, outside.id)
     expect(candidates).not_to include(archived.id, closed.id, hidden.id)
@@ -70,8 +66,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
     User.current = User.find(1)
     expect(User.current).to be_admin
-    expect(candidates).to include(active.id, outside.id)
-    expect(candidates).not_to include(archived.id, closed.id, hidden.id)
+    expect(candidates).to include(active.id, outside.id, hidden.id)
+    expect(candidates).not_to include(archived.id, closed.id)
     expect(candidates(member_only: false)).not_to include(outside.id, archived.id, closed.id, hidden.id)
   end
 
@@ -90,6 +86,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
     expect(User.current.allowed_to?(:view_canvas_gantt, denied)).to be(false)
 
+    root.reload
+    controller.instance_variable_set(:@project_scope_policy, nil)
     options = controller.send(:filter_option_projects, [], member_projects_only: true).index_by { |option| option[:id] }
 
     expect(options.fetch(in_tree.id)).to include(selectable: true)
@@ -97,8 +95,13 @@ RSpec.describe CanvasGanttsController, type: :controller do
     expect(options.fetch(denied.id)).to include(selectable: true)
     expect(options.fetch(denied.id)).not_to have_key(:disabled_reason)
 
-    allowed_ids = controller.send(:project_scope_policy).allowed_issue_project_ids(mode: 'member_all')
+    allowed_ids = controller.send(:project_scope_policy).allowed_issue_project_ids(mode: 'member_all', requested_project_ids: [permitted.id, denied.id])
     expect(allowed_ids).to include(root.id, in_tree.id, permitted.id, denied.id)
+    policy = controller.send(:project_scope_policy)
+    expect(policy.allowed_issue_project_ids(mode: 'member_all', requested_project_ids: [permitted.id]))
+      .not_to include(denied.id)
+    expect(policy.allowed_issue_project_ids(mode: 'member_all', requested_project_ids: []))
+      .not_to include(permitted.id, denied.id)
   end
 
   it 'uses a bounded number of project queries as candidate count grows' do

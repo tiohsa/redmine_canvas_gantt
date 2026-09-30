@@ -111,7 +111,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
       'candidate_mode' => 'member_all',
       'selection_explicit' => false,
       'selected_project_ids' => [],
-      'effective_project_ids' => tree_project_ids
+      'effective_project_ids' => tree_project_ids,
+      'scheduling_allowed' => true
     )
     candidate = body.fetch('filter_options').fetch('projects').find do |option|
       option.fetch('id') == outside_project.id
@@ -134,7 +135,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
     expect(body.fetch('project_scope')).to include(
       'selection_explicit' => true,
       'selected_project_ids' => [outside_project.id.to_s],
-      'effective_project_ids' => [outside_project.id.to_s]
+      'effective_project_ids' => [outside_project.id.to_s],
+      'scheduling_allowed' => false
     )
     expect(body.fetch('tasks').find { |task| task.fetch('id') == outside_issue.id }.fetch('spent_hours')).to eq(3.0)
 

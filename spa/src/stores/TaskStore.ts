@@ -2630,6 +2630,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const nextState = {
             selectedProjectIds: ids,
             projectSelectionExplicit: true,
+            inactiveExternalProjectIds: [],
             tasks: layout.tasks,
             layoutRows: layout.layoutRows,
             rowCount: layout.rowCount

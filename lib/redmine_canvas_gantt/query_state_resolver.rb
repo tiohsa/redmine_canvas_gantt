@@ -164,7 +164,8 @@ module RedmineCanvasGantt
 
       project_scope_policy.allowed_issue_project_ids(
         mode: project_scope_policy.mode_for(member_projects_only),
-        descendant_project_ids: tree_project_ids
+        descendant_project_ids: tree_project_ids,
+        requested_project_ids: parse_project_id_list(raw_project_selection)
       )
     end
 
@@ -183,7 +184,8 @@ module RedmineCanvasGantt
         candidate_mode: project_scope_policy.mode_for(member_projects_only),
         selection_explicit: explicit,
         selected_project_ids: explicit ? selected_project_ids.map(&:to_s) : [],
-        effective_project_ids: selected_project_ids.map(&:to_s)
+        effective_project_ids: selected_project_ids.map(&:to_s),
+        scheduling_allowed: (selected_project_ids.map(&:to_i) - tree_project_ids_for(selected_project_ids)).empty?
       }
     end
 

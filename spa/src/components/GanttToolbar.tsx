@@ -425,9 +425,14 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const projects = React.useMemo(() => (
         [...filterOptions.projects].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
     ), [filterOptions.projects]);
+    const duplicateProjectNames = React.useMemo(() => {
+        const counts = new Map<string, number>();
+        projects.forEach(project => counts.set(project.name, (counts.get(project.name) ?? 0) + 1));
+        return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
+    }, [projects]);
     const visibleProjects = React.useMemo(() => {
         const query = projectSearchText.trim().toLowerCase();
-        return query ? projects.filter((project) => project.name.toLowerCase().includes(query)) : projects;
+        return query ? projects.filter((project) => project.name.toLowerCase().includes(query) || (project.identifier ?? '').toLowerCase().includes(query)) : projects;
     }, [projects, projectSearchText]);
 
     const scopedProjectIds = React.useMemo(() => (
@@ -584,6 +589,11 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     ];
     return (
         <div className="gantt-toolbar-container">
+          {confirmedProjectScope?.schedulingAllowed === false && (
+            <div role="status" data-testid="cross-project-scheduling-notice" style={{ padding: '8px 12px', color: designTokens.textSecondary }}>
+              {i18n.t('label_cross_project_scheduling_notice') || 'External projects are selected. Date dragging, resizing, and dependency creation are unavailable. Deselect external projects to enable them.'}
+            </div>
+          )}
           <div className={`gantt-toolbar${hasPendingManualChanges ? ' gantt-toolbar--dirty' : ''}`} style={{
             display: 'flex',
             alignItems: 'center',
@@ -1174,7 +1184,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                             onChange={() => toggleProject(project.id)}
                                             disabled={projectFilterLoading || project.selectable === false}
                                         />
-                                        {project.name}
+                                        {project.name}{duplicateProjectNames.has(project.name) && project.identifier ? ` （${project.identifier}）` : ''}
                                         {project.selectable === false && project.disabledReason && (
                                             <small style={{ color: designTokens.textMuted }}>{project.disabledReason}</small>
                                         )}

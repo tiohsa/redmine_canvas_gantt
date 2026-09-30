@@ -161,6 +161,7 @@ en:
     label_chart_short: "Chart"
     label_display_short: "Display"
     label_refresh_failed: "Failed to refresh data"
+    label_cross_project_scheduling_notice: "External projects are selected. Date dragging, resizing, and dependency creation are unavailable. Deselect external projects to enable them."
     label_project_candidates_load_failed: "Failed to load project candidates"
     label_member_projects_only: "Show member projects in filter"
     label_project_search_placeholder: "Search projects..."

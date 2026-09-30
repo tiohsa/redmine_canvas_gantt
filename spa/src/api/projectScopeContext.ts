@@ -4,6 +4,7 @@ export type ConfirmedProjectScope = {
     selectionExplicit: boolean;
     selectedProjectIds: string[];
     effectiveProjectIds: string[];
+    schedulingAllowed?: boolean;
 };
 
 let confirmedProjectScope: ConfirmedProjectScope | null = null;

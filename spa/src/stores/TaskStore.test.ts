@@ -1364,6 +1364,33 @@ describe('TaskStore member project candidate lifecycle', () => {
         expect(loadLastUsedSharedQueryProjectState()?.scopeState.inactiveExternalProjectIds).toBeUndefined();
     });
 
+    it.each([{ ids: [] as string[] }, { ids: ['p1'] }])('discards parked projects after an explicit selection change to $ids', async ({ ids }) => {
+        const scopedResponse = (mode: 'member_all' | 'current_tree', selectedProjectIds: string[]) => ({
+            ...buildApiData([]),
+            projectScope: {
+                rootProjectId: 'p1', mode, selectionExplicit: true,
+                selectedProjectIds, effectiveProjectIds: selectedProjectIds
+            }
+        });
+        useTaskStore.getState().applyApiData(scopedResponse('member_all', ['p1', 'p2']));
+        vi.mocked(apiClient.fetchData).mockResolvedValue(scopedResponse('current_tree', ['p1']));
+        await useTaskStore.getState().setMemberProjectsOnly(false);
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual(['p2']);
+
+        useTaskStore.getState().setSelectedProjectIds(ids);
+        expect(useTaskStore.getState().inactiveExternalProjectIds).toEqual([]);
+        vi.mocked(apiClient.fetchData).mockResolvedValue(scopedResponse('current_tree', ids));
+        await useTaskStore.getState().refreshData();
+        vi.mocked(apiClient.fetchData).mockResolvedValue(scopedResponse('member_all', ids));
+        await useTaskStore.getState().setMemberProjectsOnly(true);
+
+        expect(apiClient.fetchData).toHaveBeenLastCalledWith(expect.objectContaining({
+            query: expect.objectContaining({ memberProjectsOnly: true, canvasProjectIds: ids })
+        }));
+        expect(useTaskStore.getState().selectedProjectIds).not.toContain('p2');
+        expect(loadLastUsedSharedQueryProjectState()?.scopeState.inactiveExternalProjectIds).toBeUndefined();
+    });
+
     it('keeps an implicit server scope out of the shared project selection', () => {
         useTaskStore.setState({ selectedProjectIds: ['stale'], projectSelectionExplicit: true });
         useTaskStore.getState().applyApiData({

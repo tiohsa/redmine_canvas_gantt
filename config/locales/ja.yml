@@ -161,6 +161,7 @@ ja:
     label_chart_short: "チャート"
     label_display_short: "表示"
     label_refresh_failed: "データの更新に失敗しました"
+    label_cross_project_scheduling_notice: "別ルートのプロジェクトを選択中のため、日付のドラッグ・サイズ変更と依存線の作成は利用できません。利用するには別ルートの選択を解除してください。"
     label_project_candidates_load_failed: "プロジェクト候補の取得に失敗しました"
     label_member_projects_only: "プロジェクトフィルタに所属プロジェクトを表示"
     label_project_search_placeholder: "プロジェクトを検索"

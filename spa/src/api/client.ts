@@ -594,7 +594,8 @@ const parseProjectScope = (value: unknown): ConfirmedProjectScope | undefined =>
         mode: record.candidate_mode,
         selectionExplicit: record.selection_explicit,
         selectedProjectIds: ids(record.selected_project_ids),
-        effectiveProjectIds: ids(record.effective_project_ids)
+        effectiveProjectIds: ids(record.effective_project_ids),
+        ...(typeof record.scheduling_allowed === 'boolean' ? { schedulingAllowed: record.scheduling_allowed } : {})
     };
 };
 

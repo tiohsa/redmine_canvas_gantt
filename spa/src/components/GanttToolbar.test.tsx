@@ -1574,7 +1574,7 @@ describe('GanttToolbar shortcuts', () => {
             projects.forEach(({ name }) => expect(screen.getByLabelText(name)).toBeInTheDocument());
         });
 
-        it('shows project names without paths or IDs and disables candidates rejected by the server', () => {
+        it('disambiguates duplicate names with identifiers and searches identifiers', () => {
             useTaskStore.setState({
                 filterOptions: { projects: [
                     { id: 'p1', name: 'Operations', path: 'Parent / Operations', identifier: 'root-a', selectable: true },
@@ -1583,10 +1583,27 @@ describe('GanttToolbar shortcuts', () => {
             });
             render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
             openProjects();
-            expect(screen.getByLabelText('Operations')).toBeEnabled();
+            expect(screen.getByLabelText('Operations （root-a）')).toBeEnabled();
             expect(screen.getByLabelText(/Operations.*Canvas access required/)).toBeDisabled();
-            expect(screen.getByTestId('project-menu')).not.toHaveTextContent(/Parent \/ Operations|root-a|root-b|\(p[12]\)/);
+            expect(screen.getByTestId('project-menu')).not.toHaveTextContent(/Parent \/ Operations|\(p[12]\)/);
             expect(screen.getByText('Canvas access required')).toBeInTheDocument();
+            search(' ROOT-A ');
+            expect(screen.getByLabelText('Operations （root-a）')).toBeInTheDocument();
+            expect(screen.queryByLabelText(/Operations.*root-b/)).not.toBeInTheDocument();
+        });
+
+        it('shows scheduling restrictions before interaction when external projects are selected', () => {
+            useTaskStore.setState({ confirmedProjectScope: {
+                rootProjectId: 'p1', mode: 'member_all', selectionExplicit: true,
+                selectedProjectIds: ['p1', 'p2'], effectiveProjectIds: ['p1', 'p2'], schedulingAllowed: false
+            } });
+            render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+            expect(screen.getByTestId('cross-project-scheduling-notice')).toHaveTextContent(/Date dragging, resizing, and dependency creation are unavailable/);
+            act(() => useTaskStore.setState({ confirmedProjectScope: {
+                rootProjectId: 'p1', mode: 'current_tree', selectionExplicit: true,
+                selectedProjectIds: ['p1'], effectiveProjectIds: ['p1'], schedulingAllowed: true
+            } }));
+            expect(screen.queryByTestId('cross-project-scheduling-notice')).not.toBeInTheDocument();
         });
 
         it('preserves hidden selections and adds a matching project through the existing store action', async () => {

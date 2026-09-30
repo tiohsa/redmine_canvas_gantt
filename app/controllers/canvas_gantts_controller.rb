@@ -199,6 +199,7 @@ class CanvasGanttsController < ApplicationController
     label_chart_short: :label_chart_short,
     label_refresh_failed: :label_refresh_failed,
     label_project_candidates_load_failed: :label_project_candidates_load_failed,
+    label_cross_project_scheduling_notice: :label_cross_project_scheduling_notice,
     label_member_projects_only: :label_member_projects_only,
     label_project_search_placeholder: :label_project_search_placeholder,
     label_no_matching_projects: :label_no_matching_projects,

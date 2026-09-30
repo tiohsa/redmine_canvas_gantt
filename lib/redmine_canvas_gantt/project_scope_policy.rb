@@ -43,12 +43,15 @@ module RedmineCanvasGantt
     # Root and descendant project scope remains the existing Canvas boundary.
     # Only an explicitly selected, visible, active member project outside that
     # tree can extend issue access.
-    def allowed_issue_project_ids(mode:, descendant_project_ids: self.descendant_project_ids)
+    def allowed_issue_project_ids(mode:, requested_project_ids:, descendant_project_ids: self.descendant_project_ids)
       tree_ids = Array(descendant_project_ids).map(&:to_i).uniq & self.descendant_project_ids
       return tree_ids unless normalize_mode(mode) == MEMBER_ALL && @current_user
 
+      requested_external_ids = Array(requested_project_ids).map(&:to_i).uniq - tree_ids
+      return tree_ids if requested_external_ids.empty?
+
       external_ids = candidate_projects(mode: MEMBER_ALL)
-        .where.not(id: tree_ids)
+        .where(id: requested_external_ids)
         .pluck(:id)
       (tree_ids + external_ids.map(&:to_i)).uniq
     end
