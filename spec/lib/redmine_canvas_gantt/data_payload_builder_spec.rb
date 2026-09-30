@@ -2,24 +2,24 @@ require_relative '../../spec_helper'
 
 RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
   describe '#build' do
-    it 'builds stable filter options for descendant projects and assignees' do
+    it 'serializes project, membership-derived assignee, and tracker filter options' do
       custom_field_extractor = instance_double(
         RedmineCanvasGantt::CustomFieldExtractor,
         build_project_custom_fields: []
       )
       current_user = instance_double(User)
       builder = described_class.new(custom_field_extractor: custom_field_extractor, current_user: current_user)
-      allow(Version).to receive_message_chain(:visible, :where).and_return([])
+      allow(builder).to receive(:build_versions).with([1, 2]).and_return([])
       allow(IssueStatus).to receive(:sorted).and_return([])
 
       project = instance_double(Project, id: 1, name: 'Root', start_date: nil, due_date: nil)
       child_project = instance_double(Project, id: 2, name: 'Child')
       root_project = instance_double(Project, id: 1, name: 'Root')
-      alice = instance_double(User, name: 'Alice')
-      bob = instance_double(User, name: 'Bob')
-      issue_a = instance_double(Issue, assigned_to_id: 7, assigned_to: alice, project_id: 1, tracker_id: nil, tracker: nil)
-      issue_b = instance_double(Issue, assigned_to_id: 8, assigned_to: bob, project_id: 2, tracker_id: nil, tracker: nil)
-      issue_c = instance_double(Issue, assigned_to_id: nil, assigned_to: nil, project_id: 2, tracker_id: nil, tracker: nil)
+      assignee_options = [
+        { id: nil, name: nil, project_ids: %w[1 2] },
+        { id: 7, name: 'Alice', project_ids: ['1'] },
+        { id: 8, name: 'Bob', project_ids: ['2'] }
+      ]
 
       payload = builder.build(
         project: project,
@@ -27,7 +27,7 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
         project_ids: [1, 2],
         issues: [],
         filter_option_projects: [child_project, root_project],
-        filter_option_issues: [issue_a, issue_b, issue_c],
+        filter_option_assignees: assignee_options,
         business_calendar: { status: 'ok', revision: 'revision' }
       )
 
@@ -36,29 +36,25 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
           { id: 2, name: 'Child' },
           { id: 1, name: 'Root' }
         ],
-        assignees: [
-          { id: nil, name: nil, project_ids: ['2'] },
-          { id: 7, name: 'Alice', project_ids: ['1'] },
-          { id: 8, name: 'Bob', project_ids: ['2'] }
-        ],
+        assignees: assignee_options,
         trackers: []
       )
       expect(payload[:businessCalendar]).to eq(status: 'ok', revision: 'revision')
     end
 
-    it 'builds tracker candidates from the unfiltered candidate membership set' do
+    it 'builds tracker candidates from the project configuration set' do
       custom_field_extractor = instance_double(
         RedmineCanvasGantt::CustomFieldExtractor,
         build_project_custom_fields: []
       )
       builder = described_class.new(custom_field_extractor: custom_field_extractor, current_user: instance_double(User))
-      allow(Version).to receive_message_chain(:visible, :where).and_return([])
+      allow(builder).to receive(:build_versions).with([1, 2]).and_return([])
       allow(IssueStatus).to receive(:sorted).and_return([])
 
       candidates = [
-        { id: 3, name: 'Bug', project_id: 1 },
-        { id: 4, name: 'Feature', project_id: 2 },
-        { id: 3, name: 'Bug', project_id: 2 }
+        { id: 3, name: 'Bug', project_ids: ['1'] },
+        { id: 4, name: 'Feature', project_ids: ['2'] },
+        { id: 3, name: 'Bug', project_ids: ['2'] }
       ]
 
       payload = builder.build(
@@ -67,13 +63,108 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
         project_ids: [1, 2],
         issues: [],
         filter_option_projects: [],
-        filter_option_issues: [],
+        filter_option_assignees: [],
         filter_option_trackers: candidates
       )
 
       expect(payload[:filter_options][:trackers]).to eq([
         { id: 3, name: 'Bug', project_ids: %w[1 2] },
         { id: 4, name: 'Feature', project_ids: ['2'] }
+      ])
+    end
+
+    it 'preserves the controller project_ids for a Tracker enabled on multiple projects' do
+      builder = described_class.new(
+        custom_field_extractor: instance_double(
+          RedmineCanvasGantt::CustomFieldExtractor,
+          build_project_custom_fields: []
+        ),
+        current_user: instance_double(User)
+      )
+      allow(builder).to receive(:build_versions).with([1, 2]).and_return([])
+      allow(IssueStatus).to receive(:sorted).and_return([])
+      controller_tracker_options = [
+        { id: 3, name: 'Bug', project_ids: %w[1 2] },
+        { id: 4, name: 'Feature', project_ids: ['2'] }
+      ]
+
+      payload = builder.build(
+        project: instance_double(Project, id: 1, name: 'Root', start_date: nil, due_date: nil),
+        permissions: {},
+        project_ids: [1, 2],
+        issues: [],
+        filter_option_projects: [],
+        filter_option_assignees: [],
+        filter_option_trackers: controller_tracker_options
+      )
+
+      expect(payload.dig(:filter_options, :trackers)).to eq([
+        { id: 3, name: 'Bug', project_ids: %w[1 2] },
+        { id: 4, name: 'Feature', project_ids: ['2'] }
+      ])
+    end
+
+    it 'retains compatibility with a single project_id Tracker candidate' do
+      builder = described_class.new(
+        custom_field_extractor: instance_double(
+          RedmineCanvasGantt::CustomFieldExtractor,
+          build_project_custom_fields: []
+        ),
+        current_user: instance_double(User)
+      )
+      allow(builder).to receive(:build_versions).with([1]).and_return([])
+      allow(IssueStatus).to receive(:sorted).and_return([])
+
+      payload = builder.build(
+        project: instance_double(Project, id: 1, name: 'Root', start_date: nil, due_date: nil),
+        permissions: {},
+        project_ids: [1],
+        issues: [],
+        filter_option_projects: [],
+        filter_option_assignees: [],
+        filter_option_trackers: [{ id: 3, name: 'Bug', project_id: 1 }]
+      )
+
+      expect(payload.dig(:filter_options, :trackers)).to eq([
+        { id: 3, name: 'Bug', project_ids: ['1'] }
+      ])
+    end
+  end
+
+  describe '#build_versions' do
+    it 'uses each effective Project shared_versions scope and keeps owner project metadata' do
+      shared_versions_a = double('shared versions for effective project A')
+      shared_versions_b = double('shared versions for effective project B')
+      combined_shared_versions = double('shared version union')
+      shared_version_ids = double('shared version ID subquery')
+      visible_scope = double('visible versions')
+      candidate_scope = double('visible shared versions')
+      shared_version = double(
+        'shared version', id: 30, name: 'Shared', effective_date: nil,
+        start_date: nil, completed_percent: 0, project_id: 99, status: 'open'
+      )
+      project_a = double('effective project A', shared_versions: shared_versions_a)
+      project_b = double('effective project B', shared_versions: shared_versions_b)
+      budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, collection_limit: 10)
+      builder = described_class.new(
+        custom_field_extractor: instance_double(RedmineCanvasGantt::CustomFieldExtractor),
+        current_user: instance_double(User),
+        data_payload_budget: budget
+      )
+
+      allow(Project).to receive(:where).with(id: [1, 2]).and_return([project_a, project_b])
+      allow(shared_versions_a).to receive(:or).with(shared_versions_b).and_return(combined_shared_versions)
+      allow(combined_shared_versions).to receive(:select).with(:id).and_return(shared_version_ids)
+      allow(Version).to receive(:visible).and_return(visible_scope)
+      allow(visible_scope).to receive(:where).with(id: shared_version_ids).and_return(candidate_scope)
+      expect(budget).to receive(:load_records).with(candidate_scope, resource: 'versions', limit: 10)
+        .and_return([shared_version])
+
+      expect(builder.build_versions([1, 2])).to eq([
+        {
+          id: 30, name: 'Shared', effective_date: nil, start_date: nil,
+          completed_percent: 0, project_id: 99, status: 'open'
+        }
       ])
     end
   end

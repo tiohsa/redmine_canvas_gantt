@@ -669,34 +669,16 @@ const parseFilterTrackerOption = (value: unknown): FilterTrackerOption | null =>
 
 const deriveFilterOptionsFromTasks = (tasks: Task[]): FilterOptions => {
     const projects = new Map<string, string>();
-    const assignees = new Map<number | null, { name: string | null; projectIds: Set<string> }>();
 
     tasks.forEach((task) => {
         if (task.projectId && task.projectName) {
             projects.set(task.projectId, task.projectName);
         }
-
-        const assigneeId = task.assignedToId ?? null;
-        const entry = assignees.get(assigneeId) ?? {
-            name: assigneeId === null ? null : (task.assignedToName ?? null),
-            projectIds: new Set<string>()
-        };
-        if (assigneeId !== null && entry.name === null && task.assignedToName) {
-            entry.name = task.assignedToName;
-        }
-        if (task.projectId) {
-            entry.projectIds.add(task.projectId);
-        }
-        assignees.set(assigneeId, entry);
     });
 
     return {
         projects: Array.from(projects.entries()).map(([id, name]) => ({ id, name })),
-        assignees: Array.from(assignees.entries()).map(([id, entry]) => ({
-            id,
-            name: entry.name,
-            projectIds: Array.from(entry.projectIds)
-        }))
+        assignees: []
     };
 };
 

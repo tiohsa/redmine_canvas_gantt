@@ -521,11 +521,11 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const versionsList = React.useMemo(() => (
         versions
             .filter((version) => (
-                (version.status !== 'closed' && scopedProjectIds.has(version.projectId)) ||
+                version.status !== 'closed' ||
                 selectedVersionIds.includes(version.id)
             ))
             .sort((a, b) => a.name.localeCompare(b.name))
-    ), [scopedProjectIds, selectedVersionIds, versions]);
+    ), [selectedVersionIds, versions]);
 
     const toggleVersion = (id: string) => {
         setSelectedVersionIds(toggleSelectionValue(selectedVersionIds, id));

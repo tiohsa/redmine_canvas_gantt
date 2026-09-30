@@ -373,9 +373,9 @@ RSpec.describe CanvasGanttsController, type: :controller do
       end
       allow(controller).to receive(:descendant_project_ids).and_return([1, 2])
       filter_option_project = double('ProjectOption', id: 1, name: 'Demo')
-      filter_option_issue = double('FilterOptionIssue')
+      filter_option_assignee = { id: 7, name: 'Alice', project_ids: ['1'] }
       allow(controller).to receive(:filter_option_projects).with([1, 2], member_projects_only: false).and_return([filter_option_project])
-      allow(controller).to receive(:filter_option_issues).with([1, 2]).and_return([filter_option_issue])
+      allow(controller).to receive(:filter_option_assignees).with([1, 2]).and_return([filter_option_assignee])
       allow(controller).to receive(:query_state_resolver).and_return(resolver)
       allow(controller).to receive(:baseline_repository).and_return(baseline_repository)
       allow(controller).to receive(:visible_baseline_snapshot).with(baseline_snapshot, [1, 2]).and_return(baseline_snapshot)
@@ -407,7 +407,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
         project_ids: [1, 2],
         issues: [issue],
         filter_option_projects: [filter_option_project],
-        filter_option_issues: [filter_option_issue],
+        filter_option_assignees: [filter_option_assignee],
         initial_state: { query_id: 7 },
         query_context: { query_id: 7, explicit_overrides: {} },
         warnings: ['Invalid query_id ignored', 'Baseline warning'],
@@ -456,7 +456,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       baseline_repository = instance_double(RedmineCanvasGantt::BaselineRepository)
       resolver = instance_double(RedmineCanvasGantt::QueryStateResolver)
       filter_option_project = double('ProjectOption', id: 1, name: 'Demo')
-      filter_option_issue = double('FilterOptionIssue')
+      filter_option_assignee = { id: 7, name: 'Alice', project_ids: ['1'] }
       issue = double('Issue', id: 10, project_id: 1)
 
       allow(controller).to receive(:set_permissions) do
@@ -464,7 +464,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       end
       allow(controller).to receive(:descendant_project_ids).and_return([1, 2])
       allow(controller).to receive(:filter_option_projects).with([1, 2], member_projects_only: true).and_return([filter_option_project])
-      allow(controller).to receive(:filter_option_issues).with([1, 2]).and_return([filter_option_issue])
+      allow(controller).to receive(:filter_option_assignees).with([1, 2]).and_return([filter_option_assignee])
       allow(controller).to receive(:query_state_resolver).and_return(resolver)
       allow(controller).to receive(:baseline_repository).and_return(baseline_repository)
       allow(resolver).to receive(:resolve).and_return({
@@ -522,6 +522,68 @@ RSpec.describe CanvasGanttsController, type: :controller do
         .and_return([:relation])
 
       expect(controller.send(:data_relations, issues)).to eq([:relation])
+    end
+  end
+
+  describe '#relation_change_scope_relations' do
+    it 'queries only bounded visible internal relation columns without loading Issues' do
+      project_scoped_issues = double('project-scoped Issue relation')
+      visible_issue_ids = double('visible Issue ID subquery')
+      relation_scope = double('internal relation scope')
+      ordered_relations = double('ordered relation scope')
+      bounded_relations = double('bounded relation scope')
+      relation_rows = [[12, 10, 11, 'precedes', 2], [13, 11, 12, 'follows', 0]]
+      budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, relation_limit: 2)
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2] })
+      allow(controller).to receive(:data_payload_budget).and_return(budget)
+      expect(Issue).to receive(:visible).and_return(project_scoped_issues)
+      expect(project_scoped_issues).to receive(:where).with(project_id: [1, 2]).and_return(project_scoped_issues)
+      expect(project_scoped_issues).to receive(:select).with(:id).and_return(visible_issue_ids)
+      expect(IssueRelation).to receive(:where).with(
+        issue_from_id: visible_issue_ids,
+        issue_to_id: visible_issue_ids,
+        relation_type: %w[precedes follows]
+      ).and_return(relation_scope)
+      expect(relation_scope).to receive(:order).with(:id).and_return(ordered_relations)
+      expect(ordered_relations).to receive(:limit).with(3).and_return(bounded_relations)
+      expect(bounded_relations).to receive(:pluck).with(:id, :issue_from_id, :issue_to_id, :relation_type, :delay)
+        .and_return(relation_rows)
+      expect(budget).to receive(:ensure_count!).with(relation_rows, resource: 'relations', limit: 2)
+      expect(project_scoped_issues).not_to receive(:to_a)
+
+      expect(controller.send(:relation_change_scope_relations)).to eq([
+        { id: 12, from: 10, to: 11, type: 'precedes', delay: 2 },
+        { id: 13, from: 11, to: 12, type: 'follows', delay: 0 }
+      ])
+    end
+
+    it 'raises when visible internal relations exceed the configured limit' do
+      project_scoped_issues = double('project-scoped Issue relation')
+      visible_issue_ids = double('visible Issue ID subquery')
+      relation_scope = double('internal relation scope')
+      ordered_relations = double('ordered relation scope')
+      bounded_relations = double('limit plus one relation scope')
+      relation_rows = [[12, 10, 11, 'precedes', 2], [13, 11, 12, 'precedes', 1], [14, 12, 13, 'precedes', 0]]
+      budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, relation_limit: 2)
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1] })
+      allow(controller).to receive(:data_payload_budget).and_return(budget)
+      allow(Issue).to receive(:visible).and_return(project_scoped_issues)
+      allow(project_scoped_issues).to receive(:where).with(project_id: [1]).and_return(project_scoped_issues)
+      allow(project_scoped_issues).to receive(:select).with(:id).and_return(visible_issue_ids)
+      allow(IssueRelation).to receive(:where).with(
+        issue_from_id: visible_issue_ids,
+        issue_to_id: visible_issue_ids,
+        relation_type: %w[precedes follows]
+      ).and_return(relation_scope)
+      allow(relation_scope).to receive(:order).with(:id).and_return(ordered_relations)
+      expect(ordered_relations).to receive(:limit).with(3).and_return(bounded_relations)
+      allow(bounded_relations).to receive(:pluck).with(:id, :issue_from_id, :issue_to_id, :relation_type, :delay)
+        .and_return(relation_rows)
+      expect(budget).to receive(:ensure_count!).with(relation_rows, resource: 'relations', limit: 2)
+        .and_raise(RedmineCanvasGantt::DataPayloadBudget::Exceeded.new(resource: 'relations', limit: 2, actual: 3))
+
+      expect { controller.send(:relation_change_scope_relations) }
+        .to raise_error(RedmineCanvasGantt::DataPayloadBudget::Exceeded)
     end
   end
 
@@ -585,6 +647,101 @@ RSpec.describe CanvasGanttsController, type: :controller do
         .and_return(candidate_options)
 
       expect(controller.send(:filter_option_projects, [1, 2], member_projects_only: true)).to eq(candidate_options)
+    end
+  end
+
+  describe '#filter_option_assignees' do
+    it 'uses project membership rather than Issue rows and retains active, locked, and unassigned candidates' do
+      project_scope = double('effective projects')
+      principal_scope = double('project members')
+      sorted_principals = double('sorted project members')
+      limited_principals = double('bounded project members')
+      member_scope = double('membership rows')
+      distinct_memberships = double('distinct membership rows')
+      active_user = double('active member', id: 10, name: 'Alice')
+      locked_user = double('locked member', id: 11, name: 'Locked User')
+      budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, collection_limit: 10)
+      allow(controller).to receive(:data_payload_budget).and_return(budget)
+      allow(Project).to receive(:where).with(id: [1]).and_return(project_scope)
+      allow(Principal).to receive(:member_of).with(project_scope).and_return(principal_scope)
+      allow(Setting).to receive(:issue_group_assignment?).and_return(false)
+      allow(principal_scope).to receive(:where).with(type: 'User').and_return(principal_scope)
+      allow(principal_scope).to receive(:sorted).and_return(sorted_principals)
+      allow(sorted_principals).to receive(:limit).with(11).and_return(limited_principals)
+      allow(limited_principals).to receive(:pluck).with(:id).and_return([10, 11])
+      expect(budget).to receive(:ensure_count!).with([10, 11], resource: 'assignees')
+      allow(Member).to receive(:where).with(project_id: [1], user_id: [10, 11]).and_return(member_scope)
+      allow(member_scope).to receive(:distinct).and_return(distinct_memberships)
+      allow(distinct_memberships).to receive(:pluck).with(:user_id, :project_id).and_return([[10, 1], [11, 1]])
+      allow(Principal).to receive(:where).with(id: [10, 11]).and_return([active_user, locked_user])
+      expect(Issue).not_to receive(:visible)
+
+      expect(controller.send(:filter_option_assignees, [1])).to eq([
+        { id: nil, name: nil, project_ids: ['1'] },
+        { id: 10, name: 'Alice', project_ids: ['1'] },
+        { id: 11, name: 'Locked User', project_ids: ['1'] }
+      ])
+    end
+
+    it 'allows assignable regular Groups only when group assignment is enabled' do
+      project_scope = double('effective projects')
+      principal_scope = double('all project principals')
+      principal_where = double('principal exclusion query')
+      assignable_groups = double('assignable groups')
+      built_in_group_subquery = double('built-in group IDs')
+      group_filter = double('exclude built-in groups')
+      principals_without_builtins = double('assignable principals')
+      sorted_principals = double('sorted assignable principals')
+      limited_principals = double('bounded assignable principals')
+      member_scope = double('membership rows')
+      normal_group = double('regular group', id: 20, name: 'Developers')
+      budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, collection_limit: 10)
+
+      allow(controller).to receive(:data_payload_budget).and_return(budget)
+      allow(Project).to receive(:where).with(id: [1]).and_return(project_scope)
+      allow(Principal).to receive(:member_of).with(project_scope).and_return(principal_scope)
+      allow(Setting).to receive(:issue_group_assignment?).and_return(true)
+      allow(Group).to receive(:givable).and_return(assignable_groups)
+      allow(assignable_groups).to receive(:select).with(:id).and_return(built_in_group_subquery)
+      allow(Group).to receive(:where).and_return(group_filter)
+      allow(group_filter).to receive(:not).with(id: built_in_group_subquery).and_return(principals_without_builtins)
+      allow(principals_without_builtins).to receive(:select).with(:id).and_return(built_in_group_subquery)
+      allow(principal_scope).to receive(:where).and_return(principal_where)
+      allow(principal_where).to receive(:not).with(id: built_in_group_subquery).and_return(principals_without_builtins)
+      allow(principals_without_builtins).to receive(:sorted).and_return(sorted_principals)
+      allow(sorted_principals).to receive(:limit).with(11).and_return(limited_principals)
+      allow(limited_principals).to receive(:pluck).with(:id).and_return([20])
+      allow(budget).to receive(:ensure_count!).with([20], resource: 'assignees').and_return([20])
+      allow(Member).to receive(:where).with(project_id: [1], user_id: [20]).and_return(member_scope)
+      allow(member_scope).to receive(:distinct).and_return(member_scope)
+      allow(member_scope).to receive(:pluck).with(:user_id, :project_id).and_return([[20, 1]])
+      allow(Principal).to receive(:where).with(id: [20]).and_return([normal_group])
+      expect(Issue).not_to receive(:visible)
+
+      expect(controller.send(:filter_option_assignees, [1])).to eq([
+        { id: nil, name: nil, project_ids: ['1'] },
+        { id: 20, name: 'Developers', project_ids: ['1'] }
+      ])
+    end
+  end
+
+  describe '#filter_option_trackers' do
+    it 'returns enabled visible Project trackers even when there are no Issues' do
+      tracker = double('configured tracker', id: 3, name: 'Unused Tracker')
+      tracker_scope = double('project tracker scope', visible: [tracker])
+      project = double('effective project', id: 1, trackers: tracker_scope)
+      budget = instance_double(RedmineCanvasGantt::DataPayloadBudget, collection_limit: 10)
+      allow(controller).to receive(:data_payload_budget).and_return(budget)
+      allow(Project).to receive(:where).with(id: [1]).and_return([project])
+      allow(User).to receive(:current).and_return(double('current user'))
+      expect(budget).to receive(:ensure_count!).with({
+        3 => { id: 3, name: 'Unused Tracker', project_ids: Set['1'] }
+      }, resource: 'trackers')
+      expect(Issue).not_to receive(:visible)
+
+      expect(controller.send(:filter_option_trackers, [1])).to eq([
+        { id: 3, name: 'Unused Tracker', project_ids: ['1'] }
+      ])
     end
   end
 
@@ -1399,7 +1556,8 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
     before do
       allow(controller).to receive(:requested_operation_issue_ids).and_return(Set[10])
-      allow(controller).to receive(:mutation_scope_issues).and_return([])
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1] })
+      allow(Issue).to receive_message_chain(:visible, :where).and_return([])
     end
 
     it 'classifies operation scope rejection as scope not_found by default' do
@@ -1413,6 +1571,19 @@ RSpec.describe CanvasGanttsController, type: :controller do
       end
 
       expect(controller.send(:ensure_issue_in_operation_scope, issue)).to be(false)
+    end
+
+    it 'authorizes requested operation IDs with a scoped ID pluck' do
+      visible_issues = double('visible Issue relation')
+      scoped_issues = double('scope and ID filtered relation')
+      allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2] })
+      allow(Issue).to receive(:visible).and_return(visible_issues)
+      expect(visible_issues).to receive(:where).with(project_id: [1, 2], id: [10]).and_return(scoped_issues)
+      expect(scoped_issues).to receive(:pluck).with(:id).and_return([10])
+      expect(scoped_issues).not_to receive(:to_a)
+      expect(controller).not_to receive(:render)
+
+      expect(controller.send(:ensure_issue_in_operation_scope, issue)).to be(true)
     end
   end
 
@@ -1721,7 +1892,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       end
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
       allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2, 3], issues: [] })
-      allow(controller).to receive(:mutation_scope_issues).and_return([issue_from, issue_to])
+      allow(controller).to receive(:relation_change_scope_relations).and_return([])
       allow(IssueRelation).to receive(:find).with('77').and_return(relation)
       allow(relation).to receive(:id).and_return(77)
       allow(relation).to receive(:issue_from_id).and_return(10)
@@ -1868,7 +2039,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(issue_from).to receive(:editable?).and_return(true)
       existing_relations = [{ id: '12', from: 11, to: 10, type: 'precedes', delay: 0 }]
       allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2, 3], issues: [double('Issue')] })
-      allow(controller).to receive(:build_relations).and_return(existing_relations)
+      allow(controller).to receive(:relation_change_scope_relations).and_return(existing_relations)
 
       patch :update_relation,
             params: { project_id: 'demo', id: '77', relation: { relation_type: 'precedes', delay: '2' } },
@@ -1876,6 +2047,25 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:unprocessable_entity)
       expect(JSON.parse(response.body)).to eq('errors' => ['This dependency would create a scheduling cycle.'])
+    end
+
+    it 'returns the stable 413 response when relation validation exceeds the budget' do
+      allow(controller).to receive(:canvas_gantt_l).and_return('Data is too large')
+      allow(controller).to receive(:relation_change_scope_relations).and_raise(
+        RedmineCanvasGantt::DataPayloadBudget::Exceeded.new(resource: 'relations', limit: 2, actual: 3)
+      )
+
+      patch :update_relation,
+            params: { project_id: 'demo', id: '77', relation: { relation_type: 'blocks' } },
+            format: :json
+
+      expect(response).to have_http_status(413)
+      expect(JSON.parse(response.body)).to eq(
+        'error' => 'Data is too large',
+        'code' => 'canvas_gantt_payload_limit',
+        'resource' => 'relations',
+        'limit' => 2
+      )
     end
 
     it 'allows delay when dependency dates are missing' do
@@ -1907,7 +2097,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       end
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
       allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2, 3], issues: [] })
-      allow(controller).to receive(:mutation_scope_issues).and_return([issue_from, issue_to])
+      allow(controller).to receive(:relation_change_scope_relations).and_return([])
       allow(Issue).to receive(:visible).and_return(issue_scope)
       allow(issue_scope).to receive(:find).with('10').and_return(issue_from)
       allow(issue_scope).to receive(:find).with('11').and_return(issue_to)
@@ -1949,7 +2139,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
     it 'rejects relation creation that would create a scheduling cycle' do
       allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2, 3], issues: [double('Issue')] })
-      allow(controller).to receive(:build_relations).and_return([
+      allow(controller).to receive(:relation_change_scope_relations).and_return([
         { id: '12', from: 11, to: 10, type: 'precedes', delay: 0 }
       ])
 
@@ -1959,6 +2149,25 @@ RSpec.describe CanvasGanttsController, type: :controller do
 
       expect(response).to have_http_status(:unprocessable_entity)
       expect(JSON.parse(response.body)).to eq('errors' => ['This dependency would create a scheduling cycle.'])
+    end
+
+    it 'returns the stable 413 response when relation validation exceeds the budget' do
+      allow(controller).to receive(:canvas_gantt_l).and_return('Data is too large')
+      allow(controller).to receive(:relation_change_scope_relations).and_raise(
+        RedmineCanvasGantt::DataPayloadBudget::Exceeded.new(resource: 'relations', limit: 2, actual: 3)
+      )
+
+      post :create_relation,
+           params: { project_id: 'demo', relation: { issue_from_id: '10', issue_to_id: '11', relation_type: 'precedes', delay: '2' } },
+           format: :json
+
+      expect(response).to have_http_status(413)
+      expect(JSON.parse(response.body)).to eq(
+        'error' => 'Data is too large',
+        'code' => 'canvas_gantt_payload_limit',
+        'resource' => 'relations',
+        'limit' => 2
+      )
     end
 
     it 'allows relation creation when dependency dates are missing' do

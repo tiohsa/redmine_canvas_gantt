@@ -334,7 +334,6 @@ describe('apiClient.fetchData filter options', () => {
         assigned_to_name: 'Alice'
     };
     const fallbackProjects = [{ id: '2', name: task.project_name }];
-    const fallbackAssignees = [{ id: 7, name: 'Alice', projectIds: ['2'] }];
     const fetchWithOptions = (options: Record<string, unknown>) => {
         window.RedmineCanvasGantt = {
             projectId: 1, apiBase: '/projects/1/canvas_gantt', redmineBase: '', authToken: 'token'
@@ -359,15 +358,15 @@ describe('apiClient.fetchData filter options', () => {
         expect(data.tasks).toEqual([expect.objectContaining({ id: '10', projectId: '2', assignedToId: 7 })]);
     });
 
-    it.each([{}, { filter_options: {} }])('derives candidates for missing legacy fields: %j', async (payload) => {
+    it.each([{}, { filter_options: {} }])('does not derive assignee candidates from displayed tasks: %j', async (payload) => {
         const data = await fetchWithOptions(payload);
 
-        expect(data.filterOptions).toEqual({ projects: fallbackProjects, assignees: fallbackAssignees });
+        expect(data.filterOptions).toEqual({ projects: fallbackProjects, assignees: [] });
         expect(data.filterOptions).not.toHaveProperty('trackers');
     });
 
     it.each([
-        { fields: { projects: [] }, expected: { projects: [], assignees: fallbackAssignees } },
+        { fields: { projects: [] }, expected: { projects: [], assignees: [] } },
         { fields: { assignees: [] }, expected: { projects: fallbackProjects, assignees: [] } }
     ])('falls back only for the missing field: $fields', async ({ fields, expected }) => {
         const data = await fetchWithOptions({ filter_options: fields });

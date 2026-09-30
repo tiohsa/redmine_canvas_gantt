@@ -559,7 +559,10 @@ class CanvasGanttsController < ApplicationController
           filter_option_projects(project_ids, member_projects_only: member_projects_only),
           resource: 'projects'
         ),
-        filter_option_issues: filter_option_issues(effective_project_ids),
+        filter_option_assignees: bounded_data_collection(
+          filter_option_assignees(effective_project_ids),
+          resource: 'assignees'
+        ),
         filter_option_trackers: bounded_data_collection(
           filter_option_trackers(effective_project_ids),
           resource: 'trackers'
@@ -885,6 +888,8 @@ class CanvasGanttsController < ApplicationController
       resource_role: 'relation',
       resource_type: 'relation'
     ), status: :not_found
+  rescue RedmineCanvasGantt::DataPayloadBudget::Exceeded => e
+    render_data_payload_limit(e)
   rescue => e
     render_internal_error(e)
   end
@@ -910,6 +915,8 @@ class CanvasGanttsController < ApplicationController
       resource_role: 'relation',
       resource_type: 'relation'
     ), status: :not_found
+  rescue RedmineCanvasGantt::DataPayloadBudget::Exceeded => e
+    render_data_payload_limit(e)
   rescue => e
     render_internal_error(e)
   end
@@ -1123,31 +1130,46 @@ class CanvasGanttsController < ApplicationController
     project_scope_policy.candidate_options(projects: projects)
   end
 
-  def filter_option_issues(project_ids)
-    scope = Issue.visible.where(project_id: project_ids)
-      .select(:id, :assigned_to_id, :project_id)
-      .includes(:assigned_to)
-    data_payload_budget.load_records(
-      scope,
-      resource: 'filter_issues',
-      limit: data_payload_budget.issue_limit
-    )
+  def filter_option_assignees(project_ids)
+    project_scope = Project.where(id: project_ids)
+    principals = Principal.member_of(project_scope)
+    principals = principals.where(type: 'User') unless Setting.issue_group_assignment?
+
+    if Setting.issue_group_assignment?
+      built_in_group_ids = Group.where.not(id: Group.givable.select(:id)).select(:id)
+      principals = principals.where.not(id: built_in_group_ids)
+    end
+
+    candidate_principal_ids = principals.sorted.limit(data_payload_budget.collection_limit + 1).pluck(:id)
+    data_payload_budget.ensure_count!(candidate_principal_ids, resource: 'assignees')
+    memberships = Member.where(project_id: project_ids, user_id: candidate_principal_ids)
+      .distinct
+      .pluck(:user_id, :project_id)
+
+    grouped = memberships.each_with_object({}) do |(id, project_id), result|
+      entry = result[id] ||= { id: id, project_ids: Set.new }
+      entry[:project_ids] << project_id.to_s
+    end
+    principals_by_id = Principal.where(id: grouped.keys).index_by(&:id)
+    candidates = grouped.values.filter_map do |entry|
+      principal = principals_by_id[entry[:id]]
+      next unless principal
+
+      { id: entry[:id], name: principal.name, project_ids: entry[:project_ids].to_a.sort }
+    end
+    candidates << { id: nil, name: nil, project_ids: Array(project_ids).map(&:to_s).sort }
+    candidates.sort_by { |entry| [entry[:id].nil? ? 0 : 1, entry[:name].to_s.downcase] }
   end
 
-  # Keep tracker candidates independent from the filtered task collection and
-  # avoid materializing every visible Issue.  Issue.visible remains the
-  # permission boundary; the distinct projection is O(project-tracker
-  # memberships) and the tracker name is fetched in the same query.
   def filter_option_trackers(project_ids)
-    rows = Issue.visible
-      .where(project_id: project_ids)
-      .where.not(tracker_id: nil)
-      .joins(:tracker)
-      .distinct
-      .limit(data_payload_budget.collection_limit + 1)
-      .pluck(:tracker_id, :project_id, 'trackers.name')
-    data_payload_budget.ensure_count!(rows, resource: 'trackers')
-    rows.map { |tracker_id, project_id, name| { id: tracker_id, project_id: project_id, name: name } }
+    grouped = {}
+    Project.where(id: project_ids).each do |project|
+      project.trackers.visible(User.current).each do |tracker|
+        (grouped[tracker.id] ||= { id: tracker.id, name: tracker.name, project_ids: Set.new })[:project_ids] << project.id.to_s
+        data_payload_budget.ensure_count!(grouped, resource: 'trackers')
+      end
+    end
+    grouped.values.map { |entry| entry.merge(project_ids: entry[:project_ids].to_a.sort) }
   end
 
   def render_internal_error(error)
@@ -1425,7 +1447,7 @@ class CanvasGanttsController < ApplicationController
       issue_to: issue_to,
       relation_type: relation_type,
       delay: delay,
-      existing_relations: build_relations(mutation_scope_issues),
+      existing_relations: relation_change_scope_relations,
       candidate_relation: build_candidate_relation(
         relation_id: relation_id,
         issue_from: issue_from,
@@ -1440,6 +1462,22 @@ class CanvasGanttsController < ApplicationController
     )
   end
 
+  def relation_change_scope_relations
+    visible_issue_ids = Issue.visible
+      .where(project_id: current_view_scope[:scope_project_ids])
+      .select(:id)
+    relation_limit = data_payload_budget.relation_limit
+    rows = IssueRelation
+      .where(issue_from_id: visible_issue_ids, issue_to_id: visible_issue_ids, relation_type: %w[precedes follows])
+      .order(:id)
+      .limit(relation_limit + 1)
+      .pluck(:id, :issue_from_id, :issue_to_id, :relation_type, :delay)
+    data_payload_budget.ensure_count!(rows, resource: 'relations', limit: relation_limit)
+    rows.map do |id, issue_from_id, issue_to_id, relation_type, delay|
+      { id: id, from: issue_from_id, to: issue_to_id, type: relation_type, delay: delay }
+    end
+  end
+
   def mutation_scope_issue?(issue)
     return false unless issue
 
@@ -1451,15 +1489,6 @@ class CanvasGanttsController < ApplicationController
     # second visible query would both waste a query and make the policy depend
     # on the current filtered collection.
     scope_project_ids.include?(issue.project_id)
-  end
-
-  def mutation_scope_issues
-    return Array(current_view_scope[:issues]) if current_view_scope[:scope_project_ids].blank?
-
-    @mutation_scope_issues ||= Issue.visible
-      .where(project_id: current_view_scope[:scope_project_ids])
-      .includes(ISSUE_INCLUDES)
-      .to_a
   end
 
   def save_relation_change(relation:, issue_from:, issue_to:, relation_id:, replacing_relation_id: nil)
@@ -1868,7 +1897,10 @@ class CanvasGanttsController < ApplicationController
     operation_issue_ids = requested_operation_issue_ids
     return true if operation_issue_ids.blank?
 
-    authorized_operation_issue_ids = operation_issue_ids & mutation_scope_issues.map(&:id).to_set
+    authorized_operation_issue_ids = Issue.visible
+      .where(project_id: current_view_scope[:scope_project_ids], id: operation_issue_ids.to_a)
+      .pluck(:id)
+      .to_set
     return true if authorized_operation_issue_ids.include?(issue.id)
 
     render json: mutation_failure_response(

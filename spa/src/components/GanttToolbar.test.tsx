@@ -2015,7 +2015,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(apiClient.fetchData).not.toHaveBeenCalled();
     });
 
-    it('does not infer the candidate project scope from visible tasks when server projects are empty', () => {
+    it('uses the backend version candidates without inferring availability from owner project', () => {
         useTaskStore.setState({
             allTasks: [{
                 id: '1', subject: 'Visible task', projectId: 'p1', projectName: 'Alpha',
@@ -2049,7 +2049,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByLabelText('Selected User')).toBeChecked();
 
         fireEvent.click(screen.getByTitle('Filter by version'));
-        expect(screen.queryByLabelText('Version 1')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Version 1')).toBeInTheDocument();
         expect(screen.getByLabelText('Selected Version')).toBeChecked();
 
         fireEvent.click(screen.getByTestId('tracker-filter-menu-button'));
@@ -2061,7 +2061,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(useTaskStore.getState().selectedTrackerIds).toEqual([2]);
     });
 
-    it('scopes assignee and version options by selected projects while keeping selected out-of-scope entries visible', () => {
+    it('scopes assignee options by selected projects and trusts the backend version candidate set', () => {
         useTaskStore.setState({
             filterText: '',
             allTasks: [
@@ -2115,7 +2115,7 @@ describe('GanttToolbar shortcuts', () => {
         fireEvent.click(screen.getByTitle('Filter by version'));
         expect(screen.getByText('Version 1')).toBeInTheDocument();
         expect(screen.getByText('Version 2')).toBeInTheDocument();
-        expect(screen.queryByText('Version 3')).not.toBeInTheDocument();
+        expect(screen.getByText('Version 3')).toBeInTheDocument();
     });
 
     it('scopes tracker candidates by projects without dropping a selected out-of-scope tracker', () => {
@@ -2157,6 +2157,44 @@ describe('GanttToolbar shortcuts', () => {
 
         expect(useTaskStore.getState().selectedTrackerIds).toEqual([20, 10]);
         expect(useTaskStore.getState().selectedStatusIds).toEqual([1]);
+    });
+
+    it('keeps assignee, tracker, and version filters usable while data is loading', () => {
+        useTaskStore.setState({
+            dataReadStatus: 'loading',
+            filterText: '',
+            allTasks: [] as never,
+            filterOptions: {
+                projects: [{ id: 'p1', name: 'Alpha' }],
+                assignees: [{ id: 10, name: 'User A', projectIds: ['p1'] }],
+                trackers: [{ id: 20, name: 'Bug', projectIds: ['p1'] }]
+            },
+            versions: [{ id: 'v1', name: 'Version 1', projectId: 'owner-p2', status: 'open' }],
+            selectedAssigneeIds: [],
+            selectedProjectIds: ['p1'],
+            selectedVersionIds: [],
+            selectedTrackerIds: [],
+            taskStatuses: [],
+            selectedStatusIds: [],
+            modifiedTaskIds: new Set(),
+            autoSave: true
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        fireEvent.click(screen.getByTitle('Assignee Filter'));
+        expect(screen.getByLabelText('User A')).not.toBeDisabled();
+        fireEvent.click(screen.getByLabelText('User A'));
+        fireEvent.click(screen.getByTestId('tracker-filter-menu-button'));
+        expect(screen.getByLabelText('Bug')).not.toBeDisabled();
+        fireEvent.click(screen.getByLabelText('Bug'));
+        fireEvent.click(screen.getByTitle('Filter by version'));
+        expect(screen.getByLabelText('Version 1')).not.toBeDisabled();
+        fireEvent.click(screen.getByLabelText('Version 1'));
+
+        expect(useTaskStore.getState().selectedAssigneeIds).toEqual([10]);
+        expect(useTaskStore.getState().selectedTrackerIds).toEqual([20]);
+        expect(useTaskStore.getState().selectedVersionIds).toEqual(['v1']);
     });
 
     it('toggles the project select-all checkbox between all projects and no explicit project selection after refresh', async () => {
