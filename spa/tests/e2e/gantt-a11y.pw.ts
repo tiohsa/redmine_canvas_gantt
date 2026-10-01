@@ -27,7 +27,7 @@ test.describe('default mock dataset', () => {
   });
 });
 
-test('keeps a large accessibility list bounded while navigating every task', async ({ page }) => {
+test('keeps a large accessibility list bounded while navigating across virtual window boundaries', async ({ page }) => {
   const mockData = {
     ...defaultMockData,
     tasks: Array.from({ length: 10_000 }, (_, index) => ({
@@ -114,7 +114,7 @@ test('keeps the accessibility list bounded after closing an issue dialog refresh
   await page.getByRole('button', { name: 'Close issue dialog' }).click();
 
   await expect(page.getByTestId('issue-dialog-header')).toHaveCount(0);
-  expect(requestsBeforeClose).toBeGreaterThan(0);
+  await expect.poll(() => dataRequests).toBeGreaterThan(requestsBeforeClose);
   await expect(rows.first()).toHaveAttribute('aria-label', /Refreshed accessible task/);
   await page.getByRole('button', { name: 'Today' }).click();
   await expect(list).toBeVisible();
