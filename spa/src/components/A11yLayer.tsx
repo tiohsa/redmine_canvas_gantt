@@ -14,29 +14,20 @@ export const A11yLayer: React.FC = () => {
 
     const viewport = useTaskStore(state => state.viewport);
     const listRef = useRef<HTMLUListElement>(null);
-    const [focusedTask, setFocusedTask] = useState<{ id: string; index: number } | null>(null);
-    const focusedTaskId = focusedTask?.id ?? null;
+    const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+    const lastFocusedIndexRef = useRef<number | null>(null);
     const ownsFocusRef = useRef(false);
     const pendingFocusRef = useRef<string | null>(null);
     const previousSelectionRef = useRef<string | null>(null);
     const taskIndices = useMemo(() => new Map(tasks.map((task, index) => [task.id, index])), [tasks]);
     const focusedIndex = focusedTaskId ? taskIndices.get(focusedTaskId) : undefined;
     const selectedIndex = selectedTaskId ? taskIndices.get(selectedTaskId) : undefined;
-    // Remember the current ordinal before a later filter/removal can erase it.
-    // Adjust this component's state during render rather than adding an effect render.
-    if (focusedTask && focusedIndex !== undefined && focusedTask.index !== focusedIndex) {
-        setFocusedTask({ id: focusedTask.id, index: focusedIndex });
-    } else if (tasks.length === 0 && focusedTask) {
-        setFocusedTask(null);
-    }
-    const recoveringFocus = focusedTask !== null && focusedIndex === undefined;
+    const recoveringFocus = focusedTaskId !== null && focusedIndex === undefined;
     const firstVisible = LayoutEngine.sliceTasksInRowRange(
         tasks, Math.floor(viewport.scrollY / viewport.rowHeight),
         Math.ceil((viewport.scrollY + viewport.height) / viewport.rowHeight)
     )[0];
-    const centerIndex = focusedIndex ?? (recoveringFocus
-        ? Math.min(focusedTask?.index ?? 0, tasks.length - 1)
-        : selectedIndex ?? (firstVisible ? taskIndices.get(firstVisible.id)! : 0));
+    const centerIndex = focusedIndex ?? selectedIndex ?? (firstVisible ? taskIndices.get(firstVisible.id)! : 0);
     const renderedIndices = new Set<number>();
     for (let index = Math.max(0, centerIndex - WINDOW_RADIUS);
         index <= Math.min(tasks.length - 1, centerIndex + WINDOW_RADIUS); index += 1) {
@@ -55,7 +46,7 @@ export const A11yLayer: React.FC = () => {
         const handleDocumentFocus = (event: FocusEvent) => {
             if (!listRef.current?.contains(event.target as Node)) {
                 ownsFocusRef.current = false;
-                setFocusedTask(null);
+                setFocusedTaskId(null);
             }
         };
         document.addEventListener('focusin', handleDocumentFocus);
@@ -63,11 +54,15 @@ export const A11yLayer: React.FC = () => {
     }, []);
 
     useLayoutEffect(() => {
+        // Commit the latest ordinal so removal can recover from the last displayed order.
+        if (focusedIndex !== undefined) lastFocusedIndexRef.current = focusedIndex;
         const selectionChanged = previousSelectionRef.current !== selectedTaskId;
         previousSelectionRef.current = selectedTaskId;
         const pendingId = pendingFocusRef.current;
         pendingFocusRef.current = null;
-        const recoveryId = ownsFocusRef.current && recoveringFocus ? tasks[centerIndex]?.id : undefined;
+        const recoveryId = ownsFocusRef.current && recoveringFocus
+            ? tasks[Math.min(lastFocusedIndexRef.current ?? 0, tasks.length - 1)]?.id
+            : undefined;
         const targetId = pendingId ?? recoveryId ?? (selectionChanged ? selectedTaskId : null);
         if (targetId) {
             const element = Array.from(listRef.current?.children ?? []).find(
@@ -75,12 +70,20 @@ export const A11yLayer: React.FC = () => {
             ) as HTMLElement | undefined;
             if (element && document.activeElement !== element) {
                 element.focus({ preventScroll: true });
+            } else if (!element && recoveryId) {
+                // Mount an out-of-window recovery target before focusing it.
+                pendingFocusRef.current = recoveryId;
+                selectTask(recoveryId);
             }
         }
         if (tasks.length === 0) {
             ownsFocusRef.current = false;
+            lastFocusedIndexRef.current = null;
+            // Clear bookkeeping after the focused DOM row disappears with an empty list.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setFocusedTaskId(null);
         }
-    }, [tasks, selectedTaskId, focusedTask, focusedIndex, recoveringFocus, centerIndex]);
+    }, [tasks, selectedTaskId, selectTask, focusedTaskId, focusedIndex, recoveringFocus]);
 
     const handleKeyDown = (e: React.KeyboardEvent, task: Task) => {
         if (e.key === 'Tab') {
@@ -99,7 +102,8 @@ export const A11yLayer: React.FC = () => {
 
     const handleFocus = (taskId: string) => {
         ownsFocusRef.current = true;
-        setFocusedTask({ id: taskId, index: taskIndices.get(taskId)! });
+        lastFocusedIndexRef.current = taskIndices.get(taskId)!;
+        setFocusedTaskId(taskId);
         if (selectedTaskId !== taskId) selectTask(taskId);
     };
 

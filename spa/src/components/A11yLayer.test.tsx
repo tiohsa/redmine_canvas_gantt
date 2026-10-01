@@ -117,12 +117,38 @@ describe('A11yLayer', () => {
         expect(useTaskStore.getState().selectedTaskId).toBe('2');
     });
 
+    it('mounts an out-of-window ordinal recovery target before focusing it', async () => {
+        setVisibleTasks(tasks(300), '180');
+        render(<A11yLayer />);
+        expect(list().querySelector('[data-id="180"]')).toHaveFocus();
+
+        act(() => setVisibleTasks(tasks(300).filter(item => item.id !== '180')));
+
+        await waitFor(() => expect(document.activeElement).toHaveAttribute('data-id', '181'));
+        expect(useTaskStore.getState().selectedTaskId).toBe('181');
+        expect(within(list()).getAllByRole('listitem').length).toBeLessThanOrEqual(55);
+    });
+
     it('shows an empty list when there are no tasks', () => {
         setVisibleTasks([]);
 
         render(<A11yLayer />);
 
         expect(within(list()).queryAllByRole('listitem')).toHaveLength(0);
+    });
+
+    it('clears focus recovery when the task list becomes empty', () => {
+        setVisibleTasks(tasks(100));
+        render(<><button type="button">Outside control</button><A11yLayer /></>);
+        act(() => within(list()).getByRole('listitem', { name: /Task 3\./ }).focus());
+        act(() => setVisibleTasks([]));
+        expect(within(list()).queryAllByRole('listitem')).toHaveLength(0);
+
+        const outside = screen.getByRole('button', { name: 'Outside control' });
+        act(() => outside.focus());
+        act(() => setVisibleTasks(tasks(100)));
+        expect(outside).toHaveFocus();
+        expect(within(list()).getAllByRole('listitem').length).toBeLessThanOrEqual(55);
     });
 
     it('retains the focused task when viewport scrolling changes the virtual window', async () => {

@@ -44,6 +44,7 @@ type MockData = {
 
 type SetupOptions = {
   mockData?: MockData;
+  onDataRequest?: (data: MockData, requestCount: number) => void;
   preferences?: Record<string, unknown>;
   onPatchTask?: (payload: unknown) => void;
   onCreateRelation?: (payload: unknown) => void;
@@ -271,6 +272,7 @@ const isRelationVisibleInCurrentRequest = (route: Route, data: MockData, relatio
 
 export const setupMockApp = async (page: Page, options?: SetupOptions) => {
   const data = cloneData(options?.mockData ?? defaultMockData);
+  let dataRequestCount = 0;
   const preferences = {
     groupByProject: false,
     visibleColumns: ['id', 'subject', 'status', 'assignee', 'startDate', 'dueDate', 'ratioDone'],
@@ -333,6 +335,8 @@ export const setupMockApp = async (page: Page, options?: SetupOptions) => {
   });
 
   await page.route('**/canvas_gantt/data.json**', async (route) => {
+    dataRequestCount += 1;
+    options?.onDataRequest?.(data, dataRequestCount);
     const payload = filterByQuery(route, data);
     await route.fulfill({
       status: 200,
