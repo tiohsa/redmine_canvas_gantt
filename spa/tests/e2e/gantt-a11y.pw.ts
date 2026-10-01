@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { setupMockApp, waitForInitialRender } from './support/mockApp';
+import { defaultMockData, setupMockApp, waitForInitialRender } from './support/mockApp';
 
 test.beforeEach(async ({ page }) => {
   await setupMockApp(page);
@@ -23,4 +23,61 @@ test('focuses first task on Tab', async ({ page }) => {
   }
 
   expect(focusedTaskLabel).toContain('Task:');
+});
+
+
+test('keeps a large accessibility list bounded while navigating every task', async ({ page }) => {
+  const mockData = {
+    ...defaultMockData,
+    tasks: Array.from({ length: 10_000 }, (_, index) => ({
+      ...defaultMockData.tasks[0],
+      id: 101 + index,
+      subject: `Accessible task ${index + 1}`,
+      display_order: index,
+    })),
+    relations: [],
+    versions: [],
+  };
+  await setupMockApp(page, { mockData });
+  await waitForInitialRender(page);
+  const list = page.getByRole('list', { name: 'Gantt Chart Task List' });
+  const rows = list.locator('li');
+  expect(await rows.count()).toBeLessThanOrEqual(55);
+  await expect(rows.first()).toHaveAttribute('aria-posinset', '1');
+  await expect(rows.first()).toHaveAttribute('aria-setsize', '10000');
+  // Sentinels establish both exits without depending on the surrounding toolbar.
+  await list.evaluate(element => {
+    for (const side of ['before', 'after']) {
+      const button = document.createElement('button');
+      button.id = `a11y-${side}`;
+      button.textContent = side;
+      if (side === 'before') element.before(button);
+      else element.after(button);
+    }
+  });
+  await rows.first().focus();
+  for (let index = 2; index <= 60; index += 1) {
+    await page.keyboard.press('Tab');
+    await expect(list.locator(`li[aria-posinset="${index}"]`)).toBeFocused();
+    expect(await rows.count()).toBeLessThanOrEqual(55);
+  }
+  for (let index = 59; index >= 24; index -= 1) {
+    await page.keyboard.press('Shift+Tab');
+    await expect(list.locator(`li[aria-posinset="${index}"]`)).toBeFocused();
+  }
+  await page.keyboard.press('ArrowDown');
+  await expect(list.locator('li[aria-posinset="25"]')).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(list.locator('li[aria-posinset="24"]')).toBeFocused();
+  await rows.last().focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(list.locator('li[aria-posinset="9999"]')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(rows.last()).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#a11y-after')).toBeFocused();
+  await rows.first().focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('#a11y-before')).toBeFocused();
+  expect(await rows.count()).toBeLessThanOrEqual(55);
 });
