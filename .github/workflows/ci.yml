@@ -237,6 +237,9 @@ jobs:
           tests/e2e/gantt-conflicts.pw.ts
           tests/e2e/gantt-action-needed.pw.ts
 
+      - name: Run accessibility mock suite
+        run: npx playwright test tests/e2e/gantt-a11y.pw.ts
+
   e2e-redmine-compat:
     name: Redmine ${{ matrix.label }} compatibility
     needs:
