@@ -77,7 +77,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:business_calendar_projects).with([1]).and_return([])
     end
 
-    it 'returns basename diagnostics to administrators' do
+    it 'returns safe relative diagnostics to administrators' do
       allow(User).to receive(:current).and_return(instance_double(User, admin?: true))
 
       result = controller.send(:business_calendar_payload, [1])
@@ -134,6 +134,51 @@ RSpec.describe CanvasGanttsController, type: :controller do
           expect(user_result.to_s).not_to include('holiday.csv', '2026/１/1', 'x' * 1_000)
           expect { ActiveSupport::JSON.encode(user_result) }.not_to raise_error
         end
+      end
+    end
+
+    it 'preserves duplicate calendar ID details for admins and hides them from regular users' do
+      Dir.mktmpdir('canvas-calendar-api') do |directory|
+        FileUtils.mkdir_p(File.join(directory, 'custom'))
+        FileUtils.mkdir_p(File.join(directory, 'generated'))
+        calendar = lambda do |name|
+          <<~YAML
+            schema_version: 1
+            calendar:
+              id: duplicate
+              name: #{name}
+          YAML
+        end
+        File.binwrite(File.join(directory, 'custom', 'JP.yml'), calendar.call('Custom'))
+        File.binwrite(File.join(directory, 'generated', 'JP.yml'), calendar.call('Generated'))
+
+        loader = RedmineCanvasGantt::BusinessCalendarLoader.new(
+          directory: directory, fallback_non_working_week_days: [6, 7]
+        )
+        repository = RedmineCanvasGantt::BusinessCalendarRepository.send(
+          :new, loader: loader, reload_interval: 0, clock: -> { 0.0 }, logger: nil
+        )
+        resolver = RedmineCanvasGantt::ProjectCalendarResolver.new(
+          repository: repository, fallback_non_working_week_days: [6, 7]
+        )
+        allow(controller).to receive(:business_calendar_resolver).and_return(resolver)
+
+        allow(User).to receive(:current).and_return(instance_double(User, admin?: true))
+        admin_result = controller.send(:business_calendar_payload, [1])
+        diagnostic = admin_result.fetch(:diagnostic)
+        expect(diagnostic).to include(code: 'INVALID_CONFIGURATION', file: 'generated/JP.yml', value: 'duplicate')
+        expect(diagnostic.fetch(:cause)).to include('duplicate calendar.id')
+        expect(diagnostic.fetch(:cause).length).to be <= RedmineCanvasGantt::BusinessCalendarLoader::DIAGNOSTIC_TEXT_MAX_LENGTH
+        expect(diagnostic.fetch(:cause).encoding).to eq(Encoding::UTF_8)
+        expect(diagnostic.fetch(:cause)).to be_valid_encoding
+        expect(diagnostic.fetch(:value)).not_to include('calendar.id')
+        expect { ActiveSupport::JSON.encode(admin_result) }.not_to raise_error
+
+        allow(User).to receive(:current).and_return(instance_double(User, admin?: false))
+        user_result = controller.send(:business_calendar_payload, [1])
+        expect(user_result[:diagnostic]).to be_nil
+        expect(user_result.to_s).not_to include('duplicate', 'generated/JP.yml', 'custom/JP.yml')
+        expect { ActiveSupport::JSON.encode(user_result) }.not_to raise_error
       end
     end
   end

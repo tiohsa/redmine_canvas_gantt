@@ -244,40 +244,60 @@ test('keeps the calendar validation banner through fallback and stale states, th
   await adminLogin(redmineBase, page);
 
   let validationStatus: 'invalid' | 'stale' | 'valid' = 'invalid';
-  await page.route('**/canvas_gantt/data.json**', async (route) => {
-    const response = await route.fetch();
-    const data = await response.json() as Record<string, unknown> & { businessCalendar: Record<string, unknown> };
-    const message = validationStatus === 'stale'
-      ? 'The last valid calendar is still in use.'
-      : 'Redmine weekdays are being used as a fallback.';
-    data.businessCalendar = {
-      ...data.businessCalendar,
-      status: validationStatus === 'invalid' ? 'error' : 'ok',
-      validationStatus,
-      validationMessage: validationStatus === 'valid' ? null : message,
-      diagnostic: validationStatus === 'valid' ? null : {
-        code: 'INVALID_DATE', file: 'holiday.csv', line: 2,
-        message: 'A calendar date is invalid.', cause: 'Date is invalid.', value: '2027/2/30'
-      }
+  try {
+    await page.route('**/canvas_gantt/data.json**', async (route) => {
+      const responseValidationStatus = validationStatus;
+      const response = await route.fetch();
+      const data = await response.json() as Record<string, unknown> & { businessCalendar: Record<string, unknown> };
+      const message = responseValidationStatus === 'stale'
+        ? 'The last valid calendar is still in use.'
+        : 'Redmine weekdays are being used as a fallback.';
+      data.businessCalendar = {
+        ...data.businessCalendar,
+        status: responseValidationStatus === 'invalid' ? 'error' : 'ok',
+        validationStatus: responseValidationStatus,
+        validationMessage: responseValidationStatus === 'valid' ? null : message,
+        diagnostic: responseValidationStatus === 'valid' ? null : {
+          code: 'INVALID_DATE', file: 'holiday.csv', line: 2,
+          message: 'A calendar date is invalid.', cause: 'Date is invalid.', value: '2027/2/30'
+        }
+      };
+      await route.fulfill({ response, json: data });
+    });
+
+    const expectCalendarResponse = async (
+      expectedStatus: 'invalid' | 'stale' | 'valid',
+      trigger: () => Promise<unknown>
+    ) => {
+      const responsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === 'GET' && url.pathname.endsWith('/canvas_gantt/data.json');
+      });
+      await trigger();
+      const response = await responsePromise;
+      expect(response.status()).toBe(200);
+      const data = await response.json() as { businessCalendar?: { validationStatus?: string } };
+      expect(data.businessCalendar?.validationStatus).toBe(expectedStatus);
     };
-    await route.fulfill({ response, json: data });
-  });
 
-  await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
-  const banner = page.getByRole('alert');
-  await expect(banner).toContainText('Redmine weekdays are being used as a fallback.');
-  await expect(banner).toContainText('holiday.csv:2');
+    await expectCalendarResponse('invalid', () => page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`));
+    const banner = page.getByRole('alert');
+    await expect(banner).toContainText('Redmine weekdays are being used as a fallback.');
+    await expect(banner).toContainText('holiday.csv:2');
 
-  await page.waitForTimeout(4_000);
-  await expect(banner).toBeVisible();
+    await page.waitForTimeout(4_000);
+    await expect(banner).toBeVisible();
 
-  validationStatus = 'stale';
-  await page.reload();
-  await expect(page.getByRole('alert')).toContainText('The last valid calendar is still in use.');
+    validationStatus = 'stale';
+    await expectCalendarResponse('stale', () => page.reload());
+    await expect(page.getByRole('alert')).toContainText('The last valid calendar is still in use.');
 
-  validationStatus = 'valid';
-  await page.reload();
-  await expect(page.getByRole('alert')).toHaveCount(0);
+    validationStatus = 'valid';
+    await expectCalendarResponse('valid', () => page.reload());
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
 });
 
 test('keeps clean toolbar controls from overlapping at the standard viewport', async ({ page, baseURL }) => {

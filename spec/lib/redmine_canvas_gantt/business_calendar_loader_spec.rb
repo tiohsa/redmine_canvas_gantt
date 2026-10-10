@@ -14,7 +14,7 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
   def write(relative_path, content)
     path = File.join(@directory, relative_path)
     FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, content)
+    File.binwrite(path, content)
     path
   end
 
@@ -216,6 +216,8 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     expect(diagnostic.fetch(:value)).to be_valid_encoding
     expect(diagnostic.fetch(:file)).to eq('holiday.csv')
     expect(error.message).not_to include(@directory)
+    expect(error.message).not_to include(diagnostic.fetch(:value))
+    expect(error.message).to include('Date must use YYYY/M/D')
     expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
 
     cp932_date = "2026/１/1".encode(Encoding::Windows_31J)
@@ -224,6 +226,19 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
       diagnostic = raised.diagnostic
       expect(diagnostic.fetch(:value).encoding).to eq(Encoding::UTF_8)
       expect(diagnostic.fetch(:value)).to be_valid_encoding
+      expect { ActiveSupport::JSON.encode(diagnostic) }.not_to raise_error
+    }
+
+    cp932_oversized_value = ('あ' * 1_000).encode(Encoding::Windows_31J)
+    write('holiday.csv', "header\n".b + cp932_oversized_value.b + ",Holiday\n".b)
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |raised|
+      diagnostic = raised.diagnostic
+      expect(diagnostic.fetch(:value).encoding).to eq(Encoding::UTF_8)
+      expect(diagnostic.fetch(:value)).to be_valid_encoding
+      expect(diagnostic.fetch(:value).length).to be <= described_class::DIAGNOSTIC_VALUE_MAX_LENGTH
+      expect(diagnostic.fetch(:message).encoding).to eq(Encoding::UTF_8)
+      expect(diagnostic.fetch(:message).length).to be <= described_class::DIAGNOSTIC_TEXT_MAX_LENGTH
+      expect(raised.message.length).to be <= described_class::DIAGNOSTIC_TEXT_MAX_LENGTH
       expect { ActiveSupport::JSON.encode(diagnostic) }.not_to raise_error
     }
 
@@ -244,6 +259,48 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     }
   end
 
+  it 'keeps diagnostic values separate from fixed reasons and uses safe fallbacks' do
+    reason_text = 'date must use YYYY-MM-DD'
+    write('calendar.yml', calendar_yaml(
+      id: 'invalid-date',
+      days: [{ date: reason_text, name: 'Invalid', type: 'non_working' }]
+    ))
+
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |error|
+      diagnostic = error.diagnostic
+      expect(diagnostic.fetch(:value)).to eq(reason_text)
+      expect(diagnostic.fetch(:message)).to eq("#{reason_text}.")
+      expect(error.message).to eq("calendar.yml: #{reason_text}.")
+      expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
+    }
+
+    error = loader.send(
+      :configuration_error,
+      'private secret must not appear',
+      file: File.join(@directory, 'calendar.yml'),
+      value: 'secret'
+    )
+    expect(error.message).to eq('calendar.yml: Calendar configuration value is invalid.')
+    expect(error.diagnostic.fetch(:message)).to eq('Calendar configuration value is invalid.')
+    expect(error.diagnostic.fetch(:value)).to eq('secret')
+    expect(error.message).not_to include('secret')
+    expect(error.diagnostic.fetch(:file)).to eq('calendar.yml')
+
+    unsafe_files = [
+      '../outside.yml',
+      File.join(File.dirname(@directory), 'outside.yml'),
+      "invalid-\xFF.yml".b,
+      'notes.txt'
+    ]
+    unsafe_files.each do |file|
+      unsafe_error = loader.send(:configuration_error, "#{file}: failed", file: file)
+      expect(unsafe_error.diagnostic[:file]).to be_nil
+      expect(unsafe_error.message.b).not_to include(file.to_s.b)
+      expect(unsafe_error.message).to be_valid_encoding
+      expect { ActiveSupport::JSON.encode(unsafe_error.diagnostic) }.not_to raise_error
+    end
+  end
+
   it 'rejects YAML configuration mixed with the root holiday CSV' do
     write('holiday.csv', "header\n2026/1/1,Holiday\n")
     write('settings.yml', "schema_version: 1\n")
@@ -259,7 +316,11 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     File.write(outside, "header\n2026/1/1,Holiday\n")
     FileUtils.rm(File.join(@directory, 'holiday.csv'))
     File.symlink(outside, File.join(@directory, 'holiday.csv'))
-    expect { loader.load }.to raise_error(described_class::ConfigurationError, /outside calendar directory/)
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /outside calendar directory/) { |error|
+      expect(error.diagnostic[:file]).to be_nil
+      expect(error.message).not_to include(outside)
+      expect(ActiveSupport::JSON.encode(error.diagnostic)).to be_a(String)
+    }
   ensure
     FileUtils.rm_f(outside) if outside
   end
@@ -320,7 +381,33 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     write('one.yml', calendar_yaml(id: 'duplicate'))
     write('nested/two.yml', calendar_yaml(id: 'duplicate'))
 
-    expect { loader.load }.to raise_error(described_class::ConfigurationError, /duplicate calendar.id/)
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /duplicate calendar.id/) { |error|
+      diagnostic = error.diagnostic
+      expect(diagnostic.fetch(:message)).to include('duplicate calendar.id')
+      expect(diagnostic.fetch(:value)).to eq('duplicate')
+      expect(error.message).to include('duplicate calendar.id')
+      expect(diagnostic.fetch(:file)).to eq('one.yml')
+      expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
+    }
+  end
+
+  it 'reports safe config-relative paths so same-named files remain distinguishable' do
+    write('generated/JP.yml', "schema_version: 2\ncalendar: {}\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |error|
+      diagnostic = error.diagnostic
+      expect(diagnostic.fetch(:file)).to eq('generated/JP.yml')
+      expect(error.message).not_to include(@directory)
+      expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
+    }
+
+    FileUtils.rm_f(File.join(@directory, 'generated/JP.yml'))
+    write('custom/JP.yml', "schema_version: 2\ncalendar: {}\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |error|
+      diagnostic = error.diagnostic
+      expect(diagnostic.fetch(:file)).to eq('custom/JP.yml')
+      expect(error.message).not_to include(@directory)
+      expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
+    }
   end
 
   it 'rejects duplicate dates within a file' do
@@ -332,7 +419,12 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
       ]
     ))
 
-    expect { loader.load }.to raise_error(described_class::ConfigurationError, /duplicate date/)
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /duplicate date/) { |error|
+      diagnostic = error.diagnostic
+      expect(diagnostic.fetch(:message)).to include('duplicate date')
+      expect(diagnostic.fetch(:value)).to eq('2027-01-01')
+      expect(error.message).not_to include(diagnostic.fetch(:value))
+    }
   end
 
   it 'rejects missing and cyclic bases' do

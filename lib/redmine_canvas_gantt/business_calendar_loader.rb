@@ -98,25 +98,24 @@ module RedmineCanvasGantt
 
     def configuration_error(message, file: nil, code: 'INVALID_CONFIGURATION', line: nil, value: nil, detail: nil)
       source = file.to_s.b.split(':'.b, 2).first
-      basename = File.basename(source) if file
-      basename = nil unless basename && %w[.csv .yml .yaml].include?(File.extname(basename))
-      safe_message_bytes = (detail || message).to_s.b
-      error_message_bytes = message.to_s.b
-      if basename && !source.empty?
-        safe_message_bytes = safe_message_bytes.gsub(source, basename.b)
-        error_message_bytes = error_message_bytes.gsub(source, basename.b)
+      safe_file = safe_diagnostic_file(source) if file
+      safe_message_bytes = (detail || (value.nil? ? message : 'Calendar configuration value is invalid.')).to_s.b
+      unless source.empty?
+        replacement = safe_file || 'calendar file'
+        safe_message_bytes = safe_message_bytes.gsub(source, replacement.b)
       end
       directory_bytes = @directory.to_s.b
       safe_message_bytes = safe_message_bytes.gsub(directory_bytes, ''.b)
-      error_message_bytes = error_message_bytes.gsub(directory_bytes, ''.b)
-      unless value.nil?
-        value_bytes = value.to_s.b
-        error_message_bytes = error_message_bytes.gsub(value_bytes, '[redacted]'.b) unless value_bytes.empty?
-      end
       safe_message = sanitize_diagnostic_text(safe_message_bytes, max_length: DIAGNOSTIC_TEXT_MAX_LENGTH)
+      error_message_bytes = if detail || !value.nil?
+                              location = [safe_file, ("line #{line}" if line)].compact.join(': ')
+                              location.empty? ? safe_message_bytes : "#{location}: ".b + safe_message_bytes
+                            else
+                              safe_message_bytes
+                            end
       diagnostic = {
         code: sanitize_diagnostic_text(code, max_length: 128),
-        file: basename && sanitize_diagnostic_text(basename, max_length: 128),
+        file: safe_file && sanitize_diagnostic_text(safe_file, max_length: 128),
         line: line,
         message: safe_message
       }
@@ -125,6 +124,29 @@ module RedmineCanvasGantt
         sanitize_diagnostic_text(error_message_bytes, max_length: DIAGNOSTIC_TEXT_MAX_LENGTH),
         diagnostic: diagnostic.compact
       )
+    end
+
+    def safe_diagnostic_file(source)
+      return if source.empty?
+
+      source_text = source.dup.force_encoding(Encoding::UTF_8)
+      return unless source_text.valid_encoding?
+
+      absolute = File.expand_path(source_text, @directory)
+      relative = absolute.delete_prefix("#{@directory}#{File::SEPARATOR}")
+      return if relative == absolute || relative.empty?
+      return if relative.include?("\\")
+      return if relative.split(File::SEPARATOR).any? { |part| part.empty? || part == '.' || part == '..' }
+      return unless %w[.csv .yml .yaml].include?(File.extname(relative))
+      return if relative.bytesize > 128
+
+      root = File.realpath(@directory)
+      target = File.exist?(absolute) || File.symlink?(absolute) ? absolute : File.dirname(absolute)
+      resolved = File.realpath(target)
+      return unless resolved.start_with?("#{root}#{File::SEPARATOR}")
+      relative
+    rescue ArgumentError, EncodingError, SystemCallError
+      nil
     end
 
     def sanitize_diagnostic_text(value, max_length:)
@@ -194,7 +216,8 @@ module RedmineCanvasGantt
         definition = normalize_calendar(data, path)
         id = definition.fetch(:id)
         if definitions.key?(id)
-          raise configuration_error("#{path}: duplicate calendar.id #{id.inspect}", file: path, value: id)
+          raise configuration_error("#{path}: duplicate calendar.id #{id.inspect}", file: path, value: id,
+                                    detail: 'duplicate calendar.id.')
         end
 
         definitions[id] = definition
@@ -236,7 +259,7 @@ module RedmineCanvasGantt
         if days.key?(date)
           raise configuration_error("#{path}: row #{index + 1}: duplicate date #{date.iso8601}",
                                     file: path, code: 'DUPLICATE_DATE', line: index + 1,
-                                    value: date_value, detail: 'Date is duplicated.')
+                                    value: date_value, detail: 'duplicate date.')
         end
         records += 1
         if records > MAX_CSV_HOLIDAYS
@@ -247,7 +270,7 @@ module RedmineCanvasGantt
       rescue Date::Error, ArgumentError => e
         raise configuration_error("#{path}: row #{index + 1}: invalid date (#{date_value}: #{e.message})",
                                   file: path, code: 'INVALID_DATE', line: index + 1,
-                                  value: date_value, detail: 'Date is invalid.')
+                                  value: date_value, detail: 'date is invalid (invalid date).')
       end
       raise configuration_error("#{path}: contains no holidays", file: path, code: 'EMPTY_CSV') if days.empty?
 
@@ -296,7 +319,10 @@ module RedmineCanvasGantt
         require_mapping!(entry, location)
         validate_keys!(entry, DAY_KEYS, location)
         date = normalize_date(entry['date'], location)
-        raise configuration_error("#{location}: duplicate date #{date.iso8601}", file: path, code: 'DUPLICATE_DATE', value: date.to_s) if normalized_days.key?(date)
+        if normalized_days.key?(date)
+          raise configuration_error("#{location}: duplicate date #{date.iso8601}", file: path,
+                                    code: 'DUPLICATE_DATE', value: date.to_s, detail: 'duplicate date.')
+        end
 
         day_name = entry['name']
         unless day_name.is_a?(String) && day_name.present? && day_name.length <= 255
@@ -328,10 +354,18 @@ module RedmineCanvasGantt
         source_path = definition&.fetch(:path, nil) || definitions[resolving.last]&.fetch(:path, nil)
         if resolving.include?(id)
           cycle = (resolving.drop_while { |entry| entry != id } + [id]).join(' -> ')
-          raise configuration_error("calendar base cycle detected: #{cycle}", file: source_path, value: cycle)
+          raise configuration_error("calendar base cycle detected: #{cycle}", file: source_path, value: cycle,
+                                    detail: 'calendar base cycle detected.')
         end
-        raise configuration_error("calendar base does not exist: #{id}", file: source_path, code: 'UNKNOWN_CALENDAR_ID', value: id) unless definition
-        raise configuration_error("calendar base depth exceeds #{MAX_BASE_DEPTH}: #{id}", file: definition[:path], value: id) if resolving.size >= MAX_BASE_DEPTH
+        unless definition
+          raise configuration_error("calendar base does not exist: #{id}", file: source_path,
+                                    code: 'UNKNOWN_CALENDAR_ID', value: id,
+                                    detail: 'calendar base does not exist.')
+        end
+        if resolving.size >= MAX_BASE_DEPTH
+          raise configuration_error("calendar base depth exceeds #{MAX_BASE_DEPTH}: #{id}", file: definition[:path],
+                                    value: id, detail: 'Calendar base depth limit was exceeded.')
+        end
 
         resolving << id
         base = definition[:base] ? resolve.call(definition[:base]) : nil
@@ -362,7 +396,8 @@ module RedmineCanvasGantt
 
       raise configuration_error("settings.yml: unknown calendar id(s): #{missing.join(', ')}",
                                 file: File.join(@directory, 'settings.yml'), code: 'UNKNOWN_CALENDAR_ID',
-                                value: missing.join(', '), detail: 'A referenced calendar ID does not exist.')
+                                value: missing.join(', '),
+                                detail: 'A referenced calendar ID does not exist (unknown calendar).')
     end
 
     def load_yaml(path)
@@ -475,11 +510,13 @@ module RedmineCanvasGantt
 
     def normalize_date(value, location)
       unless value.is_a?(String) && ISO_DATE_PATTERN.match?(value)
-        raise configuration_error("#{location}: date must use YYYY-MM-DD", file: location, code: 'INVALID_DATE', value: value)
+        raise configuration_error("#{location}: date must use YYYY-MM-DD", file: location, code: 'INVALID_DATE',
+                                  value: value, detail: 'date must use YYYY-MM-DD.')
       end
       Date.iso8601(value)
     rescue Date::Error
-      raise configuration_error("#{location}: date is invalid", file: location, code: 'INVALID_DATE', value: value)
+      raise configuration_error("#{location}: date is invalid", file: location, code: 'INVALID_DATE',
+                                value: value, detail: 'date is invalid.')
     end
   end
 end
