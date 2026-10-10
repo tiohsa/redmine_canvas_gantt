@@ -1,45 +1,35 @@
 # Holiday Calendar Generator
 
-This standalone Ruby bundle generates business calendar YAML files using the `holidays` gem. It is intentionally kept separate from Redmine's production bundle and does not use any external APIs.
+This standalone directory provides a tool to generate business calendar YAML files:
 
-## CSV input format
+- **Generate from the `holidays` gem:** `generate.rb` generates regional holiday calendars from bundled holiday definitions.
 
-The importer skips the first line as a header. Each non-empty data line must contain an unquoted date in `YYYY/M/D` or `YYYY/MM/DD` form, followed by a comma. Columns after the first comma are ignored. LF and CRLF line endings are supported.
+The tooling is intentionally separate from Redmine's production bundle. The generator does not call an external API while generating calendars. It produces YAML files that the Redmine Canvas Gantt business calendar loader can read.
 
-```csv
-date,name
-2026/1/1,Holiday
-2026/01/12,Holiday
-```
+## Choose a configuration workflow
 
-Duplicate dates, invalid dates, malformed data lines, and files with no valid dates are rejected.
+**Direct CSV configuration does not require this generator.** The Redmine plugin can load a `holiday.csv` file directly. Use the generator only when you need a named YAML calendar, project-specific assignments, inheritance, or working-day overrides.
 
-```bash
-ruby import_cabinet_office.rb \
-  --input /path/to/holidays.csv \
-  --calendar-id JP \
-  --name Japan \
-  --output /path/to/business_calendars/generated/JP.yml
-```
+| Behavior | Direct `holiday.csv` in Redmine | `generate.rb` to YAML |
+| --- | --- | --- |
+| Input | `holiday.csv` in the configured calendar directory | Region and year range |
+| Header | First row always skipped | Not applicable |
+| Data row | Date in first column; comma and name optional | Not applicable |
+| Calendar ID | Fixed: `global` | `--calendar-id` |
+| Holiday label | Fixed: `Holiday` | Name provided by the `holidays` gem |
+| Non-working weekdays | Redmine's `Setting.non_working_week_days` | Saturday and Sunday (`[6, 7]` in YAML) |
+| Project-specific calendars and overrides | Not supported | Supported through additional YAML configuration |
+| Updates | Runtime checks `holiday.csv` changes | Rerun generator; use `--force` for a managed file |
 
-The importer reads the file as binary and ignores every column after the first comma, so it does not decode the Japanese holiday names. It imports every listed date, sorts them, and replaces the generated calendar as a whole. Every date is `non_working` and has the fixed name `Japanese public holiday`. The input must be at most 1 MiB and the generated YAML must fit within the runtime's 1 MiB file limit and 10,000-day limit.
+**Current header behavior:** Direct CSV configuration skips the first row unconditionally, so provide a header. A headerless CSV loses its first holiday entry. Header detection and headerless loading are **not implemented**.
 
-#### Configure the generated calendar in Redmine
+**Do not mix modes:** When using direct `holiday.csv` configuration, do not put `settings.yml` or any other calendar YAML files in the same configured directory. To use YAML calendars, generate YAML there and keep CSV files outside that directory (or remove `holiday.csv` from it).
 
-Set `--output` to a path under Redmine's configured calendar directory. The default is `<Rails.root>/config/redmine_canvas_gantt/business_calendars`; when `REDMINE_CANVAS_GANTT_CALENDAR_DIR` is set, use that directory instead. Place a `settings.yml` in the same directory to select `JP` as the default and assign it to a project:
+For the direct CSV setup and its complete validation rules, see [Business calendars](../../README.md#business-calendars) or the [Japanese guide](../../README_ja.md#業務カレンダー).
 
-```yaml
-schema_version: 1
-default_calendar: JP
-project_calendars:
-  japan-project: JP
-```
+## Generate regional YAML calendars with Ruby and Bundler
 
-Replace `japan-project` with the Redmine project identifier. Child projects inherit the nearest parent project's assignment. For company-specific working-day overrides, create a separate calendar based on `JP`, as in the [company Japan example](../../examples/business_calendars/custom/company-japan.yml).
-
-The runtime detects file changes within the configured reload interval, which defaults to 60 seconds. Reload the Gantt page after detection to use the updated calendar. Changes to the CSV do not regenerate YAML automatically: rerun the import command with `--force`. This replaces the snapshot only when the existing YAML has `calendar.managed: true`. See [Business calendars](../../README.md#business-calendars) for runtime details.
-
-## Using Ruby and Bundler
+`generate.rb` uses the locally installed `holidays` gem. From `tools/holiday_generator/`:
 
 ```bash
 bundle install
@@ -54,9 +44,36 @@ bundle exec ruby generate.rb \
 
 To generate a calendar for the United States, specify `--region us --calendar-id US --name "United States"`.
 
-## Using Docker
+The generated calendar uses Saturday and Sunday as non-working weekdays (`non_working_week_days: [6, 7]`). This setting is independent of Redmine's configured weekdays. To customize weekdays or add working-day overrides, use YAML.
 
-Build the Docker image:
+## Configure the generated calendar in Redmine
+
+Write the generated YAML under the configured calendar directory, which defaults to:
+
+```text
+<Rails.root>/config/redmine_canvas_gantt/business_calendars/
+```
+
+Set `REDMINE_CANVAS_GANTT_CALENDAR_DIR` to use a different directory. For a named or project-specific YAML calendar, add a `settings.yml` to that directory:
+
+```yaml
+schema_version: 1
+default_calendar: JP
+project_calendars:
+  japan-project: JP
+```
+
+Replace `japan-project` with the Redmine project identifier. Child projects inherit the nearest parent project's assignment.
+
+Keep company shutdown dates and substitute working days in a separate calendar that declares `calendar.base: JP`. See the [company Japan example](../../examples/business_calendars/custom/company-japan.yml).
+
+Runtime configuration changes are checked every **60 seconds** by default. After the change is detected, reload the Gantt page to see it. A failed reload retains the last valid calendar snapshot. For more details, see [Business calendars](../../README.md#business-calendars).
+
+## Generate regional YAML calendars with Docker
+
+The provided Docker image runs **`generate.rb`**. The examples below use a POSIX shell on Linux/macOS; adjust the UID/GID and bind-mount syntax for Windows PowerShell.
+
+From `tools/holiday_generator/`, build the image:
 
 ```bash
 docker build -t holiday-generator .
@@ -78,7 +95,7 @@ docker run --rm \
   --output /app/generated/JP.yml
 ```
 
-To generate a calendar for the United States, run the same Docker image as follows:
+Generate a United States calendar:
 
 ```bash
 docker run --rm \
@@ -93,8 +110,13 @@ docker run --rm \
   --output /app/generated/US.yml
 ```
 
-By default, the generator creates new files only. An existing file can be replaced only when it contains `calendar.managed: true` and the `--force` option is supplied. Files with `managed: false`, or without a `managed` field, are never overwritten even when `--force` is specified.
+## Safe regeneration and company overrides
 
-Replacement is performed by writing a temporary file in the output directory and then atomically renaming it.
+By default, the generator creates new files only. An existing output can be replaced **only when both conditions are met**:
 
-Store company holidays and substitute working days in a separate file under `custom/`, and specify the generated calendar as `calendar.base`. This prevents regeneration from discarding company-specific changes.
+1. The command specifies `--force`.
+2. The existing YAML declares `calendar.managed: true`.
+
+Files with `managed: false` or no `managed` field are never overwritten by the generator. The replacement is performed by writing a temporary file in the output directory and atomically renaming it.
+
+Keep company-specific holidays and substitute working days in separate files under `custom/`, and set `calendar.base` to the generated calendar ID. This prevents regeneration from discarding company-specific changes.
