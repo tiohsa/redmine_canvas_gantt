@@ -8,7 +8,7 @@ calendar:
 
 source:
   provider: custom
-  based_on: JP
+  based_on: US
 
 days:
   - date: 2027-01-01

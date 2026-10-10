@@ -7,6 +7,22 @@ type CanvasConfig = {
   authToken: string;
 };
 
+type BusinessCalendarApiPayload = {
+  status: string;
+  defaultCalendarId: string;
+  projectCalendarIds: Record<string, string>;
+  calendars: Record<string, {
+    id: string;
+    name: string;
+    nonWorkingWeekDays: number[];
+    days: Record<string, { name: string; type: string }>;
+  }>;
+};
+
+type CanvasDataApiPayload = Record<string, unknown> & {
+  businessCalendar: BusinessCalendarApiPayload;
+};
+
 const restAuthorization = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
 
 const createIssue = async (
@@ -176,6 +192,20 @@ const showHolidayInDayView = async (page: Page, holiday: string) => {
   ).toContain(holiday);
 };
 
+const expectCsvModeCalendar = (
+  payload: CanvasDataApiPayload,
+  originalProjectIds: string[],
+  holiday: string
+) => {
+  const calendar = payload.businessCalendar;
+  expect(calendar.status).toBe('ok');
+  expect(calendar.defaultCalendarId).toBe('global');
+  expect(calendar.calendars.global.id).toBe('global');
+  expect(Object.keys(calendar.projectCalendarIds).sort()).toEqual([...originalProjectIds].sort());
+  expect(Object.values(calendar.projectCalendarIds).every((calendarId) => calendarId === 'global')).toBe(true);
+  expect(calendar.calendars.global.days[holiday]).toEqual({ name: 'Holiday', type: 'non_working' });
+};
+
 test('loads the YAML business calendar through data.json', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   await adminLogin(redmineBase, page);
@@ -245,21 +275,17 @@ test('renders a YAML holiday in the day-view Gantt background', async ({ page, b
 test('renders the CSV-equivalent payload in the day-view Gantt background', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   const holiday = '2027-02-11';
-  let originalProjectIds: string[] = [];
+  const originalProjectIdsBySearch = new Map<string, string[]>();
 
   await pinCalendarTestTime(page);
-  await page.route('**/data.json', async (route) => {
+  await page.route((url) => url.pathname.endsWith('/data.json'), async (route) => {
     const response = await route.fetch();
-    const payload = await response.json() as Record<string, unknown> & {
-      businessCalendar: {
-        defaultCalendarId: string;
-        projectCalendarIds: Record<string, string>;
-        calendars: Record<string, { nonWorkingWeekDays: number[] }>;
-      };
-    };
+    const payload = await response.json() as CanvasDataApiPayload;
     const originalCalendar = payload.businessCalendar;
     const sourceCalendar = originalCalendar.calendars[originalCalendar.defaultCalendarId];
-    originalProjectIds = Object.keys(originalCalendar.projectCalendarIds);
+    const requestUrl = new URL(route.request().url());
+    const originalProjectIds = Object.keys(originalCalendar.projectCalendarIds);
+    originalProjectIdsBySearch.set(requestUrl.search, originalProjectIds);
     await route.fulfill({
       response,
       json: {
@@ -284,27 +310,35 @@ test('renders the CSV-equivalent payload in the day-view Gantt background', asyn
   });
 
   await adminLogin(redmineBase, page);
+  const firstDataResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname.endsWith('/data.json')
+  ));
   await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
   await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
 
-  const payload = await page.evaluate(async () => {
+  const firstDataResponse = await firstDataResponsePromise;
+  expect(firstDataResponse.status()).toBe(200);
+  const firstPayload = await firstDataResponse.json() as CanvasDataApiPayload;
+  const firstSearch = new URL(firstDataResponse.url()).search;
+  const firstOriginalProjectIds = originalProjectIdsBySearch.get(firstSearch);
+  expect(firstOriginalProjectIds).toBeDefined();
+  expectCsvModeCalendar(firstPayload, firstOriginalProjectIds ?? [], holiday);
+
+  const queryPayload = await page.evaluate(async () => {
     const config = (window as Window & {
       RedmineCanvasGantt: { apiBase: string };
     }).RedmineCanvasGantt;
-    const response = await window.fetch(`${config.apiBase}/data.json`);
-    return { status: response.status, payload: await response.json() };
+    const response = await window.fetch(`${config.apiBase}/data.json?group_by=none`);
+    return {
+      status: response.status,
+      search: new URL(response.url).search,
+      payload: await response.json()
+    };
   });
-  expect(payload.status).toBe(200);
-  expect(payload.payload.businessCalendar.defaultCalendarId).toBe('global');
-  const resolvedProjectCalendarIds = payload.payload.businessCalendar.projectCalendarIds as Record<string, string>;
-  expect(Object.keys(resolvedProjectCalendarIds).sort()).toEqual(
-    [...originalProjectIds].sort()
-  );
-  expect(Object.values(resolvedProjectCalendarIds).every((calendarId) => calendarId === 'global')).toBe(true);
-  expect(payload.payload.businessCalendar.calendars.global.days[holiday]).toEqual({
-    name: 'Holiday',
-    type: 'non_working'
-  });
+  expect(queryPayload.status).toBe(200);
+  const queryOriginalProjectIds = originalProjectIdsBySearch.get(queryPayload.search);
+  expect(queryOriginalProjectIds).toBeDefined();
+  expectCsvModeCalendar(queryPayload.payload as CanvasDataApiPayload, queryOriginalProjectIds ?? [], holiday);
 
   await showHolidayInDayView(page, holiday);
 });

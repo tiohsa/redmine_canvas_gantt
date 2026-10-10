@@ -97,6 +97,9 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     directory = File.expand_path('../../../spa/tests/e2e-redmine/fixtures/business_calendars', __dir__)
     snapshot = loader(directory: directory).load
     company = snapshot.calendars.fetch('company-us')
+    us = snapshot.calendars.fetch('US')
+    thanksgiving = Date.new(2027, 11, 25)
+    thanksgiving_info = { name: 'Thanksgiving Day', type: 'non_working' }
 
     expect(snapshot.status).to eq('ok')
     expect(snapshot.default_calendar_id).to eq('company-us')
@@ -106,6 +109,9 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     expect(company.day_info(Date.new(2027, 7, 4))).to include(
       name: 'Independence Day', type: 'non_working'
     )
+    expect(us.days.fetch(thanksgiving)).to eq(thanksgiving_info)
+    expect(company.days.fetch(thanksgiving)).to eq(thanksgiving_info)
+    expect(company.day_info(thanksgiving)).to include(thanksgiving_info.merge(source: 'override'))
   end
 
   it 'resolves the dedicated CSV fixture as one global calendar for multiple projects' do

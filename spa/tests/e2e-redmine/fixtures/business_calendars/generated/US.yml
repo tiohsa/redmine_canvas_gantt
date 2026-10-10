@@ -22,3 +22,6 @@ days:
   - date: 2027-07-04
     name: Independence Day
     type: non_working
+  - date: 2027-11-25
+    name: Thanksgiving Day
+    type: non_working
