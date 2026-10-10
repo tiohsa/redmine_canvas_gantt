@@ -1,6 +1,7 @@
 require 'tmpdir'
 require_relative '../../spec_helper'
 require_relative '../../../lib/redmine_canvas_gantt/business_calendar_loader'
+require_relative '../../../lib/redmine_canvas_gantt/project_calendar_resolver'
 
 RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
   around do |example|
@@ -90,6 +91,63 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     expect(calendar.day_info(Date.new(2026, 1, 1))).to include(type: 'non_working', source: 'override')
     expect(calendar.day_info(Date.new(2026, 9, 22))).to include(type: 'non_working', source: 'override')
     expect(calendar.day_info(Date.new(2026, 1, 4))).to include(type: 'non_working', source: 'weekly')
+  end
+
+  it 'loads the YAML-only CI fixture with a valid US inheritance and company holiday' do
+    directory = File.expand_path('../../../spa/tests/e2e-redmine/fixtures/business_calendars', __dir__)
+    snapshot = loader(directory: directory).load
+    company = snapshot.calendars.fetch('company-us')
+
+    expect(snapshot.status).to eq('ok')
+    expect(snapshot.default_calendar_id).to eq('company-us')
+    expect(company.day_info(Date.new(2027, 8, 12))).to include(
+      name: 'Company summer holiday', type: 'non_working', source: 'override'
+    )
+    expect(company.day_info(Date.new(2027, 7, 4))).to include(
+      name: 'Independence Day', type: 'non_working'
+    )
+  end
+
+  it 'resolves the dedicated CSV fixture as one global calendar for multiple projects' do
+    directory = File.expand_path('../../../spa/tests/e2e-redmine/fixtures/business_calendars_csv', __dir__)
+    snapshot = loader(directory: directory).load
+    repository = instance_double(RedmineCanvasGantt::BusinessCalendarRepository, snapshot: snapshot)
+    resolver = RedmineCanvasGantt::ProjectCalendarResolver.new(
+      repository: repository, fallback_non_working_week_days: [6, 7]
+    )
+    first_project = instance_double(Project, id: 1, identifier: 'first', ancestors: [])
+    second_project = instance_double(Project, id: 2, identifier: 'second', ancestors: [])
+
+    expect(snapshot.status).to eq('ok')
+    expect(snapshot.default_calendar_id).to eq('global')
+    expect(snapshot.project_calendars).to eq({})
+    expect(snapshot.calendars.keys).to eq(['global'])
+    expect(snapshot.calendars.fetch('global').days.fetch(Date.new(2027, 2, 11))).to eq(
+      name: 'Holiday', type: 'non_working'
+    )
+    payload = resolver.payload(projects: [])
+    expect(payload).to include(
+      status: 'ok', defaultCalendarId: 'global',
+      projectCalendarIds: {}
+    )
+    expect(payload.fetch(:calendars).fetch('global')).to include(
+      id: 'global', nonWorkingWeekDays: [0, 6]
+    )
+    expect(payload.fetch(:calendars).fetch('global').fetch(:days).fetch('2027-02-11')).to include(
+      name: 'Holiday', type: 'non_working'
+    )
+    # Snapshot assignments are explicit overrides; the public payload reports
+    # resolved project IDs, which inherit the default global calendar.
+    resolved_payload = resolver.payload(projects: [first_project, second_project])
+    expect(resolved_payload.fetch(:projectCalendarIds)).to eq(
+      '1' => 'global', '2' => 'global'
+    )
+    [first_project, second_project].each do |project|
+      expect(resolver.calendar_id_for(project)).to eq('global')
+      expect(resolver.day_info(Date.new(2027, 2, 11), project: project)).to include(
+        name: 'Holiday', type: 'non_working'
+      )
+    end
   end
 
   it 'ignores all CSV files except the root holiday.csv' do

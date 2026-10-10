@@ -151,6 +151,31 @@ const fetchCanvasSchedule = async (page: Page, issueId: number) => {
   };
 };
 
+const pinCalendarTestTime = async (page: Page) => {
+  await page.clock.setFixedTime(new Date('2026-10-15T12:00:00+09:00'));
+};
+
+const showHolidayInDayView = async (page: Page, holiday: string) => {
+  await page.getByRole('button', { name: 'Day', exact: true }).click();
+  await page.getByRole('button', { name: 'Today' }).click();
+  const backgroundCanvas = page.getByTestId('gantt-background-canvas');
+  const nextMonth = page.getByRole('button', { name: /next month/i });
+
+  for (let month = 0; month < 24; month += 1) {
+    const renderedDays = await backgroundCanvas.getAttribute('data-business-calendar-non-working-days');
+    if (renderedDays?.split(',').includes(holiday)) break;
+    await nextMonth.click();
+    await expect.poll(
+      () => backgroundCanvas.getAttribute('data-business-calendar-non-working-days')
+    ).not.toBe(renderedDays);
+  }
+
+  await expect.poll(
+    () => backgroundCanvas.getAttribute('data-business-calendar-non-working-days'),
+    { timeout: 5_000 }
+  ).toContain(holiday);
+};
+
 test('loads the YAML business calendar through data.json', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   await adminLogin(redmineBase, page);
@@ -209,30 +234,54 @@ test('renders a YAML holiday in the day-view Gantt background', async ({ page, b
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   const holiday = '2027-08-12';
 
+  await pinCalendarTestTime(page);
   await adminLogin(redmineBase, page);
   await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
   await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Day', exact: true }).click();
-  const backgroundCanvas = page.getByTestId('gantt-background-canvas');
-  const nextMonth = page.getByRole('button', { name: /next month/i });
-
-  for (let month = 0; month < 24; month += 1) {
-    const renderedDays = await backgroundCanvas.getAttribute('data-business-calendar-non-working-days');
-    if (renderedDays?.split(',').includes(holiday)) break;
-    await nextMonth.click();
-    await page.waitForTimeout(50);
-  }
-
-  await expect.poll(
-    () => backgroundCanvas.getAttribute('data-business-calendar-non-working-days'),
-    { timeout: 5_000 }
-  ).toContain(holiday);
+  await showHolidayInDayView(page, holiday);
 });
 
-test('renders a Cabinet Office CSV holiday in the day-view Gantt background', async ({ page, baseURL }) => {
+test('renders the CSV-equivalent payload in the day-view Gantt background', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   const holiday = '2027-02-11';
+  let originalProjectIds: string[] = [];
+
+  await pinCalendarTestTime(page);
+  await page.route('**/data.json', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json() as Record<string, unknown> & {
+      businessCalendar: {
+        defaultCalendarId: string;
+        projectCalendarIds: Record<string, string>;
+        calendars: Record<string, { nonWorkingWeekDays: number[] }>;
+      };
+    };
+    const originalCalendar = payload.businessCalendar;
+    const sourceCalendar = originalCalendar.calendars[originalCalendar.defaultCalendarId];
+    originalProjectIds = Object.keys(originalCalendar.projectCalendarIds);
+    await route.fulfill({
+      response,
+      json: {
+        ...payload,
+        businessCalendar: {
+          status: 'ok',
+          revision: 'csv-equivalent-ui-fixture',
+          defaultCalendarId: 'global',
+          projectCalendarIds: Object.fromEntries(originalProjectIds.map((projectId) => [projectId, 'global'])),
+          calendars: {
+            global: {
+              id: 'global',
+              name: 'Global holidays',
+              nonWorkingWeekDays: sourceCalendar.nonWorkingWeekDays,
+              days: { [holiday]: { name: 'Holiday', type: 'non_working' } }
+            }
+          },
+          warnings: []
+        }
+      }
+    });
+  });
 
   await adminLogin(redmineBase, page);
   await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
@@ -246,26 +295,18 @@ test('renders a Cabinet Office CSV holiday in the day-view Gantt background', as
     return { status: response.status, payload: await response.json() };
   });
   expect(payload.status).toBe(200);
-  expect(payload.payload.businessCalendar.calendars.JP.days[holiday]).toEqual({
-    name: 'Japanese public holiday',
+  expect(payload.payload.businessCalendar.defaultCalendarId).toBe('global');
+  const resolvedProjectCalendarIds = payload.payload.businessCalendar.projectCalendarIds as Record<string, string>;
+  expect(Object.keys(resolvedProjectCalendarIds).sort()).toEqual(
+    [...originalProjectIds].sort()
+  );
+  expect(Object.values(resolvedProjectCalendarIds).every((calendarId) => calendarId === 'global')).toBe(true);
+  expect(payload.payload.businessCalendar.calendars.global.days[holiday]).toEqual({
+    name: 'Holiday',
     type: 'non_working'
   });
 
-  await page.getByRole('button', { name: 'Day', exact: true }).click();
-  const backgroundCanvas = page.getByTestId('gantt-background-canvas');
-  const nextMonth = page.getByRole('button', { name: /next month/i });
-
-  for (let month = 0; month < 24; month += 1) {
-    const renderedDays = await backgroundCanvas.getAttribute('data-business-calendar-non-working-days');
-    if (renderedDays?.split(',').includes(holiday)) break;
-    await nextMonth.click();
-    await page.waitForTimeout(50);
-  }
-
-  await expect.poll(
-    () => backgroundCanvas.getAttribute('data-business-calendar-non-working-days'),
-    { timeout: 5_000 }
-  ).toContain(holiday);
+  await showHolidayInDayView(page, holiday);
 });
 
 test('schedule mutation relation callbacks use the custom holiday calendar', async ({ page, baseURL }) => {

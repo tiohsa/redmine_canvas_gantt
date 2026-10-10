@@ -3,7 +3,7 @@ schema_version: 1
 calendar:
   id: company-us
   name: US Company Calendar
-  base: JP
+  base: US
   managed: false
 
 source:

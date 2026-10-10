@@ -36,8 +36,17 @@ module RedmineCanvasGantt
         unless File.exist?(path) || File.symlink?(path)
           next "#{relative_path(path)}:missing"
         end
-        stat = File.stat(path)
-        [relative_path(path), stat.mtime.to_f, stat.size].join(':')
+        size = File.size(path)
+        if relative_path(path) == 'holiday.csv'
+          if size > MAX_FILE_SIZE
+            raise ConfigurationError, "#{path}: file exceeds #{MAX_FILE_SIZE} bytes"
+          end
+
+          [relative_path(path), Digest::SHA256.file(path).hexdigest].join(':')
+        else
+          stat = File.stat(path)
+          [relative_path(path), stat.mtime.to_f, stat.size].join(':')
+        end
       end
       Digest::SHA256.hexdigest(entries.join("\n"))
     rescue ConfigurationError

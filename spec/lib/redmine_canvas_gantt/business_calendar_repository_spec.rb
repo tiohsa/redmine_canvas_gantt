@@ -63,6 +63,26 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarRepository do
     expect(after.calendars.fetch('global').days.keys).to eq([Date.new(2027, 1, 1)])
   end
 
+  it 'detects same-size CSV content changes after the mtime is restored' do
+    clock = { now: 0.0 }
+    csv_path = File.join(@directory, 'holiday.csv')
+    File.write(csv_path, "header\n2027/1/1,Holiday\n")
+    subject_repository = repository(clock: clock)
+    before = subject_repository.snapshot
+    original_mtime = File.mtime(csv_path)
+    original_size = File.size(csv_path)
+
+    File.write(csv_path, "header\n2027/1/2,Holiday\n")
+    expect(File.size(csv_path)).to eq(original_size)
+    File.utime(original_mtime, original_mtime, csv_path)
+    expect(File.mtime(csv_path)).to eq(original_mtime)
+    clock[:now] = 1.0
+    after = subject_repository.snapshot
+
+    expect(after.revision).not_to eq(before.revision)
+    expect(after.calendars.fetch('global').days.keys).to eq([Date.new(2027, 1, 2)])
+  end
+
   it 'retains the previous snapshot for invalid CSV and recovers when corrected' do
     clock = { now: 0.0 }
     csv_path = File.join(@directory, 'holiday.csv')
@@ -80,6 +100,32 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarRepository do
     recovered = subject_repository.snapshot
     expect(recovered).not_to equal(valid)
     expect(recovered.calendars.fetch('global').days.keys).to eq([Date.new(2027, 1, 2)])
+  end
+
+  it 'retains the valid snapshot for duplicate, oversized, and escaping-symlink CSV reloads' do
+    clock = { now: 0.0 }
+    csv_path = File.join(@directory, 'holiday.csv')
+    File.write(csv_path, "header\n2027/1/1,Holiday\n")
+    subject_repository = repository(clock: clock)
+    valid = subject_repository.snapshot
+
+    ["header\n2027/1/2,Holiday\n2027/1/2,Duplicate\n",
+     "header\n#{'x' * RedmineCanvasGantt::BusinessCalendarLoader::MAX_FILE_SIZE}\n"].each_with_index do |content, index|
+      File.write(csv_path, content)
+      clock[:now] = index + 1.0
+      expect(subject_repository.snapshot).to equal(valid)
+    end
+
+    outside = File.join(File.dirname(@directory), "#{File.basename(@directory)}-outside.csv")
+    File.write(outside, "header\n2027/1/2,Holiday\n")
+    FileUtils.rm(csv_path)
+    File.symlink(outside, csv_path)
+    clock[:now] = 3.0
+
+    expect(subject_repository.snapshot).to equal(valid)
+    expect(logger).to have_received(:warn).with(/reload failed/).at_least(:once)
+  ensure
+    FileUtils.rm_f(outside) if outside
   end
 
   it 'reloads to weekday fallback when holiday.csv is deleted and can recover when it returns' do
