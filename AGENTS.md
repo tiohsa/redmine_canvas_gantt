@@ -1,156 +1,48 @@
-# AGENTS.md
-
-## Project
-
-Redmine Canvas Gantt is a Redmine plugin with a Ruby on Rails backend and a React SPA under `spa/`.
-
-Supported Redmine versions:
-
-* Redmine 6.0
-* Redmine 6.1
-* Redmine 7.0
-
-Frontend stack includes React 19, TypeScript, Vite, and Zustand.
-
-Use the repository as the primary source of truth. Read supporting documentation only when it is relevant to the task.
-
-## Invariants
-
-### Task state and mutations
-
-Route task mutations through `spa/src/stores/taskStore/`.
-
-Preserve the existing state model based on:
-
-* ServerSnapshot
-* LocalPatch
-* MutationOperation
-
-Do not introduce parallel dirty-state, mutation-state, or synchronization mechanisms unless required to replace the existing model coherently.
-
-When changing task mutation behavior, consider both automatic-save and manual-save flows.
-
-### Date-only values
-
-Treat `YYYY-MM-DD` values as local calendar dates.
-
-Do not use:
-
-* `toISOString()` for date-only conversion
-* `new Date('YYYY-MM-DD')` for date-only parsing
-
-Preserve local-date semantics across UI, store, API, and backend boundaries.
-
-### Baseline and server state
-
-Keep server-derived state and locally edited state distinguishable.
-
-Do not update baselines from stale or superseded asynchronous responses.
-
-When multiple requests can overlap, preserve the existing generation/versioning rules that prevent older responses from overwriting newer state.
-
-### Relationships
-
-Preserve Redmine-supported relationship behavior and repository-specific restrictions.
-
-Do not silently persist relationship types that the plugin intentionally rejects or treats as unsupported.
-
-### Workload and actual work
-
-When comparing planned and actual workload, apply equivalent issue-selection semantics unless a documented product rule explicitly requires otherwise.
-
-Actual time-entry queries must preserve Redmine visibility and project/issue access rules.
-
-Avoid loading large raw time-entry datasets into the frontend when aggregation can be performed safely on the backend.
-
-### UI behavior
-
-`DESIGN.md` is authoritative for visual and interaction behavior.
-
-Do not infer a new interaction model from implementation convenience when `DESIGN.md` defines the behavior.
-
-### Generated assets
-
-Do not manually edit generated production assets.
-
-When frontend changes require tracked generated assets, regenerate them through the repository's existing build process and include the resulting files.
-
-## References
-
-Read these only when relevant:
-
-* `README.md` — product behavior and supported features
-* `DESIGN.md` — UI and interaction behavior
-* `tasks/lessons.md` — known regressions, pitfalls, and implementation lessons
-
-Use feature-specific design or task documents when the requested work explicitly concerns that feature.
-
-Repository-specific documentation takes precedence over general framework conventions when they conflict.
-
-## Validation
-
-Use the smallest sufficient validation set for the changed area.
-
-For frontend changes:
-
-* run relevant frontend tests;
-* run the production build when generated assets or bundling can be affected.
-
-For backend changes:
-
-* run relevant Ruby/Rails tests.
-
-For changes crossing frontend/backend, persistence, state-management, or date boundaries, validate both sides of the boundary.
-
-When fixing a regression, add or update a regression test when practical.
-
-If a relevant check fails:
-
-1. determine whether the failure was caused by the requested change;
-2. fix failures caused by the change;
-3. rerun the affected checks.
-
-Do not run unrelated exhaustive validation mechanically when narrower checks provide sufficient confidence.
-
-## Completion
-
-Continue until:
-
-* the requested behavior is implemented;
-* directly caused regressions are resolved;
-* relevant validation passes;
-* required generated assets are updated;
-* implementation and documented behavior remain consistent.
-
-Do not stop after the first implementation merely to request confirmation before testing or fixing directly caused failures.
-
-## Boundaries
-
-Fix issues directly caused by the requested change.
-
-Do not expand into unrelated:
-
-* refactoring;
-* cleanup;
-* dependency upgrades;
-* architecture changes;
-* behavioral changes.
-
-Small adjacent changes are acceptable when required for correctness, consistency, or reliable validation.
-
-When a broader change appears desirable but is not necessary for the requested work, leave it out and report it separately.
-
-### API and i18n boundaries
-
-New direct API access must comply with
-`spa/scripts/check-async-contract.mjs`.
-Do not bypass existing stores or API abstractions.
-
-Keep new frontend translation keys synchronized with
-`config/locales/*.yml`, `app/controllers/canvas_gantts_controller.rb`,
-and the backend i18n payload.
-
-### Git safety
-
-Do not commit, amend, merge, rebase, reset, push, or alter remote branches unless explicitly requested.
-Preserve unrelated working-tree changes.
+# AGENTS.md — Redmine Canvas Gantt
+
+## Project and approach
+
+- Redmine plugin: Ruby/Rails backend, React 19 + TypeScript 5.9 + Vite + Zustand SPA (`spa/`). Support Redmine 6.0, 6.1, and 7.0.
+- Follow existing code and tests. Read documentation only for the affected area; do not require a repository-wide survey for small changes.
+- Make the smallest coherent change. Preserve unrelated work, public contracts, compatibility, and existing UX. Avoid speculative refactoring, new dependencies, and duplicate infrastructure.
+- For complex or cross-boundary work, identify invariants and regression scenarios first. Keep simple fixes lightweight; complete implementation, relevant verification, and directly caused fixes without unnecessary approval pauses.
+
+## Invariants worth protecting
+
+- **Task persistence:** Use the existing `ServerSnapshot` / `LocalPatch` / `MutationOperation` model in `spa/src/stores/TaskStore.ts` and `spa/src/stores/taskStore/`. Preserve auto-save, manual-save, drafts, conflict handling, and atomic mutations. Do not add competing dirty-state or save pipelines.
+- **Async boundaries:** Preserve request generation, view context, and revision guards: stale or superseded responses must not overwrite current task state, baselines, or edits. Route reads/writes through existing store, service, and API layers; obey `spa/scripts/check-async-contract.mjs`.
+- **Date-only:** Redmine `YYYY-MM-DD` values are calendar dates, not instants. `spa/src/utils/dateOnly.ts` represents them as UTC midnight for timezone-independent calculation, **not** as a local timestamp. Use its conversions; never parse via `new Date('YYYY-MM-DD')` or serialize date-only values with `toISOString()`. Use local dates only at explicit display/today boundaries. Check timezone and DST edge cases.
+- **Relations and scheduling:** Preserve Redmine issue visibility, permissions, supported relation types, atomic schedule updates, optimistic revisions, and conflict responses. For dependency calculations, use the successor issue's project calendar where required.
+- **Calendars:** Keep Ruby loader/repository/resolver, API, and SPA consistent. YAML supports inheritance, project mapping, and working-day overrides. Root `holiday.csv` uses one shared `global` calendar; CSV and YAML may not coexist in that directory. Invalid reloads must not replace the last valid snapshot. When changing CSV parsing, cover headered/headerless cases as applicable, invalid/duplicate dates, and first-row data loss; do not describe proposed behavior as already implemented.
+- **Workload and security:** Enforce Redmine project, issue, and time-entry visibility server-side. Keep planned and actual issue scopes consistent unless specified otherwise; aggregate large datasets server-side. Do not expose restricted data in API responses or logs.
+- **UI and localization:** Preserve established interactions and accessibility. Keep added i18n keys aligned across `config/locales/*.yml`, `app/controllers/canvas_gantts_controller.rb`, and the SPA payload.
+- **Generated files:** Never edit `assets/build/` by hand. Regenerate through `spa` build scripts and include the manifest and its referenced assets when required. `check:build-artifacts` compares files with `HEAD`; its archive check belongs after the necessary artifacts are committed or in CI.
+
+## Verification (run from `spa/` unless noted)
+
+| Scope | Commands / checks |
+| --- | --- |
+| Focused frontend test | `npm run test -- --run src/utils/businessCalendar.test.ts` (substitute the affected test) |
+| Frontend TS/TSX | `npm run lint`; `npm run test -- --run` when breadth is warranted |
+| API/store changes | `npm run check:async-contract` and relevant tests |
+| Frontend bundling or tracked assets | `npm run build`; inspect manifest and build outputs |
+| Ruby backend | Focused RSpec in a prepared Redmine environment; CI runs `docker compose exec -T redmine env -u BUNDLE_WITHOUT bundle exec rspec plugins/redmine_canvas_gantt/spec` from the repo root |
+| Redmine UI | With the disposable test stack running: `npx playwright test -c playwright.redmine.config.ts tests/e2e-redmine/business-calendar.pw.ts` (or the affected suite) |
+| Cross-boundary / release | Validate both sides and consult `.github/workflows/ci.yml`; date changes merit Asia/Tokyo and America/Los_Angeles coverage |
+
+- Prefer meaningful regression tests for behavior, races, data boundaries, and past failures; avoid tests that only mirror implementation details. Broaden testing only when impact or failure justifies it.
+- Never reset shared databases, load destructive fixtures, remove Docker volumes, or run `docker compose down -v` unless the environment is explicitly disposable and the action is authorized.
+- Distinguish newly introduced failures from pre-existing failures; rerun affected checks after fixes. Report checks not run or blocked rather than implying they passed.
+
+## Finish and authorization
+
+- Review the diff for unrelated edits, contract drift, missing documentation/tests, and generated artifacts. Report changes, executed checks, remaining risks, and unknowns; distinguish observed facts from hypotheses.
+- Do not commit, amend, merge, rebase, reset, push, open PRs, delete data, or modify external systems without explicit authorization. Preserve unrelated working-tree changes.
+
+## References (open only if relevant)
+
+- `README.md` / `README_ja.md`: behavior, installation, calendar formats.
+- `spa/package.json`, `.github/workflows/ci.yml`: real commands, versions, CI matrix.
+- `spa/src/utils/dateOnly.ts`, `spa/src/stores/TaskStore.ts`, `spa/src/stores/taskStore/`: date and state contracts.
+- `lib/redmine_canvas_gantt/business_calendar_loader.rb`, `business_calendar_repository.rb`, `project_calendar_resolver.rb`: calendar pipeline.
+- `spa/tests/e2e-redmine/`: integration scenarios and fixtures.
