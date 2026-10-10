@@ -93,6 +93,10 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarRepository do
     clock[:now] = 1.0
     File.write(csv_path, "header\n2027/2/30,Invalid\n")
     expect(subject_repository.snapshot).to equal(valid)
+    expect(subject_repository.validation_state).to include(
+      validation_status: 'stale',
+      diagnostic: include(code: 'INVALID_DATE', file: 'holiday.csv', line: 2, value: '2027/2/30')
+    )
     expect(logger).to have_received(:warn).with(/invalid date/)
 
     clock[:now] = 2.0
@@ -100,6 +104,66 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarRepository do
     recovered = subject_repository.snapshot
     expect(recovered).not_to equal(valid)
     expect(recovered.calendars.fetch('global').days.keys).to eq([Date.new(2027, 1, 2)])
+    expect(subject_repository.validation_state).to include(validation_status: 'valid', diagnostic: nil)
+  end
+
+  it 'keeps an initial invalid CSV on fallback and records an invalid diagnostic across repeated checks' do
+    clock = { now: 0.0 }
+    File.write(File.join(@directory, 'holiday.csv'), "header\n2027/2/30,Invalid\n")
+    subject_repository = repository(clock: clock)
+
+    fallback = subject_repository.snapshot
+    expect(fallback.status).to eq('error')
+    expect(fallback.calendars).to be_empty
+    expect(subject_repository.validation_state).to include(
+      snapshot: fallback,
+      validation_status: 'invalid',
+      diagnostic: include(code: 'INVALID_DATE', file: 'holiday.csv', line: 2, value: '2027/2/30')
+    )
+
+    clock[:now] = 1.0
+    expect(subject_repository.snapshot).to equal(fallback)
+    expect(subject_repository.validation_state[:validation_status]).to eq('invalid')
+  end
+
+  it 'reports YAML syntax and unknown calendar reference diagnostics with safe filenames' do
+    clock = { now: 0.0 }
+    File.write(File.join(@directory, 'calendar.yml'), "schema_version: 1\ncalendar: [broken\n")
+    subject_repository = repository(clock: clock)
+    subject_repository.snapshot
+    expect(subject_repository.validation_state[:diagnostic]).to include(
+      code: 'YAML_SYNTAX', file: 'calendar.yml', line: 2
+    )
+    expect(subject_repository.validation_state[:diagnostic][:message]).not_to include(@directory)
+
+    FileUtils.rm(File.join(@directory, 'calendar.yml'))
+    File.write(File.join(@directory, 'settings.yml'), "schema_version: 1\ndefault_calendar: missing\n")
+    clock[:now] = 1.0
+    subject_repository.snapshot
+    expect(subject_repository.validation_state[:diagnostic]).to include(
+      code: 'UNKNOWN_CALENDAR_ID', file: 'settings.yml', value: 'missing'
+    )
+  end
+
+  it 'clears the latest failure when the accepted fingerprint is restored' do
+    clock = { now: 0.0 }
+    csv_path = File.join(@directory, 'holiday.csv')
+    valid_content = "header\n2027/1/1,Holiday\n"
+    File.write(csv_path, valid_content)
+    valid_mtime = File.mtime(csv_path)
+    subject_repository = repository(clock: clock)
+    valid = subject_repository.snapshot
+
+    File.write(csv_path, "header\n2027/2/30,Invalid\n")
+    clock[:now] = 1.0
+    expect(subject_repository.snapshot).to equal(valid)
+    expect(subject_repository.validation_state[:validation_status]).to eq('stale')
+
+    File.write(csv_path, valid_content)
+    File.utime(valid_mtime, valid_mtime, csv_path)
+    clock[:now] = 2.0
+    expect(subject_repository.snapshot).to equal(valid)
+    expect(subject_repository.validation_state).to include(validation_status: 'valid', diagnostic: nil)
   end
 
   it 'retains the valid snapshot for duplicate, oversized, and escaping-symlink CSV reloads' do

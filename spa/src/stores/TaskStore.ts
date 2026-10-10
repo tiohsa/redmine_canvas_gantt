@@ -9,6 +9,7 @@ import { useUIStore } from './UIStore';
 import { useBaselineStore } from './BaselineStore';
 import type { MoveTaskAsChildResult } from '../types';
 import type { CustomFieldMeta } from '../types/editMeta';
+import type { BusinessCalendarDiagnostic } from '../types/businessCalendar';
 import type { LayoutState, SortConfig } from './taskStore/types';
 import { buildLayout, getVersionRowId, NO_VERSION_ID } from './taskStore/layout';
 import { applyFilters } from './taskStore/filters';
@@ -199,6 +200,11 @@ const queueRefreshData = (refreshData: () => Promise<ReadApplyOutcome>) => {
 };
 
 export interface TaskState {
+    businessCalendarValidation: {
+        status: 'valid' | 'invalid' | 'stale';
+        message: string | null;
+        diagnostic: BusinessCalendarDiagnostic | null;
+    };
     permissions: { editable: boolean; viewable: boolean; baselineEditable: boolean };
     allTasks: Task[];
     tasks: Task[];
@@ -369,6 +375,12 @@ const DEFAULT_PERMISSIONS = {
     editable: false,
     viewable: false,
     baselineEditable: false
+};
+
+const DEFAULT_BUSINESS_CALENDAR_VALIDATION = {
+    status: 'valid' as const,
+    message: null,
+    diagnostic: null
 };
 
 const EMPTY_FILTER_OPTIONS: FilterOptions = {
@@ -1154,6 +1166,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     };
 
     return ({
+    businessCalendarValidation: DEFAULT_BUSINESS_CALENDAR_VALIDATION,
     allTasks: [],
     tasks: [],
     relations: [],
@@ -1389,7 +1402,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
         set((state) => {
             const result = buildApiDataPatch(data, state, readContext);
             querySyncState = result.querySyncState;
-            return { ...result.patch, activeReadContext: readContext ?? activeReadContext,
+            return { ...result.patch, businessCalendarValidation: {
+                status: businessCalendar.validationStatus ?? (businessCalendar.status === 'error' ? 'invalid' : 'valid'),
+                message: businessCalendar.validationMessage ?? null,
+                diagnostic: businessCalendar.diagnostic ?? null
+            }, activeReadContext: readContext ?? activeReadContext,
                 dataReadStatus: readContext ? 'ready' : state.dataReadStatus };
         });
         const confirmedState = get();
@@ -1422,13 +1439,6 @@ export const useTaskStore = create<TaskState>((set, get) => {
         (data.warnings ?? []).forEach((warning) => {
             useUIStore.getState().addNotification(warning, 'warning');
         });
-        if (businessCalendar.status === 'error') {
-            useUIStore.getState().addNotification(
-                i18n.t('error_canvas_gantt_business_calendar_invalid') ||
-                    "Business calendar configuration is invalid. Redmine's non-working weekdays are being used as a fallback.",
-                'warning'
-            );
-        }
         lastAppliedViewIdentity = currentViewIdentity();
     },
     setCustomFields: (customFields) => set((state) => {

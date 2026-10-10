@@ -20,6 +20,8 @@ module RedmineCanvasGantt
       @snapshot = nil
       @fingerprint = nil
       @last_checked_at = nil
+      @validation_status = 'valid'
+      @latest_failure = nil
     end
 
     def snapshot
@@ -31,6 +33,19 @@ module RedmineCanvasGantt
       @snapshot
     end
 
+    # Returns the calendar snapshot and its independent load state together.
+    # The snapshot can remain usable while a newer configuration is invalid.
+    def validation_state
+      snapshot
+      @reload_mutex.synchronize do
+        {
+          snapshot: @snapshot,
+          validation_status: @validation_status,
+          diagnostic: @latest_failure
+        }.freeze
+      end
+    end
+
     private
 
     def reload_if_needed(now)
@@ -40,13 +55,21 @@ module RedmineCanvasGantt
         @last_checked_at = now
         begin
           fingerprint = @loader.fingerprint
-          return @snapshot if @snapshot && fingerprint == @fingerprint
+          if @snapshot && fingerprint == @fingerprint
+            @validation_status = 'valid'
+            @latest_failure = nil
+            return @snapshot
+          end
 
           loaded = @loader.load(revision: fingerprint)
           @snapshot = loaded
           @fingerprint = fingerprint
+          @validation_status = 'valid'
+          @latest_failure = nil
         rescue BusinessCalendarLoader::ConfigurationError => e
           log_reload_error(e, initial: @snapshot.nil?)
+          @latest_failure = e.diagnostic
+          @validation_status = @snapshot&.status == 'ok' ? 'stale' : 'invalid'
           @snapshot ||= BusinessCalendarSnapshot.error(e.message, revision: fingerprint || '')
         end
         @snapshot
@@ -79,5 +102,6 @@ module RedmineCanvasGantt
       message = "redmine_canvas_gantt business calendar #{initial ? 'load' : 'reload'} failed: #{error.message}"
       initial ? @logger.error(message) : @logger.warn(message)
     end
+
   end
 end

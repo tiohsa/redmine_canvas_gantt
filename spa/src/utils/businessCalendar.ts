@@ -34,6 +34,7 @@ export type NormalizeTaskDateIntervalResult = {
 
 const EMPTY_PAYLOAD: BusinessCalendarPayload = {
     status: 'ok',
+    validationStatus: 'valid',
     revision: '',
     defaultCalendarId: null,
     projectCalendarIds: {},
@@ -112,12 +113,26 @@ export const normalizeBusinessCalendarPayload = (value: unknown): BusinessCalend
 
     return {
         status: record.status === 'error' ? 'error' : 'ok',
+        validationStatus: record.validationStatus === 'invalid' || record.validationStatus === 'stale'
+            ? record.validationStatus
+            : record.status === 'error' ? 'invalid' : 'valid',
+        ...(typeof record.validationMessage === 'string' ? { validationMessage: record.validationMessage } : {}),
+        ...(asRecord(record.diagnostic) && typeof asRecord(record.diagnostic)?.code === 'string'
+            && typeof asRecord(record.diagnostic)?.message === 'string'
+            ? { diagnostic: {
+                code: asRecord(record.diagnostic)!.code as string,
+                ...(typeof asRecord(record.diagnostic)!.file === 'string' ? { file: asRecord(record.diagnostic)!.file as string } : {}),
+                ...(typeof asRecord(record.diagnostic)!.line === 'number' ? { line: asRecord(record.diagnostic)!.line as number } : {}),
+                message: asRecord(record.diagnostic)!.message as string,
+                ...(typeof asRecord(record.diagnostic)!.cause === 'string' ? { cause: asRecord(record.diagnostic)!.cause as string } : {}),
+                ...(typeof asRecord(record.diagnostic)!.value === 'string' ? { value: asRecord(record.diagnostic)!.value as string } : {})
+            } }
+            : {}),
         revision: typeof record.revision === 'string' ? record.revision : '',
         defaultCalendarId,
         projectCalendarIds,
         calendars,
-        warnings,
-        ...(typeof record.error === 'string' ? { error: record.error } : {})
+        warnings
     };
 };
 

@@ -15,6 +15,7 @@ import { useUIStore } from './stores/UIStore';
 import './App.css';
 
 function App() {
+  const calendarValidation = useTaskStore(state => state.businessCalendarValidation);
   const zoomLevel = useTaskStore(state => state.zoomLevel);
   const setZoomLevel = useTaskStore(state => state.setZoomLevel);
   const isFullScreen = useUIStore(state => state.isFullScreen);
@@ -53,6 +54,19 @@ function App() {
       className={`app-container ${isFullScreen ? 'is-fullscreen' : ''}`}
       style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}
     >
+      {calendarValidation.status !== 'valid' && (
+        <div className={`business-calendar-banner is-${calendarValidation.status}`} role="alert" aria-live="polite">
+          <span>{calendarValidation.message}</span>
+          {calendarValidation.diagnostic && (
+            <span className="business-calendar-diagnostic">
+              {[calendarValidation.diagnostic.file && `${calendarValidation.diagnostic.file}${calendarValidation.diagnostic.line ? `:${calendarValidation.diagnostic.line}` : ''}`,
+                calendarValidation.diagnostic.message,
+                calendarValidation.diagnostic.cause,
+                calendarValidation.diagnostic.value].filter(Boolean).join(' — ')}
+            </span>
+          )}
+        </div>
+      )}
       <GanttToolbar zoomLevel={zoomLevel} onZoomChange={setZoomLevel} exportRef={exportRef} />
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         <GanttContainer ref={exportRef} />

@@ -58,6 +58,46 @@ RSpec.describe CanvasGanttsController, type: :controller do
     end
   end
 
+  describe '#business_calendar_payload' do
+    let(:payload) do
+      {
+        status: 'error', validationStatus: 'invalid', revision: 'rev',
+        calendars: {}, warnings: [],
+        diagnostic: {
+          code: 'INVALID_DATE', file: 'holiday.csv', line: 2,
+          message: 'The holiday CSV contains an invalid or duplicate date.', value: '2027/2/30'
+        }
+      }
+    end
+
+    before do
+      resolver = instance_double(RedmineCanvasGantt::ProjectCalendarResolver)
+      allow(resolver).to receive(:payload).and_return(payload)
+      allow(controller).to receive(:business_calendar_resolver).and_return(resolver)
+      allow(controller).to receive(:business_calendar_projects).with([1]).and_return([])
+    end
+
+    it 'returns basename diagnostics to administrators' do
+      allow(User).to receive(:current).and_return(instance_double(User, admin?: true))
+
+      result = controller.send(:business_calendar_payload, [1])
+
+      expect(result[:diagnostic]).to include(code: 'INVALID_DATE', file: 'holiday.csv', line: 2, value: '2027/2/30')
+      expect(result[:diagnostic][:message]).to eq(canvas_gantt_t(:label_canvas_gantt_calendar_invalid_date))
+      expect(result[:validationMessage]).to eq(canvas_gantt_t(:label_canvas_gantt_business_calendar_invalid))
+    end
+
+    it 'returns a generic localized summary without diagnostics to regular users' do
+      allow(User).to receive(:current).and_return(instance_double(User, admin?: false))
+
+      result = controller.send(:business_calendar_payload, [1])
+
+      expect(result[:diagnostic]).to be_nil
+      expect(result[:validationMessage]).to eq(canvas_gantt_t(:label_canvas_gantt_business_calendar_invalid))
+      expect(result.to_s).not_to include('holiday.csv', '2027/2/30')
+    end
+  end
+
   describe '#normalize_task_date_attributes!' do
     it 'canonicalizes both finite endpoints through the project calendar interval' do
       resolver = instance_double(RedmineCanvasGantt::ProjectCalendarResolver)

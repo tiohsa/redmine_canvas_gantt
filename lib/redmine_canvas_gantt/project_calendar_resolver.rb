@@ -7,6 +7,7 @@ module RedmineCanvasGantt
     def initialize(repository: BusinessCalendarRepository.instance, fallback_non_working_week_days: nil, snapshot: nil)
       @repository = repository
       @snapshot = snapshot
+      @fixed_snapshot = snapshot
       @fallback_non_working_week_days = normalize_fallback_week_days(
         fallback_non_working_week_days || Setting.non_working_week_days
       )
@@ -120,7 +121,15 @@ module RedmineCanvasGantt
     end
 
     def payload(projects:)
-      snapshot = current_snapshot
+      state = if @fixed_snapshot
+                { snapshot: @fixed_snapshot, validation_status: @fixed_snapshot.status == 'error' ? 'invalid' : 'valid', diagnostic: nil }
+              elsif @repository.respond_to?(:validation_state)
+                @repository.validation_state
+              else
+                current = current_snapshot
+                { snapshot: current, validation_status: current.status == 'error' ? 'invalid' : 'valid', diagnostic: nil }
+              end
+      snapshot = state.fetch(:snapshot)
       project_calendar_ids = Array(projects).each_with_object({}) do |project, result|
         calendar_id = calendar_id_for(project, snapshot: snapshot)
         result[project.id.to_s] = calendar_id if calendar_id
@@ -129,14 +138,14 @@ module RedmineCanvasGantt
 
       {
         status: snapshot.status,
+        validationStatus: state.fetch(:validation_status),
         revision: snapshot.revision,
         defaultCalendarId: snapshot.default_calendar_id,
         projectCalendarIds: project_calendar_ids,
         calendars: snapshot.calendars.slice(*calendar_ids).transform_values(&:to_payload),
-        warnings: snapshot.warnings
-      }.tap do |result|
-        result[:error] = snapshot.error if snapshot.error
-      end
+        warnings: snapshot.warnings,
+        diagnostic: state[:diagnostic]
+      }
     end
 
     private

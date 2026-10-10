@@ -239,6 +239,47 @@ test('loads the YAML business calendar through data.json', async ({ page, baseUR
   });
 });
 
+test('keeps the calendar validation banner through fallback and stale states, then clears it after recovery', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+
+  let validationStatus: 'invalid' | 'stale' | 'valid' = 'invalid';
+  await page.route('**/canvas_gantt/data.json**', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json() as Record<string, unknown> & { businessCalendar: Record<string, unknown> };
+    const message = validationStatus === 'stale'
+      ? 'The last valid calendar is still in use.'
+      : 'Redmine weekdays are being used as a fallback.';
+    data.businessCalendar = {
+      ...data.businessCalendar,
+      status: validationStatus === 'invalid' ? 'error' : 'ok',
+      validationStatus,
+      validationMessage: validationStatus === 'valid' ? null : message,
+      diagnostic: validationStatus === 'valid' ? null : {
+        code: 'INVALID_DATE', file: 'holiday.csv', line: 2,
+        message: 'A calendar date is invalid.', cause: 'Date is invalid.', value: '2027/2/30'
+      }
+    };
+    await route.fulfill({ response, json: data });
+  });
+
+  await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
+  const banner = page.getByRole('alert');
+  await expect(banner).toContainText('Redmine weekdays are being used as a fallback.');
+  await expect(banner).toContainText('holiday.csv:2');
+
+  await page.waitForTimeout(4_000);
+  await expect(banner).toBeVisible();
+
+  validationStatus = 'stale';
+  await page.reload();
+  await expect(page.getByRole('alert')).toContainText('The last valid calendar is still in use.');
+
+  validationStatus = 'valid';
+  await page.reload();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
 test('keeps clean toolbar controls from overlapping at the standard viewport', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
 

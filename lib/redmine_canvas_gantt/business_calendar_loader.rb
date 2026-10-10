@@ -5,7 +5,17 @@ require_relative 'business_calendar'
 
 module RedmineCanvasGantt
   class BusinessCalendarLoader
-    class ConfigurationError < StandardError; end
+    class ConfigurationError < StandardError
+      attr_reader :diagnostic
+
+      def initialize(message, diagnostic: nil)
+        super(message)
+        @diagnostic = (diagnostic || {
+          code: 'INVALID_CONFIGURATION',
+          message: 'Calendar configuration is invalid.'
+        }).freeze
+      end
+    end
 
     MAX_FILE_SIZE = 1 * 1024 * 1024
     MAX_CSV_HOLIDAYS = 10_000
@@ -39,7 +49,7 @@ module RedmineCanvasGantt
         size = File.size(path)
         if relative_path(path) == 'holiday.csv'
           if size > MAX_FILE_SIZE
-            raise ConfigurationError, "#{path}: file exceeds #{MAX_FILE_SIZE} bytes"
+            raise configuration_error("#{path}: file exceeds #{MAX_FILE_SIZE} bytes", file: path)
           end
 
           [relative_path(path), Digest::SHA256.file(path).hexdigest].join(':')
@@ -52,7 +62,8 @@ module RedmineCanvasGantt
     rescue ConfigurationError
       raise
     rescue SystemCallError => e
-      raise ConfigurationError, "#{@directory}: #{e.message}"
+      raise configuration_error("#{@directory}: #{e.message}", file: @directory,
+                                detail: 'Calendar files could not be inspected.')
     end
 
     def load(revision: fingerprint)
@@ -83,6 +94,23 @@ module RedmineCanvasGantt
       )
     end
 
+    def configuration_error(message, file: nil, code: 'INVALID_CONFIGURATION', line: nil, value: nil, detail: nil)
+      source = file.to_s.split(':', 2).first
+      basename = File.basename(source) if file
+      basename = nil unless basename && %w[.csv .yml .yaml].include?(File.extname(basename))
+      safe_message = (detail || message).to_s
+      safe_message = safe_message.gsub(source, basename) if basename && !source.empty?
+      safe_message = safe_message.gsub(@directory, '')
+      diagnostic = {
+        code: code,
+        file: basename,
+        line: line,
+        message: safe_message
+      }
+      diagnostic[:value] = value unless value.nil?
+      ConfigurationError.new(message, diagnostic: diagnostic.compact)
+    end
+
     def load_settings
       path = File.join(@directory, 'settings.yml')
       return {} unless File.file?(path)
@@ -99,7 +127,7 @@ module RedmineCanvasGantt
       require_mapping!(project_calendars, "#{path}: project_calendars")
       project_calendars.each do |identifier, calendar_id|
         unless identifier.is_a?(String) && identifier.present? && identifier.length <= 255
-          raise ConfigurationError, "#{path}: project_calendars contains an invalid project identifier"
+          raise configuration_error("#{path}: project_calendars contains an invalid project identifier", file: path)
         end
         validate_calendar_id!(calendar_id, "#{path}: project_calendars.#{identifier}")
       end
@@ -116,7 +144,7 @@ module RedmineCanvasGantt
       if File.exist?(holiday_path) || File.symlink?(holiday_path)
         yaml_files = calendar_files(include_settings: true)
         unless yaml_files.empty?
-          raise ConfigurationError, "#{yaml_files.first}: YAML files cannot be mixed with holiday.csv"
+          raise configuration_error("#{yaml_files.first}: YAML files cannot be mixed with holiday.csv", file: yaml_files.first)
         end
         definitions['global'] = load_csv_calendar(holiday_path)
         return definitions.freeze
@@ -124,7 +152,7 @@ module RedmineCanvasGantt
 
       files = calendar_files(include_settings: false)
       if files.size > MAX_CALENDARS
-        raise ConfigurationError, "#{@directory}: calendar count exceeds #{MAX_CALENDARS}"
+        raise configuration_error("#{@directory}: calendar count exceeds #{MAX_CALENDARS}", file: @directory)
       end
 
       files.each do |path|
@@ -136,7 +164,7 @@ module RedmineCanvasGantt
         definition = normalize_calendar(data, path)
         id = definition.fetch(:id)
         if definitions.key?(id)
-          raise ConfigurationError, "#{path}: duplicate calendar.id #{id.inspect}"
+          raise configuration_error("#{path}: duplicate calendar.id #{id.inspect}", file: path, value: id)
         end
 
         definitions[id] = definition
@@ -147,10 +175,10 @@ module RedmineCanvasGantt
     def load_csv_calendar(path)
       ensure_safe_path!(path)
       unless File.file?(path)
-        raise ConfigurationError, "#{path}: must be a regular file"
+        raise configuration_error("#{path}: must be a regular file", file: path)
       end
       size = File.size(path)
-      raise ConfigurationError, "#{path}: file exceeds #{MAX_FILE_SIZE} bytes" if size > MAX_FILE_SIZE
+      raise configuration_error("#{path}: file exceeds #{MAX_FILE_SIZE} bytes", file: path) if size > MAX_FILE_SIZE
 
       days = {}
       records = 0
@@ -163,27 +191,35 @@ module RedmineCanvasGantt
 
         date_value = row[0]
         if date_value.nil? || date_value.empty?
-          raise ConfigurationError, "#{path}: row #{index + 1}: first column must contain a date"
+          raise configuration_error("#{path}: row #{index + 1}: first column must contain a date",
+                                    file: path, code: 'INVALID_DATE', line: index + 1,
+                                    detail: 'The first column must contain a date.')
         end
         unless CSV_DATE_PATTERN.match?(date_value)
-          raise ConfigurationError, "#{path}: row #{index + 1}: date must use YYYY/M/D"
+          raise configuration_error("#{path}: row #{index + 1}: date must use YYYY/M/D",
+                                    file: path, code: 'INVALID_DATE', line: index + 1,
+                                    value: date_value, detail: 'Date must use YYYY/M/D.')
         end
 
         year, month, day = date_value.split('/').map(&:to_i)
         date = Date.new(year, month, day)
         if days.key?(date)
-          raise ConfigurationError, "#{path}: row #{index + 1}: duplicate date #{date.iso8601}"
+          raise configuration_error("#{path}: row #{index + 1}: duplicate date #{date.iso8601}",
+                                    file: path, code: 'DUPLICATE_DATE', line: index + 1,
+                                    value: date_value, detail: 'Date is duplicated.')
         end
         records += 1
         if records > MAX_CSV_HOLIDAYS
-          raise ConfigurationError, "#{path}: holiday count exceeds #{MAX_CSV_HOLIDAYS}"
+          raise configuration_error("#{path}: holiday count exceeds #{MAX_CSV_HOLIDAYS}", file: path, line: index + 1)
         end
 
         days[date] = { name: 'Holiday'.freeze, type: 'non_working'.freeze }.freeze
       rescue Date::Error, ArgumentError => e
-        raise ConfigurationError, "#{path}: row #{index + 1}: invalid date (#{e.message})"
+        raise configuration_error("#{path}: row #{index + 1}: invalid date (#{date_value}: #{e.message})",
+                                  file: path, code: 'INVALID_DATE', line: index + 1,
+                                  value: date_value, detail: 'Date is invalid.')
       end
-      raise ConfigurationError, "#{path}: contains no holidays" if days.empty?
+      raise configuration_error("#{path}: contains no holidays", file: path, code: 'EMPTY_CSV') if days.empty?
 
       {
         id: 'global'.freeze,
@@ -196,7 +232,9 @@ module RedmineCanvasGantt
     rescue ConfigurationError
       raise
     rescue CSV::MalformedCSVError, EncodingError, IOError, SystemCallError => e
-      raise ConfigurationError, "#{path}: #{e.message}"
+      raise configuration_error("#{path}: #{e.message}", file: path, code: 'INVALID_CSV',
+                                line: e.respond_to?(:line_number) ? e.line_number : nil,
+                                detail: 'The holiday CSV could not be parsed.')
     end
 
     def normalize_calendar(data, path)
@@ -208,7 +246,7 @@ module RedmineCanvasGantt
       validate_calendar_id!(id, "#{path}: calendar.id")
       name = calendar['name']
       unless name.is_a?(String) && name.present? && name.length <= 255
-        raise ConfigurationError, "#{path}: calendar.name must be a non-empty string of at most 255 characters"
+        raise configuration_error("#{path}: calendar.name must be a non-empty string of at most 255 characters", file: path)
       end
 
       base = calendar['base']
@@ -218,9 +256,9 @@ module RedmineCanvasGantt
 
       days = Array(data.fetch('days', []))
       unless data.fetch('days', []).is_a?(Array)
-        raise ConfigurationError, "#{path}: days must be an array"
+        raise configuration_error("#{path}: days must be an array", file: path)
       end
-      raise ConfigurationError, "#{path}: days count exceeds #{MAX_DAYS}" if days.size > MAX_DAYS
+      raise configuration_error("#{path}: days count exceeds #{MAX_DAYS}", file: path) if days.size > MAX_DAYS
 
       normalized_days = {}
       days.each_with_index do |entry, index|
@@ -228,14 +266,14 @@ module RedmineCanvasGantt
         require_mapping!(entry, location)
         validate_keys!(entry, DAY_KEYS, location)
         date = normalize_date(entry['date'], location)
-        raise ConfigurationError, "#{location}: duplicate date #{date.iso8601}" if normalized_days.key?(date)
+        raise configuration_error("#{location}: duplicate date #{date.iso8601}", file: path, code: 'DUPLICATE_DATE', value: date.to_s) if normalized_days.key?(date)
 
         day_name = entry['name']
         unless day_name.is_a?(String) && day_name.present? && day_name.length <= 255
-          raise ConfigurationError, "#{location}: name must be a non-empty string of at most 255 characters"
+          raise configuration_error("#{location}: name must be a non-empty string of at most 255 characters", file: path)
         end
         type = entry['type']
-        raise ConfigurationError, "#{location}: type must be working or non_working" unless DAY_TYPES.include?(type)
+        raise configuration_error("#{location}: type must be working or non_working", file: path) unless DAY_TYPES.include?(type)
 
         normalized_days[date] = { name: day_name, type: type }.freeze
       end
@@ -256,19 +294,20 @@ module RedmineCanvasGantt
 
       resolve = lambda do |id|
         return resolved[id] if resolved.key?(id)
+        definition = definitions[id]
+        source_path = definition&.fetch(:path, nil) || definitions[resolving.last]&.fetch(:path, nil)
         if resolving.include?(id)
           cycle = (resolving.drop_while { |entry| entry != id } + [id]).join(' -> ')
-          raise ConfigurationError, "calendar base cycle detected: #{cycle}"
+          raise configuration_error("calendar base cycle detected: #{cycle}", file: source_path, value: cycle)
         end
-        raise ConfigurationError, "calendar base does not exist: #{id}" unless definitions.key?(id)
-        raise ConfigurationError, "calendar base depth exceeds #{MAX_BASE_DEPTH}: #{id}" if resolving.size >= MAX_BASE_DEPTH
+        raise configuration_error("calendar base does not exist: #{id}", file: source_path, code: 'UNKNOWN_CALENDAR_ID', value: id) unless definition
+        raise configuration_error("calendar base depth exceeds #{MAX_BASE_DEPTH}: #{id}", file: definition[:path], value: id) if resolving.size >= MAX_BASE_DEPTH
 
-        definition = definitions.fetch(id)
         resolving << id
         base = definition[:base] ? resolve.call(definition[:base]) : nil
         days = base ? base.days.merge(definition[:days]) : definition[:days]
         if days.size > MAX_DAYS
-          raise ConfigurationError, "#{definition[:path]}: resolved days count exceeds #{MAX_DAYS}"
+          raise configuration_error("#{definition[:path]}: resolved days count exceeds #{MAX_DAYS}", file: definition[:path])
         end
         week_days = definition[:non_working_week_days] || base&.non_working_week_days || @fallback_non_working_week_days
         calendar = RedmineCanvasGantt::BusinessCalendar.new(
@@ -291,13 +330,15 @@ module RedmineCanvasGantt
       missing = referenced.uniq.reject { |id| definitions.key?(id) }
       return if missing.empty?
 
-      raise ConfigurationError, "settings.yml: unknown calendar id(s): #{missing.join(', ')}"
+      raise configuration_error("settings.yml: unknown calendar id(s): #{missing.join(', ')}",
+                                file: File.join(@directory, 'settings.yml'), code: 'UNKNOWN_CALENDAR_ID',
+                                value: missing.join(', '), detail: 'A referenced calendar ID does not exist.')
     end
 
     def load_yaml(path)
       ensure_safe_path!(path)
       size = File.size(path)
-      raise ConfigurationError, "#{path}: file exceeds #{MAX_FILE_SIZE} bytes" if size > MAX_FILE_SIZE
+      raise configuration_error("#{path}: file exceeds #{MAX_FILE_SIZE} bytes", file: path) if size > MAX_FILE_SIZE
 
       content = File.binread(path)
       content = content.gsub(/^(\s*(?:-\s+)?date\s*:\s*)(\d{4}-\d{2}-\d{2})(\s*(?:#.*)?)$/) do
@@ -310,8 +351,11 @@ module RedmineCanvasGantt
         aliases: false,
         filename: path
       ) || {}
+    rescue Psych::SyntaxError => e
+      raise configuration_error("#{path}: #{e.problem}", file: path, code: 'YAML_SYNTAX',
+                                line: e.line, detail: e.problem)
     rescue Psych::Exception, Errno::ENOENT, Errno::EACCES => e
-      raise ConfigurationError, "#{path}: #{e.message}"
+      raise configuration_error("#{path}: #{e.message}", file: path, detail: 'Calendar file could not be read.')
     end
 
     def calendar_files(include_settings:)
@@ -341,9 +385,9 @@ module RedmineCanvasGantt
       resolved = File.realpath(path)
       return if resolved.start_with?("#{root}#{File::SEPARATOR}")
 
-      raise ConfigurationError, "#{path}: symlink resolves outside calendar directory"
+      raise configuration_error("#{path}: symlink resolves outside calendar directory", file: path)
     rescue Errno::ENOENT, Errno::EACCES => e
-      raise ConfigurationError, "#{path}: #{e.message}"
+      raise configuration_error("#{path}: #{e.message}", file: path, detail: 'Calendar path could not be resolved safely.')
     end
 
     def relative_path(path)
@@ -353,40 +397,40 @@ module RedmineCanvasGantt
     def validate_schema_version!(data, location)
       return if data['schema_version'] == 1
 
-      raise ConfigurationError, "#{location}: schema_version must be 1"
+      raise configuration_error("#{location}: schema_version must be 1", file: location)
     end
 
     def validate_keys!(mapping, allowed, location)
       unknown = mapping.keys.reject { |key| key.is_a?(String) && allowed.include?(key) }
       return if unknown.empty?
 
-      raise ConfigurationError, "#{location}: unknown key(s): #{unknown.map(&:inspect).join(', ')}"
+      raise configuration_error("#{location}: unknown key(s): #{unknown.map(&:inspect).join(', ')}", file: location)
     end
 
     def require_mapping!(value, location)
       return if value.is_a?(Hash)
 
-      raise ConfigurationError, "#{location}: must be a mapping"
+      raise configuration_error("#{location}: must be a mapping", file: location)
     end
 
     def validate_calendar_id!(value, location)
       return if value.is_a?(String) && CALENDAR_ID_PATTERN.match?(value)
 
-      raise ConfigurationError, "#{location}: must match #{CALENDAR_ID_PATTERN.inspect}"
+      raise configuration_error("#{location}: must match #{CALENDAR_ID_PATTERN.inspect}", file: location)
     end
 
     def validate_managed!(value, path)
       return if value == true || value == false
 
-      raise ConfigurationError, "#{path}: calendar.managed must be true or false"
+      raise configuration_error("#{path}: calendar.managed must be true or false", file: path)
     end
 
     def normalize_week_days(value, path)
       unless value.is_a?(Array) && value.all? { |day| day.is_a?(Integer) && day.between?(1, 7) } && value.uniq.size == value.size
-        raise ConfigurationError, "#{path}: calendar.non_working_week_days must contain unique ISO weekdays 1..7"
+        raise configuration_error("#{path}: calendar.non_working_week_days must contain unique ISO weekdays 1..7", file: path)
       end
       if value.size >= 7
-        raise ConfigurationError, "#{path}: calendar.non_working_week_days must leave at least one weekly working day"
+        raise configuration_error("#{path}: calendar.non_working_week_days must leave at least one weekly working day", file: path)
       end
       value.map { |day| day % 7 }.sort.freeze
     end
@@ -401,11 +445,11 @@ module RedmineCanvasGantt
 
     def normalize_date(value, location)
       unless value.is_a?(String) && ISO_DATE_PATTERN.match?(value)
-        raise ConfigurationError, "#{location}: date must use YYYY-MM-DD"
+        raise configuration_error("#{location}: date must use YYYY-MM-DD", file: location, code: 'INVALID_DATE', value: value)
       end
       Date.iso8601(value)
     rescue Date::Error
-      raise ConfigurationError, "#{location}: date is invalid"
+      raise configuration_error("#{location}: date is invalid", file: location, code: 'INVALID_DATE', value: value)
     end
   end
 end

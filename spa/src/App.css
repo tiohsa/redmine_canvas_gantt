@@ -13,6 +13,29 @@
   background-color: var(--color-surface-subtle);
   box-shadow: var(--shadow-standard);
 }
+.business-calendar-banner {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border, #b7791f);
+  background: var(--color-warning-surface, #fff4ce);
+  color: var(--color-text, #3d3420);
+  font-size: 13px;
+}
+
+.business-calendar-banner.is-stale {
+  background: var(--color-warning-surface, #fff4ce);
+}
+
+.business-calendar-banner.is-invalid {
+  background: var(--color-danger-surface, #fde8e7);
+}
+
+.business-calendar-diagnostic {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 
 .logo {
   height: 6em;

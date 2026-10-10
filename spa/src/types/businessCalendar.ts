@@ -15,12 +15,23 @@ export interface BusinessCalendarDefinition {
 
 export interface BusinessCalendarPayload {
     status: 'ok' | 'error';
+    validationStatus?: 'valid' | 'invalid' | 'stale';
+    validationMessage?: string | null;
+    diagnostic?: BusinessCalendarDiagnostic | null;
     revision: string;
     defaultCalendarId: string | null;
     projectCalendarIds: Record<string, string>;
     calendars: Record<string, BusinessCalendarDefinition>;
     warnings: string[];
-    error?: string;
+}
+
+export interface BusinessCalendarDiagnostic {
+    code: string;
+    file?: string;
+    line?: number;
+    message: string;
+    cause?: string;
+    value?: string;
 }
 
 export interface BusinessDayInfo {

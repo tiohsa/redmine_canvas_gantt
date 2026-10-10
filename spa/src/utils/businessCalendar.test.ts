@@ -95,6 +95,15 @@ describe('businessCalendar', () => {
         expect(getCalendarIdForProject('missing')).toBe('company-japan');
     });
 
+    it('maps legacy error payloads to invalid state without retaining raw exception text', () => {
+        const normalized = normalizeBusinessCalendarPayload({
+            status: 'error', error: '/private/path/calendar.yml: parser internals'
+        });
+
+        expect(normalized.validationStatus).toBe('invalid');
+        expect(normalized).not.toHaveProperty('error');
+    });
+
     it('falls back to the global calendar for multiple projects when project mappings are empty', () => {
         configureBusinessCalendar({
             status: 'ok',

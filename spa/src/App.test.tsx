@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { useTaskStore } from './stores/TaskStore';
@@ -64,5 +64,38 @@ describe('App store subscriptions', () => {
             useUIStore.getState().setFullScreen(true);
         });
         expect(toolbarRenderMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a localized calendar warning visible and removes it after recovery', () => {
+        vi.useFakeTimers();
+        useTaskStore.setState({
+            businessCalendarValidation: {
+                status: 'stale',
+                message: '最後に正常に読み込んだカレンダーを使用しています。',
+                diagnostic: {
+                    code: 'INVALID_CSV', file: 'holiday.csv', line: 2,
+                    message: 'カレンダーの日付が不正です。', cause: 'Date is invalid.', value: '2027/2/30'
+                }
+            }
+        });
+        render(<App />);
+
+        const banner = screen.getByRole('alert');
+        expect(banner).toHaveTextContent('最後に正常に読み込んだカレンダーを使用しています。');
+        expect(banner).toHaveTextContent('holiday.csv:2');
+        expect(banner).toHaveTextContent('カレンダーの日付が不正です。');
+        expect(banner).toHaveTextContent('Date is invalid.');
+        expect(banner).toHaveTextContent('2027/2/30');
+
+        act(() => vi.advanceTimersByTime(4_000));
+        expect(screen.getByRole('alert')).toBeInTheDocument();
+
+        act(() => {
+            useTaskStore.setState({
+                businessCalendarValidation: { status: 'valid', message: null, diagnostic: null }
+            });
+        });
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        vi.useRealTimers();
     });
 });
