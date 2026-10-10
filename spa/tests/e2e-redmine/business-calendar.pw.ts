@@ -5,6 +5,7 @@ import { adminLogin } from './helpers';
 type CanvasConfig = {
   apiBase: string;
   authToken: string;
+  nonWorkingWeekDays: number[];
 };
 
 type BusinessCalendarApiPayload = {
@@ -195,15 +196,24 @@ const showHolidayInDayView = async (page: Page, holiday: string) => {
 const expectCsvModeCalendar = (
   payload: CanvasDataApiPayload,
   originalProjectIds: string[],
+  nonWorkingWeekDays: number[],
   holiday: string
 ) => {
   const calendar = payload.businessCalendar;
   expect(calendar.status).toBe('ok');
   expect(calendar.defaultCalendarId).toBe('global');
   expect(calendar.calendars.global.id).toBe('global');
+  expect(calendar.calendars.global.nonWorkingWeekDays).toEqual(nonWorkingWeekDays);
   expect(Object.keys(calendar.projectCalendarIds).sort()).toEqual([...originalProjectIds].sort());
   expect(Object.values(calendar.projectCalendarIds).every((calendarId) => calendarId === 'global')).toBe(true);
   expect(calendar.calendars.global.days[holiday]).toEqual({ name: 'Holiday', type: 'non_working' });
+};
+
+const normalizeConfiguredWeekDays = (value: unknown): number[] => {
+  expect(Array.isArray(value)).toBe(true);
+  const weekDays = value as unknown[];
+  expect(weekDays.every((day) => Number.isInteger(day) && (day as number) >= 0 && (day as number) <= 6)).toBe(true);
+  return [...new Set(weekDays as number[])].sort((left, right) => left - right);
 };
 
 test('loads the YAML business calendar through data.json', async ({ page, baseURL }) => {
@@ -272,20 +282,25 @@ test('renders a YAML holiday in the day-view Gantt background', async ({ page, b
   await showHolidayInDayView(page, holiday);
 });
 
+// The UI route uses the server's YAML-backed data response, replacing only businessCalendar with a CSV-equivalent payload.
+// Actual CSV loading is covered by the Ruby Loader → Resolver specs.
 test('renders the CSV-equivalent payload in the day-view Gantt background', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   const holiday = '2027-02-11';
-  const originalProjectIdsBySearch = new Map<string, string[]>();
+  const originalPayloadContextBySearch = new Map<string, { projectIds: string[]; nonWorkingWeekDays: number[] }>();
 
   await pinCalendarTestTime(page);
   await page.route((url) => url.pathname.endsWith('/data.json'), async (route) => {
     const response = await route.fetch();
     const payload = await response.json() as CanvasDataApiPayload;
     const originalCalendar = payload.businessCalendar;
-    const sourceCalendar = originalCalendar.calendars[originalCalendar.defaultCalendarId];
     const requestUrl = new URL(route.request().url());
     const originalProjectIds = Object.keys(originalCalendar.projectCalendarIds);
-    originalProjectIdsBySearch.set(requestUrl.search, originalProjectIds);
+    const configuredWeekDays = await page.evaluate(() => (
+      (window as Window & { RedmineCanvasGantt: CanvasConfig }).RedmineCanvasGantt.nonWorkingWeekDays
+    ));
+    const nonWorkingWeekDays = normalizeConfiguredWeekDays(configuredWeekDays);
+    originalPayloadContextBySearch.set(requestUrl.search, { projectIds: originalProjectIds, nonWorkingWeekDays });
     await route.fulfill({
       response,
       json: {
@@ -299,7 +314,7 @@ test('renders the CSV-equivalent payload in the day-view Gantt background', asyn
             global: {
               id: 'global',
               name: 'Global holidays',
-              nonWorkingWeekDays: sourceCalendar.nonWorkingWeekDays,
+              nonWorkingWeekDays,
               days: { [holiday]: { name: 'Holiday', type: 'non_working' } }
             }
           },
@@ -320,9 +335,14 @@ test('renders the CSV-equivalent payload in the day-view Gantt background', asyn
   expect(firstDataResponse.status()).toBe(200);
   const firstPayload = await firstDataResponse.json() as CanvasDataApiPayload;
   const firstSearch = new URL(firstDataResponse.url()).search;
-  const firstOriginalProjectIds = originalProjectIdsBySearch.get(firstSearch);
-  expect(firstOriginalProjectIds).toBeDefined();
-  expectCsvModeCalendar(firstPayload, firstOriginalProjectIds ?? [], holiday);
+  const firstOriginalContext = originalPayloadContextBySearch.get(firstSearch);
+  expect(firstOriginalContext).toBeDefined();
+  expectCsvModeCalendar(
+    firstPayload,
+    firstOriginalContext?.projectIds ?? [],
+    firstOriginalContext?.nonWorkingWeekDays ?? [],
+    holiday
+  );
 
   const queryPayload = await page.evaluate(async () => {
     const config = (window as Window & {
@@ -336,9 +356,14 @@ test('renders the CSV-equivalent payload in the day-view Gantt background', asyn
     };
   });
   expect(queryPayload.status).toBe(200);
-  const queryOriginalProjectIds = originalProjectIdsBySearch.get(queryPayload.search);
-  expect(queryOriginalProjectIds).toBeDefined();
-  expectCsvModeCalendar(queryPayload.payload as CanvasDataApiPayload, queryOriginalProjectIds ?? [], holiday);
+  const queryOriginalContext = originalPayloadContextBySearch.get(queryPayload.search);
+  expect(queryOriginalContext).toBeDefined();
+  expectCsvModeCalendar(
+    queryPayload.payload as CanvasDataApiPayload,
+    queryOriginalContext?.projectIds ?? [],
+    queryOriginalContext?.nonWorkingWeekDays ?? [],
+    holiday
+  );
 
   await showHolidayInDayView(page, holiday);
 });
