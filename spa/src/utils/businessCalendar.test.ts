@@ -95,6 +95,40 @@ describe('businessCalendar', () => {
         expect(getCalendarIdForProject('missing')).toBe('company-japan');
     });
 
+    it('maps legacy error payloads to invalid state without retaining raw exception text', () => {
+        const normalized = normalizeBusinessCalendarPayload({
+            status: 'error', error: '/private/path/calendar.yml: parser internals'
+        });
+
+        expect(normalized.validationStatus).toBe('invalid');
+        expect(normalized).not.toHaveProperty('error');
+    });
+
+    it('falls back to the global calendar for multiple projects when project mappings are empty', () => {
+        configureBusinessCalendar({
+            status: 'ok',
+            revision: 'csv-global',
+            defaultCalendarId: 'global',
+            projectCalendarIds: {},
+            calendars: {
+                global: {
+                    id: 'global',
+                    name: 'Global holidays',
+                    nonWorkingWeekDays: [0, 6],
+                    days: {
+                        '2027-02-11': { name: 'Holiday', type: 'non_working' }
+                    }
+                }
+            },
+            warnings: []
+        });
+
+        expect(getCalendarIdForProject('101')).toBe('global');
+        expect(getCalendarIdForProject('202')).toBe('global');
+        expect(isWorkingDay(timestamp('2027-02-11'), '101')).toBe(false);
+        expect(isWorkingDay(timestamp('2027-02-11'), '202')).toBe(false);
+    });
+
     it('lets explicit working and non-working days override weekly rules', () => {
         expect(getDayInfo(timestamp('2027-01-03'), '1')).toEqual({
             name: 'Substitute workday',

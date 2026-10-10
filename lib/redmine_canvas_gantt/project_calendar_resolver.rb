@@ -6,7 +6,7 @@ module RedmineCanvasGantt
 
     def initialize(repository: BusinessCalendarRepository.instance, fallback_non_working_week_days: nil, snapshot: nil)
       @repository = repository
-      @snapshot = snapshot
+      @calendar_state = state_for_snapshot(snapshot) if snapshot
       @fallback_non_working_week_days = normalize_fallback_week_days(
         fallback_non_working_week_days || Setting.non_working_week_days
       )
@@ -120,7 +120,8 @@ module RedmineCanvasGantt
     end
 
     def payload(projects:)
-      snapshot = current_snapshot
+      state = current_state
+      snapshot = state.fetch(:snapshot)
       project_calendar_ids = Array(projects).each_with_object({}) do |project, result|
         calendar_id = calendar_id_for(project, snapshot: snapshot)
         result[project.id.to_s] = calendar_id if calendar_id
@@ -129,20 +130,39 @@ module RedmineCanvasGantt
 
       {
         status: snapshot.status,
+        validationStatus: state.fetch(:validation_status),
         revision: snapshot.revision,
         defaultCalendarId: snapshot.default_calendar_id,
         projectCalendarIds: project_calendar_ids,
         calendars: snapshot.calendars.slice(*calendar_ids).transform_values(&:to_payload),
-        warnings: snapshot.warnings
-      }.tap do |result|
-        result[:error] = snapshot.error if snapshot.error
-      end
+        warnings: snapshot.warnings,
+        diagnostic: state[:diagnostic]
+      }
     end
 
     private
 
+    def current_state
+      @calendar_state ||= begin
+        state = @repository.validation_state if @repository.respond_to?(:validation_state)
+        if state.is_a?(Hash) && state[:snapshot]
+          state
+        else
+          state_for_snapshot(@repository.snapshot)
+        end
+      end
+    end
+
     def current_snapshot
-      @snapshot ||= @repository.snapshot
+      current_state.fetch(:snapshot)
+    end
+
+    def state_for_snapshot(snapshot)
+      {
+        snapshot: snapshot,
+        validation_status: snapshot.status == 'error' ? 'invalid' : 'valid',
+        diagnostic: nil
+      }.freeze
     end
 
     def project_and_ancestors(project)

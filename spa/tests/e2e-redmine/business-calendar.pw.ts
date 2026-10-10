@@ -5,6 +5,23 @@ import { adminLogin } from './helpers';
 type CanvasConfig = {
   apiBase: string;
   authToken: string;
+  nonWorkingWeekDays: number[];
+};
+
+type BusinessCalendarApiPayload = {
+  status: string;
+  defaultCalendarId: string;
+  projectCalendarIds: Record<string, string>;
+  calendars: Record<string, {
+    id: string;
+    name: string;
+    nonWorkingWeekDays: number[];
+    days: Record<string, { name: string; type: string }>;
+  }>;
+};
+
+type CanvasDataApiPayload = Record<string, unknown> & {
+  businessCalendar: BusinessCalendarApiPayload;
 };
 
 const restAuthorization = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
@@ -151,6 +168,54 @@ const fetchCanvasSchedule = async (page: Page, issueId: number) => {
   };
 };
 
+const pinCalendarTestTime = async (page: Page) => {
+  await page.clock.setFixedTime(new Date('2026-10-15T12:00:00+09:00'));
+};
+
+const showHolidayInDayView = async (page: Page, holiday: string) => {
+  await page.getByRole('button', { name: 'Day', exact: true }).click();
+  await page.getByRole('button', { name: 'Today' }).click();
+  const backgroundCanvas = page.getByTestId('gantt-background-canvas');
+  const nextMonth = page.getByRole('button', { name: /next month/i });
+
+  for (let month = 0; month < 24; month += 1) {
+    const renderedDays = await backgroundCanvas.getAttribute('data-business-calendar-non-working-days');
+    if (renderedDays?.split(',').includes(holiday)) break;
+    await nextMonth.click();
+    await expect.poll(
+      () => backgroundCanvas.getAttribute('data-business-calendar-non-working-days')
+    ).not.toBe(renderedDays);
+  }
+
+  await expect.poll(
+    () => backgroundCanvas.getAttribute('data-business-calendar-non-working-days'),
+    { timeout: 5_000 }
+  ).toContain(holiday);
+};
+
+const expectCsvModeCalendar = (
+  payload: CanvasDataApiPayload,
+  originalProjectIds: string[],
+  nonWorkingWeekDays: number[],
+  holiday: string
+) => {
+  const calendar = payload.businessCalendar;
+  expect(calendar.status).toBe('ok');
+  expect(calendar.defaultCalendarId).toBe('global');
+  expect(calendar.calendars.global.id).toBe('global');
+  expect(calendar.calendars.global.nonWorkingWeekDays).toEqual(nonWorkingWeekDays);
+  expect(Object.keys(calendar.projectCalendarIds).sort()).toEqual([...originalProjectIds].sort());
+  expect(Object.values(calendar.projectCalendarIds).every((calendarId) => calendarId === 'global')).toBe(true);
+  expect(calendar.calendars.global.days[holiday]).toEqual({ name: 'Holiday', type: 'non_working' });
+};
+
+const normalizeConfiguredWeekDays = (value: unknown): number[] => {
+  expect(Array.isArray(value)).toBe(true);
+  const weekDays = value as unknown[];
+  expect(weekDays.every((day) => Number.isInteger(day) && (day as number) >= 0 && (day as number) <= 6)).toBe(true);
+  return [...new Set(weekDays as number[])].sort((left, right) => left - right);
+};
+
 test('loads the YAML business calendar through data.json', async ({ page, baseURL }) => {
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   await adminLogin(redmineBase, page);
@@ -172,6 +237,67 @@ test('loads the YAML business calendar through data.json', async ({ page, baseUR
     name: 'Company summer holiday',
     type: 'non_working'
   });
+});
+
+test('keeps the calendar validation banner through fallback and stale states, then clears it after recovery', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  await adminLogin(redmineBase, page);
+
+  let validationStatus: 'invalid' | 'stale' | 'valid' = 'invalid';
+  try {
+    await page.route('**/canvas_gantt/data.json**', async (route) => {
+      const responseValidationStatus = validationStatus;
+      const response = await route.fetch();
+      const data = await response.json() as Record<string, unknown> & { businessCalendar: Record<string, unknown> };
+      const message = responseValidationStatus === 'stale'
+        ? 'The last valid calendar is still in use.'
+        : 'Redmine weekdays are being used as a fallback.';
+      data.businessCalendar = {
+        ...data.businessCalendar,
+        status: responseValidationStatus === 'invalid' ? 'error' : 'ok',
+        validationStatus: responseValidationStatus,
+        validationMessage: responseValidationStatus === 'valid' ? null : message,
+        diagnostic: responseValidationStatus === 'valid' ? null : {
+          code: 'INVALID_DATE', file: 'holiday.csv', line: 2,
+          message: 'A calendar date is invalid.', cause: 'Date is invalid.', value: '2027/2/30'
+        }
+      };
+      await route.fulfill({ response, json: data });
+    });
+
+    const expectCalendarResponse = async (
+      expectedStatus: 'invalid' | 'stale' | 'valid',
+      trigger: () => Promise<unknown>
+    ) => {
+      const responsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === 'GET' && url.pathname.endsWith('/canvas_gantt/data.json');
+      });
+      await trigger();
+      const response = await responsePromise;
+      expect(response.status()).toBe(200);
+      const data = await response.json() as { businessCalendar?: { validationStatus?: string } };
+      expect(data.businessCalendar?.validationStatus).toBe(expectedStatus);
+    };
+
+    await expectCalendarResponse('invalid', () => page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`));
+    const banner = page.getByRole('alert');
+    await expect(banner).toContainText('Redmine weekdays are being used as a fallback.');
+    await expect(banner).toContainText('holiday.csv:2');
+
+    await page.waitForTimeout(4_000);
+    await expect(banner).toBeVisible();
+
+    validationStatus = 'stale';
+    await expectCalendarResponse('stale', () => page.reload());
+    await expect(page.getByRole('alert')).toContainText('The last valid calendar is still in use.');
+
+    validationStatus = 'valid';
+    await expectCalendarResponse('valid', () => page.reload());
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  } finally {
+    await page.unrouteAll({ behavior: 'wait' });
+  }
 });
 
 test('keeps clean toolbar controls from overlapping at the standard viewport', async ({ page, baseURL }) => {
@@ -209,25 +335,98 @@ test('renders a YAML holiday in the day-view Gantt background', async ({ page, b
   const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
   const holiday = '2027-08-12';
 
+  await pinCalendarTestTime(page);
   await adminLogin(redmineBase, page);
   await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
   await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Day', exact: true }).click();
-  const backgroundCanvas = page.getByTestId('gantt-background-canvas');
-  const nextMonth = page.getByRole('button', { name: /next month/i });
+  await showHolidayInDayView(page, holiday);
+});
 
-  for (let month = 0; month < 24; month += 1) {
-    const renderedDays = await backgroundCanvas.getAttribute('data-business-calendar-non-working-days');
-    if (renderedDays?.split(',').includes(holiday)) break;
-    await nextMonth.click();
-    await page.waitForTimeout(50);
-  }
+// The UI route uses the server's YAML-backed data response, replacing only businessCalendar with a CSV-equivalent payload.
+// Actual CSV loading is covered by the Ruby Loader → Resolver specs.
+test('renders the CSV-equivalent payload in the day-view Gantt background', async ({ page, baseURL }) => {
+  const redmineBase = baseURL ?? 'http://127.0.0.1:3000';
+  const holiday = '2027-02-11';
+  const originalPayloadContextBySearch = new Map<string, { projectIds: string[]; nonWorkingWeekDays: number[] }>();
 
-  await expect.poll(
-    () => backgroundCanvas.getAttribute('data-business-calendar-non-working-days'),
-    { timeout: 5_000 }
-  ).toContain(holiday);
+  await pinCalendarTestTime(page);
+  await page.route((url) => url.pathname.endsWith('/data.json'), async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json() as CanvasDataApiPayload;
+    const originalCalendar = payload.businessCalendar;
+    const requestUrl = new URL(route.request().url());
+    const originalProjectIds = Object.keys(originalCalendar.projectCalendarIds);
+    const configuredWeekDays = await page.evaluate(() => (
+      (window as Window & { RedmineCanvasGantt: CanvasConfig }).RedmineCanvasGantt.nonWorkingWeekDays
+    ));
+    const nonWorkingWeekDays = normalizeConfiguredWeekDays(configuredWeekDays);
+    originalPayloadContextBySearch.set(requestUrl.search, { projectIds: originalProjectIds, nonWorkingWeekDays });
+    await route.fulfill({
+      response,
+      json: {
+        ...payload,
+        businessCalendar: {
+          status: 'ok',
+          revision: 'csv-equivalent-ui-fixture',
+          defaultCalendarId: 'global',
+          projectCalendarIds: Object.fromEntries(originalProjectIds.map((projectId) => [projectId, 'global'])),
+          calendars: {
+            global: {
+              id: 'global',
+              name: 'Global holidays',
+              nonWorkingWeekDays,
+              days: { [holiday]: { name: 'Holiday', type: 'non_working' } }
+            }
+          },
+          warnings: []
+        }
+      }
+    });
+  });
+
+  await adminLogin(redmineBase, page);
+  const firstDataResponsePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname.endsWith('/data.json')
+  ));
+  await page.goto(`${redmineBase}/projects/ecookbook/canvas_gantt`);
+  await expect(page.locator('#redmine-canvas-gantt-root')).toBeVisible();
+
+  const firstDataResponse = await firstDataResponsePromise;
+  expect(firstDataResponse.status()).toBe(200);
+  const firstPayload = await firstDataResponse.json() as CanvasDataApiPayload;
+  const firstSearch = new URL(firstDataResponse.url()).search;
+  const firstOriginalContext = originalPayloadContextBySearch.get(firstSearch);
+  expect(firstOriginalContext).toBeDefined();
+  expectCsvModeCalendar(
+    firstPayload,
+    firstOriginalContext?.projectIds ?? [],
+    firstOriginalContext?.nonWorkingWeekDays ?? [],
+    holiday
+  );
+
+  const queryPayload = await page.evaluate(async () => {
+    const config = (window as Window & {
+      RedmineCanvasGantt: { apiBase: string };
+    }).RedmineCanvasGantt;
+    const response = await window.fetch(`${config.apiBase}/data.json?group_by=none`);
+    return {
+      status: response.status,
+      search: new URL(response.url).search,
+      payload: await response.json()
+    };
+  });
+  expect(queryPayload.status).toBe(200);
+  const queryOriginalContext = originalPayloadContextBySearch.get(queryPayload.search);
+  expect(queryOriginalContext).toBeDefined();
+  expectCsvModeCalendar(
+    queryPayload.payload as CanvasDataApiPayload,
+    queryOriginalContext?.projectIds ?? [],
+    queryOriginalContext?.nonWorkingWeekDays ?? [],
+    holiday
+  );
+
+  await showHolidayInDayView(page, holiday);
 });
 
 test('schedule mutation relation callbacks use the custom holiday calendar', async ({ page, baseURL }) => {

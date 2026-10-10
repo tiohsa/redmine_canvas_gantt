@@ -224,37 +224,47 @@ The data endpoint rejects an oversized complete payload with HTTP 413 instead of
 
 ### Business calendars
 
-Canvas Gantt can use named business calendars for weekly non-working days, country holidays, company shutdowns, and substitute working days. The same resolved calendar drives dependency validation, automatic scheduling, critical-path calculations, Canvas background shading, and direct task-date changes. When a non-working day is selected during Gantt drag/resize or sidebar date editing, the start date is normalized forward to the next working day and the due date backward to the previous working day. This feature requires no database migration. Holiday data is read-only runtime configuration stored in external YAML files; it is never stored in `Setting.plugin_redmine_canvas_gantt`.
+Canvas Gantt can use named business calendars for weekly non-working days, country holidays, company shutdowns, and substitute working days. The same resolved calendar drives dependency validation, automatic scheduling, critical-path calculations, Canvas background shading, and direct task-date changes. When a non-working day is selected during Gantt drag/resize or sidebar date editing, the start date is normalized forward to the next working day and the due date backward to the previous working day. This feature requires no database migration. Holiday data is read-only runtime configuration loaded from external YAML and CSV files. It is never stored in `Setting.plugin_redmine_canvas_gantt`.
 
-The default directory is `<Rails.root>/config/redmine_canvas_gantt/business_calendars`. Set `REDMINE_CANVAS_GANTT_CALENDAR_DIR` to use another directory. Copy [the bundled examples](examples/business_calendars/) as a starting point:
+The default directory is `<Rails.root>/config/redmine_canvas_gantt/business_calendars`. Set `REDMINE_CANVAS_GANTT_CALENDAR_DIR` to use another directory. Choose either the [YAML examples](examples/business_calendars/) for detailed calendars or the [single-file CSV example](examples/business_calendars_csv/) for one global holiday list. A configured root cannot mix `holiday.csv` with YAML files.
+
+#### Detailed calendars with YAML
+
+YAML supports named calendars, project assignments, inheritance, weekly non-working days, and per-date `working` or `non_working` overrides. A child project inherits the nearest parent project's assignment.
 
 ```text
 business_calendars/
 ├── settings.yml
 ├── generated/JP.yml
-├── generated/US.yml
-└── custom/company-us.yml
+└── custom/company-japan.yml
 ```
 
-`settings.yml` selects the Redmine-wide default and assigns calendars by project identifier. A child project inherits the nearest parent assignment.
+```mermaid
+flowchart TD
+    S[settings.yml] --> Y[Calendar YAML files]
+    Y --> B[Optional custom calendar with base: ID]
+    B -->|adds holidays or overrides workdays| R[Resolved project calendar]
+    Y --> R
+    S -->|project assignment, else default; child inherits nearest parent| R
+```
+
+`settings.yml` selects the default calendar and can map project identifiers to calendars:
 
 ```yaml
 schema_version: 1
-default_calendar: company-us
+default_calendar: company-japan
 project_calendars:
-  us-project: company-us
-  japan-project: JP
+  japan-project: company-japan
 ```
 
-A custom calendar can inherit a generated country calendar. `non_working` adds a company holiday; `working` overrides a country holiday or weekly non-working day.
+A YAML calendar can inherit another YAML calendar and add company exceptions:
 
 ```yaml
 schema_version: 1
 calendar:
-  id: company-us
-  name: US Company Calendar
-  base: US
-  managed: false
+  id: company-japan
+  name: Japan Company Calendar
+  base: JP
 days:
   - date: 2027-08-12
     name: Company summer holiday
@@ -263,6 +273,29 @@ days:
     name: Substitute workday
     type: working
 ```
+
+See the bundled YAML example for the complete schema and country calendar files.
+
+#### One global holiday list with CSV
+
+For a simple setup, place one `holiday.csv` directly in the configured calendar directory. Its existence enables CSV mode and creates the generic `global` calendar, which is used by every project. The first row is always skipped as a header. Every following non-empty row must have a date in the first column using `YYYY/M/D` or `YYYY/MM/DD`. The second column may contain a holiday name, but it is optional and ignored, as are all later columns; every listed date is non-working. The CSV header and holiday names are never read. The CSV must use an ASCII-compatible encoding such as UTF-8 or Windows-31J because only the ASCII date field is interpreted.
+
+```text
+business_calendars/
+└── holiday.csv
+```
+
+```csv
+date,name
+2026/1/1,New Year
+2026/01/12,Holiday
+```
+
+The global CSV uses Redmine's configured non-working weekdays (`Setting.non_working_week_days`). It has no per-country, per-project, base-calendar, weekday, or working-day controls. Use YAML when you need any of those details. Other CSV files in the directory are ignored. Do not leave `settings.yml` or calendar YAML files beside `holiday.csv`; mixed configuration is rejected.
+
+To set up the CSV list, copy `examples/business_calendars_csv/holiday.csv` to the configured directory and edit the dates. Changes are checked every 60 seconds by default; reload the Gantt page after detection. A valid replacement snapshot removes deleted dates. Invalid CSV keeps the previous valid snapshot, and correcting the file allows reload to recover. The file must be a regular file inside the calendar root and contain 1–10,000 valid, unique dates; files are limited to one MiB.
+
+#### Generate YAML holiday files
 
 Country files can be generated without adding the `holidays` gem to Redmine's production bundle:
 
@@ -274,7 +307,11 @@ bundle exec ruby generate.rb --region us --calendar-id US --name United States \
   --output /path/to/business_calendars/generated/US.yml
 ```
 
-Keep company changes in `custom/`; `--force` replaces only files marked `calendar.managed: true`. The runtime checks relative path, modification time, and size every 60 seconds and atomically swaps in a fully validated snapshot after a change. Set `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` to another non-negative number of seconds. Symlinks that resolve outside the configured calendar root are rejected; symlinked directories are not traversed. A missing directory or `settings.yml` falls back to Redmine's standard non-working weekdays. An invalid configuration logs a warning and continues calendar-dependent relation and auto-schedule operations with that same weekday fallback; a failed reload logs a warning and retains the last valid snapshot.
+For YAML installations, keep company changes in `custom/`; `--force` replaces only files marked `calendar.managed: true`.
+
+#### Reload behavior
+
+The runtime checks relative path, modification time, and size every 60 seconds and atomically swaps in a fully validated snapshot after a change. Set `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` to another non-negative number of seconds. Symlinks that resolve outside the configured calendar root are rejected; symlinked directories are not traversed. A missing directory or YAML settings file falls back to Redmine's standard non-working weekdays. An invalid configuration logs a warning and continues calendar-dependent relation and auto-schedule operations with that same weekday fallback; a failed reload logs a warning and retains the last valid snapshot.
 
 For Docker, set the directory explicitly and mount the calendar directory. The official Redmine image
 changes ownership of the configuration directory during startup, so omit `:ro` when using that image.
@@ -303,9 +340,9 @@ This repository includes `docker-compose.yml` for running a local Redmine 7.0.0 
 
 GitHub Actions continuously verifies Redmine 6.0.6, 6.1.2, and 7.0.0 with backend specs and Redmine E2E coverage. Redmine 6.0.6 runs the targeted compatibility suite (smoke, business calendar, mutation contract, and baseline permissions). Redmine 6.1.2 and 7.0.0 run the full Redmine Playwright suite. Redmine 7.0.0 is also validated locally with the MariaDB 11.4 Compose database.
 
-To use a custom holiday calendar, add the following settings to the `redmine` service. Place
-`settings.yml` and the calendar YAML files under `business_calendars/`, including the `generated/`
-and `custom/` directories.
+To use custom holiday calendars, add the following settings to the `redmine` service. Place
+Either the YAML configuration and calendar files or the single `holiday.csv` file under
+`business_calendars/`.
 
 ```yaml
 services:

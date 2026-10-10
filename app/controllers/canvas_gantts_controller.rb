@@ -545,6 +545,7 @@ class CanvasGanttsController < ApplicationController
       effective_project_ids = resolved_query.fetch(:effective_project_ids)
       baseline_load = baseline_repository.load(project_id: @project.id)
       member_projects_only = resolved_query[:initial_state].fetch(:member_projects_only, false)
+      business_calendar = business_calendar_payload(effective_project_ids)
 
       relations = data_relations(resolved_query[:issues])
       payload = data_payload_builder.build(
@@ -570,7 +571,7 @@ class CanvasGanttsController < ApplicationController
         query_context: resolved_query[:query_context],
         warnings: resolved_query[:warnings] + baseline_load.warnings,
         baseline: visible_baseline_snapshot(baseline_load.snapshot, project_ids),
-        business_calendar: business_calendar_resolver.payload(projects: business_calendar_projects(effective_project_ids))
+        business_calendar: business_calendar
       )
       payload[:project_scope] = resolved_query.fetch(:project_scope)
       render body: data_payload_budget.encode_json(payload), content_type: 'application/json'
@@ -1671,6 +1672,29 @@ class CanvasGanttsController < ApplicationController
     @business_calendar_resolver ||= RedmineCanvasGantt::ProjectCalendarResolver.new(
       fallback_non_working_week_days: Setting.non_working_week_days
     )
+  end
+
+  def business_calendar_payload(project_ids)
+    payload = business_calendar_resolver.payload(projects: business_calendar_projects(project_ids))
+    status = payload[:validationStatus]
+    message_key = status == 'stale' ? :label_canvas_gantt_business_calendar_stale : :label_canvas_gantt_business_calendar_invalid
+    summary = status == 'valid' ? nil : canvas_gantt_l(message_key)
+    payload = payload.merge(validationMessage: summary)
+    if User.current.admin?
+      reason_key = {
+        'INVALID_CSV' => :label_canvas_gantt_calendar_invalid_csv,
+        'INVALID_DATE' => :label_canvas_gantt_calendar_invalid_date,
+        'DUPLICATE_DATE' => :label_canvas_gantt_calendar_duplicate_date,
+        'EMPTY_CSV' => :label_canvas_gantt_calendar_empty_csv,
+        'YAML_SYNTAX' => :label_canvas_gantt_calendar_yaml_syntax,
+        'UNKNOWN_CALENDAR_ID' => :label_canvas_gantt_calendar_unknown_id
+      }.fetch(payload.dig(:diagnostic, :code), :label_canvas_gantt_calendar_invalid_configuration)
+      diagnostic = payload[:diagnostic]
+      payload = payload.merge(diagnostic: diagnostic.merge(cause: diagnostic[:message], message: canvas_gantt_l(reason_key))) if diagnostic
+      return payload
+    end
+
+    payload.except(:diagnostic)
   end
 
   def ensure_business_calendar_revision

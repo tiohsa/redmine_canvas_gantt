@@ -232,29 +232,40 @@ data endpoint は、タスクグラフを途中で切り詰めず、完全な pa
 
 ### 業務カレンダー
 
-Canvas Gantt は、週次非稼働日、国別祝日、会社休業日、振替稼働日を名前付き業務カレンダーで扱えます。解決済みの同じカレンダーを、依存関係検証、自動スケジュール、クリティカルパス計算、Canvas 背景描画、タスク日付の直接変更に使用します。Gantt のドラッグ・リサイズやサイドバーの日付編集で非稼働日が選ばれた場合、開始日は次の稼働日、終了日は直前の稼働日に補正されます。DB マイグレーションは不要です。休日データは外部 YAML を read-only の実行時設定として読み込み、`Setting.plugin_redmine_canvas_gantt` には保存しません。
+Canvas Gantt は、週次非稼働日、国別祝日、会社休業日、振替稼働日を名前付き業務カレンダーで扱えます。解決済みの同じカレンダーを、依存関係検証、自動スケジュール、クリティカルパス計算、Canvas 背景描画、タスク日付の直接変更に使用します。Gantt のドラッグ・リサイズやサイドバーの日付編集で非稼働日が選ばれた場合、開始日は次の稼働日、終了日は直前の稼働日に補正されます。DB マイグレーションは不要です。休日データは外部 YAML または CSV の読み取り専用設定で、`Setting.plugin_redmine_canvas_gantt` には保存しません。
 
-既定ディレクトリは `<Rails.root>/config/redmine_canvas_gantt/business_calendars` です。別の場所を使う場合は `REDMINE_CANVAS_GANTT_CALENDAR_DIR` を設定します。[同梱サンプル](examples/business_calendars/)を初期ファイルとして利用できます。
+既定ディレクトリは`<Rails.root>/config/redmine_canvas_gantt/business_calendars`です。別の場所を使う場合は`REDMINE_CANVAS_GANTT_CALENDAR_DIR`を設定します。詳細なカレンダーには[YAMLサンプル](examples/business_calendars/)、全プロジェクト共通の休日一覧には[単一CSVサンプル](examples/business_calendars_csv/)を利用してください。同じルートに`holiday.csv`とYAMLファイルは混在できません。
+
+#### YAMLで詳細なカレンダーを設定する
+
+YAMLでは、名前付きカレンダー、project割当、継承、週次非稼働日、日ごとの`working`または`non_working`上書きを設定できます。子projectは最も近い親projectの割当を継承します。
 
 ```text
 business_calendars/
 ├── settings.yml
 ├── generated/JP.yml
-├── generated/US.yml
 └── custom/company-japan.yml
 ```
 
-`settings.yml` では Redmine 全体の既定カレンダーと、project identifier ごとの割当を指定します。子 project は最も近い親 project の割当を継承します。
+```mermaid
+flowchart TD
+    S[settings.yml] --> Y[YAMLカレンダーファイル]
+    Y --> B[任意: base: ID の会社カレンダー]
+    B -->|会社休日を追加または稼働日を上書き| R[project用に解決したカレンダー]
+    Y --> R
+    S -->|project割当、なければ既定値。子は最も近い親から継承| R
+```
+
+`settings.yml`で既定カレンダーを選び、project identifierごとの割当を設定できます。
 
 ```yaml
 schema_version: 1
 default_calendar: company-japan
 project_calendars:
   japan-project: company-japan
-  us-project: US
 ```
 
-カスタムカレンダーは生成済み国別カレンダーを継承できます。`non_working` で会社休日を追加し、`working` で国別祝日や週次非稼働日を稼働日に上書きします。
+YAMLカレンダーは別のYAMLカレンダーを継承し、会社独自の日を追加できます。
 
 ```yaml
 schema_version: 1
@@ -262,7 +273,6 @@ calendar:
   id: company-japan
   name: Japan Company Calendar
   base: JP
-  managed: false
 days:
   - date: 2027-08-12
     name: 会社夏季休業
@@ -271,6 +281,29 @@ days:
     name: 振替出勤日
     type: working
 ```
+
+完全なスキーマと国別カレンダーファイルは同梱のYAMLサンプルを参照してください。
+
+#### CSVで全プロジェクト共通の休日一覧を設定する
+
+簡単な設定では、設定したカレンダールート直下に`holiday.csv`を1つ置きます。ファイルの存在によりCSV形式が有効になり、すべてのprojectで共通の汎用`global`カレンダーを使用します。先頭行はヘッダーとして必ず読み飛ばします。以降の空でない各行は、第1列に`YYYY/M/D`または`YYYY/MM/DD`形式の日付が必要です。第2列の休日名は任意で省略できます。第2列以降はすべて無視され、CSVに記載した日付はすべて非稼働日です。ヘッダー名や休日名は読み込みません。第1列の日付だけを読むため、UTF-8やWindows-31JなどASCII互換の文字コードを使用してください。
+
+```text
+business_calendars/
+└── holiday.csv
+```
+
+```csv
+date,name
+2026/1/1,元日
+2026/01/12,休日
+```
+
+週次非稼働日はRedmineの`Setting.non_working_week_days`を使います。CSVでは国別・project別割当、継承、曜日設定、稼働日上書きを設定できません。これらが必要な場合はYAMLを使ってください。ほかのCSVファイルは無視します。`holiday.csv`と同じ場所に`settings.yml`やカレンダーYAMLを置かないでください。混在した設定はエラーになります。
+
+CSVを使う場合は`examples/business_calendars_csv/holiday.csv`を設定ディレクトリへコピーし、日付を編集します。変更は既定で60秒ごとに確認し、検知後にGantt画面を再読込すると反映されます。有効なCSVに置き換えると削除した日付も反映されます。不正なCSVでは直前の正常なスナップショットを維持し、ファイル修正後に再読込できます。CSVは設定ルート内の通常ファイルで、1～10,000件の有効かつ重複のない日付が必要です。ファイルサイズは1 MiB以下です。
+
+#### YAML形式で休日ファイルを生成する
 
 国別ファイルは、Redmine 本番 Bundle に `holidays` gem を追加せず生成できます。
 
@@ -282,7 +315,11 @@ bundle exec ruby generate.rb --region jp --calendar-id JP --name Japan \
   --output /path/to/business_calendars/generated/JP.yml
 ```
 
-会社固有の変更は `custom/` に分離してください。`--force` で上書きできるのは `calendar.managed: true` のファイルだけです。ランタイムは相対パス・更新時刻・サイズを既定で60秒ごとに確認し、変更後の全ファイルが検証に成功してからスナップショットを原子的に差し替えます。間隔は `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` に0以上の秒数で指定できます。設定ルート外へ解決される symlink は拒否し、symlink のディレクトリは再帰探索しません。ディレクトリまたは `settings.yml` がなければ Redmine 標準の非稼働曜日へフォールバックします。不正な設定の場合も警告を記録し、同じ曜日設定へフォールバックしてカレンダー依存の関係変更と自動スケジュールを継続します。再読み込みが失敗した場合は警告を記録して直前の正常スナップショットを維持します。
+YAML形式では会社固有の変更を`custom/`へ分離してください。`--force`で上書きできるのは`calendar.managed: true`のファイルだけです。
+
+#### 再読込
+
+ランタイムは相対パス・更新時刻・サイズを既定で60秒ごとに確認し、変更後の全ファイルが検証に成功してからスナップショットを原子的に差し替えます。間隔は`REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL`に0以上の秒数で指定できます。設定ルート外へ解決されるsymlinkは拒否し、symlinkのディレクトリは再帰探索しません。ディレクトリまたはYAML設定ファイルがなければRedmine標準の非稼働曜日へフォールバックします。不正な設定の場合も警告を記録し、同じ曜日設定へフォールバックしてカレンダー依存の関係変更と自動スケジュールを継続します。再読み込みが失敗した場合は警告を記録して直前の正常スナップショットを維持します。
 
 Docker ではパスを明示してカレンダーディレクトリをマウントします。Redmine 公式イメージは
 起動時に設定ディレクトリの所有者を変更するため、公式イメージを使う Compose では
@@ -313,7 +350,7 @@ Kubernetes では同じパスへ ConfigMap などを read-only でマウント�
 GitHub Actions では Redmine 6.0.6、6.1.2、7.0.0 の backend spec と Redmine E2E を継続検証します。Redmine 6.0.6 では targeted compatibility suite（smoke、business calendar、mutation contract、baseline permissions）を実行し、Redmine 6.1.2 と 7.0.0 では full Redmine Playwright suite を実行します。Redmine 7.0.0 は MariaDB 11.4 の Compose DBを使ったローカル検証も行います。
 
 独自休日カレンダーを使用する場合は、`redmine` サービスに次の設定を追加します。`business_calendars/`
-には `settings.yml` と、`generated/` および `custom/` 配下のカレンダー YAML を配置してください。
+にはYAML形式の設定・カレンダーファイル、または単一の`holiday.csv`を配置してください。
 
 ```yaml
 services:

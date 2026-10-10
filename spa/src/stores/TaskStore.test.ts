@@ -79,6 +79,34 @@ describe('TaskStore viewport clamping', () => {
         });
     });
 
+    it('updates calendar validation state from each accepted data response and clears it on recovery', () => {
+        useTaskStore.getState().applyApiData({
+            ...buildApiData([]),
+            businessCalendar: {
+                status: 'ok', validationStatus: 'stale',
+                validationMessage: 'Last valid calendar remains active.',
+                revision: 'accepted-revision', defaultCalendarId: null,
+                projectCalendarIds: {}, calendars: {}, warnings: [],
+                diagnostic: { code: 'INVALID_CSV', file: 'holiday.csv', line: 2, message: 'Invalid date.', value: 'bad' }
+            }
+        });
+        expect(useTaskStore.getState().businessCalendarValidation).toMatchObject({
+            status: 'stale', message: 'Last valid calendar remains active.',
+            diagnostic: { file: 'holiday.csv', value: 'bad' }
+        });
+
+        useTaskStore.getState().applyApiData({
+            ...buildApiData([]),
+            businessCalendar: {
+                status: 'ok', validationStatus: 'valid', revision: 'new-revision',
+                defaultCalendarId: null, projectCalendarIds: {}, calendars: {}, warnings: []
+            }
+        });
+        expect(useTaskStore.getState().businessCalendarValidation).toEqual({
+            status: 'valid', message: null, diagnostic: null
+        });
+    });
+
     it('updateViewport は scrollY を rowCount に合わせてクランプする', () => {
         const { updateViewport } = useTaskStore.getState();
         useTaskStore.setState({ rowCount: 10 });

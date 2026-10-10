@@ -28,6 +28,81 @@ RSpec.describe RedmineCanvasGantt::ProjectCalendarResolver do
     expect(resolver.revision).to eq('revision')
   end
 
+  it 'pins repository validation state and calendar snapshot for the resolver lifetime' do
+    first_calendar = calendar('first', days: { Date.new(2027, 1, 4) => { name: 'First holiday', type: 'non_working' } })
+    second_calendar = calendar('second', days: { Date.new(2027, 1, 4) => { name: 'Second holiday', type: 'non_working' } })
+    first_snapshot = RedmineCanvasGantt::BusinessCalendarSnapshot.new(
+      status: 'ok', revision: 'first-revision', default_calendar_id: 'first',
+      project_calendars: {}, calendars: { 'first' => first_calendar }
+    )
+    second_snapshot = RedmineCanvasGantt::BusinessCalendarSnapshot.new(
+      status: 'ok', revision: 'second-revision', default_calendar_id: 'second',
+      project_calendars: {}, calendars: { 'second' => second_calendar }
+    )
+    repository = Struct.new(:state) do
+      def validation_state
+        state
+      end
+    end.new({ snapshot: first_snapshot, validation_status: 'valid', diagnostic: nil })
+    project = instance_double(Project, id: 1, identifier: 'project', ancestors: [])
+    resolver = described_class.new(repository: repository, fallback_non_working_week_days: [6, 7])
+
+    expect(resolver.revision).to eq('first-revision')
+    repository.state = { snapshot: second_snapshot, validation_status: 'valid', diagnostic: nil }
+
+    payload = resolver.payload(projects: [project])
+    expect(payload).to include(revision: 'first-revision', defaultCalendarId: 'first')
+    expect(payload.fetch(:calendars).fetch('first').fetch(:days).fetch('2027-01-04')).to include(name: 'First holiday')
+    expect(resolver.day_info(Date.new(2027, 1, 4), project: project)).to include(name: 'First holiday')
+
+    fresh_resolver = described_class.new(repository: repository, fallback_non_working_week_days: [6, 7])
+    expect(fresh_resolver.payload(projects: [project])).to include(revision: 'second-revision', defaultCalendarId: 'second')
+  end
+
+  it 'pins the same state when date calculations or payload are the first access' do
+    project = instance_double(Project, id: 1, identifier: 'project', ancestors: [])
+    first_calendar = calendar('first', days: { Date.new(2027, 1, 4) => { name: 'First holiday', type: 'non_working' } })
+    second_calendar = calendar('second', days: { Date.new(2027, 1, 4) => { name: 'Second holiday', type: 'non_working' } })
+    first_snapshot = RedmineCanvasGantt::BusinessCalendarSnapshot.new(
+      status: 'ok', revision: 'first-revision', default_calendar_id: 'first',
+      project_calendars: {}, calendars: { 'first' => first_calendar }
+    )
+    second_snapshot = RedmineCanvasGantt::BusinessCalendarSnapshot.new(
+      status: 'ok', revision: 'second-revision', default_calendar_id: 'second',
+      project_calendars: {}, calendars: { 'second' => second_calendar }
+    )
+    first_state = {
+      snapshot: first_snapshot, validation_status: 'stale',
+      diagnostic: { code: 'INVALID_DATE', value: 'first' }
+    }
+    second_state = {
+      snapshot: second_snapshot, validation_status: 'invalid',
+      diagnostic: { code: 'INVALID_DATE', value: 'second' }
+    }
+
+    %i[day_info payload].each do |first_access|
+      repository = Struct.new(:state) do
+        def validation_state
+          state
+        end
+      end.new(first_state)
+      resolver = described_class.new(repository: repository, fallback_non_working_week_days: [6, 7])
+      if first_access == :day_info
+        expect(resolver.day_info(Date.new(2027, 1, 4), project: project)).to include(name: 'First holiday')
+      else
+        expect(resolver.payload(projects: [project])).to include(revision: 'first-revision')
+      end
+
+      repository.state = second_state
+      payload = resolver.payload(projects: [project])
+      expect(payload).to include(
+        revision: 'first-revision', validationStatus: 'stale', diagnostic: first_state[:diagnostic]
+      )
+      expect(resolver.revision).to eq('first-revision')
+      expect(resolver.day_info(Date.new(2027, 1, 4), project: project)).to include(name: 'First holiday')
+    end
+  end
+
   it 'resolves direct, nearest parent, and default assignments' do
     calendars = { 'direct' => calendar('direct'), 'parent' => calendar('parent'), 'default' => calendar('default') }
     repository = instance_double(
@@ -47,6 +122,24 @@ RSpec.describe RedmineCanvasGantt::ProjectCalendarResolver do
     expect(resolver.calendar_id_for(direct)).to eq('direct')
     expect(resolver.calendar_id_for(inherited)).to eq('parent')
     expect(resolver.calendar_id_for(root)).to eq('default')
+  end
+
+  it 'uses one global calendar for unrelated projects and their child projects' do
+    global = calendar('global', days: { Date.new(2027, 1, 4) => { name: 'Holiday', type: 'non_working' } })
+    repository = instance_double(
+      RedmineCanvasGantt::BusinessCalendarRepository,
+      snapshot: snapshot(default: 'global', calendars: { 'global' => global })
+    )
+    resolver = described_class.new(repository: repository, fallback_non_working_week_days: [6, 7])
+    parent_a = instance_double(Project, id: 1, identifier: 'a-parent', ancestors: [])
+    child_a = instance_double(Project, id: 2, identifier: 'a-child', ancestors: [parent_a])
+    parent_b = instance_double(Project, id: 3, identifier: 'b-parent', ancestors: [])
+    child_b = instance_double(Project, id: 4, identifier: 'b-child', ancestors: [parent_b])
+
+    [parent_a, child_a, parent_b, child_b].each do |project|
+      expect(resolver.calendar_id_for(project)).to eq('global')
+      expect(resolver.working_day?(Date.new(2027, 1, 4), project: project)).to be(false)
+    end
   end
 
   it 'uses explicit working days over holidays and weekends' do

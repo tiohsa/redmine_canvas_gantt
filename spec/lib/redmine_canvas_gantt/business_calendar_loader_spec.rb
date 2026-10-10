@@ -1,6 +1,7 @@
 require 'tmpdir'
 require_relative '../../spec_helper'
 require_relative '../../../lib/redmine_canvas_gantt/business_calendar_loader'
+require_relative '../../../lib/redmine_canvas_gantt/project_calendar_resolver'
 
 RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
   around do |example|
@@ -13,7 +14,7 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
   def write(relative_path, content)
     path = File.join(@directory, relative_path)
     FileUtils.mkdir_p(File.dirname(path))
-    File.write(path, content)
+    File.binwrite(path, content)
     path
   end
 
@@ -73,6 +74,257 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     expect(calendar.days).to be_frozen
   end
 
+  it 'loads a single global holiday CSV with Redmine weekdays and no project mapping' do
+    write('holiday.csv', "任意のヘッダー,任意の列名\n2026/1/1,元日,working,ignored\n2026/09/22,休日,anything\n".encode(Encoding::Windows_31J))
+    write('settings.csv', "ignored,legacy\n")
+    write('calendars.csv', "also,ignored\n")
+    write('project_calendars.csv', "ignored,too\n")
+
+    snapshot = loader(fallback: [3, 7]).load
+    calendar = snapshot.calendars.fetch('global')
+
+    expect(snapshot.default_calendar_id).to eq('global')
+    expect(snapshot.project_calendars).to eq({})
+    expect(snapshot.calendars.keys).to eq(['global'])
+    expect(calendar.name).to eq('Global holidays')
+    expect(calendar.non_working_week_days).to eq([0, 3])
+    expect(calendar.day_info(Date.new(2026, 1, 1))).to include(type: 'non_working', source: 'override')
+    expect(calendar.day_info(Date.new(2026, 9, 22))).to include(type: 'non_working', source: 'override')
+    expect(calendar.day_info(Date.new(2026, 1, 4))).to include(type: 'non_working', source: 'weekly')
+  end
+
+  it 'loads the YAML-only CI fixture with a valid US inheritance and company holiday' do
+    directory = File.expand_path('../../../spa/tests/e2e-redmine/fixtures/business_calendars', __dir__)
+    snapshot = loader(directory: directory).load
+    company = snapshot.calendars.fetch('company-us')
+    us = snapshot.calendars.fetch('US')
+    thanksgiving = Date.new(2027, 11, 25)
+    thanksgiving_info = { name: 'Thanksgiving Day', type: 'non_working' }
+
+    expect(snapshot.status).to eq('ok')
+    expect(snapshot.default_calendar_id).to eq('company-us')
+    expect(company.day_info(Date.new(2027, 8, 12))).to include(
+      name: 'Company summer holiday', type: 'non_working', source: 'override'
+    )
+    expect(company.day_info(Date.new(2027, 7, 4))).to include(
+      name: 'Independence Day', type: 'non_working'
+    )
+    expect(us.days.fetch(thanksgiving)).to eq(thanksgiving_info)
+    expect(company.days.fetch(thanksgiving)).to eq(thanksgiving_info)
+    expect(company.day_info(thanksgiving)).to include(thanksgiving_info.merge(source: 'override'))
+  end
+
+  it 'resolves the dedicated CSV fixture as one global calendar for multiple projects' do
+    directory = File.expand_path('../../../spa/tests/e2e-redmine/fixtures/business_calendars_csv', __dir__)
+    snapshot = loader(directory: directory).load
+    repository = instance_double(RedmineCanvasGantt::BusinessCalendarRepository, snapshot: snapshot)
+    resolver = RedmineCanvasGantt::ProjectCalendarResolver.new(
+      repository: repository, fallback_non_working_week_days: [6, 7]
+    )
+    first_project = instance_double(Project, id: 1, identifier: 'first', ancestors: [])
+    second_project = instance_double(Project, id: 2, identifier: 'second', ancestors: [])
+
+    expect(snapshot.status).to eq('ok')
+    expect(snapshot.default_calendar_id).to eq('global')
+    expect(snapshot.project_calendars).to eq({})
+    expect(snapshot.calendars.keys).to eq(['global'])
+    expect(snapshot.calendars.fetch('global').days.fetch(Date.new(2027, 2, 11))).to eq(
+      name: 'Holiday', type: 'non_working'
+    )
+    payload = resolver.payload(projects: [])
+    expect(payload).to include(
+      status: 'ok', defaultCalendarId: 'global',
+      projectCalendarIds: {}
+    )
+    expect(payload.fetch(:calendars).fetch('global')).to include(
+      id: 'global', nonWorkingWeekDays: [0, 6]
+    )
+    expect(payload.fetch(:calendars).fetch('global').fetch(:days).fetch('2027-02-11')).to include(
+      name: 'Holiday', type: 'non_working'
+    )
+    # Snapshot assignments are explicit overrides; the public payload reports
+    # resolved project IDs, which inherit the default global calendar.
+    resolved_payload = resolver.payload(projects: [first_project, second_project])
+    expect(resolved_payload.fetch(:projectCalendarIds)).to eq(
+      '1' => 'global', '2' => 'global'
+    )
+    [first_project, second_project].each do |project|
+      expect(resolver.calendar_id_for(project)).to eq('global')
+      expect(resolver.day_info(Date.new(2027, 2, 11), project: project)).to include(
+        name: 'Holiday', type: 'non_working'
+      )
+    end
+  end
+
+  it 'ignores all CSV files except the root holiday.csv' do
+    write('settings.csv', "key,value\nschema_version,1\n")
+    write('calendars.csv', "id,name,file\nJP,Japan,holidays/jp.csv\n")
+    write('project_calendars.csv', "project_identifier,calendar_id\nwork,JP\n")
+    write('holidays/jp.csv', "date,name\n2026/1/1,Ignored\n")
+    write('holiday.csv', "unread header\n2026/1/2,Holiday\n")
+
+    expect(loader.load.calendars.keys).to eq(['global'])
+    expect(loader.load.calendars.fetch('global').days.keys).to eq([Date.new(2026, 1, 2)])
+  end
+
+  it 'loads the bundled one-file CSV example' do
+    directory = File.expand_path('../../../examples/business_calendars_csv', __dir__)
+    snapshot = loader(directory: directory).load
+
+    expect(snapshot.default_calendar_id).to eq('global')
+    expect(snapshot.project_calendars).to eq({})
+    expect(snapshot.calendars.keys).to eq(['global'])
+    expect(snapshot.calendars.fetch('global').days.keys).to include(Date.new(2026, 1, 1))
+  end
+
+  it 'rejects malformed, duplicate, invalid, empty, and excessive holiday dates' do
+    write('holiday.csv', "header\n2026-01-01,New Year\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /YYYY\/M\/D/)
+
+    write('holiday.csv', "header\n2026/1/1,New Year\n2026/01/01,duplicate\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /duplicate date/)
+
+    write('holiday.csv', "header\n2026/2/30,Invalid\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /invalid date/)
+
+    write('holiday.csv', "header\n,Missing date\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /first column/)
+
+    write('holiday.csv', "header\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /contains no holidays/)
+
+    write('holiday.csv', "header\n\"2026/1/1,Holiday\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError)
+
+    rows = (0..10_000).map do |offset|
+      date = Date.new(2000, 1, 1) + offset
+      "#{date.year}/#{date.month}/#{date.day},Holiday"
+    end
+    write('holiday.csv', "header\n#{rows.join("\n")}\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /holiday count exceeds/)
+  end
+
+  it 'sanitizes malformed CSV bytes and bounds diagnostic values before JSON encoding' do
+    write('holiday.csv', "header\n".b + "\xFFbad,Holiday\n".b)
+
+    error = nil
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |raised| error = raised }
+    diagnostic = error.diagnostic
+
+    expect(diagnostic.fetch(:code)).to eq('INVALID_DATE')
+    expect(diagnostic.fetch(:value).encoding).to eq(Encoding::UTF_8)
+    expect(diagnostic.fetch(:value)).to be_valid_encoding
+    expect(diagnostic.fetch(:file)).to eq('holiday.csv')
+    expect(error.message).not_to include(@directory)
+    expect(error.message).not_to include(diagnostic.fetch(:value))
+    expect(error.message).to include('Date must use YYYY/M/D')
+    expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
+
+    cp932_date = "2026/１/1".encode(Encoding::Windows_31J)
+    write('holiday.csv', "header\n".b + cp932_date.b + ",Holiday\n".b)
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |raised|
+      diagnostic = raised.diagnostic
+      expect(diagnostic.fetch(:value).encoding).to eq(Encoding::UTF_8)
+      expect(diagnostic.fetch(:value)).to be_valid_encoding
+      expect { ActiveSupport::JSON.encode(diagnostic) }.not_to raise_error
+    }
+
+    cp932_oversized_value = ('あ' * 1_000).encode(Encoding::Windows_31J)
+    write('holiday.csv', "header\n".b + cp932_oversized_value.b + ",Holiday\n".b)
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |raised|
+      diagnostic = raised.diagnostic
+      expect(diagnostic.fetch(:value).encoding).to eq(Encoding::UTF_8)
+      expect(diagnostic.fetch(:value)).to be_valid_encoding
+      expect(diagnostic.fetch(:value).length).to be <= described_class::DIAGNOSTIC_VALUE_MAX_LENGTH
+      expect(diagnostic.fetch(:message).encoding).to eq(Encoding::UTF_8)
+      expect(diagnostic.fetch(:message).length).to be <= described_class::DIAGNOSTIC_TEXT_MAX_LENGTH
+      expect(raised.message.length).to be <= described_class::DIAGNOSTIC_TEXT_MAX_LENGTH
+      expect { ActiveSupport::JSON.encode(diagnostic) }.not_to raise_error
+    }
+
+    oversized_value = 'x' * 1_000
+    write('holiday.csv', "header\n#{oversized_value},Holiday\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |raised|
+      diagnostic = raised.diagnostic
+      expect(diagnostic.fetch(:value).length).to be <= described_class::DIAGNOSTIC_VALUE_MAX_LENGTH
+      expect(diagnostic.fetch(:message).length).to be <= described_class::DIAGNOSTIC_TEXT_MAX_LENGTH
+      expect(ActiveSupport::JSON.encode(diagnostic)).not_to include(oversized_value)
+    }
+
+    FileUtils.rm_f(File.join(@directory, 'holiday.csv'))
+    write('calendar.yml', "schema_version: 1\n#{'x' * 1_000}: true\ncalendar: {}\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |raised|
+      expect(raised.diagnostic.fetch(:message).length).to be <= described_class::DIAGNOSTIC_TEXT_MAX_LENGTH
+      expect(raised.message.length).to be <= described_class::DIAGNOSTIC_TEXT_MAX_LENGTH
+    }
+  end
+
+  it 'keeps diagnostic values separate from fixed reasons and uses safe fallbacks' do
+    reason_text = 'date must use YYYY-MM-DD'
+    write('calendar.yml', calendar_yaml(
+      id: 'invalid-date',
+      days: [{ date: reason_text, name: 'Invalid', type: 'non_working' }]
+    ))
+
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |error|
+      diagnostic = error.diagnostic
+      expect(diagnostic.fetch(:value)).to eq(reason_text)
+      expect(diagnostic.fetch(:message)).to eq("#{reason_text}.")
+      expect(error.message).to eq("calendar.yml: #{reason_text}.")
+      expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
+    }
+
+    error = loader.send(
+      :configuration_error,
+      'private secret must not appear',
+      file: File.join(@directory, 'calendar.yml'),
+      value: 'secret'
+    )
+    expect(error.message).to eq('calendar.yml: Calendar configuration value is invalid.')
+    expect(error.diagnostic.fetch(:message)).to eq('Calendar configuration value is invalid.')
+    expect(error.diagnostic.fetch(:value)).to eq('secret')
+    expect(error.message).not_to include('secret')
+    expect(error.diagnostic.fetch(:file)).to eq('calendar.yml')
+
+    unsafe_files = [
+      '../outside.yml',
+      File.join(File.dirname(@directory), 'outside.yml'),
+      "invalid-\xFF.yml".b,
+      'notes.txt'
+    ]
+    unsafe_files.each do |file|
+      unsafe_error = loader.send(:configuration_error, "#{file}: failed", file: file)
+      expect(unsafe_error.diagnostic[:file]).to be_nil
+      expect(unsafe_error.message.b).not_to include(file.to_s.b)
+      expect(unsafe_error.message).to be_valid_encoding
+      expect { ActiveSupport::JSON.encode(unsafe_error.diagnostic) }.not_to raise_error
+    end
+  end
+
+  it 'rejects YAML configuration mixed with the root holiday CSV' do
+    write('holiday.csv', "header\n2026/1/1,Holiday\n")
+    write('settings.yml', "schema_version: 1\n")
+
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /YAML files cannot be mixed/)
+  end
+
+  it 'rejects holiday CSV files larger than one MiB and symlinks outside the root' do
+    write('holiday.csv', "header\n#{'x' * described_class::MAX_FILE_SIZE}\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /file exceeds/)
+
+    outside = File.join(File.dirname(@directory), "#{File.basename(@directory)}-outside.csv")
+    File.write(outside, "header\n2026/1/1,Holiday\n")
+    FileUtils.rm(File.join(@directory, 'holiday.csv'))
+    File.symlink(outside, File.join(@directory, 'holiday.csv'))
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /outside calendar directory/) { |error|
+      expect(error.diagnostic[:file]).to be_nil
+      expect(error.message).not_to include(outside)
+      expect(ActiveSupport::JSON.encode(error.diagnostic)).to be_a(String)
+    }
+  ensure
+    FileUtils.rm_f(outside) if outside
+  end
+
   it 'uses Redmine weekdays when a calendar and its bases omit weekdays' do
     write('custom.yml', calendar_yaml(id: 'custom', week_days: nil))
 
@@ -129,7 +381,33 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     write('one.yml', calendar_yaml(id: 'duplicate'))
     write('nested/two.yml', calendar_yaml(id: 'duplicate'))
 
-    expect { loader.load }.to raise_error(described_class::ConfigurationError, /duplicate calendar.id/)
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /duplicate calendar.id/) { |error|
+      diagnostic = error.diagnostic
+      expect(diagnostic.fetch(:message)).to include('duplicate calendar.id')
+      expect(diagnostic.fetch(:value)).to eq('duplicate')
+      expect(error.message).to include('duplicate calendar.id')
+      expect(diagnostic.fetch(:file)).to eq('one.yml')
+      expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
+    }
+  end
+
+  it 'reports safe config-relative paths so same-named files remain distinguishable' do
+    write('generated/JP.yml', "schema_version: 2\ncalendar: {}\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |error|
+      diagnostic = error.diagnostic
+      expect(diagnostic.fetch(:file)).to eq('generated/JP.yml')
+      expect(error.message).not_to include(@directory)
+      expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
+    }
+
+    FileUtils.rm_f(File.join(@directory, 'generated/JP.yml'))
+    write('custom/JP.yml', "schema_version: 2\ncalendar: {}\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |error|
+      diagnostic = error.diagnostic
+      expect(diagnostic.fetch(:file)).to eq('custom/JP.yml')
+      expect(error.message).not_to include(@directory)
+      expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
+    }
   end
 
   it 'rejects duplicate dates within a file' do
@@ -141,7 +419,12 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
       ]
     ))
 
-    expect { loader.load }.to raise_error(described_class::ConfigurationError, /duplicate date/)
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /duplicate date/) { |error|
+      diagnostic = error.diagnostic
+      expect(diagnostic.fetch(:message)).to include('duplicate date')
+      expect(diagnostic.fetch(:value)).to eq('2027-01-01')
+      expect(error.message).not_to include(diagnostic.fetch(:value))
+    }
   end
 
   it 'rejects missing and cyclic bases' do
