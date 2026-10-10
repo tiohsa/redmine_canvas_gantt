@@ -328,7 +328,7 @@ jobs:
         working-directory: .
         run: |
           docker compose exec -T redmine mkdir -p /usr/src/redmine/config/redmine_canvas_gantt/business_calendars
-          docker compose cp examples/business_calendars/. redmine:/usr/src/redmine/config/redmine_canvas_gantt/business_calendars/
+          docker compose cp spa/tests/e2e-redmine/fixtures/business_calendars/. redmine:/usr/src/redmine/config/redmine_canvas_gantt/business_calendars/
 
       - name: Run backend specs
         working-directory: .

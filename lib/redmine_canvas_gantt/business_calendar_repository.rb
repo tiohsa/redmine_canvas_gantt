@@ -38,16 +38,16 @@ module RedmineCanvasGantt
         return @snapshot if @snapshot && !reload_check_due?(now)
 
         @last_checked_at = now
-        fingerprint = @loader.fingerprint
-        return @snapshot if @snapshot && fingerprint == @fingerprint
-
         begin
+          fingerprint = @loader.fingerprint
+          return @snapshot if @snapshot && fingerprint == @fingerprint
+
           loaded = @loader.load(revision: fingerprint)
           @snapshot = loaded
           @fingerprint = fingerprint
         rescue BusinessCalendarLoader::ConfigurationError => e
           log_reload_error(e, initial: @snapshot.nil?)
-          @snapshot ||= BusinessCalendarSnapshot.error(e.message, revision: fingerprint)
+          @snapshot ||= BusinessCalendarSnapshot.error(e.message, revision: fingerprint || '')
         end
         @snapshot
       end

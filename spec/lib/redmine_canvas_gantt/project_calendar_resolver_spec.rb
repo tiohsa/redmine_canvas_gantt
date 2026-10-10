@@ -49,6 +49,24 @@ RSpec.describe RedmineCanvasGantt::ProjectCalendarResolver do
     expect(resolver.calendar_id_for(root)).to eq('default')
   end
 
+  it 'uses one global calendar for unrelated projects and their child projects' do
+    global = calendar('global', days: { Date.new(2027, 1, 4) => { name: 'Holiday', type: 'non_working' } })
+    repository = instance_double(
+      RedmineCanvasGantt::BusinessCalendarRepository,
+      snapshot: snapshot(default: 'global', calendars: { 'global' => global })
+    )
+    resolver = described_class.new(repository: repository, fallback_non_working_week_days: [6, 7])
+    parent_a = instance_double(Project, id: 1, identifier: 'a-parent', ancestors: [])
+    child_a = instance_double(Project, id: 2, identifier: 'a-child', ancestors: [parent_a])
+    parent_b = instance_double(Project, id: 3, identifier: 'b-parent', ancestors: [])
+    child_b = instance_double(Project, id: 4, identifier: 'b-child', ancestors: [parent_b])
+
+    [parent_a, child_a, parent_b, child_b].each do |project|
+      expect(resolver.calendar_id_for(project)).to eq('global')
+      expect(resolver.working_day?(Date.new(2027, 1, 4), project: project)).to be(false)
+    end
+  end
+
   it 'uses explicit working days over holidays and weekends' do
     workday = Date.new(2027, 1, 3)
     custom = calendar(

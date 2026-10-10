@@ -1,4 +1,5 @@
 require 'digest'
+require 'csv'
 require 'yaml'
 require_relative 'business_calendar'
 
@@ -7,11 +8,13 @@ module RedmineCanvasGantt
     class ConfigurationError < StandardError; end
 
     MAX_FILE_SIZE = 1 * 1024 * 1024
+    MAX_CSV_HOLIDAYS = 10_000
     MAX_CALENDARS = 100
     MAX_DAYS = 10_000
     MAX_BASE_DEPTH = 20
     CALENDAR_ID_PATTERN = /\A[A-Za-z0-9_-]{1,64}\z/
     ISO_DATE_PATTERN = /\A\d{4}-\d{2}-\d{2}\z/
+    CSV_DATE_PATTERN = /\A[0-9]{4}\/[0-9]{1,2}\/[0-9]{1,2}\z/
     SETTINGS_KEYS = %w[schema_version default_calendar project_calendars].freeze
     FILE_KEYS = %w[schema_version calendar source days].freeze
     CALENDAR_KEYS = %w[id name base non_working_week_days managed].freeze
@@ -29,11 +32,18 @@ module RedmineCanvasGantt
     def fingerprint
       return 'missing' unless File.directory?(@directory)
 
-      entries = calendar_files(include_settings: true).map do |path|
+      entries = tracked_files.map do |path|
+        unless File.exist?(path) || File.symlink?(path)
+          next "#{relative_path(path)}:missing"
+        end
         stat = File.stat(path)
         [relative_path(path), stat.mtime.to_f, stat.size].join(':')
       end
       Digest::SHA256.hexdigest(entries.join("\n"))
+    rescue ConfigurationError
+      raise
+    rescue SystemCallError => e
+      raise ConfigurationError, "#{@directory}: #{e.message}"
     end
 
     def load(revision: fingerprint)
@@ -42,6 +52,9 @@ module RedmineCanvasGantt
       end
 
       settings = load_settings
+      if File.exist?(File.join(@directory, 'holiday.csv')) || File.symlink?(File.join(@directory, 'holiday.csv'))
+        settings = { 'default_calendar' => 'global', 'project_calendars' => {}.freeze }.freeze
+      end
       definitions = load_calendar_definitions
       validate_calendar_references!(settings, definitions)
       calendars = resolve_calendars(definitions)
@@ -90,6 +103,16 @@ module RedmineCanvasGantt
 
     def load_calendar_definitions
       definitions = {}
+      holiday_path = File.join(@directory, 'holiday.csv')
+      if File.exist?(holiday_path) || File.symlink?(holiday_path)
+        yaml_files = calendar_files(include_settings: true)
+        unless yaml_files.empty?
+          raise ConfigurationError, "#{yaml_files.first}: YAML files cannot be mixed with holiday.csv"
+        end
+        definitions['global'] = load_csv_calendar(holiday_path)
+        return definitions.freeze
+      end
+
       files = calendar_files(include_settings: false)
       if files.size > MAX_CALENDARS
         raise ConfigurationError, "#{@directory}: calendar count exceeds #{MAX_CALENDARS}"
@@ -110,6 +133,61 @@ module RedmineCanvasGantt
         definitions[id] = definition
       end
       definitions.freeze
+    end
+
+    def load_csv_calendar(path)
+      ensure_safe_path!(path)
+      unless File.file?(path)
+        raise ConfigurationError, "#{path}: must be a regular file"
+      end
+      size = File.size(path)
+      raise ConfigurationError, "#{path}: file exceeds #{MAX_FILE_SIZE} bytes" if size > MAX_FILE_SIZE
+
+      days = {}
+      records = 0
+      # Holiday names and headers are ignored, so the CSV can be parsed as
+      # bytes. The only interpreted field is an ASCII date in column one.
+      content = File.binread(path).force_encoding(Encoding::ASCII_8BIT)
+      CSV.parse(content).each_with_index do |row, index|
+        next if index.zero? # The first row is the required header.
+        next if row.empty?
+
+        date_value = row[0]
+        if date_value.nil? || date_value.empty?
+          raise ConfigurationError, "#{path}: row #{index + 1}: first column must contain a date"
+        end
+        unless CSV_DATE_PATTERN.match?(date_value)
+          raise ConfigurationError, "#{path}: row #{index + 1}: date must use YYYY/M/D"
+        end
+
+        year, month, day = date_value.split('/').map(&:to_i)
+        date = Date.new(year, month, day)
+        if days.key?(date)
+          raise ConfigurationError, "#{path}: row #{index + 1}: duplicate date #{date.iso8601}"
+        end
+        records += 1
+        if records > MAX_CSV_HOLIDAYS
+          raise ConfigurationError, "#{path}: holiday count exceeds #{MAX_CSV_HOLIDAYS}"
+        end
+
+        days[date] = { name: 'Holiday'.freeze, type: 'non_working'.freeze }.freeze
+      rescue Date::Error, ArgumentError => e
+        raise ConfigurationError, "#{path}: row #{index + 1}: invalid date (#{e.message})"
+      end
+      raise ConfigurationError, "#{path}: contains no holidays" if days.empty?
+
+      {
+        id: 'global'.freeze,
+        name: 'Global holidays'.freeze,
+        base: nil,
+        non_working_week_days: nil,
+        days: days.freeze,
+        path: path.freeze
+      }.freeze
+    rescue ConfigurationError
+      raise
+    rescue CSV::MalformedCSVError, EncodingError, IOError, SystemCallError => e
+      raise ConfigurationError, "#{path}: #{e.message}"
     end
 
     def normalize_calendar(data, path)
@@ -230,13 +308,23 @@ module RedmineCanvasGantt
     def calendar_files(include_settings:)
       return [] unless File.directory?(@directory)
 
-      Dir.glob(File.join(@directory, '**', '*')).select { |path| File.symlink?(path) }.each do |path|
+      Dir.glob(File.join(@directory, '**', '*.{yml,yaml}'), File::FNM_EXTGLOB).select { |path| File.symlink?(path) }.each do |path|
         ensure_safe_path!(path)
       end
       pattern = File.join(@directory, '**', '*.{yml,yaml}')
       Dir.glob(pattern, File::FNM_EXTGLOB).sort.filter do |path|
         File.file?(path) && (include_settings || relative_path(path) != 'settings.yml')
       end.tap { |paths| paths.each { |path| ensure_safe_path!(path) } }
+    end
+
+    def tracked_files
+      files = calendar_files(include_settings: true)
+      holiday_path = File.join(@directory, 'holiday.csv')
+      if File.exist?(holiday_path) || File.symlink?(holiday_path)
+        ensure_safe_path!(holiday_path)
+        files << holiday_path
+      end
+      files.uniq.sort
     end
 
     def ensure_safe_path!(path)

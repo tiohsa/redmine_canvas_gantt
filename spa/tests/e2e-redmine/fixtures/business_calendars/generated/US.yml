@@ -1,0 +1,24 @@
+schema_version: 1
+
+calendar:
+  id: US
+  name: United States
+  non_working_week_days: [6, 7]
+  managed: true
+
+source:
+  provider: holidays/holidays
+  package_version: example
+  generated_at: example
+  region: us
+  years:
+    from: 2027
+    to: 2027
+
+days:
+  - date: 2027-01-01
+    name: New Year's Day
+    type: non_working
+  - date: 2027-07-04
+    name: Independence Day
+    type: non_working

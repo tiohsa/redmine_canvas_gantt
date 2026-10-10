@@ -2,6 +2,43 @@
 
 This standalone Ruby bundle generates business calendar YAML files using the `holidays` gem. It is intentionally kept separate from Redmine's production bundle and does not use any external APIs.
 
+## CSV input format
+
+The importer skips the first line as a header. Each non-empty data line must contain an unquoted date in `YYYY/M/D` or `YYYY/MM/DD` form, followed by a comma. Columns after the first comma are ignored. LF and CRLF line endings are supported.
+
+```csv
+date,name
+2026/1/1,Holiday
+2026/01/12,Holiday
+```
+
+Duplicate dates, invalid dates, malformed data lines, and files with no valid dates are rejected.
+
+```bash
+ruby import_cabinet_office.rb \
+  --input /path/to/holidays.csv \
+  --calendar-id JP \
+  --name Japan \
+  --output /path/to/business_calendars/generated/JP.yml
+```
+
+The importer reads the file as binary and ignores every column after the first comma, so it does not decode the Japanese holiday names. It imports every listed date, sorts them, and replaces the generated calendar as a whole. Every date is `non_working` and has the fixed name `Japanese public holiday`. The input must be at most 1 MiB and the generated YAML must fit within the runtime's 1 MiB file limit and 10,000-day limit.
+
+#### Configure the generated calendar in Redmine
+
+Set `--output` to a path under Redmine's configured calendar directory. The default is `<Rails.root>/config/redmine_canvas_gantt/business_calendars`; when `REDMINE_CANVAS_GANTT_CALENDAR_DIR` is set, use that directory instead. Place a `settings.yml` in the same directory to select `JP` as the default and assign it to a project:
+
+```yaml
+schema_version: 1
+default_calendar: JP
+project_calendars:
+  japan-project: JP
+```
+
+Replace `japan-project` with the Redmine project identifier. Child projects inherit the nearest parent project's assignment. For company-specific working-day overrides, create a separate calendar based on `JP`, as in the [company Japan example](../../examples/business_calendars/custom/company-japan.yml).
+
+The runtime detects file changes within the configured reload interval, which defaults to 60 seconds. Reload the Gantt page after detection to use the updated calendar. Changes to the CSV do not regenerate YAML automatically: rerun the import command with `--force`. This replaces the snapshot only when the existing YAML has `calendar.managed: true`. See [Business calendars](../../README.md#business-calendars) for runtime details.
+
 ## Using Ruby and Bundler
 
 ```bash

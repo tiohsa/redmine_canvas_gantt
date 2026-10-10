@@ -47,6 +47,111 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarRepository do
     expect(after.calendars.fetch('test').name).to eq('After change')
   end
 
+  it 'reloads global holiday CSV changes and removes dates deleted from the file' do
+    clock = { now: 0.0 }
+    csv_path = File.join(@directory, 'holiday.csv')
+    File.write(csv_path, "header\n2027/1/1,Ignored name\n2027/1/2,Also ignored\n")
+    subject_repository = repository(clock: clock)
+    before = subject_repository.snapshot
+    expect(before.calendars.fetch('global').days.keys).to contain_exactly(Date.new(2027, 1, 1), Date.new(2027, 1, 2))
+
+    clock[:now] = 1.0
+    File.write(csv_path, "different header\n2027/1/1,Renamed\n")
+    after = subject_repository.snapshot
+
+    expect(after.revision).not_to eq(before.revision)
+    expect(after.calendars.fetch('global').days.keys).to eq([Date.new(2027, 1, 1)])
+  end
+
+  it 'retains the previous snapshot for invalid CSV and recovers when corrected' do
+    clock = { now: 0.0 }
+    csv_path = File.join(@directory, 'holiday.csv')
+    File.write(csv_path, "header\n2027/1/1,Holiday\n")
+    subject_repository = repository(clock: clock)
+    valid = subject_repository.snapshot
+
+    clock[:now] = 1.0
+    File.write(csv_path, "header\n2027/2/30,Invalid\n")
+    expect(subject_repository.snapshot).to equal(valid)
+    expect(logger).to have_received(:warn).with(/invalid date/)
+
+    clock[:now] = 2.0
+    File.write(csv_path, "new header\n2027/1/2,Holiday\n")
+    recovered = subject_repository.snapshot
+    expect(recovered).not_to equal(valid)
+    expect(recovered.calendars.fetch('global').days.keys).to eq([Date.new(2027, 1, 2)])
+  end
+
+  it 'reloads to weekday fallback when holiday.csv is deleted and can recover when it returns' do
+    clock = { now: 0.0 }
+    csv_path = File.join(@directory, 'holiday.csv')
+    File.write(csv_path, "header\n2027/1/1,Holiday\n")
+    subject_repository = repository(clock: clock)
+    csv_snapshot = subject_repository.snapshot
+    expect(csv_snapshot.default_calendar_id).to eq('global')
+
+    clock[:now] = 1.0
+    FileUtils.rm(csv_path)
+    fallback = subject_repository.snapshot
+    expect(fallback).not_to equal(csv_snapshot)
+    expect(fallback.calendars).to eq({})
+    expect(fallback.default_calendar_id).to be_nil
+
+    clock[:now] = 2.0
+    File.write(csv_path, "header\n2027/1/3,Holiday\n")
+    recovered = subject_repository.snapshot
+    expect(recovered).not_to equal(fallback)
+    expect(recovered.calendars.fetch('global').days.keys).to eq([Date.new(2027, 1, 3)])
+  end
+
+  it 'rejects mixed YAML configuration and ignores other CSV files' do
+    clock = { now: 0.0 }
+    csv_path = File.join(@directory, 'holiday.csv')
+    File.write(csv_path, "header\n2027/1/1,Holiday\n")
+    subject_repository = repository(clock: clock)
+    valid = subject_repository.snapshot
+
+    File.write(File.join(@directory, 'settings.csv'), "nonsense\n")
+    File.write(File.join(@directory, 'calendars.csv'), "nonsense\n")
+    File.write(File.join(@directory, 'project_calendars.csv'), "nonsense\n")
+    File.write(File.join(@directory, 'unreferenced.csv'), "nonsense\n")
+    clock[:now] = 1.0
+    expect(subject_repository.snapshot).to equal(valid)
+
+    clock[:now] = 2.0
+    File.write(File.join(@directory, 'calendar.yml'), <<~YAML)
+      schema_version: 1
+      calendar:
+        id: extra
+        name: Extra
+    YAML
+    expect(subject_repository.snapshot).to equal(valid)
+
+    clock[:now] = 3.0
+    FileUtils.rm(File.join(@directory, 'calendar.yml'))
+    expect(subject_repository.snapshot).to equal(valid)
+  end
+
+  it 'retains the last valid snapshot when holiday.csv becomes an escaping symlink' do
+    clock = { now: 0.0 }
+    csv_path = File.join(@directory, 'holiday.csv')
+    File.write(csv_path, "header\n2027/1/1,Holiday\n")
+    subject_repository = repository(clock: clock)
+    valid = subject_repository.snapshot
+    outside = File.join(File.dirname(@directory), "#{File.basename(@directory)}-outside.csv")
+    File.write(outside, "header\n2027/1/1,Holiday\n")
+
+    FileUtils.rm(csv_path)
+    File.symlink(outside, csv_path)
+    clock[:now] = 1.0
+    retained = subject_repository.snapshot
+
+    expect(retained).to equal(valid)
+    expect(logger).to have_received(:warn).with(/outside calendar directory/)
+  ensure
+    FileUtils.rm_f(outside) if outside
+  end
+
   it 'changes revision when only file mtime changes' do
     clock = { now: 0.0 }
     write_calendar(name: 'Same')

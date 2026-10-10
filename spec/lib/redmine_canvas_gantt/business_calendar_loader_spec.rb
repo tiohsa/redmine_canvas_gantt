@@ -73,6 +73,93 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     expect(calendar.days).to be_frozen
   end
 
+  it 'loads a single global holiday CSV with Redmine weekdays and no project mapping' do
+    write('holiday.csv', "任意のヘッダー,任意の列名\n2026/1/1,元日,working,ignored\n2026/09/22,休日,anything\n".encode(Encoding::Windows_31J))
+    write('settings.csv', "ignored,legacy\n")
+    write('calendars.csv', "also,ignored\n")
+    write('project_calendars.csv', "ignored,too\n")
+
+    snapshot = loader(fallback: [3, 7]).load
+    calendar = snapshot.calendars.fetch('global')
+
+    expect(snapshot.default_calendar_id).to eq('global')
+    expect(snapshot.project_calendars).to eq({})
+    expect(snapshot.calendars.keys).to eq(['global'])
+    expect(calendar.name).to eq('Global holidays')
+    expect(calendar.non_working_week_days).to eq([0, 3])
+    expect(calendar.day_info(Date.new(2026, 1, 1))).to include(type: 'non_working', source: 'override')
+    expect(calendar.day_info(Date.new(2026, 9, 22))).to include(type: 'non_working', source: 'override')
+    expect(calendar.day_info(Date.new(2026, 1, 4))).to include(type: 'non_working', source: 'weekly')
+  end
+
+  it 'ignores all CSV files except the root holiday.csv' do
+    write('settings.csv', "key,value\nschema_version,1\n")
+    write('calendars.csv', "id,name,file\nJP,Japan,holidays/jp.csv\n")
+    write('project_calendars.csv', "project_identifier,calendar_id\nwork,JP\n")
+    write('holidays/jp.csv', "date,name\n2026/1/1,Ignored\n")
+    write('holiday.csv', "unread header\n2026/1/2,Holiday\n")
+
+    expect(loader.load.calendars.keys).to eq(['global'])
+    expect(loader.load.calendars.fetch('global').days.keys).to eq([Date.new(2026, 1, 2)])
+  end
+
+  it 'loads the bundled one-file CSV example' do
+    directory = File.expand_path('../../../examples/business_calendars_csv', __dir__)
+    snapshot = loader(directory: directory).load
+
+    expect(snapshot.default_calendar_id).to eq('global')
+    expect(snapshot.project_calendars).to eq({})
+    expect(snapshot.calendars.keys).to eq(['global'])
+    expect(snapshot.calendars.fetch('global').days.keys).to include(Date.new(2026, 1, 1))
+  end
+
+  it 'rejects malformed, duplicate, invalid, empty, and excessive holiday dates' do
+    write('holiday.csv', "header\n2026-01-01,New Year\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /YYYY\/M\/D/)
+
+    write('holiday.csv', "header\n2026/1/1,New Year\n2026/01/01,duplicate\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /duplicate date/)
+
+    write('holiday.csv', "header\n2026/2/30,Invalid\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /invalid date/)
+
+    write('holiday.csv', "header\n,Missing date\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /first column/)
+
+    write('holiday.csv', "header\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /contains no holidays/)
+
+    write('holiday.csv', "header\n\"2026/1/1,Holiday\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError)
+
+    rows = (0..10_000).map do |offset|
+      date = Date.new(2000, 1, 1) + offset
+      "#{date.year}/#{date.month}/#{date.day},Holiday"
+    end
+    write('holiday.csv', "header\n#{rows.join("\n")}\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /holiday count exceeds/)
+  end
+
+  it 'rejects YAML configuration mixed with the root holiday CSV' do
+    write('holiday.csv', "header\n2026/1/1,Holiday\n")
+    write('settings.yml', "schema_version: 1\n")
+
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /YAML files cannot be mixed/)
+  end
+
+  it 'rejects holiday CSV files larger than one MiB and symlinks outside the root' do
+    write('holiday.csv', "header\n#{'x' * described_class::MAX_FILE_SIZE}\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /file exceeds/)
+
+    outside = File.join(File.dirname(@directory), "#{File.basename(@directory)}-outside.csv")
+    File.write(outside, "header\n2026/1/1,Holiday\n")
+    FileUtils.rm(File.join(@directory, 'holiday.csv'))
+    File.symlink(outside, File.join(@directory, 'holiday.csv'))
+    expect { loader.load }.to raise_error(described_class::ConfigurationError, /outside calendar directory/)
+  ensure
+    FileUtils.rm_f(outside) if outside
+  end
+
   it 'uses Redmine weekdays when a calendar and its bases omit weekdays' do
     write('custom.yml', calendar_yaml(id: 'custom', week_days: nil))
 

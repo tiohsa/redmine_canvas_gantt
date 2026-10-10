@@ -1,0 +1,25 @@
+schema_version: 1
+
+calendar:
+  id: company-us
+  name: US Company Calendar
+  base: JP
+  managed: false
+
+source:
+  provider: custom
+  based_on: JP
+
+days:
+  - date: 2027-01-01
+    name: New Year's Day
+    type: non_working
+  - date: 2027-07-04
+    name: Independence Day
+    type: non_working
+  - date: 2027-08-12
+    name: Company summer holiday
+    type: non_working
+  - date: 2027-09-18
+    name: Substitute workday
+    type: working
