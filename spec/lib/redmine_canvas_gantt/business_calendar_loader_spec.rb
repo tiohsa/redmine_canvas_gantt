@@ -204,6 +204,46 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarLoader do
     expect { loader.load }.to raise_error(described_class::ConfigurationError, /holiday count exceeds/)
   end
 
+  it 'sanitizes malformed CSV bytes and bounds diagnostic values before JSON encoding' do
+    write('holiday.csv', "header\n".b + "\xFFbad,Holiday\n".b)
+
+    error = nil
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |raised| error = raised }
+    diagnostic = error.diagnostic
+
+    expect(diagnostic.fetch(:code)).to eq('INVALID_DATE')
+    expect(diagnostic.fetch(:value).encoding).to eq(Encoding::UTF_8)
+    expect(diagnostic.fetch(:value)).to be_valid_encoding
+    expect(diagnostic.fetch(:file)).to eq('holiday.csv')
+    expect(error.message).not_to include(@directory)
+    expect(ActiveSupport::JSON.encode(diagnostic)).to be_a(String)
+
+    cp932_date = "2026/１/1".encode(Encoding::Windows_31J)
+    write('holiday.csv', "header\n".b + cp932_date.b + ",Holiday\n".b)
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |raised|
+      diagnostic = raised.diagnostic
+      expect(diagnostic.fetch(:value).encoding).to eq(Encoding::UTF_8)
+      expect(diagnostic.fetch(:value)).to be_valid_encoding
+      expect { ActiveSupport::JSON.encode(diagnostic) }.not_to raise_error
+    }
+
+    oversized_value = 'x' * 1_000
+    write('holiday.csv', "header\n#{oversized_value},Holiday\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |raised|
+      diagnostic = raised.diagnostic
+      expect(diagnostic.fetch(:value).length).to be <= described_class::DIAGNOSTIC_VALUE_MAX_LENGTH
+      expect(diagnostic.fetch(:message).length).to be <= described_class::DIAGNOSTIC_TEXT_MAX_LENGTH
+      expect(ActiveSupport::JSON.encode(diagnostic)).not_to include(oversized_value)
+    }
+
+    FileUtils.rm_f(File.join(@directory, 'holiday.csv'))
+    write('calendar.yml', "schema_version: 1\n#{'x' * 1_000}: true\ncalendar: {}\n")
+    expect { loader.load }.to raise_error(described_class::ConfigurationError) { |raised|
+      expect(raised.diagnostic.fetch(:message).length).to be <= described_class::DIAGNOSTIC_TEXT_MAX_LENGTH
+      expect(raised.message.length).to be <= described_class::DIAGNOSTIC_TEXT_MAX_LENGTH
+    }
+  end
+
   it 'rejects YAML configuration mixed with the root holiday CSV' do
     write('holiday.csv', "header\n2026/1/1,Holiday\n")
     write('settings.yml', "schema_version: 1\n")

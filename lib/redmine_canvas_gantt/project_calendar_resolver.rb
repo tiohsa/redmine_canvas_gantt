@@ -6,8 +6,7 @@ module RedmineCanvasGantt
 
     def initialize(repository: BusinessCalendarRepository.instance, fallback_non_working_week_days: nil, snapshot: nil)
       @repository = repository
-      @snapshot = snapshot
-      @fixed_snapshot = snapshot
+      @calendar_state = state_for_snapshot(snapshot) if snapshot
       @fallback_non_working_week_days = normalize_fallback_week_days(
         fallback_non_working_week_days || Setting.non_working_week_days
       )
@@ -121,14 +120,7 @@ module RedmineCanvasGantt
     end
 
     def payload(projects:)
-      state = if @fixed_snapshot
-                { snapshot: @fixed_snapshot, validation_status: @fixed_snapshot.status == 'error' ? 'invalid' : 'valid', diagnostic: nil }
-              elsif @repository.respond_to?(:validation_state)
-                @repository.validation_state
-              else
-                current = current_snapshot
-                { snapshot: current, validation_status: current.status == 'error' ? 'invalid' : 'valid', diagnostic: nil }
-              end
+      state = current_state
       snapshot = state.fetch(:snapshot)
       project_calendar_ids = Array(projects).each_with_object({}) do |project, result|
         calendar_id = calendar_id_for(project, snapshot: snapshot)
@@ -150,8 +142,27 @@ module RedmineCanvasGantt
 
     private
 
+    def current_state
+      @calendar_state ||= begin
+        state = @repository.validation_state if @repository.respond_to?(:validation_state)
+        if state.is_a?(Hash) && state[:snapshot]
+          state
+        else
+          state_for_snapshot(@repository.snapshot)
+        end
+      end
+    end
+
     def current_snapshot
-      @snapshot ||= @repository.snapshot
+      current_state.fetch(:snapshot)
+    end
+
+    def state_for_snapshot(snapshot)
+      {
+        snapshot: snapshot,
+        validation_status: snapshot.status == 'error' ? 'invalid' : 'valid',
+        diagnostic: nil
+      }.freeze
     end
 
     def project_and_ancestors(project)

@@ -97,7 +97,7 @@ RSpec.describe RedmineCanvasGantt::BusinessCalendarRepository do
       validation_status: 'stale',
       diagnostic: include(code: 'INVALID_DATE', file: 'holiday.csv', line: 2, value: '2027/2/30')
     )
-    expect(logger).to have_received(:warn).with(/invalid date/)
+    expect(logger).to have_received(:warn).with(/invalid date/).at_least(:once)
 
     clock[:now] = 2.0
     File.write(csv_path, "new header\n2027/1/2,Holiday\n")

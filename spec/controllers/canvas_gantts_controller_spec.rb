@@ -85,6 +85,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(result[:diagnostic]).to include(code: 'INVALID_DATE', file: 'holiday.csv', line: 2, value: '2027/2/30')
       expect(result[:diagnostic][:message]).to eq(canvas_gantt_t(:label_canvas_gantt_calendar_invalid_date))
       expect(result[:validationMessage]).to eq(canvas_gantt_t(:label_canvas_gantt_business_calendar_invalid))
+      expect { ActiveSupport::JSON.encode(result) }.not_to raise_error
     end
 
     it 'returns a generic localized summary without diagnostics to regular users' do
@@ -95,6 +96,45 @@ RSpec.describe CanvasGanttsController, type: :controller do
       expect(result[:diagnostic]).to be_nil
       expect(result[:validationMessage]).to eq(canvas_gantt_t(:label_canvas_gantt_business_calendar_invalid))
       expect(result.to_s).not_to include('holiday.csv', '2027/2/30')
+    end
+
+    it 'serializes bounded malformed CSV diagnostics for admins and hides them from regular users' do
+      cases = [
+        ["header\n".b + "\xFFbad,Holiday\n".b, "\xFFbad".b],
+        ["header\n".b + "2026/１/1".encode(Encoding::Windows_31J).b + ",Holiday\n".b, "2026/１/1"],
+        ["header\n".b + ("x" * 1_000) + ",Holiday\n".b, 'x' * 1_000]
+      ]
+
+      cases.each do |csv, raw_value|
+        Dir.mktmpdir('canvas-calendar-api') do |directory|
+          File.binwrite(File.join(directory, 'holiday.csv'), csv)
+          loader = RedmineCanvasGantt::BusinessCalendarLoader.new(
+            directory: directory, fallback_non_working_week_days: [6, 7]
+          )
+          repository = RedmineCanvasGantt::BusinessCalendarRepository.send(
+            :new, loader: loader, reload_interval: 0, clock: -> { 0.0 }, logger: nil
+          )
+          resolver = RedmineCanvasGantt::ProjectCalendarResolver.new(
+            repository: repository, fallback_non_working_week_days: [6, 7]
+          )
+          allow(controller).to receive(:business_calendar_resolver).and_return(resolver)
+
+          allow(User).to receive(:current).and_return(instance_double(User, admin?: true))
+          admin_result = controller.send(:business_calendar_payload, [1])
+          diagnostic = admin_result.fetch(:diagnostic)
+          expect(diagnostic.fetch(:value).length).to be <= RedmineCanvasGantt::BusinessCalendarLoader::DIAGNOSTIC_VALUE_MAX_LENGTH
+          expect(diagnostic.fetch(:message).length).to be <= RedmineCanvasGantt::BusinessCalendarLoader::DIAGNOSTIC_TEXT_MAX_LENGTH
+          expect(diagnostic.fetch(:cause).length).to be <= RedmineCanvasGantt::BusinessCalendarLoader::DIAGNOSTIC_TEXT_MAX_LENGTH
+          expect { ActiveSupport::JSON.encode(admin_result) }.not_to raise_error
+          expect(admin_result.to_s).not_to include(raw_value) if raw_value.encoding != Encoding::BINARY
+
+          allow(User).to receive(:current).and_return(instance_double(User, admin?: false))
+          user_result = controller.send(:business_calendar_payload, [1])
+          expect(user_result[:diagnostic]).to be_nil
+          expect(user_result.to_s).not_to include('holiday.csv', '2026/１/1', 'x' * 1_000)
+          expect { ActiveSupport::JSON.encode(user_result) }.not_to raise_error
+        end
+      end
     end
   end
 

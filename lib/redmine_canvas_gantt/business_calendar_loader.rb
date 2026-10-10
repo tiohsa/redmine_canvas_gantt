@@ -19,6 +19,8 @@ module RedmineCanvasGantt
 
     MAX_FILE_SIZE = 1 * 1024 * 1024
     MAX_CSV_HOLIDAYS = 10_000
+    DIAGNOSTIC_VALUE_MAX_LENGTH = 128
+    DIAGNOSTIC_TEXT_MAX_LENGTH = 512
     MAX_CALENDARS = 100
     MAX_DAYS = 10_000
     MAX_BASE_DEPTH = 20
@@ -95,20 +97,48 @@ module RedmineCanvasGantt
     end
 
     def configuration_error(message, file: nil, code: 'INVALID_CONFIGURATION', line: nil, value: nil, detail: nil)
-      source = file.to_s.split(':', 2).first
+      source = file.to_s.b.split(':'.b, 2).first
       basename = File.basename(source) if file
       basename = nil unless basename && %w[.csv .yml .yaml].include?(File.extname(basename))
-      safe_message = (detail || message).to_s
-      safe_message = safe_message.gsub(source, basename) if basename && !source.empty?
-      safe_message = safe_message.gsub(@directory, '')
+      safe_message_bytes = (detail || message).to_s.b
+      error_message_bytes = message.to_s.b
+      if basename && !source.empty?
+        safe_message_bytes = safe_message_bytes.gsub(source, basename.b)
+        error_message_bytes = error_message_bytes.gsub(source, basename.b)
+      end
+      directory_bytes = @directory.to_s.b
+      safe_message_bytes = safe_message_bytes.gsub(directory_bytes, ''.b)
+      error_message_bytes = error_message_bytes.gsub(directory_bytes, ''.b)
+      unless value.nil?
+        value_bytes = value.to_s.b
+        error_message_bytes = error_message_bytes.gsub(value_bytes, '[redacted]'.b) unless value_bytes.empty?
+      end
+      safe_message = sanitize_diagnostic_text(safe_message_bytes, max_length: DIAGNOSTIC_TEXT_MAX_LENGTH)
       diagnostic = {
-        code: code,
-        file: basename,
+        code: sanitize_diagnostic_text(code, max_length: 128),
+        file: basename && sanitize_diagnostic_text(basename, max_length: 128),
         line: line,
         message: safe_message
       }
-      diagnostic[:value] = value unless value.nil?
-      ConfigurationError.new(message, diagnostic: diagnostic.compact)
+      diagnostic[:value] = sanitize_diagnostic_text(value, max_length: DIAGNOSTIC_VALUE_MAX_LENGTH) unless value.nil?
+      ConfigurationError.new(
+        sanitize_diagnostic_text(error_message_bytes, max_length: DIAGNOSTIC_TEXT_MAX_LENGTH),
+        diagnostic: diagnostic.compact
+      )
+    end
+
+    def sanitize_diagnostic_text(value, max_length:)
+      text = value.to_s.dup
+      normalized = if text.encoding == Encoding::BINARY
+                     text.force_encoding(Encoding::UTF_8).scrub("\uFFFD")
+                   else
+                     text.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "\uFFFD")
+                   end
+      normalized.each_char.take(max_length).join.freeze
+    rescue EncodingError
+      value.to_s.b.force_encoding(Encoding::BINARY).encode(
+        Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "\uFFFD"
+      ).each_char.take(max_length).join.freeze
     end
 
     def load_settings
