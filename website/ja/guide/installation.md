@@ -71,4 +71,4 @@ docker compose exec -T redmine bundle exec rake redmine_canvas_gantt:uninstall
 - チケットの表示範囲や編集可否が Redmine の可視性・権限に合うか
 - 画面が空なら開始日・期日とフィルター条件を確認する
 
-詳しくは [権限](/ja/administration/permissions)、[設定](/ja/administration/settings)、[営業日カレンダー](/ja/administration/calendars)、[Docker / Kubernetes での配置](/ja/administration/deployment) を参照してください。
+詳しくは [権限](/ja/administration/permissions)、[設定](/ja/administration/settings)、[営業日カレンダー](/ja/administration/calendars)、[Docker Compose での配置](/ja/administration/deployment) を参照してください。

@@ -17,9 +17,9 @@
 
 フォーカス条件は個人用ブラウザー状態で、共有 URL には含まれません。
 
-![予定と実績を表示するワークロードペイン（英語 UI）。](/images/workload-en.png)
+![予定と実績を表示するワークロードペイン。](/images/workload-en.png)
 
-ワークロードペイン（英語 UI）。[画像を拡大](/images/workload-en.png)
+ワークロードペイン。[画像を拡大](/images/workload-en.png)
 
 ## データとアクセス制御
 

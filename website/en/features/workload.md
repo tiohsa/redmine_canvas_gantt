@@ -17,9 +17,9 @@ The workload pane compares estimated effort with recorded work over the visible 
 
 Focus filters are personal browser state and are not included in shared URLs.
 
-![English UI showing the workload pane and its planned and actual series.](/images/workload-en.png)
+![Workload pane showing planned and actual series.](/images/workload-en.png)
 
-Workload pane (English UI). [View full-size image](/images/workload-en.png)
+Workload pane. [View full-size image](/images/workload-en.png)
 
 ## Data access and limits
 

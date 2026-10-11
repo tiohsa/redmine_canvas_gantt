@@ -71,4 +71,4 @@ After cleanup, remove the plugin directory (or its container volume / bind mount
 - Issue visibility and edits match Redmine permissions.
 - If the chart looks empty, check issue dates and filters.
 
-See [Permissions](/en/administration/permissions), [Settings](/en/administration/settings), [Business calendars](/en/administration/calendars), and [Docker / Kubernetes deployment](/en/administration/deployment).
+See [Permissions](/en/administration/permissions), [Settings](/en/administration/settings), [Business calendars](/en/administration/calendars), and [Docker Compose deployment](/en/administration/deployment).

@@ -16,9 +16,7 @@ The editor offers three types:
 
 When the stored relation is the reverse type `follows` or `blocked`, the editor reverses the displayed issue order. The scheduler uses `precedes` / `follows` for start-date constraints.
 
-<video controls preload="metadata" playsinline poster="/images/dependency-create-poster.png" src="/videos/dependency-create.mp4" style="width:100%;height:auto" aria-label="English UI recording of creating an issue dependency">Your browser cannot play this video. <a href="/videos/dependency-create.mp4">Download the dependency creation video</a>.</video>
-
-[Download the dependency creation video](/videos/dependency-create.mp4)
+<video controls preload="metadata" playsinline poster="/images/dependency-create-poster.png" src="/videos/dependency-create.mp4" style="width:100%;height:auto" aria-label="creating an issue dependency"></video>
 
 ## Default type and delay
 
@@ -32,9 +30,9 @@ Use toolbar relation settings to choose the default type, automatic delay calcul
 
 Duplicates, cycles, permissions, and date consistency can prevent a save. Editing requires visibility and permission for the related issues. Cross-project relations follow Redmine's `cross_project_issue_relations` setting.
 
-![English UI showing the dependency relation editor.](/images/relation-editor-en.png)
+![Dependency relation editor.](/images/relation-editor-en.png)
 
-Dependency editor (English UI). [View full-size image](/images/relation-editor-en.png)
+Dependency editor. [View full-size image](/images/relation-editor-en.png)
 
 ## Scheduling behavior
 

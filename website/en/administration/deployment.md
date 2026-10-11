@@ -22,34 +22,16 @@ Place either the YAML configuration files or `holiday.csv` in the host's `./busi
 
 For an existing production deployment, use a path visible to the Redmine process. A file that exists only on the host is unavailable unless the container mounts it.
 
-## Kubernetes
-
-Mount files distributed through a ConfigMap or similar source at the path named by `REDMINE_CANVAS_GANTT_CALENDAR_DIR`. A read-only mount is supported.
-
-```yaml
-env:
-  - name: REDMINE_CANVAS_GANTT_CALENDAR_DIR
-    value: /etc/redmine/business_calendars
-volumeMounts:
-  - name: business-calendars
-    mountPath: /etc/redmine/business_calendars
-    readOnly: true
-```
-
-Add the volume definition, ConfigMap `items`, and Pod details to the manifests used by your cluster. This snippet shows the environment variable and mount only; it is not a complete Deployment manifest.
-
-Each Puma worker / Pod keeps an independent in-memory calendar snapshot. Make every Pod read the same calendar files. ConfigMap changes are detected during periodic checks; there is no immediate push. Adjust the interval with `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` if needed.
-
 ## Updates and rollback
 
 Before distributing an update, validate syntax and references against the [business-calendar formats and constraints](/en/administration/calendars). After rollout, check the resolved calendar in Gantt; that page also describes reload failure behavior.
 
-For plugin installation and upgrade steps, see the [Installation guide](/en/guide/installation). Uninstalling the plugin does not remove an external calendar directory or ConfigMap.
+For plugin installation and upgrade steps, see the [Installation guide](/en/guide/installation). Uninstalling the plugin does not remove an external calendar directory.
 
 ## Compatibility and operations
 
 - Supported Redmine versions are 6.0, 6.1, and 7.0. Use a Ruby version supported by the selected Redmine release.
-- Do not distribute different calendars to different Pods or workers.
+- Do not distribute different calendars to different workers.
 - Display preferences belong to each user's browser profile; they are not shared by a server restart or container update.
 
 See [Business calendars](/en/administration/calendars) for formats and limits, and [Troubleshooting](/en/troubleshooting/) for loading problems.

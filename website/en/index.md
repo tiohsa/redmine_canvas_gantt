@@ -17,9 +17,9 @@ Learn how to install Canvas Gantt, use it day to day, and configure it as an adm
 
 Canvas Gantt lets you view and edit Redmine issues on a Gantt chart. See [Introduction](/en/guide/introduction) for its main features and [Basic operations](/en/guide/basic-operations) for the screen controls.
 
-![English UI day view of Canvas Gantt 0.18.0 on Redmine 7.0.0.stable, showing fictional issues and dependencies.](/images/canvas-gantt-overview-en.png)
+![Day view of Canvas Gantt 0.18.0 on Redmine 7.0.0.stable, showing issues and dependencies.](/images/canvas-gantt-overview-en.png)
 
-English UI with fictional demo data. [View full-size image](/images/canvas-gantt-overview-en.png)
+[View full-size image](/images/canvas-gantt-overview-en.png)
 
 ## Requirements
 

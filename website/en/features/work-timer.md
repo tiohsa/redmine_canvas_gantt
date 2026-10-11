@@ -10,9 +10,9 @@ Work Timer measures time on an issue and records it through Redmine's standard T
 4. Optionally enable auto-stop. With it off, measurement continues after the target; with it on, measurement stops exactly at the target.
 5. Stop the timer to prepare a time entry, then record it through Redmine's standard time-entry form.
 
-![English UI showing the work timer start dialog and target options.](/images/work-timer-en.png)
+![Work timer start dialog and target options.](/images/work-timer-en.png)
 
-Work Timer start dialog (English UI). [View full-size image](/images/work-timer-en.png)
+Work Timer start dialog. [View full-size image](/images/work-timer-en.png)
 
 ## Recording and pending work
 

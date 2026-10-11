@@ -4,9 +4,9 @@
 
 Redmine Canvas Gantt lets you view and edit Redmine issues on a Gantt chart. Adjust schedules, manage dependencies, and review workload in one screen.
 
-![English-language day view of Canvas Gantt 0.18.0 on Redmine 7.0.0.stable, showing fictional issues and dependencies.](/images/canvas-gantt-overview-en.png)
+![Day view of Canvas Gantt 0.18.0 on Redmine 7.0.0.stable, showing issues and dependencies.](/images/canvas-gantt-overview-en.png)
 
-English UI with fictional demo data. [View full-size image](/images/canvas-gantt-overview-en.png)
+[View full-size image](/images/canvas-gantt-overview-en.png)
 
 ## Main features
 

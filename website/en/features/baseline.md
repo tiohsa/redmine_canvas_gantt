@@ -12,17 +12,17 @@ A baseline is a schedule snapshot for comparison. It is not used for scheduling 
 
 Each project stores one baseline. Even when you save the whole project, comparison appears only for issues currently visible in the chart.
 
-![English UI showing baseline save controls.](/images/baseline-save-en.png)
+![Baseline save controls.](/images/baseline-save-en.png)
 
-Baseline save controls (English UI). [View full-size image](/images/baseline-save-en.png)
+Baseline save controls. [View full-size image](/images/baseline-save-en.png)
 
 ## Compare with the current schedule
 
 Open the toolbar's **Save Baseline** menu and select **Show baseline comparison** to overlay saved dates on each issue's current task bar. Hover over or select an issue to open a comparison popover with the current and baseline start date, due date, and duration. Differences are shown in calendar days. A positive start-date or due-date difference means the date is later than the saved date; a positive duration difference means the duration is longer.
 
-![English UI comparing current task dates with a saved baseline.](/images/baseline-compare-en.png)
+![Current task dates compared with a saved baseline.](/images/baseline-compare-en.png)
 
-Saved baseline comparison (English UI). [View full-size image](/images/baseline-compare-en.png)
+Saved baseline comparison. [View full-size image](/images/baseline-compare-en.png)
 
 ## Permissions and storage
 

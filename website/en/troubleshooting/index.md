@@ -62,7 +62,7 @@ Canvas Gantt does not have a general settings page. Configure display preference
 
 ### Why is a calendar change not visible?
 
-Check the file location and permissions for the Redmine process. Changes are checked at intervals of up to 60 seconds by default; reload Gantt after detection. Invalid changes retain the last valid calendar. With multiple Pods, confirm every Pod reads the same files.
+Check the file location and permissions for the Redmine process. Changes are checked at intervals of up to 60 seconds by default; reload Gantt after detection. Invalid changes retain the last valid calendar.
 
 ### Why is a baseline missing or unavailable to save?
 

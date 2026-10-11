@@ -16,9 +16,7 @@
 
 保存データが逆方向の `follows` または `blocked` の場合、編集 UI はチケットの順序を反転して表示します。スケジュール計算が開始日制約に使う関係は `precedes` / `follows` です。
 
-<video controls preload="metadata" playsinline poster="/images/dependency-create-poster.png" src="/videos/dependency-create.mp4" style="width:100%;height:auto" aria-label="チケット間の依存関係を作成する英語 UI の録画">この動画を再生できない場合は、<a href="/videos/dependency-create.mp4">依存関係作成の動画をダウンロード</a>してください。</video>
-
-[依存関係作成の動画をダウンロード](/videos/dependency-create.mp4)
+<video controls preload="metadata" playsinline poster="/images/dependency-create-poster.png" src="/videos/dependency-create.mp4" style="width:100%;height:auto" aria-label="チケット間の依存関係を作成する"></video>
 
 ## 既定値と delay
 
@@ -32,9 +30,9 @@
 
 重複、循環依存、権限、日付整合性の制約により保存できない場合があります。編集には関係するチケットの可視性と権限が必要です。プロジェクトをまたぐ関係は Redmine の `cross_project_issue_relations` 設定に従います。
 
-![依存関係の編集画面を示す英語 UI。](/images/relation-editor-en.png)
+![依存関係の編集画面。](/images/relation-editor-en.png)
 
-依存関係の編集画面（英語 UI）。[画像を拡大](/images/relation-editor-en.png)
+依存関係の編集画面。[画像を拡大](/images/relation-editor-en.png)
 
 ## スケジュールへの影響
 

@@ -20,9 +20,9 @@ To detach an issue, right-click its row in the sidebar and choose **Remove Paren
 
 Created issues inherit the parent project's project, tracker, status, priority, and assignee. A tracker selected in the table must be enabled in the parent project's tracker list. The UI has no configured maximum row count. If creation permission or Redmine validation causes any row to fail, the server rolls back the whole batch. Correct the error and submit again.
 
-![English UI showing the bulk child issue form.](/images/bulk-subtasks-en.png)
+![Bulk child issue form.](/images/bulk-subtasks-en.png)
 
-Bulk child issue form (English UI). [View full-size image](/images/bulk-subtasks-en.png)
+Bulk child issue form. [View full-size image](/images/bulk-subtasks-en.png)
 
 ## Notes
 

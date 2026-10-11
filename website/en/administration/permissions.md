@@ -11,9 +11,9 @@ Canvas Gantt access and issue actions are authorized separately. Grant only the 
 
 Viewing a baseline comparison requires `view_canvas_gantt`. Saving a baseline requires `manage_canvas_gantt_baseline`. Each project has one baseline snapshot; saving another replaces it.
 
-![English UI showing Canvas Gantt permission assignments.](/images/permissions-en.png)
+![Canvas Gantt permission assignments.](/images/permissions-en.png)
 
-English UI. [View full-size image](/images/permissions-en.png)
+[View full-size image](/images/permissions-en.png)
 
 If a role used the retired `edit_canvas_gantt` permission, it is not migrated automatically. Reassign `manage_canvas_gantt_baseline` only to roles that should continue saving baselines. Canvas Gantt permissions do not replace normal issue permissions.
 

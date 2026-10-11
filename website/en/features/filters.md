@@ -6,9 +6,9 @@ Filters narrow the chart to the issues you need. Shareable conditions can be sav
 
 Filter by subject text, project, tracker, target version, assignee, and status. Assignee filtering includes unassigned issues; target-version filtering includes issues with no version. Use the toolbar search field or the relevant filter menu.
 
-![English UI showing the status filter menu.](/images/status-filter-en.png)
+![Status filter menu.](/images/status-filter-en.png)
 
-Status filter (English UI). [View full-size image](/images/status-filter-en.png)
+Status filter. [View full-size image](/images/status-filter-en.png)
 
 ## Redmine saved queries
 

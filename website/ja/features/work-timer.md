@@ -10,9 +10,9 @@ Work Timer はチケット単位で作業時間を計測し、Redmine 標準の�
 4. 必要に応じて自動停止を有効にします。自動停止が無効なら目標時間後も計測を続け、有効なら目標時刻ちょうどで停止します。
 5. 停止すると作業時間が登録待ちになります。Redmine 標準の作業時間記録フォームで登録します。
 
-![作業時間タイマーの開始画面と目標選択肢を示す英語 UI。](/images/work-timer-en.png)
+![作業時間タイマーの開始画面と目標選択肢。](/images/work-timer-en.png)
 
-Work Timer の開始画面（英語 UI）。[画像を拡大](/images/work-timer-en.png)
+Work Timer の開始画面。[画像を拡大](/images/work-timer-en.png)
 
 ## 記録と保留状態
 

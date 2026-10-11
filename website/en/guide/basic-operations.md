@@ -1,12 +1,12 @@
 # Basic operations
 
-The screenshots and videos below use the English UI. Control labels vary with Redmine's language setting.
+Control labels vary with Redmine's language setting.
 
 ## Screen areas
 
-![English UI day view of Canvas Gantt 0.18.0 on Redmine 7.0.0.stable, showing fictional issues and dependencies.](/images/canvas-gantt-overview-en.png)
+![Day view of Canvas Gantt 0.18.0 on Redmine 7.0.0.stable, showing issues and dependencies.](/images/canvas-gantt-overview-en.png)
 
-English UI with fictional demo data. [View full-size image](/images/canvas-gantt-overview-en.png)
+[View full-size image](/images/canvas-gantt-overview-en.png)
 
 The sidebar on the left lists issue rows and selected columns. The timeline on the right shows task bars and dependencies. The toolbar provides filters, display scale, zoom, fullscreen, and auto-save controls.
 
@@ -26,9 +26,7 @@ See the in-app help for other controls and keyboard shortcuts.
 
 Selecting a non-working day may adjust the date according to the issue's project calendar: start dates move to the next working day and due dates to the previous working day.
 
-<video controls preload="metadata" playsinline poster="/images/schedule-edit-poster.png" src="/videos/schedule-edit.mp4" style="width:100%;height:auto" aria-label="English UI recording of moving and resizing a task bar to change its dates">Your browser cannot play this video. <a href="/videos/schedule-edit.mp4">Download the schedule editing video</a>.</video>
-
-[Download the schedule editing video](/videos/schedule-edit.mp4)
+<video controls preload="metadata" playsinline poster="/images/schedule-edit-poster.png" src="/videos/schedule-edit.mp4" style="width:100%;height:auto" aria-label="moving and resizing a task bar to change its dates"></video>
 
 ## Edit a cell
 
@@ -40,9 +38,9 @@ Double-clicking the Subject cell does not start inline editing. Click the subjec
 
 Available edits depend on the issue's Redmine permissions and workflow. See [Permissions](/en/administration/permissions).
 
-![English UI showing inline editing in a date cell.](/images/date-cell-edit-en.png)
+![Inline editing in a date cell.](/images/date-cell-edit-en.png)
 
-Date-cell editing in the English UI. [View full-size image](/images/date-cell-edit-en.png)
+[View full-size image](/images/date-cell-edit-en.png)
 
 ## Save or discard unsaved changes
 
@@ -54,9 +52,9 @@ With auto-save on, changes are sent immediately, so **Cancel** is not shown. To 
 
 If a grouped date update conflicts, the whole change group remains unsaved and drafts are retained. Both automatic and manual saving use the [save-conflict resolution steps](/en/troubleshooting/#a-save-conflict-appears).
 
-![English UI showing pending edits and manual Save and Cancel controls.](/images/pending-save-en.png)
+![Pending edits and manual Save and Cancel controls.](/images/pending-save-en.png)
 
-Pending changes with Save and Cancel in the English UI. [View full-size image](/images/pending-save-en.png)
+[View full-size image](/images/pending-save-en.png)
 
 ## Columns, row height, and fullscreen
 

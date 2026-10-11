@@ -12,9 +12,9 @@ Clearing the browser's site data also removes saved display preferences.
 
 Display settings also support tracker icon mapping through JSON from tracker IDs to icon kinds. Follow the help shown by the settings screen; do not enter unverified keys or values.
 
-![English UI showing display settings.](/images/display-settings-en.png)
+![Display settings.](/images/display-settings-en.png)
 
-Display settings (English UI). [View full-size image](/images/display-settings-en.png)
+Display settings. [View full-size image](/images/display-settings-en.png)
 
 To show or hide the **Progress Line**, select it in the toolbar. This line starts at today's position and connects one point per issue row: the point is placed on the task bar according to its progress percentage. Closed issues and future issues that have not started are placed at today's position. This is separate from the vertical today line.
 
@@ -26,9 +26,9 @@ To show or hide the **Progress Line**, select it in the toolbar. This line start
 
 To reduce formula execution risk in spreadsheets, exported untrusted text that begins with `=`, `+`, `-`, `@` (including full-width forms), a tab, or a line break may receive a leading tab inside a quoted cell. That tab becomes cell data and can affect programmatic imports. Verify the actual file in the target Excel / Calc version and import path where needed. The export cannot guarantee safety for every spreadsheet or import route.
 
-![English UI showing the export menu.](/images/export-menu-en.png)
+![Export menu.](/images/export-menu-en.png)
 
-PNG and CSV export menu (English UI). [View full-size image](/images/export-menu-en.png)
+PNG and CSV export menu. [View full-size image](/images/export-menu-en.png)
 
 ## Display preferences versus shared query state
 

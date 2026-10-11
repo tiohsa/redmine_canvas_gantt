@@ -11,9 +11,9 @@ Canvas Gantt の表示権限と、チケットに対する操作権限は別々�
 
 ベースラインの比較表示には `view_canvas_gantt` が必要です。保存には `manage_canvas_gantt_baseline` が必要です。ベースラインはプロジェクトごとに 1 件で、新しい保存は既存スナップショットを置き換えます。
 
-![Canvas Gantt の権限設定を示す英語 UI。](/images/permissions-en.png)
+![Canvas Gantt の権限設定。](/images/permissions-en.png)
 
-英語 UI。[画像を拡大](/images/permissions-en.png)
+[画像を拡大](/images/permissions-en.png)
 
 旧 `edit_canvas_gantt` 権限を使っていた場合、現在の権限へ自動移行されません。ベースライン保存を続けるロールにだけ `manage_canvas_gantt_baseline` を付け直してください。通常のチケット編集権限の代わりに Canvas Gantt 固有権限を使うことはありません。
 
