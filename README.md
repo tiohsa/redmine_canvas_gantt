@@ -1,3 +1,5 @@
+> User manual source: [English](website/en/index.md) · [日本語](website/ja/index.md). The new manual is being prepared for GitHub Pages; publication has not been performed. Detailed usage and administration documentation is maintained in `website/`; the sections below remain migration reference until launch.
+
 <div align="center">
 
 # Redmine Canvas Gantt

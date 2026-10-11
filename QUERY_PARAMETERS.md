@@ -1,3 +1,5 @@
+> Archived migration reference. Maintain the [query parameter manual](website/en/features/query-parameters.md) in `website/` from now on. This document is retained for existing links and is no longer synchronized.
+
 # Canvas Gantt URL and query parameters
 
 This document describes the URL contract used to share a Canvas Gantt view. A
