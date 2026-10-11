@@ -65,7 +65,11 @@ For date conflicts, row buttons only select the server version or local dates. *
 
 ## Demo
 
-![Canvas Gantt Demo](./docs/demo.gif)
+Real English UI with fictional project data: move and resize a task bar, then create a dependency.
+
+![Canvas Gantt: moving and resizing a task bar, then creating a dependency](./docs/demo-current.gif)
+
+Watch the individual MP4 recordings: [Schedule editing](./website/public/videos/schedule-edit.mp4) · [Dependency creation](./website/public/videos/dependency-create.mp4).
 
 ## Requirements
 

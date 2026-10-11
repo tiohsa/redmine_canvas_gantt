@@ -63,6 +63,8 @@ npm run test:smoke
 
 The video poster images are separate from the 13 manual screenshots: `images/schedule-edit-poster.png` is 1862×552 PNG and `images/dependency-create-poster.png` is 1900×700 PNG. The schedule video ends before its final baseline comparison and holds its final frame for four seconds. The dependency video shows the new relation after saving and ends with a two-second still.
 
+README の `docs/demo-current.gif` は、この 2 本の MP4 を日程編集 → 依存関係作成の順に連結したものです。元の再生速度と末尾の静止時間を保ち、1280×472、12 fps のループ GIF に変換します。日程編集の下部は白い余白で揃えます。MP4 の更新後は `website/` から `node scripts/encode-readme-demo.mjs` を実行し、両 README のプレビューも確認してください。旧 `docs/demo.gif` は過去の記録として残し、README には掲載しません。
+
 Prepare a fresh, disposable Redmine with the plugin enabled and its default English data loaded. Seed fictional project content from the Redmine application root. The fixture refuses to run unless its disposable-database guard is set:
 
 ```sh

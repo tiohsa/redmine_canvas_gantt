@@ -64,7 +64,11 @@ Canvas Gantt の利用には、開いているプロジェクトの `view_canvas
 
 ## デモ
 
-![Canvas Gantt Demo](./docs/demo.gif)
+架空のプロジェクトデータを使った英語 UI の実画面です。タスクバーの移動・期間変更と、依存関係の作成を順に紹介します。
+
+![Canvas Gantt：タスクバーの移動・期間変更と依存関係の作成](./docs/demo-current.gif)
+
+個別の MP4 動画：[日程編集](./website/public/videos/schedule-edit.mp4) · [依存関係の作成](./website/public/videos/dependency-create.mp4)。
 
 ## 必要環境
 

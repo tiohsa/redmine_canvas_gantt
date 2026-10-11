@@ -2,6 +2,7 @@
 .antigravitycli/
 .codegraph/
 docs/*
+!docs/demo-current.gif
 !docs/architecture/
 docs/architecture/*
 !docs/architecture/timer-session-architecture.png
