@@ -3,28 +3,33 @@
 ## The Canvas Gantt menu is missing
 
 1. In the target project, confirm Canvas Gantt is enabled under **Settings → Modules**.
-2. Confirm the user's role has `view_canvas_gantt`.
+2. Confirm the user's role has `view_canvas_gantt`; see [Permissions](/en/administration/permissions) for details.
 3. Confirm the user can view the target project.
 4. Reload the page. After a fresh installation or upgrade, the Redmine process may need to restart.
 
 ## An issue cannot be edited, created, or deleted
 
-Permission to view Canvas Gantt does not grant issue actions. On the project that owns the target issue, check `edit_issues` and issue editability for edits, `delete_issues` for deletion, and `add_issues` plus `manage_subtasks` for child creation. Saving a baseline separately requires `manage_canvas_gantt_baseline`. For cross-project actions, check visibility and permissions for each target issue.
+Permission to view Canvas Gantt does not grant issue actions. Check the standard permissions and issue visibility in the target project. See [Permissions](/en/administration/permissions) for the required permissions.
 
 ## A date change is not saved
 
 - If auto-save is off, use the save action after editing. Do not leave the page before saving pending changes.
-- Check the target issue's edit permission, validation errors, and messages returned by Redmine.
+- Check the target issue's edit permission, validation errors, and messages returned by Redmine. See [Permissions](/en/administration/permissions) for the required permission.
 - With a business calendar configured, selecting a non-working date can move the start date forward to the next working day and the due date backward to the previous working day.
 - If the conflict panel lists issues, review the differences using the steps below.
 
 ## A save conflict appears
 
-If another user or page updates an issue first, the whole date-change group is not applied and local drafts are retained. In the conflict panel, choose the server or local dates for each issue, then use **Apply this group** to validate and apply the complete operation, including its dependencies and hierarchy.
+If another user or page updates an issue first, the whole date-change group is not applied and local drafts are retained. Resolve the conflict in this order:
 
-If a Redmine callback would adjust dates, review every affected issue and explicitly use **Accept adjusted dates and apply** to retry. If reviewed relations, delays, hierarchy, or calendars have changed, use **Refresh comparison and reselect**. A failed application preserves selections and drafts. Auto-save and manual save use the same resolution flow.
+1. In the conflict panel, choose the server or local dates for each issue and review the complete group, including its dependencies and hierarchy.
+2. Select **Apply this group** to validate and apply the operation.
 
-For a conflict caused by an outdated business-calendar revision, the page refreshes the latest calendar and retries once. If conflicts continue, reload the page to fetch current issues and calendars before editing again.
+- If a Redmine callback would adjust dates, review every affected issue, then explicitly select **Accept adjusted dates and apply** to retry.
+- If the reviewed relations, delays, hierarchy, or calendars have changed, select **Refresh comparison and reselect**, then review and choose the dates again.
+- For an outdated business-calendar revision, the page refreshes the latest calendar and retries once. If conflicts continue, make sure no unsaved changes remain before reloading the page to fetch current issues and calendars.
+
+If an application fails, selections and local drafts are retained. Auto-save and manual save use the same resolution flow.
 
 ## A relation cannot be added
 
@@ -53,7 +58,7 @@ If the `redmica_ui_extension` Select2 extension interferes with selection contro
 
 ### Where is the plugin settings page?
 
-Canvas Gantt does not have a general settings page. Configure browser display preferences in Gantt and business calendars with server-side YAML or CSV files.
+Canvas Gantt does not have a general settings page. Configure display preferences in Gantt; see [Display and export](/en/features/display-export). See [Business calendars](/en/administration/calendars) for server-side YAML and CSV configuration.
 
 ### Why is a calendar change not visible?
 
@@ -61,7 +66,7 @@ Check the file location and permissions for the Redmine process. Changes are che
 
 ### Why is a baseline missing or unavailable to save?
 
-Viewing baseline comparison requires `view_canvas_gantt`; saving requires `manage_canvas_gantt_baseline`. Each project has one baseline, and saving a new one replaces it.
+Viewing a baseline requires `view_canvas_gantt`; saving one requires `manage_canvas_gantt_baseline`. Each project has one baseline, and saving another replaces it. See [Permissions](/en/administration/permissions) for details.
 
 ## Report an issue on GitHub
 

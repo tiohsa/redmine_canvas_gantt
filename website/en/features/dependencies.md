@@ -4,7 +4,7 @@ Dependencies appear as lines between issues on the timeline. `precedes` / `follo
 
 ## Create a dependency
 
-1. Drag from a small dependency handle near either end of the predecessor task bar.
+1. Drag from a dependency handle near either end of the predecessor task bar.
 2. Drop near the successor issue's task bar.
 3. If **Auto apply default relation** is off, an editor popover opens. Choose a relation type and any required delay, then select **Save**. If it is on, the relation is created using the default type selected in toolbar settings.
 
@@ -17,9 +17,6 @@ The editor offers three types:
 When the stored relation is the reverse type `follows` or `blocked`, the editor reverses the displayed issue order. The scheduler uses `precedes` / `follows` for start-date constraints.
 
 <video controls preload="metadata" playsinline poster="/images/dependency-create-poster.png" src="/videos/dependency-create.mp4" style="width:100%;height:auto" aria-label="English UI recording of creating an issue dependency">Your browser cannot play this video. <a href="/videos/dependency-create.mp4">Download the dependency creation video</a>.</video>
-
-1. Drag from the predecessor task's dependency handle.
-2. Drop on the successor task and save the relation in the editor.
 
 [Download the dependency creation video](/videos/dependency-create.mp4)
 
@@ -37,7 +34,7 @@ Duplicates, cycles, permissions, and date consistency can prevent a save. Editin
 
 ![English UI showing the dependency relation editor.](/images/relation-editor-en.png)
 
-English UI screenshot of the relation type and delay editor. [View full-size image](/images/relation-editor-en.png)
+Dependency editor (English UI). [View full-size image](/images/relation-editor-en.png)
 
 ## Scheduling behavior
 

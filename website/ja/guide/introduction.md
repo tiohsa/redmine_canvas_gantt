@@ -2,24 +2,24 @@
 
 ## Redmine Canvas Gantt とは
 
-Redmine Canvas Gantt は、Redmine の Issue を HTML5 Canvas のガントチャートに描画するプラグインです。このページは 2026-10-11 に確認した安定版 v0.18.0 を対象にします。[v0.18.0 Release](https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.18.0)。左のサイドバーに Issue の列を表示し、右のタイムラインで期間や依存関係を確認します。スクロールやズームを含む操作とスケジュール編集を一つの画面で行えます。
+Redmine Canvas Gantt は、Redmine のチケットをガントチャートで確認・編集できるプラグインです。日程の調整、依存関係の管理、工数の確認を一つの画面で行えます。
 
-![Redmine 7.0.0.stable 上の Canvas Gantt 0.18.0 の英語日表示。架空の Issue と依存関係を表示したガントチャート。](/images/canvas-gantt-overview-en.png)
+![Redmine 7.0.0.stable 上の Canvas Gantt 0.18.0 の英語日表示。架空のチケットと依存関係を表示したガントチャート。](/images/canvas-gantt-overview-en.png)
 
-2026-10-11 に Redmine 7.0.0.stable と Canvas Gantt 0.18.0 で撮影した英語 UI の実画面です。架空のデモ Issue を使っています。[画像を拡大](/images/canvas-gantt-overview-en.png)
+英語 UI の実画面（架空のデモデータ）。[画像を拡大](/images/canvas-gantt-overview-en.png)
 
 ## 主な機能
 
 - タスクバーをドラッグして期間を移動・調整し、タスク端から依存関係を作成
 - 担当者、ステータス、進捗率、期日、カスタムフィールドなどのインライン編集
-- サイドバーで親子関係を変更し、複数の子 Issue をまとめて作成
+- サイドバーで親子関係を変更し、複数の子チケットをまとめて作成
 - Redmine の保存済みクエリや対応する標準フィルタと連携
 - プロジェクトまたは担当者によるグループ化、ベースライン比較、ワークロード表示
 - 作業時間タイマー、PNG / CSV 出力、表示設定の保存
 
 ## 標準 Gantt との関係
 
-Canvas Gantt は Canvas にタイムラインを描きますが、Issue と権限の管理は Redmine を利用します。独自の Issue テーブルや DB マイグレーションは追加しません。Canvas Gantt の利用には `view_canvas_gantt` が必要です。Issue の編集・追加・削除は対象 Issue のプロジェクトに対する Redmine 標準権限で制御されます。
+Canvas Gantt は Redmine のチケットと権限を利用します。利用には `view_canvas_gantt` が必要で、チケットの編集・追加・削除には対象プロジェクトの Redmine 標準権限が適用されます。詳しくは[権限設計](/ja/administration/permissions)を参照してください。
 
 ## 対応環境
 
@@ -31,10 +31,10 @@ Canvas Gantt は Canvas にタイムラインを描きますが、Issue と権�
 
 ## 画面構成
 
-画面左側のサイドバーには Issue の行と選択した列が並び、右側のタイムラインには期間を表すタスクバーと依存関係が表示されます。ツールバーから表示範囲やズームなどを操作できます。具体的な操作は[基本操作](/ja/guide/basic-operations)を参照してください。
+画面左側のサイドバーにはチケットの行と選択した列が並び、右側のタイムラインには期間を表すタスクバーと依存関係が表示されます。ツールバーから表示範囲やズームなどを操作できます。具体的な操作は[基本操作](/ja/guide/basic-operations)を参照してください。
 
 ## 次に読む
 
 - [インストールと初期設定](/ja/guide/installation)
 - [基本操作](/ja/guide/basic-operations)
-- [権限](/ja/administration/permissions)、[設定](/ja/administration/settings)、[業務カレンダー](/ja/administration/calendars)（管理者向けページ）
+- [権限](/ja/administration/permissions)、[設定](/ja/administration/settings)、[営業日カレンダー](/ja/administration/calendars)（管理者向けページ）

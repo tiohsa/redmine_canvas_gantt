@@ -2,11 +2,11 @@
 
 ## What is Redmine Canvas Gantt?
 
-Redmine Canvas Gantt is a plugin that draws Redmine issues on an HTML5 Canvas Gantt chart. This page targets stable v0.18.0, verified on 2026-10-11 ([release](https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.18.0)). The sidebar lists issue fields, while the timeline shows task bars and dependencies. It brings schedule editing and timeline navigation into one view.
+Redmine Canvas Gantt lets you view and edit Redmine issues on a Gantt chart. Adjust schedules, manage dependencies, and review workload in one screen.
 
 ![English-language day view of Canvas Gantt 0.18.0 on Redmine 7.0.0.stable, showing fictional issues and dependencies.](/images/canvas-gantt-overview-en.png)
 
-This real application screenshot was captured on 2026-10-11 with Redmine 7.0.0.stable and Canvas Gantt 0.18.0. It uses fictional issue data and the English UI. [View full-size image](/images/canvas-gantt-overview-en.png)
+English UI with fictional demo data. [View full-size image](/images/canvas-gantt-overview-en.png)
 
 ## Main features
 
@@ -19,7 +19,7 @@ This real application screenshot was captured on 2026-10-11 with Redmine 7.0.0.s
 
 ## Relationship to Redmine Gantt
 
-Canvas Gantt draws the timeline on Canvas, while Redmine remains responsible for issue storage and permissions. The plugin adds no issue table or database migration. Users need `view_canvas_gantt` to open Canvas Gantt. Redmine's standard permissions on the target issue's project control issue edits and other actions.
+Canvas Gantt uses Redmine's issues and permissions. Users need `view_canvas_gantt` to open the chart; Redmine's standard permissions on the target project control issue edits, creation, and deletion. See [Permissions](/en/administration/permissions).
 
 ## Supported environment
 

@@ -6,11 +6,9 @@ Filters narrow the chart to the issues you need. Shareable conditions can be sav
 
 Filter by subject text, project, tracker, target version, assignee, and status. Assignee filtering includes unassigned issues; target-version filtering includes issues with no version. Use the toolbar search field or the relevant filter menu.
 
-Subject text and workload focus filters are personal browser state and are not part of the shared query URL or saved query.
-
 ![English UI showing the status filter menu.](/images/status-filter-en.png)
 
-English UI screenshot of filtering the chart by status. [View full-size image](/images/status-filter-en.png)
+Status filter (English UI). [View full-size image](/images/status-filter-en.png)
 
 ## Redmine saved queries
 
@@ -31,4 +29,4 @@ Canvas Gantt groups by project or assignee. Target-version headers are a display
 | Subject text and workload focus | Personal browser state |
 | Zoom, viewport, row height, sidebar width, and similar preferences | Browser display settings |
 
-“Shared across all projects” means the same browser profile. It does not share settings with other Redmine users or other browser profiles. Anyone using that profile sees the same settings. See [URL and query parameters](/en/features/query-parameters) for details.
+Subject text and workload focus filters are not included in a shared URL or saved query. See [Display settings and export](/en/features/display-export) for the scope of browser preferences and [URL and query parameters](/en/features/query-parameters) for the URL reference.

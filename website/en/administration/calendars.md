@@ -6,7 +6,11 @@ Calendar files are not stored in Redmine's database or in the browser. No databa
 
 ## Configuration directory
 
-The default directory is `<Rails.root>/config/redmine_canvas_gantt/business_calendars`. To use another directory, set `REDMINE_CANVAS_GANTT_CALENDAR_DIR` in the Redmine process environment. Choose either **detailed YAML** or **one global `holiday.csv`**. Do not mix the formats in the same directory.
+The default directory is `<Rails.root>/config/redmine_canvas_gantt/business_calendars`. To use another directory, set `REDMINE_CANVAS_GANTT_CALENDAR_DIR` in the Redmine process environment. Choose either **detailed YAML** or **one global `holiday.csv`**.
+
+::: warning Do not mix CSV and YAML
+If `holiday.csv` sits beside `settings.yml` or calendar YAML files, the configuration is invalid. When switching formats, move the old format's files out of the configured root before reloading.
+:::
 
 ## YAML: multiple calendars, project mapping, and exceptions
 
@@ -87,16 +91,12 @@ The loader always skips the first row as the header. A headerless CSV therefore 
 
 Weekly non-working days come from the weekdays configured in Redmine under **Administration → Settings → Display**. CSV cannot define country or project assignments, inheritance, weekdays, or substitute workdays. Use YAML for those requirements. Use an ASCII-compatible encoding such as UTF-8 or Windows-31J so the date column can be read.
 
-The CSV must be a regular file inside the configured root and contain 1–10,000 valid, unique dates. The maximum file size is 1 MiB. Symlinks resolving outside the root are rejected.
+The CSV must be a regular file inside the configured root and contain 1–10,000 valid, unique dates. The maximum file size is 1 MiB.
 
 ## Reloads and invalid configuration
 
 By default, the runtime checks relative paths, modification times, and file sizes every 60 seconds. Set `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` to a non-negative number of seconds to change the interval. After a change is detected, reload the Gantt page to see the updated state.
 
-The runtime applies a changed file set only after all files validate. Replacing a valid CSV also removes dates deleted from the file. A failed reload logs a warning and retains the last valid snapshot. On initial load, an invalid configuration or a missing directory / YAML settings file falls back to Redmine's standard non-working weekdays. Symlinks pointing outside the root are rejected, and symlinked directories are not traversed.
-
-::: warning Do not mix CSV and YAML
-If `holiday.csv` sits beside `settings.yml` or calendar YAML files, the configuration is invalid. When changing formats, move the old files out of the configured root before reloading.
-:::
+The runtime applies a changed file set only after all files validate. Replacing a valid CSV also removes dates deleted from the file. A failed reload logs a warning and retains the last valid snapshot. On initial load, an invalid configuration or a missing directory / YAML settings file falls back to Redmine's standard non-working weekdays. Symlinks resolving outside the configured root are rejected, and symlinked directories are not traversed.
 
 For container mounts, see [Deployment environments](/en/administration/deployment).

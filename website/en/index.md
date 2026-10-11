@@ -1,6 +1,8 @@
 # Redmine Canvas Gantt Manual
 
-This manual targets stable v0.18.0, verified on 2026-10-11, and is grounded in the repository documentation and implementation. [v0.18.0 Release](https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.18.0)
+Learn how to install Canvas Gantt, use it day to day, and configure it as an administrator. Start with the page that matches your task.
+
+<a id="manual-version"></a>
 
 ## Find a task
 
@@ -13,16 +15,12 @@ This manual targets stable v0.18.0, verified on 2026-10-11, and is grounded in t
 
 ## About Canvas Gantt
 
-Canvas Gantt draws Redmine issues on an HTML Canvas timeline and keeps an editable issue list alongside it. It supports schedule changes by dragging, dependencies, inline edits, and integration with saved queries. Redmine permissions govern issue access and updates.
+Canvas Gantt lets you view and edit Redmine issues on a Gantt chart. See [Introduction](/en/guide/introduction) for its main features and [Basic operations](/en/guide/basic-operations) for the screen controls.
 
 ![English UI day view of Canvas Gantt 0.18.0 on Redmine 7.0.0.stable, showing fictional issues and dependencies.](/images/canvas-gantt-overview-en.png)
 
-This real application screenshot was captured on 2026-10-11 with Redmine 7.0.0.stable and Canvas Gantt 0.18.0. It uses fictional issue data and the English UI. [View full-size image](/images/canvas-gantt-overview-en.png)
+English UI with fictional demo data. [View full-size image](/images/canvas-gantt-overview-en.png)
 
 ## Requirements
 
-Supported Redmine versions are the 6.0, 6.1, and 7.0 series. Enable the REST API. Supported browsers are current desktop versions of Chrome, Edge, Firefox, and Safari with Canvas, ES modules, and `localStorage`. Internet Explorer, mobile browsers, and embedded webviews are outside the supported test matrix. See [Introduction](/en/guide/introduction) and [Installation](/en/guide/installation).
-
-## Manual version
-
-This manual covers stable v0.18.0, verified on 2026-10-11. Historical UI captures are labeled as such and do not document current controls.
+The plugin targets Redmine 6.0, 6.1, and 7.0 with desktop browsers. Check the [supported environment](/en/guide/introduction#supported-environment); administrators can then follow [Installation and setup](/en/guide/installation).

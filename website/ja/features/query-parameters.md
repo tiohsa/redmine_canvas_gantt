@@ -21,7 +21,7 @@ Canvas Gantt の URL または Redmine の保存済みクエリを使うと、�
 | `status_ids[]` | ステータス ID |
 | `assigned_to_ids[]` | 担当者 ID。未割当は `none` |
 | `canvas_project_ids[]` | 明示的に選択したプロジェクト ID。表示可能な範囲は下記「プロジェクト範囲」を参照。`none` は 0 件を明示 |
-| `project_id` | Redmine の標準 Issue 検索条件。`set_filter=1`、`f[]=project_id`、`op[project_id]`、`v[project_id][]` と組み合わせる。Canvas プロジェクト範囲には `canvas_project_ids[]` を使う |
+| `project_id` | Redmine の標準チケット検索条件。`set_filter=1`、`f[]=project_id`、`op[project_id]`、`v[project_id][]` と組み合わせる。Canvas のプロジェクト範囲には `canvas_project_ids[]` を使う |
 | `project_ids[]` | 後方互換の入力。Canvas Gantt はこの形式を生成しない |
 | `fixed_version_ids[]` | 対象バージョン ID。バージョンなしは `none` |
 | `tracker_ids[]` | トラッカー ID |
@@ -30,7 +30,7 @@ Canvas Gantt の URL または Redmine の保存済みクエリを使うと、�
 | `c[]` | 表示列。Redmine 標準の `c[]` と互換 |
 | `show_subprojects` | `0` は非表示、省略または `1` は表示 |
 
-## Redmine Issue 一覧との互換性
+## Redmine チケット一覧との互換性 {#redmine-issue-一覧との互換性}
 
 対応するパラメータは `set_filter=1`、`f[]`、`op[field]`、`v[field][]`、`c[]`、`group_by`、`sort` です。対応フィールドは `status_id`、`assigned_to_id`、`project_id`、`fixed_version_id`、`tracker_id`、`subproject_id` です。`tracker_id` は `=` または `*` に対応します。Canvas URL では `tracker_ids[]` を使います。
 
@@ -56,10 +56,10 @@ Canvas Gantt の URL または Redmine の保存済みクエリを使うと、�
 /projects/demo/canvas_gantt?assigned_to_ids[]=none&show_subprojects=0
 ```
 
-実際に開けるプロジェクト、Issue、保存済みクエリは利用者の Redmine 権限と可視性で決まります。
+実際に開けるプロジェクト、チケット、保存済みクエリは利用者の Redmine 権限と可視性で決まります。
 
 ## プロジェクト範囲
 
 通常は候補が開いているプロジェクトのツリー内に限られます。**所属プロジェクトのみ** を有効にすると、利用者が直接またはグループ経由で所属する、閲覧可能なアクティブプロジェクトが候補になります。管理者には閲覧可能なアクティブプロジェクトが候補になります。閉鎖・アーカイブ済みプロジェクトは候補に含まれません。
 
-開いているプロジェクトのツリー外のプロジェクトは、プロジェクトフィルターで明示的に選ぶまでその Issue を表示しません。表示可能かつ編集可能な外部プロジェクト Issue を選ぶと、通常の Issue 権限に従ってスケジュール操作できます。外部プロジェクト間の依存関係は Redmine の `cross_project_issue_relations` 設定にも従います。
+開いているプロジェクトのツリー外のプロジェクトは、プロジェクトフィルターで明示的に選ぶまでそのチケットを表示しません。表示可能かつ編集可能な外部プロジェクトのチケットを選ぶと、通常のチケット権限に従ってスケジュール操作できます。外部プロジェクト間の依存関係は Redmine の `cross_project_issue_relations` 設定にも従います。

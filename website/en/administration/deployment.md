@@ -42,16 +42,14 @@ Each Puma worker / Pod keeps an independent in-memory calendar snapshot. Make ev
 
 ## Updates and rollback
 
-Validate file syntax and calendar references before distributing an update. After rollout, check the resolved calendar in Gantt. An invalid reload retains the previous valid snapshot and logs a warning. If the initial configuration is invalid at startup, the plugin falls back to Redmine's standard non-working weekdays.
+Before distributing an update, validate syntax and references against the [business-calendar formats and constraints](/en/administration/calendars). After rollout, check the resolved calendar in Gantt; that page also describes reload failure behavior.
 
 For plugin installation and upgrade steps, see the [Installation guide](/en/guide/installation). Uninstalling the plugin does not remove an external calendar directory or ConfigMap.
 
 ## Compatibility and operations
 
 - Supported Redmine versions are 6.0, 6.1, and 7.0. Use a Ruby version supported by the selected Redmine release.
-- Business calendars are external runtime configuration; they require no Redmine database migration.
-- Symlinks resolving outside the configured root are rejected. Symlinked directories are not traversed.
-- Mixing `holiday.csv` and YAML is an error. Do not distribute different calendars to different Pods or workers.
+- Do not distribute different calendars to different Pods or workers.
 - Display preferences belong to each user's browser profile; they are not shared by a server restart or container update.
 
 See [Business calendars](/en/administration/calendars) for formats and limits, and [Troubleshooting](/en/troubleshooting/) for loading problems.

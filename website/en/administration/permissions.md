@@ -13,7 +13,7 @@ Viewing a baseline comparison requires `view_canvas_gantt`. Saving a baseline re
 
 ![English UI showing Canvas Gantt permission assignments.](/images/permissions-en.png)
 
-English UI screenshot of the role permission settings. [View full-size image](/images/permissions-en.png)
+English UI. [View full-size image](/images/permissions-en.png)
 
 If a role used the retired `edit_canvas_gantt` permission, it is not migrated automatically. Reassign `manage_canvas_gantt_baseline` only to roles that should continue saving baselines. Canvas Gantt permissions do not replace normal issue permissions.
 

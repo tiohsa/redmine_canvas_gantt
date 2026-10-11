@@ -22,7 +22,7 @@ Created issues inherit the parent project's project, tracker, status, priority, 
 
 ![English UI showing the bulk child issue form.](/images/bulk-subtasks-en.png)
 
-English UI screenshot of entering several child issues in one form. [View full-size image](/images/bulk-subtasks-en.png)
+Bulk child issue form (English UI). [View full-size image](/images/bulk-subtasks-en.png)
 
 ## Notes
 

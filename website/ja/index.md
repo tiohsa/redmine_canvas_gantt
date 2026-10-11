@@ -1,6 +1,8 @@
 # Redmine Canvas Gantt マニュアル
 
-Redmine Canvas Gantt の導入と日々の操作を説明します。このマニュアルは 2026-10-11 に確認した安定版 v0.18.0 を対象にし、リポジトリ内の実装と資料に基づいています。[v0.18.0 Release](https://github.com/tiohsa/redmine_canvas_gantt/releases/tag/v0.18.0)
+Redmine Canvas Gantt の導入、日々の操作、管理者向け設定を説明します。目的に合うページから読み始めてください。
+
+<a id="対象バージョン"></a>
 
 ## 目的から探す
 
@@ -13,16 +15,12 @@ Redmine Canvas Gantt の導入と日々の操作を説明します。このマ�
 
 ## Canvas Gantt について
 
-Canvas Gantt は、Redmine の Issue を HTML Canvas のタイムラインに表示し、左側の一覧からも編集できるプラグインです。ドラッグによるスケジュール調整、依存関係、インライン編集、保存済みクエリとの連携などを提供します。データの閲覧と更新には Redmine の権限が適用されます。
+Canvas Gantt は、Redmine のチケットをガントチャートで確認・編集できるプラグインです。主な機能は[はじめに](/ja/guide/introduction)、画面の使い方は[基本操作](/ja/guide/basic-operations)を参照してください。
 
-![Redmine 7.0.0.stable 上の Canvas Gantt 0.18.0 の英語 UI。架空の Issue と依存関係を表示した日表示の画面。](/images/canvas-gantt-overview-en.png)
+![Redmine 7.0.0.stable 上の Canvas Gantt 0.18.0 の英語 UI。架空のチケットと依存関係を表示した日表示の画面。](/images/canvas-gantt-overview-en.png)
 
-2026-10-11 に Redmine 7.0.0.stable と Canvas Gantt 0.18.0 で撮影した英語 UI の実画面です。架空のデモ Issue を使っています。[画像を拡大](/images/canvas-gantt-overview-en.png)
+英語 UI の実画面（架空のデモデータ）。[画像を拡大](/images/canvas-gantt-overview-en.png)
 
 ## 対応環境
 
-対応する Redmine は 6.0、6.1、7.0 系列です。REST API を有効にしてください。対応ブラウザーは Canvas、ES modules、`localStorage` が使える最新のデスクトップ版 Chrome、Edge、Firefox、Safari です。Internet Explorer、モバイルブラウザー、埋め込み WebView はテスト対象外です。詳細は [はじめに](/ja/guide/introduction) と [インストール](/ja/guide/installation) を参照してください。
-
-## 対象バージョン
-
-このマニュアルは 2026-10-11 に確認した安定版 v0.18.0 を対象にしています。過去の UI を示す画像には歴史的キャプチャであることを明記しています。
+Redmine 6.0、6.1、7.0 系列とデスクトップブラウザーを対象にしています。[対応環境](/ja/guide/introduction#対応環境)を確認し、管理者は[インストールと初期設定](/ja/guide/installation)へ進んでください。

@@ -1,6 +1,6 @@
 # Installation and setup
 
-This page follows the standard procedure documented in the README. Adjust paths and service names to match your Redmine deployment.
+These installation and upgrade steps are for administrators. Adjust paths and service names to match your Redmine deployment.
 
 ## Requirements
 
@@ -25,23 +25,25 @@ This page follows the standard procedure documented in the README. Adjust paths 
 5. Under **Administration → Roles and permissions**, grant `view_canvas_gantt` to roles that may open the chart.
 6. Open **Canvas Gantt** from the project menu.
 
-The plugin adds no database migration. Issue actions follow Redmine's standard permissions for the target project, including `edit_issues`, `delete_issues`, `add_issues`, and `manage_subtasks`. Grant `manage_canvas_gantt_baseline` only to roles that may save a baseline.
+No database migration is required. See [Permissions](/en/administration/permissions) for the standard permissions needed for issue actions. Grant `manage_canvas_gantt_baseline` to roles that may save a baseline.
 
 ## Upgrade
 
 1. Back up the Redmine database and plugin directory.
-2. Replace the plugin directory with the files from the release you are installing.
-3. **Not required for a normal release upgrade.** If you deploy the prebuilt `assets/build/` included in the release, skip this step; Node.js and npm are not needed. Only install dependencies and build with Node.js 20 or newer when you modify the SPA source or install from source without prebuilt assets.
-
-   ```sh
-   cd /path/to/redmine/plugins/redmine_canvas_gantt/spa
-   npm ci
-   npm run build
-   ```
-
-4. Restart Redmine and verify the project module and role permissions.
+2. Replace the plugin directory with the files from the release you are installing. If you need to build modified source, follow [Build from source](#build-from-source-only-when-needed) below before restarting.
+3. Restart Redmine and verify the project module and role permissions.
 
 There are no database migrations. Baselines stored in Redmine settings and display preferences in each browser are retained by an ordinary upgrade. The retired `edit_canvas_gantt` permission is not migrated automatically. Review existing roles and grant `manage_canvas_gantt_baseline` only where needed.
+
+### Build from source (only when needed)
+
+When using the prebuilt `assets/build/` included in the release, you do not need this step or Node.js / npm. Build with Node.js 20 or newer only if you modify the SPA source or install from source without prebuilt assets.
+
+```sh
+cd /path/to/redmine/plugins/redmine_canvas_gantt/spa
+npm ci
+npm run build
+```
 
 ## Uninstall
 

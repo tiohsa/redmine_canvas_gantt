@@ -10,8 +10,8 @@ The workload pane compares estimated effort with recorded work over the visible 
 
 ## Read the chart
 
-- **Planned** is the issue estimate divided across its working days.
-- **Actual** is recorded Redmine Time Entries attributed to the person who logged the work. It can appear for a person with no planned hours.
+- **Planned** is the estimate for issues assigned to a person, divided across each issue's working days.
+- **Actual** is recorded Redmine time attributed to the person who logged the work. It can appear in a person's row even when they have no planned hours.
 - Peak and total cells show Planned and Actual separately. Outlined and filled daily bars use the same capacity threshold.
 - Click a series to cycle through its contributing issues. The legend, tooltips, and accessible text distinguish both series.
 
@@ -19,7 +19,7 @@ Focus filters are personal browser state and are not included in shared URLs.
 
 ![English UI showing the workload pane and its planned and actual series.](/images/workload-en.png)
 
-English UI screenshot of the workload pane. [View full-size image](/images/workload-en.png)
+Workload pane (English UI). [View full-size image](/images/workload-en.png)
 
 ## Data access and limits
 
