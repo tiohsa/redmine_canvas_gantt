@@ -1,3 +1,5 @@
+> 移行前の参照資料です。今後の更新は [クエリパラメータのマニュアル](website/ja/features/query-parameters.md) で行います。既存リンクのため本文を保存していますが、以後同期しません。
+
 # Canvas Gantt の URL とクエリパラメータ
 
 この文書では、Canvas Gantt の表示を共有する URL の仕様を説明します。

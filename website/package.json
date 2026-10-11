@@ -1,0 +1,20 @@
+{
+  "name": "redmine-canvas-gantt-manual",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "docs:dev": "vitepress dev .",
+    "docs:build": "vitepress build .",
+    "docs:preview": "vitepress preview .",
+    "check": "node tests/check-docs.test.mjs && node scripts/check-docs.mjs",
+    "test:smoke": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "vitepress": "1.6.4"
+  }
+}
