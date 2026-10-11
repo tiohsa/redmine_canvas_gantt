@@ -1,0 +1,73 @@
+name: Bug report / 不具合報告
+description: Report a reproducible problem / 再現できる問題を報告
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before reporting, check the relevant manual or FAQ:
+        - [English troubleshooting and FAQ](https://tiohsa.github.io/redmine_canvas_gantt/en/troubleshooting/)
+        - [日本語のトラブルシューティングと FAQ](https://tiohsa.github.io/redmine_canvas_gantt/ja/troubleshooting/)
+
+        報告前に、関連するマニュアルまたは FAQ を確認してください。
+  - type: dropdown
+    id: docs_checked
+    attributes:
+      label: Manual or FAQ checked / 確認したマニュアル・FAQ
+      description: Optional. Select a relevant route if you checked one. / 任意です。確認したページがあれば選択してください。
+      options:
+        - Not checked yet / まだ確認していない
+        - English troubleshooting and FAQ (/en/troubleshooting/)
+        - 日本語トラブルシューティングと FAQ (/ja/troubleshooting/)
+        - English installation (/en/guide/installation/)
+        - 日本語インストール (/ja/guide/installation/)
+        - Other page or no relevant answer / その他のページ・該当する回答なし
+  - type: input
+    id: redmine_version
+    attributes:
+      label: Redmine version / Redmine バージョン
+      placeholder: "e.g. 6.1.2"
+    validations:
+      required: true
+  - type: input
+    id: plugin_version
+    attributes:
+      label: Canvas Gantt version / Canvas Gantt バージョン
+      placeholder: "e.g. v1.2.3 or commit SHA"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce / 再現手順
+      description: Include the relevant project or issue context without personal or confidential information. / 個人情報や機密情報を含めず、関連するプロジェクト・チケットの状況も記載してください。
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result / 期待する結果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result / 実際の結果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or errors / 関連するログ・エラー
+      description: Redact credentials, tokens, host names, user names, and sensitive issue data. / 認証情報、トークン、ホスト名、ユーザー名、機密チケット情報を伏せてください。
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or recording / スクリーンショット・録画
+      description: Attach only if useful. Crop to the relevant area and redact personal or confidential information. / 必要な場合のみ添付し、関係箇所を切り出して個人情報・機密情報を隠してください。

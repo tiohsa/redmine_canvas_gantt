@@ -1,4 +1,4 @@
-> 利用者マニュアルの正本: [日本語](website/ja/index.md) · [English](website/en/index.md)。GitHub Pages 公開準備中で、今回の作業では公開していません。操作・管理の詳細は `website/` で保守し、以下の詳細説明は公開までの移行資料として残します。
+> **📖 ユーザーマニュアル：** [日本語](https://tiohsa.github.io/redmine_canvas_gantt/ja/) | [English](https://tiohsa.github.io/redmine_canvas_gantt/en/)。Markdown原稿は `website/` で保守しています：[日本語](website/ja/index.md) | [English](website/en/index.md)。
 
 <div align="center">
 
