@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: English manual and troubleshooting
+    url: https://tiohsa.github.io/redmine_canvas_gantt/en/troubleshooting/
+    about: Check the user manual and FAQ before reporting a bug.
+  - name: 日本語マニュアル・トラブルシューティング
+    url: https://tiohsa.github.io/redmine_canvas_gantt/ja/troubleshooting/
+    about: 不具合報告の前に、ユーザーマニュアルと FAQ を確認してください。

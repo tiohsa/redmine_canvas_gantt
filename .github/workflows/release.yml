@@ -27,6 +27,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          notes="## Documentation
+
+          - [English user manual](https://tiohsa.github.io/redmine_canvas_gantt/en/)
+          - [日本語ユーザーマニュアル](https://tiohsa.github.io/redmine_canvas_gantt/ja/)"
+
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
+            --notes "${notes}" \
             --generate-notes
