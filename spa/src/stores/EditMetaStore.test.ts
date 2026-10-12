@@ -87,6 +87,165 @@ describe('EditMetaStore', () => {
         expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(1);
     });
 
+    it('reuses a matching keyless legacy cache for a persisted task', async () => {
+        const task = {
+            id: '1', subject: 'Task', projectId: '1', trackerId: 1, statusId: 1,
+            ratioDone: 0, lockVersion: 1, editable: true, rowIndex: 0, hasChildren: false
+        } as Task;
+        useTaskStore.setState({
+            allTasks: [task],
+            serverTaskSnapshot: createServerSnapshot([task])
+        });
+        useEditMetaStore.setState({ metaByTaskId: { '1': metaFixture } });
+
+        await expect(useEditMetaStore.getState().fetchEditMeta('1')).resolves.toBe(metaFixture);
+        expect(apiClient.fetchEditMeta).not.toHaveBeenCalled();
+    });
+
+    it('refreshes same-key cached metadata after the persisted task status changes', async () => {
+        const initialTask = {
+            id: '1', subject: 'Task', projectId: '1', trackerId: 1, statusId: 1,
+            ratioDone: 0, lockVersion: 1, editable: true, rowIndex: 0, hasChildren: false
+        } as Task;
+        const updatedTask = { ...initialTask, statusId: 2, lockVersion: 2 };
+        const updatedMeta: TaskEditMeta = {
+            ...metaFixture,
+            task: { ...metaFixture.task, statusId: 2, lockVersion: 2 },
+            capabilityContext: { taskId: '1', projectId: 1, trackerId: 1, statusId: 2 }
+        };
+        useTaskStore.setState({
+            allTasks: [initialTask],
+            serverTaskSnapshot: createServerSnapshot([initialTask])
+        });
+        vi.mocked(apiClient.fetchEditMeta).mockResolvedValueOnce(metaFixture).mockResolvedValueOnce(updatedMeta);
+
+        await useEditMetaStore.getState().fetchEditMeta('1');
+        useTaskStore.setState({
+            allTasks: [updatedTask],
+            serverTaskSnapshot: createServerSnapshot([updatedTask])
+        });
+        const refreshed = await useEditMetaStore.getState().fetchEditMeta('1');
+
+        expect(refreshed).toBe(updatedMeta);
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(2);
+    });
+
+    it('reuses explicit target context even when preview task fields retain persisted values', async () => {
+        const task = {
+            id: '1', subject: 'Task', projectId: '1', trackerId: 1, statusId: 1,
+            ratioDone: 0, lockVersion: 1, editable: true, rowIndex: 0, hasChildren: false
+        } as Task;
+        useTaskStore.setState({
+            allTasks: [task],
+            serverTaskSnapshot: createServerSnapshot([task])
+        });
+        const targetPreview: TaskEditMeta = {
+            ...metaFixture,
+            capabilityContext: { taskId: '1', projectId: 1, trackerId: 1, statusId: 2 }
+        };
+        vi.mocked(apiClient.fetchEditMeta).mockResolvedValue(targetPreview);
+
+        const first = await useEditMetaStore.getState().fetchEditMeta('1', { targetStatusId: 2 });
+        const second = await useEditMetaStore.getState().fetchEditMeta('1', { targetStatusId: 2 });
+
+        expect(first).toBe(targetPreview);
+        expect(second).toBe(first);
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ['project', { projectId: '2' }, { projectId: 2, trackerId: 1, statusId: 1 }],
+        ['tracker', { trackerId: 2 }, { projectId: 1, trackerId: 2, statusId: 1 }],
+        ['status', { statusId: 2 }, { projectId: 1, trackerId: 1, statusId: 2 }]
+    ])('refreshes same-key cache after persisted %s context changes, then reuses the matching result', async (_field, updated, nextContext) => {
+        const initialTask = {
+            id: '1', subject: 'Task', projectId: '1', trackerId: 1, statusId: 1,
+            ratioDone: 0, lockVersion: 1, editable: true, rowIndex: 0, hasChildren: false
+        } as Task;
+        const changedTask = { ...initialTask, ...updated } as Task;
+        const updatedMeta = {
+            ...metaFixture,
+            capabilityContext: { taskId: '1', ...nextContext }
+        } as TaskEditMeta;
+        useTaskStore.setState({
+            allTasks: [initialTask],
+            serverTaskSnapshot: createServerSnapshot([initialTask])
+        });
+        vi.mocked(apiClient.fetchEditMeta).mockResolvedValueOnce(metaFixture).mockResolvedValueOnce(updatedMeta);
+
+        await useEditMetaStore.getState().fetchEditMeta('1');
+        useTaskStore.setState({
+            allTasks: [changedTask],
+            serverTaskSnapshot: createServerSnapshot([changedTask])
+        });
+        const refreshed = await useEditMetaStore.getState().fetchEditMeta('1');
+        const reused = await useEditMetaStore.getState().fetchEditMeta('1');
+
+        expect(refreshed).toBe(updatedMeta);
+        expect(reused).toBe(refreshed);
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not reuse a normalized tracker preview against the persisted status', async () => {
+        const initialTask = {
+            id: '1', subject: 'Task', projectId: '1', trackerId: 1, statusId: 1,
+            ratioDone: 0, lockVersion: 1, editable: true, rowIndex: 0, hasChildren: false
+        } as Task;
+        const normalizedPreview = {
+            ...metaFixture,
+            capabilityContext: { taskId: '1', projectId: 1, trackerId: 2, statusId: 2 }
+        } as TaskEditMeta;
+        useTaskStore.setState({
+            allTasks: [initialTask],
+            serverTaskSnapshot: createServerSnapshot([initialTask])
+        });
+        vi.mocked(apiClient.fetchEditMeta).mockResolvedValue(normalizedPreview);
+
+        await useEditMetaStore.getState().fetchEditMeta('1', { targetTrackerId: 2 });
+        await useEditMetaStore.getState().fetchEditMeta('1', { targetTrackerId: 2 });
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(2);
+
+        const normalizedTask = { ...initialTask, statusId: 2 };
+        useTaskStore.setState({
+            allTasks: [normalizedTask],
+            serverTaskSnapshot: createServerSnapshot([normalizedTask])
+        });
+        await useEditMetaStore.getState().fetchEditMeta('1', { targetTrackerId: 2 });
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+        ['project', { projectId: 2 }, { projectId: 1, trackerId: 1, statusId: 1 }],
+        ['tracker', { trackerId: 2 }, { projectId: 1, trackerId: 1, statusId: 1 }],
+        ['status', { statusId: 2 }, { projectId: 1, trackerId: 1, statusId: 1 }]
+    ])('refreshes keyless legacy cache when persisted %s context mismatches', async (_field, updated, cachedContext) => {
+        const task = {
+            id: '1', subject: 'Task', projectId: '1', trackerId: 1, statusId: 1,
+            ratioDone: 0, lockVersion: 1, editable: true, rowIndex: 0, hasChildren: false
+        } as Task;
+        const changedTask = { ...task, ...updated } as Task;
+        useTaskStore.setState({
+            allTasks: [changedTask],
+            serverTaskSnapshot: createServerSnapshot([changedTask])
+        });
+        const cached = {
+            ...metaFixture,
+            capabilityContext: { taskId: '1', ...cachedContext }
+        } as TaskEditMeta;
+        const refreshed = {
+            ...metaFixture,
+            capabilityContext: {
+                taskId: '1', projectId: Number(changedTask.projectId),
+                trackerId: changedTask.trackerId, statusId: changedTask.statusId
+            }
+        } as TaskEditMeta;
+        useEditMetaStore.setState({ metaByTaskId: { '1': cached } });
+        vi.mocked(apiClient.fetchEditMeta).mockResolvedValue(refreshed);
+
+        await expect(useEditMetaStore.getState().fetchEditMeta('1')).resolves.toBe(refreshed);
+        expect(apiClient.fetchEditMeta).toHaveBeenCalledTimes(1);
+    });
+
     it('sends the current effective Task context for draft capability preview', async () => {
         const draftTask = {
             id: '1',

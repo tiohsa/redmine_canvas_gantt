@@ -62,17 +62,32 @@ const contextKey = (taskId: string, intent: Record<string, unknown> | null): str
     `${taskId}:${getBusinessCalendarPayload().revision}:${stableIntentSignature(intent)}`
 );
 
-const cachedMetaMatchesPersistedTask = (taskId: string, meta: TaskEditMeta): boolean => {
-    const context = meta.capabilityContext;
-    if (!context) return meta.task.id === taskId;
+const cachedMetaMatchesTaskContext = (
+    taskId: string,
+    meta: TaskEditMeta,
+    options?: FetchEditMetaOptions
+): boolean => {
     const taskState = useTaskStore.getState();
-    const task = taskState.serverTaskSnapshot.entitiesById[taskId]
-        ?? taskState.allTasks.find(candidate => candidate.id === taskId);
-    if (!task) return context.taskId === taskId;
-    return context.taskId === taskId &&
-        (task.projectId === undefined || context.projectId === Number(task.projectId)) &&
-        (task.trackerId === undefined || context.trackerId === task.trackerId) &&
-        context.statusId === task.statusId;
+    const task = taskState.allTasks.find(candidate => candidate.id === taskId)
+        ?? taskState.serverTaskSnapshot.entitiesById[taskId];
+    const context = meta.capabilityContext ?? {
+        taskId: meta.task.id,
+        projectId: positiveInteger(meta.task.projectId),
+        trackerId: positiveInteger(meta.task.trackerId),
+        statusId: positiveInteger(meta.task.statusId)
+    };
+    if (context.taskId !== taskId || meta.task.id !== taskId) return false;
+
+    const expectedProjectId = positiveInteger(options?.targetProjectId)
+        ?? (task?.projectId === undefined ? undefined : positiveInteger(task.projectId));
+    const expectedTrackerId = positiveInteger(options?.targetTrackerId)
+        ?? positiveInteger(task?.trackerId);
+    const expectedStatusId = positiveInteger(options?.targetStatusId)
+        ?? positiveInteger(task?.statusId);
+
+    return (expectedProjectId === undefined || context.projectId === expectedProjectId) &&
+        (expectedTrackerId === undefined || context.trackerId === expectedTrackerId) &&
+        (expectedStatusId === undefined || context.statusId === expectedStatusId);
 };
 
 interface EditMetaState {
@@ -100,8 +115,8 @@ export const useEditMetaStore = create<EditMetaState>((set, get) => ({
         const key = contextKey(taskId, initialDraftIntent);
         const cached = get().metaByTaskId[taskId];
         const cachedKey = get().contextKeyByTaskId[taskId];
-        if (cached && !options?.force && (
-            cachedKey === key || (!initialDraftIntent && cachedKey === undefined && cachedMetaMatchesPersistedTask(taskId, cached))
+        if (cached && !options?.force && cachedMetaMatchesTaskContext(taskId, cached, options) && (
+            cachedKey === key || (!initialDraftIntent && cachedKey === undefined)
         )) return cached;
 
         const existing = editMetaInFlight.get(key);

@@ -211,8 +211,16 @@ export const DoneRatioEditor: React.FC<{
     const [value, setValue] = React.useState(String(initialValue));
     const [saving, setSaving] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
+    const inputRef = React.useRef<HTMLInputElement>(null);
+    const committingRef = React.useRef(false);
+
+    React.useEffect(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+    }, []);
 
     const commit = async () => {
+        if (committingRef.current) return;
         const numVal = Number(value);
         if (Number.isNaN(numVal) || numVal < 0 || numVal > 100) {
             setError(i18n.t('label_must_be_0_100') || 'Must be 0-100');
@@ -223,6 +231,7 @@ export const DoneRatioEditor: React.FC<{
             onCancel();
             return;
         }
+        committingRef.current = true;
         setSaving(true);
         setError(null);
         try {
@@ -230,6 +239,7 @@ export const DoneRatioEditor: React.FC<{
         } catch (e) {
             setError(e instanceof Error ? e.message : (i18n.t('label_failed_to_save') || 'Failed to save'));
         } finally {
+            committingRef.current = false;
             setSaving(false);
         }
     };
@@ -241,6 +251,7 @@ export const DoneRatioEditor: React.FC<{
         >
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input
+                    ref={inputRef}
                     type="number"
                     min={0}
                     max={100}
@@ -253,6 +264,7 @@ export const DoneRatioEditor: React.FC<{
                         if (e.key === 'Enter') void commit();
                     }}
                     onBlur={() => {
+                        if (committingRef.current) return;
                         const numVal = Number(value);
                         if (Number.isNaN(numVal) || numVal < 0 || numVal > 100 || numVal === initialValue) {
                             onCancel();
