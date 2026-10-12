@@ -129,12 +129,12 @@ module RedmineCanvasGantt
       scope = raw_snapshot['scope'] || raw_snapshot[:scope] || 'filtered'
 
       unless snapshot_id.present? && project_id && captured_at && captured_by_id && captured_by_name.present?
-        warnings << 'Baseline snapshot payload is incomplete and was ignored.'
+        warnings << I18n.t(:'canvas_gantt.label_baseline_incomplete')
         return LoadResult.new(snapshot: nil, warnings: warnings)
       end
 
       if project_id != expected_project_id.to_i
-        warnings << 'Baseline snapshot project mismatch and was ignored.'
+        warnings << I18n.t(:'canvas_gantt.label_baseline_project_mismatch')
         return LoadResult.new(snapshot: nil, warnings: warnings)
       end
 
@@ -157,8 +157,8 @@ module RedmineCanvasGantt
       )
 
       LoadResult.new(snapshot: snapshot, warnings: warnings)
-    rescue ArgumentError => e
-      warnings << "Baseline snapshot payload is invalid: #{e.message}"
+    rescue ArgumentError
+      warnings << I18n.t(:'canvas_gantt.label_baseline_invalid')
       LoadResult.new(snapshot: nil, warnings: warnings)
     end
 
@@ -181,12 +181,12 @@ module RedmineCanvasGantt
       begin
         issue_id = Integer(issue_id)
       rescue ArgumentError, TypeError
-        warnings << 'A baseline task state was skipped because it is missing issue_id.'
+        warnings << I18n.t(:'canvas_gantt.label_baseline_missing_issue')
         return nil
       end
 
       if issue_id <= 0
-        warnings << 'A baseline task state was skipped because it is missing issue_id.'
+        warnings << I18n.t(:'canvas_gantt.label_baseline_missing_issue')
         return nil
       end
 
@@ -196,12 +196,12 @@ module RedmineCanvasGantt
       parsed_due_date = parse_date(raw_due_date)
 
       if raw_start_date.present? && parsed_start_date.nil?
-        warnings << "Baseline task state for issue #{issue_id} was skipped: baseline_start_date is invalid."
+        warnings << I18n.t(:'canvas_gantt.label_baseline_invalid_task', id: issue_id)
         return nil
       end
 
       if raw_due_date.present? && parsed_due_date.nil?
-        warnings << "Baseline task state for issue #{issue_id} was skipped: baseline_due_date is invalid."
+        warnings << I18n.t(:'canvas_gantt.label_baseline_invalid_task', id: issue_id)
         return nil
       end
 
@@ -210,8 +210,8 @@ module RedmineCanvasGantt
         baseline_start_date: parsed_start_date,
         baseline_due_date: parsed_due_date
       )
-    rescue ArgumentError => e
-      warnings << "Baseline task state for issue #{issue_id} was skipped: #{e.message}"
+    rescue ArgumentError
+      warnings << I18n.t(:'canvas_gantt.label_baseline_invalid_task', id: issue_id)
       nil
     end
 

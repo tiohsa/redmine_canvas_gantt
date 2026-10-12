@@ -1,3 +1,4 @@
+import { i18n } from '../utils/i18n';
 import { buildExportFilename, canvasToBlob, downloadBlob } from './download';
 import { getCanvasLogicalSize } from '../utils/canvasDpr';
 import type { GanttExportSnapshot } from './types';
@@ -33,7 +34,7 @@ export const composeExportCanvas = (snapshot: GanttExportSnapshot): HTMLCanvasEl
 
     const ctx = canvas.getContext('2d');
     if (!ctx) {
-        throw new Error('Failed to initialize export canvas');
+        throw new Error(i18n.t('label_export_canvas_failed') || 'Failed to initialize export canvas');
     }
 
     ctx.fillStyle = '#ffffff';

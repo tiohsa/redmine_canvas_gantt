@@ -294,7 +294,7 @@ export const IssueIframeDialog: React.FC = () => {
         isSavingRef.current = true;
 
         const preparationPromise = useTimerStore.getState().beginTimerRecordingSubmission(timerRecording).then((prepared) => {
-            if (!prepared) throw new Error('Timer recording reservation could not be moved to submitting');
+            if (!prepared) throw new Error(i18n.t('label_timer_reservation_failed') || 'Timer recording reservation could not be moved to submitting');
         });
         timerSubmissionPromiseRef.current = preparationPromise;
         try {
@@ -944,7 +944,7 @@ export const IssueIframeDialog: React.FC = () => {
                             href={externalDialogUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            aria-label="Open issue in new tab"
+                            aria-label={i18n.t('label_open_issue_in_new_tab') || 'Open issue in new tab'}
                             onClick={() => handleClose()}
                             style={{
                                 display: 'flex',
@@ -968,7 +968,7 @@ export const IssueIframeDialog: React.FC = () => {
                         <button
                             type="button"
                             onClick={handleClose}
-                            aria-label="Close issue dialog"
+                            aria-label={i18n.t('label_close_issue_dialog') || 'Close issue dialog'}
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',

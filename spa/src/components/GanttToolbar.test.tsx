@@ -79,6 +79,16 @@ describe('GanttToolbar shortcuts', () => {
         });
     };
 
+    it.each([
+        ['変更を保存', '変更を破棄'], ['Save changes', 'Discard changes']
+    ])('renders translated manual-save tooltips: %s', (save, discard) => {
+        getCanvasGanttConfig().i18n = { label_save_changes: save, label_discard_changes: discard };
+        useTaskStore.setState({ modifiedTaskIds: new Set(['1']), autoSave: false });
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+        expect(screen.getByTitle(save)).toBeInTheDocument();
+        expect(screen.getByTitle(discard)).toBeInTheDocument();
+    });
+
     it('opens filter input with Ctrl+F and cancels with Escape', async () => {
         useTaskStore.setState({
             filterText: '',

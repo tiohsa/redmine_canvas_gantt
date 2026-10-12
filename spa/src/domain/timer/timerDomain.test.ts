@@ -368,8 +368,8 @@ describe('Timer Domain Logic', () => {
     });
 
     it('formats elapsed minutes text', () => {
-        expect(formatElapsedMinutesText(45 * 60 * 1000, false)).toBe('45 min');
-        expect(formatElapsedMinutesText(45 * 60 * 1000, true)).toBe('45分');
+        expect(formatElapsedMinutesText(45 * 60 * 1000, '%{count} min')).toBe('45 min');
+        expect(formatElapsedMinutesText(45 * 60 * 1000, '%{count}分')).toBe('45分');
     });
 
 });

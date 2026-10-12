@@ -377,13 +377,13 @@ describe('apiClient.fetchData filter options', () => {
     it.each(['projects', 'assignees'])('rejects malformed %s fields instead of deriving candidates', async (field) => {
         for (const value of [null, undefined, {}, 'invalid', 1, false]) {
             await expect(fetchWithOptions({ filter_options: { [field]: value } }))
-                .rejects.toThrow(`Invalid filter options response: ${field} must be an array`);
+                .rejects.toThrow('Invalid response');
         }
     });
 
     it.each([null, [], 'invalid', false].map(value => ({ value })))('rejects a malformed filter_options container: $value', async ({ value }) => {
         await expect(fetchWithOptions({ filter_options: value }))
-            .rejects.toThrow('Invalid filter options response: expected an object');
+            .rejects.toThrow('Invalid response');
     });
 
     it('does not derive candidates after discarding invalid entries from present arrays', async () => {
@@ -1233,5 +1233,38 @@ describe('mutation error classification', () => {
         await expect(apiClient.updateTaskFields('42', { subject: 'draft' })).resolves.toMatchObject({
             status: 'protocol_error'
         });
+    });
+});
+
+
+describe('localized API errors', () => {
+    afterEach(() => { vi.unstubAllGlobals(); delete window.RedmineCanvasGantt; });
+
+    it.each(['ja', 'en'])('localizes HTTP errors and preserves server validation messages (%s)', async language => {
+        const message = language === 'ja' ? 'リクエストに失敗しました（HTTP %{status}）' : 'Request failed (HTTP %{status})';
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/canvas_gantt', redmineBase: '', authToken: '', language,
+            i18n: { label_request_failed: message } };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not JSON', { status: 503, statusText: 'Service Unavailable' })));
+        await expect(apiClient.fetchQueries()).rejects.toThrow(message.replace('%{status}', '503'));
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ errors: ['件名を入力してください'] }), { status: 422 })));
+        await expect(apiClient.fetchQueries()).rejects.toThrow('件名を入力してください');
+    });
+
+    it('localizes discarded baseline warnings', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/canvas_gantt', redmineBase: '', authToken: '', language: 'ja',
+            i18n: { label_baseline_incomplete: 'ベースラインのデータが不足しています' } };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ baseline: {} }))));
+        const result = await apiClient.fetchData();
+        expect(result.baseline).toBeNull();
+        expect(result.warnings).toEqual(['ベースラインのデータが不足しています']);
+    });
+
+    it('localizes malformed successful JSON and decoded payload errors', async () => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/canvas_gantt', redmineBase: '', authToken: '', language: 'ja',
+            i18n: { label_invalid_response: 'サーバーの応答が不正です' } };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not JSON')));
+        await expect(apiClient.fetchQueries()).rejects.toThrow('サーバーの応答が不正です');
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ filter_options: { projects: false } }))));
+        await expect(apiClient.fetchData()).rejects.toThrow('サーバーの応答が不正です');
     });
 });

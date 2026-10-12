@@ -14,6 +14,30 @@ class CanvasGanttsController < ApplicationController
   }.freeze
 
   I18N_LABELS = {
+    label_all: :label_all,
+    label_assignee_plural: :label_assignee_plural,
+    label_conflict: :label_conflict,
+    label_failed_to_load: :label_failed_to_load,
+    label_modified: :label_modified,
+    label_must_be_positive_number: :label_must_be_positive_number,
+    label_pane_layout: :label_pane_layout,
+    label_to_cancel: :label_to_cancel,
+    label_save_changes: :label_save_changes,
+    label_discard_changes: :label_discard_changes,
+    label_open_issue_in_new_tab: :label_open_issue_in_new_tab,
+    label_close_issue_dialog: :label_close_issue_dialog,
+    label_invalid_response: :label_invalid_response,
+    label_network_error: :label_network_error,
+    label_request_failed: :label_request_failed,
+    label_schedule_result_missing: :label_schedule_result_missing,
+    label_schedule_outcome_unknown: :label_schedule_outcome_unknown,
+    label_schedule_save_failed: :label_schedule_save_failed,
+    label_remote_unavailable_message: :label_remote_unavailable_message,
+    label_export_canvas_failed: :label_export_canvas_failed,
+    label_timer_reservation_failed: :label_timer_reservation_failed,
+    button_clear: :button_clear,
+    label_baseline_incomplete: :label_baseline_incomplete,
+    label_baseline_invalid_task: :label_baseline_invalid_task,
     field_id: :field_id,
     field_start_date: :field_start_date,
     field_due_date: :field_due_date,
@@ -582,7 +606,7 @@ class CanvasGanttsController < ApplicationController
       payload[:project_scope] = resolved_query.fetch(:project_scope)
       render body: data_payload_budget.encode_json(payload), content_type: 'application/json'
     rescue ActionController::ParameterMissing, ArgumentError => e
-      render json: { error: e.message }, status: :unprocessable_entity
+      render json: { error: e.is_a?(ActionController::ParameterMissing) ? canvas_gantt_l(:error_canvas_gantt_invalid_parameters) : e.message }, status: :unprocessable_entity
     rescue RedmineCanvasGantt::DataPayloadBudget::Exceeded => e
       render_data_payload_limit(e)
     rescue => e
@@ -595,11 +619,15 @@ class CanvasGanttsController < ApplicationController
   # GET /projects/:project_id/canvas_gantt/actual_workload.json
   def actual_workload
     unless [params.require(:from), params.require(:to)].all? { |value| value.to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/) }
-      raise ArgumentError, 'Invalid workload date format'
+      raise ArgumentError, canvas_gantt_l(:error_canvas_gantt_workload_date_format)
     end
-    from = Date.iso8601(params.require(:from).to_s)
-    to = Date.iso8601(params.require(:to).to_s)
-    raise ArgumentError, 'Invalid workload date range' if from > to || (to - from + 1) > MAX_ACTUAL_WORKLOAD_RANGE_DAYS
+    begin
+      from = Date.iso8601(params.require(:from).to_s)
+      to = Date.iso8601(params.require(:to).to_s)
+    rescue Date::Error
+      raise ArgumentError, canvas_gantt_l(:error_canvas_gantt_workload_date_format)
+    end
+    raise ArgumentError, canvas_gantt_l(:error_canvas_gantt_workload_date_range) if from > to || (to - from + 1) > MAX_ACTUAL_WORKLOAD_RANGE_DAYS
 
     resolved = query_state_resolver.resolve(project_ids: descendant_project_ids, scope_only: true)
     # Parent Canvas access is checked by ensure_view_permission. Child issues
@@ -612,7 +640,7 @@ class CanvasGanttsController < ApplicationController
     )
     render body: data_payload_budget.encode_json({ entries: entries }), content_type: 'application/json'
   rescue ArgumentError, ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.is_a?(ActionController::ParameterMissing) ? canvas_gantt_l(:error_canvas_gantt_invalid_parameters) : e.message }, status: :unprocessable_entity
   rescue RedmineCanvasGantt::DataPayloadBudget::Exceeded => e
     render_data_payload_limit(e)
   end
@@ -750,7 +778,7 @@ class CanvasGanttsController < ApplicationController
   def schedule_mutation
     operation_id = params[:operation_id].to_s
     if operation_id.blank?
-      render json: { error: 'operation_id is required' }, status: :unprocessable_entity
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_operation_id_required) }, status: :unprocessable_entity
       return
     end
 
@@ -785,8 +813,8 @@ class CanvasGanttsController < ApplicationController
       forbidden: :forbidden,
       not_found: :not_found
     }.fetch(result.status, :internal_server_error)
-  rescue ActionController::ParameterMissing, ArgumentError => error
-    render json: { status: 'validation_error', error: error.message }, status: :unprocessable_entity
+  rescue ActionController::ParameterMissing, ArgumentError
+    render json: { status: 'validation_error', error: canvas_gantt_l(:error_canvas_gantt_invalid_parameters) }, status: :unprocessable_entity
   rescue => error
     render_internal_error(error)
   end
@@ -1077,7 +1105,7 @@ class CanvasGanttsController < ApplicationController
     return 'filtered' if raw_scope.blank?
     return raw_scope if RedmineCanvasGantt::BaselineSnapshot::VALID_SCOPES.include?(raw_scope)
 
-    raise ArgumentError, 'scope is invalid'
+    raise ArgumentError, canvas_gantt_l(:error_canvas_gantt_invalid_scope)
   end
 
   def baseline_save_issues(scope, project_ids)
@@ -1185,7 +1213,7 @@ class CanvasGanttsController < ApplicationController
   def render_internal_error(error)
     request_id = request.request_id
     Rails.logger.error("[Canvas Gantt][#{request_id}] #{error.class}: #{error.message}\n#{Array(error.backtrace).join("\n")}")
-    render json: { error: "#{canvas_gantt_l(:label_unknown_error)} (request ID: #{request_id})" }, status: :internal_server_error
+    render json: { error: canvas_gantt_l(:label_internal_error_with_request_id, message: canvas_gantt_l(:label_unknown_error), request_id: request_id) }, status: :internal_server_error
   end
 
   # Mutation responses retain the legacy top-level fields while exposing the

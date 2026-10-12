@@ -1,6 +1,10 @@
 # Basic operations
 
-Control labels vary with Redmine's language setting.
+Canvas Gantt uses Redmine's display language. User-provided issue subjects, project names, and other data keep their original text.
+
+::: info Unreleased correction
+The development version corrects missing translations in controls, tooltips, accessibility labels, and related error messages in Japanese and English. This correction is not yet included in the documented release.
+:::
 
 ## Screen areas
 

@@ -46,15 +46,15 @@ module RedmineCanvasGantt
       resolution = resolution&.symbolize_keys
       request_date_placement_mode = normalize_date_placement_mode(date_placement_mode)
       normalized_changes = normalize_changes(changes)
-      return failure('changes must contain at least one task') if normalized_changes.empty? && !resolution
+      return failure(I18n.t(:'canvas_gantt.error_canvas_gantt_schedule_changes_required')) if normalized_changes.empty? && !resolution
 
       ids = normalized_changes.map { |change| change[:task_id] }.uniq.sort
       seed_ids = resolution ? Array(resolution[:task_ids]).map(&:to_i).select(&:positive?).uniq.sort : ids
-      return failure('Resolution scope is required') if seed_ids.empty?
-      return failure('Changes must belong to the reviewed operation') if resolution && (ids - seed_ids).any?
+      return failure(I18n.t(:'canvas_gantt.error_canvas_gantt_resolution_scope_required')) if seed_ids.empty?
+      return failure(I18n.t(:'canvas_gantt.error_canvas_gantt_resolution_changes_outside_scope')) if resolution && (ids - seed_ids).any?
       revisions = normalize_revisions(base_revisions)
       missing_revision_id = ids.find { |id| !revisions.key?(id) }
-      return failure("Missing base revision for task #{missing_revision_id}") if missing_revision_id
+      return failure(I18n.t(:'canvas_gantt.error_canvas_gantt_missing_base_revision', id: missing_revision_id)) if missing_revision_id
       planned_id_set = ids.to_set
 
       attempts = 0
@@ -85,18 +85,18 @@ module RedmineCanvasGantt
           end
           missing_id = ids.find { |id| !visible_planned_ids.include?(id) || !issues_by_id.key?(id) }
           if missing_id
-            transaction_result = failure("Task #{missing_id} was not found", status: :not_found)
+            transaction_result = failure(I18n.t(:'canvas_gantt.error_canvas_gantt_task_not_found'), status: :not_found)
             raise ActiveRecord::Rollback
           end
 
           out_of_scope = planned_issues.find { |issue| !@project_scope_ids.include?(issue.project_id.to_i) }
           if out_of_scope
-            transaction_result = failure("Task #{out_of_scope.id} is outside the Canvas scope", status: :not_found)
+            transaction_result = failure(I18n.t(:'canvas_gantt.error_canvas_gantt_issue_not_found_in_project'), status: :not_found)
             raise ActiveRecord::Rollback
           end
 
           unless planned_issues.all? { |issue| editable?(issue) }
-            transaction_result = failure('Permission denied', status: :forbidden)
+            transaction_result = failure(I18n.t(:'canvas_gantt.error_canvas_gantt_permission_denied'), status: :forbidden)
             raise ActiveRecord::Rollback
           end
 
@@ -112,7 +112,7 @@ module RedmineCanvasGantt
             visible_ids = Issue.visible.where(id: lock_ids).pluck(:id)
             unless (seed_ids - lock_ids).empty? && (lock_ids - visible_ids).empty? &&
                 issues.all? { |issue| @project_scope_ids.include?(issue.project_id.to_i) }
-              transaction_result = failure('Schedule scope is unavailable', status: :not_found)
+              transaction_result = failure(I18n.t(:'canvas_gantt.error_canvas_gantt_schedule_scope_unavailable'), status: :not_found)
               raise ActiveRecord::Rollback
             end
             token = resolution_token(scope_b, issues, calendar_resolver)
@@ -145,7 +145,7 @@ module RedmineCanvasGantt
 
           apply_order = causal_apply_order(ids, scope_b[:event_edges])
           unless apply_order
-            transaction_result = failure('Schedule dependency graph cannot be ordered safely')
+            transaction_result = failure(I18n.t(:'canvas_gantt.error_canvas_gantt_schedule_graph_unordered'))
             raise ActiveRecord::Rollback
           end
           initial_revisions = issues_by_id.to_h { |id, issue| [id, issue.lock_version.to_i] }
@@ -213,7 +213,7 @@ module RedmineCanvasGantt
             )
             if callback_authorization_status
               transaction_result = failure(
-                callback_authorization_status == :forbidden ? 'Permission denied' : 'Schedule scope is unavailable',
+                callback_authorization_status == :forbidden ? I18n.t(:'canvas_gantt.error_canvas_gantt_permission_denied') : I18n.t(:'canvas_gantt.error_canvas_gantt_schedule_scope_unavailable'),
                 status: callback_authorization_status
               )
               raise ActiveRecord::Rollback
@@ -268,7 +268,7 @@ module RedmineCanvasGantt
 
         return transaction_result if transaction_result
         return topology_conflict_result(operation_id) if topology_changed && attempts >= MAX_ATTEMPTS
-        return failure('Schedule mutation failed') unless topology_changed
+        return failure(I18n.t(:'canvas_gantt.error_canvas_gantt_schedule_failed')) unless topology_changed
       end
     rescue ActiveRecord::StaleObjectError => error
       remote = Issue.visible.find_by(id: error.record&.id)
@@ -328,11 +328,11 @@ module RedmineCanvasGantt
     def resolution_constraint_errors(issues, dates, calendar)
       by_id = issues.to_h { |issue| [issue.id.to_s, issue] }
       graph = ConstraintGraph.new(relations: resolution_relations(issues.map(&:id)))
-      return ['Schedule dependency cycle'] if graph.cyclic?
+      return [I18n.t(:'canvas_gantt.error_canvas_gantt_schedule_cycle')] if graph.cyclic?
 
       errors = dates.filter_map do |id, interval|
         if interval[:start_date] && interval[:due_date] && interval[:start_date] > interval[:due_date]
-          "Invalid dates for task #{id}"
+          I18n.t(:'canvas_gantt.error_canvas_gantt_schedule_invalid_dates', id: id)
         end
       end
       graph.edges.each do |edge|
@@ -342,7 +342,7 @@ module RedmineCanvasGantt
 
         earliest = calendar.add_working_days(predecessor[:due_date], edge.gap_days,
           project: by_id.fetch(edge.successor_id).project)
-        errors << "Task #{edge.successor_id} must start on or after #{earliest}" if successor[:start_date] < earliest
+        errors << I18n.t(:'canvas_gantt.error_canvas_gantt_schedule_earliest_start', id: edge.successor_id, date: earliest) if successor[:start_date] < earliest
       end
       errors
     end
@@ -662,7 +662,7 @@ module RedmineCanvasGantt
         entities: [],
         revisions: {},
         invalidated_entity_ids: [],
-        errors: ['The schedule topology changed while the operation was running.'],
+        errors: [I18n.t(:'canvas_gantt.error_canvas_gantt_schedule_topology_changed')],
         failure: {
           kind: 'conflict',
           resource_role: 'scope',
@@ -686,7 +686,7 @@ module RedmineCanvasGantt
         entities: @payload_builder.build_task_states(issues),
         revisions: issues.to_h { |issue| [issue.id.to_i, issue.lock_version.to_i] },
         invalidated_entity_ids: issues.map(&:id),
-        errors: ['The issue was updated by another request.'],
+        errors: [I18n.t(:'canvas_gantt.error_canvas_gantt_issue_updated')],
         conflict: conflicts.first,
         conflicts: conflicts
       )

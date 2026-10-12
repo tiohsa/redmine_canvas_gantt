@@ -84,6 +84,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check frontend translation contract
+        run: npm run check:i18n-contract
+
       - name: Check async state contract boundaries
         run: npm run check:async-contract
 
