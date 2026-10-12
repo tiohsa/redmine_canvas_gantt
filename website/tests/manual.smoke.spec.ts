@@ -8,6 +8,14 @@ async function openPage(page: import('@playwright/test').Page, path: string) {
 
 test('Japanese and English pages load and language menu reaches the matching guide', async ({ page }) => {
   await openPage(page, './')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en-US')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Redmine Canvas Gantt Manual')
+  await expect(page.getByRole('button', { name: /search/i })).toBeVisible()
+  const englishManual = page.locator('.manual-entry a').first()
+  await expect(englishManual).toHaveText('Open the English manual')
+  await englishManual.click()
+  await expect(page).toHaveURL(/\/en\/$/)
+  await openPage(page, './')
   await page.getByRole('link', { name: /日本語版マニュアルを開く/ }).click()
   await expect(page).toHaveURL(/\/ja\/$/)
 

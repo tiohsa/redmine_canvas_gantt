@@ -4,7 +4,7 @@
 
 Redmine 6.0、6.1、7.0 向けの高速な Canvas ベースのガントチャートプラグインです。この README とユーザーマニュアルはプラグイン v0.18.0 の内容です。
 
-[日本語マニュアル](website/ja/index.md) · [English user manual](website/en/index.md) · [開発者向けガイド](spa/README_ja.md)
+[日本語マニュアル](https://tiohsa.github.io/redmine_canvas_gantt/ja/) · [English user manual](https://tiohsa.github.io/redmine_canvas_gantt/en/) · [開発者向けガイド](spa/README_ja.md)
 
 詳しい機能、導入、管理手順はマニュアルのナビゲーションから確認できます。
 

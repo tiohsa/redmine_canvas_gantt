@@ -4,7 +4,7 @@
 
 A fast, Canvas-based Gantt chart plugin for Redmine 6.0, 6.1, and 7.0. This README and the user manual describe plugin release v0.18.0.
 
-[English user manual](website/en/index.md) · [日本語マニュアル](website/ja/index.md) · [Developer guide](spa/README.md)
+[English user manual](https://tiohsa.github.io/redmine_canvas_gantt/en/) · [日本語マニュアル](https://tiohsa.github.io/redmine_canvas_gantt/ja/) · [Developer guide](spa/README.md)
 
 Use the manual's navigation for detailed feature, setup, and administration guidance.
 
