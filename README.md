@@ -53,6 +53,8 @@ Watch [schedule editing](./website/public/videos/schedule-edit.mp4) and [depende
 - Redmine REST API enabled and a desktop version of Google Chrome or Microsoft Edge.
 - Node.js 20+ only to build the SPA from source; it is not required for normal operation with the included built assets.
 
+<a id="supported-browsers"></a>
+
 ### Tested environment
 
 Tested with desktop versions of Google Chrome and Microsoft Edge. Other browsers have not been tested.

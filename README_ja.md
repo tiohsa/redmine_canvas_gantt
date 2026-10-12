@@ -53,6 +53,8 @@ Canvas Gantt は、Redmine のチケット、権限、保存済みクエリを�
 - Redmine REST API と、デスクトップ版 Google Chrome または Microsoft Edge
 - Node.js 20 以降は SPA をソースからビルドする場合のみ必要です。同梱済みアセットで通常運用する場合は不要です。
 
+<a id="対応ブラウザ"></a>
+
 ### 動作確認環境
 
 デスクトップ版 Google Chrome および Microsoft Edge で動作確認しています。その他のブラウザーは未検証です。
