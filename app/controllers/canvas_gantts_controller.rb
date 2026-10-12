@@ -559,12 +559,14 @@ class CanvasGanttsController < ApplicationController
 
   # GET /projects/:project_id/canvas_gantt
   def index
-    @i18n = I18N_LABELS.transform_values { |label_key| canvas_gantt_l(label_key, default: label_key) }
+    @language = (User.current.language.presence || Setting.default_language).to_s
+    I18n.with_locale(@language) do
+      @i18n = I18N_LABELS.transform_values { |label_key| canvas_gantt_l(label_key, default: label_key) }
+      @date_format = Setting.date_format.presence || canvas_gantt_l(:general_format_date)
+      @year_month_format = canvas_gantt_l(:year_month_format)
+    end
     @settings = plugin_settings
     @non_working_week_days = normalized_non_working_week_days
-    @language = (User.current.language.presence || Setting.default_language).to_s
-    @date_format = Setting.date_format.presence || canvas_gantt_l(:general_format_date)
-    @year_month_format = canvas_gantt_l(:year_month_format)
   end
 
   # GET /projects/:project_id/canvas_gantt/data.json
