@@ -19,7 +19,7 @@ module RedmineCanvasGantt
         state: state,
         none_filters: none_filters
       )
-      return scope.except(:includes, :order) if scope_only
+      return scope.except(:includes, :preload, :order) if scope_only
 
       issues = if @data_payload_budget
                  @data_payload_budget.load_records(
@@ -45,7 +45,9 @@ module RedmineCanvasGantt
       scope = apply_version_filter(scope, state[:selected_version_ids]) if state[:selected_version_ids].present?
       scope = apply_assignee_filter(scope, state[:selected_assignee_ids]) if state[:selected_assignee_ids].present?
       scope = scope.where(tracker_id: state[:selected_tracker_ids]) if state[:selected_tracker_ids].present?
-      scope.includes(*@issue_includes)
+      # Issue.visible already joins projects. Load associations separately even
+      # when the caller supplied includes, avoiding custom-value JOIN expansion.
+      scope.except(:includes).preload(*@issue_includes)
     end
 
     def apply_assignee_filter(scope, selected_assignee_ids)

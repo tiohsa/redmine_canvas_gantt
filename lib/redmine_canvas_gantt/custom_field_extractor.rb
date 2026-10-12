@@ -39,11 +39,11 @@ module RedmineCanvasGantt
     def extract_custom_fields(issue, editable)
       return [[], {}] unless editable
 
-      applicable_custom_field_ids = issue_applicable_custom_field_ids(issue)
+      issue_custom_field_values, applicable_custom_field_ids = issue_custom_field_data(issue)
       custom_fields = []
       custom_field_values = {}
 
-      issue.custom_field_values.each do |custom_field_value|
+      issue_custom_field_values.each do |custom_field_value|
         custom_field = custom_field_value.custom_field
         next unless custom_field
         next unless applicable_custom_field_ids.include?(custom_field.id)
@@ -58,8 +58,8 @@ module RedmineCanvasGantt
     end
 
     def build_task_custom_field_values(issue)
-      applicable_custom_field_ids = issue_applicable_custom_field_ids(issue)
-      issue.custom_field_values.each_with_object({}) do |custom_field_value, values|
+      issue_custom_field_values, applicable_custom_field_ids = issue_custom_field_data(issue)
+      issue_custom_field_values.each_with_object({}) do |custom_field_value, values|
         custom_field = custom_field_value.custom_field
         next unless custom_field
         next unless applicable_custom_field_ids.include?(custom_field.id)
@@ -101,6 +101,33 @@ module RedmineCanvasGantt
         .uniq
     rescue StandardError
       []
+    end
+
+    def issue_custom_field_data(issue)
+      # Redmine's base implementation builds values from available fields. An
+      # override must retain the independent applicability check and its order.
+      if uses_base_custom_field_values?(issue)
+        custom_field_values = issue.custom_field_values
+        [custom_field_values, applicable_custom_field_ids_from_values(custom_field_values)]
+      else
+        applicable_custom_field_ids = issue_applicable_custom_field_ids(issue)
+        [issue.custom_field_values, applicable_custom_field_ids]
+      end
+    end
+
+    def applicable_custom_field_ids_from_values(custom_field_values)
+      Array(custom_field_values)
+        .filter_map { |value| value.custom_field&.id }
+        .uniq
+    rescue StandardError
+      []
+    end
+
+    def uses_base_custom_field_values?(issue)
+      issue.respond_to?(:custom_field_values) &&
+        issue.method(:custom_field_values).owner == Redmine::Acts::Customizable::InstanceMethods
+    rescue StandardError
+      false
     end
   end
 end

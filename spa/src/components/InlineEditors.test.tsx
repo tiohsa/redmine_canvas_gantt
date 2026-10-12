@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { CustomFieldEditor, DueDateEditor, SelectEditor, SubjectEditor } from './InlineEditors';
+import { CustomFieldEditor, DoneRatioEditor, DueDateEditor, SelectEditor, SubjectEditor } from './InlineEditors';
 
 describe('InlineEditors', () => {
     const deferred = <T,>() => {
@@ -110,6 +110,85 @@ describe('InlineEditors', () => {
 
         const input = screen.getByDisplayValue('Task subject');
         expect(input).toHaveStyle({ height: '20px', lineHeight: '18px', padding: '0 8px' });
+    });
+
+    it('focuses the progress input when its editor opens', () => {
+        render(
+            <DoneRatioEditor
+                initialValue={10}
+                onCancel={vi.fn()}
+                onCommit={vi.fn().mockResolvedValue(undefined)}
+            />
+        );
+
+        expect(screen.getByRole('spinbutton')).toHaveFocus();
+    });
+
+    it('commits a progress value only once when Enter is followed by blur', async () => {
+        const onCommit = vi.fn().mockResolvedValue(undefined);
+        const onCancel = vi.fn();
+        render(<DoneRatioEditor initialValue={10} onCommit={onCommit} onCancel={onCancel} />);
+
+        const input = screen.getByRole('spinbutton');
+        fireEvent.change(input, { target: { value: '40' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        fireEvent.blur(input);
+
+        await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1));
+        expect(onCommit).toHaveBeenCalledWith(40);
+        expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it('does not cancel when optimistic props match while a progress save is pending', async () => {
+        const save = deferred<void>();
+        const onCommit = vi.fn(() => save.promise);
+        const onCancel = vi.fn();
+        const { rerender } = render(
+            <DoneRatioEditor initialValue={10} onCommit={onCommit} onCancel={onCancel} />
+        );
+        const input = screen.getByRole('spinbutton');
+        fireEvent.change(input, { target: { value: '40' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(1));
+
+        rerender(<DoneRatioEditor initialValue={40} onCommit={onCommit} onCancel={onCancel} />);
+        fireEvent.blur(input);
+
+        expect(onCancel).not.toHaveBeenCalled();
+        expect(input).toBeInTheDocument();
+        await act(async () => { save.resolve(); });
+        expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it('keeps errors visible and permits retry after a progress save rejects', async () => {
+        const onCommit = vi.fn()
+            .mockRejectedValueOnce(new Error('Save failed'))
+            .mockResolvedValueOnce(undefined);
+        const onCancel = vi.fn();
+        render(<DoneRatioEditor initialValue={10} onCommit={onCommit} onCancel={onCancel} />);
+
+        const input = screen.getByRole('spinbutton');
+        fireEvent.change(input, { target: { value: '40' } });
+        fireEvent.blur(input);
+        expect(await screen.findByText('Save failed')).toBeInTheDocument();
+        expect(onCancel).not.toHaveBeenCalled();
+
+        fireEvent.change(input, { target: { value: '50' } });
+        fireEvent.blur(input);
+        await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(2));
+        expect(onCommit).toHaveBeenLastCalledWith(50);
+        expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it('cancels unchanged progress on blur without saving', () => {
+        const onCommit = vi.fn();
+        const onCancel = vi.fn();
+        render(<DoneRatioEditor initialValue={10} onCommit={onCommit} onCancel={onCancel} />);
+
+        fireEvent.blur(screen.getByRole('spinbutton'));
+
+        expect(onCancel).toHaveBeenCalledTimes(1);
+        expect(onCommit).not.toHaveBeenCalled();
     });
 
     it('applies explicit control dimensions to custom field list editors', () => {

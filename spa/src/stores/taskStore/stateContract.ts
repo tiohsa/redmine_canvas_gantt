@@ -233,10 +233,11 @@ export const commitOperationPatches = <T extends { id: string }>(
 
 export const classifyDerivedInvalidation = (fields: Iterable<string>): DerivedInvalidation => {
     const changed = new Set(fields);
-    if (changed.has('startDate') || changed.has('dueDate') || changed.has('parentId') || changed.has('displayOrder')) {
-        return 'critical_path';
+    if (changed.has('startDate') || changed.has('dueDate') || changed.has('projectId') || changed.has('relation') || changed.has('relations')) {
+        return 'schedule';
     }
-    if (changed.has('relation') || changed.has('relations')) return 'critical_path';
-    if (changed.has('projectId') || changed.has('assignedToId') || changed.has('fixedVersionId')) return 'layout';
+    if (changed.has('parentId') || changed.has('displayOrder') || changed.has('assignedToId') || changed.has('fixedVersionId')) {
+        return 'layout';
+    }
     return 'none';
 };

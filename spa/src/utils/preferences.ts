@@ -17,6 +17,7 @@ export interface StoredPreferences {
     showDueDateOnly?: boolean;
     showVersions?: boolean;
     showBaseline?: boolean;
+    calculateCriticalPathEnabled?: boolean;
     selectedStatusIds?: number[];
     selectedProjectIds?: string[];
     visibleColumns?: string[];
@@ -55,6 +56,7 @@ export interface StoredDisplayPreferences {
     showDueDateOnly?: boolean;
     showVersions?: boolean;
     showBaseline?: boolean;
+    calculateCriticalPathEnabled?: boolean;
     visibleColumns?: string[];
     columnSettings?: ColumnConfig[];
     organizeByDependency?: boolean;
@@ -100,6 +102,7 @@ export type DisplayPreferencesSnapshot = Pick<
     | 'showDueDateOnly'
     | 'showVersions'
     | 'showBaseline'
+    | 'calculateCriticalPathEnabled'
     | 'visibleColumns'
     | 'columnSettings'
     | 'organizeByDependency'
@@ -140,6 +143,9 @@ const sanitizePreferences = (prefs: StoredPreferences): StoredPreferences => Obj
         showDueDateOnly: prefs.showDueDateOnly,
         showVersions: prefs.showVersions,
         showBaseline: prefs.showBaseline,
+        calculateCriticalPathEnabled: typeof prefs.calculateCriticalPathEnabled === 'boolean'
+            ? prefs.calculateCriticalPathEnabled
+            : undefined,
         visibleColumns: prefs.visibleColumns,
         columnSettings: prefs.columnSettings,
         columnWidths: prefs.columnWidths,
@@ -176,6 +182,9 @@ const sanitizeDisplayPreferences = (prefs: StoredPreferences): StoredDisplayPref
         showDueDateOnly: prefs.showDueDateOnly,
         showVersions: prefs.showVersions,
         showBaseline: prefs.showBaseline,
+        calculateCriticalPathEnabled: typeof prefs.calculateCriticalPathEnabled === 'boolean'
+            ? prefs.calculateCriticalPathEnabled
+            : undefined,
         visibleColumns: prefs.visibleColumns,
         columnSettings: prefs.columnSettings,
         organizeByDependency: prefs.organizeByDependency,

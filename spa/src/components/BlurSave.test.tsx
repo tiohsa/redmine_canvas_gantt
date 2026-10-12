@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { UiSidebar } from './UiSidebar';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
@@ -29,12 +29,13 @@ describe('UiSidebar Blur-to-Save', () => {
             settings: {
                 inline_edit_subject: '1',
                 inline_edit_status: '1',
-                inline_edit_start_date: '1'
+                inline_edit_start_date: '1',
+                inline_edit_done_ratio: '1'
             }
         };
 
         useUIStore.setState({
-            visibleColumns: ['id', 'subject', 'status', 'startDate'],
+            visibleColumns: ['id', 'subject', 'status', 'startDate', 'ratioDone'],
             activeInlineEdit: null
         });
         useEditMetaStore.setState({ metaByTaskId: {}, loadingByTaskId: {}, error: null });
@@ -107,9 +108,15 @@ describe('UiSidebar Blur-to-Save', () => {
                 } as unknown as Response;
             }
             if (url.includes(`/canvas_gantt/tasks/${taskId}.json`) && init?.method === 'PATCH') {
+                const taskFields = (JSON.parse(String(init.body)) as { task?: Record<string, unknown> }).task ?? {};
                 return {
                     ok: true,
-                    json: async () => ({ lock_version: 2 })
+                    json: async () => ({
+                        lock_version: 2,
+                        ...(typeof taskFields.done_ratio === 'number'
+                            ? { entity: { id: Number(taskId), lock_version: 2, ratio_done: taskFields.done_ratio } }
+                            : {})
+                    })
                 } as unknown as Response;
             }
             return { ok: false } as unknown as Response;
@@ -170,5 +177,38 @@ describe('UiSidebar Blur-to-Save', () => {
         const fetchMock = vi.mocked(fetch);
         const patchCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH');
         expect(patchCalls.length).toBe(0);
+    });
+
+    it.each([true, false])('focuses, commits, and closes the progress editor on blur (autoSave=%s)', async (autoSave) => {
+        useTaskStore.setState({ autoSave });
+        render(<UiSidebar />);
+
+        const cell = await screen.findByTestId(`cell-${taskId}-ratioDone`);
+        fireEvent.doubleClick(cell);
+        const input = await screen.findByRole('spinbutton');
+
+        expect(input).toHaveFocus();
+        fireEvent.change(input, { target: { value: '40' } });
+        expect(input).toHaveValue(40);
+        await act(async () => {
+            (input as HTMLInputElement).focus();
+            (input as HTMLInputElement).blur();
+        });
+
+        await waitFor(() => expect(useUIStore.getState().activeInlineEdit).toBeNull());
+        expect(useTaskStore.getState().allTasks.find(task => task.id === taskId)?.ratioDone).toBe(40);
+
+        const patchCalls = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'PATCH');
+        if (autoSave) {
+            await waitFor(() => expect(patchCalls).toEqual(expect.arrayContaining([
+                expect.arrayContaining([
+                    expect.stringContaining(`/tasks/${taskId}.json`),
+                    expect.objectContaining({ method: 'PATCH', body: expect.stringContaining('"done_ratio":40') })
+                ])
+            ])));
+        } else {
+            expect(patchCalls).toHaveLength(0);
+            expect(useTaskStore.getState().modifiedTaskIds.has(taskId)).toBe(true);
+        }
     });
 });

@@ -1,4 +1,4 @@
-import { chromium } from '@playwright/test';
+import { chromium, firefox } from '@playwright/test';
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -21,7 +21,7 @@ const REGRESSION_THRESHOLD = 1.2;
 const EXPECTED_CANVAS_COUNT = 4;
 
 const parseArgs = (argv) => {
-  const args = { ci: false, output: DEFAULT_OUTPUT_FILE };
+  const args = { ci: false, output: DEFAULT_OUTPUT_FILE, browser: 'chromium', taskCounts: undefined };
 
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
@@ -30,10 +30,33 @@ const parseArgs = (argv) => {
       continue;
     }
 
+    if (value === '--browser') {
+      args.browser = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (value === '--task-counts') {
+      const rawCounts = argv[index + 1] ?? '';
+      args.taskCounts = rawCounts.split(',').map((count) => Number(count.trim()));
+      index += 1;
+      continue;
+    }
+
     if (value === '--output') {
       args.output = resolve(SPA_DIR, argv[index + 1]);
       index += 1;
     }
+  }
+
+  if (!['chromium', 'firefox'].includes(args.browser)) {
+    throw new Error(`Unsupported browser: ${args.browser}. Use chromium or firefox.`);
+  }
+  if (args.ci && args.browser === 'firefox') {
+    throw new Error('CI benchmark budgets are calibrated for Chromium; Firefox cannot be used with --ci.');
+  }
+  if (args.taskCounts && args.taskCounts.some((count) => !Number.isSafeInteger(count) || count <= 0)) {
+    throw new Error('Task counts must be positive integers, for example --task-counts 100,1000,5000.');
   }
 
   return args;
@@ -297,7 +320,15 @@ const main = async () => {
   if (selectedFixtures.length === 0) {
     throw new Error(`No benchmark scenarios matched: ${requestedScenarioNames.join(', ')}`);
   }
-  const scenarios = selectedFixtures.map(createScenario);
+  const scenarios = args.taskCounts
+    ? args.taskCounts.map((taskCount) => {
+      const flatFixture = selectedFixtures.find((fixture) => fixture.kind === 'flat');
+      if (!flatFixture) {
+        throw new Error('--task-counts requires a selected flat fixture as its template.');
+      }
+      return createScenario({ ...flatFixture, name: `flat-${taskCount}`, taskCount });
+    })
+    : selectedFixtures.map(createScenario);
   const budgets = JSON.parse(await readFile(BUDGET_FILE, 'utf8'));
 
   await mkdir(resolve(RESULTS_DIR), { recursive: true });
@@ -307,7 +338,8 @@ const main = async () => {
 
   try {
     benchmarkServer = await startBenchmarkServer();
-    browser = await chromium.launch({ headless: true });
+    const browserType = args.browser === 'firefox' ? firefox : chromium;
+    browser = await browserType.launch({ headless: true });
 
     const scenarioResults = [];
     for (const scenario of scenarios) {
@@ -315,11 +347,29 @@ const main = async () => {
       scenarioResults.push(await measureScenario(browser, scenario));
     }
 
-    const evaluatedResults = evaluateBudgets(scenarioResults, budgets);
+    // Firefox is diagnostic because the regression budgets are calibrated for Chromium.
+    // Only an explicit, non-CI task-count run may contain scenarios without budgets.
+    const evaluatedResults = args.browser === 'firefox'
+      ? scenarioResults
+      : args.taskCounts && !args.ci
+        ? scenarioResults.map((result) => budgets[result.name]
+          ? evaluateBudgets([result], budgets)[0]
+          : result)
+        : evaluateBudgets(scenarioResults, budgets);
     const failedScenarios = evaluatedResults.filter((result) => result.status === 'fail');
+    const buildManifest = JSON.parse(await readFile(MANIFEST_FILE, 'utf8'));
+    const buildEntry = buildManifest['src/main.tsx'];
     const output = {
       generatedAt: new Date().toISOString(),
       baseUrl: BASE_URL,
+      browser: args.browser,
+      browserVersion: browser.version(),
+      buildManifestEntry: {
+        file: buildEntry?.file ?? null,
+        css: buildEntry?.css ?? []
+      },
+      dataSource: 'mocked-api-fixtures',
+      taskCounts: args.taskCounts ?? null,
       sampleCount: SAMPLE_COUNT,
       regressionThreshold: REGRESSION_THRESHOLD,
       ci: args.ci,
@@ -329,10 +379,14 @@ const main = async () => {
     await writeFile(args.output, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
 
     for (const result of evaluatedResults) {
-      process.stdout.write(
-        `${result.name}: median ${result.metrics.renderMs.median}ms, ` +
-          `budget ${result.budget.baselineMs}ms, threshold ${result.budget.thresholdMs}ms [${result.status}]\n`
-      );
+      if (result.budget) {
+        process.stdout.write(
+          `${result.name}: median ${result.metrics.renderMs.median}ms, ` +
+            `budget ${result.budget.baselineMs}ms, threshold ${result.budget.thresholdMs}ms [${result.status}]\n`
+        );
+      } else {
+        process.stdout.write(`${result.name}: median ${result.metrics.renderMs.median}ms [unbudgeted diagnostic]\n`);
+      }
     }
 
     if (failedScenarios.length > 0) {

@@ -19,7 +19,8 @@ RSpec.describe RedmineCanvasGantt::IssueSelector do
 
   before do
     allow(issue_scope).to receive(:where).and_return(issue_scope)
-    allow(issue_scope).to receive(:includes).with(*issue_includes).and_return(issue_scope)
+    allow(issue_scope).to receive(:except).with(:includes).and_return(issue_scope)
+    allow(issue_scope).to receive(:preload).with(*issue_includes).and_return(issue_scope)
   end
 
   def select_issues(**options)
@@ -48,6 +49,15 @@ RSpec.describe RedmineCanvasGantt::IssueSelector do
     )).to eq([])
   end
 
+  it 'replaces inherited eager loading with preloads for issue associations' do
+    expect(issue_scope).to receive(:except).with(:includes).and_return(issue_scope)
+    expect(issue_scope).to receive(:preload).with(*issue_includes).and_return(issue_scope)
+    expect(issue_scope).not_to receive(:includes)
+    allow(issue_scope).to receive(:to_a).and_return([])
+
+    select_issues
+  end
+
   it 'keeps unassigned and unset-version selections in the database scope' do
     expect(issue_scope).to receive(:where).with(fixed_version_id: [7]).and_return(issue_scope)
     expect(issue_scope).to receive(:where).with(fixed_version_id: nil).and_return(issue_scope)
@@ -62,9 +72,9 @@ RSpec.describe RedmineCanvasGantt::IssueSelector do
     ))).to eq([])
   end
 
-  it 'returns an unmaterialized scope without includes or order for workload aggregation' do
+  it 'returns an unmaterialized scope without eager loading or order for workload aggregation' do
     scoped_issues = double('ScopedIssues')
-    expect(issue_scope).to receive(:except).with(:includes, :order).and_return(scoped_issues)
+    expect(issue_scope).to receive(:except).with(:includes, :preload, :order).and_return(scoped_issues)
     expect(issue_scope).not_to receive(:to_a)
 
     expect(select_issues(scope_only: true)).to eq(scoped_issues)
@@ -130,7 +140,7 @@ RSpec.describe RedmineCanvasGantt::IssueSelector do
 
   it 'applies explicit none to the relation used by workload aggregation' do
     expect(issue_scope).to receive(:where).with(id: []).and_return(issue_scope)
-    expect(issue_scope).to receive(:except).with(:includes, :order).and_return(issue_scope)
+    expect(issue_scope).to receive(:except).with(:includes, :preload, :order).and_return(issue_scope)
     select_issues(scope_only: true, none_filters: [:status])
   end
 

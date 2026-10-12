@@ -115,6 +115,29 @@ describe('Preferences storage', () => {
         expect(loadPreferences(2).showBaseline).toBeUndefined();
     });
 
+    it('saves critical path calculation in project and shared display preferences', () => {
+        saveDisplayPreferences({ calculateCriticalPathEnabled: false }, 1);
+        expect(loadPreferences(1).calculateCriticalPathEnabled).toBe(false);
+        expect(loadPreferences(2).calculateCriticalPathEnabled).toBeUndefined();
+
+        saveGlobalDisplayPreferences({ calculateCriticalPathEnabled: false }, true);
+        expect(loadDisplayPreferencesWithSource(1).preferences.calculateCriticalPathEnabled).toBe(false);
+        expect(loadDisplayPreferencesWithSource(2).preferences.calculateCriticalPathEnabled).toBe(false);
+    });
+
+    it('drops invalid stored critical path preference values', () => {
+        window.localStorage.setItem('canvasGantt:preferences', JSON.stringify({
+            version: 4,
+            general: {},
+            display: {
+                projects: { 'project:1': { calculateCriticalPathEnabled: 'false' } },
+                global: { enabled: false, preferences: {} }
+            }
+        }));
+
+        expect(loadDisplayPreferencesWithSource(1).preferences.calculateCriticalPathEnabled).toBeUndefined();
+    });
+
     it('saves and loads memberProjectsOnly preference', () => {
         saveDisplayPreferences({ memberProjectsOnly: true }, 1);
 

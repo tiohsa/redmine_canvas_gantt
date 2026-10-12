@@ -4,7 +4,7 @@ Control labels vary with Redmine's language setting.
 
 ## Screen areas
 
-![Day view of Canvas Gantt 0.18.0 on Redmine 7.0.0.stable, showing issues and dependencies.](/images/canvas-gantt-overview-en.png)
+![Day view of Canvas Gantt 0.18.1 on Redmine 7.0.0.stable, showing issues and dependencies.](/images/canvas-gantt-overview-en.png)
 
 [View full-size image](/images/canvas-gantt-overview-en.png)
 

@@ -10,6 +10,8 @@ Filter by subject text, project, tracker, target version, assignee, and status. 
 
 Status filter. [View full-size image](/images/status-filter-en.png)
 
+Parent issues shown only to preserve the hierarchy of matching children keep their context-only status after progress, status, or date edits. That distinction and the hierarchy remain intact when an edit does not require rebuilding the display order.
+
 ## Redmine saved queries
 
 Canvas Gantt uses Redmine's issue list to create and edit saved queries. The toolbar can open a query in an iframe or a new tab, then return to Canvas Gantt with supported conditions.
@@ -19,6 +21,8 @@ The `query_id` URL parameter loads a visible saved query as the base condition. 
 ## Grouping
 
 Canvas Gantt groups by project or assignee. Target-version headers are a display toggle, not a third grouping mode. Expand or collapse a group from its header.
+
+Changing a task's project or assignee name while grouped rebuilds the active group headings. Heading names follow the existing display rules; when a name is available in the project options, it takes precedence.
 
 ## Shared and personal state
 

@@ -64,7 +64,9 @@ const getCriticalPathNotification = (criticalPathMetrics?: CriticalPathNotificat
 
 export const getTaskNotification = (
     schedulingState?: SchedulingStateInfo,
-    criticalPathMetrics?: CriticalPathNotificationMetrics
+    criticalPathMetrics?: CriticalPathNotificationMetrics,
+    calculateCriticalPathEnabled = true
 ): TaskNotificationDescriptor | null => (
-    getSchedulingNotification(schedulingState) ?? getCriticalPathNotification(criticalPathMetrics)
+    getSchedulingNotification(schedulingState)
+        ?? (calculateCriticalPathEnabled ? getCriticalPathNotification(criticalPathMetrics) : null)
 );

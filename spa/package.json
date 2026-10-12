@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "benchmark": "npm run build && node ./scripts/run-benchmark.mjs",
+    "benchmark:critical-path": "npm run test -- --run --config ./bench/vitest.config.ts --reporter=verbose",
     "benchmark:ci": "npm run build && CI=1 node ./scripts/run-benchmark.mjs --ci",
     "benchmark:ci:run": "CI=1 node ./scripts/run-benchmark.mjs --ci",
     "check:build-artifacts": "node ./scripts/check-build-artifacts.mjs",

@@ -22,6 +22,7 @@ type DisplayPreferenceSnapshot = {
     showTaskBarDates: UIStoreState['showTaskBarDates'];
     showHierarchyLines: UIStoreState['showHierarchyLines'];
     showBaseline: UIStoreState['showBaseline'];
+    calculateCriticalPathEnabled: TaskStoreState['calculateCriticalPathEnabled'];
     showPointsOrphans: UIStoreState['showPointsOrphans'];
     showStartDateOnly: UIStoreState['showStartDateOnly'];
     showDueDateOnly: UIStoreState['showDueDateOnly'];
@@ -90,6 +91,7 @@ const selectDisplayPreferenceSnapshot = (
         showTaskBarDates: uiState.showTaskBarDates,
         showHierarchyLines: uiState.showHierarchyLines,
         showBaseline: uiState.showBaseline,
+        calculateCriticalPathEnabled: taskState.calculateCriticalPathEnabled,
         showPointsOrphans: uiState.showPointsOrphans,
         showStartDateOnly: uiState.showStartDateOnly,
         showDueDateOnly: uiState.showDueDateOnly,
@@ -157,6 +159,7 @@ const persistDisplayPreferences = (taskState: TaskStoreState, uiState: UIStoreSt
         showTaskBarDates: uiState.showTaskBarDates,
         showHierarchyLines: uiState.showHierarchyLines,
         showBaseline: uiState.showBaseline,
+        calculateCriticalPathEnabled: taskState.calculateCriticalPathEnabled,
         showPointsOrphans: uiState.showPointsOrphans,
         showStartDateOnly: uiState.showStartDateOnly,
         showDueDateOnly: uiState.showDueDateOnly,

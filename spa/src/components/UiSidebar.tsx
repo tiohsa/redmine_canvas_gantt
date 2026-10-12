@@ -22,12 +22,31 @@ import { parseTrackerIconMap, resolveTrackerIconKind } from './sidebar/trackerIc
 import { TrackerIcon } from './sidebar/trackerIcon';
 import { designTokens, fontFamilies } from '../styles/designTokens';
 import { formatDate } from '../utils/dateUtils';
-import { parseDateOnly } from '../utils/dateOnly';
+import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
+import { isWorkingDay } from '../utils/businessCalendar';
+import { DatePlacementMode } from '../types/constraints';
 import { ContextPreviewViolationError, previewContextChange, StaleContextPreviewError } from '../services/contextPreview';
 import { StaleEditMetaResponseError } from '../stores/EditMetaStore';
 import { useTimerStore } from '../stores/TimerStore';
 import { WorkTimerIcon } from './timer/WorkTimerIcon';
 const NOTIFICATION_COLUMN_KEY = 'notification';
+
+const notifyInvalidDateRange = (field: 'startDate' | 'dueDate', selected: string, limit: number, projectId?: string) => {
+    const limitDate = formatDateOnly(limit) ?? '';
+    const key = field === 'dueDate' ? 'label_due_date_before_start' : 'label_start_date_after_due';
+    let message = i18n.t(key, { selected, limit: limitDate }) ?? (
+        field === 'dueDate'
+            ? `Due date (${selected}) must be on or after the current start date (${limitDate}).`
+            : `Start date (${selected}) must be on or before the current due date (${limitDate}).`
+    );
+    const selectedDate = parseDateOnly(selected);
+    if (useUIStore.getState().datePlacementMode === DatePlacementMode.WorkingDays &&
+        selectedDate !== null && !isWorkingDay(selectedDate, projectId)) {
+        message += ' ' + (i18n.t('label_date_range_working_day_hint') ??
+            'Selecting a non-working day moves the start date to the next working day and the due date to the previous working day.');
+    }
+    useUIStore.getState().addNotification(message, 'warning');
+};
 
 type CanvasGanttSettings = InlineEditSettings & {
     row_height?: string;
@@ -121,6 +140,7 @@ export const UiSidebar: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
     const schedulingStates = useTaskStore(state => state.schedulingStates);
     const criticalPathMetrics = useTaskStore(state => state.criticalPathMetrics);
+    const calculateCriticalPathEnabled = useTaskStore(state => state.calculateCriticalPathEnabled);
     const layoutRows = useTaskStore(state => state.layoutRows);
     const rowCount = useTaskStore(state => state.rowCount);
     const taskStatuses = useTaskStore(state => state.taskStatuses);
@@ -383,7 +403,11 @@ export const UiSidebar: React.FC = () => {
             title: tr('label_notifications'),
             width: columnWidths[NOTIFICATION_COLUMN_KEY] ?? 44,
             render: (t: Task) => {
-                const notification = getTaskNotification(schedulingStates[t.id], criticalPathMetrics[t.id]);
+                const notification = getTaskNotification(
+                    schedulingStates[t.id],
+                    criticalPathMetrics[t.id],
+                    calculateCriticalPathEnabled
+                );
                 if (!notification) return null;
 
                 return (
@@ -1275,7 +1299,7 @@ export const UiSidebar: React.FC = () => {
                                                                     });
 
                                                                     if (!validation.valid) {
-                                                                        useUIStore.getState().addNotification(tr('label_invalid_date_range'), 'warning');
+                                                                        notifyInvalidDateRange('dueDate', next, task.startDate!, task.projectId);
                                                                         return;
                                                                     }
 
@@ -1310,7 +1334,7 @@ export const UiSidebar: React.FC = () => {
                                                                     });
 
                                                                     if (!validation.valid) {
-                                                                        useUIStore.getState().addNotification(tr('label_invalid_date_range'), 'warning');
+                                                                        notifyInvalidDateRange('startDate', next, task.dueDate!, task.projectId);
                                                                         return;
                                                                     }
 

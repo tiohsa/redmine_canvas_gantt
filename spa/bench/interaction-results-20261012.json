@@ -1,0 +1,1962 @@
+{
+  "measuredAt": "2026-10-12T07:21:30.018Z",
+  "gitSha": "994a542",
+  "browserVersion": "145.0.7632.6",
+  "buildEntry": "assets/main-zBwM5bIy.js",
+  "buildManifest": "/home/glorydays/projects/src/ruby/redmine-all/plugins/redmine_canvas_gantt/assets/build/.vite/manifest.json",
+  "host": {
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "viewport": {
+    "width": 1600,
+    "height": 900,
+    "deviceScaleFactor": 1
+  },
+  "sampleCount": 3,
+  "taskCounts": [
+    100,
+    1000,
+    5000
+  ],
+  "caveats": [
+    "Production Vite bundle with mocked API responses; Redmine server and network latency are excluded.",
+    "External action duration includes Playwright input dispatch and UI settling; browserMs uses page performance.now around the same action.",
+    "Frame gaps and Long Task API entries describe main-thread responsiveness during the measured action window; Long Task API is unavailable in some browser builds.",
+    "Synthetic flat task fixtures are benchmark data, not a representative project distribution."
+  ],
+  "results": [
+    {
+      "taskCount": 100,
+      "criticalPath": "on",
+      "samples": [
+        {
+          "initialLoad": {
+            "browserMs": 442.2,
+            "domNodes": 946,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 167.15,
+              "browserMs": 169.2,
+              "frameCount": 10,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 579.95,
+              "browserMs": 580.9,
+              "frameCount": 35,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 397.7,
+                "dragFrameCount": 24,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 716.09,
+              "browserMs": 717.3,
+              "frameCount": 43,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 426.3,
+            "domNodes": 946,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 164.26,
+              "browserMs": 166.4,
+              "frameCount": 10,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.66,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 581.05,
+              "browserMs": 582.4,
+              "frameCount": 35,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 397.4,
+                "dragFrameCount": 24,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 696.73,
+              "browserMs": 698,
+              "frameCount": 42,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 431.1,
+            "domNodes": 946,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 140.47,
+              "browserMs": 144.1,
+              "frameCount": 9,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 577.18,
+              "browserMs": 578.2,
+              "frameCount": 35,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.66,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 397.8,
+                "dragFrameCount": 24,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 682.52,
+              "browserMs": 683.7,
+              "frameCount": 41,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        }
+      ],
+      "metrics": {
+        "initialLoadMs": {
+          "median": 431.1,
+          "min": 426.3,
+          "max": 442.2
+        },
+        "operations": [
+          {
+            "name": "task_edit_ratio",
+            "externalMs": {
+              "median": 164.26,
+              "min": 140.47,
+              "max": 167.15
+            },
+            "browserMs": {
+              "median": 166.4,
+              "min": 144.1,
+              "max": 169.2
+            },
+            "maxFrameGapMs": {
+              "median": 16.8,
+              "min": 16.7,
+              "max": 16.8
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          {
+            "name": "task_schedule_drag",
+            "externalMs": {
+              "median": 579.95,
+              "min": 577.18,
+              "max": 581.05
+            },
+            "browserMs": {
+              "median": 580.9,
+              "min": 578.2,
+              "max": 582.4
+            },
+            "maxFrameGapMs": {
+              "median": 16.8,
+              "min": 16.8,
+              "max": 16.8
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "duringDrag": {
+              "browserMs": {
+                "median": 397.7,
+                "min": 397.4,
+                "max": 397.8
+              },
+              "frameCount": {
+                "median": 24,
+                "min": 24,
+                "max": 24
+              },
+              "maxFrameGapMs": {
+                "median": 16.8,
+                "min": 16.8,
+                "max": 16.8
+              },
+              "meanFrameGapMs": {
+                "median": 16.67,
+                "min": 16.67,
+                "max": 16.67
+              },
+              "longTaskCount": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              },
+              "longTaskTotalMs": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              },
+              "longTaskMaxMs": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              }
+            }
+          },
+          {
+            "name": "relation_create_drag",
+            "externalMs": {
+              "median": 696.73,
+              "min": 682.52,
+              "max": 716.09
+            },
+            "browserMs": {
+              "median": 698,
+              "min": 683.7,
+              "max": 717.3
+            },
+            "maxFrameGapMs": {
+              "median": 16.8,
+              "min": 16.8,
+              "max": 16.8
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "taskCount": 100,
+      "criticalPath": "off",
+      "samples": [
+        {
+          "initialLoad": {
+            "browserMs": 412.6,
+            "domNodes": 947,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 154.24,
+              "browserMs": 157.2,
+              "frameCount": 10,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 576.74,
+              "browserMs": 578.1,
+              "frameCount": 35,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 399.4,
+                "dragFrameCount": 24,
+                "dragMaxFrameGapMs": 16.7,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 680.49,
+              "browserMs": 682.6,
+              "frameCount": 41,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 411.5,
+            "domNodes": 947,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 134.58,
+              "browserMs": 136.7,
+              "frameCount": 9,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 580.99,
+              "browserMs": 582.4,
+              "frameCount": 35,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 398.1,
+                "dragFrameCount": 24,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 680.88,
+              "browserMs": 682.6,
+              "frameCount": 41,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 406.1,
+            "domNodes": 947,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 153.14,
+              "browserMs": 155.5,
+              "frameCount": 9,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.68,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 577.13,
+              "browserMs": 578.3,
+              "frameCount": 35,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 398.9,
+                "dragFrameCount": 24,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 698.03,
+              "browserMs": 699.4,
+              "frameCount": 42,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        }
+      ],
+      "metrics": {
+        "initialLoadMs": {
+          "median": 411.5,
+          "min": 406.1,
+          "max": 412.6
+        },
+        "operations": [
+          {
+            "name": "task_edit_ratio",
+            "externalMs": {
+              "median": 153.14,
+              "min": 134.58,
+              "max": 154.24
+            },
+            "browserMs": {
+              "median": 155.5,
+              "min": 136.7,
+              "max": 157.2
+            },
+            "maxFrameGapMs": {
+              "median": 16.7,
+              "min": 16.7,
+              "max": 16.8
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          {
+            "name": "task_schedule_drag",
+            "externalMs": {
+              "median": 577.13,
+              "min": 576.74,
+              "max": 580.99
+            },
+            "browserMs": {
+              "median": 578.3,
+              "min": 578.1,
+              "max": 582.4
+            },
+            "maxFrameGapMs": {
+              "median": 16.8,
+              "min": 16.7,
+              "max": 16.8
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "duringDrag": {
+              "browserMs": {
+                "median": 398.9,
+                "min": 398.1,
+                "max": 399.4
+              },
+              "frameCount": {
+                "median": 24,
+                "min": 24,
+                "max": 24
+              },
+              "maxFrameGapMs": {
+                "median": 16.8,
+                "min": 16.7,
+                "max": 16.8
+              },
+              "meanFrameGapMs": {
+                "median": 16.67,
+                "min": 16.67,
+                "max": 16.67
+              },
+              "longTaskCount": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              },
+              "longTaskTotalMs": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              },
+              "longTaskMaxMs": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              }
+            }
+          },
+          {
+            "name": "relation_create_drag",
+            "externalMs": {
+              "median": 680.88,
+              "min": 680.49,
+              "max": 698.03
+            },
+            "browserMs": {
+              "median": 682.6,
+              "min": 682.6,
+              "max": 699.4
+            },
+            "maxFrameGapMs": {
+              "median": 16.8,
+              "min": 16.8,
+              "max": 16.8
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "taskCount": 1000,
+      "criticalPath": "on",
+      "samples": [
+        {
+          "initialLoad": {
+            "browserMs": 428.2,
+            "domNodes": 946,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 171.54,
+              "browserMs": 175.5,
+              "frameCount": 11,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.65,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 660.06,
+              "browserMs": 661.1,
+              "frameCount": 40,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 464.4,
+                "dragFrameCount": 28,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.66,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 715.38,
+              "browserMs": 716.5,
+              "frameCount": 43,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 429.5,
+            "domNodes": 946,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 169.11,
+              "browserMs": 171.5,
+              "frameCount": 11,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.66,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 652.48,
+              "browserMs": 654.5,
+              "frameCount": 39,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.66,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 465.1,
+                "dragFrameCount": 28,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 739.94,
+              "browserMs": 741.4,
+              "frameCount": 45,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 445.5,
+            "domNodes": 946,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 167.56,
+              "browserMs": 169.4,
+              "frameCount": 10,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 651.03,
+              "browserMs": 653,
+              "frameCount": 39,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 466.3,
+                "dragFrameCount": 28,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 692.06,
+              "browserMs": 693.4,
+              "frameCount": 42,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        }
+      ],
+      "metrics": {
+        "initialLoadMs": {
+          "median": 429.5,
+          "min": 428.2,
+          "max": 445.5
+        },
+        "operations": [
+          {
+            "name": "task_edit_ratio",
+            "externalMs": {
+              "median": 169.11,
+              "min": 167.56,
+              "max": 171.54
+            },
+            "browserMs": {
+              "median": 171.5,
+              "min": 169.4,
+              "max": 175.5
+            },
+            "maxFrameGapMs": {
+              "median": 16.7,
+              "min": 16.7,
+              "max": 16.7
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          {
+            "name": "task_schedule_drag",
+            "externalMs": {
+              "median": 652.48,
+              "min": 651.03,
+              "max": 660.06
+            },
+            "browserMs": {
+              "median": 654.5,
+              "min": 653,
+              "max": 661.1
+            },
+            "maxFrameGapMs": {
+              "median": 16.8,
+              "min": 16.8,
+              "max": 16.8
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "duringDrag": {
+              "browserMs": {
+                "median": 465.1,
+                "min": 464.4,
+                "max": 466.3
+              },
+              "frameCount": {
+                "median": 28,
+                "min": 28,
+                "max": 28
+              },
+              "maxFrameGapMs": {
+                "median": 16.8,
+                "min": 16.8,
+                "max": 16.8
+              },
+              "meanFrameGapMs": {
+                "median": 16.67,
+                "min": 16.66,
+                "max": 16.67
+              },
+              "longTaskCount": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              },
+              "longTaskTotalMs": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              },
+              "longTaskMaxMs": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              }
+            }
+          },
+          {
+            "name": "relation_create_drag",
+            "externalMs": {
+              "median": 715.38,
+              "min": 692.06,
+              "max": 739.94
+            },
+            "browserMs": {
+              "median": 716.5,
+              "min": 693.4,
+              "max": 741.4
+            },
+            "maxFrameGapMs": {
+              "median": 16.8,
+              "min": 16.7,
+              "max": 16.8
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "taskCount": 1000,
+      "criticalPath": "off",
+      "samples": [
+        {
+          "initialLoad": {
+            "browserMs": 429.1,
+            "domNodes": 947,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 168.65,
+              "browserMs": 170.7,
+              "frameCount": 11,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.66,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 663.62,
+              "browserMs": 665.7,
+              "frameCount": 40,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.66,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 479.5,
+                "dragFrameCount": 29,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 713.78,
+              "browserMs": 715.1,
+              "frameCount": 43,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 427.3,
+            "domNodes": 947,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 154.32,
+              "browserMs": 157.2,
+              "frameCount": 10,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.66,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 611.54,
+              "browserMs": 613.8,
+              "frameCount": 37,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 428.4,
+                "dragFrameCount": 26,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 713.63,
+              "browserMs": 715.1,
+              "frameCount": 43,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 426.3,
+            "domNodes": 947,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 169.94,
+              "browserMs": 173,
+              "frameCount": 11,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.66,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 645.42,
+              "browserMs": 646.9,
+              "frameCount": 39,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.66,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 447.6,
+                "dragFrameCount": 27,
+                "dragMaxFrameGapMs": 16.8,
+                "dragMeanFrameGapMs": 16.67,
+                "dragLongTaskCount": 0,
+                "dragLongTaskTotalMs": 0,
+                "dragLongTaskMaxMs": 0
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 696.26,
+              "browserMs": 697.5,
+              "frameCount": 42,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        }
+      ],
+      "metrics": {
+        "initialLoadMs": {
+          "median": 427.3,
+          "min": 426.3,
+          "max": 429.1
+        },
+        "operations": [
+          {
+            "name": "task_edit_ratio",
+            "externalMs": {
+              "median": 168.65,
+              "min": 154.32,
+              "max": 169.94
+            },
+            "browserMs": {
+              "median": 170.7,
+              "min": 157.2,
+              "max": 173
+            },
+            "maxFrameGapMs": {
+              "median": 16.7,
+              "min": 16.7,
+              "max": 16.7
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          },
+          {
+            "name": "task_schedule_drag",
+            "externalMs": {
+              "median": 645.42,
+              "min": 611.54,
+              "max": 663.62
+            },
+            "browserMs": {
+              "median": 646.9,
+              "min": 613.8,
+              "max": 665.7
+            },
+            "maxFrameGapMs": {
+              "median": 16.8,
+              "min": 16.8,
+              "max": 16.8
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "duringDrag": {
+              "browserMs": {
+                "median": 447.6,
+                "min": 428.4,
+                "max": 479.5
+              },
+              "frameCount": {
+                "median": 27,
+                "min": 26,
+                "max": 29
+              },
+              "maxFrameGapMs": {
+                "median": 16.8,
+                "min": 16.8,
+                "max": 16.8
+              },
+              "meanFrameGapMs": {
+                "median": 16.67,
+                "min": 16.67,
+                "max": 16.67
+              },
+              "longTaskCount": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              },
+              "longTaskTotalMs": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              },
+              "longTaskMaxMs": {
+                "median": 0,
+                "min": 0,
+                "max": 0
+              }
+            }
+          },
+          {
+            "name": "relation_create_drag",
+            "externalMs": {
+              "median": 713.63,
+              "min": 696.26,
+              "max": 713.78
+            },
+            "browserMs": {
+              "median": 715.1,
+              "min": 697.5,
+              "max": 715.1
+            },
+            "maxFrameGapMs": {
+              "median": 16.8,
+              "min": 16.8,
+              "max": 16.8
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "taskCount": 5000,
+      "criticalPath": "on",
+      "samples": [
+        {
+          "initialLoad": {
+            "browserMs": 487.1,
+            "domNodes": 946,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 321.57,
+              "browserMs": 323.3,
+              "frameCount": 13,
+              "maxFrameGapMs": 83.4,
+              "meanFrameGapMs": 25.64,
+              "longTaskCount": 2,
+              "longTaskTotalMs": 170,
+              "longTaskMaxMs": 88,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 1077.25,
+              "browserMs": 1081.5,
+              "frameCount": 43,
+              "maxFrameGapMs": 100,
+              "meanFrameGapMs": 24.8,
+              "longTaskCount": 4,
+              "longTaskTotalMs": 428,
+              "longTaskMaxMs": 111,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 814.1,
+                "dragFrameCount": 29,
+                "dragMaxFrameGapMs": 100,
+                "dragMeanFrameGapMs": 28.16,
+                "dragLongTaskCount": 4,
+                "dragLongTaskTotalMs": 428,
+                "dragLongTaskMaxMs": 111
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 728.71,
+              "browserMs": 730.1,
+              "frameCount": 44,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 486.8,
+            "domNodes": 946,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 317.52,
+              "browserMs": 319.1,
+              "frameCount": 12,
+              "maxFrameGapMs": 83.3,
+              "meanFrameGapMs": 26.39,
+              "longTaskCount": 2,
+              "longTaskTotalMs": 165,
+              "longTaskMaxMs": 91,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 1079.63,
+              "browserMs": 1083.6,
+              "frameCount": 45,
+              "maxFrameGapMs": 116.7,
+              "meanFrameGapMs": 24.07,
+              "longTaskCount": 4,
+              "longTaskTotalMs": 425,
+              "longTaskMaxMs": 118,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 831.2,
+                "dragFrameCount": 30,
+                "dragMaxFrameGapMs": 116.7,
+                "dragMeanFrameGapMs": 27.78,
+                "dragLongTaskCount": 4,
+                "dragLongTaskTotalMs": 425,
+                "dragLongTaskMaxMs": 118
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 712.3,
+              "browserMs": 713.6,
+              "frameCount": 43,
+              "maxFrameGapMs": 16.8,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 484.8,
+            "domNodes": 946,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 319.4,
+              "browserMs": 320.6,
+              "frameCount": 12,
+              "maxFrameGapMs": 83.3,
+              "meanFrameGapMs": 27.78,
+              "longTaskCount": 2,
+              "longTaskTotalMs": 172,
+              "longTaskMaxMs": 92,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 1071.74,
+              "browserMs": 1074.2,
+              "frameCount": 41,
+              "maxFrameGapMs": 116.6,
+              "meanFrameGapMs": 25.2,
+              "longTaskCount": 4,
+              "longTaskTotalMs": 446,
+              "longTaskMaxMs": 117,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 816.1,
+                "dragFrameCount": 28,
+                "dragMaxFrameGapMs": 116.6,
+                "dragMeanFrameGapMs": 29.16,
+                "dragLongTaskCount": 4,
+                "dragLongTaskTotalMs": 446,
+                "dragLongTaskMaxMs": 117
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 735.43,
+              "browserMs": 737.7,
+              "frameCount": 44,
+              "maxFrameGapMs": 33.4,
+              "meanFrameGapMs": 17.05,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        }
+      ],
+      "metrics": {
+        "initialLoadMs": {
+          "median": 486.8,
+          "min": 484.8,
+          "max": 487.1
+        },
+        "operations": [
+          {
+            "name": "task_edit_ratio",
+            "externalMs": {
+              "median": 319.4,
+              "min": 317.52,
+              "max": 321.57
+            },
+            "browserMs": {
+              "median": 320.6,
+              "min": 319.1,
+              "max": 323.3
+            },
+            "maxFrameGapMs": {
+              "median": 83.3,
+              "min": 83.3,
+              "max": 83.4
+            },
+            "longTaskCount": {
+              "median": 2,
+              "min": 2,
+              "max": 2
+            },
+            "longTaskTotalMs": {
+              "median": 170,
+              "min": 165,
+              "max": 172
+            },
+            "longTaskMaxMs": {
+              "median": 91,
+              "min": 88,
+              "max": 92
+            }
+          },
+          {
+            "name": "task_schedule_drag",
+            "externalMs": {
+              "median": 1077.25,
+              "min": 1071.74,
+              "max": 1079.63
+            },
+            "browserMs": {
+              "median": 1081.5,
+              "min": 1074.2,
+              "max": 1083.6
+            },
+            "maxFrameGapMs": {
+              "median": 116.6,
+              "min": 100,
+              "max": 116.7
+            },
+            "longTaskCount": {
+              "median": 4,
+              "min": 4,
+              "max": 4
+            },
+            "longTaskTotalMs": {
+              "median": 428,
+              "min": 425,
+              "max": 446
+            },
+            "longTaskMaxMs": {
+              "median": 117,
+              "min": 111,
+              "max": 118
+            },
+            "duringDrag": {
+              "browserMs": {
+                "median": 816.1,
+                "min": 814.1,
+                "max": 831.2
+              },
+              "frameCount": {
+                "median": 29,
+                "min": 28,
+                "max": 30
+              },
+              "maxFrameGapMs": {
+                "median": 116.6,
+                "min": 100,
+                "max": 116.7
+              },
+              "meanFrameGapMs": {
+                "median": 28.16,
+                "min": 27.78,
+                "max": 29.16
+              },
+              "longTaskCount": {
+                "median": 4,
+                "min": 4,
+                "max": 4
+              },
+              "longTaskTotalMs": {
+                "median": 428,
+                "min": 425,
+                "max": 446
+              },
+              "longTaskMaxMs": {
+                "median": 117,
+                "min": 111,
+                "max": 118
+              }
+            }
+          },
+          {
+            "name": "relation_create_drag",
+            "externalMs": {
+              "median": 728.71,
+              "min": 712.3,
+              "max": 735.43
+            },
+            "browserMs": {
+              "median": 730.1,
+              "min": 713.6,
+              "max": 737.7
+            },
+            "maxFrameGapMs": {
+              "median": 16.8,
+              "min": 16.8,
+              "max": 33.4
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "taskCount": 5000,
+      "criticalPath": "off",
+      "samples": [
+        {
+          "initialLoad": {
+            "browserMs": 451.6,
+            "domNodes": 947,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 274.5,
+              "browserMs": 276,
+              "frameCount": 12,
+              "maxFrameGapMs": 83.3,
+              "meanFrameGapMs": 23.62,
+              "longTaskCount": 1,
+              "longTaskTotalMs": 92,
+              "longTaskMaxMs": 92,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 933.59,
+              "browserMs": 964.6,
+              "frameCount": 41,
+              "maxFrameGapMs": 83.4,
+              "meanFrameGapMs": 23.17,
+              "longTaskCount": 4,
+              "longTaskTotalMs": 356,
+              "longTaskMaxMs": 91,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 729.5,
+                "dragFrameCount": 28,
+                "dragMaxFrameGapMs": 83.4,
+                "dragMeanFrameGapMs": 26.19,
+                "dragLongTaskCount": 4,
+                "dragLongTaskTotalMs": 356,
+                "dragLongTaskMaxMs": 91
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 729.75,
+              "browserMs": 731.8,
+              "frameCount": 43,
+              "maxFrameGapMs": 33.4,
+              "meanFrameGapMs": 17.05,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 470.5,
+            "domNodes": 947,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 270.89,
+              "browserMs": 272.4,
+              "frameCount": 13,
+              "maxFrameGapMs": 83.3,
+              "meanFrameGapMs": 21.79,
+              "longTaskCount": 1,
+              "longTaskTotalMs": 88,
+              "longTaskMaxMs": 88,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 948.93,
+              "browserMs": 976,
+              "frameCount": 42,
+              "maxFrameGapMs": 83.4,
+              "meanFrameGapMs": 23.02,
+              "longTaskCount": 4,
+              "longTaskTotalMs": 372,
+              "longTaskMaxMs": 94,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 747.7,
+                "dragFrameCount": 29,
+                "dragMaxFrameGapMs": 83.4,
+                "dragMeanFrameGapMs": 25.87,
+                "dragLongTaskCount": 4,
+                "dragLongTaskTotalMs": 372,
+                "dragLongTaskMaxMs": 94
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 717.81,
+              "browserMs": 718.9,
+              "frameCount": 43,
+              "maxFrameGapMs": 33.4,
+              "meanFrameGapMs": 17.05,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        },
+        {
+          "initialLoad": {
+            "browserMs": 454.4,
+            "domNodes": 947,
+            "visibleRows": 21,
+            "canvasCount": 4
+          },
+          "operations": [
+            {
+              "name": "task_edit_ratio",
+              "externalMs": 269.09,
+              "browserMs": 270.6,
+              "frameCount": 13,
+              "maxFrameGapMs": 83.3,
+              "meanFrameGapMs": 21.8,
+              "longTaskCount": 1,
+              "longTaskTotalMs": 87,
+              "longTaskMaxMs": 87,
+              "mockedTaskPatchCount": 1
+            },
+            {
+              "name": "task_schedule_drag",
+              "externalMs": 970.3,
+              "browserMs": 972.5,
+              "frameCount": 41,
+              "maxFrameGapMs": 83.4,
+              "meanFrameGapMs": 23.17,
+              "longTaskCount": 4,
+              "longTaskTotalMs": 358,
+              "longTaskMaxMs": 93,
+              "dueDateChanged": true,
+              "duringDrag": {
+                "dragBrowserMs": 732.7,
+                "dragFrameCount": 28,
+                "dragMaxFrameGapMs": 83.4,
+                "dragMeanFrameGapMs": 26.19,
+                "dragLongTaskCount": 4,
+                "dragLongTaskTotalMs": 358,
+                "dragLongTaskMaxMs": 93
+              }
+            },
+            {
+              "name": "relation_create_drag",
+              "externalMs": 906.71,
+              "browserMs": 909.2,
+              "frameCount": 55,
+              "maxFrameGapMs": 16.7,
+              "meanFrameGapMs": 16.67,
+              "longTaskCount": 0,
+              "longTaskTotalMs": 0,
+              "longTaskMaxMs": 0,
+              "mockedRelationPostCount": 1,
+              "relationFromTaskId": "1",
+              "relationToTaskId": "31"
+            }
+          ]
+        }
+      ],
+      "metrics": {
+        "initialLoadMs": {
+          "median": 454.4,
+          "min": 451.6,
+          "max": 470.5
+        },
+        "operations": [
+          {
+            "name": "task_edit_ratio",
+            "externalMs": {
+              "median": 270.89,
+              "min": 269.09,
+              "max": 274.5
+            },
+            "browserMs": {
+              "median": 272.4,
+              "min": 270.6,
+              "max": 276
+            },
+            "maxFrameGapMs": {
+              "median": 83.3,
+              "min": 83.3,
+              "max": 83.3
+            },
+            "longTaskCount": {
+              "median": 1,
+              "min": 1,
+              "max": 1
+            },
+            "longTaskTotalMs": {
+              "median": 88,
+              "min": 87,
+              "max": 92
+            },
+            "longTaskMaxMs": {
+              "median": 88,
+              "min": 87,
+              "max": 92
+            }
+          },
+          {
+            "name": "task_schedule_drag",
+            "externalMs": {
+              "median": 948.93,
+              "min": 933.59,
+              "max": 970.3
+            },
+            "browserMs": {
+              "median": 972.5,
+              "min": 964.6,
+              "max": 976
+            },
+            "maxFrameGapMs": {
+              "median": 83.4,
+              "min": 83.4,
+              "max": 83.4
+            },
+            "longTaskCount": {
+              "median": 4,
+              "min": 4,
+              "max": 4
+            },
+            "longTaskTotalMs": {
+              "median": 358,
+              "min": 356,
+              "max": 372
+            },
+            "longTaskMaxMs": {
+              "median": 93,
+              "min": 91,
+              "max": 94
+            },
+            "duringDrag": {
+              "browserMs": {
+                "median": 732.7,
+                "min": 729.5,
+                "max": 747.7
+              },
+              "frameCount": {
+                "median": 28,
+                "min": 28,
+                "max": 29
+              },
+              "maxFrameGapMs": {
+                "median": 83.4,
+                "min": 83.4,
+                "max": 83.4
+              },
+              "meanFrameGapMs": {
+                "median": 26.19,
+                "min": 25.87,
+                "max": 26.19
+              },
+              "longTaskCount": {
+                "median": 4,
+                "min": 4,
+                "max": 4
+              },
+              "longTaskTotalMs": {
+                "median": 358,
+                "min": 356,
+                "max": 372
+              },
+              "longTaskMaxMs": {
+                "median": 93,
+                "min": 91,
+                "max": 94
+              }
+            }
+          },
+          {
+            "name": "relation_create_drag",
+            "externalMs": {
+              "median": 729.75,
+              "min": 717.81,
+              "max": 906.71
+            },
+            "browserMs": {
+              "median": 731.8,
+              "min": 718.9,
+              "max": 909.2
+            },
+            "maxFrameGapMs": {
+              "median": 33.4,
+              "min": 16.7,
+              "max": 33.4
+            },
+            "longTaskCount": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskTotalMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            },
+            "longTaskMaxMs": {
+              "median": 0,
+              "min": 0,
+              "max": 0
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

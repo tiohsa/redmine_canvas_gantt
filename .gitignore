@@ -53,7 +53,10 @@ Thumbs.db
 .serena/
 .rtk/
 .tokensave
-spa/bench/results/
+spa/bench/*
+!spa/bench/API_QUERY_PAYLOAD_FOLLOWUP_20261012.md
+!spa/bench/interaction-results-20261012.json
+!spa/bench/interaction-report-20261012.md
 .agents/
 .codex/
 
