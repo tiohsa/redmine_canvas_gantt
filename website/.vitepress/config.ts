@@ -88,20 +88,6 @@ const jaSearch = {
           },
         },
       },
-      root: {
-        translations: {
-          button: { buttonText: '検索', buttonAriaLabel: '検索' },
-          modal: {
-            noResultsText: '結果が見つかりません',
-            resetButtonTitle: '検索をリセット',
-            footer: {
-              selectText: '選択',
-              navigateText: '移動',
-              closeText: '閉じる',
-            },
-          },
-        },
-      },
     },
   },
 }
@@ -109,7 +95,7 @@ const jaSearch = {
 const enSearch = { provider: 'local' as const }
 
 export default defineConfig({
-  lang: 'ja-JP',
+  lang: 'en-US',
   title: 'Redmine Canvas Gantt Manual',
   description: 'User manual for Redmine Canvas Gantt',
   base: '/redmine_canvas_gantt/',
@@ -119,17 +105,17 @@ export default defineConfig({
   head: [['meta', { name: 'theme-color', content: '#ffffff' }]],
   themeConfig: {
     nav: [
-      { text: '日本語', link: '/ja/' },
       { text: 'English', link: '/en/' },
+      { text: '日本語', link: '/ja/' },
     ],
     socialLinks: [{ icon: 'github', link: repository }],
-    search: jaSearch,
+    search: enSearch,
     editLink: {
       pattern: `${repository}/edit/main/website/:path`,
-      text: 'このページを編集',
+      text: 'Edit this page',
     },
     footer: {
-      message: '対象バージョン: v0.18.0（2026-10-11確認）',
+      message: 'Manual version: v0.18.0 (verified 2026-10-11)',
       copyright: 'Redmine Canvas Gantt contributors',
     },
   },
