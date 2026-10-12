@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Relation, Task } from '../types';
 import { RelationType } from '../types/constraints';
 import { calculateCriticalPath } from './criticalPath';
-import { calculateCriticalPath as calculateCriticalPathBaseline } from '../../bench/criticalPath.baseline';
+import { calculateCriticalPath as calculateCriticalPathBaseline } from './__fixtures__/criticalPath.baseline';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
 
 const DAY_MS = 86_400_000;
