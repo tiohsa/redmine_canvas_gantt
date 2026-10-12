@@ -343,7 +343,7 @@ describe('apiClient.fetchEditMeta', () => {
         });
 
         vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
-        await expect(apiClient.fetchEditMeta('10')).rejects.toThrow(`Invalid response: ${fieldName}`);
+        await expect(apiClient.fetchEditMeta('10'), fieldName).rejects.toThrow('Invalid response');
     });
 
     it('accepts boundary done_ratio and lock_version values', async () => {

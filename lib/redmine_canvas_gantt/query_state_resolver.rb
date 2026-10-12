@@ -345,12 +345,12 @@ module RedmineCanvasGantt
     end
 
     def warn_invalid_query_id(query_id)
-      @warnings << "Ignored invalid query_id=#{query_id}"
+      @warnings << I18n.t(:'canvas_gantt.label_invalid_query_ignored', id: query_id)
       Rails.logger.warn("[redmine_canvas_gantt] invalid query_id=#{query_id} for user #{@current_user.id}")
     end
 
     def warn_query_resolution_failure(query_id, error)
-      @warnings << "Failed to resolve query_id=#{query_id}"
+      @warnings << I18n.t(:'canvas_gantt.label_query_resolution_failed', id: query_id)
       Rails.logger.warn("[redmine_canvas_gantt] query_id=#{query_id} resolution failed: #{error.class}: #{error.message}")
     end
 
@@ -527,7 +527,7 @@ module RedmineCanvasGantt
       when '', nil
         nil
       else
-        @warnings << "Ignored unsupported group_by=#{@params[:group_by]}"
+        @warnings << I18n.t(:'canvas_gantt.label_unsupported_group_ignored', value: @params[:group_by])
       end
     end
 
@@ -539,7 +539,7 @@ module RedmineCanvasGantt
         next if operator.blank?
 
         unless STANDARD_FILTER_OPERATORS.fetch(field, []).include?(operator)
-          @warnings << "Ignored unsupported operator #{operator} for #{field}"
+          @warnings << I18n.t(:'canvas_gantt.label_unsupported_operator_ignored', operator: operator, field: field)
           next
         end
 
@@ -560,7 +560,7 @@ module RedmineCanvasGantt
       end
 
       unsupported_standard_filter_fields.each do |field|
-        @warnings << "Ignored unsupported field #{field}"
+        @warnings << I18n.t(:'canvas_gantt.label_unsupported_field_ignored', field: field)
       end
     end
 

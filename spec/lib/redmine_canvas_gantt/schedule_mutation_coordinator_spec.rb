@@ -30,6 +30,15 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     )
   end
 
+  it 'localizes schedule validation and conflict messages in Japanese' do
+    I18n.with_locale(:ja) do
+      coordinator = described_class.new(current_user: current_user, project_scope_ids: [], payload_builder: double)
+      result = coordinator.call(operation_id: 'localization', base_revisions: {}, changes: [])
+      expect(result.errors).to eq(['変更対象のチケットを1件以上指定してください'])
+      expect(coordinator.send(:topology_conflict_result, 'localization').errors).to eq(['操作中にスケジュールの依存関係が変更されました。'])
+    end
+  end
+
   before { User.current = current_user }
 
   def build_schedule_issue(subject, start_date:, due_date:, parent: nil, project: nil)

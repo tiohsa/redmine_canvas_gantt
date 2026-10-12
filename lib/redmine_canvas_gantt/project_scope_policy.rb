@@ -72,7 +72,7 @@ module RedmineCanvasGantt
       invalid_tokens = tokens.reject do |token|
         %w[none _none].include?(token) || (token.match?(/\A\d+\z/) && token.to_i.positive?)
       end
-      raise ArgumentError, 'Invalid project IDs' if invalid_tokens.any?
+      raise ArgumentError, I18n.t(:'canvas_gantt.error_canvas_gantt_invalid_project_ids') if invalid_tokens.any?
 
       tokens.reject { |token| %w[none _none].include?(token) }.map(&:to_i).uniq
     end

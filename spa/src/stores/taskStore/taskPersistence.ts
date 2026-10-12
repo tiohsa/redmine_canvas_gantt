@@ -381,7 +381,7 @@ export const saveModifiedTasks = async (
         }));
         let scheduleResult: ScheduleMutationResponse = {
             status: 'transient_error',
-            errors: ['Schedule mutation did not return a result.']
+            errors: [i18n.t('label_schedule_result_missing') || 'Schedule mutation did not return a result.']
         };
         try {
             scheduleResult = await scheduleMutation(scheduleChanges);
@@ -436,7 +436,7 @@ export const saveModifiedTasks = async (
                     } else {
                         scheduleResult = {
                             status: 'conflict',
-                            errors: ['The schedule mutation outcome is unknown.'],
+                            errors: [i18n.t('label_schedule_outcome_unknown') || 'The schedule mutation outcome is unknown.'],
                             entities: canonicalChanges
                                 .map(({ task }) => task as unknown as PersistedTaskState)
                                 .filter((task): task is PersistedTaskState => Boolean(task)),
@@ -470,7 +470,7 @@ export const saveModifiedTasks = async (
                 onTaskSaved?.(taskId, revision);
             });
         } else {
-            const message = scheduleResult.errors?.[0] || (scheduleResult.status === 'conflict' ? 'Conflict' : 'Failed to save schedule');
+            const message = scheduleResult.errors?.[0] || (scheduleResult.status === 'conflict' ? (i18n.t('label_conflict') || 'Conflict') : (i18n.t('label_schedule_save_failed') || 'Failed to save schedule'));
             const isScopeConflict = scheduleResult.failure?.resourceRole === 'scope';
             const conflicts = scheduleResult.conflicts ?? (scheduleResult.conflict ? [scheduleResult.conflict] : []);
             if (!isScopeConflict && scheduleResult.status === 'conflict') {
@@ -839,7 +839,7 @@ export const saveModifiedTasks = async (
                     pendingTaskIds.delete(taskId);
                     terminalFailureTaskIds.add(taskId);
                     failures.set(taskId, message);
-                    onConflict?.(taskId, `${message} (remote unavailable)`, undefined, undefined);
+                    onConflict?.(taskId, i18n.t('label_remote_unavailable_message', { message }) || `${message} (remote unavailable)`, undefined, undefined);
                 });
                 hasProcessedTask = true;
                 continue;
@@ -861,7 +861,7 @@ export const saveModifiedTasks = async (
                     terminalFailureTaskIds.add(taskId);
                     const message = conflictMessages.get(taskId) || conflictMessage;
                     failures.set(taskId, message);
-                    onConflict?.(taskId, `${message} (remote unavailable)`, undefined, undefined);
+                    onConflict?.(taskId, i18n.t('label_remote_unavailable_message', { message }) || `${message} (remote unavailable)`, undefined, undefined);
                     return;
                 }
 

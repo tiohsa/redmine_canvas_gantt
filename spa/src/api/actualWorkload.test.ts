@@ -23,7 +23,7 @@ describe('actual workload API contract', () => {
     });
     it.each([{}, { entries: null }, { entries: [{ spentOn: '2026-02-30' }] }])('rejects malformed data instead of returning an empty workload', async payload => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
-        await expect(apiClient.fetchActualWorkload(params)).rejects.toThrow('Invalid actual workload');
+        await expect(apiClient.fetchActualWorkload(params)).rejects.toThrow('Invalid response');
     });
     it('distinguishes an empty successful response from an HTTP failure', async () => {
         const fetch = vi.fn().mockResolvedValueOnce(new Response('{"entries":[]}'))

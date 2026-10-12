@@ -240,10 +240,10 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
             });
 
             if (result.status === 'error') {
-                throw new Error(result.error || 'Failed to save baseline');
+                throw new Error(result.error || i18n.t('label_baseline_save_failed') || 'Failed to save baseline');
             }
             if (!result.baseline) {
-                throw new Error('Failed to save baseline');
+                throw new Error(i18n.t('label_baseline_save_failed') || 'Failed to save baseline');
             }
 
             baselineStore.setSnapshot(result.baseline, result.warnings ?? []);
@@ -1975,7 +1975,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     <>
                         <button
                             onClick={() => void saveChanges()}
-                            title="Save changes"
+                            title={i18n.t('label_save_changes') || 'Save changes'}
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -2001,7 +2001,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                         </button>
                         <button
                             onClick={() => void discardChanges()}
-                            title="Discard changes"
+                            title={i18n.t('label_discard_changes') || 'Discard changes'}
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',

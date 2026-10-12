@@ -1,6 +1,30 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('sessionFetch', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        if (window.RedmineCanvasGantt) window.RedmineCanvasGantt.i18n = {};
+    });
+
+    it.each([
+        ['接続できませんでした', 'ja'],
+        ['Could not connect', 'en']
+    ])('localizes network errors: %s', async (message, language) => {
+        window.RedmineCanvasGantt = { projectId: 1, apiBase: '/canvas_gantt', redmineBase: '', authToken: '', language,
+            i18n: { label_network_error: message } };
+        const cause = new TypeError('Failed to fetch');
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(cause));
+        const { sessionFetch } = await import('./sessionFetch');
+        await expect(sessionFetch('/canvas_gantt')).rejects.toMatchObject({ message, cause });
+    });
+
+    it('preserves abort errors for cancellation guards', async () => {
+        const abort = new DOMException('Aborted', 'AbortError');
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abort));
+        const { sessionFetch } = await import('./sessionFetch');
+        await expect(sessionFetch('/canvas_gantt')).rejects.toBe(abort);
+    });
 
     it('removes the Redmine API key and uses same-origin credentials', async () => {
         const response = new Response('{}', { status: 200 });

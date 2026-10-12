@@ -26,6 +26,15 @@ RSpec.describe RedmineCanvasGantt::BaselineRepository do
 
   subject(:repository) { described_class.new(settings_reader: settings_reader) }
 
+  it 'localizes ignored baseline warnings in Japanese' do
+    settings_hash['baseline_snapshots'] = { '1' => { 'snapshot_id' => 'incomplete' } }
+    I18n.with_locale(:ja) do
+      result = repository.load(project_id: 1)
+      expect(result.snapshot).to be_nil
+      expect(result.warnings).to eq(['ベースラインのデータが不足しているため読み込みませんでした。'])
+    end
+  end
+
   describe '#build_snapshot' do
     it 'captures the current issue dates in a baseline snapshot' do
       project = instance_double(Project, id: 1)

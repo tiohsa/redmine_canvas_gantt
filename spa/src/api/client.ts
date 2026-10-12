@@ -1,3 +1,4 @@
+import { i18n } from '../utils/i18n';
 import type { ActualWorkloadEntry } from '../services/WorkloadLogicService';
 import type {
     FilterAssigneeOption,
@@ -250,6 +251,15 @@ const buildJsonHeaders = (config: RedmineCanvasGanttConfig, includeCsrf: boolean
     };
 };
 
+const readJson = async (response: Response): Promise<unknown> => {
+    try {
+        return await response.json();
+    } catch (error) {
+        if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') throw error;
+        throw new Error(i18n.t('label_invalid_response') || 'Invalid response', { cause: error });
+    }
+};
+
 const parseErrorMessage = async (response: Response): Promise<string> => {
     const payload = await response.json().catch(() => ({} as UnknownRecord));
     const record = asRecord(payload) ?? {};
@@ -258,10 +268,10 @@ const parseErrorMessage = async (response: Response): Promise<string> => {
 
     const errorsValue = record.errors;
     if (Array.isArray(errorsValue) && errorsValue.every(e => typeof e === 'string')) {
-        return errorsValue.join(', ');
+        return errorsValue.join(', ') || (i18n.t('label_request_failed', { status: response.status }) || `Request failed (HTTP ${response.status})`);
     }
 
-    return response.statusText;
+    return (i18n.t('label_request_failed', { status: response.status }) || `Request failed (HTTP ${response.status})`);
 };
 
 const parseApiResponseError = async (response: Response): Promise<ApiResponseError> => {
@@ -271,7 +281,7 @@ const parseApiResponseError = async (response: Response): Promise<ApiResponseErr
         : undefined;
     const message = typeof record.error === 'string' && record.error
         ? record.error
-        : errors || response.statusText;
+        : errors || (i18n.t('label_request_failed', { status: response.status }) || `Request failed (HTTP ${response.status})`);
     return new ApiResponseError(
         message,
         response.status,
@@ -296,8 +306,8 @@ const parseMutationError = async (response: Response): Promise<ApiMutationError>
     const message = typeof record.error === 'string' && record.error
         ? record.error
         : errors
-            ? Object.values(errors).join(', ')
-            : response.statusText;
+            ? Object.values(errors).join(', ') || (i18n.t('label_request_failed', { status: response.status }) || `Request failed (HTTP ${response.status})`)
+            : (i18n.t('label_request_failed', { status: response.status }) || `Request failed (HTTP ${response.status})`);
     const failure = decodeMutationFailure(record.failure);
     return new ApiMutationError(mutationStatusForHttp(response.status), message, response.status, errors, failure);
 };
@@ -487,36 +497,36 @@ const isBlankRequiredValue = (value: unknown): boolean =>
 
 const parseRequiredPositiveNumber = (value: unknown, fieldName: string): number => {
     if (isBlankRequiredValue(value)) {
-        throw new Error(`Invalid response: ${fieldName}`);
+        throw new Error(i18n.t('label_invalid_response') || 'Invalid response', { cause: `Invalid response: ${fieldName}` });
     }
 
     const parsed = typeof value === 'number' ? value : Number(value);
     if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
-        throw new Error(`Invalid response: ${fieldName}`);
+        throw new Error(i18n.t('label_invalid_response') || 'Invalid response', { cause: `Invalid response: ${fieldName}` });
     }
     return parsed;
 };
 
 const parseRequiredNonNegativeInteger = (value: unknown, fieldName: string): number => {
     if (isBlankRequiredValue(value)) {
-        throw new Error(`Invalid response: ${fieldName}`);
+        throw new Error(i18n.t('label_invalid_response') || 'Invalid response', { cause: `Invalid response: ${fieldName}` });
     }
 
     const parsed = typeof value === 'number' ? value : Number(value);
     if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
-        throw new Error(`Invalid response: ${fieldName}`);
+        throw new Error(i18n.t('label_invalid_response') || 'Invalid response', { cause: `Invalid response: ${fieldName}` });
     }
     return parsed;
 };
 
 const parseRequiredDoneRatio = (value: unknown): number => {
     if (isBlankRequiredValue(value)) {
-        throw new Error('Invalid response: done_ratio');
+        throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
     }
 
     const parsed = typeof value === 'number' ? value : Number(value);
     if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0 || parsed > 100) {
-        throw new Error('Invalid response: done_ratio');
+        throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
     }
     return parsed;
 };
@@ -687,16 +697,16 @@ const parseFilterOptions = (value: unknown, tasks: Task[]): FilterOptions => {
     if (value === undefined) return fallback;
     const record = asRecord(value);
     if (!record || Array.isArray(value)) {
-        throw new Error('Invalid filter options response: expected an object');
+        throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
     }
 
     const hasProjects = Object.prototype.hasOwnProperty.call(record, 'projects');
     const hasAssignees = Object.prototype.hasOwnProperty.call(record, 'assignees');
     if (hasProjects && !Array.isArray(record.projects)) {
-        throw new Error('Invalid filter options response: projects must be an array');
+        throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
     }
     if (hasAssignees && !Array.isArray(record.assignees)) {
-        throw new Error('Invalid filter options response: assignees must be an array');
+        throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
     }
     const projectsRaw = Array.isArray(record.projects) ? record.projects : [];
     const assigneesRaw = Array.isArray(record.assignees) ? record.assignees : [];
@@ -730,22 +740,22 @@ const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | n
     const tasksByIssueIdValue = asRecord(root.tasks_by_issue_id);
 
     if (typeof snapshotIdValue !== 'string' || snapshotIdValue.trim() === '') {
-        warnings.push('Baseline snapshot discarded: missing snapshot_id');
+        warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
         return { snapshot: null, warnings };
     }
 
     if (typeof projectIdValue !== 'number' && typeof projectIdValue !== 'string') {
-        warnings.push('Baseline snapshot discarded: missing project_id');
+        warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
         return { snapshot: null, warnings };
     }
 
     if (typeof capturedAtValue !== 'string' || capturedAtValue.trim() === '') {
-        warnings.push('Baseline snapshot discarded: missing captured_at');
+        warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
         return { snapshot: null, warnings };
     }
 
     if (!tasksByIssueIdValue) {
-        warnings.push('Baseline snapshot discarded: missing tasks_by_issue_id');
+        warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
         return { snapshot: null, warnings };
     }
 
@@ -753,13 +763,13 @@ const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | n
     Object.entries(tasksByIssueIdValue).forEach(([key, entry]) => {
         const taskRecord = asRecord(entry);
         if (!taskRecord) {
-            warnings.push(`Baseline task skipped: invalid payload for issue ${key}`);
+            warnings.push(i18n.t('label_baseline_invalid_task', { id: key }) || `Baseline task state for issue ${key} was skipped because its data is invalid.`);
             return;
         }
 
         const issueIdValue = taskRecord.issue_id ?? key;
         if (typeof issueIdValue !== 'number' && typeof issueIdValue !== 'string') {
-            warnings.push(`Baseline task skipped: invalid issue_id for issue ${key}`);
+            warnings.push(i18n.t('label_baseline_invalid_task', { id: key }) || `Baseline task state for issue ${key} was skipped because its data is invalid.`);
             return;
         }
 
@@ -767,10 +777,10 @@ const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | n
         const baselineDueDate = parseBaselineDateValue(taskRecord.baseline_due_date);
 
         if (taskRecord.baseline_start_date !== undefined && taskRecord.baseline_start_date !== null && baselineStartDate === null) {
-            warnings.push(`Baseline task date parse failure for issue ${String(issueIdValue)} start_date`);
+            warnings.push(i18n.t('label_baseline_invalid_task', { id: String(issueIdValue) }) || `Baseline task state for issue ${String(issueIdValue)} was skipped because its data is invalid.`);
         }
         if (taskRecord.baseline_due_date !== undefined && taskRecord.baseline_due_date !== null && baselineDueDate === null) {
-            warnings.push(`Baseline task date parse failure for issue ${String(issueIdValue)} due_date`);
+            warnings.push(i18n.t('label_baseline_invalid_task', { id: String(issueIdValue) }) || `Baseline task state for issue ${String(issueIdValue)} was skipped because its data is invalid.`);
         }
 
         tasksByIssueId[String(issueIdValue)] = {
@@ -809,15 +819,15 @@ export const apiClient = {
             headers: buildJsonHeaders(config)
         });
         if (!response.ok) throw new Error(await parseErrorMessage(response));
-        const payload = asRecord(await response.json());
-        if (!Array.isArray(payload?.entries)) throw new Error('Invalid actual workload response');
+        const payload = asRecord(await readJson(response));
+        if (!Array.isArray(payload?.entries)) throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
         return payload.entries.map((raw: unknown) => {
             const entry = asRecord(raw);
             if (!entry || typeof entry.id !== 'string' || typeof entry.issueId !== 'string' ||
                 typeof entry.userId !== 'number' || !Number.isInteger(entry.userId) ||
                 typeof entry.userName !== 'string' || typeof entry.spentOn !== 'string' ||
                 parseDateOnly(entry.spentOn) === null || typeof entry.hours !== 'number' || !Number.isFinite(entry.hours)) {
-                throw new Error('Invalid actual workload entry');
+                throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
             }
             return { id: entry.id, issueId: entry.issueId, userId: entry.userId,
                 userName: entry.userName, spentOn: entry.spentOn, hours: entry.hours };
@@ -833,7 +843,7 @@ export const apiClient = {
             throw new Error(await parseErrorMessage(response));
         }
 
-        const payload = await response.json();
+        const payload = await readJson(response);
         const root = asRecord(payload);
         const queries = Array.isArray(root?.queries) ? root.queries : [];
         return queries.map(parseSavedQuery).filter((entry): entry is SavedQuery => entry !== null);
@@ -855,7 +865,7 @@ export const apiClient = {
 
         if (!response.ok) throw await parseApiResponseError(response);
 
-        const payload = await response.json();
+        const payload = await readJson(response);
         const data = asRecord(payload) ?? {};
         const customFieldsRaw = Array.isArray(data.custom_fields) ? data.custom_fields : [];
         const customFields = customFieldsRaw.map(parseCustomFieldMeta).filter((v): v is CustomFieldMeta => Boolean(v));
@@ -1006,10 +1016,10 @@ export const apiClient = {
             throw await parseMutationError(response);
         }
 
-        const payload = await response.json();
+        const payload = await readJson(response);
         const root = asRecord(payload);
         if (!root) {
-            return { status: 'error', baseline: null, error: 'Invalid response' };
+            return { status: 'error', baseline: null, error: i18n.t('label_invalid_response') || 'Invalid response' };
         }
 
         const baselinePayload = parseBaselineSnapshot(root.baseline ?? root);
@@ -1043,9 +1053,9 @@ export const apiClient = {
 
         if (!response.ok) throw await parseMutationError(response);
 
-        const payload = await response.json();
+        const payload = await readJson(response);
         const root = asRecord(payload);
-        if (!root) throw new Error('Invalid response');
+        if (!root) throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
 
         const task = asRecord(root.task);
         const editable = asRecord(root.editable);
@@ -1053,7 +1063,7 @@ export const apiClient = {
         const customFieldValuesRecord = asRecord(root.custom_field_values) ?? {};
         const draftContractRaw = asRecord(root.draft_contract);
 
-        if (!task || !editable || !options) throw new Error('Invalid response');
+        if (!task || !editable || !options) throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
 
         const taskIdValue = task.id;
         const subjectValue = task.subject;
@@ -1071,7 +1081,7 @@ export const apiClient = {
         const lockVersionValue = task.lock_version;
 
         if (taskIdValue === undefined || subjectValue === undefined || statusIdValue === undefined || doneRatioValue === undefined || lockVersionValue === undefined) {
-            throw new Error('Invalid response');
+            throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
         }
 
         const capabilityContextRaw = asRecord(root.capability_context);
@@ -1104,7 +1114,7 @@ export const apiClient = {
         const editableCustomFieldValues = editable.custom_field_values;
 
         if (![editableSubject, editableAssignedToId, editableStatusId, editableDoneRatio, editableDueDate, editableStartDate, editablePriorityId, editableCategoryId, editableEstimatedHours, editableProjectId, editableTrackerId, editableFixedVersionId, editableCustomFieldValues].every(v => typeof v === 'boolean')) {
-            throw new Error('Invalid response');
+            throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
         }
 
         const statusesRaw = Array.isArray(options.statuses) ? options.statuses : [];
@@ -1306,13 +1316,13 @@ export const apiClient = {
             throw await parseMutationError(response);
         }
 
-        const payload = await response.json();
+        const payload = await readJson(response);
         const relation = normalizeRelation(payload, { fromId, toId, type });
 
         // If we can't obtain a usable id, deletion will fail later.
         // Prefer failing fast so the UI can surface the error.
         if (!relation.id || relation.id === 'undefined' || relation.id === 'null') {
-            throw new Error('Invalid relation response');
+            throw new Error(i18n.t('label_invalid_response') || 'Invalid response');
         }
 
         return { status: 'ok', ...relation, ...parseMutationMetadata(payload) };
@@ -1337,7 +1347,7 @@ export const apiClient = {
             throw await parseMutationError(response);
         }
 
-        const payload = await response.json();
+        const payload = await readJson(response);
         return { status: 'ok', ...normalizeRelation(payload, { fromId: '', toId: '', type }), ...parseMutationMetadata(payload) };
     },
 
@@ -1354,7 +1364,7 @@ export const apiClient = {
         if (!response.ok) {
             throw await parseMutationError(response);
         }
-        const payload = typeof response.json === 'function' ? await response.json().catch(() => ({})) : {};
+        const payload = typeof response.json === 'function' ? await readJson(response).catch(() => ({})) : {};
         return { status: 'ok', ...parseMutationMetadata(payload) };
     },
 
@@ -1367,7 +1377,7 @@ export const apiClient = {
             headers: buildJsonHeaders(config)
         });
         if (!response.ok) throw await parseMutationError(response);
-        const payload = await response.json() as { trackers?: Array<{ id: number; name: string }> };
+        const payload = await readJson(response) as { trackers?: Array<{ id: number; name: string }> };
         return Array.isArray(payload.trackers) ? payload.trackers : [];
     },
 
@@ -1389,7 +1399,7 @@ export const apiClient = {
             throw await parseMutationError(response);
         }
 
-        const data = await response.json();
+        const data = asRecord(await readJson(response)) ?? {};
         const resultsRaw = Array.isArray(data.results) ? data.results : [];
         const results = resultsRaw.map((row: unknown) => {
             const record = asRecord(row) ?? {};
@@ -1397,7 +1407,7 @@ export const apiClient = {
                 ? record.errors as string[]
                 : undefined;
             return {
-                status: record.status === 'ok' ? 'ok' : 'error',
+                status: record.status === 'ok' ? 'ok' as const : 'error' as const,
                 subject: typeof record.subject === 'string' ? record.subject : '',
                 issueId: record.issue_id != null ? String(record.issue_id) : undefined,
                 errors
@@ -1426,7 +1436,7 @@ export const apiClient = {
         if (!response.ok) {
             throw await parseMutationError(response);
         }
-        const payload = typeof response.json === 'function' ? await response.json().catch(() => ({})) : {};
+        const payload = typeof response.json === 'function' ? await readJson(response).catch(() => ({})) : {};
         return { status: 'ok', ...parseMutationMetadata(payload) };
     }
 };

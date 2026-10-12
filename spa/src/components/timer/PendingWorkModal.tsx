@@ -52,10 +52,9 @@ export const PendingWorkModal: React.FC = () => {
   if (!pendingWorkModalOpen || !session) return null;
 
   const tr = (key: string) => i18n.t(key) ?? '';
-  const isJa = (typeof window !== 'undefined' && window.RedmineCanvasGantt?.language === 'ja') || i18n.t('general_text_yes') === 'はい';
 
   const totalMs = calculateTimerElapsed(session);
-  const elapsedText = formatElapsedMinutesText(totalMs, isJa);
+  const elapsedText = formatElapsedMinutesText(totalMs, i18n.t('label_timer_minutes'));
   const durationFormatted = formatTimerDuration(totalMs);
   const isCrossDay = isTimerSpanningMultipleDays(session);
   const recordingPhase = session.recordingAttempt?.phase;

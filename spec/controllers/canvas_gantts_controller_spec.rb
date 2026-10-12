@@ -1238,6 +1238,31 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(Setting).to receive(:non_working_week_days).and_return(['6', '7'])
     end
 
+    { ja: ['クリア', '担当者', '0以上の数値を入力してください', '変更を保存'],
+      en: ['Clear', 'Assignees', 'Must be 0 or greater', 'Save changes'] }.each do |locale, labels|
+      it "publishes missing UI labels in #{locale} despite a different default language" do
+        current_user = User.current
+        allow(User).to receive(:current).and_return(current_user)
+        allow(current_user).to receive(:language).and_return(locale.to_s)
+        allow(Setting).to receive(:default_language).and_return(locale == :ja ? 'en' : 'ja')
+        get :index, params: { project_id: 'demo' }
+        expect(response).to have_http_status(:ok)
+        payload = controller.instance_variable_get(:@i18n).stringify_keys
+        expect(payload.values_at('button_clear', 'label_assignee_plural', 'label_must_be_positive_number', 'label_save_changes')).to eq(labels)
+        expect(controller.instance_variable_get(:@language)).to eq(locale.to_s)
+      end
+    end
+
+    it 'uses the default language when the user has no language preference' do
+      current_user = User.current
+      allow(User).to receive(:current).and_return(current_user)
+      allow(current_user).to receive(:language).and_return('')
+      allow(Setting).to receive(:default_language).and_return('ja')
+      get :index, params: { project_id: 'demo' }
+      expect(controller.instance_variable_get(:@language)).to eq('ja')
+      expect(controller.instance_variable_get(:@i18n).fetch(:button_clear)).to eq('クリア')
+    end
+
     { en: ['Search projects...', 'No matching projects', 'Canvas Gantt data exceeds the configured safety limit. Narrow the filters or ask an administrator to review the limit.'],
       ja: ['プロジェクトを検索', '一致するプロジェクトがありません', 'Canvas Gantt のデータが設定された安全上限を超えています。絞り込みを狭めるか、管理者に上限の確認を依頼してください。'] }.each do |locale, labels|
       it "publishes project candidate search labels in #{locale}" do

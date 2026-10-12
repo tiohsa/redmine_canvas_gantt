@@ -384,12 +384,9 @@ export const formatTimerDurationHoursMinutes = (totalMs: number): string => {
     return `${pad(hours)}:${pad(minutes)}`;
 };
 
-export const formatElapsedMinutesText = (totalMs: number, isJapanese: boolean = false): string => {
+export const formatElapsedMinutesText = (totalMs: number, localizedMinutesTemplate: string = '%{count} min'): string => {
     const totalMinutes = Math.round(totalMs / (60 * 1000));
-    if (isJapanese) {
-        return `${totalMinutes}分`;
-    }
-    return `${totalMinutes} min`;
+    return localizedMinutesTemplate.replace('%{count}', String(totalMinutes));
 };
 
 export const formatTimerExtensionLabel = (minutes: TimerIntervalMinutes, localizedMinutesTemplate?: string): string => {
