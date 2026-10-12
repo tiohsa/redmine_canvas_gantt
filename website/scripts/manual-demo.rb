@@ -1,33 +1,50 @@
 # Run with rails runner ONLY in a disposable Redmine dedicated to documentation.
-# Load English default data first. The password is supplied out of band.
+# The password is supplied out of band.
 abort 'Set MANUAL_CAPTURE_DISPOSABLE=1 for the dedicated capture database' unless ENV['MANUAL_CAPTURE_DISPOSABLE'] == '1'
 password = ENV.fetch('MANUAL_CAPTURE_PASSWORD')
-Setting.default_language = 'en'
-Setting.app_title = 'Manual Demo Redmine'
+locale = ENV.fetch('MANUAL_CAPTURE_LOCALE', 'en')
+abort 'MANUAL_CAPTURE_LOCALE must be en or ja' unless %w[en ja].include?(locale)
+japanese = locale == 'ja'
+Setting.default_language = locale
+Setting.app_title = japanese ? 'マニュアル撮影用 Redmine' : 'Manual Demo Redmine'
 user = User.find_or_initialize_by(login: 'manual-demo')
-user.assign_attributes(firstname: 'Alex', lastname: 'Demo', mail: 'manual-demo@example.test', language: 'en', admin: true, status: User::STATUS_ACTIVE, password: password, password_confirmation: password)
+user.assign_attributes(firstname: japanese ? 'マニュアル' : 'Alex', lastname: japanese ? 'デモ' : 'Demo', mail: 'manual-demo@example.test', language: locale, admin: true, status: User::STATUS_ACTIVE, password: password, password_confirmation: password)
 user.save!
 role = Role.find_or_initialize_by(name: 'Manual Editor')
 role.permissions = [:view_issues, :view_canvas_gantt, :edit_issues, :add_issues, :manage_subtasks, :log_time, :view_time_entries, :manage_canvas_gantt_baseline]
 role.save!
 project = Project.find_or_initialize_by(identifier: 'manual-demo')
-project.assign_attributes(name: 'Website Launch (Demo)', is_public: false, enabled_module_names: ['issue_tracking', 'canvas_gantt', 'time_tracking'])
+project.assign_attributes(name: japanese ? 'Webサイト公開（デモ）' : 'Website Launch (Demo)', is_public: false, enabled_module_names: ['issue_tracking', 'canvas_gantt', 'time_tracking'])
 project.save!
 project.trackers = Tracker.all
 member = Member.find_or_initialize_by(project: project, principal: user)
 member.roles = [role]
 member.save!
-version = project.versions.find_or_create_by!(name: 'Initial Launch') { |v| v.effective_date = Date.new(2026, 10, 30) }
-rows = [
- ['Planning and Design', '2026-10-12', '2026-10-16', 0, nil],
- ['Gather requirements', '2026-10-12', '2026-10-13', 100, 0],
- ['Design page layout', '2026-10-14', '2026-10-16', 60, 0],
- ['Build and Launch', '2026-10-19', '2026-10-30', 0, nil],
- ['Implement pages', '2026-10-19', '2026-10-22', 30, 3],
- ['Review the design', '2026-10-23', '2026-10-26', 0, 3],
- ['Verify functionality', '2026-10-27', '2026-10-28', 0, 3],
- ['Prepare launch', '2026-10-29', '2026-10-30', 0, 3]
-]
+version_name = japanese ? '初回公開' : 'Initial Launch'
+version = project.versions.find_or_create_by!(name: version_name) { |v| v.effective_date = Date.new(2026, 10, 30) }
+rows = if japanese
+ [
+  ['計画・デザイン', '2026-10-12', '2026-10-16', 0, nil],
+  ['要件をまとめる', '2026-10-12', '2026-10-13', 100, 0],
+  ['画面レイアウトを設計', '2026-10-14', '2026-10-16', 60, 0],
+  ['構築・公開', '2026-10-19', '2026-10-30', 0, nil],
+  ['ページを実装', '2026-10-19', '2026-10-22', 30, 3],
+  ['デザインを確認', '2026-10-23', '2026-10-26', 0, 3],
+  ['動作を検証', '2026-10-27', '2026-10-28', 0, 3],
+  ['公開準備', '2026-10-29', '2026-10-30', 0, 3]
+ ]
+else
+ [
+  ['Planning and Design', '2026-10-12', '2026-10-16', 0, nil],
+  ['Gather requirements', '2026-10-12', '2026-10-13', 100, 0],
+  ['Design page layout', '2026-10-14', '2026-10-16', 60, 0],
+  ['Build and Launch', '2026-10-19', '2026-10-30', 0, nil],
+  ['Implement pages', '2026-10-19', '2026-10-22', 30, 3],
+  ['Review the design', '2026-10-23', '2026-10-26', 0, 3],
+  ['Verify functionality', '2026-10-27', '2026-10-28', 0, 3],
+  ['Prepare launch', '2026-10-29', '2026-10-30', 0, 3]
+ ]
+end
 issues = []
 rows.each do |subject, first, last, progress, parent|
  issue = project.issues.find_or_initialize_by(subject: subject)

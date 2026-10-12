@@ -14,7 +14,7 @@ test('Japanese and English pages load and language menu reaches the matching gui
   await openPage(page, 'ja/guide/introduction')
   await expect(page.locator('main')).toContainText(/Redmine Canvas Gantt/)
   await expect(page.locator('.manual-scope')).toContainText('v0.18.0')
-  const overview = page.locator('main img[src$="canvas-gantt-overview-en.png"]')
+  const overview = page.locator('main img[src$="canvas-gantt-overview-ja.png"]')
   await expect(overview).toBeVisible()
   await expect.poll(() => overview.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true)
 
@@ -71,10 +71,10 @@ test('manual image remains visible on a narrow mobile viewport', async ({ page }
 })
 
 const mediaPages = [
-  { path: 'ja/guide/basic-operations', video: 'schedule-edit.mp4' },
-  { path: 'en/guide/basic-operations', video: 'schedule-edit.mp4' },
-  { path: 'ja/features/dependencies', video: 'dependency-create.mp4' },
-  { path: 'en/features/dependencies', video: 'dependency-create.mp4' },
+  { path: 'ja/guide/basic-operations', video: 'schedule-edit-ja.mp4', poster: 'schedule-edit-poster-ja.png' },
+  { path: 'en/guide/basic-operations', video: 'schedule-edit.mp4', poster: 'schedule-edit-poster.png' },
+  { path: 'ja/features/dependencies', video: 'dependency-create-ja.mp4', poster: 'dependency-create-poster-ja.png' },
+  { path: 'en/features/dependencies', video: 'dependency-create.mp4', poster: 'dependency-create-poster.png' },
 ]
 
 const imagePages = [
@@ -102,6 +102,7 @@ test('all documented screenshots load on their Japanese and English pages', asyn
       await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true)
       const pathname = new URL(await image.getAttribute('src') ?? '', page.url()).pathname
       const filename = pathname.split('/').pop() ?? ''
+      expect(filename).toMatch(path.startsWith('ja/') ? /-ja\.png$/ : /-en\.png$/)
       loadedScreenshots.add(filename)
     }
   }
@@ -120,7 +121,7 @@ test('all documented screenshots load on their Japanese and English pages', asyn
     'status-filter-en.png',
     'work-timer-en.png',
     'workload-en.png',
-  ].sort())
+  ].flatMap(filename => [filename, filename.replace('-en.png', '-ja.png')]).sort())
 })
 
 for (const viewport of [
@@ -145,6 +146,7 @@ for (const viewport of [
       await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.preload)).toBe('metadata')
       await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.autoplay)).toBe(false)
       await expect.poll(() => video.evaluate((element: HTMLVideoElement, filename: string) => element.currentSrc.endsWith(`/videos/${filename}`), entry.video)).toBe(true)
+      await expect(video).toHaveAttribute('poster', new RegExp(`/images/${entry.poster.replaceAll('.', '\\.')}$`))
       await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState >= HTMLMediaElement.HAVE_METADATA && Number.isFinite(element.duration) && element.duration > 0)).toBe(true)
       await video.scrollIntoViewIfNeeded()
       await video.click()
@@ -177,13 +179,13 @@ for (const locale of ['ja', 'en']) {
       await page.setViewportSize({ width, height: 900 })
       for (const path of [`${locale}/`, `${locale}/guide/introduction`, `${locale}/guide/basic-operations`]) {
         await openPage(page, path)
-        const overview = page.locator('main img[src$="canvas-gantt-overview-en.png"]')
+        const overview = page.locator(`main img[src$="canvas-gantt-overview-${locale}.png"]`)
         await expect(overview).toHaveCount(1)
         await overview.scrollIntoViewIfNeeded()
         await expect.poll(() => overview.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true)
         await expect(page.locator('main img[src$=".svg"]')).toHaveCount(0)
         await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
-        const expand = page.locator('main a[href$="canvas-gantt-overview-en.png"]')
+        const expand = page.locator(`main a[href$="canvas-gantt-overview-${locale}.png"]`)
         await expect(expand).toHaveCount(1)
         const response = await page.request.get((await expand.getAttribute('href'))!)
         expect(response.ok()).toBe(true)

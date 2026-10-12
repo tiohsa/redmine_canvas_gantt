@@ -7,7 +7,7 @@ These installation and upgrade steps are for administrators. Adjust paths and se
 - Redmine 6.0, 6.1, or 7.0
 - A Ruby version supported by the selected Redmine release
 - Redmine REST API enabled
-- A supported desktop browser
+- Desktop Google Chrome or Microsoft Edge (other browsers have not been tested)
 - Node.js 20 or newer only when building the SPA from source
 
 ## Install

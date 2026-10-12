@@ -26,6 +26,8 @@ To show or hide the **Progress Line**, select it in the toolbar. This line start
 
 To reduce formula execution risk in spreadsheets, exported untrusted text that begins with `=`, `+`, `-`, `@` (including full-width forms), a tab, or a line break may receive a leading tab inside a quoted cell. That tab becomes cell data and can affect programmatic imports. Verify the actual file in the target Excel / Calc version and import path where needed. The export cannot guarantee safety for every spreadsheet or import route.
 
+For a spreadsheet check, create test issues with subject `=1+1`, parent subject `+1+1`, custom field name `＠SUM(1)`, and custom field value `  -1+1`. Include a value containing a quote, comma, and lone carriage return. Export CSV and inspect that dangerous text begins with a tab inside a quoted cell and embedded quotes are doubled. Open it in the target Excel or Calc version, confirm that values remain text and cells and rows stay intact, then save and reopen it to check again. Repeat for each supported import route. Automated serializer tests do not perform this spreadsheet check. The exporter also checks past leading spaces and BOM; a single-quote prefix is not used because Excel may remove it on save and reopen.
+
 ![Export menu.](/images/export-menu-en.png)
 
 PNG and CSV export menu. [View full-size image](/images/export-menu-en.png)

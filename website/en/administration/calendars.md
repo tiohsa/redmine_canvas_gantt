@@ -77,7 +77,7 @@ days:
 
 ## CSV: one global holiday list
 
-Place one `holiday.csv` directly in the configured root to create the `global` calendar for every project. The first row is always skipped as a header. Each subsequent non-empty row must have a date in its first column using `YYYY/M/D` or `YYYY/MM/DD`. The optional second-column name and all later columns are ignored. Every listed date is non-working.
+Place one `holiday.csv` directly in the configured root to create the `global` calendar for every project. The first row is always skipped as a header. Each subsequent non-empty row must have a date in its first column using `YYYY/M/D` or `YYYY/MM/DD`. The optional second-column name and all later columns are ignored; CSV holiday names are not retained or shown. Every listed date is non-working.
 
 ```csv
 date,name
@@ -95,8 +95,8 @@ The CSV must be a regular file inside the configured root and contain 1–10,000
 
 ## Reloads and invalid configuration
 
-By default, the runtime checks relative paths, modification times, and file sizes every 60 seconds. Set `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` to a non-negative number of seconds to change the interval. After a change is detected, reload the Gantt page to see the updated state.
+By default, the runtime checks for changes every 60 seconds. It fingerprints `holiday.csv` by its SHA-256 content hash. YAML files are checked by relative path, modification time, and file size; their contents are not hashed. Set `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` to a non-negative number of seconds to change the interval. After a change is detected, reload the Gantt page to see the updated state.
 
-The runtime applies a changed file set only after all files validate. Replacing a valid CSV also removes dates deleted from the file. A failed reload logs a warning and retains the last valid snapshot. On initial load, an invalid configuration or a missing directory / YAML settings file falls back to Redmine's standard non-working weekdays. Symlinks resolving outside the configured root are rejected, and symlinked directories are not traversed.
+The runtime applies a changed file set only after all files validate. Replacing a valid CSV also removes dates deleted from the file. A failed reload logs a warning, marks the prior configuration stale, and retains the last valid snapshot. If the initial configuration is invalid, the API reports the error and date calculations fall back to Redmine's configured non-working weekdays. A missing directory or YAML settings file also uses Redmine's configured non-working weekdays. Symlinks resolving outside the configured root are rejected, and symlinked directories are not traversed.
 
 For container mounts, see [Deployment environments](/en/administration/deployment).

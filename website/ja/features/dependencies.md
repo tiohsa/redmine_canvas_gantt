@@ -6,19 +6,21 @@
 
 1. 先行チケットのタスクバーの左右端付近にある依存ハンドルからドラッグします。
 2. 後続チケットのタスクバー付近でドロップします。
-3. ツールバーの **既定の依存関係を自動適用** がオフなら編集ポップオーバーが開きます。関係種別と必要な delay を選び、**保存** を押します。オンなら、ツールバーで選択した既定種別で作成します。
+3. ツールバーの **デフォルト依存関係を自動適用** がオフなら編集ポップオーバーが開きます。関係種別と必要な delay を選び、**保存** を押します。オンなら、ツールバーで選択した既定種別で作成します。
 
 編集 UI では次の 3 種類を選べます。
 
-- **Precedes**: 先行チケットが完了してから後続チケットを開始する関係です。delay はこの種類だけ指定でき、0 以上の稼働日数です。
-- **Relates**: 参照リンクです。スケジュール制約を作りません。
-- **Blocks**: 一方のチケットが他方をブロックする関係です。
+- **先行**: 先行チケットが完了してから後続チケットを開始する関係です。delay はこの種類だけ指定でき、0 以上の稼働日数です。
+- **関連**: 参照リンクです。スケジュール制約を作りません。
+- **ブロック**: 一方のチケットが他方をブロックする関係です。
 
 保存データが逆方向の `follows` または `blocked` の場合、編集 UI はチケットの順序を反転して表示します。スケジュール計算が開始日制約に使う関係は `precedes` / `follows` です。
 
-<video controls preload="metadata" playsinline poster="/images/dependency-create-poster.png" src="/videos/dependency-create.mp4" style="width:100%;height:auto" aria-label="チケット間の依存関係を作成する"></video>
+<video controls preload="metadata" playsinline poster="/images/dependency-create-poster-ja.png" src="/videos/dependency-create-ja.mp4" style="width:100%;height:auto" aria-label="チケット間の依存関係を作成する"></video>
 
 ## 既定値と delay
+
+delay は先行チケットと後続チケットの間隔を指定する稼働日数です。日本語表示でも画面上の表記は「delay」です。
 
 ツールバーの依存関係設定から既定種別、自動 delay 計算、既定関係の自動適用を変更できます。自動 delay は先行側の期日（なければ開始日）と後続側の開始日から求め、後続チケットのプロジェクトカレンダーを使います。日付が不足していれば自動計算できない旨が表示されます。
 
@@ -30,9 +32,9 @@
 
 重複、循環依存、権限、日付整合性の制約により保存できない場合があります。編集には関係するチケットの可視性と権限が必要です。プロジェクトをまたぐ関係は Redmine の `cross_project_issue_relations` 設定に従います。
 
-![依存関係の編集画面。](/images/relation-editor-en.png)
+![依存関係の編集画面。](/images/relation-editor-ja.png)
 
-依存関係の編集画面。[画像を拡大](/images/relation-editor-en.png)
+依存関係の編集画面。[画像を拡大](/images/relation-editor-ja.png)
 
 ## スケジュールへの影響
 

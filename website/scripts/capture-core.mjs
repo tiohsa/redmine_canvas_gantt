@@ -6,21 +6,28 @@ const base = process.env.REDMINE_CAPTURE_URL ?? 'http://127.0.0.1:3101';
 if (!['127.0.0.1', 'localhost'].includes(new URL(base).hostname)) throw new Error('Capture requires a local disposable Redmine.');
 const passwordFile = process.env.REDMINE_CAPTURE_PASSWORD_FILE;
 if (!passwordFile) throw new Error('Set REDMINE_CAPTURE_PASSWORD_FILE to the demo password file.');
+const locale = process.env.REDMINE_CAPTURE_LOCALE ?? 'en';
+if (!['en', 'ja'].includes(locale)) throw new Error('REDMINE_CAPTURE_LOCALE must be en or ja.');
+const ja = locale === 'ja';
+const screenshotName = name => locale === 'en' && name.endsWith('-poster') ? name : `${name}-${locale}`;
+const issueSubjects = ja
+  ? { requirements: '要件をまとめる', designReview: 'デザインを確認', prepareLaunch: '公開準備' }
+  : { requirements: 'Gather requirements', designReview: 'Review the design', prepareLaunch: 'Prepare launch' };
 const phase = process.argv[2] ?? 'overview';
 if (!['overview', 'date', 'schedule', 'comparison', 'dependency', 'dependency-poster'].includes(phase)) throw new Error('Unknown capture phase.');
 const images = fileURLToPath(new URL('../public/images/', import.meta.url));
 const raw = process.env.REDMINE_CAPTURE_RAW_DIR ?? '/tmp/canvas-gantt-manual-recordings';
 await mkdir(raw, { recursive: true });
 await mkdir(images, { recursive: true });
-const browser = await chromium.launch();
-const auth = await browser.newContext({ viewport: { width: 1900, height: 700 }, locale: 'en-US', timezoneId: 'Asia/Tokyo' });
+const browser = await chromium.launch({ executablePath: process.env.REDMINE_CAPTURE_CHROMIUM_PATH || undefined });
+const auth = await browser.newContext({ viewport: { width: 1900, height: 700 }, locale: ja ? 'ja-JP' : 'en-US', timezoneId: 'Asia/Tokyo' });
 const login = await auth.newPage();
 await login.goto(base + '/login');
 await login.locator('#username').fill('manual-demo');
 await login.locator('#password').fill((await readFile(passwordFile, 'utf8')).trim());
-await login.getByRole('button', { name: 'Login', exact: true }).click();
+await login.getByRole('button', { name: ja ? 'ログイン' : 'Login', exact: true }).click();
 await login.waitForURL(url => !url.pathname.includes('/login'));
-const context = await browser.newContext({ storageState: await auth.storageState(), viewport: { width: 1900, height: 700 }, locale: 'en-US', timezoneId: 'Asia/Tokyo', deviceScaleFactor: 1, colorScheme: 'light', ...(phase === 'schedule' || phase === 'dependency' ? { recordVideo: { dir: raw, size: { width: 1900, height: 700 } } } : {}) });
+const context = await browser.newContext({ storageState: await auth.storageState(), viewport: { width: 1900, height: 700 }, locale: ja ? 'ja-JP' : 'en-US', timezoneId: 'Asia/Tokyo', deviceScaleFactor: 1, colorScheme: 'light', ...(phase === 'schedule' || phase === 'dependency' ? { recordVideo: { dir: raw, size: { width: 1900, height: 700 } } } : {}) });
 await auth.close();
 const videoStart = Date.now();
 const page = await context.newPage();
@@ -31,10 +38,10 @@ let payload;
 const data = page.waitForResponse(r => r.url().includes('/canvas_gantt/data') && r.status() === 200);
 await page.goto(base + '/projects/manual-demo/canvas_gantt?set_filter=1&f[]=status_id&op[status_id]=*&c[]=id&c[]=subject' + (phase === 'date' ? '&c[]=start_date&c[]=due_date' : ''));
 payload = await (await data).json();
-await page.getByText('Implement pages', { exact: true }).first().waitFor();
-await page.getByRole('button', { name: 'Day', exact: true }).click();
+await page.getByText(ja ? 'ページを実装' : 'Implement pages', { exact: true }).first().waitFor();
+await page.getByRole('button', { name: ja ? '日' : 'Day', exact: true }).click();
 await page.waitForTimeout(300);
-await page.getByRole('button', { name: 'Today', exact: true }).click();
+await page.getByRole('button', { name: ja ? '今日' : 'Today', exact: true }).click();
 await page.waitForTimeout(300);
 await page.mouse.move(1200, 450);
 await page.mouse.wheel(480, 0);
@@ -67,14 +74,14 @@ async function drag(x, y, dx) {
 }
 let recordingFrom;
 let recordingEndedAt;
-if (phase === 'overview') await screenshot('canvas-gantt-overview-en');
+if (phase === 'overview') await screenshot(screenshotName('canvas-gantt-overview'));
 if (phase === 'date') {
-  const id = taskId('Gather requirements');
+  const id = taskId(issueSubjects.requirements);
   // Shrink Subject through its real column resize handle so date columns fit.
   const column = await page.getByTestId('sidebar-column-resize-handle-subject').boundingBox();
   await drag(column.x + column.width / 2, column.y + column.height / 2, -170);
   await page.getByTestId(`cell-${id}-startDate`).dblclick();
-  await screenshot('date-cell-edit-en', { x: 165, y: 300, width: 260, height: 355 });
+  await screenshot(screenshotName('date-cell-edit'), { x: 165, y: 300, width: 260, height: 355 });
 }
 if (phase === 'schedule') {
   await page.getByTestId('baseline-save-menu-button').click();
@@ -82,17 +89,17 @@ if (phase === 'schedule') {
   await page.getByTestId('baseline-save-project-button').click();
   expect((await saved).status()).toBe(200);
   await page.getByTestId('display-settings-menu-button').click();
-  const toggle = page.getByRole('switch', { name: 'Auto Save', exact: true });
+  const toggle = page.getByRole('switch', { name: ja ? '自動保存' : 'Auto Save', exact: true });
   if (await toggle.isChecked()) await page.locator('label').filter({ has: toggle }).click();
   await page.getByTestId('display-settings-menu-button').click();
-  const id = taskId('Prepare launch');
+  const id = taskId(issueSubjects.prepareLaunch);
   await select(id);
-  await screenshot('schedule-edit-poster');
+  await screenshot(screenshotName('schedule-edit-poster'));
   recordingFrom = (Date.now() - videoStart) / 1000;
   await page.waitForTimeout(1700);
   let h = await handles(id);
   await drag(h.x, h.y, 80);
-  await screenshot('pending-save-en', { x: 20, y: 134, width: 1862, height: 455 });
+  await screenshot(screenshotName('pending-save'), { x: 20, y: 134, width: 1862, height: 455 });
   await page.waitForTimeout(1700);
   await select(id); h = await handles(id);
   await drag(h.end.x + h.end.width / 2, h.y, 80);
@@ -108,31 +115,31 @@ if (phase === 'schedule') {
   await page.getByTestId('baseline-save-menu-button').click();
   await select(id);
   const comparison = await page.getByTestId('baseline-diff-popover').boundingBox();
-  await screenshot('baseline-compare-en', { x: comparison.x - 380, y: comparison.y - 170, width: comparison.width + 410, height: comparison.height + 190 });
+  await screenshot(screenshotName('baseline-compare'), { x: comparison.x - 380, y: comparison.y - 170, width: comparison.width + 410, height: comparison.height + 190 });
 }
 if (phase === 'comparison') {
   await page.setViewportSize({ width: 1900, height: 900 });
   await page.getByTestId('baseline-save-menu-button').click();
   await page.getByTestId('baseline-toggle-checkbox').check();
   await page.getByTestId('baseline-save-menu-button').click();
-  await select(taskId('Prepare launch'));
+  await select(taskId(issueSubjects.prepareLaunch));
   const comparison = await page.getByTestId('baseline-diff-popover').boundingBox();
-  await screenshot('baseline-compare-en', { x: comparison.x - 380, y: comparison.y - 170, width: comparison.width + 410, height: comparison.height + 190 });
+  await screenshot(screenshotName('baseline-compare'), { x: comparison.x - 380, y: comparison.y - 170, width: comparison.width + 410, height: comparison.height + 190 });
 }
 if (phase === 'dependency-poster') {
-  await page.getByTitle('Full Screen', { exact: true }).click();
-  await select(taskId('Gather requirements'));
-  await screenshot('dependency-create-poster');
+  await page.getByTitle(ja ? '全画面表示' : 'Full Screen', { exact: true }).click();
+  await select(taskId(issueSubjects.requirements));
+  await screenshot(screenshotName('dependency-create-poster'));
 }
 if (phase === 'dependency') {
-  await page.getByTitle('Full Screen', { exact: true }).click();
+  await page.getByTitle(ja ? '全画面表示' : 'Full Screen', { exact: true }).click();
   await page.waitForTimeout(300);
   await page.getByTestId('relation-settings-menu-button').click();
   await page.getByTestId('relation-auto-apply-toggle').uncheck();
   await page.getByTestId('relation-settings-save-button').click();
-  const from = taskId('Gather requirements'), to = taskId('Review the design');
+  const from = taskId(issueSubjects.requirements), to = taskId(issueSubjects.designReview);
   await select(from);
-  await screenshot('dependency-create-poster');
+  await screenshot(screenshotName('dependency-create-poster'));
   recordingFrom = (Date.now() - videoStart) / 1000;
   await page.waitForTimeout(2000);
   await select(from);
@@ -150,7 +157,7 @@ if (phase === 'dependency') {
   await page.waitForTimeout(500);
   await page.getByTestId('relation-editor').waitFor();
   const editor = await page.getByTestId('relation-editor').boundingBox();
-  await screenshot('relation-editor-en', { x: editor.x - 30, y: editor.y - 20, width: editor.width + 60, height: editor.height + 40 });
+  await screenshot(screenshotName('relation-editor'), { x: editor.x - 30, y: editor.y - 20, width: editor.width + 60, height: editor.height + 40 });
   await page.waitForTimeout(4000);
   const response = page.waitForResponse(r => r.request().method() === 'POST' && /relations/.test(r.url()));
   await page.getByTestId('relation-save-button').click();

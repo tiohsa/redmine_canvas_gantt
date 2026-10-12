@@ -2,9 +2,9 @@
 
 ## 画面構成
 
-![Redmine 7.0.0.stable 上の Canvas Gantt 0.18.0 で、チケットと依存関係を表示した日表示の画面。](/images/canvas-gantt-overview-en.png)
+![Redmine 7.0.0.stable 上の Canvas Gantt 0.18.0 で、日本語表示のチケットと依存関係を表示した日表示の画面。](/images/canvas-gantt-overview-ja.png)
 
-[画像を拡大](/images/canvas-gantt-overview-en.png)
+[画像を拡大](/images/canvas-gantt-overview-ja.png)
 
 左側のサイドバーにはチケットの行と表示列、右側のタイムラインには期間を示すタスクバーと依存関係が表示されます。上部のツールバーからフィルターや表示粒度、保存方式などを操作します。
 
@@ -24,7 +24,7 @@
 
 非稼働日を選ぶと、対象チケットのプロジェクトカレンダーに従い、開始日は次の稼働日、期日は直前の稼働日に補正されることがあります。
 
-<video controls preload="metadata" playsinline poster="/images/schedule-edit-poster.png" src="/videos/schedule-edit.mp4" style="width:100%;height:auto" aria-label="タスクバーの移動と端の調整による日付変更を示す"></video>
+<video controls preload="metadata" playsinline poster="/images/schedule-edit-poster-ja.png" src="/videos/schedule-edit-ja.mp4" style="width:100%;height:auto" aria-label="タスクバーの移動と端の調整による日付変更を示す"></video>
 
 ## セルを編集する
 
@@ -36,9 +36,9 @@
 
 利用できる編集項目は、対象チケットの Redmine 権限とワークフローにより異なります。詳しくは[権限設計](/ja/administration/permissions)を参照してください。
 
-![日付セルをインライン編集する。](/images/date-cell-edit-en.png)
+![日付セルをインライン編集する。](/images/date-cell-edit-ja.png)
 
-日付セルの編集。[画像を拡大](/images/date-cell-edit-en.png)
+日付セルの編集。[画像を拡大](/images/date-cell-edit-ja.png)
 
 ## 保存と未保存の変更を破棄する
 
@@ -50,9 +50,9 @@
 
 日付をまとめて更新する際に競合すると、その変更グループ全体は保存されず、下書きが保持されます。自動保存・手動保存ともに、[保存競合の解決手順](/ja/troubleshooting/#保存競合が発生した)に従ってください。
 
-![保留中の変更と手動保存の保存・キャンセル操作を示す。](/images/pending-save-en.png)
+![保留中の変更と手動保存の保存・キャンセル操作を示す。](/images/pending-save-ja.png)
 
-未保存の変更と保存・キャンセル操作。[画像を拡大](/images/pending-save-en.png)
+未保存の変更と保存・キャンセル操作。[画像を拡大](/images/pending-save-ja.png)
 
 ## 列、行の高さ、全画面
 
