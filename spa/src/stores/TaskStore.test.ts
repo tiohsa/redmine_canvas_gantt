@@ -12,6 +12,7 @@ import { WorkloadLogicService } from '../services/WorkloadLogicService';
 import { createReadContext } from './taskStore/stateContract';
 import { parseDateOnly } from '../utils/dateOnly';
 import { loadPreferences, saveDisplayPreferences } from '../utils/preferences';
+import * as criticalPathCalculation from '../scheduling/criticalPath';
 
 vi.mock('../api/client', () => ({
     apiClient: {
@@ -2511,6 +2512,194 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(derivedRecalculationCounters.layout).toBe(1);
     });
 
+    it('preserves unchanged visible task references when editing one of 5,000 tasks', () => {
+        useTaskStore.getState().setCalculateCriticalPathEnabled(false);
+        useTaskStore.getState().setTasks(Array.from({ length: 5000 }, (_, index) => buildTask({
+            id: `task-${index}`,
+            subject: `Task ${index}`,
+            ratioDone: 0
+        })));
+        const before = useTaskStore.getState().tasks;
+        resetDerivedRecalculationCounters();
+
+        useTaskStore.getState().updateTask('task-2500', { ratioDone: 25 });
+
+        const after = useTaskStore.getState();
+        expect(after.tasks).toHaveLength(5000);
+        expect(after.tasks[2500]).not.toBe(before[2500]);
+        expect(after.tasks[2500].ratioDone).toBe(25);
+        after.tasks.forEach((task, index) => {
+            if (index !== 2500) expect(task).toBe(before[index]);
+        });
+        expect(derivedRecalculationCounters).toEqual({ scheduling: 0, criticalPath: 0, layout: 0 });
+    });
+
+    it('updates each dependency-adjusted visible task and preserves unrelated references', () => {
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift });
+        useTaskStore.setState({ groupByProject: false, groupByAssignee: false, showVersions: false, sortConfig: null });
+        useTaskStore.getState().setTasks([
+            buildTask({ id: 'source', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'successor-a', startDate: WEDNESDAY, dueDate: THURSDAY }),
+            buildTask({ id: 'successor-b', startDate: FRIDAY, dueDate: FRIDAY }),
+            buildTask({ id: 'unrelated', startDate: MONDAY, dueDate: TUESDAY })
+        ]);
+        useTaskStore.getState().setRelations([
+            { id: 'r1', from: 'source', to: 'successor-a', type: 'precedes' },
+            { id: 'r2', from: 'successor-a', to: 'successor-b', type: 'precedes' }
+        ]);
+        const before = useTaskStore.getState().tasks;
+
+        useTaskStore.getState().updateTask('source', { dueDate: WEDNESDAY });
+
+        const after = useTaskStore.getState();
+        expect(after.allTasks.find(task => task.id === 'successor-a')?.startDate).toBe(THURSDAY);
+        expect(after.allTasks.find(task => task.id === 'successor-b')?.startDate).not.toBe(FRIDAY);
+        expect(after.tasks.find(task => task.id === 'successor-a')).not.toBe(before.find(task => task.id === 'successor-a'));
+        expect(after.tasks.find(task => task.id === 'successor-b')).not.toBe(before.find(task => task.id === 'successor-b'));
+        expect(after.tasks.find(task => task.id === 'unrelated')).toBe(before.find(task => task.id === 'unrelated'));
+    });
+
+    it.each([
+        ['progress', { ratioDone: 30 }],
+        ['status', { statusId: 2 }],
+        ['date', { dueDate: WEDNESDAY }]
+    ] as const)('preserves filtered context task layout after a %s edit', (field, updates) => {
+        for (const sortingSuspended of [false, true]) {
+            useTaskStore.setState(useTaskStore.getInitialState(), true);
+            useTaskStore.setState({
+                groupByProject: false,
+                groupByAssignee: false,
+                showVersions: false,
+                sortConfig: null
+            });
+            useTaskStore.getState().setTasks([
+                buildTask({ id: 'parent', subject: 'Parent', hasChildren: true, startDate: MONDAY, dueDate: TUESDAY }),
+                buildTask({ id: 'child', subject: 'Visible child', parentId: 'parent', startDate: MONDAY, dueDate: TUESDAY })
+            ]);
+            useTaskStore.getState().setFilterText('Visible child');
+            if (sortingSuspended) useTaskStore.setState({ isSortingSuspended: true });
+            const before = useTaskStore.getState();
+            const visibleParent = before.tasks.find(task => task.id === 'parent');
+            expect(visibleParent?.isContextOnly).toBe(true);
+            resetDerivedRecalculationCounters();
+
+            useTaskStore.getState().updateTask('child', updates);
+
+            const after = useTaskStore.getState();
+            expect(after.tasks.map(task => task.id)).toEqual(['parent', 'child']);
+            if (field === 'date') {
+                expect(after.allTasks.find(task => task.id === 'parent')).not.toBe(before.allTasks.find(task => task.id === 'parent'));
+                expect(after.tasks[0]).not.toBe(visibleParent);
+            } else {
+                expect(after.tasks[0]).toBe(visibleParent);
+            }
+            expect(after.tasks[0]).toMatchObject({
+                isContextOnly: true,
+                rowIndex: visibleParent?.rowIndex,
+                indentLevel: visibleParent?.indentLevel,
+                treeLevelGuides: visibleParent?.treeLevelGuides,
+                isLastChild: visibleParent?.isLastChild,
+                hasChildren: visibleParent?.hasChildren
+            });
+            expect(after.tasks[1]).toMatchObject({
+                rowIndex: before.tasks[1].rowIndex,
+                indentLevel: before.tasks[1].indentLevel,
+                treeLevelGuides: before.tasks[1].treeLevelGuides,
+                isLastChild: before.tasks[1].isLastChild,
+                hasChildren: before.tasks[1].hasChildren,
+                isContextOnly: before.tasks[1].isContextOnly
+            });
+            expect(after.layoutRows.filter(row => row.type === 'task').map(row => row.type === 'task' ? row.taskId : row.type))
+                .toEqual(['parent', 'child']);
+        }
+    });
+
+    it.each([
+        ['project', 'projectName', 'groupByProject', 'projectId', 'p1', 'Project One', 'Renamed Project'],
+        ['assignee', 'assignedToName', 'groupByAssignee', 'assignedToId', 7, 'User One', 'Renamed User']
+    ] as const)('rebuilds the active %s heading only when its name changes', (group, nameField, groupField, idField, groupId, currentName, nextName) => {
+        useTaskStore.setState({
+            groupByProject: groupField === 'groupByProject',
+            groupByAssignee: groupField === 'groupByAssignee',
+            sortConfig: null,
+            filterOptions: { projects: [], assignees: [] },
+            projectExpansion: {
+                [group === 'project' ? String(groupId) : `assignee:${groupId}`]: false
+            }
+        });
+        useTaskStore.getState().setTasks([buildTask({
+            id: 'task-1',
+            [nameField]: currentName,
+            [idField]: groupId
+        } as Partial<Task>)]);
+        resetDerivedRecalculationCounters();
+
+        useTaskStore.getState().updateTask('task-1', { [nameField]: nextName });
+
+        expect(derivedRecalculationCounters).toEqual({ scheduling: 0, criticalPath: 0, layout: 1 });
+        expect(useTaskStore.getState().layoutRows.find(row => row.type === 'header')).toMatchObject({ projectName: nextName });
+        expect(useTaskStore.getState().tasks).toEqual([]);
+        expect(useTaskStore.getState().projectExpansion[group === 'project' ? String(groupId) : `assignee:${groupId}`]).toBe(false);
+
+        useTaskStore.setState({ sortConfig: { key: nameField, direction: 'asc' } });
+        resetDerivedRecalculationCounters();
+        useTaskStore.getState().updateTask('task-1', { [nameField]: nextName });
+        expect(derivedRecalculationCounters).toEqual({ scheduling: 0, criticalPath: 0, layout: 0 });
+
+        useTaskStore.getState().setGroupByProject(false);
+        useTaskStore.getState().setGroupByAssignee(false);
+        useTaskStore.getState().setSortConfig(null);
+        resetDerivedRecalculationCounters();
+        useTaskStore.getState().updateTask('task-1', { [nameField]: 'A different name' });
+        expect(derivedRecalculationCounters).toEqual({ scheduling: 0, criticalPath: 0, layout: 0 });
+    });
+
+    it('preserves filtered context layout when a bar-operation date rollback reuses layout', () => {
+        useTaskStore.setState({
+            groupByProject: false,
+            groupByAssignee: false,
+            showVersions: false,
+            sortConfig: null,
+        });
+        const parent = buildTask({ id: 'parent', subject: 'Parent', startDate: MONDAY, dueDate: TUESDAY, hasChildren: true });
+        const child = buildTask({ id: 'child', subject: 'Visible child', parentId: 'parent', startDate: MONDAY, dueDate: TUESDAY, rowIndex: 1, indentLevel: 1 });
+        const visibleParent = { ...parent, isContextOnly: true };
+        useTaskStore.setState({
+            allTasks: [parent, child],
+            tasks: [visibleParent, child],
+            layoutRows: [
+                { type: 'task', taskId: 'parent', rowIndex: 0 },
+                { type: 'task', taskId: 'child', rowIndex: 1 }
+            ],
+            rowCount: 2,
+            groupByProject: false,
+            groupByAssignee: false,
+            showVersions: false,
+            sortConfig: null
+        });
+        expect(useTaskStore.getState().tasks[0].isContextOnly).toBe(true);
+        const operationId = useTaskStore.getState().beginBarOperation('child');
+        useTaskStore.getState().updateTask('child', { dueDate: WEDNESDAY });
+        useTaskStore.getState().endBarOperation(operationId);
+        resetDerivedRecalculationCounters();
+
+        useTaskStore.getState().rollbackBarOperation(operationId);
+
+        const after = useTaskStore.getState();
+        expect(after.allTasks.find(task => task.id === 'child')?.dueDate).toBe(TUESDAY);
+        expect(after.tasks[0]).toMatchObject({
+            isContextOnly: true,
+            rowIndex: visibleParent.rowIndex,
+            indentLevel: visibleParent.indentLevel,
+            treeLevelGuides: visibleParent.treeLevelGuides,
+            isLastChild: visibleParent.isLastChild,
+            hasChildren: visibleParent.hasChildren
+        });
+        expect(after.layoutRows.filter(row => row.type === 'task').map(row => row.type === 'task' ? row.taskId : row.type))
+            .toEqual(['parent', 'child']);
+        expect(derivedRecalculationCounters.layout).toBe(0);
+    });
+
     it('recalculates scheduling and critical path once without rebuilding task-only layout for a date edit', () => {
         useTaskStore.setState({
             groupByProject: false, groupByAssignee: false, showVersions: false,
@@ -2686,26 +2875,32 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(derivedRecalculationCounters.layout).toBe(0);
     });
 
-    it('applies an accepted fetch using the critical path setting active at response time', async () => {
+    it('applies an accepted fetch with zero calculator calls when critical path is disabled before response', async () => {
         const request = deferred<ReturnType<typeof buildApiData>>();
         vi.mocked(apiClient.fetchData).mockReturnValue(request.promise);
 
         const refresh = useTaskStore.getState().refreshData();
         useTaskStore.getState().setCalculateCriticalPathEnabled(false);
         resetDerivedRecalculationCounters();
-        request.resolve(buildApiData([
-                buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
-                buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY })
-            ], [{ id: 'r1', from: 'A', to: 'B', type: 'precedes' }]
-        ));
-        await expect(refresh).resolves.toEqual(expect.objectContaining({ status: 'applied' }));
+        const calculator = vi.spyOn(criticalPathCalculation, 'calculateCriticalPath');
+        try {
+            request.resolve(buildApiData([
+                    buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+                    buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY })
+                ], [{ id: 'r1', from: 'A', to: 'B', type: 'precedes' }]
+            ));
+            await expect(refresh).resolves.toEqual(expect.objectContaining({ status: 'applied' }));
 
-        const state = useTaskStore.getState();
-        expect(state.dataReadStatus).toBe('ready');
-        expect(state.calculateCriticalPathEnabled).toBe(false);
-        expect(state.criticalPathMetrics).toEqual({});
-        expect(derivedRecalculationCounters.scheduling).toBe(1);
-        expect(derivedRecalculationCounters.criticalPath).toBe(0);
+            const state = useTaskStore.getState();
+            expect(state.dataReadStatus).toBe('ready');
+            expect(state.calculateCriticalPathEnabled).toBe(false);
+            expect(state.criticalPathMetrics).toEqual({});
+            expect(derivedRecalculationCounters.scheduling).toBe(1);
+            expect(derivedRecalculationCounters.criticalPath).toBe(0);
+            expect(calculator).toHaveBeenCalledTimes(0);
+        } finally {
+            calculator.mockRestore();
+        }
     });
 
     it('canonicalizes direct date updates with the task project calendar', () => {
@@ -4201,6 +4396,45 @@ describe('TaskStore scheduling state and relation-driven recalculation', () => {
     beforeEach(() => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
         useUIStore.setState(useUIStore.getInitialState(), true);
+    });
+
+    it('never invokes the critical path calculator during loads, edits, drag updates or relation changes while disabled', () => {
+        const calculator = vi.spyOn(criticalPathCalculation, 'calculateCriticalPath');
+        try {
+            const store = useTaskStore.getState();
+            store.setCalculateCriticalPathEnabled(false);
+            store.applyApiData(buildApiData([
+                buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+                buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY })
+            ]));
+            expect(calculator).not.toHaveBeenCalled();
+
+            store.updateTask('A', { subject: 'Edited subject' });
+            store.updateTask('A', { dueDate: WEDNESDAY });
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'A')?.dueDate).toBe(WEDNESDAY);
+            expect(calculator).not.toHaveBeenCalled();
+
+            store.setSortingSuspended(true);
+            for (const dueDate of [THURSDAY, FRIDAY]) {
+                store.updateTask('A', { dueDate });
+                expect(calculator).not.toHaveBeenCalled();
+            }
+            store.setSortingSuspended(false);
+            store.addRelation({ id: 'cp-off-relation', from: 'A', to: 'B', type: 'precedes' });
+            expect(useTaskStore.getState().allTasks.find(task => task.id === 'B')?.startDate).toBeGreaterThan(FRIDAY);
+            expect(calculator).not.toHaveBeenCalled();
+            store.replaceRelation({ id: 'cp-off-relation', from: 'A', to: 'B', type: 'precedes', delay: 1 });
+            store.removeRelation('cp-off-relation');
+            expect(useTaskStore.getState().relations).toEqual([]);
+            expect(useTaskStore.getState().criticalPathMetrics).toEqual({});
+            expect(calculator).toHaveBeenCalledTimes(0);
+
+            store.setCalculateCriticalPathEnabled(true);
+            expect(calculator).toHaveBeenCalledTimes(1);
+            expect(useTaskStore.getState().criticalPathMetrics.A).toBeDefined();
+        } finally {
+            calculator.mockRestore();
+        }
     });
 
     it('does not schedule related dates for context-only edits', () => {

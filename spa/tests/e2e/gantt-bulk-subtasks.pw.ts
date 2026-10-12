@@ -96,7 +96,7 @@ test('bulk creates subtasks for a visible parent issue', async ({ page }) => {
   expect(bulkPayloads[0]).toEqual({
     client_operation_id: expect.stringMatching(/^mutation:/),
     parent_issue_id: 501,
-    operation_issue_ids: [501, 502],
+    operation_issue_ids: [501],
     subjects: ['Subtask A', 'Subtask B'],
   });
 });

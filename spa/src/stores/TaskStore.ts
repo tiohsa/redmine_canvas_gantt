@@ -503,6 +503,16 @@ export const resetDerivedRecalculationCounters = () => {
     derivedRecalculationCounters.layout = 0;
 };
 
+const mergeVisibleTask = (visibleTask: Task, updatedTask: Task): Task => ({
+    ...updatedTask,
+    rowIndex: visibleTask.rowIndex,
+    indentLevel: visibleTask.indentLevel,
+    treeLevelGuides: visibleTask.treeLevelGuides,
+    isLastChild: visibleTask.isLastChild,
+    hasChildren: visibleTask.hasChildren,
+    isContextOnly: visibleTask.isContextOnly
+});
+
 const buildDerivedTaskState = (
     state: TaskState,
     overrides: Partial<LayoutState> & {
@@ -554,19 +564,13 @@ const buildDerivedTaskState = (
     const visibleTasks = layout?.tasks ?? (allTasks === state.allTasks
         ? state.tasks
         : (() => {
+            const previousTaskById = new Map(state.allTasks.map(task => [task.id, task]));
             const taskById = new Map(allTasks.map(task => [task.id, task]));
             return state.tasks.flatMap((visibleTask) => {
                 const updatedTask = taskById.get(visibleTask.id);
                 if (!updatedTask) return [];
-                if (updatedTask === visibleTask) return [visibleTask];
-                return [{
-                    ...updatedTask,
-                    rowIndex: visibleTask.rowIndex,
-                    indentLevel: visibleTask.indentLevel,
-                    treeLevelGuides: visibleTask.treeLevelGuides,
-                    isLastChild: visibleTask.isLastChild,
-                    hasChildren: visibleTask.hasChildren
-                }];
+                if (previousTaskById.get(visibleTask.id) === updatedTask) return [visibleTask];
+                return [mergeVisibleTask(visibleTask, updatedTask)];
             });
         })());
 
@@ -1091,12 +1095,24 @@ const matchesTaskFilters = (task: Task, state: TaskState): boolean => {
     );
 };
 
-const taskFieldsAffectLayout = (state: TaskState, changedFields: Set<string>): boolean => {
+const taskFieldsAffectLayout = (
+    state: TaskState,
+    changedFields: Set<string>,
+    changedTaskNames?: { projectName: boolean; assignedToName: boolean }
+): boolean => {
     if (['projectId', 'assignedToId', 'fixedVersionId', 'parentId', 'displayOrder'].some(field => changedFields.has(field))) {
         return true;
     }
+    const projectNameChanged = changedFields.has('projectName') && changedTaskNames?.projectName === true;
+    const assigneeNameChanged = changedFields.has('assignedToName') && changedTaskNames?.assignedToName === true;
+    if ((state.groupByProject && projectNameChanged) || (state.groupByAssignee && assigneeNameChanged)) {
+        return true;
+    }
     if (state.sortConfig && (
-        changedFields.has(state.sortConfig.key) ||
+        (changedFields.has(state.sortConfig.key) && (
+            (state.sortConfig.key !== 'projectName' || projectNameChanged) &&
+            (state.sortConfig.key !== 'assignedToName' || assigneeNameChanged)
+        )) ||
         (state.sortConfig.key.startsWith('cf:') && changedFields.has('customFieldValues'))
     )) {
         return true;
@@ -1923,9 +1939,21 @@ export const useTaskStore = create<TaskState>((set, get) => {
             cascadingUpdates.updates.forEach((patch, taskId) => pendingUpdates.set(taskId, patch));
         }
 
+        const changedTaskIds = new Set([id, ...pendingUpdates.keys()]);
+        const finalTaskById = new Map<string, Task>();
+        const taskChanges: Array<[Task, Task]> = [];
         const finalTasks = state.allTasks.map(t => {
-            if (t.id === id) return updatedTask;
-            if (pendingUpdates.has(t.id)) return { ...t, ...pendingUpdates.get(t.id) };
+            if (t.id === id) {
+                finalTaskById.set(t.id, updatedTask);
+                taskChanges.push([t, updatedTask]);
+                return updatedTask;
+            }
+            if (pendingUpdates.has(t.id)) {
+                const nextTask = { ...t, ...pendingUpdates.get(t.id) };
+                finalTaskById.set(t.id, nextTask);
+                taskChanges.push([t, nextTask]);
+                return nextTask;
+            }
             return t;
         });
 
@@ -1981,7 +2009,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
         pendingUpdates.forEach((fields, taskId) => patchFor(taskId, fields, fields));
 
         const changedFields = new Set([...Object.keys(canonicalUpdates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
-        const requiresLayout = taskFieldsAffectLayout(state, changedFields);
+        const requiresLayout = taskFieldsAffectLayout(state, changedFields, {
+            projectName: changedFields.has('projectName') && taskChanges.some(([previousTask, updatedTask]) => (
+                previousTask.projectName !== updatedTask.projectName
+            )),
+            assignedToName: changedFields.has('assignedToName') && taskChanges.some(([previousTask, updatedTask]) => (
+                previousTask.assignedToName !== updatedTask.assignedToName
+            ))
+        });
         const hasSchedulingChanges = ['startDate', 'dueDate', 'projectId'].some(field => changedFields.has(field));
         const nextSchedulingSummary = hasSchedulingChanges
             ? buildDerivedSchedulingSummary(finalTasks, state.relations, state.calculateCriticalPathEnabled)
@@ -1993,20 +2028,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         if (state.isSortingSuspended) {
             // Just update the view 'tasks' without re-layout (preserving order)
-            const newViewTasks = state.tasks.map(t => {
-                const updated = finalTasks.find(ft => ft.id === t.id);
-                if (updated) {
-                    // Keep layout-specific props from 't', update data from 'updated'
-                    return {
-                        ...updated,
-                        rowIndex: t.rowIndex,
-                        indentLevel: t.indentLevel,
-                        treeLevelGuides: t.treeLevelGuides,
-                        isLastChild: t.isLastChild,
-                        hasChildren: t.hasChildren
-                    };
-                }
-                return t;
+            const newViewTasks = state.tasks.map(viewTask => {
+                if (!changedTaskIds.has(viewTask.id)) return viewTask;
+                const updatedTask = finalTaskById.get(viewTask.id);
+                return updatedTask ? mergeVisibleTask(viewTask, updatedTask) : viewTask;
             });
 
             return {
@@ -2022,15 +2047,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         if (!requiresLayout && !hasSchedulingChanges) {
             const nextViewTasks = state.tasks.map(viewTask => {
-                const updated = finalTasks.find(task => task.id === viewTask.id);
-                return updated ? {
-                    ...updated,
-                    rowIndex: viewTask.rowIndex,
-                    indentLevel: viewTask.indentLevel,
-                    treeLevelGuides: viewTask.treeLevelGuides,
-                    isLastChild: viewTask.isLastChild,
-                    hasChildren: viewTask.hasChildren
-                } : viewTask;
+                if (!changedTaskIds.has(viewTask.id)) return viewTask;
+                const updatedTask = finalTaskById.get(viewTask.id);
+                return updatedTask ? mergeVisibleTask(viewTask, updatedTask) : viewTask;
             });
             return {
                 allTasks: finalTasks,
