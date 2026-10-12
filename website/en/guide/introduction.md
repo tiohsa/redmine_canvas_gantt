@@ -21,13 +21,15 @@ Redmine Canvas Gantt lets you view and edit Redmine issues on a Gantt chart. Adj
 
 Canvas Gantt uses Redmine's issues and permissions. Users need `view_canvas_gantt` to open the chart; Redmine's standard permissions on the target project control issue edits, creation, and deletion. See [Permissions](/en/administration/permissions).
 
-## Supported environment
+<a id="supported-environment"></a>
+
+## Tested environment
 
 The plugin supports Redmine 6.0, 6.1, and 7.0. CI references Redmine 6.0.6, 6.1.2, and 7.0.0; that does not establish support for every patch release in those series. Use a Ruby version supported by the selected Redmine version.
 
 Node.js is not required for normal operation. Node.js 20 or newer is required to build the SPA from source or use frontend development tools. Enable Redmine's REST API.
 
-Supported browsers are current desktop versions of Chrome, Edge, Firefox, and Safari with Canvas, ES modules, and `localStorage`. Internet Explorer is unsupported. Mobile browsers and embedded webviews are not part of the test matrix.
+Tested with desktop versions of Google Chrome and Microsoft Edge. Other browsers have not been tested.
 
 ## Screen areas
 

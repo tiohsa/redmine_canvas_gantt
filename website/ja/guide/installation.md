@@ -7,7 +7,7 @@
 - Redmine 6.0、6.1、または 7.0
 - 選択した Redmine がサポートする Ruby
 - Redmine REST API を有効化
-- デスクトップの対応ブラウザー
+- デスクトップ版 Google Chrome または Microsoft Edge（その他のブラウザは未検証）
 - SPA をソースからビルドするときのみ Node.js 20 以降
 
 ## 新規インストール

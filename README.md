@@ -1,25 +1,12 @@
-> **📖 User Manual:** [English](https://tiohsa.github.io/redmine_canvas_gantt/en/) | [日本語](https://tiohsa.github.io/redmine_canvas_gantt/ja/). Markdown sources are maintained in `website/`: [English](website/en/index.md) | [日本語](website/ja/index.md).
-
 <div align="center">
 
 # Redmine Canvas Gantt
 
-A fast, low-risk, Canvas-based Gantt chart plugin for Redmine 6.0, 6.1, and 7.0.
+A fast, Canvas-based Gantt chart plugin for Redmine 6.0, 6.1, and 7.0. This README and the user manual describe plugin release v0.18.0.
 
-## Why this plugin?
+[English user manual](website/en/index.md) · [日本語マニュアル](website/ja/index.md) · [Developer guide](spa/README.md)
 
-Built for Redmine projects that need **faster Gantt rendering**,
-**interactive scheduling**, and a **low-risk installation without database migrations**.
-
-## Key benefits
-
-**Performance** — Fast Canvas rendering with smooth scrolling and zooming
-**Editing** — Drag, resize, dependency editing, and inline issue editing
-**Operations** — No database migration and easy uninstall
-**Compatibility** — Redmine 6.0 compatibility; Redmine 6.1 and 7.0 full support
-
-Listed on Redmine Plugins Directory:
-https://www.redmine.org/plugins/redmine_canvas_gantt
+Use the manual's navigation for detailed feature, setup, and administration guidance.
 
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main\&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
@@ -28,392 +15,143 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 [![Ruby](https://img.shields.io/badge/Ruby-See%20Redmine%20requirements-cc342d)](#requirements)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#requirements)
 
-[日本語 README](README_ja.md) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
+[Redmine Plugins Directory](https://www.redmine.org/plugins/redmine_canvas_gantt) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues) · [日本語 README](README_ja.md)
 
 </div>
 
----
+## Why this plugin?
+
+Canvas Gantt brings responsive timeline rendering and direct schedule editing to Redmine projects while using Redmine issues, permissions, and saved queries.
+
+## Key benefits
+
+- **Fast:** Canvas rendering with smooth scrolling and zooming.
+- **Interactive:** Edit schedules, dependencies, hierarchy, and issue fields from the chart.
+- **Low impact:** No database migration; an uninstall task removes the plugin settings and saved baselines.
+- **Compatible:** Targets Redmine 6.0, 6.1, and 7.0.
 
 ## Overview
 
-Redmine Canvas Gantt renders the timeline on HTML5 Canvas while keeping the left task list editable. It is designed for projects where the default Redmine Gantt view becomes hard to read or slow to operate.
-
-Baseline snapshots are stored in Redmine's plugin settings (`Setting.plugin_redmine_canvas_gantt`), not in browser storage and not in a separate table. Each project has one snapshot; saving a new snapshot replaces the previous one.
+View and edit project issues on a Gantt chart, with a task list beside the timeline.
 
 ## Highlights
 
-- Fast Canvas rendering with smooth scrolling and zooming
-- Drag tasks to move them, resize date ranges, and create dependencies from task endpoints
-- Dependency management with create, update, and delete operations
-- Inline quick edit for subject, assignee, status, progress, due date, and custom fields
-- Drag and drop in the sidebar to change parent-child relationships
-- Bulk child task creation from multiple subject lines
-- Baseline snapshots for visual comparison, saved for either the current filtered view or the whole project
-- Saved queries, Redmine query editing, and round-tripping back to the issue list with supported filters
-- Filters by subject text, project, tracker, target version, assignee, and status; tracker filters round-trip through saved and Redmine queries
-- Grouping by project or assignee; target-version headers are a display toggle, not a grouping mode
-- Workload pane, export to PNG or CSV, full screen mode, and toolbar controls for zoom, row height, and font size
-- Per-issue Work Timer with 5/10/15/30/60-minute targets, optional auto-stop, multi-tab synchronization, and Redmine standard time-entry recording
-- Display settings stored per project or shared across all projects in the same browser profile (not across Redmine users)
-- Version headers, progress line, hierarchy lines, orphan date points, task titles, and dependency-based organization
-
-Date changes in a batch are saved atomically. If another request has updated any of the issues, the entire batch is cancelled and every local draft is retained. The conflict panel lists all issues with revision conflicts; issues whose save was only cancelled with the batch remain unsaved without being marked as conflicts.
-
-Canvas Gantt requires `view_canvas_gantt` on the opened project. Issues in other projects follow Redmine's issue visibility rules; those projects do not need their own Canvas Gantt permission. Issue spent hours, spent-hours sorting, mutation responses, and actual workload include only time entries visible to the current user. These totals can differ from Redmine's `Issue#spent_hours`. The "member projects only" filter lists all visible active projects with direct or group membership (all visible active projects for administrators). Projects outside the opened tree require an explicit selection before their visible issues can appear. With the filter off, project candidates stay within the opened tree. Closed and archived projects never appear as candidates. Visible editable issues in explicitly selected external projects support the same scheduling actions as issues in the opened tree. Dependency creation and updates across project trees follow Redmine's `cross_project_issue_relations` setting and normal issue visibility and edit permissions. Scheduling uses each issue's project calendar; dependency minimum-start checks use the successor issue's calendar. Duplicate project names include identifiers, and project search matches both names and identifiers.
-
-For date conflicts, row buttons only select the server version or local dates. **Apply this group** validates and commits the original schedule operation together with its dependencies and hierarchy. Inconsistent combinations are blocked. The server also checks the final Redmine callback result and rolls back if it changes a selected date. If Redmine would adjust dates, the panel lists every affected issue, including dependencies without a conflict card, and requires **Accept adjusted dates and apply** before retrying. The retry succeeds only if the actual final dates match the approved adjustment. Changes to reviewed revisions, relations, delays, hierarchy or calendars require **Refresh comparison and reselect**. Failed applications preserve choices and drafts. Local choices apply only the reviewed date intent; later edits, other fields and unrelated drafts remain unsaved. Automatic and manual saving use the same resolution flow.
+- Move and resize schedules, edit issue fields, and manage pending changes.
+- Organize parent-child issues, manage scheduling links, and narrow or share views with filters and saved queries.
+- Compare schedules with baselines, review workload, or measure work with the Work Timer.
+- Adjust chart presentation and export PNG or CSV.
 
 ## Demo
 
-Real English UI with fictional project data: move and resize a task bar, then create a dependency.
+![Canvas Gantt demo: schedule editing and dependency creation](./docs/demo-current.gif)
 
-![Canvas Gantt: moving and resizing a task bar, then creating a dependency](./docs/demo-current.gif)
-
-Watch the individual MP4 recordings: [Schedule editing](./website/public/videos/schedule-edit.mp4) · [Dependency creation](./website/public/videos/dependency-create.mp4).
+Watch [schedule editing](./website/public/videos/schedule-edit.mp4) and [dependency creation](./website/public/videos/dependency-create.mp4).
 
 ## Requirements
 
-- Redmine 6.0 (compatibility), 6.1, or 7.0
-- A Ruby version supported by the selected Redmine version
-- Node.js 20+ only for building the SPA or running frontend development tools; Node.js is not required for normal Redmine operation when prebuilt assets are used
-- REST API enabled in Redmine
+- Redmine 6.0, 6.1, or 7.0 and a Ruby version supported by that Redmine release.
+- Redmine REST API enabled and a desktop version of Google Chrome or Microsoft Edge.
+- Node.js 20+ only to build the SPA from source; it is not required for normal operation with the included built assets.
 
-### Supported browsers
+### Tested environment
 
-Use a current desktop version of Chrome, Edge, Firefox, or Safari with HTML5 Canvas, ES modules, and `localStorage` enabled. Internet Explorer is not supported. Mobile browsers and embedded webviews are not part of the supported test matrix.
+Tested with desktop versions of Google Chrome and Microsoft Edge. Other browsers have not been tested.
 
 ### Security and impact
 
-- Database migration: none
-- Added permissions: `view_canvas_gantt`, `manage_canvas_gantt_baseline`
-- Uninstall: run the cleanup task from the Redmine application environment before removing the plugin directory. For Docker Compose, run it inside the `redmine` service container. The task deletes the complete Redmine plugin settings row, including stored baselines. Browser `localStorage` remains local to each user and is not removed by the server-side task.
+No database migration is required. Access requires `view_canvas_gantt`; baseline saving uses `manage_canvas_gantt_baseline`, and issue actions follow standard Redmine permissions on each target issue's project. Before removing the plugin, run the uninstall task; it deletes the complete plugin settings row, including saved baselines.
 
 ## Installation
 
-1. Clone the plugin into Redmine's `plugins/` directory.
+For a basic installation, clone the v0.18.0 release into Redmine's `plugins/` directory, then restart Redmine:
 
-   ```bash
-   cd /path/to/redmine/plugins
-   git clone https://github.com/tiohsa/redmine_canvas_gantt.git
-   ```
+```sh
+cd /path/to/redmine/plugins
+git clone --branch v0.18.0 --depth 1 https://github.com/tiohsa/redmine_canvas_gantt.git
+```
 
-2. Restart Redmine.
-
-   Restart your application server after placing the plugin.
+Enable the REST API and the Canvas Gantt project module, then grant `view_canvas_gantt` to the appropriate roles.
 
 ### Upgrade
 
-1. Back up the Redmine database and the plugin directory.
-2. Replace the plugin directory with the desired release (for example, update the Git checkout or extract the release over it).
-3. If you build the SPA from source, run `cd spa && npm ci && npm run build` with Node.js 20+.
-4. Restart Redmine and verify the plugin module and permissions.
-
-This plugin does not provide database migrations. Existing baselines in Redmine settings and browser display preferences are retained during upgrades.
+Back up Redmine and replace the plugin files with the selected release, then restart Redmine and review role permissions. Ordinary upgrades require no database migration.
 
 ### Uninstall
 
-1. Back up the Redmine database if stored baselines or plugin settings may be needed later.
-2. Run the idempotent cleanup task while the plugin directory is still present.
-
-   **Standard installation** — run from the Redmine application directory that contains `Gemfile`:
-
-   ```bash
-   cd /path/to/redmine
-   bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production
-   ```
-
-   **Docker Compose** — run inside the Redmine service container:
-
-   ```bash
-   docker compose exec -T redmine \
-     bundle exec rake redmine_canvas_gantt:uninstall
-   ```
-
-   `RAILS_ENV=production` is already configured in this repository's Compose service. To set it explicitly:
-
-   ```bash
-   docker compose exec -T -e RAILS_ENV=production redmine \
-     bundle exec rake redmine_canvas_gantt:uninstall
-   ```
-
-   Do not run `bundle exec` from the host plugin directory when Redmine itself runs only in Docker. The host directory does not contain Redmine's `Gemfile`, so Bundler reports `Could not locate Gemfile or .bundle/ directory`.
-
-3. Remove the `plugins/redmine_canvas_gantt` directory, or remove the corresponding plugin volume or bind mount from the container configuration.
-4. Restart Redmine.
-
-The cleanup task deletes the `plugin_redmine_canvas_gantt` row from Redmine's `settings` table, including all baseline snapshots and plugin defaults stored there. It does not clear browser `localStorage`.
+Run `bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production` from the Redmine application directory while the plugin is still present, then remove the plugin directory and restart Redmine. This deletes the complete `plugin_redmine_canvas_gantt` settings row, including stored baselines and plugin defaults; browser `localStorage` is not cleared. For Docker, run the task inside the Redmine service.
 
 ## Usage
 
-1. Enable the REST API.
-   Go to **Administration** -> **Settings** -> **API** and enable **Enable REST web service**.
-
-2. Enable the project module.
-   Open **Project** -> **Settings** -> **Modules** and enable **Canvas Gantt**.
-
-3. Grant permissions.
-   In **Administration** -> **Roles and permissions**, grant `view_canvas_gantt` to use Canvas Gantt. Issue actions use Redmine's standard permissions on the target issue's project: `edit_issues`, `delete_issues`, `add_issues`, and `manage_subtasks`. Grant `manage_canvas_gantt_baseline` only to roles allowed to save a baseline.
-
-   When upgrading from a version that used `edit_canvas_gantt`, review affected roles: that retired permission is not migrated automatically. Grant `manage_canvas_gantt_baseline` only where baseline saving should remain available; no Canvas-specific permission is needed for normal Issue actions.
-
-4. Open the chart.
-   Click **Canvas Gantt** from the project menu.
-
-5. Use the chart and toolbar.
-   - Zoom with Ctrl/Cmd + mouse wheel or the toolbar controls.
-   - Drag tasks to move them on the timeline.
-   - Drag task edges to resize date ranges.
-   - Drag from endpoint dots to create dependencies.
-   - Open dependency editing to change the relation type, delay, or remove the relation.
-   - Drag a sidebar row onto another task to make it a child issue.
-   - Use bulk subtask creation to add multiple child issues at once.
-   - Open the workload pane to review capacity and focus filters.
-   - Use display settings to save and share UI preferences across projects.
-   - Export the current view as PNG or CSV when the layout supports it.
-   - Toggle full screen for more workspace when needed.
-
-CSV is intended for people opening it in spreadsheet applications. For untrusted text beginning with a formula marker (`=`, `+`, `-`, `@`, including full-width forms), a tab, or a line break, the export adds a leading tab inside a quoted CSV cell; it also checks past leading spaces and BOM. Numeric task columns remain numeric. This follows the [OWASP CSV Injection guidance](https://owasp.org/www-community/attacks/CSV_Injection) for Excel-oriented viewing. The tab becomes part of the cell data and can affect programmatic imports. A single-quote prefix may be removed when Excel saves and reopens CSV, so it is not used here. Spreadsheet behavior varies; this export cannot guarantee safety in every spreadsheet or import path.
-
-To verify in a spreadsheet, create test issues with subject `=1+1`, parent subject `+1+1`, custom field name `＠SUM(1)`, and custom field value `  -1+1`. Include a value with a quote, comma, and lone carriage return. Export CSV; inspect that dangerous text begins with a tab inside a quoted cell and that embedded quotes are doubled. Open it in the target Excel or Calc version, confirm that all values remain text and cells and rows stay intact, then save and reopen it to check again. Repeat for each supported import route. The automated serializer tests do not perform this spreadsheet check.
+Enable Redmine's REST API, enable **Canvas Gantt** under the project's **Settings → Modules**, grant `view_canvas_gantt`, and open the chart from the project menu. Issue edits, creation, deletion, and relations still require the relevant standard Redmine permissions on the target issue's project; grant `manage_canvas_gantt_baseline` only to roles allowed to save baselines.
 
 ### Work Timer
 
-- Enable the **Work Timer** column from column settings. It is hidden by default and does not become a Redmine query column.
-- Start a timer on an issue where Redmine grants `log_time`. One active or pending timer is allowed for each Redmine instance and user.
-- Choose 5, 10, 15, 30, or 60 minutes. With auto-stop off, measurement continues after the deadline; with it on, measurement stops exactly at the deadline.
-- Stop the timer to create pending work, then record it through Redmine's standard time-entry form. Canceling the form or receiving a validation error keeps the pending timer.
-- The timer's measured work time is shown in `hh:mm` as well as the seconds-level display. Recorded hours are calculated from measured timestamp segments and rounded to two decimal places. Very short measurements may therefore open the form with `0.00`; Redmine validation remains authoritative.
-- While a timer-origin time entry is being edited or submitted, the pending session is reserved and cannot be resumed, extended, discarded, or recorded by another tab. If a reservation is stranded after its owner tab closes, another tab can explicitly recover it; a submission-phase recovery remains unknown until you check Redmine. If the save result cannot be confirmed, the session is retained as unknown until you explicitly mark it recorded or not registered after checking Redmine.
+Measure work on an issue and record it through Redmine's standard time-entry form.
 
 ### Baseline snapshots
 
-- Baseline is comparison-only. It is not used for scheduling or CPM calculations.
-- Each project stores a single baseline snapshot, and saving a new one replaces the previous snapshot.
-- The toolbar lets you save either the current filtered view or the whole project as the baseline scope.
-- Baseline bars and diff popovers only render for tasks currently visible in the chart, even when the saved scope was the whole project.
-- Viewing baseline comparison requires `view_canvas_gantt`. Saving a baseline requires `manage_canvas_gantt_baseline`.
-- Baselines are stored in `Setting.plugin_redmine_canvas_gantt` in Redmine's settings area. Removing the plugin directory alone does not delete them; run the uninstall cleanup task first.
+Save one schedule snapshot per project and compare it with the current chart. Saving another snapshot replaces the previous one.
 
 ### Workload, display settings, and export
 
-- The workload pane compares planned estimates and recorded Time Entries over the visible histogram date range. Peak and total cells show Planned and Actual separately; outlined and filled daily bars share the same capacity threshold and are never stacked.
-- Planned hours remain the estimate divided across all working days of the issue. Actual hours belong to the Time Entry worker, including workers with no planned hours. Closed-issue, leaf-issue, and today-onward filters apply to both series.
-- Click either series to cycle through its contributing issues. The legend, daily tooltip, and accessible text distinguish both series. Saving a time entry refreshes actuals; loading or failed actual data is shown as `—`, while planned data remains available.
-- Actual data respects Redmine Issue/Time Entry visibility and the current project/query scope. Requests are limited to the displayed period (up to 730 calendar dates, including both endpoints) and the configured collection budget; oversized results produce an error rather than partial totals.
-- Display settings are stored in the browser's `localStorage`, not on a Redmine user record. Project mode applies to that project; global mode applies across projects in that same browser profile. It does not change settings in other browser profiles, but anyone using the same browser profile will see them. Settings cover zoom level, view mode, chart position, progress line, task titles, hierarchy lines, orphan date points, version headers, baseline visibility, visible columns, column order, dependency-based organization, column widths, sidebar width, custom zoom scales, row height, and font size.
-- The configuration screen also supports tracker icon mapping with a JSON object that maps tracker IDs to icon kinds.
-- Auto save determines whether edits are committed immediately or kept pending until you save them manually.
-- The help dialog documents the current toolbar actions and editing flows if you need a quick refresher in the UI.
+Review planned and actual workload, keep display preferences in the browser profile, and export the current view.
 
 ## Shared views, filters, and query parameters
 
-URL parameters and saved Redmine queries are the shareable contract for business conditions: status, assignee, project, target version, subproject visibility, grouping, sorting, and visible columns. The subject-text filter and workload focus filters are personal browser state and are not shared. The last resolved query is kept in `localStorage` only as a per-user fallback when a bare Canvas Gantt URL is opened.
-
-Display settings are also browser-profile preferences, not Redmine user settings. “Shared across all projects” means all projects in the same browser profile, not all Redmine users. See [URL and query parameters](QUERY_PARAMETERS.md) for the complete parameter list, Redmine compatibility rules, precedence, and examples.
-
-Canvas Gantt uses Redmine's standard issue list for creating and editing saved queries. The toolbar can open the current query in an iframe or a new tab, and **Open in Canvas Gantt** returns with supported URL state.
+Use supported URL parameters and Redmine saved queries to share business filters and view state.
 
 ## Configuration
 
-Canvas Gantt does not expose a plugin configuration screen. UI defaults are fixed in code, and baseline snapshots are stored internally in `Setting.plugin_redmine_canvas_gantt` without requiring a database migration. The setting is Redmine-wide storage; baseline access is still limited by the project permissions described above.
-
-To use the Vite dev server during development, set `CANVAS_GANTT_USE_VITE_DEV_SERVER=1`.
+Canvas Gantt has no plugin configuration screen. Baselines are stored in Redmine plugin settings; display preferences are stored in each browser profile.
 
 ### Data payload safety limits
 
-The data endpoint rejects an oversized complete payload with HTTP 413 instead of returning a truncated task graph. The built-in finite maxima are 10,000 issues, 50,000 relations, 10,000 auxiliary collection entries, and 25 MiB of encoded JSON. Administrators may lower, but cannot raise, those hard maxima with these environment variables:
-
-- `REDMINE_CANVAS_GANTT_MAX_DATA_ISSUES`
-- `REDMINE_CANVAS_GANTT_MAX_DATA_RELATIONS`
-- `REDMINE_CANVAS_GANTT_MAX_DATA_COLLECTION_ITEMS`
-- `REDMINE_CANVAS_GANTT_MAX_DATA_BYTES`
+The data endpoint rejects oversized complete payloads instead of returning a truncated task graph; administrators can lower its built-in limits with environment variables.
 
 ### Business calendars
 
-Canvas Gantt can use named business calendars for weekly non-working days, country holidays, company shutdowns, and substitute working days. The same resolved calendar drives dependency validation, automatic scheduling, critical-path calculations, Canvas background shading, and direct task-date changes. When a non-working day is selected during Gantt drag/resize or sidebar date editing, the start date is normalized forward to the next working day and the due date backward to the previous working day. This feature requires no database migration. Holiday data is read-only runtime configuration loaded from external YAML and CSV files. It is never stored in `Setting.plugin_redmine_canvas_gantt`.
-
-The default directory is `<Rails.root>/config/redmine_canvas_gantt/business_calendars`. Set `REDMINE_CANVAS_GANTT_CALENDAR_DIR` to use another directory. Choose either the [YAML examples](examples/business_calendars/) for detailed calendars or the [single-file CSV example](examples/business_calendars_csv/) for one global holiday list. A configured root cannot mix `holiday.csv` with YAML files.
+Named business calendars can define weekly non-working days, holidays, company shutdowns, and substitute working days. Use either YAML calendar configuration or the single shared `holiday.csv` format in a calendar directory; CSV and YAML files cannot coexist there.
 
 #### Detailed calendars with YAML
 
-YAML supports named calendars, project assignments, inheritance, weekly non-working days, and per-date `working` or `non_working` overrides. A child project inherits the nearest parent project's assignment.
-
-```text
-business_calendars/
-├── settings.yml
-├── generated/JP.yml
-└── custom/company-japan.yml
-```
-
-```mermaid
-flowchart TD
-    S[settings.yml] --> Y[Calendar YAML files]
-    Y --> B[Optional custom calendar with base: ID]
-    B -->|adds holidays or overrides workdays| R[Resolved project calendar]
-    Y --> R
-    S -->|project assignment, else default; child inherits nearest parent| R
-```
-
-`settings.yml` selects the default calendar and can map project identifiers to calendars:
-
-```yaml
-schema_version: 1
-default_calendar: company-japan
-project_calendars:
-  japan-project: company-japan
-```
-
-A YAML calendar can inherit another YAML calendar and add company exceptions:
-
-```yaml
-schema_version: 1
-calendar:
-  id: company-japan
-  name: Japan Company Calendar
-  base: JP
-days:
-  - date: 2027-08-12
-    name: Company summer holiday
-    type: non_working
-  - date: 2027-09-18
-    name: Substitute workday
-    type: working
-```
-
-See the bundled YAML example for the complete schema and country calendar files.
+YAML supports named calendars, project mapping, inheritance, and working-day overrides.
 
 #### One global holiday list with CSV
 
-For a simple setup, place one `holiday.csv` directly in the configured calendar directory. Its existence enables CSV mode and creates the generic `global` calendar, which is used by every project. The first row is always skipped as a header. Every following non-empty row must have a date in the first column using `YYYY/M/D` or `YYYY/MM/DD`. The second column may contain a holiday name, but it is optional and ignored, as are all later columns; every listed date is non-working. The CSV header and holiday names are never read. The CSV must use an ASCII-compatible encoding such as UTF-8 or Windows-31J because only the ASCII date field is interpreted.
-
-```text
-business_calendars/
-└── holiday.csv
-```
-
-```csv
-date,name
-2026/1/1,New Year
-2026/01/12,Holiday
-```
-
-The global CSV uses Redmine's configured non-working weekdays (`Setting.non_working_week_days`). It has no per-country, per-project, base-calendar, weekday, or working-day controls. Use YAML when you need any of those details. Other CSV files in the directory are ignored. Do not leave `settings.yml` or calendar YAML files beside `holiday.csv`; mixed configuration is rejected.
-
-To set up the CSV list, copy `examples/business_calendars_csv/holiday.csv` to the configured directory and edit the dates. Changes are checked every 60 seconds by default; reload the Gantt page after detection. A valid replacement snapshot removes deleted dates. Invalid CSV keeps the previous valid snapshot, and correcting the file allows reload to recover. The file must be a regular file inside the calendar root and contain 1–10,000 valid, unique dates; files are limited to one MiB.
+Place one `holiday.csv` at the calendar directory root for a shared global holiday list. Do not place YAML calendar files in the same directory.
 
 #### Generate YAML holiday files
 
-Country files can be generated without adding the `holidays` gem to Redmine's production bundle:
-
-```bash
-cd tools/holiday_generator
-bundle install
-bundle exec ruby generate.rb --region us --calendar-id US --name United States \
-  --from 2026 --to 2030 \
-  --output /path/to/business_calendars/generated/US.yml
-```
-
-For YAML installations, keep company changes in `custom/`; `--force` replaces only files marked `calendar.managed: true`.
+The repository includes a tool for generating country holiday calendars.
 
 #### Reload behavior
 
-The runtime checks relative path, modification time, and size every 60 seconds and atomically swaps in a fully validated snapshot after a change. Set `REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL` to another non-negative number of seconds. Symlinks that resolve outside the configured calendar root are rejected; symlinked directories are not traversed. A missing directory or YAML settings file falls back to Redmine's standard non-working weekdays. An invalid configuration logs a warning and continues calendar-dependent relation and auto-schedule operations with that same weekday fallback; a failed reload logs a warning and retains the last valid snapshot.
-
-For Docker, set the directory explicitly and mount the calendar directory. The official Redmine image
-changes ownership of the configuration directory during startup, so omit `:ro` when using that image.
-The plugin treats holiday data as read-only after startup.
-
-```yaml
-services:
-  redmine:
-    environment:
-      REDMINE_CANVAS_GANTT_CALENDAR_DIR: /etc/redmine/business_calendars
-    volumes:
-      - ./business_calendars:/etc/redmine/business_calendars
-```
-
-For Kubernetes, mount one read-only ConfigMap (or another read-only volume) at the same path and set the same environment variable. Every Puma worker keeps an independent in-memory snapshot, and every Pod must see identical files. ConfigMap updates are detected on the next reload check; there is no real-time push.
-
-Uninstalling the plugin does not delete this external directory or ConfigMap. Remove it separately only when its holiday data is no longer needed. This preserves the existing **No database migration** and easy-uninstall behavior.
+Calendar files are checked at runtime, and an invalid reload keeps the last valid snapshot.
 
 ### Compatibility note
 
-If `redmica_ui_extension` applies Select2 behavior that interferes with Canvas Gantt controls, open **Administration** -> **Plugins** -> **Redmica UI Extension** -> **Configure** and disable searchable select boxes.
+If Redmica UI Extension's Select2 behavior interferes with chart controls, disable searchable select boxes in that extension's settings.
 
 ## Docker Quick Start
 
-This repository includes `docker-compose.yml` for running a local Redmine 7.0.0 + MariaDB 11.4 environment. Set `REDMINE_IMAGE` to `redmine:6.0.6` or `redmine:6.1.2` to run a compatibility version instead.
-
-GitHub Actions continuously verifies Redmine 6.0.6, 6.1.2, and 7.0.0 with backend specs and Redmine E2E coverage. Redmine 6.0.6 runs the targeted compatibility suite (smoke, business calendar, mutation contract, and baseline permissions). Redmine 6.1.2 and 7.0.0 run the full Redmine Playwright suite. Redmine 7.0.0 is also validated locally with the MariaDB 11.4 Compose database.
-
-To use custom holiday calendars, add the following settings to the `redmine` service. Place
-Either the YAML configuration and calendar files or the single `holiday.csv` file under
-`business_calendars/`.
-
-```yaml
-services:
-  redmine:
-    environment:
-      RAILS_ENV: production
-      REDMINE_CANVAS_GANTT_CALENDAR_DIR: /usr/src/redmine/config/redmine_canvas_gantt/business_calendars
-    volumes:
-      - ./business_calendars:/usr/src/redmine/config/redmine_canvas_gantt/business_calendars
-```
-
-Do not use `RAILS_ENV: development` with the official image unless the `listen` gem is added separately;
-the image does not include it by default.
+This repository includes a disposable Docker Compose environment for local Redmine evaluation. It uses sample credentials; do not expose it to a network or use it with production data.
 
 ### Start the stack
 
-```bash
-docker compose up -d --wait
-```
-
-To start Redmine 6.1.2 instead:
-
-```bash
-REDMINE_IMAGE=redmine:6.1.2 docker compose up -d --wait
-```
-
-For Redmine 6.0.6, use `REDMINE_IMAGE=redmine:6.0.6`.
-
-Open Redmine at [http://localhost:3000](http://localhost:3000).
+Use `docker compose up -d --wait` from the repository root.
 
 ### Load initial data
 
-```bash
-docker compose exec -T -e REDMINE_LANG=en redmine bundle exec rake redmine:load_default_data
-docker compose exec -T redmine bundle exec rake db:fixtures:load
-```
+Follow the manual navigation above for local initial-data setup. Load test fixtures only into a fresh disposable database; they can overwrite records.
 
 ### Enable Canvas Gantt in a project
 
-1. Open the target project.
-2. Go to **Settings** -> **Modules**.
-3. Enable **Canvas Gantt**.
-4. Ensure the active role has `view_canvas_gantt` and the relevant standard Issue permissions if editing is required. To save baselines, also grant `manage_canvas_gantt_baseline`.
+Enable the project module and grant `view_canvas_gantt` plus the standard Redmine permissions needed for the intended issue actions.
 
 ### Stop the stack
 
-```bash
-docker compose down
-```
+Use `docker compose down` from the repository root.
 
 ## Development
 
-The SPA frontend lives in `spa/`.
-
-```bash
-cd spa
-npm ci
-npm run build
-npm run lint
-npm run test -- --run
-```
-
-For live frontend development:
-
-```bash
-cd spa
-npm run dev
-```
+The SPA is in `spa/`. See [spa/README.md](spa/README.md) for frontend setup and development commands.

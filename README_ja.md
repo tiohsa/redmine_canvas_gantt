@@ -1,26 +1,12 @@
-> **📖 ユーザーマニュアル：** [日本語](https://tiohsa.github.io/redmine_canvas_gantt/ja/) | [English](https://tiohsa.github.io/redmine_canvas_gantt/en/)。Markdown原稿は `website/` で保守しています：[日本語](website/ja/index.md) | [English](website/en/index.md)。
-
 <div align="center">
 
 # Redmine Canvas Gantt
 
-Redmine 向けの高速・低リスクな Canvas ベースのガントチャートプラグイン。
+Redmine 6.0、6.1、7.0 向けの高速な Canvas ベースのガントチャートプラグインです。この README とユーザーマニュアルはプラグイン v0.18.0 の内容です。
 
-## このプラグインを選ぶ理由
+[日本語マニュアル](website/ja/index.md) · [English user manual](website/en/index.md) · [開発者向けガイド](spa/README_ja.md)
 
-チケット数が多い Redmine でも快適に扱える、
-**高速描画・直感的なスケジュール編集・DB マイグレーション不要**
-を重視したガントチャートです。
-
-## 主なメリット
-
-**高速描画** — Canvas による滑らかなスクロールとズーム
-**直接編集** — ドラッグ、リサイズ、依存関係、インライン編集
-**導入・運用** — DB マイグレーション不要で、アンインストールも容易
-**互換性** — Redmine 6.0 互換対応、Redmine 6.1 / 7.0 フルサポート
-
-Redmine Plugins Directory に掲載されています:
-https://www.redmine.org/plugins/redmine_canvas_gantt
+詳しい機能、導入、管理手順はマニュアルのナビゲーションから確認できます。
 
 [![License](https://img.shields.io/github/license/tiohsa/redmine_canvas_gantt)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/tiohsa/redmine_canvas_gantt/ci.yml?branch=main\&label=CI)](https://github.com/tiohsa/redmine_canvas_gantt/actions/workflows/ci.yml)
@@ -29,398 +15,143 @@ https://www.redmine.org/plugins/redmine_canvas_gantt
 [![Ruby](https://img.shields.io/badge/Ruby-Redmine公式要件に準拠-cc342d)](#必要環境)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)](#必要環境)
 
-[English README](README.md) · [Releases](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issues](https://github.com/tiohsa/redmine_canvas_gantt/issues)
+[Redmine プラグインディレクトリ](https://www.redmine.org/plugins/redmine_canvas_gantt) · [リリース](https://github.com/tiohsa/redmine_canvas_gantt/releases) · [Issue](https://github.com/tiohsa/redmine_canvas_gantt/issues) · [English README](README.md)
 
 </div>
 
----
+## このプラグインを選ぶ理由
+
+Canvas Gantt は、Redmine のチケット、権限、保存済みクエリを利用しながら、滑らかなタイムライン表示と日程編集を提供します。
+
+## 主なメリット
+
+- **高速:** Canvas 描画により、スクロールやズームを滑らかに操作できます。
+- **対話的:** チャート上で日程、依存関係、親子関係、チケット項目を編集できます。
+- **影響を抑えた導入:** DB マイグレーションは不要です。アンインストールタスクでプラグイン設定と保存済みベースラインを削除できます。
+- **互換性:** Redmine 6.0、6.1、7.0 系列を対象にしています。
 
 ## 概要
 
-Redmine Canvas Gantt は、タイムラインを HTML5 Canvas で描画しながら、左側のチケット一覧を直接編集できる Redmine 向けガントチャートプラグインです。標準の Redmine ガントが見づらくなったり、チケット数の増加によって操作が重くなったりするプロジェクト向けに設計されています。
-
-ベースラインスナップショットは、ブラウザや専用テーブルではなく Redmine の設定領域（`Setting.plugin_redmine_canvas_gantt`）に保存されます。プロジェクトごとに1件だけ保持され、新しく保存すると以前のスナップショットを置き換えます。
+チケット一覧とタイムラインを並べて、プロジェクトの日程を確認・編集できます。
 
 ## 主な特徴
 
-- Canvas ベースの高速描画による滑らかなスクロールとズーム
-- タスクの移動、期間変更、端点ドラッグによる依存関係作成
-- 依存関係の作成、更新、削除に対応
-- 題名、担当者、ステータス、進捗率、期日、カスタムフィールドのインライン編集
-- サイドバーでのドラッグアンドドロップによる親子関係の変更
-- 複数行入力による子チケット一括作成
-- 現在のフィルタ結果またはプロジェクト全体を保存できるベースライン比較
-- 保存済みクエリ、Redmine でのクエリ編集、チケット一覧との往復
-- 題名、プロジェクト、トラッカー、対象バージョン、担当者、ステータスによるフィルタ。トラッカー条件は保存済みクエリや Redmine クエリとの往復にも対応
-- プロジェクトまたは担当者によるグループ化。対象バージョンのヘッダーはグループ化ではなく表示切り替え
-- ワークロードパネル、PNG / CSV 出力、全画面表示、ズーム・行高・フォントサイズの操作
-- 5・10・15・30・60分、任意の自動停止、複数タブ同期、Redmine標準の作業時間登録に対応したチケット単位の作業タイマー
-- 同じブラウザプロファイル内で、プロジェクトごとまたは全プロジェクト共通に保存できる表示設定（Redmine ユーザー間では共有しない）
-- バージョンヘッダー、進捗ライン、階層線、開始日のみ・期日のみタスク、依存関係ベースの整理
-
-日付の一括保存は、全件まとめて保存または取り消されます。他のリクエストによる更新と競合した場合は保存全体を取り消し、全件の下書きを保持します。競合パネルには revision が競合したチケットをすべて表示します。一括保存の取り消しに伴って未保存となっただけのチケットは、競合として表示しません。
-
-Canvas Gantt の利用には、開いているプロジェクトの `view_canvas_gantt` 権限が必要です。他のプロジェクトのチケットには Redmine 標準のチケット閲覧権限を適用し、対象プロジェクト自体の Canvas Gantt 権限は要求しません。チケット別作業時間、作業時間順ソート、更新レスポンス、実績工数は、現在のユーザーが閲覧できる作業時間だけを対象とします。この合計は Redmine の `Issue#spent_hours` と異なる場合があります。「所属プロジェクトを表示」をONにすると、別ルートも含め、直接またはグループ経由で所属する可視かつ有効な全プロジェクトを候補に表示します（管理者は可視かつ有効な全プロジェクト）。別ルートのチケットを表示するには、対象プロジェクトの明示選択が必要です。OFF時の候補は、開いているプロジェクトとその子孫に限ります。閉鎖・アーカイブ済みプロジェクトはON/OFFとも候補から除外します。明示選択された別プロジェクトのチケットも、閲覧・編集権限があれば通常どおりスケジュールできます。異なるプロジェクトツリー間の依存関係の作成・更新は、Redmine の `cross_project_issue_relations` 設定と標準の閲覧・編集権限に従います。スケジュール計算は各チケットのプロジェクトカレンダーを使い、依存関係の後続開始日チェックには後続チケットのカレンダーを使います。同名のプロジェクト候補には識別子を併記し、名前と識別子の両方で検索できます。
+- 日程とチケット項目を編集し、未保存変更を管理できます。
+- 親子関係と依存関係を管理し、フィルターや保存済みクエリで表示を絞り込んで共有できます。
+- ベースラインで日程を比較し、ワークロードを確認したり、作業時間タイマーで作業を計測したりできます。
+- チャートの表示を調整し、PNG または CSV に出力できます。
 
 ## デモ
 
-架空のプロジェクトデータを使った英語 UI の実画面です。タスクバーの移動・期間変更と、依存関係の作成を順に紹介します。
+![Canvas Gantt のデモ: 日程編集と依存関係の作成](./docs/demo-current.gif)
 
-![Canvas Gantt：タスクバーの移動・期間変更と依存関係の作成](./docs/demo-current.gif)
-
-個別の MP4 動画：[日程編集](./website/public/videos/schedule-edit.mp4) · [依存関係の作成](./website/public/videos/dependency-create.mp4)。
+[日程編集](./website/public/videos/schedule-edit.mp4)と[依存関係の作成](./website/public/videos/dependency-create.mp4)の動画もあります。
 
 ## 必要環境
 
-- Redmine 6.0（互換対応）、6.1、または 7.0
-- 利用する Redmine バージョンが公式にサポートする Ruby
-- Node.js 20+ は SPA のビルドまたはフロントエンド開発時のみ必要です。ビルド済みアセットを使う通常の Redmine 利用時には Node.js は必要ありません
-- Redmine で REST API が有効化されていること
+- Redmine 6.0、6.1、7.0 と、その Redmine 版がサポートする Ruby
+- Redmine REST API と、デスクトップ版 Google Chrome または Microsoft Edge
+- Node.js 20 以降は SPA をソースからビルドする場合のみ必要です。同梱済みアセットで通常運用する場合は不要です。
 
-### 対応ブラウザ
+### 動作確認環境
 
-HTML5 Canvas、ES modules、`localStorage` が有効な、現行のデスクトップ版 Chrome、
-Edge、Firefox、Safari を使用してください。Internet Explorer は対応しません。モバイル
-ブラウザと埋め込み WebView は、対応テスト対象外です。
+デスクトップ版 Google Chrome および Microsoft Edge で動作確認しています。その他のブラウザーは未検証です。
 
 ### セキュリティと影響
 
-- データベースマイグレーション: なし
-- 追加パーミッション: `view_canvas_gantt`, `manage_canvas_gantt_baseline`
-- アンインストール: プラグインディレクトリを削除する前に、Redmine の実行環境からクリーンアップタスクを実行します。Docker Compose の場合は `redmine` サービスのコンテナ内で実行します。このタスクは保存済みベースラインを含む Redmine のプラグイン設定行全体を削除します。各ユーザーのブラウザ `localStorage` はサーバー側タスクでは削除されません。
+DB マイグレーションは不要です。チャートの表示には `view_canvas_gantt`、ベースライン保存には `manage_canvas_gantt_baseline` が必要です。チケット操作には、対象チケットのプロジェクトにおける Redmine 標準権限が適用されます。プラグイン削除前にアンインストールタスクを実行してください。このタスクは保存済みベースラインを含むプラグイン設定行全体を削除します。
 
 ## インストール
 
-1. プラグインを Redmine の `plugins/` ディレクトリに配置します。
+v0.18.0 を Redmine の `plugins/` に clone して Redmine を再起動します。
 
-   ```bash
-   cd /path/to/redmine/plugins
-   git clone https://github.com/tiohsa/redmine_canvas_gantt.git
-   ```
+```sh
+cd /path/to/redmine/plugins
+git clone --branch v0.18.0 --depth 1 https://github.com/tiohsa/redmine_canvas_gantt.git
+```
 
-2. Redmine を再起動します。
-
-   配置後にアプリケーションサーバーを再起動してください。
+REST API とプロジェクトの Canvas Gantt モジュールを有効にし、利用ロールに `view_canvas_gantt` を付与します。
 
 ### アップグレード
 
-1. Redmine データベースとプラグインディレクトリをバックアップします。
-2. Git の更新またはリリースの展開で、プラグインディレクトリを目的のバージョンに置き換えます。
-3. SPA をソースからビルドする場合は、Node.js 20+ で `cd spa && npm ci && npm run build` を実行します。
-4. Redmine を再起動し、プラグインのモジュールと権限を確認します。
-
-データベースマイグレーションはありません。Redmine 設定内のベースラインとブラウザの
-表示設定は、アップグレード時には保持されます。
+Redmine をバックアップしてプラグインファイルを更新し、再起動後にロール権限を確認します。通常の更新で DB マイグレーションは不要です。
 
 ### アンインストール
 
-1. 保存済みベースラインやプラグイン設定を後で利用する可能性がある場合は、Redmine データベースをバックアップします。
-2. プラグインディレクトリが存在する状態で、冪等なクリーンアップタスクを実行します。
-
-   **通常インストール** — `Gemfile` が存在する Redmine 本体ディレクトリで実行します。
-
-   ```bash
-   cd /path/to/redmine
-   bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production
-   ```
-
-   **Docker Compose** — Redmine サービスのコンテナ内で実行します。
-
-   ```bash
-   docker compose exec -T redmine \
-     bundle exec rake redmine_canvas_gantt:uninstall
-   ```
-
-   このリポジトリの Compose 設定では `RAILS_ENV=production` が設定済みです。明示する場合は次のように実行します。
-
-   ```bash
-   docker compose exec -T -e RAILS_ENV=production redmine \
-     bundle exec rake redmine_canvas_gantt:uninstall
-   ```
-
-   Redmine 本体が Docker 内だけで動作している場合、ホスト側のプラグインディレクトリでは `bundle exec` を実行しないでください。ホスト側には Redmine の `Gemfile` がないため、Bundler が `Could not locate Gemfile or .bundle/ directory` を出力します。
-
-3. `plugins/redmine_canvas_gantt` ディレクトリを削除します。Docker の場合は、対応するプラグインの volume または bind mount もコンテナ設定から削除します。
-4. Redmine を再起動します。
-
-クリーンアップタスクは Redmine の `settings` テーブルから `plugin_redmine_canvas_gantt` 行を削除し、保存済みベースラインと同じ行に保存されたプラグイン設定をすべて削除します。ブラウザの `localStorage` は削除しません。
+プラグインが存在する間に Redmine アプリケーションディレクトリから `bundle exec rake redmine_canvas_gantt:uninstall RAILS_ENV=production` を実行し、その後プラグインディレクトリを削除して Redmine を再起動します。`plugin_redmine_canvas_gantt` 設定行全体が削除され、ベースラインとプラグイン既定値も消去されます。ブラウザーの `localStorage` は削除されません。Docker では Redmine サービス内でタスクを実行してください。
 
 ## 使い方
 
-1. REST API を有効化します。
-   **管理** -> **設定** -> **API** で **REST による Web サービスを有効にする** を有効化します。
-
-2. プロジェクトモジュールを有効化します。
-   **プロジェクト** -> **設定** -> **モジュール** で **Canvas Gantt** を有効化します。
-
-3. 権限を付与します。
-   **管理** -> **ロールと権限** で Canvas Gantt の利用には `view_canvas_gantt` を付与します。Issue 操作は対象IssueのProjectに対する Redmine 標準権限 `edit_issues`、`delete_issues`、`add_issues`、`manage_subtasks` で制御します。Baseline 保存を許可するロールにだけ `manage_canvas_gantt_baseline` を付与します。
-
-   `edit_canvas_gantt` を使用していたバージョンから更新する場合は、該当ロールを確認してください。この廃止権限は自動移行されません。Baseline 保存を継続するロールだけに `manage_canvas_gantt_baseline` を付与し、通常のIssue操作にCanvas固有権限は不要です。
-
-4. チャートを開きます。
-   プロジェクトメニューの **Canvas Gantt** をクリックします。
-
-5. チャートとツールバーを操作します。
-   - Ctrl/Cmd + マウスホイールまたはツールバーでズームします。
-   - タスクをドラッグしてタイムライン上で移動します。
-   - タスク端をドラッグして期間を変更します。
-   - 端点ドットからドラッグして依存関係を作成します。
-   - 依存関係編集で種別や delay を変更、または削除します。
-   - サイドバーの行を別タスクへドラッグして子チケット化します。
-   - 子チケット一括作成で複数の子チケットをまとめて追加します。
-   - ワークロードパネルで稼働状況や絞り込み条件を確認します。
-   - 表示設定で UI 設定を保存し、必要に応じて全プロジェクトで共有します。
-   - 表示可能なレイアウトでは PNG または CSV として出力します。
-   - 必要に応じて全画面表示に切り替えて作業領域を広げます。
+Redmine REST API とプロジェクトの **設定 → モジュール** にある **Canvas Gantt** を有効化し、`view_canvas_gantt` を付与してプロジェクトメニューからチャートを開きます。チケットの編集・作成・削除・関連付けには対象プロジェクトの Redmine 標準権限が必要です。ベースライン保存を許可するロールにだけ `manage_canvas_gantt_baseline` を付与してください。
 
 ### 作業タイマー
 
-- 列設定から **作業タイマー** 列を表示します。初期状態では非表示で、Redmineクエリの列には追加されません。
-- Redmineの `log_time` 権限があるチケットで開始します。Redmineインスタンス・ユーザーごとに、実行中または未登録のタイマーは1件だけです。
-- 5・10・15・30・60分から選択します。自動停止がOFFなら期限後も計測を続け、ONなら期限時刻ちょうどで停止します。
-- 停止後は未登録状態となり、Redmine標準の作業時間フォームから登録します。フォームのキャンセルや入力エラーでは未登録状態を保持します。
-- 画面上の作業時間は秒単位の表示に加えて `hh:mm` 形式でも表示します。登録時間はtimestampと計測Segmentから算出し、小数第2位へ丸めます。そのため極短時間は `0.00` でフォームが開く場合があり、入力可否はRedmine標準Validationに従います。
-- タイマー由来の作業時間フォームを編集中・送信中はPending Sessionを予約し、別タブからの再開・延長・破棄・新規記録を禁止します。所有タブが閉じて予約だけが残った場合は、別タブから明示的に復旧できます。送信中の予約を復旧した場合は不明状態として扱い、Redmineを確認した後に「記録済み」または「未登録」として解決します。保存結果を確認できない場合もSessionを保持します。
+チケットの作業時間を計測し、Redmine 標準の作業時間入力フォームで記録できます。
 
 ### ベースライン snapshot
 
-- ベースラインは比較専用機能であり、スケジューリングや CPM 計算の入力には使いません。
-- プロジェクトごとに単一のベースライン snapshot を保持し、新しく保存すると既存 snapshot を置き換えます。
-- ツールバーから `現在のフィルタ結果` または `プロジェクト全体` のどちらを保存するかを選べます。
-- 保存範囲が `プロジェクト全体` でも、ゴーストバーと差分 popover は現在表示中のタスクに対してのみ表示されます。
-- ベースラインの閲覧には `view_canvas_gantt`、保存には `manage_canvas_gantt_baseline` が必要です。
-- ベースラインは Redmine の設定領域 `Setting.plugin_redmine_canvas_gantt` に保存されます。プラグインディレクトリを削除するだけでは残るため、先にアンインストール用クリーンアップタスクを実行してください。
+プロジェクトごとに 1 件の日程 snapshot を保存し、現在のチャートと比較できます。新しい snapshot を保存すると前のものが置き換わります。
 
 ### ワークロード、表示設定、出力
 
-- ワークロードパネルは、ヒストグラムの表示日付範囲で予定工数と登録済み作業時間を比較します。ピーク・合計は「予」「実」の2段表示、日別バーは予定が枠付き、実績が塗りつぶしで、同じ稼働上限を使って横並びに表示します。積み上げはしません。
-- 予定は従来どおり見積工数をチケット全期間の稼働日へ均等配分します。実績はTime Entryの作業者へ帰属し、予定のない作業者も表示します。「末端チケットのみ」「完了チケットを含める」「今日以降のみ」は両系列へ適用します。
-- 各系列のバーをクリックすると寄与チケットを順番に選択できます。凡例・日別Tooltip・読み上げ用テキストでも予実を区別できます。作業時間の保存成功後は実績を再取得し、取得中・取得失敗は `—` と表示します。予定表示は引き続き利用できます。
-- 実績取得はRedmineのIssue・Time Entry閲覧権限と現在のプロジェクト／クエリ範囲に従います。表示期間（両端を含め最大730日）と設定済みコレクション件数上限で取得量を制限し、上限超過時は部分的な合計を出さず取得エラーにします。
-- 表示設定は Redmine のユーザー情報ではなく、ブラウザの `localStorage` に保存されます。プロジェクト単位ではそのプロジェクトに適用され、全プロジェクト共通化では同じブラウザプロファイルの全プロジェクトに適用されます。他のブラウザプロファイルには影響しませんが、同じプロファイルを使う人には表示されます。対象には、ズームレベル、表示モード、チャート位置、進捗ライン、チケットタイトル、階層線、開始日のみ・期日のみタスク、バージョンヘッダー、ベースライン表示、表示列、列順、依存関係に基づく整理、列幅、サイドバー幅、カスタムズーム倍率、行の高さ、フォントサイズが含まれます。
-- 自動保存の有無によって、変更を即時保存するか、手動保存まで保留するかを切り替えます。
-- ヘルプダイアログには、現在のツールバー操作と編集フローがまとまっています。
+予定・実績のワークロードを確認し、ブラウザープロファイルに表示設定を保存して、現在のビューを出力できます。
 
 ## 共有ビュー、フィルタ、クエリパラメータ
 
-URL パラメータと保存済み Redmine クエリが、共有可能な業務条件の契約です。
-ステータス、担当者、プロジェクト、対象バージョン、サブプロジェクト表示、
-グループ化、ソート、表示列を共有できます。題名テキストフィルタとワークロードの
-フォーカスフィルタは個人用ブラウザ状態であり、共有されません。直前に解決した
-クエリ状態も、共有ではなく、bare な Canvas Gantt URL を開いたときの個人用
-`localStorage` フォールバックとして保存されます。
-
-表示設定も Redmine ユーザー単位ではなくブラウザプロファイル単位の設定です。
-「全プロジェクトで共有」は同じブラウザプロファイル内で全プロジェクトに適用する意味で
-あり、Redmine の全ユーザーへの共有ではありません。同じプロファイルを使う人には表示
-されます。パラメータ一覧、Redmine 互換性、優先順位、例は
-[URL とクエリパラメータ](QUERY_PARAMETERS_ja.md) を参照してください。
-
-保存済みクエリの作成・編集は Redmine 標準のチケット一覧で行います。Canvas Gantt の
-ツールバーから現在のクエリを iframe または新しいタブで開け、**Canvas Ganttで開く**で
-対応する URL 状態を引き継いで戻れます。
+対応する URL パラメータと Redmine 保存済みクエリで、業務上のフィルタや表示状態を共有できます。
 
 ## 設定
 
-Canvas Gantt にはプラグイン設定画面はありません。UI の既定値はコード内で固定され、ベースライン snapshot はデータベース移行なしで `Setting.plugin_redmine_canvas_gantt` に内部保存されます。この設定は Redmine 全体の保存領域ですが、ベースライン操作自体は前述のプロジェクト権限で制限されます。
-
-開発時に Vite dev server を使うには `CANVAS_GANTT_USE_VITE_DEV_SERVER=1` を設定します。
+Canvas Gantt にプラグイン設定画面はありません。ベースラインは Redmine のプラグイン設定に、表示設定は各ブラウザープロファイルに保存されます。
 
 ### データ payload の安全上限
 
-data endpoint は、タスクグラフを途中で切り詰めず、完全な payload が上限を超えた場合に HTTP 413 を返します。組み込みの有限上限は、チケット 10,000 件、関連 50,000 件、補助 collection 10,000 件、encode 後 JSON 25 MiB です。管理者は次の環境変数で上限を引き下げられますが、hard maximum を超えて引き上げることはできません。
-
-- `REDMINE_CANVAS_GANTT_MAX_DATA_ISSUES`
-- `REDMINE_CANVAS_GANTT_MAX_DATA_RELATIONS`
-- `REDMINE_CANVAS_GANTT_MAX_DATA_COLLECTION_ITEMS`
-- `REDMINE_CANVAS_GANTT_MAX_DATA_BYTES`
+data endpoint は、上限を超えた完全な payload を途中で切り詰めず拒否します。管理者は組み込み上限を環境変数で引き下げられます。
 
 ### 業務カレンダー
 
-Canvas Gantt は、週次非稼働日、国別祝日、会社休業日、振替稼働日を名前付き業務カレンダーで扱えます。解決済みの同じカレンダーを、依存関係検証、自動スケジュール、クリティカルパス計算、Canvas 背景描画、タスク日付の直接変更に使用します。Gantt のドラッグ・リサイズやサイドバーの日付編集で非稼働日が選ばれた場合、開始日は次の稼働日、終了日は直前の稼働日に補正されます。DB マイグレーションは不要です。休日データは外部 YAML または CSV の読み取り専用設定で、`Setting.plugin_redmine_canvas_gantt` には保存しません。
-
-既定ディレクトリは`<Rails.root>/config/redmine_canvas_gantt/business_calendars`です。別の場所を使う場合は`REDMINE_CANVAS_GANTT_CALENDAR_DIR`を設定します。詳細なカレンダーには[YAMLサンプル](examples/business_calendars/)、全プロジェクト共通の休日一覧には[単一CSVサンプル](examples/business_calendars_csv/)を利用してください。同じルートに`holiday.csv`とYAMLファイルは混在できません。
+名前付き業務カレンダーでは、週次非稼働日、祝日、会社休日、振替稼働日を設定できます。カレンダーディレクトリでは YAML 設定一式または全プロジェクト共通の単一 `holiday.csv` を使用し、CSV と YAML は同じ場所に共存できません。
 
 #### YAMLで詳細なカレンダーを設定する
 
-YAMLでは、名前付きカレンダー、project割当、継承、週次非稼働日、日ごとの`working`または`non_working`上書きを設定できます。子projectは最も近い親projectの割当を継承します。
-
-```text
-business_calendars/
-├── settings.yml
-├── generated/JP.yml
-└── custom/company-japan.yml
-```
-
-```mermaid
-flowchart TD
-    S[settings.yml] --> Y[YAMLカレンダーファイル]
-    Y --> B[任意: base: ID の会社カレンダー]
-    B -->|会社休日を追加または稼働日を上書き| R[project用に解決したカレンダー]
-    Y --> R
-    S -->|project割当、なければ既定値。子は最も近い親から継承| R
-```
-
-`settings.yml`で既定カレンダーを選び、project identifierごとの割当を設定できます。
-
-```yaml
-schema_version: 1
-default_calendar: company-japan
-project_calendars:
-  japan-project: company-japan
-```
-
-YAMLカレンダーは別のYAMLカレンダーを継承し、会社独自の日を追加できます。
-
-```yaml
-schema_version: 1
-calendar:
-  id: company-japan
-  name: Japan Company Calendar
-  base: JP
-days:
-  - date: 2027-08-12
-    name: 会社夏季休業
-    type: non_working
-  - date: 2027-09-18
-    name: 振替出勤日
-    type: working
-```
-
-完全なスキーマと国別カレンダーファイルは同梱のYAMLサンプルを参照してください。
+YAML では名前付きカレンダー、プロジェクト割当、継承、稼働日上書きを設定できます。
 
 #### CSVで全プロジェクト共通の休日一覧を設定する
 
-簡単な設定では、設定したカレンダールート直下に`holiday.csv`を1つ置きます。ファイルの存在によりCSV形式が有効になり、すべてのprojectで共通の汎用`global`カレンダーを使用します。先頭行はヘッダーとして必ず読み飛ばします。以降の空でない各行は、第1列に`YYYY/M/D`または`YYYY/MM/DD`形式の日付が必要です。第2列の休日名は任意で省略できます。第2列以降はすべて無視され、CSVに記載した日付はすべて非稼働日です。ヘッダー名や休日名は読み込みません。第1列の日付だけを読むため、UTF-8やWindows-31JなどASCII互換の文字コードを使用してください。
-
-```text
-business_calendars/
-└── holiday.csv
-```
-
-```csv
-date,name
-2026/1/1,元日
-2026/01/12,休日
-```
-
-週次非稼働日はRedmineの`Setting.non_working_week_days`を使います。CSVでは国別・project別割当、継承、曜日設定、稼働日上書きを設定できません。これらが必要な場合はYAMLを使ってください。ほかのCSVファイルは無視します。`holiday.csv`と同じ場所に`settings.yml`やカレンダーYAMLを置かないでください。混在した設定はエラーになります。
-
-CSVを使う場合は`examples/business_calendars_csv/holiday.csv`を設定ディレクトリへコピーし、日付を編集します。変更は既定で60秒ごとに確認し、検知後にGantt画面を再読込すると反映されます。有効なCSVに置き換えると削除した日付も反映されます。不正なCSVでは直前の正常なスナップショットを維持し、ファイル修正後に再読込できます。CSVは設定ルート内の通常ファイルで、1～10,000件の有効かつ重複のない日付が必要です。ファイルサイズは1 MiB以下です。
+全プロジェクト共通の休日一覧には、カレンダーディレクトリ直下に `holiday.csv` を 1 つ配置します。同じディレクトリに YAML カレンダーファイルを置かないでください。
 
 #### YAML形式で休日ファイルを生成する
 
-国別ファイルは、Redmine 本番 Bundle に `holidays` gem を追加せず生成できます。
-
-```bash
-cd tools/holiday_generator
-bundle install
-bundle exec ruby generate.rb --region jp --calendar-id JP --name Japan \
-  --from 2026 --to 2030 \
-  --output /path/to/business_calendars/generated/JP.yml
-```
-
-YAML形式では会社固有の変更を`custom/`へ分離してください。`--force`で上書きできるのは`calendar.managed: true`のファイルだけです。
+リポジトリには国別休日カレンダーの生成ツールがあります。
 
 #### 再読込
 
-ランタイムは相対パス・更新時刻・サイズを既定で60秒ごとに確認し、変更後の全ファイルが検証に成功してからスナップショットを原子的に差し替えます。間隔は`REDMINE_CANVAS_GANTT_CALENDAR_RELOAD_INTERVAL`に0以上の秒数で指定できます。設定ルート外へ解決されるsymlinkは拒否し、symlinkのディレクトリは再帰探索しません。ディレクトリまたはYAML設定ファイルがなければRedmine標準の非稼働曜日へフォールバックします。不正な設定の場合も警告を記録し、同じ曜日設定へフォールバックしてカレンダー依存の関係変更と自動スケジュールを継続します。再読み込みが失敗した場合は警告を記録して直前の正常スナップショットを維持します。
-
-Docker ではパスを明示してカレンダーディレクトリをマウントします。Redmine 公式イメージは
-起動時に設定ディレクトリの所有者を変更するため、公式イメージを使う Compose では
-`business_calendars` のマウントに `:ro` を付けないでください。アプリケーション起動後は
-プラグインが休日データを読み取り専用で扱います。
-
-```yaml
-services:
-  redmine:
-    environment:
-      REDMINE_CANVAS_GANTT_CALENDAR_DIR: /etc/redmine/business_calendars
-    volumes:
-      - ./business_calendars:/etc/redmine/business_calendars
-```
-
-Kubernetes では同じパスへ ConfigMap などを read-only でマウントし、同じ環境変数を設定します。各 Puma worker / Pod は独立したメモリスナップショットを持つため、すべての Pod が同一ファイルを参照する必要があります。ConfigMap の変更は次回確認時に検知され、リアルタイム Push は行いません。
-
-プラグインをアンインストールしても、外部ディレクトリや ConfigMap は削除されません。休日データが不要になった場合だけ別途削除してください。既存の「DB マイグレーション不要」と簡単なアンインストール方針は維持されます。
+実行時にカレンダーファイルを確認し、不正な再読込では直前の正常な snapshot を維持します。
 
 ### 互換性メモ
 
-`redmica_ui_extension` による Select2 の挙動が Canvas Gantt の操作に干渉する場合は、**管理** -> **プラグイン** -> **Redmica UI Extension** -> **設定** で検索可能セレクトボックスを無効化してください。
+Redmica UI Extension の Select2 の挙動がチャート操作に干渉する場合は、同拡張の設定で検索可能なセレクトボックスを無効にしてください。
 
 ## Docker クイックスタート
 
-このリポジトリには、Redmine 7.0.0 と MariaDB 11.4 をローカルで起動するための `docker-compose.yml` が含まれています。互換バージョンを使う場合は `REDMINE_IMAGE=redmine:6.0.6` または `redmine:6.1.2` を指定します。
-
-GitHub Actions では Redmine 6.0.6、6.1.2、7.0.0 の backend spec と Redmine E2E を継続検証します。Redmine 6.0.6 では targeted compatibility suite（smoke、business calendar、mutation contract、baseline permissions）を実行し、Redmine 6.1.2 と 7.0.0 では full Redmine Playwright suite を実行します。Redmine 7.0.0 は MariaDB 11.4 の Compose DBを使ったローカル検証も行います。
-
-独自休日カレンダーを使用する場合は、`redmine` サービスに次の設定を追加します。`business_calendars/`
-にはYAML形式の設定・カレンダーファイル、または単一の`holiday.csv`を配置してください。
-
-```yaml
-services:
-  redmine:
-    environment:
-      RAILS_ENV: production
-      REDMINE_CANVAS_GANTT_CALENDAR_DIR: /usr/src/redmine/config/redmine_canvas_gantt/business_calendars
-    volumes:
-      - ./business_calendars:/usr/src/redmine/config/redmine_canvas_gantt/business_calendars
-```
-
-`RAILS_ENV: development` は、公式イメージに `listen` gem が含まれないため使用しないでください。
+このリポジトリには、ローカルでの評価用に使い捨ての Docker Compose 環境があります。サンプル資格情報を使用するため、ネットワークへ公開したり、本番データに使ったりしないでください。
 
 ### スタックを起動
 
-```bash
-docker compose up -d --wait
-```
-
-Redmine 6.1.2 を起動する場合:
-
-```bash
-REDMINE_IMAGE=redmine:6.1.2 docker compose up -d --wait
-```
-
-Redmine 6.0.6 の場合は `REDMINE_IMAGE=redmine:6.0.6` を指定します。
-
-[http://localhost:3000](http://localhost:3000) で Redmine を開けます。
+リポジトリのルートで `docker compose up -d --wait` を実行します。
 
 ### 初期データを投入
 
-```bash
-docker compose exec -T -e REDMINE_LANG=en redmine bundle exec rake redmine:load_default_data
-docker compose exec -T redmine bundle exec rake db:fixtures:load
-```
+初期データの投入方法は上記マニュアルのナビゲーションから確認してください。テスト fixture は新規の使い捨て DB だけで読み込んでください。既存レコードを上書きする場合があります。
 
 ### プロジェクトで Canvas Gantt を有効化
 
-1. 対象 project を開きます。
-2. **設定** -> **モジュール** を開きます。
-3. **Canvas Gantt** を有効化します。
-4. 編集が必要な場合は、利用ロールに `view_canvas_gantt` と対象IssueのProjectに対する該当する Redmine 標準権限を付与します。Baseline 保存には `manage_canvas_gantt_baseline` も付与します。
+プロジェクトのモジュールを有効にし、`view_canvas_gantt` と、必要なチケット操作に応じた Redmine 標準権限を付与します。
 
 ### スタックを停止
 
-```bash
-docker compose down
-```
+リポジトリのルートで `docker compose down` を実行します。
 
 ## 開発
 
-SPA フロントエンドは `spa/` にあります。
-
-```bash
-cd spa
-npm ci
-npm run build
-npm run lint
-npm run test -- --run
-```
-
-フロントエンドをライブ開発する場合:
-
-```bash
-cd spa
-npm run dev
-```
+SPA は `spa/` にあります。フロントエンドの準備と開発コマンドは[spa/README_ja.md](spa/README_ja.md)を参照してください。
