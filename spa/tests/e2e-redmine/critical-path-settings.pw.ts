@@ -27,8 +27,9 @@ test('persists critical path calculation and shares its display preference witho
   await page.reload();
   await page.getByTestId('display-settings-menu-button').click();
   await expect(calculation).not.toBeChecked();
-  await page.getByRole('switch', { name: 'Share settings across all projects', exact: true })
-    .locator('xpath=ancestor::label').click();
+  const shareSettings = page.getByRole('switch', { name: 'Share display settings across all projects', exact: true });
+  await shareSettings.check();
+  await expect(shareSettings).toBeChecked();
   await expect.poll(() => page.evaluate(() => {
     const raw = localStorage.getItem('canvasGantt:preferences');
     return raw ? JSON.parse(raw).display.global.preferences.calculateCriticalPathEnabled : undefined;
