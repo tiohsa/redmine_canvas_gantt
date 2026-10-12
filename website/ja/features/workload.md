@@ -19,7 +19,7 @@
 
 ![予定と実績を表示するワークロードペイン。](/images/workload-ja.png)
 
-ワークロードペイン。日本語表示の画面例。[画像を拡大](/images/workload-ja.png)
+ワークロードペイン。[画像を拡大](/images/workload-ja.png)
 
 ## データとアクセス制御
 

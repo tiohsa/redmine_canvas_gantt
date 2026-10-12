@@ -4,7 +4,7 @@
 
 ![Redmine 7.0.0.stable 上の Canvas Gantt 0.18.0 で、日本語表示のチケットと依存関係を表示した日表示の画面。](/images/canvas-gantt-overview-ja.png)
 
-日本語表示の画面例。[画像を拡大](/images/canvas-gantt-overview-ja.png)
+[画像を拡大](/images/canvas-gantt-overview-ja.png)
 
 左側のサイドバーにはチケットの行と表示列、右側のタイムラインには期間を示すタスクバーと依存関係が表示されます。上部のツールバーからフィルターや表示粒度、保存方式などを操作します。
 
@@ -38,7 +38,7 @@
 
 ![日付セルをインライン編集する。](/images/date-cell-edit-ja.png)
 
-日付セルの編集。日本語表示の画面例。[画像を拡大](/images/date-cell-edit-ja.png)
+日付セルの編集。[画像を拡大](/images/date-cell-edit-ja.png)
 
 ## 保存と未保存の変更を破棄する
 
@@ -52,7 +52,7 @@
 
 ![保留中の変更と手動保存の保存・キャンセル操作を示す。](/images/pending-save-ja.png)
 
-未保存の変更と保存・キャンセル操作。日本語表示の画面例。[画像を拡大](/images/pending-save-ja.png)
+未保存の変更と保存・キャンセル操作。[画像を拡大](/images/pending-save-ja.png)
 
 ## 列、行の高さ、全画面
 

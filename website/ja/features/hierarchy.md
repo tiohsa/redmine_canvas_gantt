@@ -22,7 +22,7 @@
 
 ![複数の子チケットを入力する一括作成フォーム。](/images/bulk-subtasks-ja.png)
 
-子チケットの一括作成フォーム。日本語表示の画面例。[画像を拡大](/images/bulk-subtasks-ja.png)
+子チケットの一括作成フォーム。[画像を拡大](/images/bulk-subtasks-ja.png)
 
 ## 注意点
 

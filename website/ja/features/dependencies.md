@@ -34,7 +34,7 @@ delay は先行チケットと後続チケットの間隔を指定する稼働�
 
 ![依存関係の編集画面。](/images/relation-editor-ja.png)
 
-依存関係の編集画面。日本語表示の画面例。[画像を拡大](/images/relation-editor-ja.png)
+依存関係の編集画面。[画像を拡大](/images/relation-editor-ja.png)
 
 ## スケジュールへの影響
 

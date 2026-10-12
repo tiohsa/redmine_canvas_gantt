@@ -14,7 +14,7 @@
 
 ![ベースラインの保存操作。](/images/baseline-save-ja.png)
 
-ベースライン保存メニュー。日本語表示の画面例。[画像を拡大](/images/baseline-save-ja.png)
+ベースライン保存メニュー。[画像を拡大](/images/baseline-save-ja.png)
 
 ## 現在の日程と比較する
 
@@ -22,7 +22,7 @@
 
 ![保存済みベースラインと現在の日程を比較する。](/images/baseline-compare-ja.png)
 
-保存済みベースラインの比較。日本語表示の画面例。[画像を拡大](/images/baseline-compare-ja.png)
+保存済みベースラインの比較。[画像を拡大](/images/baseline-compare-ja.png)
 
 ## 権限と保存先
 

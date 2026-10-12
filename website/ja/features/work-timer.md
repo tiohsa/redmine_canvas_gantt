@@ -12,7 +12,7 @@
 
 ![作業時間タイマーの開始画面と目標選択肢。](/images/work-timer-ja.png)
 
-作業タイマーの開始画面。日本語表示の画面例。[画像を拡大](/images/work-timer-ja.png)
+作業タイマーの開始画面。[画像を拡大](/images/work-timer-ja.png)
 
 ## 記録と保留状態
 

@@ -19,7 +19,7 @@ Canvas Gantt は、Redmine のチケットをガントチャートで確認・�
 
 ![Redmine 7.0.0.stable 上の Canvas Gantt 0.18.0 で、日本語表示のチケットと依存関係を表示した日表示の画面。](/images/canvas-gantt-overview-ja.png)
 
-日本語表示の画面例。[画像を拡大](/images/canvas-gantt-overview-ja.png)
+[画像を拡大](/images/canvas-gantt-overview-ja.png)
 
 ## 対応環境
 

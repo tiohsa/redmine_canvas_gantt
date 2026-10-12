@@ -8,7 +8,7 @@
 
 ![ステータスで絞り込むメニュー。](/images/status-filter-ja.png)
 
-ステータスフィルター。日本語表示の画面例。[画像を拡大](/images/status-filter-ja.png)
+ステータスフィルター。[画像を拡大](/images/status-filter-ja.png)
 
 ## Redmine 保存済みクエリ
 
