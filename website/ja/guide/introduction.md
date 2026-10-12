@@ -4,7 +4,7 @@
 
 Redmine Canvas Gantt は、Redmine のチケットをガントチャートで確認・編集できるプラグインです。日程の調整、依存関係の管理、工数の確認を一つの画面で行えます。
 
-![Redmine 7.0.0.stable 上の Canvas Gantt 0.18.0 で、日本語表示のチケットと依存関係を表示した日表示のガントチャート。](/images/canvas-gantt-overview-ja.png)
+![Redmine 7.0.0.stable 上の Canvas Gantt 0.18.1 で、日本語表示のチケットと依存関係を表示した日表示のガントチャート。](/images/canvas-gantt-overview-ja.png)
 
 [画像を拡大](/images/canvas-gantt-overview-ja.png)
 

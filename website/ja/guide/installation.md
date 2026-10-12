@@ -16,7 +16,7 @@
 
    ```sh
    cd /path/to/redmine/plugins
-   git clone --branch v0.18.0 --depth 1 https://github.com/tiohsa/redmine_canvas_gantt.git
+   git clone --branch v0.18.1 --depth 1 https://github.com/tiohsa/redmine_canvas_gantt.git
    ```
 
 2. Redmine アプリケーションサーバーを再起動します。
