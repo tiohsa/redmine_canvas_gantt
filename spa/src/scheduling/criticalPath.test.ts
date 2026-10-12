@@ -230,4 +230,78 @@ describe('calculateCriticalPath', () => {
         expect(result.metricsByTaskId.A.totalSlackDays).toBe(3);
         expect(result.metricsByTaskId.B.totalSlackDays).toBe(0);
     });
+
+    it('matches the stable reference topological order for tied ready tasks and preserves inputs', () => {
+        const tasks = [
+            buildTask({ id: 'late', startDate: MONDAY, dueDate: MONDAY }),
+            buildTask({ id: 'missing', startDate: undefined, dueDate: undefined }),
+            buildTask({ id: 'first', startDate: MONDAY, dueDate: MONDAY }),
+            buildTask({ id: 'second', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'join', startDate: MONDAY, dueDate: WEDNESDAY }),
+            buildTask({ id: 'cycle-a', startDate: MONDAY, dueDate: MONDAY }),
+            buildTask({ id: 'cycle-b', startDate: MONDAY, dueDate: MONDAY })
+        ];
+        const relations: Relation[] = [
+            { id: 'r1', from: 'first', to: 'join', type: RelationType.Precedes },
+            { id: 'r2', from: 'second', to: 'join', type: RelationType.Precedes },
+            { id: 'r3', from: 'cycle-a', to: 'cycle-b', type: RelationType.Precedes },
+            { id: 'r4', from: 'cycle-b', to: 'cycle-a', type: RelationType.Precedes }
+        ];
+        const tasksBefore = structuredClone(tasks);
+        const relationsBefore = structuredClone(relations);
+        const stableReferenceOrder = (ids: string[], edges: Relation[]): string[] => {
+            const order = new Map(ids.map((id, index) => [id, index]));
+            const indegree = new Map(ids.map((id) => [id, 0]));
+            const outgoing = new Map(ids.map((id) => [id, [] as string[]]));
+            edges.forEach(({ from, to }) => {
+                if (!indegree.has(from) || !indegree.has(to)) return;
+                indegree.set(to, (indegree.get(to) ?? 0) + 1);
+                outgoing.get(from)?.push(to);
+            });
+            const ready = ids.filter((id) => indegree.get(id) === 0)
+                .sort((left, right) => (order.get(left) ?? 0) - (order.get(right) ?? 0));
+            const result: string[] = [];
+            while (ready.length > 0) {
+                const id = ready.shift();
+                if (!id) continue;
+                result.push(id);
+                outgoing.get(id)?.forEach((next) => {
+                    const degree = (indegree.get(next) ?? 0) - 1;
+                    indegree.set(next, degree);
+                    if (degree === 0) {
+                        ready.push(next);
+                        ready.sort((left, right) => (order.get(left) ?? 0) - (order.get(right) ?? 0));
+                    }
+                });
+            }
+            return result;
+        };
+
+        const result = calculateCriticalPath(tasks, relations);
+
+        expect(result.orderedTaskIds).toEqual(stableReferenceOrder(['late', 'first', 'second', 'join'], relations));
+        expect(result.orderedTaskIds).toEqual(['late', 'first', 'second', 'join']);
+        expect(result.excludedTaskIds).toEqual(['missing', 'cycle-a', 'cycle-b']);
+        expect(result.cyclicTaskIds).toEqual(['cycle-a', 'cycle-b']);
+        expect(result.metricsByTaskId).toEqual({
+            late: {
+                taskId: 'late', durationDays: 0, es: MONDAY, ef: MONDAY,
+                ls: FRIDAY_NEXT, lf: FRIDAY_NEXT, totalSlackDays: 4, critical: false
+            },
+            first: {
+                taskId: 'first', durationDays: 0, es: MONDAY, ef: MONDAY,
+                ls: TUESDAY, lf: TUESDAY, totalSlackDays: 1, critical: false
+            },
+            second: {
+                taskId: 'second', durationDays: 1, es: MONDAY, ef: TUESDAY,
+                ls: MONDAY, lf: TUESDAY, totalSlackDays: 0, critical: true
+            },
+            join: {
+                taskId: 'join', durationDays: 2, es: WEDNESDAY, ef: FRIDAY_NEXT,
+                ls: WEDNESDAY, lf: FRIDAY_NEXT, totalSlackDays: 0, critical: true
+            }
+        });
+        expect(tasks).toEqual(tasksBefore);
+        expect(relations).toEqual(relationsBefore);
+    });
 });

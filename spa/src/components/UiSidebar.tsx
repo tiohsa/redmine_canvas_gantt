@@ -121,6 +121,7 @@ export const UiSidebar: React.FC = () => {
     const tasks = useTaskStore(state => state.tasks);
     const schedulingStates = useTaskStore(state => state.schedulingStates);
     const criticalPathMetrics = useTaskStore(state => state.criticalPathMetrics);
+    const calculateCriticalPathEnabled = useTaskStore(state => state.calculateCriticalPathEnabled);
     const layoutRows = useTaskStore(state => state.layoutRows);
     const rowCount = useTaskStore(state => state.rowCount);
     const taskStatuses = useTaskStore(state => state.taskStatuses);
@@ -383,7 +384,11 @@ export const UiSidebar: React.FC = () => {
             title: tr('label_notifications'),
             width: columnWidths[NOTIFICATION_COLUMN_KEY] ?? 44,
             render: (t: Task) => {
-                const notification = getTaskNotification(schedulingStates[t.id], criticalPathMetrics[t.id]);
+                const notification = getTaskNotification(
+                    schedulingStates[t.id],
+                    criticalPathMetrics[t.id],
+                    calculateCriticalPathEnabled
+                );
                 if (!notification) return null;
 
                 return (

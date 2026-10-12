@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useTaskStore, derivedRecalculationCounters, resetDerivedRecalculationCounters } from './TaskStore';
-import type { Task } from '../types';
+import type { Relation, Task } from '../types';
 import { ZOOM_SCALES } from '../utils/grid';
 import { apiClient } from '../api/client';
 import { taskMutationService } from '../services/taskMutationService';
@@ -43,9 +43,9 @@ const buildTask = (overrides: Partial<Task>): Task => ({
     ...overrides
 });
 
-const buildApiData = (tasks: Task[]) => ({
+const buildApiData = (tasks: Task[], relations: Relation[] = []) => ({
     tasks,
-    relations: [],
+    relations,
     versions: [],
     filterOptions: { projects: [], assignees: [] },
     statuses: [],
@@ -2511,7 +2511,11 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(derivedRecalculationCounters.layout).toBe(1);
     });
 
-    it('recalculates scheduling and critical path once for a date edit', () => {
+    it('recalculates scheduling and critical path once without rebuilding task-only layout for a date edit', () => {
+        useTaskStore.setState({
+            groupByProject: false, groupByAssignee: false, showVersions: false,
+            sortConfig: { key: 'subject', direction: 'asc' }
+        });
         resetDerivedRecalculationCounters();
         useTaskStore.getState().setTasks([buildTask({ id: 'task-1', startDate: MONDAY, dueDate: TUESDAY })]);
         resetDerivedRecalculationCounters();
@@ -2520,6 +2524,188 @@ describe('TaskStore asynchronous state ownership', () => {
 
         expect(derivedRecalculationCounters.scheduling).toBe(1);
         expect(derivedRecalculationCounters.criticalPath).toBe(1);
+        expect(derivedRecalculationCounters.layout).toBe(0);
+    });
+
+    it('rebuilds layout when a task subject changes the active text filter', () => {
+        const { setTasks, setFilterText, updateTask } = useTaskStore.getState();
+        setTasks([buildTask({ id: 'task-1', subject: 'Needle' })]);
+        setFilterText('Needle');
+        resetDerivedRecalculationCounters();
+
+        updateTask('task-1', { subject: 'Other' });
+
+        expect(useTaskStore.getState().tasks).toEqual([]);
+        expect(derivedRecalculationCounters.criticalPath).toBe(0);
+        expect(derivedRecalculationCounters.layout).toBe(1);
+    });
+
+    it.each(['project', 'assignee'] as const)('refreshes %s summary dates after moving a task with subject sorting', (group) => {
+        useTaskStore.setState({
+            groupByProject: group === 'project',
+            groupByAssignee: group === 'assignee',
+            sortConfig: { key: 'subject', direction: 'asc' },
+            showVersions: false
+        });
+        useTaskStore.getState().setTasks([
+            buildTask({ id: 'A', subject: 'A', projectId: 'p1', assignedToId: 7, startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', subject: 'B', projectId: 'p1', assignedToId: 7, startDate: TUESDAY, dueDate: WEDNESDAY })
+        ]);
+        const before = useTaskStore.getState();
+        expect(before.layoutRows.find(row => row.type === 'header')).toMatchObject({ startDate: MONDAY, dueDate: WEDNESDAY });
+        resetDerivedRecalculationCounters();
+
+        useTaskStore.getState().updateTask('A', { startDate: WEDNESDAY, dueDate: THURSDAY });
+
+        const after = useTaskStore.getState();
+        expect(after.layoutRows.find(row => row.type === 'header')).toMatchObject({ startDate: TUESDAY, dueDate: THURSDAY });
+        expect(after.tasks.map(task => [task.id, task.rowIndex])).toEqual(before.tasks.map(task => [task.id, task.rowIndex]));
+        expect(derivedRecalculationCounters).toEqual({ scheduling: 1, criticalPath: 1, layout: 1 });
+    });
+
+    it.each(['fallback', 'no-version', 'explicit'] as const)('refreshes %s version summaries after resizing a task', (kind) => {
+        useTaskStore.setState({
+            groupByProject: false,
+            groupByAssignee: false,
+            sortConfig: { key: 'subject', direction: 'asc' },
+            showVersions: true
+        });
+        useTaskStore.getState().setVersions([{
+            id: 'v1', name: 'Version 1', status: 'open', projectId: 'p1',
+            startDate: kind === 'explicit' ? MONDAY : undefined,
+            effectiveDate: kind === 'explicit' ? FRIDAY : undefined
+        }]);
+        useTaskStore.getState().setTasks([
+            buildTask({ id: 'A', projectId: 'p1', fixedVersionId: kind === 'no-version' ? undefined : 'v1', startDate: TUESDAY, dueDate: WEDNESDAY })
+        ]);
+        const before = useTaskStore.getState();
+        expect(before.layoutRows.find(row => row.type === 'version')).toMatchObject({
+            startDate: kind === 'explicit' ? MONDAY : TUESDAY,
+            dueDate: kind === 'explicit' ? FRIDAY : WEDNESDAY
+        });
+        useTaskStore.getState().setCalculateCriticalPathEnabled(false);
+        resetDerivedRecalculationCounters();
+
+        useTaskStore.getState().updateTask('A', { dueDate: THURSDAY });
+
+        const after = useTaskStore.getState();
+        expect(after.layoutRows.find(row => row.type === 'version')).toMatchObject({
+            startDate: kind === 'explicit' ? MONDAY : TUESDAY,
+            dueDate: kind === 'explicit' ? FRIDAY : THURSDAY
+        });
+        expect(after.rowCount).toBe(before.rowCount);
+        expect(derivedRecalculationCounters.criticalPath).toBe(0);
+    });
+
+    it('refreshes collapsed group summary dates from tasks hidden by the group', () => {
+        useTaskStore.setState({
+            groupByProject: true, groupByAssignee: false, showVersions: false,
+            projectExpansion: { p1: false }, sortConfig: { key: 'subject', direction: 'asc' }
+        });
+        useTaskStore.getState().setTasks([
+            buildTask({ id: 'A', projectId: 'p1', startDate: MONDAY, dueDate: TUESDAY })
+        ]);
+        expect(useTaskStore.getState().tasks).toEqual([]);
+
+        useTaskStore.getState().updateTask('A', { dueDate: THURSDAY });
+
+        expect(useTaskStore.getState().layoutRows.find(row => row.type === 'header')).toMatchObject({ startDate: MONDAY, dueDate: THURSDAY });
+        expect(useTaskStore.getState().tasks).toEqual([]);
+    });
+
+    it('disables critical path atomically while scheduling state remains active', () => {
+        const { setTasks, setRelations, setCalculateCriticalPathEnabled, updateTask } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY })
+        ]);
+        setRelations([{ id: 'r1', from: 'A', to: 'B', type: 'precedes' }]);
+
+        setCalculateCriticalPathEnabled(false);
+
+        expect(useTaskStore.getState()).toMatchObject({
+            calculateCriticalPathEnabled: false,
+            criticalPathMetrics: {},
+            criticalPathProjectFinish: undefined
+        });
+
+        resetDerivedRecalculationCounters();
+        updateTask('A', { dueDate: WEDNESDAY });
+
+        const state = useTaskStore.getState();
+        expect(state.schedulingStates).toBeDefined();
+        expect(state.calculateCriticalPathEnabled).toBe(false);
+        expect(state.criticalPathMetrics).toEqual({});
+        expect(state.criticalPathProjectFinish).toBeUndefined();
+        expect(derivedRecalculationCounters.scheduling).toBe(1);
+        expect(derivedRecalculationCounters.criticalPath).toBe(0);
+    });
+
+    it('re-enables critical path with a metrics-only recalculation', () => {
+        const { setTasks, setRelations, setCalculateCriticalPathEnabled } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY })
+        ]);
+        setRelations([{ id: 'r1', from: 'A', to: 'B', type: 'precedes' }]);
+        setCalculateCriticalPathEnabled(false);
+        resetDerivedRecalculationCounters();
+
+        setCalculateCriticalPathEnabled(true);
+
+        const state = useTaskStore.getState();
+        expect(state.calculateCriticalPathEnabled).toBe(true);
+        expect(state.criticalPathMetrics.A?.critical).toBe(true);
+        expect(state.criticalPathMetrics.B?.critical).toBe(true);
+        expect(state.criticalPathProjectFinish).toBe(THURSDAY);
+        expect(derivedRecalculationCounters.scheduling).toBe(0);
+        expect(derivedRecalculationCounters.criticalPath).toBe(1);
+        expect(derivedRecalculationCounters.layout).toBe(0);
+    });
+
+    it('keeps edits intact and does not issue writes across rapid toggle changes', () => {
+        const { setTasks, updateTask, setCalculateCriticalPathEnabled } = useTaskStore.getState();
+        setTasks([buildTask({ id: 'task-1', subject: 'Before' })]);
+        updateTask('task-1', { subject: 'Draft' });
+        const before = useTaskStore.getState();
+        const apiCallsBefore = vi.mocked(apiClient.updateTask).mock.calls.length;
+        resetDerivedRecalculationCounters();
+
+        setCalculateCriticalPathEnabled(false);
+        setCalculateCriticalPathEnabled(true);
+        setCalculateCriticalPathEnabled(false);
+
+        const state = useTaskStore.getState();
+        expect(state.modifiedTaskIds).toBe(before.modifiedTaskIds);
+        expect(state.localTaskPatches).toBe(before.localTaskPatches);
+        expect(state.calculateCriticalPathEnabled).toBe(false);
+        expect(state.criticalPathMetrics).toEqual({});
+        expect(vi.mocked(apiClient.updateTask).mock.calls).toHaveLength(apiCallsBefore);
+        expect(derivedRecalculationCounters.criticalPath).toBe(1);
+        expect(derivedRecalculationCounters.scheduling).toBe(0);
+        expect(derivedRecalculationCounters.layout).toBe(0);
+    });
+
+    it('applies an accepted fetch using the critical path setting active at response time', async () => {
+        const request = deferred<ReturnType<typeof buildApiData>>();
+        vi.mocked(apiClient.fetchData).mockReturnValue(request.promise);
+
+        const refresh = useTaskStore.getState().refreshData();
+        useTaskStore.getState().setCalculateCriticalPathEnabled(false);
+        resetDerivedRecalculationCounters();
+        request.resolve(buildApiData([
+                buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+                buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: THURSDAY })
+            ], [{ id: 'r1', from: 'A', to: 'B', type: 'precedes' }]
+        ));
+        await expect(refresh).resolves.toEqual(expect.objectContaining({ status: 'applied' }));
+
+        const state = useTaskStore.getState();
+        expect(state.dataReadStatus).toBe('ready');
+        expect(state.calculateCriticalPathEnabled).toBe(false);
+        expect(state.criticalPathMetrics).toEqual({});
+        expect(derivedRecalculationCounters.scheduling).toBe(1);
+        expect(derivedRecalculationCounters.criticalPath).toBe(0);
     });
 
     it('canonicalizes direct date updates with the task project calendar', () => {
@@ -4063,6 +4249,36 @@ describe('TaskStore scheduling state and relation-driven recalculation', () => {
         expect(state.modifiedTaskIds.has('B')).toBe(true);
     });
 
+    it('keeps relation add, replace, and delete scheduling active while critical path is disabled', () => {
+        const { setTasks, setCalculateCriticalPathEnabled, addRelation, replaceRelation, removeRelation } = useTaskStore.getState();
+        setTasks([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: MONDAY }),
+            buildTask({ id: 'B', startDate: MONDAY, dueDate: TUESDAY })
+        ]);
+        setCalculateCriticalPathEnabled(false);
+
+        resetDerivedRecalculationCounters();
+        addRelation({ id: 'r1', from: 'A', to: 'B', type: 'precedes' });
+        expect(useTaskStore.getState().allTasks.find(task => task.id === 'B')).toMatchObject({
+            startDate: TUESDAY,
+            dueDate: WEDNESDAY
+        });
+        expect(derivedRecalculationCounters.scheduling).toBe(1);
+        expect(derivedRecalculationCounters.criticalPath).toBe(0);
+
+        resetDerivedRecalculationCounters();
+        replaceRelation({ id: 'r1', from: 'A', to: 'B', type: 'precedes', delay: 1 });
+        expect(derivedRecalculationCounters.scheduling).toBe(1);
+        expect(derivedRecalculationCounters.criticalPath).toBe(0);
+
+        resetDerivedRecalculationCounters();
+        removeRelation('r1');
+        expect(useTaskStore.getState().relations).toEqual([]);
+        expect(derivedRecalculationCounters.scheduling).toBe(1);
+        expect(derivedRecalculationCounters.criticalPath).toBe(0);
+        expect(useTaskStore.getState().criticalPathMetrics).toEqual({});
+    });
+
     it('recalculates a parent dependency after a child extends the parent', () => {
         const { setTasks, setRelations, updateTask } = useTaskStore.getState();
         setTasks([
@@ -4261,6 +4477,7 @@ describe('TaskStore scheduling state and relation-driven recalculation', () => {
         const addNotification = vi.fn();
 
         try {
+            useTaskStore.getState().setCalculateCriticalPathEnabled(false);
             useUIStore.setState({
                 autoScheduleMoveMode: AutoScheduleMoveMode.LinkedDownstreamShift,
                 addNotification: addNotification as unknown as (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void
@@ -4282,6 +4499,7 @@ describe('TaskStore scheduling state and relation-driven recalculation', () => {
             expect(useTaskStore.getState().allTasks.find((task) => task.id === 'B')?.startDate).toBe(FRIDAY + DAY * 3);
             expect(addNotification).toHaveBeenCalledTimes(1);
             expect(String(addNotification.mock.calls[0]?.[0])).toContain('external dependency');
+            expect(useTaskStore.getState().criticalPathMetrics).toEqual({});
         } finally {
             window.RedmineCanvasGantt = originalConfig;
         }

@@ -43,7 +43,42 @@ const hasValidDateRange = (task: Pick<Task, 'startDate' | 'dueDate'>): task is P
     task.startDate <= task.dueDate
 );
 
+const popEarliestTask = (queue: string[], inputOrder: Map<string, number>): string | undefined => {
+    const first = queue[0];
+    const last = queue.pop();
+    if (queue.length > 0 && last !== undefined) {
+        let index = 0;
+        while (true) {
+            const left = index * 2 + 1;
+            if (left >= queue.length) break;
+            const right = left + 1;
+            const child = right < queue.length && (inputOrder.get(queue[right]) ?? 0) < (inputOrder.get(queue[left]) ?? 0)
+                ? right
+                : left;
+            if ((inputOrder.get(last) ?? 0) <= (inputOrder.get(queue[child]) ?? 0)) break;
+            queue[index] = queue[child];
+            index = child;
+        }
+        queue[index] = last;
+    }
+    return first;
+};
+
+const pushEarliestTask = (queue: string[], taskId: string, inputOrder: Map<string, number>): void => {
+    let index = queue.length;
+    queue.push(taskId);
+    while (index > 0) {
+        const parent = Math.floor((index - 1) / 2);
+        if ((inputOrder.get(queue[parent]) ?? 0) <= (inputOrder.get(taskId) ?? 0)) break;
+        queue[index] = queue[parent];
+        index = parent;
+    }
+    queue[index] = taskId;
+};
+
 const buildTopologicalOrder = (taskIds: string[], edges: SchedulingEdge[], inputOrder: Map<string, number>): string[] => {
+    if (edges.length === 0) return [...taskIds];
+
     const indegree = new Map<string, number>();
     const outgoing = new Map<string, SchedulingEdge[]>();
 
@@ -59,13 +94,14 @@ const buildTopologicalOrder = (taskIds: string[], edges: SchedulingEdge[], input
         outgoing.set(edge.predecessorId, nextEdges);
     });
 
-    const queue = [...taskIds]
-        .filter((taskId) => (indegree.get(taskId) ?? 0) === 0)
-        .sort((left, right) => (inputOrder.get(left) ?? 0) - (inputOrder.get(right) ?? 0));
+    const queue: string[] = [];
+    taskIds.forEach((taskId) => {
+        if ((indegree.get(taskId) ?? 0) === 0) pushEarliestTask(queue, taskId, inputOrder);
+    });
     const orderedTaskIds: string[] = [];
 
     while (queue.length > 0) {
-        const taskId = queue.shift();
+        const taskId = popEarliestTask(queue, inputOrder);
         if (!taskId) continue;
 
         orderedTaskIds.push(taskId);
@@ -73,8 +109,7 @@ const buildTopologicalOrder = (taskIds: string[], edges: SchedulingEdge[], input
             const nextIndegree = (indegree.get(edge.successorId) ?? 0) - 1;
             indegree.set(edge.successorId, nextIndegree);
             if (nextIndegree === 0) {
-                queue.push(edge.successorId);
-                queue.sort((left, right) => (inputOrder.get(left) ?? 0) - (inputOrder.get(right) ?? 0));
+                pushEarliestTask(queue, edge.successorId, inputOrder);
             }
         });
     }

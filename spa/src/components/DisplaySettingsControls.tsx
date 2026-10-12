@@ -18,7 +18,8 @@ const DEFAULT_DISPLAY_SETTINGS = {
     showDueDateOnly: true,
     showTaskTitles: true,
     showTaskBarDates: false,
-    showHierarchyLines: true
+    showHierarchyLines: true,
+    calculateCriticalPathEnabled: true
 } as const;
 
 interface DisplaySettingsControlsProps {
@@ -111,7 +112,9 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         customScales,
         autoSave,
         autoSaveTransition,
-        requestAutoSaveChange
+        requestAutoSaveChange,
+        calculateCriticalPathEnabled,
+        setCalculateCriticalPathEnabled
     } = useTaskStore();
     const {
         showProgressLine,
@@ -162,6 +165,7 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
         || showTaskTitles !== DEFAULT_DISPLAY_SETTINGS.showTaskTitles
         || showTaskBarDates !== DEFAULT_DISPLAY_SETTINGS.showTaskBarDates
         || showHierarchyLines !== DEFAULT_DISPLAY_SETTINGS.showHierarchyLines
+        || calculateCriticalPathEnabled !== DEFAULT_DISPLAY_SETTINGS.calculateCriticalPathEnabled
         || datePlacementMode !== DatePlacementMode.WorkingDays;
     const isLeftPaneMaximized = leftPaneVisible && !rightPaneVisible;
     const isRightPaneMaximized = !leftPaneVisible && rightPaneVisible;
@@ -215,7 +219,8 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
             customScales,
             rowHeight: viewport.rowHeight,
             sidebarFontSize,
-            autoSave
+            autoSave,
+            calculateCriticalPathEnabled
         });
 
         if (shareAcrossProjects) {
@@ -329,6 +334,20 @@ export const DisplaySettingsControls: React.FC<DisplaySettingsControlsProps> = (
                                     </option>
                                 </select>
                             </label>
+                        </div>
+
+                        <div style={{ borderTop: `1px solid ${designTokens.borderSubtle}`, paddingTop: 8, marginBottom: 8 }}>
+                            <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginBottom: 4 }}>
+                                {i18n.t('label_calculation_and_performance') || 'Calculation & Performance'}
+                            </div>
+                            <DisplaySettingSwitch
+                                checked={calculateCriticalPathEnabled}
+                                onChange={(event) => setCalculateCriticalPathEnabled(event.target.checked)}
+                                label={i18n.t('label_calculate_critical_path') || 'Calculate critical path'}
+                            />
+                            <div style={{ color: designTokens.textMuted, fontSize: 12, lineHeight: 1.4 }}>
+                                {i18n.t('help_desc_calculate_critical_path') || 'Calculate the critical path and total slack. Dependency management and automatic scheduling remain available when disabled.'}
+                            </div>
                         </div>
 
                         <div style={{ fontFamily: fontFamilies.ui, fontWeight: 600, marginTop: 12, marginBottom: 4 }}>

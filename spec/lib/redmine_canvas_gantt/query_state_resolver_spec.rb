@@ -57,7 +57,7 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     allow(working_query).to receive(:filters=)
     allow(working_query).to receive(:column_names).and_return([])
     allow(issue_scope).to receive(:where).and_return(issue_scope)
-    allow(issue_scope).to receive(:includes).with(*issue_includes).and_return(issue_scope)
+    allow(issue_scope).to receive(:preload).with(*issue_includes).and_return(issue_scope)
     allow(issue_scope).to receive(:to_a).and_return([])
     allow(issue_scope).to receive(:except).and_return(issue_scope)
   end
@@ -284,7 +284,8 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     filtered_scope = double('FilteredScope')
     expect(issue_scope).to receive(:where).with(project_id: [1, 2]).and_return(issue_scope)
     expect(issue_scope).to receive(:where).with(tracker_id: [3, 4]).and_return(filtered_scope)
-    allow(filtered_scope).to receive(:includes).with(*issue_includes).and_return(filtered_scope)
+    allow(filtered_scope).to receive(:except).with(:includes).and_return(filtered_scope)
+    allow(filtered_scope).to receive(:preload).with(*issue_includes).and_return(filtered_scope)
     allow(filtered_scope).to receive(:to_a).and_return([])
 
     result = described_class.new(
@@ -598,7 +599,8 @@ RSpec.describe RedmineCanvasGantt::QueryStateResolver do
     expect(issue_scope).to receive(:where).with(project_id: [1, 2]).and_return(issue_scope)
     expect(issue_scope).to receive(:where).with(id: [12]).and_return(issue_scope)
     expect(issue_scope).to receive(:where).with(fixed_version_id: nil).and_return(filtered_scope)
-    expect(filtered_scope).to receive(:includes).with(*issue_includes).and_return(filtered_scope)
+    expect(filtered_scope).to receive(:except).with(:includes).and_return(filtered_scope)
+    expect(filtered_scope).to receive(:preload).with(*issue_includes).and_return(filtered_scope)
     allow(filtered_scope).to receive(:to_a).and_return([])
 
     resolver = described_class.new(

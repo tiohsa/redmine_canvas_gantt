@@ -11,6 +11,7 @@ import {
     timelineToCalendarDate
 } from './dateOnly';
 import { getNonWorkingWeekDays } from './nonWorkingWeekDays';
+import { BusinessCalendarWorkingDayIndex } from './businessCalendarIndex';
 import { DatePlacementMode, type DatePlacementMode as DatePlacementModeValue } from '../types/constraints';
 
 type UnknownRecord = Record<string, unknown>;
@@ -43,6 +44,88 @@ const EMPTY_PAYLOAD: BusinessCalendarPayload = {
 };
 
 let configuredPayload: BusinessCalendarPayload = EMPTY_PAYLOAD;
+
+const MAX_WORKING_DAY_INDEXES = 12;
+const workingDayIndexes = new Map<string, BusinessCalendarWorkingDayIndex>();
+
+const getWorkingDayIndex = (projectId: ProjectCalendarArgument | undefined, queryOrdinal: number): BusinessCalendarWorkingDayIndex => {
+    const windowKey = BusinessCalendarWorkingDayIndex.windowKeyForOrdinal(queryOrdinal);
+    let cacheKey: string;
+    let nonWorkingWeekDays: Iterable<number>;
+    let overrideDays: BusinessCalendarDefinition['days'] | undefined;
+
+    if (projectId instanceof Set) {
+        const days = [...projectId].sort((left, right) => left - right);
+        cacheKey = `legacy:${days.join(',')}:${windowKey}`;
+        nonWorkingWeekDays = days;
+    } else {
+        const calendarId = getCalendarIdForProject(projectId);
+        const calendar = calendarId ? configuredPayload.calendars[calendarId] : undefined;
+        if (calendar) {
+            cacheKey = `calendar:${calendarId}:${windowKey}`;
+            nonWorkingWeekDays = calendar.nonWorkingWeekDays;
+            overrideDays = calendar.days;
+        } else {
+            const days = [...getNonWorkingWeekDays()].sort((left, right) => left - right);
+            cacheKey = `legacy:${days.join(',')}:${windowKey}`;
+            nonWorkingWeekDays = days;
+        }
+    }
+
+    const cached = workingDayIndexes.get(cacheKey);
+    if (cached) {
+        workingDayIndexes.delete(cacheKey);
+        workingDayIndexes.set(cacheKey, cached);
+        return cached;
+    }
+
+    const overrides: Record<string, 'working' | 'non_working'> = {};
+    Object.entries(overrideDays ?? {}).forEach(([key, day]) => { overrides[key] = day.type; });
+    const index = new BusinessCalendarWorkingDayIndex(nonWorkingWeekDays, overrides, queryOrdinal);
+    workingDayIndexes.set(cacheKey, index);
+    if (workingDayIndexes.size > MAX_WORKING_DAY_INDEXES) {
+        const oldestKey = workingDayIndexes.keys().next().value;
+        if (oldestKey !== undefined) workingDayIndexes.delete(oldestKey);
+    }
+    return index;
+};
+
+const ordinalForDate = (timestamp: number): number => Math.round(timestamp / (24 * 60 * 60 * 1000));
+const timestampForOrdinal = (ordinal: number): number => {
+    const timestamp = ordinal * (24 * 60 * 60 * 1000);
+    if (!Number.isFinite(timestamp) || !Number.isFinite(new Date(timestamp).getTime())) {
+        throw new RangeError('Working date is outside the supported calendar range');
+    }
+    return timestamp;
+};
+
+const requireWorkingCapacity = (
+    index: BusinessCalendarWorkingDayIndex,
+    startOrdinal: number,
+    count: number,
+    direction: 1 | -1
+): void => {
+    if (index.hasWeeklyWorkingDays) return;
+    if (index.countWorkingOverridesInDirection(startOrdinal, direction) < count) {
+        throw new RangeError('Calendar has no working date in the requested direction');
+    }
+};
+
+const walkWorkingDays = (
+    timestamp: number,
+    count: number,
+    direction: 1 | -1,
+    projectId?: ProjectCalendarArgument
+): number => {
+    let date = timestamp;
+    let remaining = count;
+    while (remaining > 0) {
+        date = addCalendarDays(date, direction);
+        if (!Number.isFinite(date)) throw new RangeError('Working date is outside the supported calendar range');
+        if (isWorkingDay(date, projectId)) remaining -= 1;
+    }
+    return date;
+};
 
 const asRecord = (value: unknown): UnknownRecord | null => (
     value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -138,6 +221,7 @@ export const normalizeBusinessCalendarPayload = (value: unknown): BusinessCalend
 
 export const configureBusinessCalendar = (payload: unknown): BusinessCalendarPayload => {
     configuredPayload = normalizeBusinessCalendarPayload(payload);
+    workingDayIndexes.clear();
     return configuredPayload;
 };
 
@@ -201,12 +285,17 @@ export const normalizeWorkingDate = (
     if (!Number.isFinite(timestamp) || timestamp !== timelineToCalendarDate(timestamp)) {
         return timestamp;
     }
-    let date = timelineToCalendarDate(timestamp);
+    const date = timelineToCalendarDate(timestamp);
+    if (isWorkingDay(date, projectId)) return date;
+    const startOrdinal = ordinalForDate(date);
+    const index = getWorkingDayIndex(projectId, startOrdinal);
+    const targetOrdinal = direction === 'forward'
+        ? index.nthWorkingDay(startOrdinal - 1, 1, 1)
+        : index.nthWorkingDay(startOrdinal + 1, 1, -1);
+    if (targetOrdinal !== undefined) return timestampForOrdinal(targetOrdinal);
     const step = direction === 'forward' ? 1 : -1;
-    while (!isWorkingDay(date, projectId)) {
-        date = addCalendarDays(date, step);
-    }
-    return date;
+    requireWorkingCapacity(index, startOrdinal - step, 1, step);
+    return walkWorkingDays(date, 1, step, projectId);
 };
 
 export const nextWorkingDay = (timestamp: number, projectId?: ProjectCalendarArgument): number => (
@@ -255,13 +344,16 @@ export const normalizeTaskDateInterval = (
 };
 
 export const addWorkingDays = (timestamp: number, days: number, projectId?: ProjectCalendarArgument): number => {
-    let date = timelineToCalendarDate(timestamp);
-    let remaining = Math.max(0, Math.floor(days));
-    while (remaining > 0) {
-        date = addCalendarDays(date, 1);
-        if (isWorkingDay(date, projectId)) remaining -= 1;
-    }
-    return date;
+    const date = timelineToCalendarDate(timestamp);
+    const remaining = Math.max(0, Math.floor(days));
+    if (!(remaining > 0)) return date;
+    if (!Number.isSafeInteger(remaining)) throw new RangeError('Working-day count must be a positive safe integer');
+    const startOrdinal = ordinalForDate(date);
+    const index = getWorkingDayIndex(projectId, startOrdinal);
+    const targetOrdinal = index.nthWorkingDay(startOrdinal, remaining, 1);
+    if (targetOrdinal !== undefined) return timestampForOrdinal(targetOrdinal);
+    requireWorkingCapacity(index, startOrdinal, remaining, 1);
+    return walkWorkingDays(date, remaining, 1, projectId);
 };
 
 export const shiftByWorkingDays = (timestamp: number, days: number, projectId?: ProjectCalendarArgument): number => {
@@ -269,13 +361,15 @@ export const shiftByWorkingDays = (timestamp: number, days: number, projectId?: 
     if (normalizedDays === 0) return timelineToCalendarDate(timestamp);
     if (normalizedDays > 0) return addWorkingDays(timestamp, normalizedDays, projectId);
 
-    let date = timelineToCalendarDate(timestamp);
-    let remaining = Math.abs(normalizedDays);
-    while (remaining > 0) {
-        date = addCalendarDays(date, -1);
-        if (isWorkingDay(date, projectId)) remaining -= 1;
-    }
-    return date;
+    if (!Number.isSafeInteger(normalizedDays)) throw new RangeError('Working-day count must be a positive safe integer');
+    const date = timelineToCalendarDate(timestamp);
+    const startOrdinal = ordinalForDate(date);
+    const remaining = Math.abs(normalizedDays);
+    const index = getWorkingDayIndex(projectId, startOrdinal);
+    const targetOrdinal = index.nthWorkingDay(startOrdinal, remaining, -1);
+    if (targetOrdinal !== undefined) return timestampForOrdinal(targetOrdinal);
+    requireWorkingCapacity(index, startOrdinal, remaining, -1);
+    return walkWorkingDays(date, remaining, -1, projectId);
 };
 
 export const diffWorkingDays = (fromTimestamp: number, toTimestamp: number, projectId?: ProjectCalendarArgument): number => {
@@ -283,11 +377,20 @@ export const diffWorkingDays = (fromTimestamp: number, toTimestamp: number, proj
     const to = timelineToCalendarDate(toTimestamp);
     if (from === to) return 0;
 
+    const fromOrdinal = ordinalForDate(from);
+    const toOrdinal = ordinalForDate(to);
+    const index = getWorkingDayIndex(projectId, fromOrdinal);
+    const count = from < to
+        ? index.countWorkingDays(fromOrdinal + 1, toOrdinal)
+        : index.countWorkingDays(toOrdinal, fromOrdinal - 1);
+    if (count !== undefined) return count === 0 || from < to ? count : -count;
+
     const step = from < to ? 1 : -1;
     let current = from;
     let delta = 0;
     while (current !== to) {
         current = addCalendarDays(current, step);
+        if (!Number.isFinite(current)) throw new RangeError('Working date is outside the supported calendar range');
         if (isWorkingDay(current, projectId)) delta += step;
     }
     return delta;

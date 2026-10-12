@@ -29,4 +29,24 @@ describe('sidebarNotifications helpers', () => {
             testIdSuffix: 'critical'
         });
     });
+
+    it('hides critical path notifications when critical path calculation is disabled', () => {
+        const notification = getTaskNotification(
+            { state: 'normal', message: 'OK' },
+            { critical: true, totalSlackDays: 2 },
+            false
+        );
+
+        expect(notification).toBeNull();
+    });
+
+    it('keeps scheduling notifications when critical path calculation is disabled', () => {
+        const notification = getTaskNotification(
+            { state: 'unscheduled', message: 'Unscheduled' },
+            { critical: true, totalSlackDays: 2 },
+            false
+        );
+
+        expect(notification?.testIdSuffix).toBe('unscheduled');
+    });
 });

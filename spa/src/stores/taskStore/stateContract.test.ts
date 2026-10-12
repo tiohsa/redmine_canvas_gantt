@@ -66,7 +66,9 @@ describe('state lifecycle contract', () => {
         expect(commitOperationPatches(patches, 'op-1')).toHaveLength(1);
         expect(applyLocalPatches<Entity>({ id: '1', subject: 'old', lockVersion: 1 }, patches)).toMatchObject({ subject: 'a', startDate: 2 });
         expect(classifyDerivedInvalidation(['subject'])).toBe('none');
-        expect(classifyDerivedInvalidation(['startDate'])).toBe('critical_path');
+        expect(classifyDerivedInvalidation(['startDate'])).toBe('schedule');
+        expect(classifyDerivedInvalidation(['relations'])).toBe('schedule');
+        expect(classifyDerivedInvalidation(['parentId'])).toBe('layout');
     });
 
     it('identifies ownership by task and generation without requiring the latest generation', () => {

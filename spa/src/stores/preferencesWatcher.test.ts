@@ -65,6 +65,45 @@ describe('preferencesWatcher', () => {
         expect(syncSharedQueryState).not.toHaveBeenCalled();
     });
 
+    it('persists critical path calculation changes only as Display Preferences', () => {
+        useTaskStore.getState().setCalculateCriticalPathEnabled(false);
+
+        expect(preferences.saveDisplayPreferences).toHaveBeenCalledTimes(1);
+        expect(preferences.saveDisplayPreferences).toHaveBeenCalledWith(
+            expect.objectContaining({ calculateCriticalPathEnabled: false })
+        );
+        expect(preferences.savePreferences).not.toHaveBeenCalled();
+        expect(syncSharedQueryState).not.toHaveBeenCalled();
+    });
+
+    it('waits for initial data before persisting a critical path preference change', () => {
+        useTaskStore.setState({ initialDataLoaded: false });
+        useTaskStore.getState().setCalculateCriticalPathEnabled(false);
+
+        expect(preferences.saveDisplayPreferences).not.toHaveBeenCalled();
+        expect(preferences.saveGlobalDisplayPreferences).not.toHaveBeenCalled();
+
+        useTaskStore.setState({ initialDataLoaded: true });
+
+        expect(preferences.saveDisplayPreferences).toHaveBeenCalledWith(
+            expect.objectContaining({ calculateCriticalPathEnabled: false })
+        );
+    });
+
+    it('persists critical path calculation through shared display preferences', () => {
+        useUIStore.setState({ displayPreferencesGlobalEnabled: true });
+        vi.clearAllMocks();
+
+        useTaskStore.getState().setCalculateCriticalPathEnabled(false);
+
+        expect(preferences.saveGlobalDisplayPreferences).toHaveBeenCalledWith(
+            expect.objectContaining({ calculateCriticalPathEnabled: false })
+        );
+        expect(preferences.saveDisplayPreferences).not.toHaveBeenCalled();
+        expect(preferences.savePreferences).not.toHaveBeenCalled();
+        expect(syncSharedQueryState).not.toHaveBeenCalled();
+    });
+
     it('does not sync Query State for viewport scrolling', () => {
         useTaskStore.getState().updateViewport({ scrollX: 24 });
 

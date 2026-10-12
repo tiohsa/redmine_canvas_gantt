@@ -37,7 +37,10 @@ describe('DisplaySettingsControls', () => {
             i18n: {
                 label_display_settings: 'Display settings',
                 label_settings: 'Settings',
-                help_label_autosave: 'Auto Save'
+                help_label_autosave: 'Auto Save',
+                label_calculate_critical_path: 'Calculate critical path',
+                label_calculation_and_performance: 'Calculation & Performance',
+                help_desc_calculate_critical_path: 'Calculate the critical path and total slack. Dependency management and automatic scheduling remain available when disabled.'
             }
         };
         useTaskStore.setState(useTaskStore.getInitialState(), true);
@@ -109,6 +112,7 @@ describe('DisplaySettingsControls', () => {
                 showPointsOrphans: false,
                 showVersions: false,
                 showBaseline: true,
+                calculateCriticalPathEnabled: true,
                 organizeByDependency: true,
                 rowHeight: 44,
                 sidebarWidth: 420,
@@ -166,6 +170,9 @@ describe('DisplaySettingsControls', () => {
         expect(screen.getByLabelText('Hierarchy lines')).toBeChecked();
         expect(screen.getByLabelText('Share settings across all projects')).not.toBeChecked();
         expect(screen.getByLabelText('Auto Save')).toHaveAttribute('role', 'switch');
+        expect(within(screen.getByTestId('display-settings-menu')).getByText('Calculation & Performance')).toBeInTheDocument();
+        expect(screen.getByLabelText('Calculate critical path')).toBeChecked();
+        expect(screen.getByText('Calculate the critical path and total slack. Dependency management and automatic scheduling remain available when disabled.')).toBeInTheDocument();
         expect(screen.getByLabelText('Auto Save').parentElement).toHaveStyle({ width: '32px', height: '18px' });
         expect(screen.getByTestId('display-settings-row-height-select')).toHaveValue('36');
         expect(screen.getByTestId('display-settings-font-size-select')).toHaveValue('13');
@@ -193,6 +200,9 @@ describe('DisplaySettingsControls', () => {
 
         fireEvent.click(screen.getByLabelText('Auto Save'));
         expect(useTaskStore.getState().autoSave).toBe(true);
+
+        fireEvent.click(screen.getByLabelText('Calculate critical path'));
+        expect(useTaskStore.getState().calculateCriticalPathEnabled).toBe(false);
     });
 
     it('uses the Auto Save transition action and disables the switch while enabling', () => {
@@ -215,6 +225,25 @@ describe('DisplaySettingsControls', () => {
             useTaskStore.setState({ autoSaveTransition: 'enabling' });
         });
         expect(screen.getByLabelText('Auto Save')).toBeDisabled();
+    });
+
+    it('changes critical path calculation without clearing pending task edits', () => {
+        const displaySettingsMenuRef = React.createRef<HTMLDivElement>();
+        const modifiedTaskIds = new Set(['task-1']);
+        useTaskStore.setState({ modifiedTaskIds });
+
+        render(
+            <DisplaySettingsControls
+                displaySettingsMenuRef={displaySettingsMenuRef}
+                showDisplaySettingsMenu={true}
+                onToggleDisplaySettingsMenu={vi.fn()}
+            />
+        );
+
+        fireEvent.click(screen.getByLabelText('Calculate critical path'));
+
+        expect(useTaskStore.getState().calculateCriticalPathEnabled).toBe(false);
+        expect(useTaskStore.getState().modifiedTaskIds).toBe(modifiedTaskIds);
     });
 
     it('keeps pane maximization controls in the popup and leaves it open after toggling', () => {

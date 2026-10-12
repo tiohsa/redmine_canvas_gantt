@@ -212,6 +212,7 @@ export interface TaskState {
     schedulingStates: Record<string, SchedulingStateInfo>;
     criticalPathMetrics: Record<string, CriticalPathTaskMetrics>;
     criticalPathProjectFinish?: number;
+    calculateCriticalPathEnabled: boolean;
     versions: Version[];
     filterOptions: FilterOptions;
     taskStatuses: TaskStatus[];
@@ -281,6 +282,7 @@ export interface TaskState {
     setVersions: (versions: Version[]) => void;
     setFilterOptions: (filterOptions: FilterOptions) => void;
     setTaskStatuses: (statuses: TaskStatus[]) => void;
+    setCalculateCriticalPathEnabled: (enabled: boolean) => void;
     setCustomFields: (fields: CustomFieldMeta[]) => void;
     setPermissions: (permissions: { editable: boolean; viewable: boolean; baselineEditable: boolean }) => void;
     restoreActiveQueryId: (queryId: number | null) => void;
@@ -466,15 +468,26 @@ const buildLayoutFromState = (state: LayoutState, overrides: Partial<LayoutState
     );
 };
 
-const buildDerivedSchedulingSummary = (tasks: Task[], relations: Relation[]): DerivedSchedulingSummary => {
-    derivedRecalculationCounters.scheduling += 1;
+const buildCriticalPathSummary = (
+    tasks: Task[],
+    relations: Relation[],
+    enabled: boolean
+): Pick<DerivedSchedulingSummary, 'criticalPathMetrics' | 'criticalPathProjectFinish'> => {
+    if (!enabled) return { criticalPathMetrics: {}, criticalPathProjectFinish: undefined };
     derivedRecalculationCounters.criticalPath += 1;
     const criticalPath = TaskLogicService.calculateCriticalPath(tasks, relations);
+    return {
+        criticalPathMetrics: criticalPath.metricsByTaskId,
+        criticalPathProjectFinish: criticalPath.projectFinish
+    };
+};
+
+const buildDerivedSchedulingSummary = (tasks: Task[], relations: Relation[], calculateCriticalPathEnabled: boolean): DerivedSchedulingSummary => {
+    derivedRecalculationCounters.scheduling += 1;
 
     return {
         schedulingStates: TaskLogicService.deriveSchedulingStates(tasks, relations),
-        criticalPathMetrics: criticalPath.metricsByTaskId,
-        criticalPathProjectFinish: criticalPath.projectFinish
+        ...buildCriticalPathSummary(tasks, relations, calculateCriticalPathEnabled)
     };
 };
 
@@ -501,20 +514,66 @@ const buildDerivedTaskState = (
 ): DerivedTaskState => {
     const allTasks = overrides.allTasks ?? state.allTasks;
     const relations = overrides.relations ?? state.relations;
-    derivedRecalculationCounters.layout += 1;
-    const layout = buildLayoutFromState(state, { ...overrides, allTasks, relations });
-    const schedulingSummary = overrides.schedulingSummary ?? (overrides.derivedInvalidation === 'none' || overrides.derivedInvalidation === 'layout'
-        ? {
-            schedulingStates: state.schedulingStates,
-            criticalPathMetrics: state.criticalPathMetrics,
-            criticalPathProjectFinish: state.criticalPathProjectFinish
+    const invalidation = overrides.derivedInvalidation;
+    // Header and fallback version ranges depend on dates, including collapsed
+    // tasks. Reuse the existing layout builder so their aggregation rules stay
+    // consistent even when the edit cannot change row ordering.
+    const summaryDatesChanged = invalidation !== undefined && invalidation !== 'layout'
+        && allTasks !== state.allTasks
+        && state.layoutRows.some(row => row.type !== 'task')
+        && (() => {
+            const previousTasks = new Map(state.allTasks.map(task => [task.id, task]));
+            return allTasks.some(task => {
+                const previous = previousTasks.get(task.id);
+                return previous?.startDate !== task.startDate || previous?.dueDate !== task.dueDate;
+            });
+        })();
+    const shouldBuildLayout = invalidation === undefined || invalidation === 'layout' || summaryDatesChanged;
+    const shouldBuildScheduling = invalidation === undefined || invalidation === 'schedule';
+    const shouldBuildCriticalPath = invalidation === undefined || invalidation === 'schedule' || invalidation === 'critical_path';
+    const layout = shouldBuildLayout
+        ? (() => {
+            derivedRecalculationCounters.layout += 1;
+            return buildLayoutFromState(state, { ...overrides, allTasks, relations });
+        })()
+        : null;
+    let schedulingSummary = overrides.schedulingSummary;
+    if (!schedulingSummary) {
+        let schedulingStates = state.schedulingStates;
+        if (shouldBuildScheduling) {
+            derivedRecalculationCounters.scheduling += 1;
+            schedulingStates = TaskLogicService.deriveSchedulingStates(allTasks, relations);
         }
-        : buildDerivedSchedulingSummary(allTasks, relations));
+        schedulingSummary = {
+            schedulingStates,
+            ...(shouldBuildCriticalPath
+                ? buildCriticalPathSummary(allTasks, relations, state.calculateCriticalPathEnabled)
+                : { criticalPathMetrics: state.criticalPathMetrics, criticalPathProjectFinish: state.criticalPathProjectFinish })
+        };
+    }
+    const visibleTasks = layout?.tasks ?? (allTasks === state.allTasks
+        ? state.tasks
+        : (() => {
+            const taskById = new Map(allTasks.map(task => [task.id, task]));
+            return state.tasks.flatMap((visibleTask) => {
+                const updatedTask = taskById.get(visibleTask.id);
+                if (!updatedTask) return [];
+                if (updatedTask === visibleTask) return [visibleTask];
+                return [{
+                    ...updatedTask,
+                    rowIndex: visibleTask.rowIndex,
+                    indentLevel: visibleTask.indentLevel,
+                    treeLevelGuides: visibleTask.treeLevelGuides,
+                    isLastChild: visibleTask.isLastChild,
+                    hasChildren: visibleTask.hasChildren
+                }];
+            });
+        })());
 
     return {
-        tasks: layout.tasks,
-        layoutRows: layout.layoutRows,
-        rowCount: layout.rowCount,
+        tasks: visibleTasks,
+        layoutRows: layout?.layoutRows ?? state.layoutRows,
+        rowCount: layout?.rowCount ?? state.rowCount,
         ...schedulingSummary
     };
 };
@@ -1032,6 +1091,24 @@ const matchesTaskFilters = (task: Task, state: TaskState): boolean => {
     );
 };
 
+const taskFieldsAffectLayout = (state: TaskState, changedFields: Set<string>): boolean => {
+    if (['projectId', 'assignedToId', 'fixedVersionId', 'parentId', 'displayOrder'].some(field => changedFields.has(field))) {
+        return true;
+    }
+    if (state.sortConfig && (
+        changedFields.has(state.sortConfig.key) ||
+        (state.sortConfig.key.startsWith('cf:') && changedFields.has('customFieldValues'))
+    )) {
+        return true;
+    }
+    if (state.filterText && changedFields.has('subject')) return true;
+    if (state.selectedAssigneeIds.length > 0 && changedFields.has('assignedToId')) return true;
+    if (state.selectedProjectIds.length > 0 && changedFields.has('projectId')) return true;
+    if (state.selectedVersionIds.length > 0 && changedFields.has('fixedVersionId')) return true;
+    if (state.selectedTrackerIds.length > 0 && changedFields.has('trackerId')) return true;
+    return !state.showSubprojects && state.currentProjectId !== null && changedFields.has('projectId');
+};
+
 export const useTaskStore = create<TaskState>((set, get) => {
     const inflightReads = new Map<string, Promise<ReadApplyOutcome>>();
     let auxiliaryReadContext: ReadContext | null = null;
@@ -1173,6 +1250,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     schedulingStates: {},
     criticalPathMetrics: {},
     criticalPathProjectFinish: undefined,
+    calculateCriticalPathEnabled: preferences.calculateCriticalPathEnabled ?? true,
     versions: [],
     filterOptions: { projects: [], assignees: [] },
     taskStatuses: [],
@@ -1317,6 +1395,20 @@ export const useTaskStore = create<TaskState>((set, get) => {
     }),
     setFilterOptions: (filterOptions) => set(() => ({ filterOptions })),
     setTaskStatuses: (statuses) => set(() => ({ taskStatuses: statuses })),
+    setCalculateCriticalPathEnabled: (enabled) => set((state) => {
+        if (state.calculateCriticalPathEnabled === enabled) return state;
+        if (!enabled) {
+            return {
+                calculateCriticalPathEnabled: false,
+                criticalPathMetrics: {},
+                criticalPathProjectFinish: undefined
+            };
+        }
+        return {
+            calculateCriticalPathEnabled: true,
+            ...buildCriticalPathSummary(state.allTasks, state.relations, true)
+        };
+    }),
     setPermissions: (permissions) => set(() => ({ permissions })),
     restoreActiveQueryId: (queryId) => {
         const queryContext = { ...get().queryContext, baseQueryId: queryId };
@@ -1750,10 +1842,18 @@ export const useTaskStore = create<TaskState>((set, get) => {
     rollbackBarOperation: (operationId) => set((state) => {
         const rollback = buildBarOperationRollback(state, operationId);
         if (!rollback) return state;
-        const schedulingSummary = buildDerivedSchedulingSummary(rollback.allTasks, state.relations);
+        const schedulingSummary = buildDerivedSchedulingSummary(rollback.allTasks, state.relations, state.calculateCriticalPathEnabled);
+        const changedFields = new Set<string>();
+        const previousTasksById = new Map(state.allTasks.map(task => [task.id, task]));
+        rollback.allTasks.forEach((task) => {
+            const previousTask = previousTasksById.get(task.id);
+            if (!previousTask) return;
+            if (previousTask.startDate !== task.startDate) changedFields.add('startDate');
+            if (previousTask.dueDate !== task.dueDate) changedFields.add('dueDate');
+        });
         const derived = buildDerivedTaskState(state, {
             allTasks: rollback.allTasks,
-            derivedInvalidation: 'critical_path',
+            derivedInvalidation: taskFieldsAffectLayout(state, changedFields) ? 'layout' : 'schedule',
             schedulingSummary
         });
         return {
@@ -1881,15 +1981,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
         pendingUpdates.forEach((fields, taskId) => patchFor(taskId, fields, fields));
 
         const changedFields = new Set([...Object.keys(canonicalUpdates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
-        const requiresLayout = ['projectId', 'assignedToId', 'fixedVersionId'].some(field => changedFields.has(field));
-        const hasSchedulingChanges = ['startDate', 'dueDate', 'parentId', 'displayOrder'].some(field => changedFields.has(field));
-        const derivedInvalidation: DerivedInvalidation = hasSchedulingChanges
-            ? 'critical_path'
-            : requiresLayout
-                ? 'layout'
-                : 'none';
+        const requiresLayout = taskFieldsAffectLayout(state, changedFields);
+        const hasSchedulingChanges = ['startDate', 'dueDate', 'projectId'].some(field => changedFields.has(field));
         const nextSchedulingSummary = hasSchedulingChanges
-            ? buildDerivedSchedulingSummary(finalTasks, state.relations)
+            ? buildDerivedSchedulingSummary(finalTasks, state.relations, state.calculateCriticalPathEnabled)
             : {
                 schedulingStates: state.schedulingStates,
                 criticalPathMetrics: state.criticalPathMetrics,
@@ -1949,7 +2044,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
         const derived = buildDerivedTaskState(state, {
             allTasks: finalTasks,
-            derivedInvalidation,
+            derivedInvalidation: requiresLayout ? 'layout' : 'schedule',
             schedulingSummary: nextSchedulingSummary
         });
 

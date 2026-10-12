@@ -6,6 +6,10 @@ Use the toolbar and display settings to adjust zoom, month/week/day view, row he
 
 You can also toggle the progress line, task titles, hierarchy lines, date-only task markers, version headers, baseline visibility, and dependency-based sorting.
 
+::: warning Development addition — not included in v0.18.0
+In the **Calculation & Performance** section of display settings, **Calculate critical path** controls calculation of the critical path and total slack. It is on by default. Turning it off clears critical-path and total-slack notifications; dependency-based automatic scheduling continues to work. This preference is stored with display settings and can be saved per project or for all projects in the current browser profile.
+:::
+
 Preferences are stored in browser `localStorage`, not in a Redmine user record. You can apply them per project or across all projects in the same browser profile. “All projects” does not mean all Redmine users; anyone using the same profile will see those settings.
 
 Clearing the browser's site data also removes saved display preferences.
