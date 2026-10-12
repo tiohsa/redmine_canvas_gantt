@@ -7,12 +7,20 @@ test('persists critical path calculation and shares its display preference witho
   await expect(page.getByTestId('display-settings-menu-button')).toBeVisible();
   await expect(page.getByText('Loading Canvas Gantt...')).toHaveCount(0);
   await page.getByTestId('display-settings-menu-button').click();
-  const calculation = page.getByRole('switch', { name: 'Calculate critical path', exact: true });
+  const labels = await page.evaluate(() => {
+    const i18n = window.RedmineCanvasGantt?.i18n;
+    return {
+      calculation: i18n?.label_calculate_critical_path ?? 'Calculate critical path',
+      share: i18n?.label_share_display_settings_across_projects ?? 'Share settings across all projects'
+    };
+  });
+  const calculation = page.getByRole('switch', { name: labels.calculation, exact: true });
   await expect(calculation).toBeChecked();
 
   const requests: string[] = [];
   page.on('request', request => {
-    if (request.url().includes('/canvas_gantt/') && request.resourceType() !== 'script') {
+    // Initial query reads can overlap with the first toggle; only track mutations.
+    if (request.url().includes('/canvas_gantt/') && !['GET', 'HEAD'].includes(request.method())) {
       requests.push(`${request.method()} ${request.url()}`);
     }
   });
@@ -27,7 +35,7 @@ test('persists critical path calculation and shares its display preference witho
   await page.reload();
   await page.getByTestId('display-settings-menu-button').click();
   await expect(calculation).not.toBeChecked();
-  const shareSettings = page.getByRole('switch', { name: 'Share display settings across all projects', exact: true });
+  const shareSettings = page.getByRole('switch', { name: labels.share, exact: true });
   await shareSettings.check();
   await expect(shareSettings).toBeChecked();
   await expect.poll(() => page.evaluate(() => {

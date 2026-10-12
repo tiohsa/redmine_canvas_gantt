@@ -78,7 +78,7 @@ test('critical path can be disabled, persists by project, and leaves scheduling 
   await page.getByTestId('display-settings-menu-button').click();
   const criticalPathSwitch = page.getByRole('switch', { name: 'Calculate critical path', exact: true });
   await expect(criticalPathSwitch).toBeChecked();
-  await page.locator('label').filter({ has: criticalPathSwitch }).click();
+  await criticalPathSwitch.uncheck();
 
   await expect(criticalPathSwitch).not.toBeChecked();
   await expect(criticalBadge).toHaveCount(0);
@@ -147,10 +147,10 @@ test('shared critical path preference loads for other projects after reload', as
   await page.getByTestId('display-settings-menu-button').click();
 
   const sharedSettingsSwitch = page.getByRole('switch', { name: 'Share settings across all projects', exact: true });
-  await page.locator('label').filter({ has: sharedSettingsSwitch }).click();
+  await sharedSettingsSwitch.check();
   await expect(sharedSettingsSwitch).toBeChecked();
   const criticalPathSwitch = page.getByRole('switch', { name: 'Calculate critical path', exact: true });
-  await page.locator('label').filter({ has: criticalPathSwitch }).click();
+  await criticalPathSwitch.uncheck();
   await expect(criticalPathSwitch).not.toBeChecked();
 
   await page.reload();

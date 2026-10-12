@@ -69,6 +69,7 @@ const DisplaySettingSwitch: React.FC<DisplaySettingSwitchProps> = ({ checked, di
             <span
                 aria-hidden="true"
                 style={{
+                    pointerEvents: 'none',
                     display: 'flex',
                     alignItems: 'center',
                     width: '100%',

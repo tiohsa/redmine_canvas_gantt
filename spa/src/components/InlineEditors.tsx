@@ -421,6 +421,7 @@ export const DueDateEditor: React.FC<{
                 e instanceof Error ? e.message : (i18n.t('label_failed_to_save') || 'Failed to save'),
                 'error'
             );
+        } finally {
             setSaving(false);
         }
     };
