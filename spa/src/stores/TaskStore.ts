@@ -3331,6 +3331,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const terminalBarFailureTaskGenerations = new Map<string, number>();
                 const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number; remoteAvailability: MutationRemoteAvailability }>();
                 const savedLockVersions = new Map<string, number>();
+                const successfulMutationTaskIds = new Set<string>();
                 const mutationMetadataRecords: Array<{ taskId: string; metadata: MutationMetadata }> = [];
                 let mutationMetadataNeedsRefresh = false;
                 const hasScheduleMutation = Object.values(snapshotMutationScheduling).some(Boolean);
@@ -3383,9 +3384,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                                     : result
                             });
                         }
-                        if (result.status === 'ok') {
-                            get().settleBarOperationTaskThrough(taskId, snapshotGenerations[taskId] ?? 0);
-                        } else if (result.status === 'validation_error' || result.status === 'forbidden' || sourceDisposition !== 'not_applicable') {
+                        if (result.status === 'ok') successfulMutationTaskIds.add(taskId);
+                        if (result.status !== 'ok' && (result.status === 'validation_error' || result.status === 'forbidden' || sourceDisposition !== 'not_applicable')) {
                             const operationGeneration = snapshotGenerations[taskId] ?? 0;
                             const hasBarOperation = Object.values(get().barOperations).some((operation) => (
                                 operation.entityGenerations[taskId] === operationGeneration
@@ -3443,7 +3443,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const { failures, savedTaskIds, settledFieldsByTask } = saveResult;
                 committedTaskCount += savedTaskIds.size;
 
-                if (savedLockVersions.size > 0 || mutationMetadataRecords.length > 0) {
+                if (savedLockVersions.size > 0 || mutationMetadataRecords.length > 0 || savedTaskIds.size > 0 || successfulMutationTaskIds.size > 0) {
                     set((state) => {
                         const currentTaskById = new Map(state.allTasks.map((task) => [task.id, task]));
                         const entitiesById = { ...state.serverTaskSnapshot.entitiesById };
@@ -3528,9 +3528,42 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         let taskTombstones = state.taskTombstones;
                         let barOperations = state.barOperations;
                         let activeBarOperationId = state.activeBarOperationId;
-                        if (deletedTaskIds.size > 0) {
+                        if (savedTaskIds.size > 0) {
                             localTaskPatches = { ...state.localTaskPatches };
                             modifiedTaskIds = new Set(state.modifiedTaskIds);
+                            snapshotTaskIds.forEach((taskId) => {
+                                if (!savedTaskIds.has(taskId)) return;
+                                const remainingPatches = settleLocalPatchFields(
+                                    localTaskPatches[taskId] ?? [],
+                                    snapshotGenerations[taskId] ?? 0,
+                                    settledFieldsByTask.get(taskId) ?? []
+                                );
+                                if (remainingPatches.length > 0) {
+                                    localTaskPatches[taskId] = remainingPatches;
+                                } else {
+                                    delete localTaskPatches[taskId];
+                                }
+                                if (hasLocalMutationIntent(remainingPatches)) {
+                                    modifiedTaskIds.add(taskId);
+                                } else {
+                                    modifiedTaskIds.delete(taskId);
+                                }
+
+                            });
+                        }
+                        successfulMutationTaskIds.forEach((taskId) => {
+                            const settlement = settleBarOperationTaskOwnership(
+                                barOperations,
+                                activeBarOperationId,
+                                taskId,
+                                { mode: 'through', generation: snapshotGenerations[taskId] ?? 0 }
+                            );
+                            barOperations = settlement.barOperations;
+                            activeBarOperationId = settlement.activeBarOperationId;
+                        });
+                        if (deletedTaskIds.size > 0) {
+                            if (localTaskPatches === state.localTaskPatches) localTaskPatches = { ...state.localTaskPatches };
+                            if (modifiedTaskIds === state.modifiedTaskIds) modifiedTaskIds = new Set(state.modifiedTaskIds);
                             taskConflicts = { ...state.taskConflicts };
                             taskTombstones = { ...state.taskTombstones };
                             deletedTaskIds.forEach((taskId) => {
@@ -3564,6 +3597,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             ...(derived ? toDerivedTaskStatePatch(derived) : {}),
                             ...(deletedTaskIds.size > 0
                                 ? { localTaskPatches, modifiedTaskIds, taskConflicts, taskTombstones, barOperations, activeBarOperationId }
+                                : savedTaskIds.size > 0 || successfulMutationTaskIds.size > 0
+                                    ? { localTaskPatches, modifiedTaskIds, barOperations, activeBarOperationId }
                                 : {}),
                             serverTaskSnapshot: {
                                 ...state.serverTaskSnapshot,
@@ -3574,37 +3609,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     });
                 }
 
-                set((state) => {
-                    const modifiedTaskIds = new Set(state.modifiedTaskIds);
-                    const localTaskPatches = { ...state.localTaskPatches };
-                    snapshotTaskIds.forEach((taskId) => {
-                        if (!savedTaskIds.has(taskId)) return;
-                        const savedGeneration = snapshotGenerations[taskId] ?? 0;
-                        const remainingPatches = settleLocalPatchFields(
-                            localTaskPatches[taskId] ?? [],
-                            savedGeneration,
-                            settledFieldsByTask.get(taskId) ?? []
-                        );
-                        if (remainingPatches.length > 0) {
-                            localTaskPatches[taskId] = remainingPatches;
-                        } else {
-                            delete localTaskPatches[taskId];
-                        }
-                        if (hasLocalMutationIntent(remainingPatches)) {
-                            modifiedTaskIds.add(taskId);
-                        } else {
-                            modifiedTaskIds.delete(taskId);
-                        }
-                    });
-                    return { modifiedTaskIds, localTaskPatches };
-                });
-
                 const requiresResync = saveResult.savedTaskIds.size > 0 && [...saveResult.savedTaskIds].some(taskId => (
                     (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
                         BULK_TASK_FIELDS.some(field => field in patch.mutationIntent)
                     ))
                 ));
-                if (saveResult.batchStatus !== 'preflight_failure' && hasScheduleMutation && requiresResync) {
+                const requiresPostTaskRefresh = mutationMetadataNeedsRefresh || (
+                    saveResult.batchStatus !== 'preflight_failure' && hasScheduleMutation && requiresResync
+                );
+                if (requiresPostTaskRefresh) {
                     try {
                         await get().refreshData();
                     } catch (error) {
@@ -3612,13 +3625,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         // terminal conflict. Do not replace that actionable
                         // result with a second refresh exception; the local
                         // patch must remain available for manual resolution.
-                        if (conflictMessages.size === 0) throw error;
+                        if (conflictMessages.size === 0 && hasScheduleMutation && requiresResync) throw error;
+                        console.error('Failed to refresh saved tasks after mutation', error);
                     }
-                }
-                if (mutationMetadataNeedsRefresh) {
-                    queueMicrotask(() => {
-                        void get().refreshData().catch((error) => console.error('Failed to refresh invalidated tasks', error));
-                    });
                 }
                 if (conflictMessages.size > 0) {
                     set((state) => {

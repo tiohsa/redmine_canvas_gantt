@@ -314,6 +314,45 @@ describe('TaskStore canonical mutation reconciliation', () => {
         }
     });
 
+    it('coalesces schedule resync and invalidation refresh after a mixed task save', async () => {
+        const original = buildTask({ id: 'coalesced-refresh', subject: 'Before', dueDate: TUESDAY, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok',
+            entities: [{ id: original.id, dueDate: WEDNESDAY, lockVersion: 2 }],
+            revisions: { [original.id]: 2 }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', {
+            value: scheduleMutation,
+            configurable: true,
+            writable: true
+        });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 3,
+            entity: { id: original.id, subject: 'After', dueDate: WEDNESDAY, lockVersion: 3 },
+            invalidatedEntityIds: ['related-task']
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...original, subject: 'After', dueDate: WEDNESDAY, lockVersion: 3 }
+        ]));
+
+        try {
+            useTaskStore.getState().setTasks([original]);
+            useTaskStore.getState().updateTask(original.id, { dueDate: WEDNESDAY, subject: 'After' });
+
+            const failures = await useTaskStore.getState().saveChanges();
+
+            expect(failures).toEqual(new Map());
+            expect(scheduleMutation).toHaveBeenCalledTimes(1);
+            expect(apiClient.updateTask).toHaveBeenCalledTimes(1);
+            expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+            expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set());
+            expect(useTaskStore.getState().localTaskPatches[original.id]).toBeUndefined();
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
     it('keeps the date placement mode captured by a manual edit after the preference changes', async () => {
         const original = buildTask({ id: 'captured-mode', dueDate: MONDAY, lockVersion: 1 });
         const scheduleMutation = vi.fn().mockResolvedValue({
@@ -4886,6 +4925,98 @@ describe('TaskStore saveChanges ordering', () => {
             expect.objectContaining({ subject: 'After', status_id: 2, done_ratio: 50 })
         );
         expect(useTaskStore.getState().modifiedTaskIds.has('task-1')).toBe(false);
+    });
+
+    it('defers successful task settlement until the whole task batch completes', async () => {
+        const taskA = buildTask({ id: 'task-a', subject: 'A before', lockVersion: 1 });
+        const taskB = buildTask({ id: 'task-b', subject: 'B before', lockVersion: 1 });
+        useTaskStore.getState().setTasks([taskA, taskB]);
+        const operationId = useTaskStore.getState().beginBarOperation('task-a');
+        useTaskStore.getState().updateTask('task-a', { subject: 'A local' });
+        useTaskStore.getState().updateTask('task-b', { subject: 'B local' });
+        useTaskStore.getState().endBarOperation(operationId);
+        useTaskStore.setState({
+            serverTaskSnapshot: {
+                entitiesById: { 'task-a': taskA, 'task-b': taskB },
+                revisions: { 'task-a': 1, 'task-b': 1 },
+                context: null
+            }
+        });
+
+        const secondResponse = deferred<Awaited<ReturnType<typeof apiClient.updateTask>>>();
+        const secondStarted = deferred<void>();
+        vi.mocked(apiClient.updateTask).mockImplementation(async (task) => {
+            if (task.id === 'task-b') {
+                secondStarted.resolve();
+                return secondResponse.promise;
+            }
+            return {
+                status: 'ok',
+                lockVersion: 2,
+                entity: { id: task.id, subject: 'A canonical', lockVersion: 2 },
+                revision: 2
+            };
+        });
+
+        resetDerivedRecalculationCounters();
+        let storeUpdates = 0;
+        const unsubscribe = useTaskStore.subscribe(() => { storeUpdates += 1; });
+        let secondResolved = false;
+        const save = useTaskStore.getState().saveChanges();
+        try {
+            await secondStarted.promise;
+
+            const duringSave = useTaskStore.getState();
+            expect(storeUpdates).toBe(0);
+            expect(derivedRecalculationCounters).toEqual({ scheduling: 0, criticalPath: 0, layout: 0 });
+            expect(duringSave.serverTaskSnapshot.revisions['task-a']).toBe(1);
+            expect(duringSave.barOperations[operationId]?.entityGenerations['task-a']).toBeDefined();
+            expect(duringSave.localTaskPatches['task-a']).toHaveLength(1);
+
+            secondResponse.resolve({ status: 'forbidden', error: 'B cannot be saved' });
+            secondResolved = true;
+            const failures = await save;
+
+            const state = useTaskStore.getState();
+            expect(failures.get('task-b')).toBe('B cannot be saved');
+            expect(state.allTasks.find(task => task.id === 'task-a')?.subject).toBe('A canonical');
+            expect(state.allTasks.find(task => task.id === 'task-b')?.subject).toBe('B before');
+            expect(state.barOperations[operationId]).toBeUndefined();
+            expect(state.modifiedTaskIds).toEqual(new Set());
+            expect(state.localTaskPatches).toEqual({});
+        } finally {
+            if (!secondResolved) secondResponse.resolve({ status: 'forbidden', error: 'B cannot be saved' });
+            unsubscribe();
+            await save.catch(() => undefined);
+        }
+    });
+
+    it('keeps a successful task settlement when an invalidation refresh fails', async () => {
+        const original = buildTask({ id: 'saved-before-refresh', subject: 'Before', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { subject: 'After' });
+        vi.mocked(apiClient.updateTask).mockResolvedValue({
+            status: 'ok',
+            lockVersion: 2,
+            entity: { id: original.id, subject: 'Canonical', lockVersion: 2 },
+            invalidatedEntityIds: ['related-task']
+        });
+        vi.mocked(apiClient.fetchData).mockRejectedValue(new Error('temporary refresh failure'));
+        const logError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        try {
+            const failures = await useTaskStore.getState().saveChanges();
+
+            const state = useTaskStore.getState();
+            expect(failures).toEqual(new Map());
+            expect(state.allTasks.find(task => task.id === original.id)?.subject).toBe('Canonical');
+            expect(state.serverTaskSnapshot.revisions[original.id]).toBe(2);
+            expect(state.modifiedTaskIds).toEqual(new Set());
+            expect(state.localTaskPatches[original.id]).toBeUndefined();
+            expect(logError).toHaveBeenCalledWith('Failed to refresh saved tasks after mutation', expect.any(Error));
+        } finally {
+            logError.mockRestore();
+        }
     });
 
     it('saveChanges updates parent before child for nested tasks', async () => {
