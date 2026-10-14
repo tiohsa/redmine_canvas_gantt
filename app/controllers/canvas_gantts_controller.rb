@@ -61,6 +61,7 @@ class CanvasGanttsController < ApplicationController
     label_relation_remove_failed: :label_relation_remove_failed,
     label_relation_added: :label_relation_added,
     label_relation_change_pending: :label_relation_change_pending,
+    label_relation_edit_blocked: :label_relation_edit_blocked,
     label_pending_relation_count: :label_pending_relation_count,
     label_relation_draft_confirm: :label_relation_draft_confirm,
     label_relation_change_create: :label_relation_change_create,

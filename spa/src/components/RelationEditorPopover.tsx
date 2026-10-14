@@ -59,7 +59,7 @@ export const RelationEditorPopover: React.FC<{
         setAutoDelayMessage(target.initialAutoDelayMessage ?? null);
         setError(null);
         setSaving(false);
-    }, [target]);
+    }, [target.isDraft, target.relationId, target.from.id, target.to.id, target.initialType, target.initialDelay, target.initialAutoDelayMessage]);
 
     const supportsDelay = supportsDelayForUiType(relationType);
     const helperText = getRelationInfoText(relationType);

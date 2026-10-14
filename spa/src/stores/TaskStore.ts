@@ -64,6 +64,7 @@ import {
     orderedRelationChanges,
     projectEffectiveRelations,
     relationChangeTarget,
+    sameRelationTarget,
     validateRelationDrafts,
     type PendingRelationChange,
     type RelationDraftMap,
@@ -312,9 +313,9 @@ export interface TaskState {
     addRelation: (relation: Relation) => void;
     replaceRelation: (relation: Relation) => void;
     removeRelation: (relationId: string) => void;
-    stageRelationCreate: (desired: RelationTarget) => void;
-    stageRelationUpdate: (relationId: string, desired: RelationTarget) => void;
-    stageRelationDelete: (relationId: string) => void;
+    stageRelationCreate: (desired: RelationTarget) => boolean;
+    stageRelationUpdate: (relationId: string, desired: RelationTarget) => boolean;
+    stageRelationDelete: (relationId: string) => boolean;
     discardPendingRelationChanges: () => void;
     getEffectiveRelations: () => Relation[];
     getPendingRelationChange: (relationId: string) => PendingRelationChange | undefined;
@@ -811,6 +812,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
         columnsExplicitInQuery: useUIStore.getState().columnsExplicitInQuery
     };
 
+    const draftRelation = state.draftRelation;
     return {
         querySyncState,
         patch: {
@@ -826,10 +828,15 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
             customFields,
             taskStatuses: data.statuses ?? [],
             permissions: data.permissions ?? DEFAULT_PERMISSIONS,
-            selectedRelationId: state.selectedRelationId && relations.some(relation => relation.id === state.selectedRelationId)
+            selectedRelationId: preservesDirtyScope && state.selectedRelationId &&
+                projectEffectiveRelations(relations, state.pendingRelationChanges).some(relation => relation.id === state.selectedRelationId)
                 ? state.selectedRelationId
                 : null,
-            draftRelation: null,
+            draftRelation: !state.autoSave && preservesDirtyScope && draftRelation &&
+                derived.tasks.some(task => task.id === draftRelation.from) &&
+                derived.tasks.some(task => task.id === draftRelation.to)
+                ? draftRelation
+                : null,
             projectExpansion,
             versionExpansion,
             taskExpansion,
@@ -1696,57 +1703,76 @@ export const useTaskStore = create<TaskState>((set, get) => {
             localTaskPatches: relationChange.localTaskPatches
         };
     }),
-    stageRelationCreate: (desired) => set((state) => {
-        if (state.autoSave || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
-        const generation = state.relationEditGeneration + 1;
-        const pendingRelationChanges = normalizeRelationCreate(
-            state.pendingRelationChanges,
-            state.relations,
-            relationChangeTarget(desired),
-            generation
-        );
-        if (pendingRelationChanges === state.pendingRelationChanges) return state;
-        return {
-            pendingRelationChanges,
-            relationEditGeneration: generation,
-            draftRelation: null,
-            ...relationDraftDerivedPatch(state, pendingRelationChanges)
-        };
-    }),
-    stageRelationUpdate: (relationId, desired) => set((state) => {
-        if (state.autoSave || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
-        const generation = state.relationEditGeneration + 1;
-        const pendingRelationChanges = normalizeRelationUpdate(
-            state.pendingRelationChanges,
-            state.relations,
-            relationId,
-            relationChangeTarget(desired),
-            generation
-        );
-        if (pendingRelationChanges === state.pendingRelationChanges) return state;
-        return {
-            pendingRelationChanges,
-            relationEditGeneration: generation,
-            ...relationDraftDerivedPatch(state, pendingRelationChanges)
-        };
-    }),
-    stageRelationDelete: (relationId) => set((state) => {
-        if (state.autoSave || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
-        const generation = state.relationEditGeneration + 1;
-        const pendingRelationChanges = normalizeRelationDelete(
-            state.pendingRelationChanges,
-            state.relations,
-            relationId,
-            generation
-        );
-        if (pendingRelationChanges === state.pendingRelationChanges) return state;
-        return {
-            pendingRelationChanges,
-            relationEditGeneration: generation,
-            selectedRelationId: state.selectedRelationId === relationId ? null : state.selectedRelationId,
-            ...relationDraftDerivedPatch(state, pendingRelationChanges)
-        };
-    }),
+    stageRelationCreate: (desired) => {
+        let accepted = false;
+        set((state) => {
+            if (state.autoSave || state.autoSaveTransition === 'enabling' || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
+            if (Object.values(state.pendingRelationChanges).some(change => change.status === 'unknown' &&
+                [change.original, change.desired].some(target => target && target.from === desired.from && target.to === desired.to && target.type === desired.type))) return state;
+            const generation = state.relationEditGeneration + 1;
+            const pendingRelationChanges = normalizeRelationCreate(
+                state.pendingRelationChanges,
+                state.relations,
+                relationChangeTarget(desired),
+                generation
+            );
+            accepted = projectEffectiveRelations(state.relations, pendingRelationChanges).some(relation => sameRelationTarget(relation, desired));
+            if (!accepted || pendingRelationChanges === state.pendingRelationChanges) return state;
+            return {
+                pendingRelationChanges,
+                relationEditGeneration: generation,
+                draftRelation: null,
+                ...relationDraftDerivedPatch(state, pendingRelationChanges)
+            };
+        });
+        return accepted;
+    },
+    stageRelationUpdate: (relationId, desired) => {
+        let accepted = false;
+        set((state) => {
+            if (state.autoSave || state.autoSaveTransition === 'enabling' || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
+            if (selectPendingRelationChange(state.pendingRelationChanges, relationId)?.status === 'unknown') return state;
+            const generation = state.relationEditGeneration + 1;
+            const pendingRelationChanges = normalizeRelationUpdate(
+                state.pendingRelationChanges,
+                state.relations,
+                relationId,
+                relationChangeTarget(desired),
+                generation
+            );
+            accepted = projectEffectiveRelations(state.relations, pendingRelationChanges).some(relation => relation.id === relationId && sameRelationTarget(relation, desired));
+            if (!accepted || pendingRelationChanges === state.pendingRelationChanges) return state;
+            return {
+                pendingRelationChanges,
+                relationEditGeneration: generation,
+                ...relationDraftDerivedPatch(state, pendingRelationChanges)
+            };
+        });
+        return accepted;
+    },
+    stageRelationDelete: (relationId) => {
+        let accepted = false;
+        set((state) => {
+            if (state.autoSave || state.autoSaveTransition === 'enabling' || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
+            if (selectPendingRelationChange(state.pendingRelationChanges, relationId)?.status === 'unknown') return state;
+            const generation = state.relationEditGeneration + 1;
+            const pendingRelationChanges = normalizeRelationDelete(
+                state.pendingRelationChanges,
+                state.relations,
+                relationId,
+                generation
+            );
+            accepted = !projectEffectiveRelations(state.relations, pendingRelationChanges).some(relation => relation.id === relationId);
+            if (!accepted || pendingRelationChanges === state.pendingRelationChanges) return state;
+            return {
+                pendingRelationChanges,
+                relationEditGeneration: generation,
+                selectedRelationId: state.selectedRelationId === relationId ? null : state.selectedRelationId,
+                ...relationDraftDerivedPatch(state, pendingRelationChanges)
+            };
+        });
+        return accepted;
+    },
     discardPendingRelationChanges: () => set((state) => {
         if (!hasPendingRelationChanges(state.pendingRelationChanges)) return state;
         return {
@@ -3924,7 +3950,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
                                         pendingRelationChanges[later.draftId] = { ...next, status: 'pending', error: undefined };
                                     }
                                 }
-                                return { pendingRelationChanges };
+                                return {
+                                    pendingRelationChanges,
+                                    ...relationDraftDerivedPatch(state, pendingRelationChanges)
+                                };
                             });
                             failedOperationId = operation.draftId;
                             relationFailures.set(`relation:${operation.draftId}`, message);
@@ -3996,6 +4025,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
     discardChanges: async () => {
         const state = get();
         set({
+            selectedRelationId: null,
+            draftRelation: null,
             localTaskPatches: {},
             modifiedTaskIds: new Set(),
             pendingRelationChanges: {},

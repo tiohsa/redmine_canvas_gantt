@@ -13,17 +13,13 @@ vi.mock('./components/GanttContainer', () => ({
 }));
 
 vi.mock('./components/GanttToolbar', () => ({
-    GanttToolbar: ({ onOpenRelationReview }: { onOpenRelationReview?: () => void }) => {
+    GanttToolbar: () => {
         toolbarRenderMock();
-        return <div data-testid="gantt-toolbar"><button onClick={onOpenRelationReview}>Review relations</button></div>;
+        return <div data-testid="gantt-toolbar" />;
     }
 }));
 
 vi.mock('./components/Toast', () => ({ default: () => <div /> }));
-vi.mock('./components/ConflictResolutionPanel', () => ({
-    ConflictResolutionPanel: ({ relationReviewRequest }: { relationReviewRequest?: number }) =>
-        <div data-testid="relation-review-request">{relationReviewRequest}</div>
-}));
 vi.mock('./components/timer/GlobalTimer', () => ({ GlobalTimer: () => <div /> }));
 vi.mock('./components/timer/TimerStartModal', () => ({ TimerStartModal: () => <div /> }));
 vi.mock('./components/timer/PendingWorkModal', () => ({ PendingWorkModal: () => <div /> }));
@@ -35,13 +31,30 @@ describe('App store subscriptions', () => {
         toolbarRenderMock.mockClear();
     });
 
-    it('opens relation review again on each toolbar request', () => {
+    it.each([false, true])('reopens dependency review through the shared trigger with task conflicts: %s', (withTaskConflict) => {
+        useTaskStore.setState({
+            pendingRelationChanges: {
+                draft: {
+                    draftId: 'draft', operation: 'create', generation: 1, status: 'unknown',
+                    desired: { from: '1', to: '2', type: 'relates' }
+                }
+            },
+            taskConflicts: withTaskConflict
+                ? { '1': { taskId: '1', detectedAt: 1, message: 'Conflict' } }
+                : {}
+        });
         render(<App />);
-        expect(screen.getByTestId('relation-review-request')).toHaveTextContent('0');
-        fireEvent.click(screen.getByRole('button', { name: 'Review relations' }));
-        expect(screen.getByTestId('relation-review-request')).toHaveTextContent('1');
-        fireEvent.click(screen.getByRole('button', { name: 'Review relations' }));
-        expect(screen.getByTestId('relation-review-request')).toHaveTextContent('2');
+        const triggerId = withTaskConflict ? 'conflict-reopen' : 'relation-review-reopen';
+        for (let attempt = 0; attempt < 2; attempt++) {
+            expect(screen.getByTestId('relation-review-card-draft')).toBeInTheDocument();
+            fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+            expect(screen.queryByTestId('conflict-resolution-panel')).not.toBeInTheDocument();
+            expect(screen.getByTestId(triggerId).querySelector('.conflict-reopen-count'))
+                .toHaveTextContent(withTaskConflict ? '2' : '1');
+            fireEvent.click(screen.getByTestId(triggerId));
+        }
+        expect(screen.getByTestId('relation-review-card-draft')).toBeInTheDocument();
+        expect(useTaskStore.getState().pendingRelationChanges.draft.status).toBe('unknown');
     });
 
     it('warns on leaving with task or relation drafts and removes the listener on unmount', () => {

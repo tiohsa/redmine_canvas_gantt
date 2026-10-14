@@ -88,6 +88,7 @@ en:
     label_relation_remove_failed: "Failed to remove dependency"
     label_relation_added: "Dependency created"
     label_relation_change_pending: "Dependency changes are pending."
+    label_relation_edit_blocked: "Dependency changes cannot be kept pending right now. Check that saving has finished and that you have permission to edit, then try again."
     label_pending_relation_count: "Dependencies: %{count}"
     label_relation_draft_confirm: "Keep changes pending"
     label_relation_change_create: "Create dependency"

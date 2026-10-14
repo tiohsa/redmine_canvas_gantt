@@ -86,7 +86,7 @@ const conflictComparison = (
 };
 
 /** Keeps conflicted drafts in TaskStore until the user makes an explicit choice. */
-export const ConflictResolutionPanel: React.FC<{ relationReviewRequest?: number }> = ({ relationReviewRequest = 0 }) => {
+export const ConflictResolutionPanel: React.FC = () => {
     const store = useTaskStore();
     const [pending, setPending] = useState(false);
     const conflicts = useTaskStore(state => state.taskConflicts);
@@ -113,26 +113,11 @@ export const ConflictResolutionPanel: React.FC<{ relationReviewRequest?: number 
     const relationEntries = Object.values(pendingRelationChanges).filter(change => change.status === 'failed' || change.status === 'unknown');
     const relationSignature = relationEntries.map(change => `${change.draftId}:${change.generation}:${change.status}`).join('|');
     const reviewSignature = `${conflictSignature}#${relationSignature}`;
-    const relationRequestSeen = useRef(relationReviewRequest);
-    const [focusRelationReview, setFocusRelationReview] = useState(false);
     const [relationResolutionDraftId, setRelationResolutionDraftId] = useState<string | null>(null);
     const [relationResolutionAction, setRelationResolutionAction] = useState<'refresh' | 'resolve' | 'save' | null>(null);
     const [relationResolutionErrors, setRelationResolutionErrors] = useState<Record<string, string>>({});
     const [refreshedRelationContexts, setRefreshedRelationContexts] = useState<Record<string, string>>({});
     const open = closedSignature !== reviewSignature;
-
-    React.useEffect(() => {
-        if (relationRequestSeen.current === relationReviewRequest) return;
-        relationRequestSeen.current = relationReviewRequest;
-        setClosedSignature(null);
-        setFocusRelationReview(true);
-    }, [relationReviewRequest]);
-
-    useLayoutEffect(() => {
-        if (!focusRelationReview || !open) return;
-        panelRef.current?.querySelector<HTMLElement>('[data-conflict-heading]')?.focus();
-        setFocusRelationReview(false);
-    }, [focusRelationReview, open]);
 
     useLayoutEffect(() => {
         if (focusAfterResolve.current === null) return;

@@ -688,6 +688,111 @@ describe('HtmlOverlay', () => {
         expect(apiClient.createRelation).not.toHaveBeenCalled();
     });
 
+    it.each(['create', 'update', 'delete'] as const)('retains %s editor input rejected during a relation save and accepts a later retry', async (operation) => {
+        const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Blocks };
+        const inFlight = {
+            draftId: 'in-flight', operation: 'create' as const, generation: 1, status: 'saving' as const,
+            desired: { from: '2', to: '1', type: RelationType.Relates }
+        };
+        act(() => {
+            useTaskStore.getState().setTasks([{ ...task1, startDate: undefined, dueDate: undefined }, task2]);
+            useTaskStore.setState({
+                autoSave: false,
+                permissions: { editable: true, viewable: true, baselineEditable: true },
+                relations: operation === 'create' ? [] : [relation],
+                selectedRelationId: operation === 'create' ? null : relation.id,
+                draftRelation: operation === 'create'
+                    ? { from: '1', to: '2', type: RelationType.Precedes, delay: 3, anchor: { x: 100, y: 80 } }
+                    : null,
+                pendingRelationChanges: { [inFlight.draftId]: inFlight }
+            });
+        });
+        render(<HtmlOverlay />);
+        if (operation !== 'create') {
+            fireEvent.change(await screen.findByTestId('relation-type-select'), { target: { value: RelationType.Precedes } });
+            fireEvent.change(screen.getByTestId('relation-delay-input'), { target: { value: '3' } });
+        }
+        const buttonId = operation === 'delete' ? 'relation-delete-button' : 'relation-save-button';
+        const generation = useTaskStore.getState().relationEditGeneration;
+        fireEvent.click(await screen.findByTestId(buttonId));
+
+        expect(await screen.findByTestId('relation-error')).toHaveTextContent('Dependency changes cannot be kept pending right now.');
+        expect(screen.getByTestId('relation-type-select')).toHaveValue(RelationType.Precedes);
+        expect(screen.getByTestId('relation-delay-input')).toHaveValue('3');
+        expect(useTaskStore.getState().pendingRelationChanges).toEqual({ [inFlight.draftId]: inFlight });
+        expect(useTaskStore.getState().relationEditGeneration).toBe(generation);
+        expect(useUIStore.getState().notifications).toEqual([]);
+        expect(apiClient.createRelation).not.toHaveBeenCalled();
+        expect(apiClient.updateRelation).not.toHaveBeenCalled();
+        expect(apiClient.deleteRelation).not.toHaveBeenCalled();
+
+        act(() => {
+            // The save's refresh may replace task and relation objects without changing the selected relation.
+            useTaskStore.getState().applyApiData({
+                tasks: [{ ...task1, startDate: undefined, dueDate: undefined }, { ...task2 }],
+                relations: operation === 'create' ? [] : [{ ...relation }],
+                versions: [],
+                filterOptions: { projects: [], assignees: [] },
+                statuses: [],
+                customFields: [],
+                project: { id: 'p1', name: 'Project' },
+                permissions: { editable: true, viewable: true, baselineEditable: true }
+            });
+            useTaskStore.setState({ pendingRelationChanges: {} });
+        });
+        expect(screen.getByTestId('relation-type-select')).toHaveValue(RelationType.Precedes);
+        expect(screen.getByTestId('relation-delay-input')).toHaveValue('3');
+        fireEvent.click(screen.getByTestId(buttonId));
+        await waitFor(() => expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument());
+        expect(Object.values(useTaskStore.getState().pendingRelationChanges)).toHaveLength(1);
+        expect(Object.values(useTaskStore.getState().pendingRelationChanges)[0]).toMatchObject({
+            operation, status: 'pending',
+            ...(operation === 'delete' ? {} : { desired: { type: RelationType.Precedes, delay: 3 } })
+        });
+        expect(useUIStore.getState().notifications).toEqual([expect.objectContaining({ type: 'success' })]);
+        expect(apiClient.createRelation).not.toHaveBeenCalled();
+        expect(apiClient.updateRelation).not.toHaveBeenCalled();
+        expect(apiClient.deleteRelation).not.toHaveBeenCalled();
+    });
+
+    it('retains an auto-applied drag draft when staging is rejected during saving', async () => {
+        act(() => {
+            useUIStore.setState({ autoApplyDefaultRelation: true, defaultRelationType: RelationType.Precedes, autoCalculateDelay: true });
+            useTaskStore.getState().setTasks([{ ...task1, dueDate: undefined }, task2]);
+            useTaskStore.getState().setHoveredTask('1');
+            useTaskStore.setState({
+                autoSave: false,
+                permissions: { editable: true, viewable: true, baselineEditable: true },
+                pendingRelationChanges: {
+                    'in-flight': {
+                        draftId: 'in-flight', operation: 'create', generation: 1, status: 'saving',
+                        desired: { from: '2', to: '1', type: RelationType.Relates }
+                    }
+                }
+            });
+        });
+        const { container } = render(<HtmlOverlay />);
+        mockOverlayRect(container);
+        fireEvent.mouseDown(container.querySelectorAll('.dependency-handle')[1]);
+        const bounds = LayoutEngine.getTaskBounds(useTaskStore.getState().tasks.find(task => task.id === '2')!, viewport, 'hit', 2);
+        fireEvent.mouseMove(window, { clientX: bounds.x + 1, clientY: bounds.y + 1 });
+        fireEvent.mouseUp(window);
+
+        await waitFor(() => expect(useUIStore.getState().notifications).toEqual([
+            expect.objectContaining({ type: 'error', message: expect.stringContaining('Dependency changes cannot be kept pending right now.') })
+        ]));
+        expect(await screen.findByTestId('relation-delay-input')).toHaveValue('1');
+        expect(useTaskStore.getState().draftRelation).toMatchObject({ from: '1', to: '2', type: RelationType.Precedes, delay: 1, anchor: expect.any(Object) });
+        expect(apiClient.createRelation).not.toHaveBeenCalled();
+
+        act(() => useTaskStore.setState({ pendingRelationChanges: {} }));
+        expect(apiClient.createRelation).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().draftRelation).not.toBeNull();
+        fireEvent.click(screen.getByTestId('relation-save-button'));
+        await waitFor(() => expect(useTaskStore.getState().draftRelation).toBeNull());
+        expect(Object.values(useTaskStore.getState().pendingRelationChanges)[0]).toMatchObject({ desired: { from: '1', to: '2', type: RelationType.Precedes, delay: 1 } });
+    });
+
     it('blocks relation creation while Manual Save changes are being saved before Auto Save enables', async () => {
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);

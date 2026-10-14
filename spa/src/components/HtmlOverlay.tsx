@@ -312,7 +312,8 @@ export const HtmlOverlay: React.FC = () => {
             if (state.autoSaveTransition === 'enabling') {
                 throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
             }
-            state.stageRelationCreate({ from: relation.from, to: relation.to, type: rawType, ...(delay !== undefined ? { delay } : {}) });
+            const accepted = state.stageRelationCreate({ from: relation.from, to: relation.to, type: rawType, ...(delay !== undefined ? { delay } : {}) });
+            if (!accepted) throw new Error(i18n.t('label_relation_edit_blocked') || 'Dependency changes cannot be kept pending right now. Check that saving has finished and that you have permission to edit, then try again.');
             clearRelationSelection();
             useUIStore.getState().addNotification(i18n.t('label_relation_change_pending') ?? '', 'success');
             return;
@@ -335,12 +336,13 @@ export const HtmlOverlay: React.FC = () => {
             if (useTaskStore.getState().autoSaveTransition === 'enabling') {
                 throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
             }
-            useTaskStore.getState().stageRelationUpdate(relationId, {
+            const accepted = useTaskStore.getState().stageRelationUpdate(relationId, {
                 from: currentRelation.from,
                 to: currentRelation.to,
                 type: rawType,
                 ...(delay !== undefined ? { delay } : {})
             });
+            if (!accepted) throw new Error(i18n.t('label_relation_edit_blocked') || 'Dependency changes cannot be kept pending right now. Check that saving has finished and that you have permission to edit, then try again.');
             clearRelationSelection();
             useUIStore.getState().addNotification(i18n.t('label_relation_change_pending') ?? '', 'success');
             return;
@@ -363,7 +365,8 @@ export const HtmlOverlay: React.FC = () => {
             if (useTaskStore.getState().autoSaveTransition === 'enabling') {
                 throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
             }
-            useTaskStore.getState().stageRelationDelete(relationId);
+            const accepted = useTaskStore.getState().stageRelationDelete(relationId);
+            if (!accepted) throw new Error(i18n.t('label_relation_edit_blocked') || 'Dependency changes cannot be kept pending right now. Check that saving has finished and that you have permission to edit, then try again.');
             clearRelationSelection();
             setContextMenu(null);
             useUIStore.getState().addNotification(i18n.t('label_relation_change_pending') ?? '', 'success');
@@ -409,15 +412,7 @@ export const HtmlOverlay: React.FC = () => {
 
         const relationDelay = defaultRelationType === RelationType.Precedes ? autoDelay.delay : undefined;
 
-        if (autoApplyDefaultRelation) {
-            void handleCreateRelation({ from: relationFromId, to: relationToId, type: defaultRelationType }, defaultRelationType, relationDelay).catch((error: unknown) => {
-                const message = error instanceof Error ? error.message : (i18n.t('label_relation_add_failed') || 'Failed to create relation');
-                useUIStore.getState().addNotification(message, 'error');
-            });
-            return;
-        }
-
-        setDraftRelation({
+        const nextDraft: DraftRelation = {
             from: relationFromId,
             to: relationToId,
             type: defaultRelationType,
@@ -427,7 +422,15 @@ export const HtmlOverlay: React.FC = () => {
                 x: (start.x + pointer.x) / 2,
                 y: (start.y + pointer.y) / 2
             }
-        });
+        };
+        if (!autoApplyDefaultRelation || !useTaskStore.getState().autoSave) setDraftRelation(nextDraft);
+
+        if (autoApplyDefaultRelation) {
+            void handleCreateRelation(nextDraft, defaultRelationType, relationDelay).catch((error: unknown) => {
+                const message = error instanceof Error ? error.message : (i18n.t('label_relation_add_failed') || 'Failed to create relation');
+                useUIStore.getState().addNotification(message, 'error');
+            });
+        }
     }, [autoApplyDefaultRelation, autoCalculateDelay, defaultRelationType, handleCreateRelation, handleMouseMove, relations, setDraftRelation, taskById]);
 
     const startDraft = React.useCallback((taskId: string, x: number, y: number, startSide: 'left' | 'right') => {

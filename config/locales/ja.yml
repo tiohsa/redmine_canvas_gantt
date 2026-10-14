@@ -88,6 +88,7 @@ ja:
     label_relation_remove_failed: "依存関係の解除に失敗しました"
     label_relation_added: "依存関係を追加しました"
     label_relation_change_pending: "依存関係の変更は未保存です"
+    label_relation_edit_blocked: "現在この依存関係の変更を保留できません。保存が完了していることと編集権限を確認し、再試行してください。"
     label_pending_relation_count: "未保存の依存関係: %{count}"
     label_relation_draft_confirm: "変更を保留"
     label_relation_change_create: "依存関係を作成"

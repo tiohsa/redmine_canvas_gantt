@@ -40,7 +40,7 @@ const relationTarget = (relation: Relation | RelationTarget): RelationTarget => 
     ...(relation.delay === undefined ? {} : { delay: relation.delay })
 });
 
-const sameTarget = (left: RelationTarget | undefined, right: RelationTarget | undefined): boolean => (
+export const sameRelationTarget = (left: RelationTarget | undefined, right: RelationTarget | undefined): boolean => (
     left?.from === right?.from &&
     left?.to === right?.to &&
     left?.type === right?.type &&
@@ -77,7 +77,7 @@ export const normalizeRelationCreate = (
     if (existingRelation) {
         const pending = getPendingRelationChange(changes, existingRelation.id);
         if (pending?.operation === 'delete' && pending.status !== 'saving' && pending.status !== 'unknown') {
-            if (sameTarget(relationTarget(existingRelation), target)) {
+            if (sameRelationTarget(relationTarget(existingRelation), target)) {
                 const next = { ...changes };
                 delete next[pending.draftId];
                 return next;
@@ -98,7 +98,7 @@ export const normalizeRelationCreate = (
         return next;
     }
 
-    const duplicate = Object.values(changes).find(change => change.operation === 'create' && sameTarget(change.desired, target));
+    const duplicate = Object.values(changes).find(change => change.operation === 'create' && sameRelationTarget(change.desired, target));
     if (duplicate) return changes;
 
     const draftId = `relation-${++localRelationSequence}`;
@@ -120,8 +120,8 @@ export const normalizeRelationUpdate = (
 
     if (current?.operation === 'create') {
         const next = { ...changes };
-        if (sameTarget(current.desired, target)) return changes;
-        if (Object.values(next).some(change => change.draftId !== current.draftId && change.operation === 'create' && sameTarget(change.desired, target))) {
+        if (sameRelationTarget(current.desired, target)) return changes;
+        if (Object.values(next).some(change => change.draftId !== current.draftId && change.operation === 'create' && sameRelationTarget(change.desired, target))) {
             return changes;
         }
         next[current.draftId] = { ...current, desired: relationTarget(target), generation, status: 'pending', error: undefined };
@@ -135,7 +135,8 @@ export const normalizeRelationUpdate = (
         // then applies the requested value against the server snapshot.
     }
     const originalSnapshot = current?.original ?? snapshotRelation(original);
-    if (sameTarget(relationTarget(originalSnapshot), target)) {
+    if (sameRelationTarget(relationTarget(originalSnapshot), target)) {
+        if (!current) return changes;
         const next = { ...changes };
         delete next[current?.draftId ?? relationId];
         return next;

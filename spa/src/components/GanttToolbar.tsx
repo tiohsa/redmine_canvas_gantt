@@ -41,10 +41,9 @@ interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
     onZoomChange: (level: ZoomLevel) => void;
     exportRef: React.RefObject<GanttExportHandle | null>;
-    onOpenRelationReview?: () => void;
 }
 
-export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange, exportRef, onOpenRelationReview }) => {
+export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange, exportRef }) => {
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, groupByAssignee, setGroupByAssignee,
         filterText, setFilterText, versions, selectedAssigneeIds, setSelectedAssigneeIds,
@@ -148,7 +147,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const relationChanges = Object.values(pendingRelationChanges ?? {});
     const isSavingPendingRelation = relationChanges.some(change => change.status === 'saving');
     const hasUnknownPendingRelation = relationChanges.some(change => change.status === 'unknown');
-    const relationReviewCount = relationChanges.filter(change => change.status === 'unknown' || change.status === 'failed').length;
     const hasPendingManualChanges = !autoSave && (modifiedTaskIds.size > 0 || pendingRelationCount > 0);
 
     useToolbarShortcuts({
@@ -1992,33 +1990,6 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                     onToggleBaseline={() => toggleBaseline()}
                 />
                 <ActionNeededControl />
-
-                {relationReviewCount > 0 && (
-                    <button
-                        type="button"
-                        data-testid="relation-review-button"
-                        onClick={onOpenRelationReview}
-                        aria-label={`${i18n.t('label_relation_review') ?? ''} (${relationReviewCount})`}
-                        title={`${i18n.t('label_relation_review') ?? ''} (${relationReviewCount})`}
-                        style={{
-                            position: 'relative',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 34,
-                            height: 32,
-                            padding: 0,
-                            border: '1px solid #d6deea',
-                            borderRadius: '9999px',
-                            background: '#fff',
-                            color: '#92400e',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        <span aria-hidden="true" style={{ fontSize: 15, fontWeight: 700 }}>!</span>
-                        <span aria-hidden="true" style={{ position: 'absolute', right: -4, top: -5, minWidth: 15, height: 15, padding: '0 3px', borderRadius: 999, background: '#92400e', color: '#fff', fontSize: 9, lineHeight: '15px' }}>{relationReviewCount}</span>
-                    </button>
-                )}
 
                 {hasPendingManualChanges && (
                     <>

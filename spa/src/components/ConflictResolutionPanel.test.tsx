@@ -118,7 +118,7 @@ describe('ConflictResolutionPanel', () => {
             }
         });
 
-        const { rerender } = render(<ConflictResolutionPanel relationReviewRequest={0} />);
+        render(<ConflictResolutionPanel />);
         expect(screen.getByTestId('relation-review-card-relation:failed')).toHaveTextContent('#10 → #11');
         expect(screen.getByTestId('relation-review-card-relation:failed')).toHaveTextContent('Delete was rejected');
         expect(screen.getByTestId('relation-review-card-relation:unknown')).toHaveTextContent('#20 → #21');
@@ -136,7 +136,7 @@ describe('ConflictResolutionPanel', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Close' }));
         expect(screen.getByTestId('relation-review-reopen')).toBeInTheDocument();
-        rerender(<ConflictResolutionPanel relationReviewRequest={1} />);
+        fireEvent.click(screen.getByTestId('relation-review-reopen'));
         expect(screen.getByTestId('conflict-resolution-panel')).toBeInTheDocument();
         await act(async () => {
             fireEvent.click(screen.getByTestId('relation-unknown-retry-relation:unknown'));

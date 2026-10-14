@@ -187,7 +187,8 @@ test('does not resend a relation create with an unknown outcome', async ({ page 
   await panel.getByRole('button', { name: 'Close' }).click();
   await expect(panel).toHaveCount(0);
   await expect(page.getByTestId(`relation-unknown-assume-applied-${unknownDraftId}`)).toHaveCount(0);
-  await page.getByTestId('relation-review-button').click();
+  await expect(page.getByTestId('relation-review-button')).toHaveCount(0);
+  await page.getByTestId('relation-review-reopen').click();
   await expect(panel).toBeVisible();
   const reopenedCard = page.getByTestId(`relation-review-card-${unknownDraftId}`);
   await reopenedCard.getByTestId(`relation-review-refresh-${unknownDraftId}`).click();

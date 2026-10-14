@@ -2,6 +2,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { GanttToolbar } from './GanttToolbar';
+import { HtmlOverlay } from './HtmlOverlay';
 import { AutoScheduleMoveMode, RelationType } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
@@ -13,6 +14,8 @@ import '../stores/preferencesWatcher';
 import { resetCanvasGanttTestState } from '../test/testSetup';
 import { setVisibleColumnsForTest } from '../test/columnTestHelpers';
 import type { CustomFieldMeta } from '../types/editMeta';
+import type { Task } from '../types';
+import { createReadContext } from '../stores/taskStore/stateContract';
 
 vi.mock('../utils/navigation', () => ({
     navigateToRedminePath: vi.fn()
@@ -99,7 +102,54 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByTestId('discard-manual-changes-button').textContent).toBe('');
     });
 
-    it('shows ticket and dependency counts and exposes failed relation changes', () => {
+    it('closes the dependency editor when Cancel is activated without a mousedown', async () => {
+        const tasks: Task[] = ['1', '2'].map((id, rowIndex) => ({
+            id, subject: `Task ${id}`, projectId: '1', ratioDone: 0, statusId: 1,
+            lockVersion: 0, editable: true, hasChildren: false, rowIndex,
+            startDate: Date.UTC(2026, 0, 5 + rowIndex), dueDate: Date.UTC(2026, 0, 5 + rowIndex)
+        }));
+        useTaskStore.setState({ autoSave: false, permissions: { editable: true, viewable: true, baselineEditable: true } });
+        useTaskStore.getState().setTasks(tasks);
+        useTaskStore.getState().updateTask('1', { subject: 'Unsaved' });
+        useTaskStore.getState().setDraftRelation({ from: '1', to: '2', type: RelationType.Relates, anchor: { x: 100, y: 80 } });
+        const data = {
+            tasks, relations: [], versions: [], statuses: [], customFields: [],
+            filterOptions: { projects: [], assignees: [] },
+            project: { id: '1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        };
+        const context = createReadContext({ generation: 1, projectId: '1', query: {}, scope: {}, purpose: 'refresh' });
+        let finishRefresh!: () => void;
+        const refresh = vi.spyOn(useTaskStore.getState(), 'refreshData').mockImplementationOnce(() => new Promise(resolve => {
+            finishRefresh = () => {
+                useTaskStore.getState().applyApiData(data, context);
+                resolve({ status: 'applied', context });
+            };
+        }));
+        try {
+            render(<>
+                <GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />
+                <HtmlOverlay />
+            </>);
+            expect(screen.getByTestId('relation-editor')).toBeInTheDocument();
+            const cancel = screen.getByTestId('discard-manual-changes-button');
+            cancel.focus();
+            expect(cancel).toHaveFocus();
+            fireEvent.click(cancel, { detail: 0 });
+
+            expect(refresh).toHaveBeenCalledTimes(1);
+            expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+            expect(useTaskStore.getState().draftRelation).toBeNull();
+            expect(useTaskStore.getState().selectedRelationId).toBeNull();
+            expect(useTaskStore.getState().hasPendingChanges()).toBe(false);
+            await act(async () => { finishRefresh(); });
+            expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+        } finally {
+            refresh.mockRestore();
+        }
+    });
+
+    it('shows save counts without a duplicate dependency review trigger', () => {
         getCanvasGanttConfig().i18n = {
             label_save_changes_with_counts: 'Save (tasks: %{tasks} / dependencies: %{relations})',
             button_save: 'Save',
@@ -146,7 +196,7 @@ describe('GanttToolbar shortcuts', () => {
         expect(screen.getByTestId('manual-save-button')).toHaveTextContent('');
         expect(screen.getByTestId('manual-save-button')).toHaveAccessibleName('Save');
         expect(screen.getByTestId('manual-save-button')).toHaveAttribute('title', 'Save (tasks: 1 / dependencies: 3)');
-        expect(screen.getByTestId('relation-review-button')).toHaveAttribute('aria-label', 'Review dependency changes (2)');
+        expect(screen.queryByRole('button', { name: /Review dependency changes/ })).not.toBeInTheDocument();
         expect(screen.queryByTestId('pending-relation-failure')).not.toBeInTheDocument();
         expect(screen.queryByTestId('relation-unknown-assume-applied-relation:3')).not.toBeInTheDocument();
     });
