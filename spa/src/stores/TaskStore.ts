@@ -49,11 +49,26 @@ import { AutoScheduleMoveMode, DatePlacementMode, type DatePlacementMode as Date
 import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/businessCalendar';
 import { fromLocalDate, parseDateOnly, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
-import type { MutationMetadata } from '../api/client';
+import type { ExpectedRelation, MutationMetadata } from '../api/client';
 import { setConfirmedProjectScope, type ConfirmedProjectScope } from '../api/projectScopeContext';
 import { classifyMutationSourceDisposition } from '../api/mutationOutcome';
 import type { MutationRemoteAvailability } from '../api/mutationOutcome';
-import { buildTaskMutationDelta, BULK_TASK_FIELDS, PERSISTABLE_TASK_FIELDS, taskMutationFields, taskMutationService, type TaskFields } from '../services/taskMutationService';
+import { buildTaskMutationDelta, BULK_TASK_FIELDS, PERSISTABLE_TASK_FIELDS, RelationExecutionGuardError, taskMutationFields, taskMutationService, type TaskFields } from '../services/taskMutationService';
+import {
+    countPendingRelationChanges,
+    getPendingRelationChange as selectPendingRelationChange,
+    hasPendingRelationChanges,
+    normalizeRelationCreate,
+    normalizeRelationDelete,
+    normalizeRelationUpdate,
+    orderedRelationChanges,
+    projectEffectiveRelations,
+    relationChangeTarget,
+    validateRelationDrafts,
+    type PendingRelationChange,
+    type RelationDraftMap,
+    type RelationTarget
+} from './taskStore/relationDrafts';
 import {
     applyLocalPatches,
     settleLocalPatchFields,
@@ -209,6 +224,8 @@ export interface TaskState {
     allTasks: Task[];
     tasks: Task[];
     relations: Relation[];
+    pendingRelationChanges: RelationDraftMap;
+    relationEditGeneration: number;
     schedulingStates: Record<string, SchedulingStateInfo>;
     criticalPathMetrics: Record<string, CriticalPathTaskMetrics>;
     criticalPathProjectFinish?: number;
@@ -295,6 +312,15 @@ export interface TaskState {
     addRelation: (relation: Relation) => void;
     replaceRelation: (relation: Relation) => void;
     removeRelation: (relationId: string) => void;
+    stageRelationCreate: (desired: RelationTarget) => void;
+    stageRelationUpdate: (relationId: string, desired: RelationTarget) => void;
+    stageRelationDelete: (relationId: string) => void;
+    discardPendingRelationChanges: () => void;
+    getEffectiveRelations: () => Relation[];
+    getPendingRelationChange: (relationId: string) => PendingRelationChange | undefined;
+    pendingRelationCount: () => number;
+    hasPendingChanges: () => boolean;
+    resolveUnknownRelationChange: (draftId: string, resolution: 'assume_applied' | 'retry') => Promise<boolean>;
     selectTask: (id: string | null) => void;
     selectRelation: (id: string | null) => void;
     setDraftRelation: (relation: DraftRelation | null) => void;
@@ -414,7 +440,10 @@ const initialQueryContext = resolvedStateToQueryContext(initialUrlState);
 
 const resolveLayoutState = (state: LayoutState, overrides: Partial<LayoutState> = {}): LayoutState => ({
     allTasks: overrides.allTasks ?? state.allTasks,
-    relations: overrides.relations ?? state.relations,
+    relations: overrides.relations ?? projectEffectiveRelations(
+        state.relations,
+        (state as LayoutState & { pendingRelationChanges?: RelationDraftMap }).pendingRelationChanges ?? {}
+    ),
     versions: overrides.versions ?? state.versions,
     filterOptions: overrides.filterOptions ?? state.filterOptions ?? { projects: [], assignees: [] },
     groupByProject: overrides.groupByProject ?? state.groupByProject,
@@ -518,12 +547,16 @@ const buildDerivedTaskState = (
     overrides: Partial<LayoutState> & {
         allTasks?: Task[];
         relations?: Relation[];
+        relationChanges?: RelationDraftMap;
         derivedInvalidation?: DerivedInvalidation;
         schedulingSummary?: DerivedSchedulingSummary;
     } = {}
 ): DerivedTaskState => {
     const allTasks = overrides.allTasks ?? state.allTasks;
-    const relations = overrides.relations ?? state.relations;
+    const relations = projectEffectiveRelations(
+        overrides.relations ?? state.relations,
+        overrides.relationChanges ?? state.pendingRelationChanges ?? {}
+    );
     const invalidation = overrides.derivedInvalidation;
     // Header and fallback version ranges depend on dates, including collapsed
     // tasks. Reuse the existing layout builder so their aggregation rules stay
@@ -645,6 +678,34 @@ const toDerivedTaskStatePatch = (derived: DerivedTaskState): DerivedTaskStatePat
     criticalPathMetrics: derived.criticalPathMetrics,
     criticalPathProjectFinish: derived.criticalPathProjectFinish
 });
+
+const relationDraftDerivedPatch = (state: TaskState, relationChanges: RelationDraftMap): Partial<TaskState> => {
+    const previousRelations = projectEffectiveRelations(state.relations, state.pendingRelationChanges);
+    const nextRelations = projectEffectiveRelations(state.relations, relationChanges);
+    if (state.organizeByDependency) {
+        return toDerivedTaskStatePatch(buildDerivedTaskState(state, {
+            relations: nextRelations,
+            relationChanges
+        }));
+    }
+
+    const previousById = new Map(previousRelations.map(relation => [relation.id, relation]));
+    const nextById = new Map(nextRelations.map(relation => [relation.id, relation]));
+    const changedIds = new Set([...previousById.keys(), ...nextById.keys()]);
+    const changesConstraintGraph = [...changedIds].some((id) => {
+        const previous = previousById.get(id);
+        const next = nextById.get(id);
+        if (previous && next && previous.from === next.from && previous.to === next.to && previous.type === next.type &&
+            (previous.delay ?? 0) === (next.delay ?? 0)) return false;
+        return [previous, next].some(relation => relation?.type === 'precedes' || relation?.type === 'follows');
+    });
+    if (!changesConstraintGraph) return {};
+    return toDerivedTaskStatePatch(buildDerivedTaskState(state, {
+        relations: nextRelations,
+        relationChanges,
+        derivedInvalidation: 'schedule'
+    }));
+};
 
 type ApiDataPatchResult = {
     patch: Partial<TaskState>;
@@ -994,12 +1055,13 @@ const normalizeTaskDateUpdates = (
 };
 
 const buildRelationChange = (state: TaskState, relation: Relation, nextRelations: Relation[]) => {
+    const effectiveRelations = projectEffectiveRelations(nextRelations, state.pendingRelationChanges);
     let nextTasks = state.allTasks;
     const originTaskId = relation.type === 'follows' ? relation.to : relation.from;
     const originTask = nextTasks.find((task) => task.id === originTaskId);
     const dependentUpdates = TaskLogicService.checkDependencies(
         nextTasks,
-        nextRelations,
+        effectiveRelations,
         originTaskId,
         originTask?.startDate ?? Number.NaN,
         originTask?.dueDate ?? Number.NaN,
@@ -1012,7 +1074,7 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
 
     const cascadingUpdates = resolveCascadingScheduleUpdates(
         nextTasks,
-        nextRelations,
+        effectiveRelations,
         [originTaskId, ...dependentUpdates.updates.keys()]
     );
     if (cascadingUpdates.error) {
@@ -1053,7 +1115,7 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
         modifiedTaskIds,
         editGenerations,
         localTaskPatches,
-        derived: buildDerivedTaskState(state, { relations: nextRelations, allTasks: nextTasks })
+        derived: buildDerivedTaskState(state, { relations: effectiveRelations, allTasks: nextTasks })
     };
 };
 
@@ -1263,6 +1325,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
     allTasks: [],
     tasks: [],
     relations: [],
+    pendingRelationChanges: {},
+    relationEditGeneration: 0,
     schedulingStates: {},
     criticalPathMetrics: {},
     criticalPathProjectFinish: undefined,
@@ -1338,7 +1402,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (state.autoSave || state.autoSaveTransition === 'enabling') {
             return autoSaveEnableOperation ?? Promise.resolve();
         }
-        if (state.modifiedTaskIds.size === 0) {
+        if (state.modifiedTaskIds.size === 0 && !hasPendingRelationChanges(state.pendingRelationChanges)) {
             set({ autoSave: true });
             return;
         }
@@ -1347,7 +1411,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const operation = (async () => {
             try {
                 const failures = await get().saveChanges();
-                if (failures.size === 0 && get().modifiedTaskIds.size === 0 && get().autoSaveTransition === 'enabling') {
+                if (failures.size === 0 && get().modifiedTaskIds.size === 0 && !hasPendingRelationChanges(get().pendingRelationChanges) && get().autoSaveTransition === 'enabling') {
                     set({ autoSave: true });
                 }
             } catch (error) {
@@ -1392,7 +1456,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         };
     }),
     setRelations: (relations) => set((state) => {
-        const derived = buildDerivedTaskState(state, { relations });
+        const derived = buildDerivedTaskState(state, { relations, relationChanges: state.pendingRelationChanges });
         return {
             relations,
             selectedRelationId: state.selectedRelationId && relations.some(relation => relation.id === state.selectedRelationId)
@@ -1422,7 +1486,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
         }
         return {
             calculateCriticalPathEnabled: true,
-            ...buildCriticalPathSummary(state.allTasks, state.relations, true)
+            ...buildCriticalPathSummary(
+                state.allTasks,
+                projectEffectiveRelations(state.relations, state.pendingRelationChanges),
+                true
+            )
         };
     }),
     setPermissions: (permissions) => set(() => ({ permissions })),
@@ -1628,6 +1696,137 @@ export const useTaskStore = create<TaskState>((set, get) => {
             localTaskPatches: relationChange.localTaskPatches
         };
     }),
+    stageRelationCreate: (desired) => set((state) => {
+        if (state.autoSave || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
+        const generation = state.relationEditGeneration + 1;
+        const pendingRelationChanges = normalizeRelationCreate(
+            state.pendingRelationChanges,
+            state.relations,
+            relationChangeTarget(desired),
+            generation
+        );
+        if (pendingRelationChanges === state.pendingRelationChanges) return state;
+        return {
+            pendingRelationChanges,
+            relationEditGeneration: generation,
+            draftRelation: null,
+            ...relationDraftDerivedPatch(state, pendingRelationChanges)
+        };
+    }),
+    stageRelationUpdate: (relationId, desired) => set((state) => {
+        if (state.autoSave || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
+        const generation = state.relationEditGeneration + 1;
+        const pendingRelationChanges = normalizeRelationUpdate(
+            state.pendingRelationChanges,
+            state.relations,
+            relationId,
+            relationChangeTarget(desired),
+            generation
+        );
+        if (pendingRelationChanges === state.pendingRelationChanges) return state;
+        return {
+            pendingRelationChanges,
+            relationEditGeneration: generation,
+            ...relationDraftDerivedPatch(state, pendingRelationChanges)
+        };
+    }),
+    stageRelationDelete: (relationId) => set((state) => {
+        if (state.autoSave || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
+        const generation = state.relationEditGeneration + 1;
+        const pendingRelationChanges = normalizeRelationDelete(
+            state.pendingRelationChanges,
+            state.relations,
+            relationId,
+            generation
+        );
+        if (pendingRelationChanges === state.pendingRelationChanges) return state;
+        return {
+            pendingRelationChanges,
+            relationEditGeneration: generation,
+            selectedRelationId: state.selectedRelationId === relationId ? null : state.selectedRelationId,
+            ...relationDraftDerivedPatch(state, pendingRelationChanges)
+        };
+    }),
+    discardPendingRelationChanges: () => set((state) => {
+        if (!hasPendingRelationChanges(state.pendingRelationChanges)) return state;
+        return {
+            pendingRelationChanges: {},
+            relationEditGeneration: state.relationEditGeneration + 1,
+            ...relationDraftDerivedPatch(state, {})
+        };
+    }),
+    getEffectiveRelations: () => projectEffectiveRelations(get().relations, get().pendingRelationChanges),
+    getPendingRelationChange: (relationId) => selectPendingRelationChange(get().pendingRelationChanges, relationId),
+    pendingRelationCount: () => countPendingRelationChanges(get().pendingRelationChanges),
+    hasPendingChanges: () => get().modifiedTaskIds.size > 0 || hasPendingRelationChanges(get().pendingRelationChanges),
+    resolveUnknownRelationChange: async (draftId, resolution) => {
+        const initial = get().pendingRelationChanges[draftId];
+        if (!initial || initial.status !== 'unknown') return false;
+        const viewIdentity = currentViewIdentity();
+        let refreshedContext: ReadContext;
+        try {
+            const outcome = await get().refreshData();
+            if (outcome.status !== 'applied' || currentViewIdentity() !== viewIdentity) return false;
+            refreshedContext = outcome.context;
+        } catch {
+            return false;
+        }
+        const current = get().pendingRelationChanges[draftId];
+        if (!current || current.generation !== initial.generation || current.status !== 'unknown') return false;
+        const serverRelations = get().relations;
+        if (current.operation === 'delete') {
+            const refreshedTaskSnapshot = get().serverTaskSnapshot;
+            const original = current.original;
+            if (refreshedTaskSnapshot.context !== refreshedContext || !original ||
+                !refreshedTaskSnapshot.entitiesById[original.from] ||
+                !refreshedTaskSnapshot.entitiesById[original.to]) return false;
+        }
+        const matching = current.operation === 'delete'
+            ? !serverRelations.some(relation => relation.id === current.relationId)
+            : current.operation === 'create'
+                ? serverRelations.some(relation => current.desired && (
+                    relation.from === current.desired.from && relation.to === current.desired.to &&
+                    relation.type === current.desired.type && (relation.delay ?? 0) === (current.desired.delay ?? 0)
+                ))
+                : serverRelations.some(relation => relation.id === current.relationId && current.desired && (
+                    relation.from === current.desired.from && relation.to === current.desired.to &&
+                    relation.type === current.desired.type && (relation.delay ?? 0) === (current.desired.delay ?? 0)
+                ));
+        if (resolution === 'assume_applied') {
+            if (!matching) return false;
+            set((state) => {
+                const next = { ...state.pendingRelationChanges };
+                delete next[draftId];
+                const derived = buildDerivedTaskState(state, { relations: state.relations, relationChanges: next });
+                return {
+                    pendingRelationChanges: next,
+                    relationEditGeneration: state.relationEditGeneration + 1,
+                    ...toDerivedTaskStatePatch(derived)
+                };
+            });
+            return true;
+        }
+        if (matching) return false;
+        const expectedStillCurrent = current.operation === 'create'
+            ? !serverRelations.some(relation => current.desired && relation.from === current.desired.from && relation.to === current.desired.to && relation.type === current.desired.type)
+            : serverRelations.some(relation => relation.id === current.relationId && current.original && (
+                relation.from === current.original.from && relation.to === current.original.to && relation.type === current.original.type &&
+                (relation.delay ?? 0) === (current.original.delay ?? 0)
+            ));
+        if (!expectedStillCurrent) {
+            set((state) => ({ pendingRelationChanges: {
+                ...state.pendingRelationChanges,
+                [draftId]: { ...current, status: 'failed', error: i18n.t('label_relation_change_conflict') || i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked' }
+            } }));
+            return false;
+        }
+        set((state) => ({ pendingRelationChanges: {
+            ...state.pendingRelationChanges,
+            [draftId]: { ...current, status: 'pending', error: undefined }
+        } }));
+        const failures = await get().saveChanges();
+        return !failures.has(`relation:${draftId}`) && !get().pendingRelationChanges[draftId];
+    },
     selectTask: (id) => set({
         selectedTaskId: id,
         selectedRelationId: null,
@@ -1858,7 +2057,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
     rollbackBarOperation: (operationId) => set((state) => {
         const rollback = buildBarOperationRollback(state, operationId);
         if (!rollback) return state;
-        const schedulingSummary = buildDerivedSchedulingSummary(rollback.allTasks, state.relations, state.calculateCriticalPathEnabled);
+        const effectiveRelations = projectEffectiveRelations(state.relations, state.pendingRelationChanges);
+        const schedulingSummary = buildDerivedSchedulingSummary(rollback.allTasks, effectiveRelations, state.calculateCriticalPathEnabled);
         const changedFields = new Set<string>();
         const previousTasksById = new Map(state.allTasks.map(task => [task.id, task]));
         rollback.allTasks.forEach((task) => {
@@ -1894,6 +2094,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const canonicalMutationIntent = normalizeTaskDateUpdates(task, mutationIntent, capturedDatePlacementMode);
         const updatedTask = { ...task, ...canonicalUpdates };
         TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
+        const effectiveRelations = projectEffectiveRelations(state.relations, state.pendingRelationChanges);
 
         let currentTasks = state.allTasks.map(t => t.id === id ? updatedTask : t);
         const pendingUpdates = new Map<string, Partial<Task>>();
@@ -1902,7 +2103,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (!isContextChange && (hasOwnField(canonicalUpdates, 'startDate') || hasOwnField(canonicalUpdates, 'dueDate'))) {
             const depResult = TaskLogicService.checkDependencies(
                 state.allTasks,
-                state.relations,
+                effectiveRelations,
                 id,
                 updatedTask.startDate!,
                 updatedTask.dueDate!,
@@ -1927,7 +2128,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (!isContextChange) {
             const cascadingUpdates = resolveCascadingScheduleUpdates(
                 currentTasks,
-                state.relations,
+                effectiveRelations,
                 [id, ...pendingUpdates.keys()],
                 useUIStore.getState().autoScheduleMoveMode !== AutoScheduleMoveMode.Off
             );
@@ -2019,7 +2220,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         });
         const hasSchedulingChanges = ['startDate', 'dueDate', 'projectId'].some(field => changedFields.has(field));
         const nextSchedulingSummary = hasSchedulingChanges
-            ? buildDerivedSchedulingSummary(finalTasks, state.relations, state.calculateCriticalPathEnabled)
+            ? buildDerivedSchedulingSummary(finalTasks, effectiveRelations, state.calculateCriticalPathEnabled)
             : {
                 schedulingStates: state.schedulingStates,
                 criticalPathMetrics: state.criticalPathMetrics,
@@ -3015,10 +3216,26 @@ export const useTaskStore = create<TaskState>((set, get) => {
     saveChanges: async () => {
         if (saveChangesOperation) return saveChangesOperation;
 
+        let committedTaskCount = 0;
+        let committedRelationCount = 0;
+        let relationWorkCaptured = false;
+        const partialSaveMessage = () => i18n.t('label_relation_save_partial', {
+            task_count: committedTaskCount,
+            relation_count: committedRelationCount
+        }) || 'label_relation_save_partial';
+
         const operation = (async () => {
             while (true) {
                 const snapshot = get();
-                if (snapshot.modifiedTaskIds.size === 0) return new Map<string, string>();
+                if (snapshot.modifiedTaskIds.size === 0 && !hasPendingRelationChanges(snapshot.pendingRelationChanges)) return new Map<string, string>();
+                relationWorkCaptured = relationWorkCaptured || hasPendingRelationChanges(snapshot.pendingRelationChanges);
+                const relationViewIdentity = currentViewIdentity();
+                const relationScopeProjectIds = snapshot.confirmedProjectScope
+                    ? new Set(snapshot.confirmedProjectScope.effectiveProjectIds)
+                    : undefined;
+                const relationScopeIdentity = snapshot.confirmedProjectScope
+                    ? [...snapshot.confirmedProjectScope.effectiveProjectIds].sort().join(',')
+                    : '';
 
                 const snapshotGenerations = { ...snapshot.editGenerations };
                 const snapshotTaskIds = new Set(snapshot.modifiedTaskIds);
@@ -3067,6 +3284,50 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         }
                     }
                 });
+                const relationSnapshot = Object.fromEntries(Object.entries(snapshot.pendingRelationChanges).map(([key, value]) => [key, { ...value }]));
+                const relationOperations = orderedRelationChanges(relationSnapshot);
+                const relationValidation = hasPendingRelationChanges(relationSnapshot)
+                    ? validateRelationDrafts(
+                        snapshot.allTasks,
+                        snapshot.relations,
+                        relationSnapshot,
+                        snapshotMutationFields,
+                        relationScopeProjectIds
+                    )
+                    : null;
+                const conflictedRelation = Object.values(relationSnapshot).find((change) => {
+                    const endpoints = new Set([change.original?.from, change.original?.to, change.desired?.from, change.desired?.to].filter((id): id is string => Boolean(id)));
+                    return [...endpoints].some(taskId => snapshot.taskConflicts[taskId] || Object.values(snapshot.taskConflicts).some(conflict => (
+                        conflict.scheduleOperation?.[taskId] !== undefined || conflict.scheduleReview?.taskIds.includes(taskId)
+                    )));
+                });
+                const relationConflictValidation = conflictedRelation
+                    ? { draftId: conflictedRelation.draftId, error: i18n.t('label_unresolved_task_conflict') || 'label_unresolved_task_conflict' }
+                    : null;
+                if (relationValidation || relationConflictValidation) {
+                    const validation = relationValidation ?? relationConflictValidation!;
+                    set((state) => {
+                        const current = state.pendingRelationChanges[validation.draftId];
+                        if (!current) return state;
+                        return { pendingRelationChanges: {
+                            ...state.pendingRelationChanges,
+                            [validation.draftId]: { ...current, status: current.status === 'unknown' ? 'unknown' : 'failed', error: validation.error }
+                        } };
+                    });
+                    return new Map([[`relation:${validation.draftId}`, validation.error]]);
+                }
+                if (relationOperations.length > 0) {
+                    set((state) => {
+                        const pendingRelationChanges = { ...state.pendingRelationChanges };
+                        relationOperations.forEach((operation) => {
+                            const current = pendingRelationChanges[operation.draftId];
+                            if (current?.generation === operation.generation) {
+                                pendingRelationChanges[operation.draftId] = { ...current, status: 'saving', error: undefined };
+                            }
+                        });
+                        return { pendingRelationChanges };
+                    });
+                }
                 const terminalBarFailureTaskGenerations = new Map<string, number>();
                 const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number; remoteAvailability: MutationRemoteAvailability }>();
                 const savedLockVersions = new Map<string, number>();
@@ -3180,6 +3441,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     snapshotMutationDatePlacementModes
                 );
                 const { failures, savedTaskIds, settledFieldsByTask } = saveResult;
+                committedTaskCount += savedTaskIds.size;
 
                 if (savedLockVersions.size > 0 || mutationMetadataRecords.length > 0) {
                     set((state) => {
@@ -3378,29 +3640,361 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     if (operation) get().rollbackBarOperation(operation.operationId);
                 });
                 if (failures.size > 0) {
+                    if (relationOperations.length > 0) {
+                        const blockedMessage = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = { ...current, status: 'pending', error: blockedMessage };
+                                    failures.set(`relation:${operation.draftId}`, blockedMessage);
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                    }
                     const [failedTaskId, failedReason] = failures.entries().next().value as [string, string];
-                    useUIStore.getState().addNotification(
-                        `${i18n.t('label_failed_to_save') || 'Failed to save'} (#${failedTaskId}: ${failedReason})`,
-                        'error'
-                    );
+                    const failureMessage = failedTaskId.startsWith('relation:')
+                        ? failedReason
+                        : `${i18n.t('label_failed_to_save') || 'Failed to save'} (#${failedTaskId}: ${failedReason})`;
+                    const notificationMessage = relationWorkCaptured && (committedTaskCount > 0 || committedRelationCount > 0)
+                        ? `${partialSaveMessage()} ${failureMessage}`
+                        : failureMessage;
+                    useUIStore.getState().addNotification(notificationMessage, 'error');
                     return failures;
                 }
 
-                if (get().modifiedTaskIds.size === 0) return failures;
+                if (relationOperations.length > 0 && get().modifiedTaskIds.size > 0) {
+                    set((state) => {
+                        const pendingRelationChanges = { ...state.pendingRelationChanges };
+                        relationOperations.forEach((operation) => {
+                            const current = pendingRelationChanges[operation.draftId];
+                            if (current?.generation === operation.generation && current.status === 'saving') {
+                                pendingRelationChanges[operation.draftId] = { ...current, status: 'pending' };
+                            }
+                        });
+                        return { pendingRelationChanges };
+                    });
+                    continue;
+                }
+
+                if (relationOperations.length > 0) {
+                    const hasRelationSaveScope = () => currentViewIdentity() === relationViewIdentity &&
+                        (get().confirmedProjectScope
+                            ? [...get().confirmedProjectScope!.effectiveProjectIds].sort().join(',')
+                            : '') === relationScopeIdentity;
+                    if (!hasRelationSaveScope()) {
+                        const message = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = { ...current, status: 'pending', error: message };
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                        return new Map([['relations', message]]);
+                    }
+                    let refreshOutcome: ReadApplyOutcome;
+                    try {
+                        refreshOutcome = await get().refreshData();
+                    } catch {
+                        refreshOutcome = { status: 'superseded' } as ReadApplyOutcome;
+                    }
+                    if (refreshOutcome.status !== 'applied' || !hasRelationSaveScope()) {
+                        const message = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = { ...current, status: 'pending', error: message };
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                        if (committedTaskCount > 0 || committedRelationCount > 0) {
+                            useUIStore.getState().addNotification(`${partialSaveMessage()} ${message}`, 'warning');
+                        }
+                        return new Map([['relations', message]]);
+                    }
+
+                    // Edits can arrive while refresh is in flight. Persist them
+                    // first, then validate drafts against their confirmed state.
+                    if (get().modifiedTaskIds.size > 0) {
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = { ...current, status: 'pending' };
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                        continue;
+                    }
+
+                    const currentState = get();
+                    const revalidationChanges = Object.fromEntries(Object.entries(currentState.pendingRelationChanges).map(([key, value]) => [
+                        key,
+                        value.status === 'saving' ? { ...value, status: 'pending' as const } : value
+                    ]));
+                    const authoritativeTasks = currentState.allTasks.map(task => ({
+                        ...task,
+                        ...(currentState.serverTaskSnapshot.entitiesById[task.id] ?? {})
+                    }));
+                    const revalidation = validateRelationDrafts(
+                        authoritativeTasks,
+                        currentState.relations,
+                        revalidationChanges,
+                        {},
+                        relationScopeProjectIds
+                    );
+                    if (revalidation) {
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = {
+                                        ...current,
+                                        status: current.draftId === revalidation.draftId ? 'failed' : 'pending',
+                                        error: current.draftId === revalidation.draftId ? revalidation.error : undefined
+                                    };
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                        if (committedTaskCount > 0 || committedRelationCount > 0) {
+                            useUIStore.getState().addNotification(`${partialSaveMessage()} ${revalidation.error}`, 'warning');
+                        }
+                        return new Map([[`relation:${revalidation.draftId}`, revalidation.error]]);
+                    }
+
+                    const relationFailures = new Map<string, string>();
+                    let failedOperationId: string | null = null;
+                    const relationEndpointIds = new Set(relationOperations.flatMap(operation => [
+                        operation.original?.from, operation.original?.to,
+                        operation.desired?.from, operation.desired?.to
+                    ]).filter((id): id is string => Boolean(id)));
+                    const hasNewerEndpointEdits = () => [...relationEndpointIds].some(taskId =>
+                        get().modifiedTaskIds.has(taskId) &&
+                        (get().editGenerations[taskId] ?? 0) > (snapshotGenerations[taskId] ?? 0)
+                    );
+                    const committedRelationsBeforeBatch = committedRelationCount;
+                    for (let operationIndex = 0; operationIndex < relationOperations.length; operationIndex += 1) {
+                        const operation = relationOperations[operationIndex];
+                        const current = get().pendingRelationChanges[operation.draftId];
+                        if (!current || current.generation !== operation.generation || current.status !== 'saving') continue;
+                        if (!hasRelationSaveScope() || hasNewerEndpointEdits()) {
+                            const message = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                            set((state) => {
+                                const pendingRelationChanges = { ...state.pendingRelationChanges };
+                                relationOperations.slice(operationIndex).forEach((later) => {
+                                    const active = pendingRelationChanges[later.draftId];
+                                    if (active?.generation === later.generation && active.status === 'saving') {
+                                        pendingRelationChanges[later.draftId] = { ...active, status: 'pending', error: message };
+                                    }
+                                });
+                                return { pendingRelationChanges };
+                            });
+                            relationFailures.set(`relation:${operation.draftId}`, message);
+                            break;
+                        }
+                        try {
+                            const executionGuard = () => {
+                                if (!hasRelationSaveScope() || hasNewerEndpointEdits()) {
+                                    throw new RelationExecutionGuardError(i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked');
+                                }
+                            };
+                            let savedRelation: Relation | null = null;
+                            if (operation.operation === 'create' && operation.desired) {
+                                savedRelation = await taskMutationService.createRelation(
+                                    operation.desired.from,
+                                    operation.desired.to,
+                                    operation.desired.type,
+                                    operation.desired.delay,
+                                    executionGuard
+                                );
+                            } else if (operation.operation === 'update' && operation.relationId && operation.desired && operation.original) {
+                                const expected: ExpectedRelation = {
+                                    from: operation.original.from,
+                                    to: operation.original.to,
+                                    type: operation.original.type,
+                                    ...(operation.original.delay === undefined ? {} : { delay: operation.original.delay })
+                                };
+                                savedRelation = await taskMutationService.updateRelation(
+                                    operation.relationId,
+                                    operation.desired.type,
+                                    operation.desired.delay,
+                                    [operation.original.from, operation.original.to, operation.desired.from, operation.desired.to],
+                                    expected,
+                                    executionGuard
+                                );
+                            } else if (operation.operation === 'delete' && operation.relationId && operation.original) {
+                                const expected: ExpectedRelation = {
+                                    from: operation.original.from,
+                                    to: operation.original.to,
+                                    type: operation.original.type,
+                                    ...(operation.original.delay === undefined ? {} : { delay: operation.original.delay })
+                                };
+                                await taskMutationService.deleteRelation(
+                                    operation.relationId,
+                                    [operation.original.from, operation.original.to],
+                                    expected,
+                                    executionGuard
+                                );
+                            }
+
+                            const relationViewStillCurrent = hasRelationSaveScope();
+                            set((state) => {
+                                const pendingRelationChanges = { ...state.pendingRelationChanges };
+                                const active = pendingRelationChanges[operation.draftId];
+                                if (active?.generation === operation.generation) delete pendingRelationChanges[operation.draftId];
+                                const relations = !relationViewStillCurrent
+                                    ? state.relations
+                                    : operation.operation === 'delete' && operation.relationId
+                                    ? state.relations.filter(relation => relation.id !== operation.relationId)
+                                    : savedRelation
+                                        ? [...state.relations.filter(relation => relation.id !== savedRelation!.id), savedRelation]
+                                        : state.relations;
+                                const derived = buildDerivedTaskState(state, { relations, relationChanges: pendingRelationChanges });
+                                return {
+                                    relations,
+                                    pendingRelationChanges,
+                                    relationEditGeneration: state.relationEditGeneration + 1,
+                                    ...toDerivedTaskStatePatch(derived)
+                                };
+                            });
+                            committedRelationCount += 1;
+                            if (!relationViewStillCurrent) {
+                                queueMicrotask(() => { void get().refreshData().catch(() => undefined); });
+                            }
+                            if (hasNewerEndpointEdits()) {
+                                const message = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                                set((state) => {
+                                    const pendingRelationChanges = { ...state.pendingRelationChanges };
+                                    relationOperations.slice(operationIndex + 1).forEach((later) => {
+                                        const active = pendingRelationChanges[later.draftId];
+                                        if (active?.generation === later.generation && active.status === 'saving') {
+                                            pendingRelationChanges[later.draftId] = { ...active, status: 'pending', error: message };
+                                        }
+                                    });
+                                    return { pendingRelationChanges };
+                                });
+                                relationFailures.set(`relation:${operation.draftId}`, message);
+                                break;
+                            }
+                        } catch (error) {
+                            const errorRecord = error && typeof error === 'object' ? error as { status?: unknown; statusCode?: unknown; httpStatus?: unknown; name?: unknown; knownUnsent?: unknown } : null;
+                            const responseStatus = typeof errorRecord?.status === 'number'
+                                ? errorRecord.status
+                                : typeof errorRecord?.httpStatus === 'number'
+                                    ? errorRecord.httpStatus
+                                    : typeof errorRecord?.statusCode === 'number' ? errorRecord.statusCode : undefined;
+                            const unknown = errorRecord?.knownUnsent !== true && (
+                                responseStatus === undefined || responseStatus === 408 || responseStatus >= 500 ||
+                                errorRecord?.name === 'AbortError' || error instanceof TypeError
+                            );
+                            const message = unknown
+                                ? (i18n.t('label_relation_result_unknown') || 'label_relation_result_unknown')
+                                : (error instanceof Error ? error.message : (i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked'));
+                            set((state) => {
+                                const pendingRelationChanges = { ...state.pendingRelationChanges };
+                                const active = pendingRelationChanges[operation.draftId];
+                                if (active?.generation === operation.generation) {
+                                    pendingRelationChanges[operation.draftId] = { ...active, status: unknown ? 'unknown' : 'failed', error: message };
+                                }
+                                for (const later of relationOperations.slice(operationIndex + 1)) {
+                                    const next = pendingRelationChanges[later.draftId];
+                                    if (next?.generation === later.generation && next.status === 'saving') {
+                                        pendingRelationChanges[later.draftId] = { ...next, status: 'pending', error: undefined };
+                                    }
+                                }
+                                return { pendingRelationChanges };
+                            });
+                            failedOperationId = operation.draftId;
+                            relationFailures.set(`relation:${operation.draftId}`, message);
+                            break;
+                        }
+                    }
+                    let relationRefreshError: string | null = null;
+                    if (committedRelationCount > committedRelationsBeforeBatch) {
+                        try {
+                            const reconcileOutcome = await get().refreshData();
+                            if (reconcileOutcome.status !== 'applied') {
+                                relationRefreshError = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                            }
+                        } catch {
+                            relationRefreshError = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                        }
+                    }
+                    if (relationFailures.size > 0) {
+                        const first = relationFailures.values().next().value as string;
+                        const failure = relationRefreshError ? `${first} ${relationRefreshError}` : first;
+                        useUIStore.getState().addNotification(
+                            committedTaskCount > 0 || committedRelationCount > 0
+                                ? `${partialSaveMessage()} ${failure}`
+                                : failure,
+                            'error'
+                        );
+                        return relationFailures;
+                    }
+                    if (failedOperationId) return relationFailures;
+                    if (relationRefreshError) {
+                        useUIStore.getState().addNotification(`${partialSaveMessage()} ${relationRefreshError}`, 'warning');
+                        return new Map([['relations', relationRefreshError]]);
+                    }
+                }
+
+                const remainingSaveableRelations = orderedRelationChanges(get().pendingRelationChanges).length > 0;
+                if (get().modifiedTaskIds.size === 0 && !remainingSaveableRelations) return failures;
             }
-        })();
+        })().catch((error) => {
+            if (relationWorkCaptured && (committedTaskCount > 0 || committedRelationCount > 0) && hasPendingRelationChanges(get().pendingRelationChanges)) {
+                useUIStore.getState().addNotification(partialSaveMessage(), 'warning');
+            }
+            throw error;
+        });
 
         saveChangesOperation = operation;
         try {
             return await operation;
         } finally {
+            set((state) => {
+                const pendingRelationChanges = { ...state.pendingRelationChanges };
+                let changed = false;
+                Object.values(pendingRelationChanges).forEach((change) => {
+                    if (change.status === 'saving') {
+                        pendingRelationChanges[change.draftId] = {
+                            ...change,
+                            status: 'pending',
+                            error: change.error ?? (i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked')
+                        };
+                        changed = true;
+                    }
+                });
+                return changed ? { pendingRelationChanges } : state;
+            });
             if (saveChangesOperation === operation) saveChangesOperation = null;
         }
     },
 
     discardChanges: async () => {
         const state = get();
-        set({ localTaskPatches: {}, modifiedTaskIds: new Set(), barOperations: {}, activeBarOperationId: null });
+        set({
+            localTaskPatches: {},
+            modifiedTaskIds: new Set(),
+            pendingRelationChanges: {},
+            relationEditGeneration: state.relationEditGeneration + 1,
+            barOperations: {},
+            activeBarOperationId: null,
+            ...toDerivedTaskStatePatch(buildDerivedTaskState(state, { relations: state.relations, relationChanges: {} }))
+        });
         await state.refreshData();
     }
 });

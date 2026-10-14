@@ -2186,6 +2186,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2, 3], issues: [] })
       allow(controller).to receive(:relation_change_scope_relations).and_return([])
       allow(IssueRelation).to receive(:find).with('77').and_return(relation)
+      allow(relation).to receive(:with_lock) { |&operation| operation.call }
       allow(relation).to receive(:id).and_return(77)
       allow(relation).to receive(:issue_from_id).and_return(10)
       allow(relation).to receive(:issue_to_id).and_return(11)
@@ -2236,6 +2237,57 @@ RSpec.describe CanvasGanttsController, type: :controller do
           'delay' => nil
         }
       )
+    end
+
+    it 'updates when the supplied expected relation still matches' do
+      patch :update_relation,
+            params: {
+              project_id: 'demo', id: '77',
+              expected_relation: { from: '10', to: '11', type: 'precedes', delay: 2 },
+              relation: { relation_type: 'blocks' }
+            },
+            format: :json
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it 'matches a missing expected delay against a relation with no delay' do
+      allow(relation).to receive(:relation_type).and_return('blocks')
+      allow(relation).to receive(:delay).and_return(nil)
+      patch :update_relation,
+            params: {
+              project_id: 'demo', id: '77',
+              expected_relation: { from: '10', to: '11', type: 'blocks' },
+              relation: { relation_type: 'relates' }
+            },
+            format: :json
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it 'returns conflict without saving when the supplied expected relation is stale' do
+      patch :update_relation,
+            params: {
+              project_id: 'demo', id: '77',
+              expected_relation: { from: '10', to: '11', type: 'follows', delay: 2 },
+              relation: { relation_type: 'blocks' }
+            },
+            format: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(JSON.parse(response.body)).to include(
+        'error' => 'This dependency changed on the server. Reload and review it before saving.',
+        'status' => 'conflict',
+        'failure' => include('kind' => 'conflict', 'resource_role' => 'relation', 'resource_type' => 'relation', 'resource_id' => 77),
+        'relation' => {
+          'id' => 77,
+          'from' => 10,
+          'to' => 11,
+          'type' => 'precedes',
+          'delay' => 2
+        }
+      )
+      expect(relation).not_to have_received(:save)
     end
 
     it 'returns forbidden when owned issue is not editable' do
@@ -2538,6 +2590,7 @@ RSpec.describe CanvasGanttsController, type: :controller do
       allow(controller).to receive(:current_view_issue_ids).and_return(Set[10, 11])
       allow(controller).to receive(:current_view_scope).and_return({ scope_project_ids: [1, 2, 3], issues: [] })
       allow(IssueRelation).to receive(:find).with('77').and_return(relation)
+      allow(relation).to receive(:with_lock) { |&operation| operation.call }
       allow(Issue).to receive(:visible).and_return(issue_scope)
       allow(issue_scope).to receive(:find).with(10).and_return(issue_from)
       allow(issue_scope).to receive(:find).with(11).and_return(issue_to)
@@ -2565,6 +2618,113 @@ RSpec.describe CanvasGanttsController, type: :controller do
         'deleted_entity_ids' => [77]
       )
       expect(relation).to have_received(:destroy)
+    end
+
+    it 'returns conflict without deleting when the supplied expected relation is stale' do
+      allow(relation).to receive(:relation_type).and_return('precedes')
+      allow(relation).to receive(:delay).and_return(2)
+      allow(issue_from).to receive(:editable?).and_return(true)
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_from).and_return(true)
+      allow(relation).to receive(:destroy)
+
+      delete :destroy_relation,
+             params: {
+               project_id: 'demo', id: '77',
+               expected_relation: { from: '10', to: '11', type: 'follows', delay: 2 }
+             },
+             format: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(JSON.parse(response.body)).to include(
+        'error' => 'This dependency changed on the server. Reload and review it before saving.',
+        'status' => 'conflict',
+        'completeness' => 'partial',
+        'invalidated_entity_ids' => [],
+        'failure' => {
+          'kind' => 'conflict',
+          'resource_role' => 'relation',
+          'resource_type' => 'relation',
+          'resource_id' => 77
+        },
+        'relation' => {
+          'id' => 77,
+          'from' => 10,
+          'to' => 11,
+          'type' => 'precedes',
+          'delay' => 2
+        }
+      )
+      expect(relation).not_to have_received(:destroy)
+    end
+
+    it 'returns a stale conflict with a null delay for a current relation without delay' do
+      allow(relation).to receive(:relation_type).and_return('blocks')
+      allow(relation).to receive(:delay).and_return(nil)
+      allow(issue_from).to receive(:editable?).and_return(true)
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_from).and_return(true)
+      allow(relation).to receive(:destroy)
+
+      delete :destroy_relation,
+             params: {
+               project_id: 'demo', id: '77',
+               expected_relation: { from: '10', to: '11', type: 'relates' }
+             },
+             format: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(JSON.parse(response.body)).to include(
+        'relation' => {
+          'id' => 77,
+          'from' => 10,
+          'to' => 11,
+          'type' => 'blocks',
+          'delay' => nil
+        }
+      )
+      expect(relation).not_to have_received(:destroy)
+    end
+
+    it 'destroys when the supplied expected relation still matches' do
+      allow(relation).to receive(:relation_type).and_return('precedes')
+      allow(relation).to receive(:delay).and_return(2)
+      allow(issue_from).to receive(:editable?).and_return(true)
+      allow(User.current).to receive(:allowed_to?).with(:edit_issues, project_from).and_return(true)
+      allow(relation).to receive(:destroy)
+
+      delete :destroy_relation,
+             params: {
+               project_id: 'demo', id: '77',
+               expected_relation: { from: '10', to: '11', type: 'precedes', delay: 2 }
+             },
+             format: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)).to eq(
+        'status' => 'ok',
+        'completeness' => 'partial',
+        'invalidated_entity_ids' => [10, 11],
+        'deleted_entity_ids' => [77]
+      )
+      expect(relation).to have_received(:destroy).once
+    end
+
+    it 'returns forbidden for a stale expected relation when the issue is not editable' do
+      allow(relation).to receive(:relation_type).and_return('precedes')
+      allow(relation).to receive(:delay).and_return(2)
+      allow(relation).to receive(:destroy)
+
+      delete :destroy_relation,
+             params: {
+               project_id: 'demo', id: '77',
+               expected_relation: { from: '10', to: '11', type: 'follows', delay: 2 }
+             },
+             format: :json
+
+      expect(response).to have_http_status(:forbidden)
+      body = JSON.parse(response.body)
+      expect(body).to eq('error' => 'Permission denied')
+      expect(body).not_to have_key('relation')
+      expect(relation).not_to have_received(:destroy)
     end
 
     it 'returns forbidden when owned issue is not editable' do

@@ -2,6 +2,26 @@
 
 Dependencies appear as lines between issues on the timeline. `precedes` / `follows` are used as scheduling constraints; reference-only `relates` and blocking relations have different behavior.
 
+## Manual save in the development version {#manual-save}
+
+In the documented v0.18.0 release, creating, editing, or deleting a dependency sends the change to Redmine immediately, even when task auto-save is off. The development version changes this when **Auto save** is off:
+
+- Create, edit, and delete operations stay as local drafts. The relation editor's primary action is **Keep changes pending**; it stages the edit without sending an API request. This also applies when **Auto apply default relation** is on.
+- Staged dependencies are shown as pending in the editor, and new or updated links use a dashed line.
+- Staged precedence relations also take part in local constraint checks, linked moves, and critical-path calculations according to the current scheduling settings. Relations staged for deletion are excluded from these local calculations.
+- Compact icon-only **Save** and **Cancel** buttons appear for task drafts, dependency drafts, or both. The **Save** tooltip shows separate task and dependency counts. A review alert opens the right-side panel for failed or unknown dependency saves. **Cancel** discards the unsaved task and dependency drafts together.
+- With **Auto save** on, dependency changes continue to be sent immediately.
+
+In manual save mode, definitive rejections such as permission errors, missing targets, conflicts, or validation errors leave the dependency draft marked as **Failed**. Review the server's error message, make any necessary corrections, and retry.
+
+The combined save is a sequence of server requests, not one database transaction. Canvas Gantt saves task changes first and stops before dependency writes if any task save fails. It then refreshes and revalidates the dependencies before sending their changes. A task save or an earlier dependency request can complete while a later request fails. Completed work stays saved, while unresolved dependency changes stay pending. **Cancel** only discards those remaining drafts; it cannot undo changes already saved.
+
+If a dependency request times out or returns an ambiguous server error, its result is marked **Unknown** and is never retried automatically. Use the toolbar's **Review dependencies** alert to open the right-side conflict and review panel. It lists unresolved dependency changes individually with their endpoints, status, and error, including deletions whose links are no longer shown. Before resolving an unknown result, Canvas Gantt refreshes the server relations and checks them against the intended change. Choose **Mark as applied** only when the server state matches; choose **Retry after review** only when it does not match and the original state is still current. Failed changes can also be retried from the panel with **Retry failed dependency saves**. This retry uses the combined save flow, so other pending task or dependency drafts may be included. If the refreshed state has changed in another way, or cannot be checked, leave the operation unresolved and review the dependency in Redmine. **Cancel** discards remaining drafts but cannot undo changes already saved.
+
+For an unknown deletion, both endpoint issues must be included in the refreshed server data before absence of the relation can confirm deletion. If a filter excludes either issue, keep the change unresolved and adjust the filter to include both issues before checking again.
+
+Some combined changes cannot be applied safely in this sequence. For example, if moving a successor earlier requires deleting or changing its existing predecessor relation first, the development version refuses the combined save before writing either change. Save the relation change first, then edit and save the dates. These development behaviors are not included in v0.18.0.
+
 ## Create a dependency
 
 1. Drag from a dependency handle near either end of the predecessor task bar.

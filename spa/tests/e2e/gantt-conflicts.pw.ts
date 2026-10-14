@@ -170,7 +170,7 @@ for (const autoSave of [false, true]) {
         await useTaskStore.getState().saveChanges();
       });
     } else {
-      await page.getByTitle('Save changes', { exact: true }).click();
+      await page.getByTestId('manual-save-button').click();
     }
 
     const panel = page.getByTestId('conflict-resolution-panel');

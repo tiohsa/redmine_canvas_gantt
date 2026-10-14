@@ -60,6 +60,43 @@ class CanvasGanttsController < ApplicationController
     label_relation_removed: :label_relation_removed,
     label_relation_remove_failed: :label_relation_remove_failed,
     label_relation_added: :label_relation_added,
+    label_relation_change_pending: :label_relation_change_pending,
+    label_pending_relation_count: :label_pending_relation_count,
+    label_relation_draft_confirm: :label_relation_draft_confirm,
+    label_relation_change_create: :label_relation_change_create,
+    label_relation_change_update: :label_relation_change_update,
+    label_relation_change_delete: :label_relation_change_delete,
+    label_relation_change_conflict: :label_relation_change_conflict,
+    label_relation_save_failed: :label_relation_save_failed,
+    label_relation_save_in_progress: :label_relation_save_in_progress,
+    label_relation_save_partial: :label_relation_save_partial,
+    label_relation_save_blocked: :label_relation_save_blocked,
+    label_relation_result_unknown: :label_relation_result_unknown,
+    label_relation_combined_change_unsupported: :label_relation_combined_change_unsupported,
+    label_relation_not_found: :label_relation_not_found,
+    label_relation_unknown_assume_applied: :label_relation_unknown_assume_applied,
+    label_relation_unknown_retry: :label_relation_unknown_retry,
+    label_relation_unknown_review: :label_relation_unknown_review,
+    label_relation_unknown_review_required: :label_relation_unknown_review_required,
+    label_relation_review: :label_relation_review,
+    label_relation_review_intro: :label_relation_review_intro,
+    label_relation_review_refreshing: :label_relation_review_refreshing,
+    label_relation_failed_retry: :label_relation_failed_retry,
+    label_relation_review_original: :label_relation_review_original,
+    label_relation_review_desired: :label_relation_review_desired,
+    label_relation_review_server: :label_relation_review_server,
+    label_relation_review_no_relation: :label_relation_review_no_relation,
+    label_relation_review_refresh: :label_relation_review_refresh,
+    label_relation_review_refresh_failed: :label_relation_review_refresh_failed,
+    label_relation_review_last_loaded: :label_relation_review_last_loaded,
+    label_relation_type_follows: :label_relation_type_follows,
+    label_relation_type_blocked: :label_relation_type_blocked,
+    label_relation_type_duplicates: :label_relation_type_duplicates,
+    label_relation_type_duplicated: :label_relation_type_duplicated,
+    label_relation_type_copied_to: :label_relation_type_copied_to,
+    label_relation_type_copied_from: :label_relation_type_copied_from,
+    label_save_changes_with_counts: :label_save_changes_with_counts,
+    label_saving: :label_saving,
     label_relation_save_pending_task_changes: :label_relation_save_pending_task_changes,
     label_relation_already_exists: :label_relation_already_exists,
     label_add_child_task: :button_add_subtask,
@@ -927,16 +964,21 @@ class CanvasGanttsController < ApplicationController
   # PATCH /projects/:project_id/canvas_gantt/relations/:id.json
   def update_relation
     relation = IssueRelation.find(params[:id])
-    return unless ensure_relation_editable!(relation)
-    issue_from, issue_to = @authorized_relation_endpoints
+    relation.with_lock do
+      return unless ensure_relation_editable!(relation)
+      expected_relation = requested_expected_relation
+      return if performed?
+      return unless ensure_expected_relation_matches!(relation, expected_relation)
+      issue_from, issue_to = @authorized_relation_endpoints
 
-    save_relation_change(
-      relation: relation,
-      issue_from: issue_from,
-      issue_to: issue_to,
-      relation_id: relation.id,
-      replacing_relation_id: relation.id
-    )
+      save_relation_change(
+        relation: relation,
+        issue_from: issue_from,
+        issue_to: issue_to,
+        relation_id: relation.id,
+        replacing_relation_id: relation.id
+      )
+    end
   rescue ActiveRecord::RecordNotFound
     render json: mutation_failure_response(
       error: canvas_gantt_l(:error_canvas_gantt_relation_not_found),
@@ -953,16 +995,21 @@ class CanvasGanttsController < ApplicationController
   # DELETE /projects/:project_id/canvas_gantt/relations/:id.json
   def destroy_relation
     relation = IssueRelation.find(params[:id])
-    return unless ensure_relation_editable!(relation)
-    issue_from, issue_to = @authorized_relation_endpoints
+    relation.with_lock do
+      return unless ensure_relation_editable!(relation)
+      expected_relation = requested_expected_relation
+      return if performed?
+      return unless ensure_expected_relation_matches!(relation, expected_relation)
+      issue_from, issue_to = @authorized_relation_endpoints
 
-    relation.destroy
-    render json: mutation_response(
-      status: 'ok',
-      completeness: 'partial',
-      invalidated_entity_ids: [issue_from.id, issue_to.id],
-      deleted_entity_ids: [relation.id]
-    )
+      relation.destroy
+      render json: mutation_response(
+        status: 'ok',
+        completeness: 'partial',
+        invalidated_entity_ids: [issue_from.id, issue_to.id],
+        deleted_entity_ids: [relation.id]
+      )
+    end
   rescue ActiveRecord::RecordNotFound
     render json: mutation_failure_response(
       error: canvas_gantt_l(:error_canvas_gantt_relation_not_found),
@@ -1397,6 +1444,62 @@ class CanvasGanttsController < ApplicationController
     params.require(:relation).permit(:issue_from_id, :issue_to_id, :relation_type, :delay)
   end
 
+  def serialize_relation(relation)
+    {
+      id: relation.id,
+      from: relation.issue_from_id,
+      to: relation.issue_to_id,
+      type: relation.relation_type,
+      delay: relation.delay
+    }
+  end
+
+  def requested_expected_relation
+    raw = params[:expected_relation]
+    return nil if raw.nil?
+
+    unless raw.respond_to?(:permit)
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_invalid_parameters) }, status: :unprocessable_entity
+      return nil
+    end
+
+    expected = raw.permit(:from, :to, :type, :delay)
+    unless %i[from to type].all? { |key| expected.key?(key) && expected[key].present? }
+      render json: { error: canvas_gantt_l(:error_canvas_gantt_invalid_parameters) }, status: :unprocessable_entity
+      return nil
+    end
+
+    delay = expected[:delay].present? ? Integer(expected[:delay]) : nil
+    {
+      from: expected[:from].to_s,
+      to: expected[:to].to_s,
+      type: expected[:type].to_s,
+      delay: delay
+    }
+  rescue ArgumentError, TypeError
+    render json: { error: canvas_gantt_l(:error_canvas_gantt_invalid_parameters) }, status: :unprocessable_entity
+    nil
+  end
+
+  def ensure_expected_relation_matches!(relation, expected)
+    return true unless expected
+
+    matches = relation.issue_from_id.to_s == expected[:from] &&
+      relation.issue_to_id.to_s == expected[:to] &&
+      relation.relation_type.to_s == expected[:type] &&
+      relation.delay == expected[:delay]
+    return true if matches
+
+    render json: mutation_failure_response(
+      error: canvas_gantt_l(:label_relation_change_conflict),
+      kind: 'conflict',
+      resource_role: 'relation',
+      resource_type: 'relation',
+      resource_id: relation.id
+    ).merge(relation: serialize_relation(relation)), status: :conflict
+    false
+  end
+
   def ensure_relation_editable!(relation)
     issue_from, issue_to = visible_relation_endpoints(relation)
     return false unless issue_from && issue_to
@@ -1563,7 +1666,7 @@ class CanvasGanttsController < ApplicationController
         status: 'ok',
         completeness: 'complete',
         invalidated_entity_ids: [relation.issue_from_id, relation.issue_to_id]
-      ).merge(relation: relation_params_normalizer.serialize_relation(relation))
+      ).merge(relation: serialize_relation(relation))
     else
       render json: { errors: relation.errors.full_messages }, status: :unprocessable_entity
     end

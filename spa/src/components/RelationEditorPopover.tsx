@@ -39,11 +39,15 @@ export const RelationEditorPopover: React.FC<{
     taskById: Map<string, Task>;
     relations: Relation[];
     position: { x: number; y: number };
+    manualSave?: boolean;
+    pendingLabel?: string | null;
+    pendingError?: string;
+    isUnknown?: boolean;
     onClose: () => void;
     onCreate: (draftRelation: DraftRelation, rawType: string, delay?: number) => Promise<void>;
     onUpdate: (relationId: string, rawType: string, delay?: number) => Promise<void>;
     onDelete: (relationId: string) => Promise<void>;
-}> = ({ popoverRef, target, taskById, relations, position, onClose, onCreate, onUpdate, onDelete }) => {
+}> = ({ popoverRef, target, taskById, relations, position, manualSave = false, pendingLabel, pendingError, isUnknown = false, onClose, onCreate, onUpdate, onDelete }) => {
     const [relationType, setRelationType] = React.useState<DefaultRelationType>(target.initialType);
     const [delayValue, setDelayValue] = React.useState(target.initialDelay !== undefined ? String(target.initialDelay) : '');
     const [autoDelayMessage, setAutoDelayMessage] = React.useState<string | null>(target.initialAutoDelayMessage ?? null);
@@ -182,7 +186,7 @@ export const RelationEditorPopover: React.FC<{
                     <select
                         data-testid="relation-type-select"
                         value={relationType}
-                        disabled={saving}
+                        disabled={saving || isUnknown}
                         onChange={(event) => updateDelayForType(event.target.value as DefaultRelationType)}
                         style={{
                             boxSizing: 'border-box',
@@ -210,7 +214,7 @@ export const RelationEditorPopover: React.FC<{
                             type="text"
                             inputMode="numeric"
                             value={delayValue}
-                            disabled={saving}
+                            disabled={saving || isUnknown}
                             placeholder="0"
                             onChange={(event) => {
                                 setDelayValue(event.target.value);
@@ -232,6 +236,16 @@ export const RelationEditorPopover: React.FC<{
                 )}
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {pendingLabel && (
+                        <div data-testid="relation-pending-status" role="status" style={{ fontSize: 12, color: '#92400e', lineHeight: 1.45, margin: 0 }}>
+                            {pendingLabel}
+                        </div>
+                    )}
+                    {pendingError && (
+                        <div data-testid="relation-pending-error" role="alert" style={{ fontSize: 12, color: '#dc2626', lineHeight: 1.45, margin: 0 }}>
+                            {pendingError}
+                        </div>
+                    )}
                     <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.45, margin: 0 }}>
                         {helperText}
                     </div>
@@ -280,7 +294,7 @@ export const RelationEditorPopover: React.FC<{
                             onClick={() => {
                                 void handleDelete();
                             }}
-                            disabled={saving}
+                            disabled={saving || isUnknown}
                             style={{
                                 boxSizing: 'border-box',
                                 display: 'inline-flex',
@@ -308,7 +322,7 @@ export const RelationEditorPopover: React.FC<{
                         onClick={() => {
                             void handleSave();
                         }}
-                        disabled={saving}
+                        disabled={saving || isUnknown}
                         style={{
                             boxSizing: 'border-box',
                             display: 'inline-flex',
@@ -327,7 +341,9 @@ export const RelationEditorPopover: React.FC<{
                             lineHeight: 1
                         }}
                     >
-                        {i18n.t('button_save') || 'Save'}
+                        {manualSave
+                            ? (i18n.t('label_relation_draft_confirm') || i18n.t('button_save') || '')
+                            : (i18n.t('button_save') || '')}
                     </button>
                 </div>
             </div>

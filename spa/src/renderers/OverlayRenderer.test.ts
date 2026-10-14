@@ -376,4 +376,29 @@ describe('OverlayRenderer dependencies', () => {
 
         expect(ctx.fill).toHaveBeenCalledTimes(1);
     });
+
+    it('renders staged relation links with a dashed stroke', () => {
+        const ctx = createMockContext();
+        const canvas = { width: 1000, height: 600, getContext: vi.fn(() => ctx) } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+        const tasks = [
+            buildTask('1', 0, ONE_DAY, 0),
+            buildTask('2', ONE_DAY * 4, ONE_DAY * 5, 1)
+        ];
+        const relation: Relation = { id: 'local:relation-1', from: '1', to: '2', type: RelationType.Precedes };
+
+        renderer.render({
+            viewport,
+            tasks,
+            relations: [relation],
+            pendingRelationIds: new Set([relation.id]),
+            rowCount: tasks.length,
+            zoomLevel: 1,
+            selectedTaskId: null,
+            selectedRelationId: null,
+            draftRelation: null
+        });
+
+        expect(ctx.setLineDash).toHaveBeenCalledWith([6, 4]);
+    });
 });

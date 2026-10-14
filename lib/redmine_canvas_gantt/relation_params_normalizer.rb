@@ -34,14 +34,5 @@ module RedmineCanvasGantt
       nil
     end
 
-    def serialize_relation(relation)
-      {
-        id: relation.id,
-        from: relation.issue_from_id,
-        to: relation.issue_to_id,
-        type: relation.relation_type,
-        delay: relation.delay
-      }
-    end
   end
 end

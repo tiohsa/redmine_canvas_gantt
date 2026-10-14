@@ -23,6 +23,7 @@ export type OverlayRenderState = {
     selectedTaskId: string | null;
     selectedRelationId: string | null;
     draftRelation: DraftRelation | null;
+    pendingRelationIds?: ReadonlySet<string>;
     showStartDateOnly?: boolean;
     showDueDateOnly?: boolean;
     today?: CalendarDate;
@@ -45,6 +46,7 @@ export class OverlayRenderer {
         selectedTaskId,
         selectedRelationId,
         draftRelation,
+        pendingRelationIds,
         showStartDateOnly = true,
         showDueDateOnly = true,
         today = todayCalendarDate()
@@ -77,7 +79,8 @@ export class OverlayRenderer {
                 draftRelation,
                 zoomLevel,
                 selectedRelationId,
-                { showStartDateOnly, showDueDateOnly }
+                { showStartDateOnly, showDueDateOnly },
+                pendingRelationIds
             );
         }
 
@@ -198,7 +201,8 @@ export class OverlayRenderer {
         displaySettings: { showStartDateOnly: boolean; showDueDateOnly: boolean } = {
             showStartDateOnly: true,
             showDueDateOnly: true
-        }
+        },
+        pendingRelationIds: ReadonlySet<string> = new Set()
     ) {
         const visibleTasks = filterTasksVisibleByDate(tasks, displaySettings);
         const context = buildRelationRenderContext(visibleTasks, viewport, zoomLevel);
@@ -212,13 +216,14 @@ export class OverlayRenderer {
             }
 
             const isDraft = relation.id === '__draft__';
+            const isPending = isDraft || pendingRelationIds.has(relation.id);
             const isSelected = isDraft || relation.id === selectedRelationId;
             ctx.save();
             ctx.strokeStyle = isSelected ? designTokens.brandPrimary : designTokens.dependency;
             ctx.lineWidth = isSelected ? 3 : 1.5;
             ctx.lineJoin = 'round';
             ctx.lineCap = 'round';
-            if (isDraft) {
+            if (isPending) {
                 ctx.setLineDash([6, 4]);
             }
 

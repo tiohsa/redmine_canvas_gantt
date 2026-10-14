@@ -1344,7 +1344,7 @@ describe('InteractionEngine relation selection', () => {
         container.remove();
     });
 
-    it('selects a visible relation when clicking near its route', () => {
+    it.each([false, true])('selects a visible relation when clicking near its route (pending=%s)', (pending) => {
         const DAY_MS = 24 * 60 * 60 * 1000;
         setViewport({ scale: 1 / DAY_MS, rowHeight: 36 });
         const container = createContainer();
@@ -1352,12 +1352,18 @@ describe('InteractionEngine relation selection', () => {
 
         const task1 = baseTask({ id: '1', rowIndex: 0, startDate: 0, dueDate: DAY_MS });
         const task2 = baseTask({ id: '2', rowIndex: 1, startDate: DAY_MS * 4, dueDate: DAY_MS * 5 });
-        const relation: Relation = { id: 'r1', from: '1', to: '2', type: 'precedes' };
+        const relation: Relation = { id: pending ? 'local:selection-draft' : 'r1', from: '1', to: '2', type: 'precedes' };
 
         useTaskStore.setState({
             allTasks: [task1, task2],
             tasks: [task1, task2],
-            relations: [relation],
+            relations: pending ? [] : [relation],
+            pendingRelationChanges: pending ? {
+                'selection-draft': {
+                    draftId: 'selection-draft', operation: 'create', generation: 1, status: 'pending',
+                    desired: { from: '1', to: '2', type: 'precedes' }
+                }
+            } : {},
             layoutRows: [],
             rowCount: 2,
             selectedTaskId: null,
@@ -1377,7 +1383,8 @@ describe('InteractionEngine relation selection', () => {
             bubbles: true
         }));
 
-        expect(useTaskStore.getState().selectedRelationId).toBe('r1');
+        expect(useTaskStore.getState().selectedRelationId).toBe(relation.id);
+        useTaskStore.setState({ pendingRelationChanges: {} });
 
         engine.detach();
         container.remove();

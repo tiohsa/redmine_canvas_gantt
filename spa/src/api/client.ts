@@ -39,6 +39,8 @@ type ApiRelation = Record<string, unknown>;
 type ApiVersion = Record<string, unknown>;
 type UnknownRecord = Record<string, unknown>;
 
+export type ExpectedRelation = Pick<Relation, 'from' | 'to' | 'type' | 'delay'>;
+
 const asRecord = (value: unknown): UnknownRecord | null => {
     if (!value || typeof value !== 'object') return null;
     return value as UnknownRecord;
@@ -1328,7 +1330,7 @@ export const apiClient = {
         return { status: 'ok', ...relation, ...parseMutationMetadata(payload) };
     },
 
-    updateRelation: async (relationId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata & { status: 'ok' }> => {
+    updateRelation: async (relationId: string, type: string, delay?: number, operationId?: string, expected?: ExpectedRelation): Promise<Relation & MutationMetadata & { status: 'ok' }> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
         const response = await sessionFetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
@@ -1339,6 +1341,7 @@ export const apiClient = {
                     relation_type: type,
                     ...(typeof delay === 'number' ? { delay } : {})
                 },
+                ...(expected ? { expected_relation: expected } : {}),
                 ...(operationId ? { client_operation_id: operationId } : {})
             })
         });
@@ -1351,14 +1354,19 @@ export const apiClient = {
         return { status: 'ok', ...normalizeRelation(payload, { fromId: '', toId: '', type }), ...parseMutationMetadata(payload) };
     },
 
-    deleteRelation: async (relationId: string, operationId?: string): Promise<MutationMetadata & { status: 'ok' }> => {
+    deleteRelation: async (relationId: string, operationId?: string, expected?: ExpectedRelation): Promise<MutationMetadata & { status: 'ok' }> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
         const response = await sessionFetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
             method: 'DELETE',
             headers: buildJsonHeaders(config, true),
-            ...(operationId ? { body: JSON.stringify({ client_operation_id: operationId }) } : {})
+            ...((operationId || expected) ? {
+                body: JSON.stringify({
+                    ...(expected ? { expected_relation: expected } : {}),
+                    ...(operationId ? { client_operation_id: operationId } : {})
+                })
+            } : {})
         });
 
         if (!response.ok) {

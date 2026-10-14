@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTaskStore } from './stores/TaskStore';
 import { GanttContainer } from './components/GanttContainer';
 import { GanttToolbar } from './components/GanttToolbar';
@@ -22,6 +22,17 @@ function App() {
   const setFullScreen = useUIStore(state => state.setFullScreen);
   const previousOverflow = useRef<string | undefined>(undefined);
   const exportRef = useRef<GanttExportHandle>(null);
+  const [relationReviewRequest, setRelationReviewRequest] = useState(0);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!useTaskStore.getState().hasPendingChanges()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   useEffect(() => {
     const bodyStyle = document.body.style;
@@ -67,13 +78,14 @@ function App() {
           )}
         </div>
       )}
-      <GanttToolbar zoomLevel={zoomLevel} onZoomChange={setZoomLevel} exportRef={exportRef} />
+      <GanttToolbar zoomLevel={zoomLevel} onZoomChange={setZoomLevel} exportRef={exportRef}
+        onOpenRelationReview={() => setRelationReviewRequest(request => request + 1)} />
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         <GanttContainer ref={exportRef} />
       </div>
 
       <Toast />
-      <ConflictResolutionPanel />
+      <ConflictResolutionPanel relationReviewRequest={relationReviewRequest} />
       <GlobalTimer />
       <TimerStartModal />
       <PendingWorkModal />

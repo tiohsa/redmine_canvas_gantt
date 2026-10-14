@@ -6,6 +6,7 @@ import {
 } from '../stores/taskStore/taskPersistence';
 import {
     PERSISTABLE_TASK_FIELDS,
+    RelationExecutionGuardError,
     taskMutationAffectsScheduling,
     taskMutationFields,
     taskMutationService
@@ -253,6 +254,52 @@ describe('taskMutationService mutation boundary', () => {
             .filter(candidate => candidate.entityIds.includes('10') && candidate.entityIds.includes('11'))
             .at(-1);
         expect(record).toMatchObject({ status: 'conflict', outcome: 'conflict' });
+    });
+
+    it('passes expected relation snapshots through update and delete mutations', async () => {
+        vi.spyOn(apiClient, 'updateRelation').mockResolvedValue({
+            status: 'ok', id: '3', from: '10', to: '11', type: 'blocks'
+        });
+        vi.spyOn(apiClient, 'deleteRelation').mockResolvedValue({ status: 'ok' });
+        const expected = { from: '10', to: '11', type: 'precedes', delay: 2 };
+
+        await taskMutationService.updateRelation('3', 'blocks', undefined, ['10', '11'], expected);
+        await taskMutationService.deleteRelation('3', ['10', '11'], expected);
+
+        expect(apiClient.updateRelation).toHaveBeenCalledWith('3', 'blocks', undefined, expect.any(String), expected);
+        expect(apiClient.deleteRelation).toHaveBeenCalledWith('3', expect.any(String), expected);
+    });
+
+    it('rechecks relation view scope after queued writes drain and does not send a blocked request', async () => {
+        let releaseFirst!: () => void;
+        const firstRequest = new Promise<void>(resolve => { releaseFirst = resolve; });
+        let calls = 0;
+        const updateRelation = vi.spyOn(apiClient, 'updateRelation').mockImplementation(async () => {
+            calls += 1;
+            if (calls === 1) await firstRequest;
+            return { status: 'ok', id: '3', from: '10', to: '11', type: 'blocks' };
+        });
+        const expected = { from: '10', to: '11', type: 'precedes', delay: 2 };
+        const first = taskMutationService.updateRelation('3', 'blocks', undefined, ['10', '11'], expected);
+        await vi.waitFor(() => expect(updateRelation).toHaveBeenCalledTimes(1));
+
+        const guard = vi.fn(() => { throw new Error('The current view changed'); });
+        const second = taskMutationService.updateRelation('3', 'relates', undefined, ['10', '11'], expected, guard);
+        await Promise.resolve();
+        expect(guard).not.toHaveBeenCalled();
+
+        releaseFirst();
+        await first;
+        const error = await second.then(() => undefined, failure => failure);
+        expect(error).toBeInstanceOf(RelationExecutionGuardError);
+        expect(error).toMatchObject({
+            name: 'RelationExecutionGuardError',
+            status: 'conflict',
+            knownUnsent: true,
+            message: 'The current view changed'
+        });
+        expect(guard).toHaveBeenCalledTimes(1);
+        expect(updateRelation).toHaveBeenCalledTimes(1);
     });
 
     it('records resolved bulk subtask row failures as failed domain operations', async () => {

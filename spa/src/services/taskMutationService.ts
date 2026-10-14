@@ -1,5 +1,6 @@
 import type { Relation } from '../types';
 import { apiClient } from '../api/client';
+import type { ExpectedRelation } from '../api/client';
 import type { MutationMetadata, ScheduleMutationChange, ScheduleResolutionRequest } from '../api/client';
 import { baselineProjectResourceKey, enqueueMutationOperation, enqueueScheduleMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
 import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
@@ -9,6 +10,27 @@ import { DatePlacementMode } from '../types/constraints';
 
 export type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
+export type RelationExecutionGuard = () => void;
+
+export class RelationExecutionGuardError extends Error {
+    readonly status = 'conflict' as const;
+    readonly knownUnsent = true as const;
+
+    constructor(message = 'Relation save scope changed before the request was sent') {
+        super(message);
+        this.name = 'RelationExecutionGuardError';
+    }
+}
+
+const runRelationExecutionGuard = (guard?: RelationExecutionGuard): void => {
+    if (!guard) return;
+    try {
+        guard();
+    } catch (error) {
+        if (error instanceof RelationExecutionGuardError) throw error;
+        throw new RelationExecutionGuardError(error instanceof Error ? error.message : undefined);
+    }
+};
 
 export const BULK_TASK_FIELDS = ['startDate', 'dueDate', 'parentId'] as const;
 export const SCHEDULE_TASK_FIELDS = ['startDate', 'dueDate'] as const;
@@ -299,16 +321,25 @@ export const taskMutationService = {
         );
     },
 
-    createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
-        enqueueMutationOperation([fromId, toId], (context) => apiClient.createRelation(fromId, toId, type, delay, context?.operationId), undefined, [taskResourceKey(fromId), taskResourceKey(toId)])
+    createRelation: (fromId: string, toId: string, type: string, delay?: number, executionGuard?: RelationExecutionGuard): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
+        enqueueMutationOperation([fromId, toId], (context) => {
+            runRelationExecutionGuard(executionGuard);
+            return apiClient.createRelation(fromId, toId, type, delay, context?.operationId);
+        }, undefined, [taskResourceKey(fromId), taskResourceKey(toId)])
     ),
 
-    updateRelation: (relationId: string, type: string, delay?: number, endpointIds: string[] = []): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
-        enqueueMutationOperation([relationId, ...endpointIds], (context) => apiClient.updateRelation(relationId, type, delay, context?.operationId), undefined, [relationResourceKey(relationId), ...endpointIds.map(taskResourceKey)])
+    updateRelation: (relationId: string, type: string, delay?: number, endpointIds: string[] = [], expected?: ExpectedRelation, executionGuard?: RelationExecutionGuard): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
+        enqueueMutationOperation([relationId, ...endpointIds], (context) => {
+            runRelationExecutionGuard(executionGuard);
+            return apiClient.updateRelation(relationId, type, delay, context?.operationId, expected);
+        }, undefined, [relationResourceKey(relationId), ...endpointIds.map(taskResourceKey)])
     ),
 
-    deleteRelation: (relationId: string, endpointIds: string[] = []): Promise<MutationMetadata & { status: 'ok' }> => (
-        enqueueMutationOperation([relationId, ...endpointIds], (context) => apiClient.deleteRelation(relationId, context?.operationId), undefined, [relationResourceKey(relationId), ...endpointIds.map(taskResourceKey)])
+    deleteRelation: (relationId: string, endpointIds: string[] = [], expected?: ExpectedRelation, executionGuard?: RelationExecutionGuard): Promise<MutationMetadata & { status: 'ok' }> => (
+        enqueueMutationOperation([relationId, ...endpointIds], (context) => {
+            runRelationExecutionGuard(executionGuard);
+            return apiClient.deleteRelation(relationId, context?.operationId, expected);
+        }, undefined, [relationResourceKey(relationId), ...endpointIds.map(taskResourceKey)])
     ),
 
     deleteTask: (taskId: string): Promise<MutationMetadata & { status: 'ok' }> => (

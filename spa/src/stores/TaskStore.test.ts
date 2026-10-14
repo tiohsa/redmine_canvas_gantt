@@ -4645,6 +4645,57 @@ describe('TaskStore scheduling state and relation-driven recalculation', () => {
         expect(state.allTasks.find((task) => task.id === 'C')?.startDate).toBe(Date.UTC(2026, 0, 9));
     });
 
+    it('uses staged dependency creates for local propagation and derived scheduling after date edits', () => {
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+        useTaskStore.getState().setAutoSave(false);
+        useTaskStore.getState().applyApiData(buildApiData([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: WEDNESDAY })
+        ]));
+        useTaskStore.getState().stageRelationCreate({ from: 'A', to: 'B', type: 'precedes', delay: 0 });
+
+        useTaskStore.getState().updateTask('A', { dueDate: THURSDAY });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === 'B')?.startDate).toBe(FRIDAY);
+        expect(state.criticalPathMetrics.A?.critical).toBe(true);
+        expect(state.criticalPathMetrics.B?.critical).toBe(true);
+        expect(state.criticalPathProjectFinish).toBe(FRIDAY);
+    });
+
+    it('does not propagate through a staged dependency delete during a date edit', () => {
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+        useTaskStore.getState().setAutoSave(false);
+        useTaskStore.getState().applyApiData(buildApiData([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: WEDNESDAY })
+        ], [{ id: 'r1', from: 'A', to: 'B', type: 'precedes' }]));
+        useTaskStore.getState().stageRelationDelete('r1');
+
+        useTaskStore.getState().updateTask('A', { dueDate: THURSDAY });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === 'B')?.startDate).toBe(WEDNESDAY);
+        expect(state.getEffectiveRelations()).toEqual([]);
+    });
+
+    it('uses staged relation direction and delay when propagating a date edit', () => {
+        useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.ConstraintPush });
+        useTaskStore.getState().setAutoSave(false);
+        useTaskStore.getState().applyApiData(buildApiData([
+            buildTask({ id: 'A', startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'B', startDate: WEDNESDAY, dueDate: WEDNESDAY })
+        ], [{ id: 'r1', from: 'A', to: 'B', type: 'precedes', delay: 0 }]));
+        useTaskStore.getState().stageRelationUpdate('r1', { from: 'B', to: 'A', type: 'precedes', delay: 1 });
+
+        useTaskStore.getState().updateTask('B', { dueDate: THURSDAY });
+
+        const state = useTaskStore.getState();
+        expect(state.allTasks.find(task => task.id === 'A')?.startDate).toBeGreaterThan(TUESDAY);
+        expect(state.allTasks.find(task => task.id === 'A')?.startDate).toBeGreaterThanOrEqual(FRIDAY);
+        expect(state.getEffectiveRelations()).toEqual([expect.objectContaining({ from: 'B', to: 'A', delay: 1 })]);
+    });
+
     it('updateTask leaves downstream tasks untouched when auto scheduling is off', () => {
         useUIStore.setState({ autoScheduleMoveMode: AutoScheduleMoveMode.Off });
         const { setTasks, setRelations, updateTask } = useTaskStore.getState();
@@ -5762,5 +5813,286 @@ describe('physical hierarchy canonical reconciliation', () => {
         else useTaskStore.getState().applyApiData(buildApiData([old]));
         expect(useTaskStore.getState().serverTaskSnapshot.entitiesById['10']).toMatchObject(current);
         expect(useTaskStore.getState().allTasks[0]).toMatchObject(current);
+    });
+});
+
+describe('TaskStore relation draft persistence', () => {
+    const addNotification = vi.fn();
+
+    beforeEach(() => {
+        useTaskStore.setState(useTaskStore.getInitialState(), true);
+        useUIStore.setState({ addNotification: addNotification as unknown as (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void });
+        addNotification.mockReset();
+        vi.mocked(apiClient.updateTask).mockReset().mockResolvedValue({ status: 'ok', lockVersion: 2 });
+        vi.mocked(apiClient.fetchData).mockReset();
+        vi.spyOn(useTaskStore.getState(), 'refreshData').mockResolvedValue({
+            status: 'applied',
+            context: createReadContext({ generation: 0, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh' })
+        });
+    });
+
+    const initialize = () => {
+        const from = buildTask({ id: 'from', projectId: 'p1', startDate: MONDAY, dueDate: TUESDAY });
+        const to = buildTask({ id: 'to', projectId: 'p1', startDate: WEDNESDAY, dueDate: THURSDAY });
+        useTaskStore.getState().applyApiData(buildApiData([from, to]));
+        return { from, to };
+    };
+
+    const stageUnknownDelete = () => {
+        const { from, to } = initialize();
+        const relation: Relation = { id: 'relation-1', from: from.id, to: to.id, type: 'precedes', delay: 0 };
+        useTaskStore.getState().applyApiData(buildApiData([from, to], [relation]));
+        useTaskStore.setState({ pendingRelationChanges: {
+            'relation:relation-1': {
+                draftId: 'relation:relation-1', operation: 'delete', relationId: relation.id,
+                original: relation, generation: 1, status: 'unknown'
+            }
+        } });
+        return { from, to, relation, draftId: 'relation:relation-1' };
+    };
+
+    const refreshWithSnapshot = (data: ReturnType<typeof buildApiData>) => {
+        const context = createReadContext({
+            generation: 1, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh'
+        });
+        vi.mocked(useTaskStore.getState().refreshData).mockImplementation(async () => {
+            useTaskStore.setState({ activeReadContext: context });
+            useTaskStore.getState().applyApiData(data, context);
+            return { status: 'applied', context };
+        });
+    };
+
+    it.each([
+        ['from', 'assume_applied'], ['to', 'assume_applied'],
+        ['from', 'retry'], ['to', 'retry']
+    ] as const)(
+        'keeps an unknown deletion unresolved when the refreshed snapshot filters the %s endpoint during %s',
+        async (filteredEndpoint, resolution) => {
+            const { from, to, relation, draftId } = stageUnknownDelete();
+            const filteredTask = filteredEndpoint === 'from' ? from : to;
+            const visibleTask = filteredEndpoint === 'from' ? to : from;
+            useTaskStore.setState(state => ({
+                allTasks: state.allTasks.map(task => task.id === filteredTask.id ? { ...task, subject: 'Local edit' } : task),
+                modifiedTaskIds: new Set([...state.modifiedTaskIds, filteredTask.id]),
+                localTaskPatches: {
+                    ...state.localTaskPatches,
+                    [filteredTask.id]: [{
+                        entityId: filteredTask.id,
+                        projection: { subject: 'Local edit' },
+                        mutationIntent: { subject: 'Local edit' },
+                        generation: 1,
+                        operationId: `edit:${filteredTask.id}:1`
+                    }]
+                }
+            }));
+            refreshWithSnapshot(buildApiData([visibleTask]));
+
+            const resolved = await useTaskStore.getState().resolveUnknownRelationChange(draftId, resolution);
+            const state = useTaskStore.getState();
+
+            expect(resolved).toBe(false);
+            expect(state.allTasks.some(task => task.id === filteredTask.id)).toBe(true);
+            expect(state.serverTaskSnapshot.entitiesById[filteredTask.id]).toBeUndefined();
+            expect(state.pendingRelationChanges[draftId]).toMatchObject({ status: 'unknown', original: relation });
+        }
+    );
+
+    it('resolves an unknown deletion as applied when both endpoints are covered and the relation is absent', async () => {
+        const { from, to, draftId } = stageUnknownDelete();
+        refreshWithSnapshot(buildApiData([from, to]));
+
+        const resolved = await useTaskStore.getState().resolveUnknownRelationChange(draftId, 'assume_applied');
+
+        expect(resolved).toBe(true);
+        expect(useTaskStore.getState().pendingRelationChanges[draftId]).toBeUndefined();
+    });
+
+    it('keeps an unknown deletion unresolved when the relation remains in the refreshed snapshot', async () => {
+        const { from, to, relation, draftId } = stageUnknownDelete();
+        refreshWithSnapshot(buildApiData([from, to], [relation]));
+
+        const resolved = await useTaskStore.getState().resolveUnknownRelationChange(draftId, 'assume_applied');
+
+        expect(resolved).toBe(false);
+        expect(useTaskStore.getState().pendingRelationChanges[draftId]).toMatchObject({ status: 'unknown', original: relation });
+    });
+
+    it('preserves the view guard while refreshing an unknown relation deletion', async () => {
+        const { draftId } = stageUnknownDelete();
+        const refresh = vi.mocked(useTaskStore.getState().refreshData);
+        const request = deferred<{ status: 'applied'; context: ReturnType<typeof createReadContext> }>();
+        refresh.mockReturnValueOnce(request.promise);
+
+        const resolution = useTaskStore.getState().resolveUnknownRelationChange(draftId, 'assume_applied');
+        useTaskStore.setState({ showSubprojects: true });
+        request.resolve({
+            status: 'applied',
+            context: createReadContext({ generation: 2, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh' })
+        });
+
+        expect(await resolution).toBe(false);
+        expect(useTaskStore.getState().pendingRelationChanges[draftId]).toMatchObject({ status: 'unknown' });
+    });
+
+    it('saves a relation-only draft and preserves server relations as the confirmed base', async () => {
+        const { from, to } = initialize();
+        const created: Relation = { id: 'new-r', from: from.id, to: to.id, type: 'precedes', delay: 0 };
+        const create = vi.spyOn(taskMutationService, 'createRelation').mockResolvedValue(created as Relation & { status: 'ok' });
+        useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'precedes', delay: 0 });
+        expect(useTaskStore.getState().relations).toEqual([]);
+        expect(useTaskStore.getState().getEffectiveRelations()).toEqual([expect.objectContaining({ id: expect.stringMatching(/^local:/) })]);
+
+        const failures = await useTaskStore.getState().saveChanges();
+
+        expect(failures.size).toBe(0);
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(create).toHaveBeenCalledWith(from.id, to.id, 'precedes', 0, expect.any(Function));
+        expect(useTaskStore.getState().refreshData).toHaveBeenCalledTimes(2);
+        expect(useTaskStore.getState().relations).toEqual([created]);
+        expect(useTaskStore.getState().pendingRelationChanges).toEqual({});
+        create.mockRestore();
+    });
+
+    it('does not rebuild derived task state for reference-only drafts when dependency ordering is off', () => {
+        const { from, to } = initialize();
+        useTaskStore.setState({ organizeByDependency: false });
+        resetDerivedRecalculationCounters();
+
+        useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'relates' });
+
+        expect(derivedRecalculationCounters).toEqual({ scheduling: 0, criticalPath: 0, layout: 0 });
+        expect(useTaskStore.getState().getEffectiveRelations()).toEqual([expect.objectContaining({ type: 'relates' })]);
+    });
+
+    it('recalculates scheduling without rebuilding layout for constraint drafts when dependency ordering is off', () => {
+        const { from, to } = initialize();
+        useTaskStore.setState({ organizeByDependency: false });
+        resetDerivedRecalculationCounters();
+
+        useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'precedes', delay: 0 });
+
+        expect(derivedRecalculationCounters).toEqual({ scheduling: 1, criticalPath: 1, layout: 0 });
+    });
+
+    it('keeps a confirmed relation committed when the final reconcile read fails', async () => {
+        const { from, to } = initialize();
+        const created: Relation = { id: 'confirmed-r', from: from.id, to: to.id, type: 'precedes', delay: 0 };
+        const create = vi.spyOn(taskMutationService, 'createRelation').mockResolvedValue(created as Relation & { status: 'ok' });
+        const refresh = vi.mocked(useTaskStore.getState().refreshData);
+        refresh.mockReset()
+            .mockResolvedValueOnce({
+                status: 'applied',
+                context: createReadContext({ generation: 0, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh' })
+            })
+            .mockRejectedValueOnce(new Error('refresh failed'));
+        useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'precedes', delay: 0 });
+
+        const failures = await useTaskStore.getState().saveChanges();
+
+        expect(failures.has('relations')).toBe(true);
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(useTaskStore.getState().pendingRelationChanges).toEqual({});
+        expect(useTaskStore.getState().relations).toEqual([created]);
+        expect(addNotification).toHaveBeenCalledWith(expect.any(String), 'warning');
+        create.mockRestore();
+    });
+
+    it('keeps a network-unknown create blocked from automatic resend', async () => {
+        const { from, to } = initialize();
+        const create = vi.spyOn(taskMutationService, 'createRelation').mockRejectedValue(new TypeError('network lost'));
+        useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'precedes', delay: 0 });
+
+        const first = await useTaskStore.getState().saveChanges();
+        const second = await useTaskStore.getState().saveChanges();
+
+        expect(first.size).toBe(1);
+        expect(second.size).toBe(1);
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(Object.values(useTaskStore.getState().pendingRelationChanges)[0]).toMatchObject({ status: 'unknown' });
+        create.mockRestore();
+    });
+
+    it.each([
+        [403, 'forbidden'],
+        [404, 'not_found'],
+        [409, 'conflict'],
+        [422, 'validation_error']
+    ] as const)('marks an HTTP %i relation rejection failed with its server message', async (httpStatus, status) => {
+        const { from, to } = initialize();
+        const { ApiMutationError } = await vi.importActual<typeof import('../api/client')>('../api/client');
+        const message = `Server rejected relation with HTTP ${httpStatus}`;
+        const create = vi.spyOn(taskMutationService, 'createRelation').mockRejectedValue(
+            new ApiMutationError(status, message, httpStatus)
+        );
+        useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'precedes', delay: 0 });
+
+        const failures = await useTaskStore.getState().saveChanges();
+        const draft = Object.values(useTaskStore.getState().pendingRelationChanges)[0];
+
+        expect(failures.get(`relation:${draft.draftId}`)).toBe(message);
+        expect(draft).toMatchObject({ status: 'failed', error: message });
+        create.mockRestore();
+    });
+
+    it.each([
+        [408, 'timeout'],
+        [500, 'server failure']
+    ] as const)('keeps an HTTP %i relation outcome unknown', async (httpStatus, description) => {
+        const { from, to } = initialize();
+        const { ApiMutationError } = await vi.importActual<typeof import('../api/client')>('../api/client');
+        const create = vi.spyOn(taskMutationService, 'createRelation').mockRejectedValue(
+            new ApiMutationError('transient_error', description, httpStatus)
+        );
+        useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'precedes', delay: 0 });
+
+        await useTaskStore.getState().saveChanges();
+
+        expect(Object.values(useTaskStore.getState().pendingRelationChanges)[0]).toMatchObject({
+            status: 'unknown',
+            error: 'label_relation_result_unknown'
+        });
+        create.mockRestore();
+    });
+
+    it('does not send relations after a task write fails', async () => {
+        const { from, to } = initialize();
+        const create = vi.spyOn(taskMutationService, 'createRelation').mockResolvedValue({ id: 'new-r', from: from.id, to: to.id, type: 'precedes' } as Relation & { status: 'ok' });
+        useTaskStore.getState().setAutoSave(false);
+        useTaskStore.getState().updateTask(from.id, { subject: 'Edited' });
+        useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'precedes', delay: 0 });
+        vi.mocked(apiClient.updateTask).mockImplementation(async () => ({ status: 'error', error: 'task rejected' }));
+
+        const failures = await useTaskStore.getState().saveChanges();
+
+        expect(apiClient.updateTask).toHaveBeenCalled();
+        expect(failures.has(from.id)).toBe(true);
+        expect(create).not.toHaveBeenCalled();
+        expect(Object.values(useTaskStore.getState().pendingRelationChanges)[0]?.status).toBe('pending');
+        create.mockRestore();
+    });
+
+    it('stops after an in-flight relation if endpoint task edits arrive', async () => {
+        const { from, to } = initialize();
+        const otherFrom = buildTask({ id: 'other-from', projectId: 'p1', startDate: MONDAY, dueDate: TUESDAY });
+        const otherTo = buildTask({ id: 'other-to', projectId: 'p1', startDate: WEDNESDAY, dueDate: THURSDAY });
+        useTaskStore.getState().applyApiData(buildApiData([from, to, otherFrom, otherTo]));
+        const firstRequest = deferred<Relation & { status: 'ok' }>();
+        const create = vi.spyOn(taskMutationService, 'createRelation')
+            .mockReturnValueOnce(firstRequest.promise)
+            .mockResolvedValueOnce({ id: 'new-r2', from: otherFrom.id, to: otherTo.id, type: 'precedes', delay: 0 } as Relation & { status: 'ok' });
+        useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'precedes', delay: 0 });
+        useTaskStore.getState().stageRelationCreate({ from: otherFrom.id, to: otherTo.id, type: 'precedes', delay: 0 });
+
+        const save = useTaskStore.getState().saveChanges();
+        await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+        useTaskStore.getState().updateTask(from.id, { subject: 'later edit' });
+        firstRequest.resolve({ id: 'new-r', from: from.id, to: to.id, type: 'precedes', delay: 0, status: 'ok' });
+        await save;
+
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(useTaskStore.getState().modifiedTaskIds.has(from.id)).toBe(true);
+        expect(Object.values(useTaskStore.getState().pendingRelationChanges)).toHaveLength(1);
+        expect(Object.values(useTaskStore.getState().pendingRelationChanges)[0]?.status).toBe('pending');
+        create.mockRestore();
     });
 });

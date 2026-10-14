@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { ConflictResolutionPanel } from './ConflictResolutionPanel';
 import { useTaskStore } from '../stores/TaskStore';
 import { createReadContext, createServerSnapshot } from '../stores/taskStore/stateContract';
 import type { Task } from '../types';
 import { parseDateOnly } from '../utils/dateOnly';
+import { RelationType } from '../types/constraints';
 
 const task = (subject: string, lockVersion: number): Task => ({
     id: '1',
@@ -67,6 +68,83 @@ describe('ConflictResolutionPanel', () => {
         fireEvent.click(screen.getByTestId('conflict-reopen'));
         expect(screen.getByTestId('conflict-resolution-panel')).toBeInTheDocument();
         expect(screen.getByRole('cell', { name: 'Remote' })).toBeInTheDocument();
+    });
+
+    it('reviews failed and unknown relation changes in the shared side panel', async () => {
+        const saveChanges = vi.fn().mockResolvedValue(new Map());
+        const resolveUnknownRelationChange = vi.fn().mockResolvedValue(false);
+        const initialContext = createReadContext({ generation: 1, projectId: '1', query: {}, scope: {}, purpose: 'initial_load' });
+        const refreshedContext = createReadContext({ generation: 2, projectId: '1', query: {}, scope: {}, purpose: 'refresh' });
+        const refreshData = vi.fn().mockImplementation(async () => {
+            useTaskStore.setState({ activeReadContext: refreshedContext, dataReadStatus: 'ready' });
+            return { status: 'applied', context: refreshedContext };
+        });
+        window.RedmineCanvasGantt!.i18n = {
+            label_relation_review: 'Review dependency changes',
+            label_relation_review_intro: 'Review dependency changes before retrying.',
+            label_relation_change_delete: 'Delete dependency',
+            label_relation_save_failed: 'Dependency save failed',
+            label_relation_result_unknown: 'Dependency result is unknown',
+            label_relation_review_original: 'Original',
+            label_relation_review_desired: 'Desired',
+            label_relation_review_server: 'Server',
+            label_relation_review_last_loaded: 'last loaded',
+            label_relation_review_no_relation: 'No relation',
+            label_relation_review_refresh: 'Refresh comparison',
+            label_relation_review_refresh_failed: 'Could not refresh comparison',
+            label_relation_unknown_review_required: 'Refresh the server comparison first.',
+            label_relation_type_relates: 'Relates',
+            label_relation_unknown_assume_applied: 'Mark as applied',
+            label_relation_unknown_retry: 'Retry after review',
+            label_relation_failed_retry: 'Retry save'
+        };
+        useTaskStore.setState({
+            activeReadContext: initialContext,
+            dataReadStatus: 'ready',
+            saveChanges,
+            refreshData,
+            resolveUnknownRelationChange,
+            pendingRelationChanges: {
+                'relation:failed': {
+                    draftId: 'relation:failed', operation: 'delete', relationId: 'rel-1',
+                    original: { id: 'rel-1', from: '10', to: '11', type: RelationType.Relates },
+                    generation: 1, status: 'failed', error: 'Delete was rejected'
+                },
+                'relation:unknown': {
+                    draftId: 'relation:unknown', operation: 'delete', relationId: 'rel-2',
+                    original: { id: 'rel-2', from: '20', to: '21', type: RelationType.Relates },
+                    generation: 2, status: 'unknown', error: 'Connection was lost'
+                }
+            }
+        });
+
+        const { rerender } = render(<ConflictResolutionPanel relationReviewRequest={0} />);
+        expect(screen.getByTestId('relation-review-card-relation:failed')).toHaveTextContent('#10 → #11');
+        expect(screen.getByTestId('relation-review-card-relation:failed')).toHaveTextContent('Delete was rejected');
+        expect(screen.getByTestId('relation-review-card-relation:unknown')).toHaveTextContent('#20 → #21');
+        expect(screen.getByTestId('relation-review-card-relation:unknown')).toHaveTextContent('Server (last loaded)');
+        expect(screen.getByTestId('relation-unknown-retry-relation:unknown')).toBeDisabled();
+        fireEvent.click(screen.getByTestId('relation-review-refresh-relation:unknown'));
+        await vi.waitFor(() => {
+            expect(refreshData).toHaveBeenCalledTimes(1);
+            expect(screen.getByTestId('relation-review-card-relation:unknown')).not.toHaveTextContent('last loaded');
+        });
+        expect(screen.getByTestId('relation-unknown-retry-relation:unknown')).toBeEnabled();
+        fireEvent.click(screen.getByTestId('relation-failed-retry-relation:failed'));
+        expect(saveChanges).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(screen.getByTestId('relation-unknown-retry-relation:unknown')).toBeEnabled());
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+        expect(screen.getByTestId('relation-review-reopen')).toBeInTheDocument();
+        rerender(<ConflictResolutionPanel relationReviewRequest={1} />);
+        expect(screen.getByTestId('conflict-resolution-panel')).toBeInTheDocument();
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('relation-unknown-retry-relation:unknown'));
+            await Promise.resolve();
+        });
+        await vi.waitFor(() => expect(resolveUnknownRelationChange).toHaveBeenCalledWith('relation:unknown', 'retry'));
+        expect(within(screen.getByTestId('relation-review-card-relation:unknown')).getByRole('alert'))
+            .toHaveTextContent('Dependency result is unknown');
     });
 
     it('stays open for remaining conflicts after resolving a newly arrived conflict', () => {

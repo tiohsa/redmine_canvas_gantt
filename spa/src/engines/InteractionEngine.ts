@@ -228,7 +228,8 @@ export class InteractionEngine {
     }
 
     private hitTestRelation(x: number, y: number): Relation | null {
-        const { tasks, relations, viewport, rowCount, zoomLevel } = useTaskStore.getState();
+        const { tasks, getEffectiveRelations, viewport, rowCount, zoomLevel } = useTaskStore.getState();
+        const relations = getEffectiveRelations();
         if (!shouldRenderRelationsAtZoom(zoomLevel)) {
             return null;
         }

@@ -85,18 +85,23 @@ const conflictComparison = (
     return rows;
 };
 
-/** Keeps the current draft in TaskStore until one of the two explicit choices. */
-export const ConflictResolutionPanel: React.FC = () => {
+/** Keeps conflicted drafts in TaskStore until the user makes an explicit choice. */
+export const ConflictResolutionPanel: React.FC<{ relationReviewRequest?: number }> = ({ relationReviewRequest = 0 }) => {
     const store = useTaskStore();
     const [pending, setPending] = useState(false);
     const conflicts = useTaskStore(state => state.taskConflicts);
+    const pendingRelationChanges = useTaskStore(state => state.pendingRelationChanges);
+    const serverRelations = useTaskStore(state => state.relations);
+    const activeReadContext = useTaskStore(state => state.activeReadContext);
+    const refreshData = useTaskStore(state => state.refreshData);
+    const saveChanges = useTaskStore(state => state.saveChanges);
+    const resolveUnknownRelationChange = useTaskStore(state => state.resolveUnknownRelationChange);
     const allTasks = useTaskStore(state => state.allTasks);
     const patches = useTaskStore(state => state.localTaskPatches);
     const statuses = useTaskStore(state => state.taskStatuses);
     const customFields = useTaskStore(state => state.customFields);
     const assignees = useTaskStore(state => state.filterOptions.assignees);
     const snapshot = useTaskStore(state => state.serverTaskSnapshot);
-    const activeReadContext = useTaskStore(state => state.activeReadContext);
     const readStatus = useTaskStore(state => state.dataReadStatus);
     const resolveTaskConflict = useTaskStore(state => state.resolveTaskConflict);
     const entries = Object.values(conflicts);
@@ -105,7 +110,29 @@ export const ConflictResolutionPanel: React.FC = () => {
     const focusAfterResolve = useRef<number | null>(null);
     const [closedSignature, setClosedSignature] = useState<string | null>(null);
     const conflictSignature = entries.map(conflict => `${conflict.taskId}:${conflict.detectedAt}`).join('|');
-    const open = closedSignature !== conflictSignature;
+    const relationEntries = Object.values(pendingRelationChanges).filter(change => change.status === 'failed' || change.status === 'unknown');
+    const relationSignature = relationEntries.map(change => `${change.draftId}:${change.generation}:${change.status}`).join('|');
+    const reviewSignature = `${conflictSignature}#${relationSignature}`;
+    const relationRequestSeen = useRef(relationReviewRequest);
+    const [focusRelationReview, setFocusRelationReview] = useState(false);
+    const [relationResolutionDraftId, setRelationResolutionDraftId] = useState<string | null>(null);
+    const [relationResolutionAction, setRelationResolutionAction] = useState<'refresh' | 'resolve' | 'save' | null>(null);
+    const [relationResolutionErrors, setRelationResolutionErrors] = useState<Record<string, string>>({});
+    const [refreshedRelationContexts, setRefreshedRelationContexts] = useState<Record<string, string>>({});
+    const open = closedSignature !== reviewSignature;
+
+    React.useEffect(() => {
+        if (relationRequestSeen.current === relationReviewRequest) return;
+        relationRequestSeen.current = relationReviewRequest;
+        setClosedSignature(null);
+        setFocusRelationReview(true);
+    }, [relationReviewRequest]);
+
+    useLayoutEffect(() => {
+        if (!focusRelationReview || !open) return;
+        panelRef.current?.querySelector<HTMLElement>('[data-conflict-heading]')?.focus();
+        setFocusRelationReview(false);
+    }, [focusRelationReview, open]);
 
     useLayoutEffect(() => {
         if (focusAfterResolve.current === null) return;
@@ -116,7 +143,7 @@ export const ConflictResolutionPanel: React.FC = () => {
         if (!buttons?.length) panelRef.current?.querySelector<HTMLElement>('[data-conflict-heading]')?.focus();
     }, [conflicts]);
 
-    if (entries.length === 0) return null;
+    if (entries.length === 0 && relationEntries.length === 0) return null;
     const choose = (id: string, resolution: 'local' | 'remote', index: number) => {
         const grouped = scheduleConflictIds(store, id).length > 0;
         if (grouped) setPending(true);
@@ -128,25 +155,34 @@ export const ConflictResolutionPanel: React.FC = () => {
         }).finally(() => { if (grouped) setPending(false); });
     };
 
-    if (!open) return <button type="button" className="conflict-reopen" data-testid="conflict-reopen"
+    if (!open) return <button type="button" className="conflict-reopen"
+        data-testid={entries.length > 0 ? 'conflict-reopen' : 'relation-review-reopen'}
         onClick={() => setClosedSignature(null)}>
-        <span aria-hidden="true">!</span> {i18n.t('label_conflict_resolution') || 'Resolve conflicting changes'}
-        <span className="conflict-reopen-count">{entries.length}</span>
+        <span aria-hidden="true">!</span> {entries.length > 0
+            ? (i18n.t('label_conflict_resolution') || 'Resolve conflicting changes')
+            : (i18n.t('label_relation_review') ?? '')}
+        <span className="conflict-reopen-count">{entries.length + relationEntries.length}</span>
     </button>;
 
     return (<>
-        <div className="conflict-backdrop" aria-hidden="true" onMouseDown={() => setClosedSignature(conflictSignature)} />
-        <section ref={panelRef} aria-label={i18n.t('label_conflict_resolution') || 'Conflict resolution'}
+        <div className="conflict-backdrop" aria-hidden="true" onMouseDown={() => setClosedSignature(reviewSignature)} />
+        <section ref={panelRef} aria-label={entries.length > 0
+            ? (i18n.t('label_conflict_resolution') || 'Conflict resolution')
+            : (i18n.t('label_relation_review') ?? '')}
             data-testid="conflict-resolution-panel" className="conflict-panel">
             <header className="conflict-panel-header">
                 <div className="conflict-panel-title-row">
                     <span className="conflict-panel-icon" aria-hidden="true">!</span>
-                    <h2 tabIndex={-1} data-conflict-heading>{i18n.t('label_conflict_resolution') || 'Resolve conflicting changes'}</h2>
-                    <span className="conflict-panel-count">{entries.length}</span>
+                    <h2 tabIndex={-1} data-conflict-heading>{entries.length > 0
+                        ? (i18n.t('label_conflict_resolution') || 'Resolve conflicting changes')
+                        : (i18n.t('label_relation_review') ?? '')}</h2>
+                    <span className="conflict-panel-count">{entries.length + relationEntries.length}</span>
                     <button type="button" className="conflict-panel-close" aria-label={i18n.t('button_close') || 'Close'}
-                        onClick={() => setClosedSignature(conflictSignature)}>×</button>
+                        onClick={() => setClosedSignature(reviewSignature)}>×</button>
                 </div>
-                <p>{i18n.t('label_conflict_intro') || 'Other users have updated these issues. Review the values and choose which changes to keep.'}</p>
+                <p>{entries.length > 0
+                    ? (i18n.t('label_conflict_intro') || 'Other users have updated these issues. Review the values and choose which changes to keep.')
+                    : (i18n.t('label_relation_review_intro') ?? '')}</p>
                 {entries.length > 1 && <nav className="conflict-panel-jump-list rcg-scroll"
                     aria-label={i18n.t('label_conflict_resolution') || 'Conflict resolution'}>
                     {entries.map(conflict => <button key={conflict.taskId} type="button"
@@ -242,6 +278,169 @@ export const ConflictResolutionPanel: React.FC = () => {
                                     onClick={() => choose(conflict.taskId, 'local', index)}>
                                     {grouped ? (i18n.t('button_select_local') || 'Select local dates') : (i18n.t('button_keep_local_retry') || 'Keep local & retry')}
                                 </button><span>{grouped ? (i18n.t('label_conflict_selection_only') || 'Selection only; apply the group to confirm') : (i18n.t('label_conflict_retry_help') || 'Try saving your changes again')}</span></div>
+                            </div>
+                        </article>
+                    );
+                })}
+                {relationEntries.map(change => {
+                    const target = change.desired ?? change.original;
+                    const isUnknown = change.status === 'unknown';
+                    const busy = relationResolutionDraftId !== null || pending || Object.values(pendingRelationChanges).some(item => item.status === 'saving');
+                    const currentServerRelation = change.relationId
+                        ? serverRelations.find(relation => relation.id === change.relationId)
+                        : change.desired
+                            ? serverRelations.find(relation => relation.from === change.desired?.from && relation.to === change.desired?.to && relation.type === change.desired?.type)
+                            : undefined;
+                    const comparisonIsCurrent = Boolean(refreshedRelationContexts[change.draftId] &&
+                        refreshedRelationContexts[change.draftId] === activeReadContext?.contextId);
+                    const currentValue = comparisonIsCurrent
+                        ? i18n.t('label_relation_review_server') ?? ''
+                        : `${i18n.t('label_relation_review_server') ?? ''} (${i18n.t('label_relation_review_last_loaded') ?? ''})`;
+                    const formatRelation = (relation: { from: string; to: string; type: string; delay?: number } | undefined) => {
+                        if (!relation) return i18n.t('label_relation_review_no_relation') ?? '';
+                        const type = i18n.t(`label_relation_type_${relation.type}`) ?? '';
+                        const delay = relation.delay === undefined ? '' : ` · ${i18n.t('label_delay') ?? ''}: ${relation.delay}`;
+                        return `#${relation.from} → #${relation.to} · ${type}${delay}`;
+                    };
+                    const resolveUnknown = async (resolution: 'assume_applied' | 'retry') => {
+                        setRelationResolutionDraftId(change.draftId);
+                        setRelationResolutionAction('resolve');
+                        setRelationResolutionErrors(previous => ({ ...previous, [change.draftId]: '' }));
+                        try {
+                            const resolved = await resolveUnknownRelationChange(change.draftId, resolution);
+                            if (!resolved) setRelationResolutionErrors(previous => ({
+                                ...previous,
+                                [change.draftId]: i18n.t('label_relation_result_unknown') ?? ''
+                            }));
+                        } catch (error: unknown) {
+                            setRelationResolutionErrors(previous => ({
+                                ...previous,
+                                [change.draftId]: error instanceof Error ? error.message : (i18n.t('label_relation_result_unknown') ?? '')
+                            }));
+                        } finally {
+                            setRelationResolutionDraftId(null);
+                            setRelationResolutionAction(null);
+                        }
+                    };
+                    const refreshComparison = async () => {
+                        setRelationResolutionDraftId(change.draftId);
+                        setRelationResolutionAction('refresh');
+                        setRelationResolutionErrors(previous => ({ ...previous, [change.draftId]: '' }));
+                        const before = useTaskStore.getState().activeReadContext;
+                        try {
+                            const outcome = await refreshData();
+                            const after = useTaskStore.getState();
+                            const sameScope = Boolean(before &&
+                                before.projectId === outcome.context.projectId &&
+                                before.queryIdentity === outcome.context.queryIdentity &&
+                                before.scopeIdentity === outcome.context.scopeIdentity);
+                            if (outcome.status !== 'applied' || !sameScope ||
+                                after.activeReadContext?.contextId !== outcome.context.contextId || after.dataReadStatus !== 'ready') {
+                                setRelationResolutionErrors(previous => ({
+                                    ...previous,
+                                    [change.draftId]: i18n.t('label_relation_review_refresh_failed') ?? ''
+                                }));
+                            } else {
+                                setRefreshedRelationContexts(previous => ({ ...previous, [change.draftId]: outcome.context.contextId }));
+                            }
+                        } catch (error: unknown) {
+                            setRelationResolutionErrors(previous => ({
+                                ...previous,
+                                [change.draftId]: error instanceof Error ? error.message : (i18n.t('label_relation_review_refresh_failed') ?? '')
+                            }));
+                        } finally {
+                            setRelationResolutionDraftId(null);
+                            setRelationResolutionAction(null);
+                        }
+                    };
+                    const retryFailed = async () => {
+                        setRelationResolutionDraftId(change.draftId);
+                        setRelationResolutionAction('save');
+                        setRelationResolutionErrors(previous => ({ ...previous, [change.draftId]: '' }));
+                        try {
+                            const failures = await saveChanges();
+                            if (failures.size > 0) {
+                                setRelationResolutionErrors(previous => ({
+                                    ...previous,
+                                    [change.draftId]: failures.get(change.draftId) ?? i18n.t('label_relation_save_failed') ?? ''
+                                }));
+                            }
+                        } catch (error: unknown) {
+                            setRelationResolutionErrors(previous => ({
+                                ...previous,
+                                [change.draftId]: error instanceof Error ? error.message : (i18n.t('label_relation_save_failed') ?? '')
+                            }));
+                        } finally {
+                            setRelationResolutionDraftId(null);
+                            setRelationResolutionAction(null);
+                        }
+                    };
+                    return (
+                        <article key={change.draftId} className="conflict-card relation-review-card"
+                            data-testid={`relation-review-card-${change.draftId}`}>
+                            <div className="conflict-card-heading">
+                                <span className="conflict-card-title">
+                                    <span className="conflict-card-id">{`#${target?.from ?? '?'} → #${target?.to ?? '?'}`}</span>
+                                    <strong>{i18n.t(`label_relation_change_${change.operation}`) ?? ''}</strong>
+                                </span>
+                                <span className="conflict-card-badge">{isUnknown
+                                    ? (i18n.t('label_relation_result_unknown') ?? '')
+                                    : (i18n.t('label_relation_save_failed') ?? '')}</span>
+                            </div>
+                            <dl className="relation-review-comparison">
+                                <div><dt>{i18n.t('label_relation_review_original') ?? ''}</dt><dd>{formatRelation(change.original)}</dd></div>
+                                <div><dt>{i18n.t('label_relation_review_desired') ?? ''}</dt><dd>{formatRelation(change.desired)}</dd></div>
+                                <div><dt>{currentValue}</dt><dd>{formatRelation(currentServerRelation)}</dd></div>
+                            </dl>
+                            {isUnknown && !comparisonIsCurrent && (
+                                <p className="relation-review-progress" role="note">
+                                    {i18n.t('label_relation_unknown_review_required') ?? ''}
+                                </p>
+                            )}
+                            {(change.error || relationResolutionErrors[change.draftId]) && (
+                                <p className="relation-review-error" role="alert">
+                                    {relationResolutionErrors[change.draftId] || change.error}
+                                </p>
+                            )}
+                            {relationResolutionDraftId === change.draftId && (
+                                <p className="relation-review-progress" role="status" aria-live="polite">
+                                    {isUnknown
+                                        ? (relationResolutionAction === 'refresh' || relationResolutionAction === 'resolve'
+                                            ? (i18n.t('label_relation_review_refreshing') ?? '')
+                                            : (i18n.t('label_relation_save_in_progress') ?? ''))
+                                        : (relationResolutionAction === 'refresh'
+                                            ? (i18n.t('label_relation_review_refreshing') ?? '')
+                                            : (i18n.t('label_relation_save_in_progress') ?? ''))}
+                                </p>
+                            )}
+                            <div className="conflict-card-actions relation-review-actions">
+                                <div><button type="button" disabled={busy}
+                                    data-testid={`relation-review-refresh-${change.draftId}`}
+                                    onClick={() => void refreshComparison()}>
+                                    {i18n.t('label_relation_review_refresh') ?? ''}
+                                </button></div>
+                                {isUnknown ? (
+                                    <>
+                                        <div><button type="button"
+                                            data-testid={`relation-unknown-assume-applied-${change.draftId}`}
+                                            disabled={busy || !comparisonIsCurrent}
+                                            onClick={() => void resolveUnknown('assume_applied')}>
+                                            {i18n.t('label_relation_unknown_assume_applied') ?? ''}
+                                        </button></div>
+                                        <div><button type="button"
+                                            data-testid={`relation-unknown-retry-${change.draftId}`}
+                                            disabled={busy || !comparisonIsCurrent}
+                                            onClick={() => void resolveUnknown('retry')}>
+                                            {i18n.t('label_relation_unknown_retry') ?? ''}
+                                        </button></div>
+                                    </>
+                                ) : (
+                                    <div><button type="button" disabled={busy}
+                                        data-testid={`relation-failed-retry-${change.draftId}`}
+                                        onClick={() => void retryFailed()}>
+                                        {i18n.t('label_relation_failed_retry') ?? ''}
+                                    </button></div>
+                                )}
                             </div>
                         </article>
                     );

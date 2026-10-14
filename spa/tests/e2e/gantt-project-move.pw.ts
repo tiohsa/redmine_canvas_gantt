@@ -137,7 +137,7 @@ test('keeps Auto Save OFF project projection out of follow-up intent and manual 
 
   await page.getByTestId('cell-601-tracker').dispatchEvent('dblclick', { bubbles: true, cancelable: true });
   await page.locator('[data-testid="task-row-601"] select').first().selectOption({ label: 'P2 explicit tracker' });
-  await page.getByTitle('Save changes').click();
+  await page.getByTestId('manual-save-button').click();
 
   await expect.poll(() => patchPayloads.length).toBe(1);
   const payload = patchPayloads[0] as { task?: Record<string, unknown> };

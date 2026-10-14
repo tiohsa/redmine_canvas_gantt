@@ -723,6 +723,62 @@ describe('apiClient.updateRelation', () => {
         }));
         expect(rel).toEqual({ status: 'ok', id: '3', from: '10', to: '11', type: 'blocks', delay: undefined });
     });
+
+    it('sends the optional expected relation snapshot with PATCH', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key'
+        };
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ relation: { id: 3, from: 10, to: 11, type: 'blocks', delay: null } })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.updateRelation('3', 'blocks', undefined, 'mutation:1', {
+            from: '10', to: '11', type: 'precedes', delay: 2
+        });
+
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({
+            relation: { relation_type: 'blocks' },
+            expected_relation: { from: '10', to: '11', type: 'precedes', delay: 2 },
+            client_operation_id: 'mutation:1'
+        });
+    });
+});
+
+describe('apiClient.deleteRelation', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('sends the optional expected relation snapshot with DELETE', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key'
+        };
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.deleteRelation('3', 'mutation:2', {
+            from: '10', to: '11', type: 'precedes', delay: 2
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith('/canvas_gantt/relations/3.json?canvas_project_id=1', expect.objectContaining({
+            method: 'DELETE'
+        }));
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({
+            expected_relation: { from: '10', to: '11', type: 'precedes', delay: 2 },
+            client_operation_id: 'mutation:2'
+        });
+    });
 });
 
 describe('apiClient.saveBaseline', () => {

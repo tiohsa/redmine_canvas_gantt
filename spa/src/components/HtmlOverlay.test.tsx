@@ -103,7 +103,9 @@ describe('HtmlOverlay', () => {
             draftRelation: null,
             hoveredTaskId: null,
             contextMenu: null,
-            autoSave: false,
+            autoSave: true,
+            autoSaveTransition: 'idle',
+            pendingRelationChanges: {},
             localTaskPatches: {},
             modifiedTaskIds: new Set()
         });
@@ -539,6 +541,19 @@ describe('HtmlOverlay', () => {
             fireEvent.click(screen.getByTestId('relation-save-button'));
         }
 
+        if (!autoSave) {
+            await waitFor(() => {
+                expect(apiClient.createRelation).not.toHaveBeenCalled();
+                expect(Object.values(useTaskStore.getState().pendingRelationChanges)).toHaveLength(1);
+                expect(useTaskStore.getState().relations).toEqual([]);
+                expect(useTaskStore.getState().getEffectiveRelations()).toMatchObject([
+                    { id: expect.stringMatching(/^local:/), from: '1', to: '2', type: RelationType.Precedes, delay: 1 }
+                ]);
+            });
+            expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+            return;
+        }
+
         await waitFor(() => {
             expect(apiClient.createRelation).toHaveBeenCalledWith('1', '2', RelationType.Precedes, 1, expect.stringMatching(/^mutation:/));
             expect(useTaskStore.getState().relations).toEqual([relation]);
@@ -572,12 +587,12 @@ describe('HtmlOverlay', () => {
         fireEvent.change(delayInput, { target: { value: '1' } });
         fireEvent.click(screen.getByTestId('relation-save-button'));
         await waitFor(() => {
-            expect(apiClient.updateRelation).toHaveBeenCalledWith(relation.id, RelationType.Follows, 1, expect.stringMatching(/^mutation:/));
+            expect(apiClient.updateRelation).toHaveBeenCalledWith(relation.id, RelationType.Follows, 1, expect.stringMatching(/^mutation:/), undefined);
             expect(useTaskStore.getState().relations).toEqual([{ ...relation, delay: 1 }]);
         });
     });
 
-    it('blocks auto-applied relation creation when an endpoint has pending consistency intent', async () => {
+    it('stages auto-applied relation creation when an endpoint has pending schedule changes', async () => {
         act(() => {
             useUIStore.setState({
                 autoApplyDefaultRelation: true,
@@ -606,10 +621,7 @@ describe('HtmlOverlay', () => {
 
         await waitFor(() => {
             expect(apiClient.createRelation).not.toHaveBeenCalled();
-            expect(useUIStore.getState().notifications.at(-1)).toMatchObject({
-                message: 'There are unsaved task changes. Save the task changes before modifying the relation.',
-                type: 'error'
-            });
+            expect(Object.values(useTaskStore.getState().pendingRelationChanges)).toHaveLength(1);
         });
     });
 
@@ -631,7 +643,7 @@ describe('HtmlOverlay', () => {
         fireEvent.click(screen.getByTestId('relation-save-button'));
 
         await waitFor(() => {
-            expect(apiClient.updateRelation).toHaveBeenCalledWith('rel-1', RelationType.Blocked, undefined, expect.stringMatching(/^mutation:/));
+            expect(apiClient.updateRelation).toHaveBeenCalledWith('rel-1', RelationType.Blocked, undefined, expect.stringMatching(/^mutation:/), undefined);
             expect(useTaskStore.getState().relations).toEqual([updatedRelation]);
             expect(useTaskStore.getState().selectedRelationId).toBeNull();
         });
@@ -704,7 +716,7 @@ describe('HtmlOverlay', () => {
         ['startDate', '2', { startDate: DAY_MS * 3 }],
         ['projectId on the successor', '2', { projectId: 'p2' }],
         ['projectId on the predecessor', '1', { projectId: 'p2' }]
-    ] as const)('blocks relation creation for pending %s intent', async (label, endpointId, mutationIntent) => {
+    ] as const)('stages relation creation for pending %s intent', async (label, endpointId, mutationIntent) => {
         const relationType = label === 'projectId on the successor' ? RelationType.Precedes : RelationType.Relates;
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);
@@ -721,13 +733,12 @@ describe('HtmlOverlay', () => {
         render(<HtmlOverlay />);
         fireEvent.click(await screen.findByTestId('relation-save-button'));
 
-        expect(await screen.findByTestId('relation-error')).toHaveTextContent('There are unsaved task changes.');
+        await waitFor(() => expect(Object.values(useTaskStore.getState().pendingRelationChanges)).toHaveLength(1));
         expect(apiClient.createRelation).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().draftRelation).toBeNull();
     });
 
-    it('allows relation creation when the endpoint has only pending subject intent', async () => {
-        const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Relates };
-        vi.mocked(apiClient.createRelation).mockResolvedValue({ status: 'ok', ...relation });
+    it('stages relation creation when the endpoint has pending subject intent', async () => {
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);
             useTaskStore.setState({
@@ -743,7 +754,8 @@ describe('HtmlOverlay', () => {
         render(<HtmlOverlay />);
         fireEvent.click(await screen.findByTestId('relation-save-button'));
 
-        await waitFor(() => expect(apiClient.createRelation).toHaveBeenCalled());
+        await waitFor(() => expect(Object.values(useTaskStore.getState().pendingRelationChanges)).toHaveLength(1));
+        expect(apiClient.createRelation).not.toHaveBeenCalled();
     });
 
     it('blocks follows relation update when delay does not match current task dates', async () => {
@@ -762,7 +774,7 @@ describe('HtmlOverlay', () => {
         expect(apiClient.updateRelation).not.toHaveBeenCalled();
     });
 
-    it.each(['idle', 'enabling'] as const)('blocks relation update with dirty endpoints while transition is %s', async (autoSaveTransition) => {
+    it.each(['idle', 'enabling'] as const)('handles relation update with dirty endpoints while transition is %s', async (autoSaveTransition) => {
         const relation: Relation = { id: 'rel-1', from: '1', to: '2', type: RelationType.Relates };
         act(() => {
             useTaskStore.getState().setTasks([task1, task2]);
@@ -779,11 +791,17 @@ describe('HtmlOverlay', () => {
         });
 
         render(<HtmlOverlay />);
+        fireEvent.change(await screen.findByTestId('relation-type-select'), { target: { value: RelationType.Blocks } });
         fireEvent.click(await screen.findByTestId('relation-save-button'));
 
-        expect(await screen.findByTestId('relation-error')).toHaveTextContent('There are unsaved task changes. Save the task changes before modifying the relation.');
         expect(apiClient.updateRelation).not.toHaveBeenCalled();
-        expect(useTaskStore.getState().selectedRelationId).toBe(relation.id);
+        if (autoSaveTransition === 'enabling') {
+            expect(await screen.findByTestId('relation-error')).toHaveTextContent('There are unsaved task changes.');
+            expect(useTaskStore.getState().selectedRelationId).toBe(relation.id);
+        } else {
+            await waitFor(() => expect(Object.values(useTaskStore.getState().pendingRelationChanges)).toHaveLength(1));
+            expect(useTaskStore.getState().selectedRelationId).toBeNull();
+        }
     });
 
     it('allows save when dependency dates are missing', async () => {
@@ -837,7 +855,7 @@ describe('HtmlOverlay', () => {
         expect(await screen.findByTestId('relation-delay-input')).toHaveValue('0');
     });
 
-    it('deletes a relation from the popover after confirmation', async () => {
+    it('stages relation deletion from the popover without calling the API', async () => {
         vi.mocked(apiClient.deleteRelation).mockResolvedValue({ status: 'ok' });
 
         act(() => {
@@ -856,12 +874,10 @@ describe('HtmlOverlay', () => {
         render(<HtmlOverlay />);
         fireEvent.click(await screen.findByTestId('relation-delete-button'));
 
-        await waitFor(() => {
-            expect(apiClient.deleteRelation).toHaveBeenCalledWith('rel-1', expect.stringMatching(/^mutation:/));
-            expect(useTaskStore.getState().relations).toEqual([]);
-            expect(useTaskStore.getState().selectedRelationId).toBeNull();
-            expect(useTaskStore.getState().localTaskPatches['2']).toHaveLength(1);
-        });
+        await waitFor(() => expect(Object.values(useTaskStore.getState().pendingRelationChanges)).toHaveLength(1));
+        expect(apiClient.deleteRelation).not.toHaveBeenCalled();
+        expect(useTaskStore.getState().selectedRelationId).toBeNull();
+        expect(useTaskStore.getState().localTaskPatches['2']).toHaveLength(1);
     });
 
     it('shows an inline error when relation deletion fails', async () => {

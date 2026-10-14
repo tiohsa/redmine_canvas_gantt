@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { useTaskStore } from './stores/TaskStore';
@@ -13,14 +13,17 @@ vi.mock('./components/GanttContainer', () => ({
 }));
 
 vi.mock('./components/GanttToolbar', () => ({
-    GanttToolbar: () => {
+    GanttToolbar: ({ onOpenRelationReview }: { onOpenRelationReview?: () => void }) => {
         toolbarRenderMock();
-        return <div data-testid="gantt-toolbar" />;
+        return <div data-testid="gantt-toolbar"><button onClick={onOpenRelationReview}>Review relations</button></div>;
     }
 }));
 
 vi.mock('./components/Toast', () => ({ default: () => <div /> }));
-vi.mock('./components/ConflictResolutionPanel', () => ({ ConflictResolutionPanel: () => <div /> }));
+vi.mock('./components/ConflictResolutionPanel', () => ({
+    ConflictResolutionPanel: ({ relationReviewRequest }: { relationReviewRequest?: number }) =>
+        <div data-testid="relation-review-request">{relationReviewRequest}</div>
+}));
 vi.mock('./components/timer/GlobalTimer', () => ({ GlobalTimer: () => <div /> }));
 vi.mock('./components/timer/TimerStartModal', () => ({ TimerStartModal: () => <div /> }));
 vi.mock('./components/timer/PendingWorkModal', () => ({ PendingWorkModal: () => <div /> }));
@@ -30,6 +33,39 @@ describe('App store subscriptions', () => {
     beforeEach(() => {
         resetCanvasGanttTestState();
         toolbarRenderMock.mockClear();
+    });
+
+    it('opens relation review again on each toolbar request', () => {
+        render(<App />);
+        expect(screen.getByTestId('relation-review-request')).toHaveTextContent('0');
+        fireEvent.click(screen.getByRole('button', { name: 'Review relations' }));
+        expect(screen.getByTestId('relation-review-request')).toHaveTextContent('1');
+        fireEvent.click(screen.getByRole('button', { name: 'Review relations' }));
+        expect(screen.getByTestId('relation-review-request')).toHaveTextContent('2');
+    });
+
+    it('warns on leaving with task or relation drafts and removes the listener on unmount', () => {
+        const { unmount } = render(<App />);
+        const unload = () => {
+            const event = new Event('beforeunload', { cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+        };
+        expect(unload()).toBe(false);
+        act(() => useTaskStore.setState({ modifiedTaskIds: new Set(['1']) }));
+        expect(unload()).toBe(true);
+        act(() => useTaskStore.setState({
+            modifiedTaskIds: new Set(),
+            pendingRelationChanges: {
+                draft: {
+                    draftId: 'draft', operation: 'create', generation: 1, status: 'pending',
+                    desired: { from: '1', to: '2', type: 'precedes', delay: 0 }
+                }
+            }
+        }));
+        expect(unload()).toBe(true);
+        unmount();
+        expect(unload()).toBe(false);
     });
 
     it('does not re-evaluate App children for UI, task, viewport, or timer state App does not use', () => {

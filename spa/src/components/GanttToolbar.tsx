@@ -41,19 +41,21 @@ interface GanttToolbarProps {
     zoomLevel: ZoomLevel;
     onZoomChange: (level: ZoomLevel) => void;
     exportRef: React.RefObject<GanttExportHandle | null>;
+    onOpenRelationReview?: () => void;
 }
 
-export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange, exportRef }) => {
+export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomChange, exportRef, onOpenRelationReview }) => {
     const {
         viewport, updateViewport, groupByProject, setGroupByProject, groupByAssignee, setGroupByAssignee,
         filterText, setFilterText, versions, selectedAssigneeIds, setSelectedAssigneeIds,
         selectedProjectIds, projectSelectionExplicit, setSelectedProjectIds, selectedTrackerIds, setSelectedTrackerIds, selectedVersionIds, setSelectedVersionIds, memberProjectsOnly, setMemberProjectsOnly,
         taskStatuses, selectedStatusIds, setSelectedStatusFromServer, showVersions, setShowVersions,
-        modifiedTaskIds, saveChanges, discardChanges, autoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
+        modifiedTaskIds, pendingRelationChanges, saveChanges, discardChanges, autoSave, customFields, activeQueryId, isQueryModified, sortConfig, showSubprojects, permissions, filterOptions,
         applySavedQuery: applySavedQueryFromStore,
         clearSavedQuery: clearSavedQueryFromStore,
         savedQueries, savedQueriesStatus, savedQueriesError, loadSavedQueries, queryContext
     } = useTaskStore();
+    const pendingRelationCount = useTaskStore(state => state.pendingRelationCount());
     const dataReadStatus = useTaskStore((state) => state.dataReadStatus);
     const confirmedProjectScope = useTaskStore((state) => state.confirmedProjectScope);
     const inactiveExternalProjectIds = useTaskStore((state) => state.inactiveExternalProjectIds);
@@ -82,6 +84,7 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     } = useUIStore();
     const baselineSaveStatus = useBaselineStore(state => state.saveStatus);
     const hasBaseline = useBaselineStore(state => state.hasBaseline);
+    const [manualSaveInProgress, setManualSaveInProgress] = React.useState(false);
     const [projectSearchText, setProjectSearchText] = React.useState('');
     const resetProjectSearch = React.useCallback(() => setProjectSearchText(''), []);
     const {
@@ -142,7 +145,11 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     const showWorkloadMenu = isMenuOpen('workload');
     const showBaselineSaveMenu = isMenuOpen('baselineSave');
     const displayedActiveQueryId = pendingSavedQueryId ?? activeQueryId;
-    const hasPendingManualChanges = modifiedTaskIds.size > 0 && !autoSave;
+    const relationChanges = Object.values(pendingRelationChanges ?? {});
+    const isSavingPendingRelation = relationChanges.some(change => change.status === 'saving');
+    const hasUnknownPendingRelation = relationChanges.some(change => change.status === 'unknown');
+    const relationReviewCount = relationChanges.filter(change => change.status === 'unknown' || change.status === 'failed').length;
+    const hasPendingManualChanges = !autoSave && (modifiedTaskIds.size > 0 || pendingRelationCount > 0);
 
     useToolbarShortcuts({
         closeMenu,
@@ -259,6 +266,21 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
             const message = error instanceof Error ? error.message : (i18n.t('label_baseline_save_failed') || 'Failed to save baseline');
             baselineStore.setLastError(message);
             useUIStore.getState().addNotification(message, 'error');
+        }
+    };
+
+    const handleManualSave = async () => {
+        if (manualSaveInProgress || isSavingPendingRelation || hasUnknownPendingRelation) return;
+        setManualSaveInProgress(true);
+        try {
+            await saveChanges();
+        } catch (error: unknown) {
+            useUIStore.getState().addNotification(
+                error instanceof Error ? error.message : (i18n.t('label_failed_to_save') || 'Failed to save changes'),
+                'error'
+            );
+        } finally {
+            setManualSaveInProgress(false);
         }
     };
 
@@ -1795,7 +1817,7 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                 </button>
 
 
-                <div style={{
+                <div className="gantt-toolbar-zoom-controls" style={{
                     display: 'flex',
                     backgroundColor: designTokens.surfaceMuted,
                     borderRadius: '8px',
@@ -1971,23 +1993,58 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                 />
                 <ActionNeededControl />
 
+                {relationReviewCount > 0 && (
+                    <button
+                        type="button"
+                        data-testid="relation-review-button"
+                        onClick={onOpenRelationReview}
+                        aria-label={`${i18n.t('label_relation_review') ?? ''} (${relationReviewCount})`}
+                        title={`${i18n.t('label_relation_review') ?? ''} (${relationReviewCount})`}
+                        style={{
+                            position: 'relative',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 34,
+                            height: 32,
+                            padding: 0,
+                            border: '1px solid #d6deea',
+                            borderRadius: '9999px',
+                            background: '#fff',
+                            color: '#92400e',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <span aria-hidden="true" style={{ fontSize: 15, fontWeight: 700 }}>!</span>
+                        <span aria-hidden="true" style={{ position: 'absolute', right: -4, top: -5, minWidth: 15, height: 15, padding: '0 3px', borderRadius: 999, background: '#92400e', color: '#fff', fontSize: 9, lineHeight: '15px' }}>{relationReviewCount}</span>
+                    </button>
+                )}
+
                 {hasPendingManualChanges && (
                     <>
                         <button
-                            onClick={() => void saveChanges()}
-                            title={i18n.t('label_save_changes') || 'Save changes'}
+                            data-testid="manual-save-button"
+                            aria-label={i18n.t('button_save') || 'Save'}
+                            onClick={() => void handleManualSave()}
+                            title={i18n.t('label_save_changes_with_counts', {
+                                tasks: modifiedTaskIds.size,
+                                relations: pendingRelationCount
+                            }) ?? i18n.t('label_save_changes') ?? ''}
+                            disabled={manualSaveInProgress || isSavingPendingRelation || hasUnknownPendingRelation}
                             style={{
-                                display: 'flex',
+                                display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '6px',
-                                padding: '0 14px',
+                                justifyContent: 'center',
+                                width: 32,
+                                minWidth: 32,
+                                padding: 0,
                                 borderRadius: '9999px',
                                 border: 'none',
                                 backgroundColor: '#181e25',
                                 color: '#ffffff',
-                                cursor: 'pointer',
-                                height: '32px',
-                                fontSize: '10px',
+                                cursor: manualSaveInProgress || isSavingPendingRelation || hasUnknownPendingRelation ? 'not-allowed' : 'pointer',
+                                opacity: manualSaveInProgress || isSavingPendingRelation || hasUnknownPendingRelation ? 0.6 : 1,
+                                height: 32,
                                 fontWeight: 600,
                                 transition: 'background 0.2s'
                             }}
@@ -1997,28 +2054,32 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                 <path d="M9 3v6h6" />
                                 <path d="M9 17h6" />
                             </svg>
-                            {i18n.t('button_save') || "Save"}
                         </button>
                         <button
+                            data-testid="discard-manual-changes-button"
+                            aria-label={i18n.t('button_cancel') || 'Cancel'}
                             onClick={() => void discardChanges()}
                             title={i18n.t('label_discard_changes') || 'Discard changes'}
+                            disabled={manualSaveInProgress || isSavingPendingRelation}
                             style={{
-                                display: 'flex',
+                                display: 'inline-flex',
                                 alignItems: 'center',
-                                gap: '6px',
-                                padding: '0 14px',
+                                justifyContent: 'center',
+                                width: 32,
+                                minWidth: 32,
+                                padding: 0,
                                 borderRadius: '9999px',
                                 border: 'none',
                                 backgroundColor: '#f0f0f0',
                                 color: '#45515e',
                                 cursor: 'pointer',
-                                height: '32px',
-                                fontSize: '10px',
-                                fontWeight: 500,
+                                height: 32,
                                 transition: 'background 0.2s'
                             }}
                         >
-                            {i18n.t('button_cancel') || "Cancel"}
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M18 6 6 18M6 6l12 12" />
+                            </svg>
                         </button>
                     </>
                 )}

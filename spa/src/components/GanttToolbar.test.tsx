@@ -80,13 +80,75 @@ describe('GanttToolbar shortcuts', () => {
     };
 
     it.each([
-        ['変更を保存', '変更を破棄'], ['Save changes', 'Discard changes']
-    ])('renders translated manual-save tooltips: %s', (save, discard) => {
-        getCanvasGanttConfig().i18n = { label_save_changes: save, label_discard_changes: discard };
+        ['変更を保存', '変更を破棄', '保存', 'キャンセル'],
+        ['Save changes', 'Discard changes', 'Save', 'Cancel']
+    ])('renders translated manual-save tooltips and icon labels: %s', (save, discard, saveAction, cancelAction) => {
+        getCanvasGanttConfig().i18n = {
+            label_save_changes: save,
+            label_discard_changes: discard,
+            button_save: saveAction,
+            button_cancel: cancelAction
+        };
         useTaskStore.setState({ modifiedTaskIds: new Set(['1']), autoSave: false });
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
         expect(screen.getByTitle(save)).toBeInTheDocument();
         expect(screen.getByTitle(discard)).toBeInTheDocument();
+        expect(screen.getByTestId('manual-save-button')).toHaveAccessibleName(saveAction);
+        expect(screen.getByTestId('discard-manual-changes-button')).toHaveAccessibleName(cancelAction);
+        expect(screen.getByTestId('manual-save-button').textContent).toBe('');
+        expect(screen.getByTestId('discard-manual-changes-button').textContent).toBe('');
+    });
+
+    it('shows ticket and dependency counts and exposes failed relation changes', () => {
+        getCanvasGanttConfig().i18n = {
+            label_save_changes_with_counts: 'Save (tasks: %{tasks} / dependencies: %{relations})',
+            button_save: 'Save',
+            label_relation_review: 'Review dependency changes',
+            label_relation_save_failed: 'A dependency change failed to save.',
+            label_relation_unknown_review: 'Unknown dependency changes',
+            label_relation_unknown_assume_applied: 'Confirm applied',
+            label_relation_unknown_retry: 'Retry dependency change'
+        };
+        useTaskStore.setState({
+            modifiedTaskIds: new Set(['1']),
+            autoSave: false,
+            pendingRelationChanges: {
+                'relation:1': {
+                    draftId: 'relation:1',
+                    operation: 'delete',
+                    relationId: 'rel-1',
+                    original: { id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes },
+                    generation: 1,
+                    status: 'failed',
+                    error: 'Delete failed'
+                },
+                'relation:2': {
+                    draftId: 'relation:2',
+                    operation: 'create',
+                    desired: { from: '1', to: '3', type: RelationType.Relates },
+                    generation: 2,
+                    status: 'pending'
+                },
+                'relation:3': {
+                    draftId: 'relation:3',
+                    operation: 'delete',
+                    relationId: 'rel-3',
+                    original: { id: 'rel-3', from: '2', to: '3', type: RelationType.Precedes },
+                    generation: 3,
+                    status: 'unknown',
+                    error: 'Response was lost'
+                }
+            }
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        expect(screen.getByTestId('manual-save-button')).toHaveTextContent('');
+        expect(screen.getByTestId('manual-save-button')).toHaveAccessibleName('Save');
+        expect(screen.getByTestId('manual-save-button')).toHaveAttribute('title', 'Save (tasks: 1 / dependencies: 3)');
+        expect(screen.getByTestId('relation-review-button')).toHaveAttribute('aria-label', 'Review dependency changes (2)');
+        expect(screen.queryByTestId('pending-relation-failure')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('relation-unknown-assume-applied-relation:3')).not.toBeInTheDocument();
     });
 
     it('opens filter input with Ctrl+F and cancels with Escape', async () => {

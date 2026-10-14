@@ -279,3 +279,12 @@
 
 .conflict-adjustments { margin: 12px 0; padding: 12px; border: 1px solid var(--color-border-strong, #d6deea); border-radius: 8px; background: #fff; }
 .conflict-adjustments ul { padding-left: 18px; overflow-wrap: anywhere; }
+
+.relation-review-card .conflict-card-badge { max-width: 48%; white-space: normal; text-align: right; background: #fff3e2; color: #92400e; }
+.relation-review-error { margin: 8px 0 0; color: #b42318; font-size: 12px; white-space: pre-wrap; }
+.relation-review-progress { margin: 8px 0 0; color: #92400e; font-size: 12px; }
+.relation-review-actions { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.relation-review-comparison { display: grid; gap: 6px; margin: 10px 0 0; font-size: 12px; }
+.relation-review-comparison > div { display: grid; grid-template-columns: minmax(90px, 28%) minmax(0, 1fr); gap: 8px; }
+.relation-review-comparison dt { color: var(--col-text04, #45515e); font-weight: 600; }
+.relation-review-comparison dd { margin: 0; overflow-wrap: anywhere; }
