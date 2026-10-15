@@ -109,6 +109,14 @@ export async function prepareScheduleConflict(get: Get, set: Set, id: string): P
         result.resolutionContext!.taskIds.forEach(key => {
             const conflict = taskConflicts[key];
             if (conflict) generations[key] ??= conflict.generation ?? state.editGenerations[key] ?? 0;
+            // Ancestor previews have no write intent or conflict of their own.
+            // Capture their pre-request ownership so applying the reviewed
+            // child schedule settles these previews without clearing newer edits.
+            if (before.allTasks.find(task => task.id === key)?.datesDerived &&
+                (before.localTaskPatches[key] ?? []).some(patch => dates.some(field =>
+                    field in patch.projection && !(field in patch.mutationIntent)))) {
+                generations[key] ??= before.editGenerations[key] ?? 0;
+            }
         });
         const review: ScheduleConflictReview = { ...result.resolutionContext!, generations, revisions: result.revisions };
         review.taskIds.forEach(key => {

@@ -287,12 +287,12 @@ export const recalculateDownstreamTasks = (
         visited.add(predecessorId);
 
         const predecessor = taskById.get(predecessorId);
-        if (!predecessor || !hasValidDateRange(predecessor)) continue;
+        if (!predecessor || predecessor.datesDerived || !hasValidDateRange(predecessor)) continue;
         const predecessorDueDate = predecessor.dueDate!;
 
         (outgoing.get(predecessorId) ?? []).forEach((edge) => {
             const successor = taskById.get(edge.successorId);
-            if (!successor || !hasValidDateRange(successor)) return;
+            if (!successor || successor.datesDerived || !hasValidDateRange(successor)) return;
             const successorStartDate = successor.startDate!;
             const successorDueDate = successor.dueDate!;
             const minimumSuccessorStart = addWorkingDays(predecessorDueDate, edge.gapDays, successor.projectId);
@@ -361,11 +361,11 @@ export const calculateLinkedDownstreamUpdates = (
 
     while (queue.length > 0) {
         const predecessorId = queue.shift();
-        if (!predecessorId) continue;
+        if (!predecessorId || taskById.get(predecessorId)?.datesDerived) continue;
 
         (outgoing.get(predecessorId) ?? []).forEach((edge) => {
             const successor = taskById.get(edge.successorId);
-            if (!successor || !hasValidDateRange(successor) || clusterTaskIds.has(successor.id)) return;
+            if (!successor || successor.datesDerived || !hasValidDateRange(successor) || clusterTaskIds.has(successor.id)) return;
 
             clusterTaskIds.add(successor.id);
             queue.push(successor.id);
@@ -393,7 +393,7 @@ export const calculateLinkedDownstreamUpdates = (
         const successor = taskById.get(edge.successorId);
         const shiftedSuccessor = updates.get(edge.successorId);
         if (!predecessor || !successor || !shiftedSuccessor) continue;
-        if (!hasValidDateRange(predecessor)) continue;
+        if (predecessor.datesDerived || !hasValidDateRange(predecessor)) continue;
 
         const shiftedStartDate = shiftedSuccessor.startDate;
         const shiftedDueDate = shiftedSuccessor.dueDate;

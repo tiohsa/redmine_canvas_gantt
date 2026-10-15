@@ -990,7 +990,11 @@ const resolveCascadingScheduleUpdates = (
             : new Set<string>();
         for (const taskId of dependencySeeds) {
             const task = workingTasks.find((candidate) => candidate.id === taskId);
-            if (!task || !Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) continue;
+            // Redmine owns scheduling for date-derived parents. The client task
+            // graph may omit siblings, so using a projected parent range here
+            // could create incorrect downstream edits before the server runs
+            // its complete callback graph.
+            if (!task || task.datesDerived || !Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) continue;
             const result = TaskLogicService.checkDependencies(
                 workingTasks,
                 relations,
@@ -1101,16 +1105,20 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
             Object.entries(fields).filter(([key]) => key !== 'lockVersion' && key !== 'id')
         ) as Partial<Task>;
         if (Object.keys(meaningfulFields).length === 0) return;
+        const task = nextTasks.find((candidate) => candidate.id === taskId);
+        const mutationIntent = task?.datesDerived
+            ? Object.fromEntries(Object.entries(meaningfulFields).filter(([key]) => key !== 'startDate' && key !== 'dueDate')) as Partial<Task>
+            : meaningfulFields;
         const generation = (editGenerations[taskId] ?? 0) + 1;
         editGenerations[taskId] = generation;
-        modifiedTaskIds.add(taskId);
+        if (Object.keys(mutationIntent).length > 0) modifiedTaskIds.add(taskId);
         const operationId = `relation-cascade:${relation.id || 'new'}:${taskId}:${generation}`;
         localTaskPatches[taskId] = [
             ...(localTaskPatches[taskId] ?? []).filter(patch => patch.operationId !== operationId),
             {
                 entityId: taskId,
                 projection: meaningfulFields,
-                mutationIntent: meaningfulFields,
+                mutationIntent,
                 generation,
                 operationId
             }
@@ -2113,11 +2121,29 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return state;
         }
 
+        const hasDerivedDateEdit = task.datesDerived && (
+            hasOwnField(updates, 'startDate') || hasOwnField(updates, 'dueDate') ||
+            hasOwnField(mutationIntent, 'startDate') || hasOwnField(mutationIntent, 'dueDate')
+        );
+        if (hasDerivedDateEdit) {
+            useUIStore.getState().addNotification(
+                i18n.t('label_dates_derived_from_children') || 'Dates for this task are derived from its children.',
+                'error'
+            );
+        }
+
         invalidateDataRequests();
 
         const capturedDatePlacementMode = datePlacementMode ?? useUIStore.getState().datePlacementMode;
-        const canonicalUpdates = normalizeTaskDateUpdates(task, updates, capturedDatePlacementMode);
-        const canonicalMutationIntent = normalizeTaskDateUpdates(task, mutationIntent, capturedDatePlacementMode);
+        const requestedUpdates = task.datesDerived
+            ? Object.fromEntries(Object.entries(updates).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
+            : updates;
+        const requestedMutationIntent = task.datesDerived
+            ? Object.fromEntries(Object.entries(mutationIntent).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
+            : mutationIntent;
+        const canonicalUpdates = normalizeTaskDateUpdates(task, requestedUpdates, capturedDatePlacementMode);
+        const canonicalMutationIntent = normalizeTaskDateUpdates(task, requestedMutationIntent, capturedDatePlacementMode);
+        if (Object.keys(canonicalUpdates).length === 0 && Object.keys(canonicalMutationIntent).length === 0) return state;
         const updatedTask = { ...task, ...canonicalUpdates };
         TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
         const effectiveRelations = projectEffectiveRelations(state.relations, state.pendingRelationChanges);
@@ -2151,7 +2177,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
             });
         }
 
-        if (!isContextChange) {
+        const hasScheduleSeed = hasOwnField(canonicalUpdates, 'startDate') ||
+            hasOwnField(canonicalUpdates, 'dueDate') || pendingUpdates.size > 0;
+        // A non-date edit must not create a derived parent's projection with
+        // no schedule operation to settle it. Keep existing manual-parent
+        // recalculation behavior unchanged.
+        const parentDatesAreDerived = state.allTasks.find(candidate => candidate.id === task.parentId)?.datesDerived;
+        if (!isContextChange && (hasScheduleSeed || !parentDatesAreDerived)) {
             const cascadingUpdates = resolveCascadingScheduleUpdates(
                 currentTasks,
                 effectiveRelations,
@@ -2233,7 +2265,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
             if (Object.keys(persistenceIntent).length > 0) newModifiedIds.add(taskId);
         };
         patchFor(id, canonicalUpdates, canonicalMutationIntent, capturedDatePlacementMode);
-        pendingUpdates.forEach((fields, taskId) => patchFor(taskId, fields, fields));
+        pendingUpdates.forEach((fields, taskId) => {
+            const affectedTask = state.allTasks.find(candidate => candidate.id === taskId);
+            const mutationIntent = affectedTask?.datesDerived
+                ? Object.fromEntries(Object.entries(fields).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
+                : fields;
+            patchFor(taskId, fields, mutationIntent);
+        });
 
         const changedFields = new Set([...Object.keys(canonicalUpdates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
         const requiresLayout = taskFieldsAffectLayout(state, changedFields, {
@@ -3358,6 +3396,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number; remoteAvailability: MutationRemoteAvailability }>();
                 const savedLockVersions = new Map<string, number>();
                 const successfulMutationTaskIds = new Set<string>();
+                const canonicalDerivedDateTaskIds = new Set<string>();
                 const mutationMetadataRecords: Array<{ taskId: string; metadata: MutationMetadata }> = [];
                 let mutationMetadataNeedsRefresh = false;
                 const hasScheduleMutation = Object.values(snapshotMutationScheduling).some(Boolean);
@@ -3377,6 +3416,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         );
                     },
                     (taskId, result) => {
+                        if (result.status === 'ok' && result.entity?.datesDerived === true) {
+                            canonicalDerivedDateTaskIds.add(taskId);
+                        }
                         const invalidatedEntityIds = result.invalidatedEntityIds ?? [];
                         const deletedEntityIds = result.deletedEntityIds ?? [];
                         const sourceDisposition = classifyMutationSourceDisposition(result);
@@ -3522,6 +3564,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         });
 
                         const settledTaskById = new Map<string, Task>();
+                        const canonicalDateSettlementIds = new Set([...canonicalDerivedDateTaskIds].filter((taskId) => (
+                            (state.editGenerations[taskId] ?? 0) === (snapshotGenerations[taskId] ?? 0)
+                        )));
                         affectedTaskIds.forEach((taskId) => {
                             if (deletedTaskIds.has(taskId)) return;
                             const currentTask = currentTaskById.get(taskId);
@@ -3529,11 +3574,17 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             if (!canonicalTask) return;
 
                             const patches = state.localTaskPatches[taskId] ?? [];
-                            const patchesToApply = savedLockVersions.has(taskId)
+                            const shouldSettle = savedLockVersions.has(taskId) || canonicalDateSettlementIds.has(taskId);
+                            const settledFields = new Set(settledFieldsByTask.get(taskId) ?? []);
+                            if (canonicalDateSettlementIds.has(taskId)) {
+                                settledFields.add('startDate');
+                                settledFields.add('dueDate');
+                            }
+                            const patchesToApply = shouldSettle
                                 ? settleLocalPatchFields(
                                     patches,
                                     snapshotGenerations[taskId] ?? 0,
-                                    settledFieldsByTask.get(taskId) ?? []
+                                    settledFields
                                 )
                                 : patches;
                             settledTaskById.set(taskId, applyLocalPatches(canonicalTask, patchesToApply));
@@ -3577,6 +3628,16 @@ export const useTaskStore = create<TaskState>((set, get) => {
 
                             });
                         }
+                        canonicalDateSettlementIds.forEach((taskId) => {
+                            if (localTaskPatches === state.localTaskPatches) localTaskPatches = { ...state.localTaskPatches };
+                            const remainingPatches = settleLocalPatchFields(
+                                localTaskPatches[taskId] ?? [],
+                                snapshotGenerations[taskId] ?? 0,
+                                ['startDate', 'dueDate']
+                            );
+                            if (remainingPatches.length > 0) localTaskPatches[taskId] = remainingPatches;
+                            else delete localTaskPatches[taskId];
+                        });
                         successfulMutationTaskIds.forEach((taskId) => {
                             const settlement = settleBarOperationTaskOwnership(
                                 barOperations,
@@ -3623,7 +3684,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             ...(derived ? toDerivedTaskStatePatch(derived) : {}),
                             ...(deletedTaskIds.size > 0
                                 ? { localTaskPatches, modifiedTaskIds, taskConflicts, taskTombstones, barOperations, activeBarOperationId }
-                                : savedTaskIds.size > 0 || successfulMutationTaskIds.size > 0
+                                : savedTaskIds.size > 0 || successfulMutationTaskIds.size > 0 || canonicalDateSettlementIds.size > 0
                                     ? { localTaskPatches, modifiedTaskIds, barOperations, activeBarOperationId }
                                 : {}),
                             serverTaskSnapshot: {

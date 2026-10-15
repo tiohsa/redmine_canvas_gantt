@@ -144,6 +144,139 @@ describe('TaskStore canonical mutation reconciliation', () => {
         useTaskStore.setState(useTaskStore.getInitialState(), true);
     });
 
+    it('projects derived parent dates without writing them and settles from an unchanged canonical ancestor', async () => {
+        const parent = buildTask({
+            id: 'derived-parent', startDate: MONDAY, dueDate: FRIDAY, datesDerived: true, lockVersion: 4
+        });
+        const child = buildTask({
+            id: 'visible-child', parentId: parent.id, startDate: TUESDAY, dueDate: WEDNESDAY, lockVersion: 2
+        });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok',
+            entities: [
+                { id: child.id, startDate: THURSDAY, dueDate: FRIDAY, lockVersion: 3 },
+                { id: parent.id, startDate: MONDAY, dueDate: FRIDAY, datesDerived: true, lockVersion: 4 }
+            ],
+            revisions: { [child.id]: 3, [parent.id]: 4 }
+        });
+        Object.defineProperty(apiClient, 'scheduleMutation', { value: scheduleMutation, configurable: true, writable: true });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([
+            { ...parent }, { ...child, startDate: THURSDAY, dueDate: FRIDAY, lockVersion: 3 }
+        ]));
+
+        try {
+            useTaskStore.setState({ autoSave: false });
+            useTaskStore.getState().setTasks([parent, child]);
+            useTaskStore.getState().updateTask(child.id, { startDate: THURSDAY, dueDate: FRIDAY });
+
+            expect(useTaskStore.getState().modifiedTaskIds).toEqual(new Set([child.id]));
+            expect(useTaskStore.getState().localTaskPatches[parent.id]).toEqual([
+                expect.objectContaining({
+                    projection: { startDate: THURSDAY, dueDate: FRIDAY },
+                    mutationIntent: {}
+                })
+            ]);
+
+            const failures = await useTaskStore.getState().saveChanges();
+
+            expect(failures).toEqual(new Map());
+            expect(scheduleMutation.mock.calls[0][0].map((change: { taskId: string }) => change.taskId)).toEqual([child.id]);
+            expect(useTaskStore.getState().allTasks.find(task => task.id === parent.id)).toMatchObject({
+                startDate: MONDAY, dueDate: FRIDAY, lockVersion: 4
+            });
+            expect(useTaskStore.getState().localTaskPatches[parent.id]).toBeUndefined();
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it('keeps a newer parent projection when an older child schedule response arrives', async () => {
+        const parent = buildTask({
+            id: 'racing-derived-parent', startDate: MONDAY, dueDate: FRIDAY, datesDerived: true, lockVersion: 4
+        });
+        const firstChild = buildTask({
+            id: 'first-child', parentId: parent.id, startDate: TUESDAY, dueDate: WEDNESDAY, lockVersion: 2
+        });
+        const secondChild = buildTask({
+            id: 'second-child', parentId: parent.id, startDate: WEDNESDAY, dueDate: THURSDAY, lockVersion: 2
+        });
+        const firstResponse = deferred<Awaited<ReturnType<typeof apiClient.scheduleMutation>>>();
+        const secondResponse = deferred<Awaited<ReturnType<typeof apiClient.scheduleMutation>>>();
+        const scheduleMutation = vi.fn()
+            .mockImplementationOnce(() => firstResponse.promise)
+            .mockImplementationOnce(() => secondResponse.promise);
+        Object.defineProperty(apiClient, 'scheduleMutation', { value: scheduleMutation, configurable: true, writable: true });
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([parent, firstChild, secondChild]));
+
+        try {
+            useTaskStore.setState({ autoSave: false });
+            useTaskStore.getState().setTasks([parent, firstChild, secondChild]);
+            useTaskStore.getState().updateTask(firstChild.id, { startDate: THURSDAY, dueDate: FRIDAY });
+            const saving = useTaskStore.getState().saveChanges();
+            await vi.waitFor(() => expect(scheduleMutation).toHaveBeenCalledTimes(1));
+
+            useTaskStore.getState().updateTask(secondChild.id, { startDate: TUESDAY, dueDate: THURSDAY });
+            firstResponse.resolve({
+                status: 'ok', operationId: 'first', entities: [
+                    { id: firstChild.id, startDate: THURSDAY, dueDate: FRIDAY, lockVersion: 3 },
+                    { id: parent.id, startDate: MONDAY, dueDate: FRIDAY, datesDerived: true, lockVersion: 4 }
+                ], revisions: { [firstChild.id]: 3, [parent.id]: 4 }
+            });
+            await vi.waitFor(() => expect(scheduleMutation).toHaveBeenCalledTimes(2));
+
+            expect(useTaskStore.getState().allTasks.find(task => task.id === parent.id)).toMatchObject({
+                startDate: TUESDAY, dueDate: FRIDAY
+            });
+            expect(useTaskStore.getState().localTaskPatches[parent.id]).toHaveLength(2);
+
+            secondResponse.resolve({
+                status: 'ok', operationId: 'second', entities: [
+                    { id: secondChild.id, startDate: TUESDAY, dueDate: THURSDAY, lockVersion: 3 },
+                    { id: parent.id, startDate: MONDAY, dueDate: FRIDAY, datesDerived: true, lockVersion: 4 }
+                ], revisions: { [secondChild.id]: 3, [parent.id]: 4 }
+            });
+            expect(await saving).toEqual(new Map());
+
+            expect(useTaskStore.getState().allTasks.find(task => task.id === parent.id)).toMatchObject({
+                startDate: MONDAY, dueDate: FRIDAY, lockVersion: 4
+            });
+            expect(useTaskStore.getState().localTaskPatches[parent.id]).toBeUndefined();
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+        }
+    });
+
+    it('rejects direct date edits on derived parents while leaving other fields editable', () => {
+        const parent = buildTask({ id: 'derived-parent-edit', datesDerived: true, subject: 'Parent' });
+        useTaskStore.getState().setTasks([parent]);
+
+        useTaskStore.getState().updateTask(parent.id, { startDate: TUESDAY, subject: 'Updated parent' });
+
+        expect(useTaskStore.getState().allTasks[0]).toMatchObject({
+            startDate: 0, subject: 'Updated parent'
+        });
+        expect(useTaskStore.getState().localTaskPatches[parent.id]).toEqual([
+            expect.objectContaining({ mutationIntent: { subject: 'Updated parent' } })
+        ]);
+    });
+
+    it('does not recalculate a derived parent from a child subject-only edit', () => {
+        const parent = buildTask({
+            id: 'derived-parent-subject-edit', startDate: MONDAY, dueDate: FRIDAY, datesDerived: true
+        });
+        const child = buildTask({
+            id: 'subject-only-child', parentId: parent.id, startDate: TUESDAY, dueDate: WEDNESDAY
+        });
+        useTaskStore.getState().setTasks([parent, child]);
+
+        useTaskStore.getState().updateTask(child.id, { subject: 'Changed child' });
+
+        expect(useTaskStore.getState().allTasks.find(task => task.id === parent.id)).toMatchObject({
+            startDate: MONDAY, dueDate: FRIDAY
+        });
+        expect(useTaskStore.getState().localTaskPatches[parent.id]).toBeUndefined();
+    });
+
     it('keeps the server canonical value after settling the committed generation', () => {
         const original = buildTask({ id: 'canonical-task', subject: 'persisted', lockVersion: 1 });
         useTaskStore.getState().setTasks([original]);

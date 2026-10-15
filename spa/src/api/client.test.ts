@@ -103,7 +103,7 @@ describe('apiClient.fetchData', () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
             ok: true,
             json: async () => ({ tasks: [
-                { id: 1, has_physical_children: true },
+                { id: 1, has_physical_children: true, dates_derived: true },
                 { id: 2, has_physical_children: false },
                 { id: 3, parent_id: 2, has_physical_children: false },
                 { id: 4 }
@@ -113,6 +113,7 @@ describe('apiClient.fetchData', () => {
         const result = await apiClient.fetchData();
 
         expect(result.tasks.map(task => task.hasPhysicalChildren)).toEqual([true, false, false, false]);
+        expect(result.tasks.map(task => task.datesDerived)).toEqual([true, false, false, false]);
     });
 
     afterEach(() => {
@@ -1200,13 +1201,13 @@ describe('mutation error classification', () => {
             status: 200,
             json: async () => ({
                 status: 'ok',
-                entity: { id: 42, subject: 'Saved', lock_version: 4, has_physical_children: true }
+                entity: { id: 42, subject: 'Saved', lock_version: 4, has_physical_children: true, dates_derived: true }
             })
         }) as unknown as typeof fetch);
 
         const result = await apiClient.updateTaskFields('42', { subject: 'Saved' });
 
-        expect(result.entity).toEqual({ id: '42', subject: 'Saved', lockVersion: 4, hasPhysicalChildren: true });
+        expect(result.entity).toEqual({ id: '42', subject: 'Saved', lockVersion: 4, hasPhysicalChildren: true, datesDerived: true });
         expect(result.entity).not.toHaveProperty('editable');
         expect(result.entity).not.toHaveProperty('rowIndex');
         expect(result.entity).not.toHaveProperty('hasChildren');

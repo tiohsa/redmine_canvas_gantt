@@ -412,6 +412,7 @@ en:
     label_date_placement: "Date placement"
     label_date_placement_working_days: "Snap to working days"
     label_date_placement_calendar_days: "Allow any calendar day"
+    label_dates_derived_from_children: "Dates for this task are derived from its children."
     label_auto_schedule_external_conflict: "Moving linked tasks would violate an external dependency."
     label_auto_schedule_permission_denied: "A linked task cannot be moved because you do not have permission to edit it."
     label_relation_delay_auto_calc_unavailable: "No auto calculation due to missing dates."

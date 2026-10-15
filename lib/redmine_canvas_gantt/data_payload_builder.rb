@@ -72,6 +72,7 @@ module RedmineCanvasGantt
           assigned_to_name: issue.assigned_to&.name,
           parent_id: issue.parent_id,
           has_physical_children: issue.rgt > issue.lft + 1,
+          dates_derived: issue.respond_to?(:dates_derived?) && issue.dates_derived?,
           lock_version: issue.lock_version,
           tracker_id: issue.tracker_id,
           tracker_name: issue.tracker&.name,

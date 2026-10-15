@@ -293,6 +293,7 @@ class CanvasGanttsController < ApplicationController
     label_date_placement: :label_date_placement,
     label_date_placement_working_days: :label_date_placement_working_days,
     label_date_placement_calendar_days: :label_date_placement_calendar_days,
+    label_dates_derived_from_children: :label_dates_derived_from_children,
     label_auto_schedule_external_conflict: :label_auto_schedule_external_conflict,
     label_auto_schedule_permission_denied: :label_auto_schedule_permission_denied,
     label_relation_delay_auto_calc_unavailable: :label_relation_delay_auto_calc_unavailable,
