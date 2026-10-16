@@ -727,6 +727,40 @@ const parseFilterOptions = (value: unknown, tasks: Task[]): FilterOptions => {
     };
 };
 
+const invalidBaselineTaskWarning = (id: string): string =>
+    i18n.t('label_baseline_invalid_task', { id }) || `Baseline task state for issue ${id} was skipped because its data is invalid.`;
+
+const parseBaselineTask = (key: string, value: unknown): { task: BaselineTaskState | null; warnings: string[] } => {
+    const warnings: string[] = [];
+    const taskRecord = asRecord(value);
+    if (!taskRecord) {
+        warnings.push(invalidBaselineTaskWarning(key));
+        return { task: null, warnings };
+    }
+
+    const issueIdValue = taskRecord.issue_id ?? key;
+    if (typeof issueIdValue !== 'number' && typeof issueIdValue !== 'string') {
+        warnings.push(invalidBaselineTaskWarning(key));
+        return { task: null, warnings };
+    }
+
+    const issueId = String(issueIdValue);
+    const baselineStartDate = parseBaselineDateValue(taskRecord.baseline_start_date);
+    const baselineDueDate = parseBaselineDateValue(taskRecord.baseline_due_date);
+
+    if (taskRecord.baseline_start_date !== undefined && taskRecord.baseline_start_date !== null && baselineStartDate === null) {
+        warnings.push(invalidBaselineTaskWarning(issueId));
+    }
+    if (taskRecord.baseline_due_date !== undefined && taskRecord.baseline_due_date !== null && baselineDueDate === null) {
+        warnings.push(invalidBaselineTaskWarning(issueId));
+    }
+
+    return {
+        task: { issueId, baselineStartDate, baselineDueDate },
+        warnings
+    };
+};
+
 const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | null; warnings: string[] } => {
     const warnings: string[] = [];
     const root = asRecord(value);
@@ -742,55 +776,21 @@ const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | n
     const scopeValue = root.scope;
     const tasksByIssueIdValue = asRecord(root.tasks_by_issue_id);
 
-    if (typeof snapshotIdValue !== 'string' || snapshotIdValue.trim() === '') {
-        warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
-        return { snapshot: null, warnings };
-    }
-
-    if (typeof projectIdValue !== 'number' && typeof projectIdValue !== 'string') {
-        warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
-        return { snapshot: null, warnings };
-    }
-
-    if (typeof capturedAtValue !== 'string' || capturedAtValue.trim() === '') {
-        warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
-        return { snapshot: null, warnings };
-    }
-
-    if (!tasksByIssueIdValue) {
+    if (
+        typeof snapshotIdValue !== 'string' || snapshotIdValue.trim() === '' ||
+        (typeof projectIdValue !== 'number' && typeof projectIdValue !== 'string') ||
+        typeof capturedAtValue !== 'string' || capturedAtValue.trim() === '' ||
+        !tasksByIssueIdValue
+    ) {
         warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
         return { snapshot: null, warnings };
     }
 
     const tasksByIssueId: Record<string, BaselineTaskState> = {};
     Object.entries(tasksByIssueIdValue).forEach(([key, entry]) => {
-        const taskRecord = asRecord(entry);
-        if (!taskRecord) {
-            warnings.push(i18n.t('label_baseline_invalid_task', { id: key }) || `Baseline task state for issue ${key} was skipped because its data is invalid.`);
-            return;
-        }
-
-        const issueIdValue = taskRecord.issue_id ?? key;
-        if (typeof issueIdValue !== 'number' && typeof issueIdValue !== 'string') {
-            warnings.push(i18n.t('label_baseline_invalid_task', { id: key }) || `Baseline task state for issue ${key} was skipped because its data is invalid.`);
-            return;
-        }
-
-        const baselineStartDate = parseBaselineDateValue(taskRecord.baseline_start_date);
-        const baselineDueDate = parseBaselineDateValue(taskRecord.baseline_due_date);
-
-        if (taskRecord.baseline_start_date !== undefined && taskRecord.baseline_start_date !== null && baselineStartDate === null) {
-            warnings.push(i18n.t('label_baseline_invalid_task', { id: String(issueIdValue) }) || `Baseline task state for issue ${String(issueIdValue)} was skipped because its data is invalid.`);
-        }
-        if (taskRecord.baseline_due_date !== undefined && taskRecord.baseline_due_date !== null && baselineDueDate === null) {
-            warnings.push(i18n.t('label_baseline_invalid_task', { id: String(issueIdValue) }) || `Baseline task state for issue ${String(issueIdValue)} was skipped because its data is invalid.`);
-        }
-
-        tasksByIssueId[String(issueIdValue)] = {
-            issueId: String(issueIdValue),
-            baselineStartDate,
-            baselineDueDate
-        };
+        const parsedTask = parseBaselineTask(key, entry);
+        warnings.push(...parsedTask.warnings);
+        if (parsedTask.task) tasksByIssueId[parsedTask.task.issueId] = parsedTask.task;
     });
 
     return {

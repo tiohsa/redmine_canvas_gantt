@@ -326,6 +326,179 @@ describe('apiClient.getSubtaskTrackers', () => {
     });
 });
 
+describe('apiClient baseline parsing', () => {
+    const validBaselineHeaders = {
+        snapshot_id: 'baseline-1',
+        project_id: 1,
+        captured_at: '2026-04-01T00:00:00.000Z',
+        tasks_by_issue_id: {}
+    };
+
+    const useApi = (path: 'data' | 'baseline', payload: unknown) => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => path === 'data' ? payload : { baseline: payload, warnings: ['server warning'] }
+        }));
+    };
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('keeps a missing baseline absent and leaves server warnings untouched', async () => {
+        useApi('data', { tasks: [], warnings: ['server warning'] });
+
+        const result = await apiClient.fetchData();
+
+        expect(result.baseline).toBeNull();
+        expect(result.warnings).toEqual(['server warning']);
+    });
+
+    it.each([
+        ['snapshot_id', ' '],
+        ['project_id', null],
+        ['captured_at', ''],
+        ['tasks_by_issue_id', null]
+    ])('emits one localized incomplete warning when %s is invalid', async (field, invalidValue) => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            i18n: { label_baseline_incomplete: 'localized incomplete' }
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                tasks: [],
+                warnings: ['server warning'],
+                baseline: { ...validBaselineHeaders, [field]: invalidValue }
+            })
+        }));
+
+        const result = await apiClient.fetchData();
+
+        expect(result.baseline).toBeNull();
+        expect(result.warnings).toEqual(['server warning', 'localized incomplete']);
+    });
+
+    it('emits only one localized incomplete warning when several required headers are invalid', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            i18n: { label_baseline_incomplete: 'localized incomplete' }
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                tasks: [],
+                warnings: ['server warning'],
+                baseline: { snapshot_id: ' ', project_id: null, captured_at: '', tasks_by_issue_id: null }
+            })
+        }));
+
+        const result = await apiClient.fetchData();
+
+        expect(result.baseline).toBeNull();
+        expect(result.warnings).toEqual(['server warning', 'localized incomplete']);
+    });
+
+    it('preserves task parsing, warning order, ID fallback, and last-wins behavior through fetchData', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            i18n: { label_baseline_invalid_task: 'localized issue %{id}' }
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                tasks: [],
+                warnings: ['server warning'],
+                baseline: {
+                    ...validBaselineHeaders,
+                    tasks_by_issue_id: {
+                        malformed: null,
+                        'invalid-id': { issue_id: [], baseline_start_date: '2026-04-02' },
+                        'fallback-missing': { baseline_start_date: 'bad-date' },
+                        'fallback-null': { issue_id: null, baseline_start_date: null, baseline_due_date: null },
+                        'both-invalid': { issue_id: 'actual-id', baseline_start_date: 'bad-start', baseline_due_date: 'bad-due' },
+                        'array-entry': [],
+                        'duplicate-first': { issue_id: 'duplicate', baseline_start_date: '2026-04-03', baseline_due_date: null },
+                        'duplicate-last': { issue_id: 'duplicate', baseline_start_date: 123456789, baseline_due_date: 987654321 }
+                    }
+                }
+            })
+        }));
+
+        const result = await apiClient.fetchData();
+
+        expect(result.warnings).toEqual([
+            'server warning',
+            'localized issue malformed',
+            'localized issue invalid-id',
+            'localized issue fallback-missing',
+            'localized issue actual-id',
+            'localized issue actual-id'
+        ]);
+        expect(result.baseline?.tasksByIssueId).toEqual({
+            'fallback-missing': {
+                issueId: 'fallback-missing', baselineStartDate: null, baselineDueDate: null
+            },
+            'fallback-null': {
+                issueId: 'fallback-null', baselineStartDate: null, baselineDueDate: null
+            },
+            'actual-id': {
+                issueId: 'actual-id', baselineStartDate: null, baselineDueDate: null
+            },
+            'array-entry': {
+                issueId: 'array-entry', baselineStartDate: null, baselineDueDate: null
+            },
+            duplicate: {
+                issueId: 'duplicate', baselineStartDate: 123456789, baselineDueDate: 987654321
+            }
+        });
+    });
+
+    it('keeps missing and null dates quiet while warning independently for invalid dates on saveBaseline', async () => {
+        useApi('baseline', {
+            ...validBaselineHeaders,
+            tasks_by_issue_id: {
+                missing: {},
+                nulls: { baseline_start_date: null, baseline_due_date: null },
+                one_invalid: { baseline_start_date: 'not-a-date' },
+                both_invalid: { issue_id: 42, baseline_start_date: 'not-a-date', baseline_due_date: 'also-bad' }
+            }
+        });
+
+        const result = await apiClient.saveBaseline();
+
+        expect(result.warnings).toEqual([
+            'server warning',
+            'Baseline task state for issue one_invalid was skipped because its data is invalid.',
+            'Baseline task state for issue 42 was skipped because its data is invalid.',
+            'Baseline task state for issue 42 was skipped because its data is invalid.'
+        ]);
+        expect(result.baseline?.tasksByIssueId).toEqual({
+            missing: { issueId: 'missing', baselineStartDate: null, baselineDueDate: null },
+            nulls: { issueId: 'nulls', baselineStartDate: null, baselineDueDate: null },
+            one_invalid: { issueId: 'one_invalid', baselineStartDate: null, baselineDueDate: null },
+            '42': { issueId: '42', baselineStartDate: null, baselineDueDate: null }
+        });
+    });
+});
+
 describe('apiClient.fetchData filter options', () => {
     const task = {
         id: 10,

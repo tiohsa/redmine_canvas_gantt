@@ -95,6 +95,52 @@ describe('businessCalendar', () => {
         expect(getCalendarIdForProject('missing')).toBe('company-japan');
     });
 
+    it('normalizes full and minimal diagnostics while preserving empty strings and line zero', () => {
+        const full = normalizeBusinessCalendarPayload({
+            diagnostic: {
+                code: '',
+                file: '',
+                line: 0,
+                message: '',
+                cause: '',
+                value: ''
+            }
+        });
+        const minimal = normalizeBusinessCalendarPayload({ diagnostic: { code: 'parse_error', message: 'Invalid calendar' } });
+
+        expect(full.diagnostic).toEqual({ code: '', file: '', line: 0, message: '', cause: '', value: '' });
+        expect(minimal.diagnostic).toEqual({ code: 'parse_error', message: 'Invalid calendar' });
+    });
+
+    it.each([
+        ['absent', {}],
+        ['null', { diagnostic: null }],
+        ['array', { diagnostic: [] }],
+        ['primitive', { diagnostic: 'invalid' }],
+        ['missing code', { diagnostic: { message: 'Invalid calendar' } }],
+        ['wrong code', { diagnostic: { code: 1, message: 'Invalid calendar' } }],
+        ['missing message', { diagnostic: { code: 'parse_error' } }],
+        ['wrong message', { diagnostic: { code: 'parse_error', message: false } }]
+    ])('omits %s diagnostics', (_description, input) => {
+        expect(normalizeBusinessCalendarPayload(input)).not.toHaveProperty('diagnostic');
+    });
+
+    it('omits diagnostic optional fields with the wrong types', () => {
+        const normalized = normalizeBusinessCalendarPayload({
+            diagnostic: { code: 'parse_error', file: 1, line: '0', message: 'Invalid calendar', cause: null, value: false }
+        });
+
+        expect(normalized.diagnostic).toEqual({ code: 'parse_error', message: 'Invalid calendar' });
+    });
+
+    it('preserves numeric diagnostic line values without range validation', () => {
+        const normalized = normalizeBusinessCalendarPayload({
+            diagnostic: { code: 'parse_error', line: Number.NaN, message: 'Invalid calendar' }
+        });
+
+        expect(Number.isNaN(normalized.diagnostic?.line)).toBe(true);
+    });
+
     it('maps legacy error payloads to invalid state without retaining raw exception text', () => {
         const normalized = normalizeBusinessCalendarPayload({
             status: 'error', error: '/private/path/calendar.yml: parser internals'
