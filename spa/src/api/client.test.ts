@@ -1464,6 +1464,40 @@ describe('mutation error classification', () => {
             status: 'protocol_error'
         });
     });
+
+    it('keeps the schedule decoder fallback for unknown status strings', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: 'future_status', entities: [], revisions: {} })
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.scheduleMutation([], 'schedule:future-status')).resolves.toMatchObject({ status: 'ok' });
+    });
+
+    it('uses the HTTP fallback when a mutation response body cannot be decoded', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 503,
+            json: async () => { throw new SyntaxError('invalid JSON'); }
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.scheduleMutation([], 'schedule:malformed')).resolves.toMatchObject({
+            status: 'transient_error', operationId: '', entities: [], revisions: {}
+        });
+    });
 });
 
 
