@@ -1,4 +1,5 @@
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { createRef } from 'react';
 import { GanttContainer } from './GanttContainer';
 import { useUIStore } from '../stores/UIStore';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -6,6 +7,7 @@ import { useTaskStore } from '../stores/TaskStore';
 import { useWorkloadStore } from '../stores/WorkloadStore';
 import { SIDEBAR_MIN_WIDTH, SIDEBAR_RESIZE_CURSOR, WORKLOAD_SIDEBAR_MIN_WIDTH } from '../constants';
 import type { Relation, Task } from '../types';
+import type { GanttExportHandle } from '../export/types';
 
 const fetchDataMock = vi.fn().mockResolvedValue({
     tasks: [],
@@ -18,7 +20,12 @@ const baselineRenderMock = vi.fn();
 const taskRenderMock = vi.fn();
 const overlayRenderMock = vi.fn();
 const resizeCanvasForDprMock = vi.fn();
+const fullExportMock = vi.fn().mockResolvedValue(undefined);
 const resizeObserverCallbacks: ResizeObserverCallback[] = [];
+
+vi.mock('../export/fullPng', () => ({
+    exportFullRangePng: (...args: unknown[]) => fullExportMock(...args)
+}));
 
 // Mock engines and renderers
 vi.mock('../engines/InteractionEngine', () => ({
@@ -131,6 +138,53 @@ vi.mock('../api/client', () => ({
 }));
 
 describe('GanttContainer Resize', () => {
+    it('exports the current layout and staged relations without changing viewport or edits', async () => {
+        const ref = createRef<GanttExportHandle>();
+        render(<GanttContainer ref={ref} />);
+        await waitFor(() => expect(taskRenderMock).toHaveBeenCalled());
+        const task: Task = {
+            id: 'A', subject: 'Edited task', startDate: 0, dueDate: 86400000,
+            ratioDone: 10, statusId: 1, lockVersion: 0, editable: true,
+            rowIndex: 0, hasChildren: false
+        };
+        act(() => {
+            useTaskStore.setState({
+                tasks: [task], rowCount: 1, layoutRows: [],
+                relations: [{ id: 'r1', from: 'A', to: 'B', type: 'precedes' }],
+                pendingRelationChanges: {
+                    'relation:r1': {
+                        draftId: 'relation:r1', relationId: 'r1', operation: 'delete',
+                        generation: 1, status: 'pending'
+                    }
+                },
+                viewport: { ...useTaskStore.getState().viewport, scrollX: 123 }
+            });
+        });
+        const state = useTaskStore.getState();
+        const uiState = useUIStore.getState();
+        await ref.current!.exportFullPng();
+
+        expect(fullExportMock).toHaveBeenCalledWith(expect.objectContaining({
+            tasks: state.tasks,
+            relations: [],
+            pendingRelationIds: new Set(),
+            viewport: state.viewport,
+            rowCount: 1,
+            showTaskTitles: uiState.showTaskTitles,
+            showProgressLine: uiState.showProgressLine
+        }));
+        expect(useTaskStore.getState()).toBe(state);
+        expect(useUIStore.getState()).toBe(uiState);
+    });
+
+    it('rejects full PNG export when the chart pane is hidden', async () => {
+        useUIStore.setState({ rightPaneVisible: false });
+        const ref = createRef<GanttExportHandle>();
+        render(<GanttContainer ref={ref} />);
+        await expect(ref.current!.exportFullPng()).rejects.toThrow();
+        expect(fullExportMock).not.toHaveBeenCalled();
+    });
+
     it('shares one CalendarDate with the task and overlay renderers for each canvas frame', async () => {
         render(<GanttContainer />);
 
@@ -207,6 +261,7 @@ describe('GanttContainer Resize', () => {
             },
             tasks: [],
             relations: [],
+            pendingRelationChanges: {},
             layoutRows: [],
             rowCount: 0
         });

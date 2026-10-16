@@ -34,6 +34,16 @@ For a spreadsheet check, create test issues with subject `=1+1`, parent subject 
 
 PNG and CSV export menu. [View full-size image](/images/export-menu-en.png)
 
+### Export full PNG (development feature)
+
+Full PNG export is under development and is not included in release v0.18.1.
+
+Select **Export full PNG** from the Export menu to create a PNG of all rows in the current view, including rows outside the viewport, across the full date range beyond the visible area. It uses the current zoom and row height, preserves the current filters, sort order, and collapsed groups, and draws tasks, summaries, and enabled baseline dates. The image contains the chart area only; it excludes the sidebar and workload pane. Selection, hover, and the draft dependency line are also excluded. Image dimensions do not depend on monitor display scaling.
+
+When enabled, task titles, version names, and bar date labels are included in the image's horizontal bounds. Long names widen the image instead of being truncated or scaled down.
+
+The image must be no more than 8192 pixels on either side and no more than 16,777,216 pixels in total. The header and label widths count toward these limits. Export stops when a limit is exceeded. Reduce the zoom or row height, or filter the displayed rows, and try again.
+
 ## Display preferences versus shared query state
 
 Display settings and filters are separate. See [Filters and saved queries](/en/features/filters) and [URL and query parameters](/en/features/query-parameters) for conditions that can be shared in a Redmine query or URL.

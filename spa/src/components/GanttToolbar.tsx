@@ -84,6 +84,8 @@ export const GanttToolbar: React.FC<GanttToolbarProps> = ({ zoomLevel, onZoomCha
     const baselineSaveStatus = useBaselineStore(state => state.saveStatus);
     const hasBaseline = useBaselineStore(state => state.hasBaseline);
     const [manualSaveInProgress, setManualSaveInProgress] = React.useState(false);
+    const [pngExportInProgress, setPngExportInProgress] = React.useState(false);
+    const pngExportInProgressRef = React.useRef(false);
     const [projectSearchText, setProjectSearchText] = React.useState('');
     const resetProjectSearch = React.useCallback(() => setProjectSearchText(''), []);
     const {
@@ -205,6 +207,13 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
     };
 
     const handleExport = async (method: keyof GanttExportHandle) => {
+        const isPngExport = method === 'exportPng' || method === 'exportFullPng';
+        if (isPngExport && pngExportInProgressRef.current) return;
+        if (isPngExport) {
+            pngExportInProgressRef.current = true;
+            setPngExportInProgress(true);
+        }
+
         try {
             const handle = exportRef.current;
             if (!handle || !rightPaneVisible) {
@@ -218,6 +227,11 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                 error instanceof Error ? error.message : (i18n.t('label_export_failed') || 'Export failed'),
                 'error'
             );
+        } finally {
+            if (isPngExport) {
+                pngExportInProgressRef.current = false;
+                setPngExportInProgress(false);
+            }
         }
     };
 
@@ -1903,8 +1917,11 @@ const showDisplaySettingsMenu = isMenuOpen('displaySettings');
                                 gap: '4px'
                             }}
                         >
-                            <button type="button" onClick={() => void handleExport('exportPng')} style={{ border: 'none', background: designTokens.controlBg, textAlign: 'left', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}>
+                            <button type="button" disabled={pngExportInProgress} onClick={() => void handleExport('exportPng')} style={{ border: 'none', background: designTokens.controlBg, textAlign: 'left', padding: '8px', borderRadius: '6px', cursor: pngExportInProgress ? 'not-allowed' : 'pointer', opacity: pngExportInProgress ? 0.6 : 1 }}>
                                 {i18n.t('label_export_png') || 'Export PNG'}
+                            </button>
+                            <button type="button" disabled={pngExportInProgress} onClick={() => void handleExport('exportFullPng')} style={{ border: 'none', background: designTokens.controlBg, textAlign: 'left', padding: '8px', borderRadius: '6px', cursor: pngExportInProgress ? 'not-allowed' : 'pointer', opacity: pngExportInProgress ? 0.6 : 1 }}>
+                                {i18n.t('label_export_full_png') || 'Export full PNG'}
                             </button>
                             <button type="button" onClick={() => void handleExport('exportCsv')} style={{ border: 'none', background: designTokens.controlBg, textAlign: 'left', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}>
                                 {i18n.t('label_export_csv') || 'Export CSV'}

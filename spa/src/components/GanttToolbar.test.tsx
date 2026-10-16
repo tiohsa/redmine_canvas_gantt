@@ -39,6 +39,7 @@ describe('GanttToolbar shortcuts', () => {
     const exportRef: React.RefObject<GanttExportHandle | null> = {
         current: {
             exportPng: async () => undefined,
+            exportFullPng: async () => undefined,
             exportCsv: async () => undefined
         }
     };
@@ -1016,6 +1017,7 @@ describe('GanttToolbar shortcuts', () => {
         const localExportRef: React.RefObject<GanttExportHandle | null> = {
             current: {
                 exportPng: async () => undefined,
+                exportFullPng: async () => undefined,
                 exportCsv: csvExport
             }
         };
@@ -1028,6 +1030,37 @@ describe('GanttToolbar shortcuts', () => {
         await waitFor(() => {
             expect(csvExport).toHaveBeenCalledTimes(1);
         });
+    });
+
+    it('disables both PNG exports and ignores duplicate generation while full PNG is running', async () => {
+        let resolveExport!: () => void;
+        const fullPngExport = vi.fn(() => new Promise<void>((resolve) => { resolveExport = resolve; }));
+        const localExportRef: React.RefObject<GanttExportHandle | null> = {
+            current: {
+                exportPng: vi.fn().mockResolvedValue(undefined),
+                exportFullPng: fullPngExport,
+                exportCsv: vi.fn().mockResolvedValue(undefined)
+            }
+        };
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={localExportRef} />);
+        fireEvent.click(screen.getByTestId('export-menu-button'));
+
+        const fullPngButton = screen.getByRole('button', { name: 'Export full PNG' });
+        const pngButton = screen.getByRole('button', { name: 'Export PNG' });
+        fireEvent.click(fullPngButton);
+
+        expect(fullPngButton).toBeDisabled();
+        expect(pngButton).toBeDisabled();
+        fireEvent.click(fullPngButton);
+        fireEvent.click(pngButton);
+        expect(fullPngExport).toHaveBeenCalledTimes(1);
+
+        await act(async () => resolveExport());
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Export full PNG' })).not.toBeInTheDocument());
+        fireEvent.click(screen.getByTestId('export-menu-button'));
+        expect(screen.getByRole('button', { name: 'Export full PNG' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Export PNG' })).toBeEnabled();
     });
 
     it('shows notification column in the column menu and includes it in reset flow', () => {

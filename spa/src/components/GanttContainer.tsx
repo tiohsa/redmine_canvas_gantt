@@ -23,6 +23,7 @@ import { useInitialGanttData } from './gantt/useInitialGanttData';
 import { useScrollSync } from './gantt/useScrollSync';
 import { exportTasksAsCsv } from '../export/csv';
 import { exportSnapshotAsPng } from '../export/png';
+import { exportFullRangePng } from '../export/fullPng';
 import { todayCalendarDate } from '../utils/dateOnly';
 import type { GanttExportHandle, GanttExportSnapshot } from '../export/types';
 import type { TimelineHeaderHandle } from './TimelineHeader';
@@ -354,10 +355,33 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         exportPng: async () => {
             await exportSnapshotAsPng(captureSnapshot());
         },
+        exportFullPng: async () => {
+            if (!rightPaneVisible) {
+                throw new Error(i18n.t('label_export_unavailable') || 'Export is unavailable in the current layout');
+            }
+            await exportFullRangePng({
+                viewport,
+                zoomLevel,
+                tasks,
+                relations: effectiveRelations,
+                pendingRelationIds,
+                rowCount,
+                layoutRows,
+                baselineSnapshot,
+                showBaseline,
+                showTaskTitles,
+                showTaskBarDates,
+                showPointsOrphans,
+                showStartDateOnly,
+                showDueDateOnly,
+                showProgressLine,
+                today: todayCalendarDate()
+            });
+        },
         exportCsv: async () => {
             exportTasksAsCsv(tasks, relations, customFields);
         }
-    }), [captureSnapshot, customFields, relations, tasks]);
+    }), [baselineSnapshot, captureSnapshot, customFields, effectiveRelations, layoutRows, pendingRelationIds, relations, rightPaneVisible, rowCount, showBaseline, showDueDateOnly, showPointsOrphans, showProgressLine, showStartDateOnly, showTaskBarDates, showTaskTitles, tasks, viewport, zoomLevel]);
 
     const workloadSplitRows = `minmax(${WORKLOAD_MIN_PANE_PX}px, ${workloadTopWeight}fr) ${WORKLOAD_SPLIT_HANDLE_HEIGHT}px minmax(${WORKLOAD_MIN_PANE_PX}px, ${workloadBottomWeight}fr)`;
     const collapsedSplitRows = 'minmax(0, 1fr) 0px 0px';

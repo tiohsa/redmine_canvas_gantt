@@ -22,6 +22,7 @@ vi.mock('../../api/client', () => ({
 const exportRef: { current: GanttExportHandle | null } = {
     current: {
         exportPng: async () => undefined,
+        exportFullPng: async () => undefined,
         exportCsv: async () => undefined
     }
 };

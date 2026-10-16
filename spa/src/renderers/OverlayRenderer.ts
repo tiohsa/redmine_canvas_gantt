@@ -27,6 +27,7 @@ export type OverlayRenderState = {
     showStartDateOnly?: boolean;
     showDueDateOnly?: boolean;
     today?: CalendarDate;
+    showProgressLine?: boolean;
 };
 
 export class OverlayRenderer {
@@ -49,7 +50,8 @@ export class OverlayRenderer {
         pendingRelationIds,
         showStartDateOnly = true,
         showDueDateOnly = true,
-        today = todayCalendarDate()
+        today = todayCalendarDate(),
+        showProgressLine = useUIStore.getState().showProgressLine
     }: OverlayRenderState) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
@@ -93,15 +95,15 @@ export class OverlayRenderer {
         }
 
         // Draw Inazuma line (Progress Line)
-        this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel, today);
+        if (showProgressLine) {
+            this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel, today);
+        }
 
         // Draw "Today" line
         this.drawTodayLine(ctx, viewport, width, height, today);
     }
 
     private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[], zoomLevel: ZoomLevel, todayStart: CalendarDate = todayCalendarDate()) {
-        const { showProgressLine } = useUIStore.getState();
-        if (!showProgressLine) return;
 
         // Tasks are already ordered by rowIndex (TaskStore layout).
         // Include tasks even if dates are missing (they will snap to Today line)
