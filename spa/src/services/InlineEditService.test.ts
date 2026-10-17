@@ -203,6 +203,7 @@ describe('InlineEditService', () => {
             rollbackTaskUpdates: { subject: initialTask.subject },
             fields: { subject: 'Generation one' }
         });
+        const generationOne = useTaskStore.getState().editGenerations[initialTask.id];
         await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
         useTaskStore.getState().updateTask(initialTask.id, { subject: 'Generation two' });
         const generationTwo = useTaskStore.getState().editGenerations[initialTask.id];
@@ -213,7 +214,14 @@ describe('InlineEditService', () => {
 
         await expect(saving).rejects.toThrow('Old unknown result');
 
-        expect(useTaskStore.getState().taskConflicts[initialTask.id]).toBe(newerConflict);
+        expect(useTaskStore.getState().taskConflicts[initialTask.id]).toMatchObject({
+            generation: newerConflict.generation,
+            message: newerConflict.message,
+            unresolvedMutations: expect.objectContaining({
+                [generationOne]: expect.objectContaining({ message: 'Old unknown result' }),
+                [generationTwo]: expect.objectContaining({ message: 'Newer generation conflict' })
+            })
+        });
         expect(useTaskStore.getState().localTaskPatches[initialTask.id]).toHaveLength(2);
     });
 

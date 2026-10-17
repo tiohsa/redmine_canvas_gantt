@@ -1245,7 +1245,7 @@ describe('saveModifiedTasks', () => {
 
         expect(fetchData).not.toHaveBeenCalled();
         expect(result.savedTaskIds).toEqual(new Set());
-        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock', remote, 2);
+        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock', remote, 2, 'conflict');
     });
 
     it('falls back to one resync when a 409 entity omits an owned field', async () => {
@@ -1367,7 +1367,7 @@ describe('saveModifiedTasks', () => {
         expect(result.savedTaskIds).toEqual(new Set());
         expect(result.unsentTaskIds).toEqual(new Set());
         expect(result.failures.get('A')).toBe('resync unavailable');
-        expect(onConflict).toHaveBeenCalledWith('A', 'resync unavailable (remote unavailable)', undefined, undefined);
+        expect(onConflict).toHaveBeenCalledWith('A', 'resync unavailable (remote unavailable)', undefined, undefined, 'unknown');
     });
 
     it('does not treat a conflict response outside the current scope as success', async () => {
@@ -1396,7 +1396,7 @@ describe('saveModifiedTasks', () => {
         expect(fetchData).toHaveBeenCalledTimes(1);
         expect(result.savedTaskIds).toEqual(new Set());
         expect(result.failures.get('A')).toBe('stale lock');
-        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock (remote unavailable)', undefined, undefined);
+        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock (remote unavailable)', undefined, undefined, 'unknown');
     });
 
     it('records multiple differing conflicts in one resync without retrying with newer lock versions', async () => {
@@ -1432,8 +1432,8 @@ describe('saveModifiedTasks', () => {
             ['B', 'B stale lock']
         ]));
         expect(result.savedTaskIds).toEqual(new Set());
-        expect(onConflict).toHaveBeenCalledWith('A', 'A stale lock', remoteA, 2);
-        expect(onConflict).toHaveBeenCalledWith('B', 'B stale lock', remoteB, 4);
+        expect(onConflict).toHaveBeenCalledWith('A', 'A stale lock', remoteA, 2, 'conflict');
+        expect(onConflict).toHaveBeenCalledWith('B', 'B stale lock', remoteB, 4, 'conflict');
     });
 
     it('blocks a successor after a not-found predecessor', async () => {

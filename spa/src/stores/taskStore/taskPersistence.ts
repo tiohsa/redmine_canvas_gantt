@@ -327,7 +327,7 @@ export const saveModifiedTasks = async (
     fetchData: (params: FetchDataParams) => Promise<FetchDataResult>,
     onTaskSaved?: (taskId: string, lockVersion?: number) => void,
     onTaskResult?: (taskId: string, result: UpdateTaskFieldsResult) => void,
-    onConflict?: (taskId: string, message: string, remoteEntity?: PersistedTaskState, remoteRevision?: number) => void,
+    onConflict?: (taskId: string, message: string, remoteEntity?: PersistedTaskState, remoteRevision?: number, outcome?: 'conflict' | 'unknown') => void,
     shouldAbortRemaining?: (taskId: string) => boolean,
     mutationGenerations: Record<string, number> = {},
     mutationFields: Record<string, TaskFields> = {},
@@ -663,7 +663,7 @@ export const saveModifiedTasks = async (
     });
     const attemptCounts = new Map<string, number>();
     const conflictMessages = new Map<string, string>();
-    const conflictCandidates = new Map<string, { intent: MutationIntent; message: string; entity?: PersistedTaskState; revision?: number }>();
+    const conflictCandidates = new Map<string, { intent: MutationIntent; message: string; entity?: PersistedTaskState; revision?: number; outcome: 'conflict' | 'unknown' }>();
     const failureMessage = i18n.t('label_failed_to_save') || 'Failed to save task';
     const unknownErrorMessage = i18n.t('label_unknown_error') || 'Unknown error';
     const conflictMessage = i18n.t('label_conflict') || 'Conflict';
@@ -846,7 +846,8 @@ export const saveModifiedTasks = async (
                     intent,
                     message: result.error || conflictMessage,
                     entity: result.status === 'protocol_error' ? undefined : result.entity,
-                    revision: result.status === 'protocol_error' ? undefined : result.revision ?? result.lockVersion ?? result.entity?.lockVersion
+                    revision: result.status === 'protocol_error' ? undefined : result.revision ?? result.lockVersion ?? result.entity?.lockVersion,
+                    outcome: result.status === 'protocol_error' ? 'unknown' as const : 'conflict' as const
                 };
                 conflictCandidates.set(taskId, candidate);
                 const conflictAckIsComplete = result.status === 'conflict' && result.entity &&
@@ -868,7 +869,7 @@ export const saveModifiedTasks = async (
                     pendingTaskIds.delete(taskId);
                     terminalFailureTaskIds.add(taskId);
                     failures.set(taskId, candidate.message);
-                    onConflict?.(taskId, candidate.message, result.entity, candidate.revision);
+                    onConflict?.(taskId, candidate.message, result.entity, candidate.revision, candidate.outcome);
                 } else {
                     failures.set(taskId, candidate.message);
                     conflictMessages.set(taskId, candidate.message);
@@ -898,7 +899,7 @@ export const saveModifiedTasks = async (
                     pendingTaskIds.delete(taskId);
                     terminalFailureTaskIds.add(taskId);
                     failures.set(taskId, message);
-                    onConflict?.(taskId, i18n.t('label_remote_unavailable_message', { message }) || `${message} (remote unavailable)`, undefined, undefined);
+                    onConflict?.(taskId, i18n.t('label_remote_unavailable_message', { message }) || `${message} (remote unavailable)`, undefined, undefined, 'unknown');
                 });
                 hasProcessedTask = true;
                 continue;
@@ -924,7 +925,7 @@ export const saveModifiedTasks = async (
                     terminalFailureTaskIds.add(taskId);
                     const message = conflictMessages.get(taskId) || conflictMessage;
                     failures.set(taskId, message);
-                    onConflict?.(taskId, i18n.t('label_remote_unavailable_message', { message }) || `${message} (remote unavailable)`, undefined, undefined);
+                    onConflict?.(taskId, i18n.t('label_remote_unavailable_message', { message }) || `${message} (remote unavailable)`, undefined, undefined, 'unknown');
                     return;
                 }
 
@@ -951,7 +952,7 @@ export const saveModifiedTasks = async (
                 terminalFailureTaskIds.add(taskId);
                 const message = conflictMessages.get(taskId) || conflictMessage;
                 failures.set(taskId, message);
-                onConflict?.(taskId, message, canonicalRemote.entity, canonicalRemote.revision);
+                    onConflict?.(taskId, message, canonicalRemote.entity, canonicalRemote.revision, candidate?.outcome ?? 'unknown');
             });
         }
 

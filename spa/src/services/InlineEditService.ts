@@ -72,7 +72,8 @@ export class InlineEditService {
                                 operationGeneration,
                                 completedResult.status === 'protocol_error' ? undefined : completedResult.entity,
                                 completedResult.status === 'protocol_error' ? undefined : completedResult.revision ?? completedResult.entity?.lockVersion,
-                                completedResult.status === 'protocol_error' || !completedResult.entity ? 'needs_refresh' : 'known'
+                                completedResult.status === 'protocol_error' || !completedResult.entity ? 'needs_refresh' : 'known',
+                                completedResult.status === 'protocol_error' ? 'unknown' : 'conflict'
                             );
                             return;
                         }
@@ -109,13 +110,18 @@ export class InlineEditService {
         if (result.status === 'protocol_error' && ownsOperation()) {
             const beforeRefresh = useTaskStore.getState();
             const conflictAtRefresh = beforeRefresh.taskConflicts[taskId];
+            const outcomeAtRefresh = conflictAtRefresh?.unresolvedMutations?.[String(operationGeneration)];
             const readContextAtRefresh = beforeRefresh.activeReadContext;
             const projectAtRefresh = beforeRefresh.currentProjectId;
             let refreshContext = readContextAtRefresh;
             const isRefreshOwner = (refreshContext?: typeof readContextAtRefresh, allowUnapplied = false) => {
                 const state = useTaskStore.getState();
                 const currentReadContext = state.getActiveReadContext();
-                return ownsOperation() && state.taskConflicts[taskId] === conflictAtRefresh &&
+                const currentConflict = state.taskConflicts[taskId];
+                const stillOwnsConflict = outcomeAtRefresh
+                    ? currentConflict?.unresolvedMutations?.[String(operationGeneration)] === outcomeAtRefresh
+                    : currentConflict === conflictAtRefresh;
+                return ownsOperation() && stillOwnsConflict &&
                     state.editGenerations[taskId] === operationGeneration && state.currentProjectId === projectAtRefresh &&
                     Boolean(refreshContext && currentReadContext?.contextId === refreshContext.contextId &&
                         (allowUnapplied || canApplyReadResponse(state.activeReadContext, refreshContext)) &&
@@ -142,11 +148,11 @@ export class InlineEditService {
                     if (remote && validRemote) {
                         mutationLifecycleMetrics.reconciliationUnresolved += 1;
                         refreshedState.registerTaskConflict(taskId, result.error || (i18n.t('label_failed_to_save') || 'Failed to save'),
-                            operationGeneration, remote, revision, 'known');
+                            operationGeneration, remote, revision, 'known', 'unknown');
                     } else {
                         mutationLifecycleMetrics.reconciliationUnresolved += 1;
                         refreshedState.registerTaskConflict(taskId, result.error || (i18n.t('label_failed_to_save') || 'Failed to save'),
-                            operationGeneration, undefined, undefined, 'unavailable');
+                            operationGeneration, undefined, undefined, 'unavailable', 'unknown');
                     }
                 }
             } catch {
@@ -154,7 +160,7 @@ export class InlineEditService {
                     mutationLifecycleMetrics.reconciliationUnresolved += 1;
                     useTaskStore.getState().registerTaskConflict(taskId,
                         result.error || (i18n.t('label_failed_to_save') || 'Failed to save'), operationGeneration,
-                        undefined, undefined, 'unavailable');
+                        undefined, undefined, 'unavailable', 'unknown');
                 }
             }
         }
