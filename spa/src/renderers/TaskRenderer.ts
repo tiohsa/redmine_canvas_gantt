@@ -3,17 +3,21 @@ import { LayoutEngine } from '../engines/LayoutEngine';
 import { buildDependencySummary } from './dependencyIndicators';
 import type { BaselineSnapshot } from '../types/baseline';
 import { calculateBaselineDiff, getBaselineTaskState } from '../utils/baseline';
-import { canvasFonts, designTokens } from '../styles/designTokens';
-import { getCanvasLogicalSize, snapTextPosition } from '../utils/canvasDpr';
-import { calendarDateKey, todayCalendarDate, type CalendarDate } from '../utils/dateOnly';
+import { designTokens } from '../styles/designTokens';
+import { getCanvasLogicalSize } from '../utils/canvasDpr';
+import { todayCalendarDate, type CalendarDate } from '../utils/dateOnly';
+import {
+    drawTaskTextLabel,
+    getTaskDateLabels,
+    getTaskSubjectLabel,
+    TASK_BAR_DATE_GAP,
+    TASK_START_POINT_DATE_GAP,
+    TASK_TITLE_OFFSET,
+    TASK_TITLE_OFFSET_WITH_DATES
+} from './taskLabels';
 
 export class TaskRenderer {
     private canvas: HTMLCanvasElement;
-
-    private static readonly TASK_TITLE_OFFSET = 30;
-    private static readonly TASK_TITLE_OFFSET_WITH_DATES = 42;
-    private static readonly TASK_BAR_DATE_GAP = 10;
-    private static readonly TASK_START_POINT_DATE_GAP = 14;
 
     // MiniMax standard-like bar colors
     private static readonly DONE_GREEN = designTokens.taskDone;
@@ -121,7 +125,7 @@ export class TaskRenderer {
                         bounds.y,
                         bounds.width,
                         bounds.height,
-                        showTaskBarDates ? TaskRenderer.TASK_TITLE_OFFSET_WITH_DATES : TaskRenderer.TASK_TITLE_OFFSET
+                        showTaskBarDates ? TASK_TITLE_OFFSET_WITH_DATES : TASK_TITLE_OFFSET
                     );
                 }
                 if (showTaskBarDates) {
@@ -143,7 +147,7 @@ export class TaskRenderer {
                         y: rowY + (viewport.rowHeight - 12) / 2,
                         width: 0,
                         height: 12
-                    }, TaskRenderer.TASK_START_POINT_DATE_GAP);
+                    }, TASK_START_POINT_DATE_GAP);
                 }
                 if (showTaskTitles) {
                     this.drawSubjectBeforeBar(
@@ -153,7 +157,7 @@ export class TaskRenderer {
                         rowY + (viewport.rowHeight - 12) / 2,
                         12,
                         12,
-                        showTaskBarDates ? TaskRenderer.TASK_TITLE_OFFSET_WITH_DATES : TaskRenderer.TASK_TITLE_OFFSET
+                        showTaskBarDates ? TASK_TITLE_OFFSET_WITH_DATES : TASK_TITLE_OFFSET
                     );
                 }
                 if (showBaseline) {
@@ -183,7 +187,7 @@ export class TaskRenderer {
                         rowY + (viewport.rowHeight - 12) / 2,
                         12,
                         12,
-                        showTaskBarDates ? TaskRenderer.TASK_TITLE_OFFSET_WITH_DATES : TaskRenderer.TASK_TITLE_OFFSET
+                        showTaskBarDates ? TASK_TITLE_OFFSET_WITH_DATES : TASK_TITLE_OFFSET
                     );
                 }
                 if (showBaseline) {
@@ -285,21 +289,16 @@ export class TaskRenderer {
         if (stroke) ctx.stroke();
     }
 
-    private drawSubjectBeforeBar(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number, offset = 30) {
+    private drawSubjectBeforeBar(ctx: CanvasRenderingContext2D, task: Task, x: number, y: number, width: number, height: number, offset = TASK_TITLE_OFFSET) {
         // We aren't clipping to width currently, but keeping the signature compatible.
         void width;
 
         ctx.save();
-        ctx.font = canvasFonts.body;
-        ctx.fillStyle = designTokens.textPrimary;
-
-        const textX = x - offset; // Keep space clear for dependency indicators and date labels.
-        const textY = y + height / 2;
-
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'middle';
-
-        ctx.fillText(task.subject, snapTextPosition(textX), snapTextPosition(textY));
+        drawTaskTextLabel(
+            ctx,
+            getTaskSubjectLabel(task.subject, x, y + height / 2, offset === TASK_TITLE_OFFSET_WITH_DATES),
+            designTokens.textPrimary
+        );
 
         ctx.restore();
     }
@@ -308,37 +307,12 @@ export class TaskRenderer {
         ctx: CanvasRenderingContext2D,
         task: Task,
         bar: { x: number; y: number; width: number; height: number },
-        dateGap = TaskRenderer.TASK_BAR_DATE_GAP
+        dateGap = TASK_BAR_DATE_GAP
     ) {
-        const formatDate = (timestamp: number) => {
-            const [, month, day] = calendarDateKey(timestamp).split('-');
-            return `${Number(month)}/${Number(day)}`;
-        };
-
-        const textY = bar.y + bar.height / 2;
         ctx.save();
-        ctx.font = canvasFonts.body;
-        ctx.fillStyle = designTokens.textMuted;
-        ctx.textBaseline = 'middle';
-
-        const startDate = task.startDate;
-        if (startDate !== undefined && Number.isFinite(startDate)) {
-            ctx.textAlign = 'right';
-            ctx.fillText(
-                formatDate(startDate),
-                snapTextPosition(bar.x - dateGap),
-                snapTextPosition(textY)
-            );
-        }
-        const dueDate = task.dueDate;
-        if (dueDate !== undefined && Number.isFinite(dueDate)) {
-            ctx.textAlign = 'left';
-            ctx.fillText(
-                formatDate(dueDate),
-                snapTextPosition(bar.x + bar.width + dateGap),
-                snapTextPosition(textY)
-            );
-        }
+        getTaskDateLabels(task, bar, dateGap).forEach(label => {
+            drawTaskTextLabel(ctx, label, designTokens.textMuted);
+        });
         ctx.restore();
     }
 

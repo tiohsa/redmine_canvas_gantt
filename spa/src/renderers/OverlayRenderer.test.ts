@@ -95,6 +95,25 @@ describe('OverlayRenderer selection highlight', () => {
 });
 
 describe('OverlayRenderer progress line', () => {
+    it.each([true, false])('uses the export progress setting %s without changing the UI store', (enabled) => {
+        useUIStore.setState({ showProgressLine: !enabled });
+        const state = useUIStore.getState();
+        const ctx = createMockContext();
+        const canvas = { width: 800, height: 600, getContext: () => ctx } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+        const today = parseDateOnly('2026-01-10')!;
+        renderer.render({
+            viewport: { ...viewport, startDate: today },
+            tasks: [buildTask('1', today, today, 0)],
+            relations: [], rowCount: 1, zoomLevel: 2,
+            selectedTaskId: null, selectedRelationId: null, draftRelation: null,
+            today, showProgressLine: enabled
+        });
+        // The today line is always drawn; enabling progress adds another path.
+        expect(ctx.moveTo).toHaveBeenCalledTimes(enabled ? 2 : 1);
+        expect(useUIStore.getState()).toBe(state);
+    });
+
     it.each([
         { name: 'start-only', dates: { dueDate: undefined }, settings: { showStartDateOnly: false, showDueDateOnly: true } },
         { name: 'due-only', dates: { startDate: undefined }, settings: { showStartDateOnly: true, showDueDateOnly: false } }
@@ -214,6 +233,7 @@ describe('OverlayRenderer progress line', () => {
 
 describe('OverlayRenderer today line', () => {
     it('passes one CalendarDate to both progress and today-line rendering in a frame', () => {
+        useUIStore.setState({ showProgressLine: true });
         const ctx = createMockContext();
         const canvas = { width: 10, height: 600, getContext: vi.fn(() => ctx) } as unknown as HTMLCanvasElement;
         const renderer = new OverlayRenderer(canvas);
@@ -375,5 +395,30 @@ describe('OverlayRenderer dependencies', () => {
         }).drawDependencies(ctx, viewport, tasks, [relation], null, 2, null);
 
         expect(ctx.fill).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders staged relation links with a dashed stroke', () => {
+        const ctx = createMockContext();
+        const canvas = { width: 1000, height: 600, getContext: vi.fn(() => ctx) } as unknown as HTMLCanvasElement;
+        const renderer = new OverlayRenderer(canvas);
+        const tasks = [
+            buildTask('1', 0, ONE_DAY, 0),
+            buildTask('2', ONE_DAY * 4, ONE_DAY * 5, 1)
+        ];
+        const relation: Relation = { id: 'local:relation-1', from: '1', to: '2', type: RelationType.Precedes };
+
+        renderer.render({
+            viewport,
+            tasks,
+            relations: [relation],
+            pendingRelationIds: new Set([relation.id]),
+            rowCount: tasks.length,
+            zoomLevel: 1,
+            selectedTaskId: null,
+            selectedRelationId: null,
+            draftRelation: null
+        });
+
+        expect(ctx.setLineDash).toHaveBeenCalledWith([6, 4]);
     });
 });

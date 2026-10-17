@@ -5,9 +5,11 @@ import { useUIStore } from '../stores/UIStore';
 import { apiClient } from '../api/client';
 import type { Task } from '../types';
 import { configureBusinessCalendar } from '../utils/businessCalendar';
+import { parseDateOnly } from '../utils/dateOnly';
 
 vi.mock('../api/client', () => ({
     apiClient: {
+        fetchData: vi.fn(),
         updateTask: vi.fn(),
         updateTaskFields: vi.fn()
     }
@@ -26,6 +28,23 @@ const buildTask = (overrides: Partial<Task> = {}): Task => ({
     hasChildren: false,
     ...overrides
 });
+
+const buildCanonicalAck = (taskId: string, fields: Record<string, unknown>, revision: number) => {
+    const names: Record<string, string> = {
+        start_date: 'startDate', due_date: 'dueDate', parent_issue_id: 'parentId', done_ratio: 'ratioDone',
+        status_id: 'statusId', assigned_to_id: 'assignedToId', priority_id: 'priorityId', category_id: 'categoryId',
+        estimated_hours: 'estimatedHours', project_id: 'projectId', tracker_id: 'trackerId',
+        fixed_version_id: 'fixedVersionId', custom_field_values: 'customFieldValues'
+    };
+    const entity: Record<string, unknown> = { id: taskId, lockVersion: revision };
+    Object.entries(fields).forEach(([key, value]) => {
+        const name = names[key] ?? key;
+        entity[name] = (key === 'start_date' || key === 'due_date') && typeof value === 'string'
+            ? parseDateOnly(value) ?? undefined
+            : key.endsWith('_id') && value === '' ? undefined : value;
+    });
+    return { status: 'ok' as const, entity: entity as unknown as Task, revision, lockVersion: revision };
+};
 
 const deferred = <T,>() => {
     let resolve!: (value: T) => void;
@@ -62,6 +81,148 @@ describe('InlineEditService', () => {
         expect(state.allTasks[0]?.subject).toBe('Pending subject');
         expect(state.modifiedTaskIds.has('task-1')).toBe(true);
         expect(state.localTaskPatches['task-1']).toHaveLength(1);
+    });
+
+    it('keeps an auto-saved patch unresolved when the task acknowledgement is incomplete', async () => {
+        const initialTask = buildTask();
+        useTaskStore.setState({ allTasks: [initialTask], tasks: [initialTask] });
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+        vi.mocked(apiClient.fetchData).mockRejectedValue(new Error('offline'));
+
+        await expect(InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: { subject: 'Pending subject' },
+            rollbackTaskUpdates: { subject: initialTask.subject },
+            fields: { subject: 'Pending subject' }
+        })).rejects.toThrow('Failed to save');
+
+        const state = useTaskStore.getState();
+        expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1);
+        expect(state.allTasks.find(task => task.id === initialTask.id)?.subject).toBe('Pending subject');
+        expect(state.localTaskPatches[initialTask.id]).toBeDefined();
+        expect(state.taskConflicts[initialTask.id]).toMatchObject({ remoteAvailability: 'unavailable' });
+    });
+
+    it('settles an incomplete inline acknowledgement when a fresh read confirms the edit', async () => {
+        const initialTask = buildTask();
+        const queryContext = { ...useTaskStore.getState().queryContext };
+        useTaskStore.setState({ allTasks: [initialTask], tasks: [initialTask], queryContext });
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [{ ...initialTask, subject: 'Confirmed subject', lockVersion: 4 }],
+            relations: [], versions: [], filterOptions: { projects: [], assignees: [] }, statuses: [], customFields: [],
+            queryContext: { ...queryContext },
+            project: { id: 'p1', name: 'P1' }, permissions: { editable: true, viewable: true, baselineEditable: true }
+        } as never);
+
+        await InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: { subject: 'Confirmed subject' },
+            rollbackTaskUpdates: { subject: initialTask.subject },
+            fields: { subject: 'Confirmed subject' }
+        });
+
+        const state = useTaskStore.getState();
+        expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1);
+        expect(apiClient.fetchData).toHaveBeenCalledTimes(1);
+        expect(state.localTaskPatches[initialTask.id]).toBeUndefined();
+        expect(state.taskConflicts[initialTask.id]).toBeUndefined();
+        expect(state.serverTaskSnapshot.revisions[initialTask.id]).toBe(4);
+    });
+
+    it('keeps an unknown inline mutation unresolved when the refresh view filters the task out', async () => {
+        const initialTask = buildTask({ projectId: 'p1' });
+        const queryContext = { ...useTaskStore.getState().queryContext };
+        useTaskStore.setState({ allTasks: [initialTask], tasks: [initialTask], queryContext });
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
+            status: 'protocol_error', error: 'Malformed acknowledgement', deletedEntityIds: [initialTask.id]
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [], relations: [], versions: [], filterOptions: { projects: [], assignees: [] }, statuses: [], customFields: [],
+            queryContext: { ...queryContext }, project: { id: 'p1', name: 'P1' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        } as never);
+
+        await expect(InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: { subject: 'Pending subject' },
+            rollbackTaskUpdates: { subject: initialTask.subject },
+            fields: { subject: 'Pending subject' }
+        })).rejects.toThrow('Malformed acknowledgement');
+
+        const state = useTaskStore.getState();
+        expect(state.taskTombstones[initialTask.id]).toBeUndefined();
+        expect(state.localTaskPatches[initialTask.id]).toBeDefined();
+        expect(state.modifiedTaskIds.has(initialTask.id)).toBe(true);
+        expect(state.taskConflicts[initialTask.id]).toMatchObject({ remoteAvailability: 'unavailable' });
+    });
+
+    it('does not apply an inline protocol-error refresh after the view changes while it is pending', async () => {
+        const initialTask = buildTask({ projectId: 'p1', lockVersion: 1 });
+        const queryContext = { ...useTaskStore.getState().queryContext };
+        const makeData = (tasks: Task[], context = queryContext) => ({
+            tasks, relations: [], versions: [], filterOptions: { projects: [], assignees: [] }, statuses: [], customFields: [],
+            queryContext: { ...context }, project: { id: 'p1', name: 'P1' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        useTaskStore.getState().applyApiData(makeData([initialTask]) as never);
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'protocol_error', error: 'Unknown outcome' });
+        const oldRead = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        const newViewTask = buildTask({ projectId: 'p1', subject: 'Current view', lockVersion: 4 });
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(oldRead.promise)
+            .mockResolvedValueOnce(makeData([newViewTask]) as never);
+
+        const saving = InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: { subject: 'Pending subject' },
+            rollbackTaskUpdates: { subject: initialTask.subject },
+            fields: { subject: 'Pending subject' }
+        });
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
+        await useTaskStore.getState().setSelectedAssigneeIds([99]);
+        oldRead.resolve(makeData([{ ...initialTask, subject: 'Old view response', lockVersion: 5 }]) as never);
+        await expect(saving).rejects.toThrow('Unknown outcome');
+
+        const state = useTaskStore.getState();
+        expect(state.serverTaskSnapshot.entitiesById[initialTask.id]?.subject).toBe('Current view');
+        expect(state.serverTaskSnapshot.revisions[initialTask.id]).toBe(4);
+        expect(state.localTaskPatches[initialTask.id]).toBeDefined();
+        expect(state.taskConflicts[initialTask.id]).toMatchObject({ remoteAvailability: 'needs_refresh' });
+    });
+
+    it('keeps a newer conflict when an older deferred inline mutation completes', async () => {
+        const initialTask = buildTask({ lockVersion: 1 });
+        useTaskStore.setState({ allTasks: [initialTask], tasks: [initialTask] });
+        const mutation = deferred<{ status: 'protocol_error'; error: string }>();
+        vi.mocked(apiClient.updateTaskFields).mockReturnValue(mutation.promise as never);
+        vi.mocked(apiClient.fetchData).mockRejectedValue(new Error('offline'));
+
+        const saving = InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: { subject: 'Generation one' },
+            rollbackTaskUpdates: { subject: initialTask.subject },
+            fields: { subject: 'Generation one' }
+        });
+        const generationOne = useTaskStore.getState().editGenerations[initialTask.id];
+        await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
+        useTaskStore.getState().updateTask(initialTask.id, { subject: 'Generation two' });
+        const generationTwo = useTaskStore.getState().editGenerations[initialTask.id];
+        useTaskStore.getState().registerTaskConflict(initialTask.id, 'Newer generation conflict', generationTwo,
+            { id: initialTask.id, subject: 'Remote generation two', lockVersion: 2 }, 2, 'known');
+        const newerConflict = useTaskStore.getState().taskConflicts[initialTask.id];
+        mutation.resolve({ status: 'protocol_error', error: 'Old unknown result' });
+
+        await expect(saving).rejects.toThrow('Old unknown result');
+
+        expect(useTaskStore.getState().taskConflicts[initialTask.id]).toMatchObject({
+            generation: newerConflict.generation,
+            message: newerConflict.message,
+            unresolvedMutations: expect.objectContaining({
+                [generationOne]: expect.objectContaining({ message: 'Old unknown result' }),
+                [generationTwo]: expect.objectContaining({ message: 'Newer generation conflict' })
+            })
+        });
+        expect(useTaskStore.getState().localTaskPatches[initialTask.id]).toHaveLength(2);
     });
 
     it('stores project preview materialization as projection but saves only explicit project intent', async () => {
@@ -112,7 +273,7 @@ describe('InlineEditService', () => {
         });
         expect(draft?.mutationIntent).toEqual({ projectId: '9' });
 
-        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+        vi.mocked(apiClient.updateTaskFields).mockImplementation(async (taskId, fields) => buildCanonicalAck(taskId, fields, 4));
         await useTaskStore.getState().saveChanges();
 
         expect(apiClient.updateTaskFields).toHaveBeenCalledWith(initialTask.id, {
@@ -152,7 +313,7 @@ describe('InlineEditService', () => {
             vi.mocked(apiClient.updateTask).mockImplementation(async (task, operationId, fields) => (
                 apiClient.updateTaskFields(task.id, { ...(fields ?? {}), lock_version: task.lockVersion }, operationId)
             ));
-            vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+            vi.mocked(apiClient.updateTaskFields).mockImplementation(async (taskId, fields) => buildCanonicalAck(taskId, fields, 4));
 
             await InlineEditService.saveTaskFields({
                 taskId: initialTask.id,
@@ -225,7 +386,7 @@ describe('InlineEditService', () => {
             mutationIntent: { trackerId: 2 }
         });
 
-        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+        vi.mocked(apiClient.updateTaskFields).mockImplementation(async (taskId, fields) => buildCanonicalAck(taskId, fields, 4));
         await useTaskStore.getState().saveChanges();
         expect(apiClient.updateTaskFields).toHaveBeenCalledWith(initialTask.id, {
             tracker_id: 2,
@@ -251,7 +412,7 @@ describe('InlineEditService', () => {
             vi.mocked(apiClient.updateTask).mockImplementation(async (task, operationId, fields) => (
                 apiClient.updateTaskFields(task.id, { ...(fields ?? {}), lock_version: task.lockVersion }, operationId)
             ));
-            vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+            vi.mocked(apiClient.updateTaskFields).mockImplementation(async (taskId, fields) => buildCanonicalAck(taskId, fields, 4));
 
             await InlineEditService.saveTaskFields({
                 taskId: initialTask.id,
@@ -310,7 +471,7 @@ describe('InlineEditService', () => {
             { statusId: 3 }
         ]);
 
-        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 5 });
+        vi.mocked(apiClient.updateTaskFields).mockImplementation(async (taskId, fields) => buildCanonicalAck(taskId, fields, 5));
         await useTaskStore.getState().saveChanges();
 
         expect(apiClient.updateTaskFields).toHaveBeenCalledWith(initialTask.id, {
@@ -327,10 +488,7 @@ describe('InlineEditService', () => {
             tasks: [initialTask]
         });
 
-        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
-            status: 'ok',
-            lockVersion: 4
-        });
+        vi.mocked(apiClient.updateTaskFields).mockImplementation(async (taskId, fields) => buildCanonicalAck(taskId, fields, 4));
 
         await InlineEditService.saveTaskFields({
             taskId: 'task-1',
@@ -377,7 +535,7 @@ describe('InlineEditService', () => {
                 dueDate: Date.UTC(2026, 0, 6)
             });
             useTaskStore.setState({ allTasks: [initialTask], tasks: [initialTask] });
-            vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'ok', lockVersion: 4 });
+            vi.mocked(apiClient.updateTaskFields).mockImplementation(async (taskId, fields) => buildCanonicalAck(taskId, fields, 4));
 
             await InlineEditService.saveTaskFields({
                 taskId: 'task-1',
@@ -487,7 +645,7 @@ describe('InlineEditService', () => {
         vi.mocked(apiClient.updateTaskFields)
             .mockReturnValueOnce(firstSave.promise)
             .mockResolvedValueOnce({ status: 'error', error: 'First edit failed' })
-            .mockResolvedValueOnce({ status: 'ok', lockVersion: 5 });
+            .mockImplementationOnce(async (taskId, fields) => buildCanonicalAck(taskId, fields, 5));
         const initialTask = buildTask();
         useTaskStore.setState({
             allTasks: [initialTask],
@@ -527,7 +685,7 @@ describe('InlineEditService', () => {
         const firstSave = deferred<{ status: 'ok'; lockVersion: number }>();
         vi.mocked(apiClient.updateTaskFields)
             .mockReturnValueOnce(firstSave.promise)
-            .mockResolvedValueOnce({ status: 'ok', lockVersion: 5 });
+            .mockImplementationOnce(async (taskId, fields) => buildCanonicalAck(taskId, fields, 5));
         const initialTask = buildTask();
         useTaskStore.setState({
             allTasks: [initialTask],
@@ -550,7 +708,7 @@ describe('InlineEditService', () => {
         });
         expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1);
 
-        firstSave.resolve({ status: 'ok', lockVersion: 4 });
+        firstSave.resolve(buildCanonicalAck('task-1', { subject: 'First edit' }, 4));
         await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
         expect(apiClient.updateTaskFields).toHaveBeenLastCalledWith('task-1', {
             subject: 'Second edit',

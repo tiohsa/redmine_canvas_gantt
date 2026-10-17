@@ -1,12 +1,14 @@
 import type { Task } from '../types';
 import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
-import { taskMutationService } from './taskMutationService';
+import { responseMatchesIntendedFields, taskMutationService } from './taskMutationService';
 import { classifyMutationError, classifyMutationResult, classifyMutationSourceDisposition } from '../api/mutationOutcome';
 import { formatDateOnly } from '../utils/dateOnly';
 import { hasLocalPatchOwnership } from '../stores/taskStore/stateContract';
 import { useUIStore } from '../stores/UIStore';
 import { materializedTaskUpdates } from '../stores/taskStore/draftIntent';
+import { mutationLifecycleMetrics } from '../stores/taskStore/taskPersistence';
+import { canApplyReadResponse } from '../stores/taskStore/stateContract';
 
 export class InlineEditService {
     static async saveTaskFields(params: {
@@ -43,14 +45,16 @@ export class InlineEditService {
         );
 
         let result;
+        let attemptedBaseRevision = current.lockVersion;
         try {
             result = await taskMutationService.updateTaskFields(
                 taskId,
                 () => {
                     const latest = useTaskStore.getState().allTasks.find((task) => task.id === taskId);
+                    attemptedBaseRevision = latest?.lockVersion ?? current.lockVersion;
                     return {
                         ...canonicalFields,
-                        lock_version: latest?.lockVersion ?? current.lockVersion
+                        lock_version: attemptedBaseRevision
                     };
                 },
                 {
@@ -60,14 +64,16 @@ export class InlineEditService {
                             useTaskStore.getState().commitTaskOperation(taskId, operationGeneration, completedResult.lockVersion);
                             return;
                         }
-                        if (completedResult.status === 'conflict') {
+                        if (completedResult.status === 'conflict' || completedResult.status === 'protocol_error') {
+                            if (!ownsOperation()) return;
                             useTaskStore.getState().registerTaskConflict(
                                 taskId,
                                 completedResult.error || (i18n.t('label_conflict') || 'Conflict'),
                                 operationGeneration,
-                                completedResult.entity,
-                                completedResult.revision ?? completedResult.entity?.lockVersion,
-                                completedResult.entity ? 'known' : 'needs_refresh'
+                                completedResult.status === 'protocol_error' ? undefined : completedResult.entity,
+                                completedResult.status === 'protocol_error' ? undefined : completedResult.revision ?? completedResult.entity?.lockVersion,
+                                completedResult.status === 'protocol_error' || !completedResult.entity ? 'needs_refresh' : 'known',
+                                completedResult.status === 'protocol_error' ? 'unknown' : 'conflict'
                             );
                             return;
                         }
@@ -101,6 +107,63 @@ export class InlineEditService {
         }
 
         if (result.status === 'ok') return;
+        if (result.status === 'protocol_error' && ownsOperation()) {
+            const beforeRefresh = useTaskStore.getState();
+            const conflictAtRefresh = beforeRefresh.taskConflicts[taskId];
+            const outcomeAtRefresh = conflictAtRefresh?.unresolvedMutations?.[String(operationGeneration)];
+            const readContextAtRefresh = beforeRefresh.activeReadContext;
+            const projectAtRefresh = beforeRefresh.currentProjectId;
+            let refreshContext = readContextAtRefresh;
+            const isRefreshOwner = (refreshContext?: typeof readContextAtRefresh, allowUnapplied = false) => {
+                const state = useTaskStore.getState();
+                const currentReadContext = state.getActiveReadContext();
+                const currentConflict = state.taskConflicts[taskId];
+                const stillOwnsConflict = outcomeAtRefresh
+                    ? currentConflict?.unresolvedMutations?.[String(operationGeneration)] === outcomeAtRefresh
+                    : currentConflict === conflictAtRefresh;
+                return ownsOperation() && stillOwnsConflict &&
+                    state.editGenerations[taskId] === operationGeneration && state.currentProjectId === projectAtRefresh &&
+                    Boolean(refreshContext && currentReadContext?.contextId === refreshContext.contextId &&
+                        (allowUnapplied || canApplyReadResponse(state.activeReadContext, refreshContext)) &&
+                        (!readContextAtRefresh || (refreshContext.projectId === readContextAtRefresh.projectId &&
+                            refreshContext.queryIdentity === readContextAtRefresh.queryIdentity &&
+                            refreshContext.scopeIdentity === readContextAtRefresh.scopeIdentity)));
+            };
+            try {
+                const refreshPromise = beforeRefresh.refreshData();
+                refreshContext = useTaskStore.getState().getActiveReadContext();
+                const refreshOutcome = await refreshPromise;
+                const refreshedState = useTaskStore.getState();
+                if (refreshOutcome.status === 'applied' && isRefreshOwner(refreshOutcome.context)) {
+                    const remote = refreshedState.serverTaskSnapshot.entitiesById[taskId];
+                    const revision = refreshedState.serverTaskSnapshot.revisions[taskId];
+                    const validRemote = Boolean(remote && remote.id === taskId && Number.isSafeInteger(revision) &&
+                        revision! >= attemptedBaseRevision &&
+                        (remote.lockVersion === undefined || remote.lockVersion === revision));
+                    if (validRemote && responseMatchesIntendedFields(canonicalFields, remote!)) {
+                        refreshedState.commitTaskOperation(taskId, operationGeneration, revision);
+                        mutationLifecycleMetrics.reconciliationSucceeded += 1;
+                        return;
+                    }
+                    if (remote && validRemote) {
+                        mutationLifecycleMetrics.reconciliationUnresolved += 1;
+                        refreshedState.registerTaskConflict(taskId, result.error || (i18n.t('label_failed_to_save') || 'Failed to save'),
+                            operationGeneration, remote, revision, 'known', 'unknown');
+                    } else {
+                        mutationLifecycleMetrics.reconciliationUnresolved += 1;
+                        refreshedState.registerTaskConflict(taskId, result.error || (i18n.t('label_failed_to_save') || 'Failed to save'),
+                            operationGeneration, undefined, undefined, 'unavailable', 'unknown');
+                    }
+                }
+            } catch {
+                if (isRefreshOwner(refreshContext, true)) {
+                    mutationLifecycleMetrics.reconciliationUnresolved += 1;
+                    useTaskStore.getState().registerTaskConflict(taskId,
+                        result.error || (i18n.t('label_failed_to_save') || 'Failed to save'), operationGeneration,
+                        undefined, undefined, 'unavailable', 'unknown');
+                }
+            }
+        }
         const message = result.error || (i18n.t('label_failed_to_save') || 'Failed to save');
         useUIStore.getState().addNotification(message, 'error');
         throw new Error(message);

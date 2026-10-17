@@ -9,7 +9,6 @@ import type {
     Project,
     SavedQuery,
     Task,
-    PersistedTaskState,
     Version,
     TaskStatus
 } from '../types';
@@ -24,8 +23,28 @@ import type { DatePlacementMode } from '../types/constraints';
 import { getBusinessCalendarPayload, normalizeBusinessCalendarPayload } from '../utils/businessCalendar';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { sessionFetch } from './sessionFetch';
-import { decodeMutationFailure, type MutationFailure, type MutationStatusValue } from './mutationOutcome';
+import { decodeMutationFailure, type MutationFailure } from './mutationOutcome';
+import {
+    mutationStatusForHttp,
+    parseMutationMetadata,
+    parseMutationTaskResult as decodeMutationTaskResult,
+    parseScheduleMutationResult as decodeScheduleMutationResult,
+    type MutationMetadata,
+    type MutationStatus,
+    type ScheduleAdjustment,
+    type ScheduleMutationResult,
+    type UpdateTaskResult
+} from './mutationDecoders';
 import { getConfirmedProjectScope, type ConfirmedProjectScope } from './projectScopeContext';
+
+export type {
+    MutationMetadata,
+    MutationStatus,
+    ScheduleAdjustment,
+    ScheduleMutationConflict,
+    ScheduleMutationResult,
+    ScheduleResolutionContext
+} from './mutationDecoders';
 
 export {
     classifyMutationError,
@@ -38,6 +57,8 @@ type ApiTask = Record<string, unknown>;
 type ApiRelation = Record<string, unknown>;
 type ApiVersion = Record<string, unknown>;
 type UnknownRecord = Record<string, unknown>;
+
+export type ExpectedRelation = Pick<Relation, 'from' | 'to' | 'type' | 'delay'>;
 
 const asRecord = (value: unknown): UnknownRecord | null => {
     if (!value || typeof value !== 'object') return null;
@@ -83,15 +104,6 @@ interface ApiData {
     projectScope?: ConfirmedProjectScope;
 }
 
-export interface MutationMetadata {
-    completeness?: 'complete' | 'partial';
-    invalidatedEntityIds?: string[];
-    deletedEntityIds?: string[];
-    entity?: PersistedTaskState;
-    revision?: number;
-    failure?: MutationFailure;
-}
-
 export type ScheduleMutationChange = {
     taskId: string;
     baseRevision: number;
@@ -103,29 +115,8 @@ export type ScheduleMutationChange = {
     datePlacementMode?: DatePlacementMode;
 };
 
-export type ScheduleMutationConflict = {
-    taskId?: string;
-    expectedRevision?: number;
-    actualRevision?: number;
-};
-
-export type ScheduleAdjustment = { taskId: string; beforeStartDate?: number | null; beforeDueDate?: number | null;
-    startDate?: number | null; dueDate?: number | null };
 export type ScheduleResolutionRequest = { taskIds: string[]; token?: string; preview?: boolean;
     acceptedAdjustments?: ScheduleAdjustment[] };
-export type ScheduleResolutionContext = { token: string; taskIds: string[]; relations: Relation[] };
-
-export type ScheduleMutationResult = MutationMetadata & {
-    status: MutationStatus;
-    operationId: string;
-    entities: PersistedTaskState[];
-    revisions: Record<string, number>;
-    errors?: string[];
-    conflict?: ScheduleMutationConflict;
-    conflicts?: ScheduleMutationConflict[];
-    resolutionContext?: ScheduleResolutionContext;
-    adjustments?: ScheduleAdjustment[];
-};
 
 interface BaselineSaveResult extends MutationMetadata {
     status: 'ok' | 'error';
@@ -133,8 +124,6 @@ interface BaselineSaveResult extends MutationMetadata {
     warnings?: string[];
     error?: string;
 }
-
-export type MutationStatus = MutationStatusValue;
 
 export class ApiMutationError extends Error {
     readonly status: Exclude<MutationStatus, 'ok'>;
@@ -162,17 +151,6 @@ export class ApiResponseError extends Error {
         this.httpStatus = httpStatus;
         this.code = code;
     }
-}
-
-interface UpdateTaskResult extends MutationMetadata {
-    status: MutationStatus;
-    entity?: PersistedTaskState;
-    revision?: number;
-    lockVersion?: number;
-    taskId?: string;
-    parentId?: string;
-    siblingPosition?: 'tail';
-    error?: string;
 }
 
 export interface BulkCreateSubtasksResult {
@@ -289,14 +267,6 @@ const parseApiResponseError = async (response: Response): Promise<ApiResponseErr
     );
 };
 
-const mutationStatusForHttp = (status: number): Exclude<MutationStatus, 'ok'> => {
-    if (status === 409) return 'conflict';
-    if (status === 403) return 'forbidden';
-    if (status === 404) return 'not_found';
-    if (status === 422) return 'validation_error';
-    return 'transient_error';
-};
-
 const parseMutationError = async (response: Response): Promise<ApiMutationError> => {
     const payload = await response.json().catch(() => ({} as UnknownRecord));
     const record = asRecord(payload) ?? {};
@@ -312,170 +282,14 @@ const parseMutationError = async (response: Response): Promise<ApiMutationError>
     return new ApiMutationError(mutationStatusForHttp(response.status), message, response.status, errors, failure);
 };
 
-const parseMutationMetadata = (value: unknown): Pick<UpdateTaskResult, 'completeness' | 'invalidatedEntityIds' | 'deletedEntityIds' | 'failure'> => {
-    const record = asRecord(value);
-    const completeness = record?.completeness;
-    const ids = record?.invalidated_entity_ids;
-    const deletedIds = record?.deleted_entity_ids;
-    const metadata: Pick<UpdateTaskResult, 'completeness' | 'invalidatedEntityIds' | 'deletedEntityIds' | 'failure'> = {};
-    if (completeness === 'complete' || completeness === 'partial') metadata.completeness = completeness;
-    if (Array.isArray(ids)) metadata.invalidatedEntityIds = ids
-        .filter(id => typeof id === 'number' || typeof id === 'string')
-        .map(String);
-    if (Array.isArray(deletedIds)) metadata.deletedEntityIds = deletedIds
-        .filter(id => typeof id === 'number' || typeof id === 'string')
-        .map(String);
-    const failure = decodeMutationFailure(record?.failure);
-    if (failure) metadata.failure = failure;
-    return metadata;
-};
-
-const parseMutationEntity = (value: unknown): PersistedTaskState | undefined => {
-    const record = asRecord(value);
-    if (!record) return undefined;
-    const id = record.id;
-    if (id === undefined || id === null) return undefined;
-    const has = (key: string): boolean => Object.prototype.hasOwnProperty.call(record, key);
-    const parseDate = (key: string): number | undefined => {
-        const candidate = record[key];
-        if (typeof candidate === 'string') return parseDateOnly(candidate) ?? undefined;
-        return undefined;
-    };
-    const parseNullableNumber = (key: string): number | undefined => {
-        const candidate = record[key];
-        return typeof candidate === 'number' ? candidate : undefined;
-    };
-    const parseNullableId = (key: string): string | undefined => {
-        const candidate = record[key];
-        return candidate === null ? undefined : candidate === undefined ? undefined : String(candidate);
-    };
-    const entity: PersistedTaskState = {
-        id: String(id),
-        ...(typeof record.subject === 'string' ? { subject: record.subject } : {}),
-        ...(has('project_id') ? { projectId: parseNullableId('project_id') } : {}),
-        ...(typeof record.project_name === 'string' ? { projectName: record.project_name } : {}),
-        ...(has('start_date') ? { startDate: parseDate('start_date') } : {}),
-        ...(has('due_date') ? { dueDate: parseDate('due_date') } : {}),
-        ...(typeof record.ratio_done === 'number' ? { ratioDone: record.ratio_done } : {}),
-        ...(typeof record.status_id === 'number' ? { statusId: record.status_id } : {}),
-        ...(typeof record.status_name === 'string' ? { statusName: record.status_name } : {}),
-        ...(record.assigned_to_id === null || typeof record.assigned_to_id === 'number' ? { assignedToId: record.assigned_to_id } : {}),
-        ...(record.assigned_to_name === null || typeof record.assigned_to_name === 'string' ? { assignedToName: record.assigned_to_name } : {}),
-        ...(has('parent_id') ? { parentId: parseNullableId('parent_id') } : {}),
-        ...(typeof record.has_physical_children === 'boolean' ? { hasPhysicalChildren: record.has_physical_children } : {}),
-        ...(typeof record.lock_version === 'number' ? { lockVersion: record.lock_version } : {}),
-        ...(has('tracker_id') ? { trackerId: parseNullableNumber('tracker_id') } : {}),
-        ...(typeof record.tracker_name === 'string' ? { trackerName: record.tracker_name } : {}),
-        ...(has('fixed_version_id') ? { fixedVersionId: parseNullableId('fixed_version_id') } : {}),
-        ...(has('priority_id') ? { priorityId: parseNullableNumber('priority_id') } : {}),
-        ...(typeof record.priority_name === 'string' ? { priorityName: record.priority_name } : {}),
-        ...(typeof record.priority_position === 'number' ? { priorityPosition: record.priority_position } : {}),
-        ...(has('author_id') ? { authorId: parseNullableNumber('author_id') } : {}),
-        ...(typeof record.author_name === 'string' ? { authorName: record.author_name } : {}),
-        ...(has('category_id') ? { categoryId: parseNullableNumber('category_id') } : {}),
-        ...(has('category_name') ? { categoryName: typeof record.category_name === 'string' ? record.category_name : undefined } : {}),
-        ...(has('estimated_hours') ? { estimatedHours: parseNullableNumber('estimated_hours') } : {}),
-        ...(typeof record.created_on === 'string' ? { createdOn: record.created_on } : {}),
-        ...(typeof record.updated_on === 'string' ? { updatedOn: record.updated_on } : {}),
-        ...(typeof record.spent_hours === 'number' ? { spentHours: record.spent_hours } : {}),
-        ...(has('fixed_version_name') ? { fixedVersionName: typeof record.fixed_version_name === 'string' ? record.fixed_version_name : undefined } : {}),
-        ...(asRecord(record.custom_field_values) ? { customFieldValues: asRecord(record.custom_field_values) as Task['customFieldValues'] } : {})
-    };
-    return entity;
-};
-
 const parseMutationTaskResult = async (response: Response): Promise<UpdateTaskResult> => {
-    const data = asRecord(await response.json().catch(() => ({}))) ?? {};
-    const entity = parseMutationEntity(data.entity);
-    const revision = typeof data.revision === 'number' ? data.revision : entity?.lockVersion;
-    const rawStatus = data.status;
-    const status: MutationStatus = response.status === 409
-        ? 'conflict'
-        : typeof rawStatus === 'string' && ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error'].includes(rawStatus)
-            ? rawStatus as MutationStatus
-            : typeof rawStatus === 'string'
-                ? 'protocol_error'
-                : response.ok ? 'ok' : mutationStatusForHttp(response.status);
-    return {
-        status,
-        ...parseMutationMetadata(data),
-        ...(entity ? { entity } : {}),
-        ...(revision !== undefined ? { revision } : {}),
-        lockVersion: typeof data.lock_version === 'number' ? data.lock_version : entity?.lockVersion,
-        taskId: data.task_id ? String(data.task_id) : entity?.id,
-        parentId: data.parent_id === null ? undefined : (data.parent_id ? String(data.parent_id) : entity?.parentId),
-        siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined,
-        error: typeof data.error === 'string' ? data.error : undefined
-    };
-};
-
-const parseScheduleMutationConflict = (value: unknown): ScheduleMutationConflict | undefined => {
-    const raw = asRecord(value);
-    if (!raw) return undefined;
-    const taskId = raw.task_id ?? raw.taskId;
-    const expectedRevision = raw.expectedRevision ?? raw.expected_revision;
-    const actualRevision = raw.actualRevision ?? raw.actual_revision;
-    return {
-        ...(typeof taskId === 'string' || typeof taskId === 'number' ? { taskId: String(taskId) } : {}),
-        ...(typeof expectedRevision === 'number' ? { expectedRevision } : {}),
-        ...(typeof actualRevision === 'number' ? { actualRevision } : {})
-    };
+    const payload = await response.json().catch(() => ({}));
+    return decodeMutationTaskResult(payload, { status: response.status, ok: response.ok });
 };
 
 const parseScheduleMutationResult = async (response: Response): Promise<ScheduleMutationResult> => {
-    const data = asRecord(await response.json().catch(() => ({}))) ?? {};
-    const rawEntities = Array.isArray(data.entities) ? data.entities : [];
-    const entities = rawEntities.map(parseMutationEntity).filter((entity): entity is PersistedTaskState => Boolean(entity));
-    const rawRevisions = asRecord(data.revisions) ?? {};
-    const revisions = Object.entries(rawRevisions).reduce<Record<string, number>>((result, [id, revision]) => {
-        if (typeof revision === 'number') result[String(id)] = revision;
-        return result;
-    }, {});
-    const rawStatus = data.status;
-    const status: MutationStatus = response.status === 409
-        ? 'conflict'
-        : typeof rawStatus === 'string' && ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error'].includes(rawStatus)
-            ? rawStatus as MutationStatus
-            : response.ok ? 'ok' : mutationStatusForHttp(response.status);
-    const errors = Array.isArray(data.errors) ? data.errors.filter((error): error is string => typeof error === 'string') : undefined;
-    const conflict = parseScheduleMutationConflict(data.conflict);
-    const conflicts = Array.isArray(data.conflicts)
-        ? data.conflicts.map(parseScheduleMutationConflict).filter((entry): entry is ScheduleMutationConflict => Boolean(entry))
-        : undefined;
-    const context = asRecord(data.resolution_context);
-    const adjustments = Array.isArray(data.adjustments) ? data.adjustments.map((value): ScheduleAdjustment | null => {
-        const entry = asRecord(value);
-        if (!entry || (typeof entry.task_id !== 'number' && typeof entry.task_id !== 'string')) return null;
-        const parseDate = (field: string): number | null | undefined => entry[field] === null ? null
-            : typeof entry[field] === 'string' ? parseDateOnly(entry[field] as string) : undefined;
-        const startDate = parseDate('start_date');
-        const dueDate = parseDate('due_date');
-        if (startDate === undefined || dueDate === undefined) return null;
-        return { taskId: String(entry.task_id), beforeStartDate: parseDate('before_start_date'),
-            beforeDueDate: parseDate('before_due_date'), startDate, dueDate };
-    }).filter((entry): entry is ScheduleAdjustment => entry !== null) : undefined;
-    return {
-        status,
-        operationId: typeof data.operation_id === 'string' ? data.operation_id : '',
-        entities,
-        revisions,
-        ...(errors && errors.length > 0 ? { errors } : {}),
-        ...(conflict ? { conflict } : {}),
-        ...(conflicts ? { conflicts } : {}),
-        ...(adjustments?.length ? { adjustments } : {}),
-        ...(context && typeof context.token === 'string' && Array.isArray(context.task_ids) && Array.isArray(context.relations) ? {
-            resolutionContext: {
-                token: context.token,
-                taskIds: context.task_ids.map(String),
-                relations: context.relations.map(value => {
-                    const relation = asRecord(value) ?? {};
-                    return { id: String(relation.id), from: String(relation.from), to: String(relation.to),
-                        type: String(relation.type) as Relation['type'], delay: Number(relation.delay ?? 0) };
-                })
-            }
-        } : {}),
-        ...parseMutationMetadata(data)
-    };
+    const payload = await response.json().catch(() => ({}));
+    return decodeScheduleMutationResult(payload, { status: response.status, ok: response.ok });
 };
 
 const parseEditOption = (value: unknown): EditOption | null => {
@@ -724,6 +538,40 @@ const parseFilterOptions = (value: unknown, tasks: Task[]): FilterOptions => {
     };
 };
 
+const invalidBaselineTaskWarning = (id: string): string =>
+    i18n.t('label_baseline_invalid_task', { id }) || `Baseline task state for issue ${id} was skipped because its data is invalid.`;
+
+const parseBaselineTask = (key: string, value: unknown): { task: BaselineTaskState | null; warnings: string[] } => {
+    const warnings: string[] = [];
+    const taskRecord = asRecord(value);
+    if (!taskRecord) {
+        warnings.push(invalidBaselineTaskWarning(key));
+        return { task: null, warnings };
+    }
+
+    const issueIdValue = taskRecord.issue_id ?? key;
+    if (typeof issueIdValue !== 'number' && typeof issueIdValue !== 'string') {
+        warnings.push(invalidBaselineTaskWarning(key));
+        return { task: null, warnings };
+    }
+
+    const issueId = String(issueIdValue);
+    const baselineStartDate = parseBaselineDateValue(taskRecord.baseline_start_date);
+    const baselineDueDate = parseBaselineDateValue(taskRecord.baseline_due_date);
+
+    if (taskRecord.baseline_start_date !== undefined && taskRecord.baseline_start_date !== null && baselineStartDate === null) {
+        warnings.push(invalidBaselineTaskWarning(issueId));
+    }
+    if (taskRecord.baseline_due_date !== undefined && taskRecord.baseline_due_date !== null && baselineDueDate === null) {
+        warnings.push(invalidBaselineTaskWarning(issueId));
+    }
+
+    return {
+        task: { issueId, baselineStartDate, baselineDueDate },
+        warnings
+    };
+};
+
 const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | null; warnings: string[] } => {
     const warnings: string[] = [];
     const root = asRecord(value);
@@ -739,55 +587,21 @@ const parseBaselineSnapshot = (value: unknown): { snapshot: BaselineSnapshot | n
     const scopeValue = root.scope;
     const tasksByIssueIdValue = asRecord(root.tasks_by_issue_id);
 
-    if (typeof snapshotIdValue !== 'string' || snapshotIdValue.trim() === '') {
-        warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
-        return { snapshot: null, warnings };
-    }
-
-    if (typeof projectIdValue !== 'number' && typeof projectIdValue !== 'string') {
-        warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
-        return { snapshot: null, warnings };
-    }
-
-    if (typeof capturedAtValue !== 'string' || capturedAtValue.trim() === '') {
-        warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
-        return { snapshot: null, warnings };
-    }
-
-    if (!tasksByIssueIdValue) {
+    if (
+        typeof snapshotIdValue !== 'string' || snapshotIdValue.trim() === '' ||
+        (typeof projectIdValue !== 'number' && typeof projectIdValue !== 'string') ||
+        typeof capturedAtValue !== 'string' || capturedAtValue.trim() === '' ||
+        !tasksByIssueIdValue
+    ) {
         warnings.push(i18n.t('label_baseline_incomplete') || 'Baseline snapshot payload is incomplete and was ignored.');
         return { snapshot: null, warnings };
     }
 
     const tasksByIssueId: Record<string, BaselineTaskState> = {};
     Object.entries(tasksByIssueIdValue).forEach(([key, entry]) => {
-        const taskRecord = asRecord(entry);
-        if (!taskRecord) {
-            warnings.push(i18n.t('label_baseline_invalid_task', { id: key }) || `Baseline task state for issue ${key} was skipped because its data is invalid.`);
-            return;
-        }
-
-        const issueIdValue = taskRecord.issue_id ?? key;
-        if (typeof issueIdValue !== 'number' && typeof issueIdValue !== 'string') {
-            warnings.push(i18n.t('label_baseline_invalid_task', { id: key }) || `Baseline task state for issue ${key} was skipped because its data is invalid.`);
-            return;
-        }
-
-        const baselineStartDate = parseBaselineDateValue(taskRecord.baseline_start_date);
-        const baselineDueDate = parseBaselineDateValue(taskRecord.baseline_due_date);
-
-        if (taskRecord.baseline_start_date !== undefined && taskRecord.baseline_start_date !== null && baselineStartDate === null) {
-            warnings.push(i18n.t('label_baseline_invalid_task', { id: String(issueIdValue) }) || `Baseline task state for issue ${String(issueIdValue)} was skipped because its data is invalid.`);
-        }
-        if (taskRecord.baseline_due_date !== undefined && taskRecord.baseline_due_date !== null && baselineDueDate === null) {
-            warnings.push(i18n.t('label_baseline_invalid_task', { id: String(issueIdValue) }) || `Baseline task state for issue ${String(issueIdValue)} was skipped because its data is invalid.`);
-        }
-
-        tasksByIssueId[String(issueIdValue)] = {
-            issueId: String(issueIdValue),
-            baselineStartDate,
-            baselineDueDate
-        };
+        const parsedTask = parseBaselineTask(key, entry);
+        warnings.push(...parsedTask.warnings);
+        if (parsedTask.task) tasksByIssueId[parsedTask.task.issueId] = parsedTask.task;
     });
 
     return {
@@ -895,6 +709,7 @@ export const apiClient = {
                 assignedToId: t.assigned_to_id === null ? null : (typeof t.assigned_to_id === 'number' ? t.assigned_to_id : undefined),
                 assignedToName: t.assigned_to_name === null ? null : (typeof t.assigned_to_name === 'string' ? t.assigned_to_name : undefined),
                 parentId: t.parent_id ? String(t.parent_id) : undefined,
+                datesDerived: t.dates_derived === true,
                 lockVersion: typeof t.lock_version === 'number' ? t.lock_version : 0,
                 editable: Boolean(t.editable),
                 canLogTime: typeof t.can_log_time === 'boolean' ? t.can_log_time : undefined,
@@ -1328,7 +1143,7 @@ export const apiClient = {
         return { status: 'ok', ...relation, ...parseMutationMetadata(payload) };
     },
 
-    updateRelation: async (relationId: string, type: string, delay?: number, operationId?: string): Promise<Relation & MutationMetadata & { status: 'ok' }> => {
+    updateRelation: async (relationId: string, type: string, delay?: number, operationId?: string, expected?: ExpectedRelation): Promise<Relation & MutationMetadata & { status: 'ok' }> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
         const response = await sessionFetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
@@ -1339,6 +1154,7 @@ export const apiClient = {
                     relation_type: type,
                     ...(typeof delay === 'number' ? { delay } : {})
                 },
+                ...(expected ? { expected_relation: expected } : {}),
                 ...(operationId ? { client_operation_id: operationId } : {})
             })
         });
@@ -1351,14 +1167,19 @@ export const apiClient = {
         return { status: 'ok', ...normalizeRelation(payload, { fromId: '', toId: '', type }), ...parseMutationMetadata(payload) };
     },
 
-    deleteRelation: async (relationId: string, operationId?: string): Promise<MutationMetadata & { status: 'ok' }> => {
+    deleteRelation: async (relationId: string, operationId?: string, expected?: ExpectedRelation): Promise<MutationMetadata & { status: 'ok' }> => {
         const config = getConfig();
         const query = buildViewContextQuery(config);
 
         const response = await sessionFetch(`${getGlobalApiBase(config)}/relations/${relationId}.json?${query}`, {
             method: 'DELETE',
             headers: buildJsonHeaders(config, true),
-            ...(operationId ? { body: JSON.stringify({ client_operation_id: operationId }) } : {})
+            ...((operationId || expected) ? {
+                body: JSON.stringify({
+                    ...(expected ? { expected_relation: expected } : {}),
+                    ...(operationId ? { client_operation_id: operationId } : {})
+                })
+            } : {})
         });
 
         if (!response.ok) {

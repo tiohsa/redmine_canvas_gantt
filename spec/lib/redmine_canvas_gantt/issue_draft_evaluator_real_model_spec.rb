@@ -57,6 +57,35 @@ RSpec.describe RedmineCanvasGantt::IssueDraftEvaluator, type: :model do
     expect(result.violations).to include(include(field: 'tracker_id', code: 'not_accepted'))
   end
 
+  it 'still rejects direct date writes to a parent derived from its children' do
+    previous_setting = Setting.parent_issue_dates
+    Setting.parent_issue_dates = 'derived'
+    parent = Issue.create!(
+      project: issue.project, tracker: issue.tracker, status: issue.status,
+      author: current_user, subject: 'Derived dates acceptance parent'
+    )
+    Issue.create!(
+      project: issue.project, tracker: issue.tracker, status: issue.status,
+      author: current_user, subject: 'Derived dates acceptance child', parent: parent,
+      start_date: Date.new(2027, 1, 4), due_date: Date.new(2027, 1, 5)
+    )
+    parent.reload
+    expect(parent.dates_derived?).to be(true)
+
+    result = evaluator.evaluate(issue: parent, intent: {
+      start_date: '2027-01-06', due_date: '2027-01-07', lock_version: parent.lock_version
+    })
+
+    expect(result).not_to be_valid
+    expect(result.violations).to include(
+      include(field: 'start_date', code: 'not_accepted'),
+      include(field: 'due_date', code: 'not_accepted')
+    )
+    expect(parent.reload).to have_attributes(start_date: Date.new(2027, 1, 4), due_date: Date.new(2027, 1, 5))
+  ensure
+    Setting.parent_issue_dates = previous_setting if previous_setting
+  end
+
   it 'materializes the Redmine default Status when a Tracker change invalidates the current Status' do
     source_project = issue.project
     source_tracker = Tracker.find(1)

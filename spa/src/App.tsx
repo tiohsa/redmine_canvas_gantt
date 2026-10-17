@@ -24,6 +24,16 @@ function App() {
   const exportRef = useRef<GanttExportHandle>(null);
 
   useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!useTaskStore.getState().hasPendingChanges()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  useEffect(() => {
     const bodyStyle = document.body.style;
 
     if (isFullScreen) {

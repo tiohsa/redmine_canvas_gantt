@@ -99,6 +99,34 @@ describe('schedule conflict group resolution', () => {
         expect(useTaskStore.getState().taskConflicts.B.scheduleReview?.error).toBe('Selected dates would change');
     });
 
+    it('keeps a task mutation outcome when schedule review settles only that generation dates', async () => {
+        setup();
+        const state = useTaskStore.getState();
+        useTaskStore.setState({ localTaskPatches: {
+            ...state.localTaskPatches,
+            B: [{ ...state.localTaskPatches.B[0], mutationIntent: {
+                ...state.localTaskPatches.B[0].mutationIntent, subject: 'unsaved subject'
+            }, projection: { ...state.localTaskPatches.B[0].projection, subject: 'unsaved subject' } }]
+        } });
+        useTaskStore.getState().registerTaskConflict('B', 'Task PATCH remains unresolved', 1,
+            undefined, undefined, 'unavailable', 'unknown');
+        await useTaskStore.getState().resolveTaskConflict('A', 'remote');
+        await useTaskStore.getState().resolveTaskConflict('B', 'local');
+
+        await useTaskStore.getState().applyScheduleConflict('A');
+
+        expect(useTaskStore.getState().localTaskPatches.B).toEqual([
+            expect.objectContaining({ mutationIntent: { subject: 'unsaved subject' } })
+        ]);
+        expect(useTaskStore.getState().taskConflicts.B).toMatchObject({
+            generation: 1,
+            message: 'Task PATCH remains unresolved',
+            unresolvedMutations: expect.objectContaining({
+                '1': expect.objectContaining({ outcome: 'unknown', message: 'Task PATCH remains unresolved' })
+            })
+        });
+    });
+
     it('shows a read-only successor adjustment, then applies only the explicitly accepted result', async () => {
         const { tasks } = setup();
         const state = useTaskStore.getState();
@@ -220,7 +248,10 @@ describe('schedule conflict group resolution', () => {
         let finish!: (value: Awaited<ReturnType<typeof taskMutationService.scheduleMutation>>) => void;
         api.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
         const selecting = useTaskStore.getState().resolveTaskConflict('A', 'remote');
-        useTaskStore.getState().registerTaskConflict('A', 'New conflict', 2, { ...task('A', 4, 5), lockVersion: 3 }, 3);
+        useTaskStore.getState().updateTask('A', { subject: 'New local edit' });
+        const newerGeneration = useTaskStore.getState().editGenerations.A;
+        useTaskStore.getState().registerTaskConflict('A', 'New conflict', newerGeneration,
+            { ...task('A', 4, 5), lockVersion: 3 }, 3);
         const newer = useTaskStore.getState().taskConflicts.A;
         finish(await implementation([], { taskIds: ['A', 'B'], preview: true }));
         await selecting;

@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
   base: './', // Ensure relative paths for assets
   build: {
@@ -15,7 +15,8 @@ export default defineConfig({
     },
   },
   server: {
-    origin: 'http://localhost:5173',
+    // Playwright serves on a separate port; font asset URLs must use that origin.
+    origin: mode === 'e2e' ? 'http://127.0.0.1:4173' : 'http://localhost:5173',
     cors: true,
   },
   test: {
@@ -23,4 +24,4 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/setupTests.ts',
   },
-})
+}))

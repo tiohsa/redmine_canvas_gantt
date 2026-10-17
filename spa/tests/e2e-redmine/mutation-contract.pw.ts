@@ -819,8 +819,9 @@ test('Auto Save OFF defers the inline mutation until the manual Save action', as
   expect(nextStatus).not.toBe('');
   await statusSelect.selectOption(nextStatus);
 
-  const saveButton = page.getByTitle('Save changes');
+  const saveButton = page.getByTestId('manual-save-button');
   await expect(saveButton).toBeVisible();
+  await expect(saveButton).toBeEnabled();
   expect(pluginPatchStatuses).toHaveLength(0);
   const beforeManualSave = await fetchRestIssue(page, issueId);
   expect(beforeManualSave.statusId).toBe(before.statusId);
@@ -871,7 +872,9 @@ test('Manual to Auto Save persists a bar move before creating Precedes and survi
   await page.mouse.down();
   await page.mouse.move(x + 160, y, { steps: 10 });
   await page.mouse.up();
-  await expect(page.getByTitle(/Save changes|変更を保存/)).toBeVisible();
+  const manualSaveButton = page.getByTestId('manual-save-button');
+  await expect(manualSaveButton).toBeVisible();
+  await expect(manualSaveButton).toBeEnabled();
   expect(events).toEqual([]);
   expect(await fetchRestIssue(page, originId)).toMatchObject({ startDate: before.startDate, dueDate: before.dueDate });
 

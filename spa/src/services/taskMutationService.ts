@@ -1,14 +1,38 @@
 import type { Relation } from '../types';
 import { apiClient } from '../api/client';
+import { isCompleteScheduleMutationAck } from '../api/mutationDecoders';
+import type { ExpectedRelation } from '../api/client';
 import type { MutationMetadata, ScheduleMutationChange, ScheduleResolutionRequest } from '../api/client';
 import { baselineProjectResourceKey, enqueueMutationOperation, enqueueScheduleMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
 import { classifyMutationError, classifyMutationResult } from '../api/mutationOutcome';
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { useUIStore } from '../stores/UIStore';
 import { DatePlacementMode } from '../types/constraints';
+import { i18n } from '../utils/i18n';
 
 export type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
+export type RelationExecutionGuard = () => void;
+
+export class RelationExecutionGuardError extends Error {
+    readonly status = 'conflict' as const;
+    readonly knownUnsent = true as const;
+
+    constructor(message = 'Relation save scope changed before the request was sent') {
+        super(message);
+        this.name = 'RelationExecutionGuardError';
+    }
+}
+
+const runRelationExecutionGuard = (guard?: RelationExecutionGuard): void => {
+    if (!guard) return;
+    try {
+        guard();
+    } catch (error) {
+        if (error instanceof RelationExecutionGuardError) throw error;
+        throw new RelationExecutionGuardError(error instanceof Error ? error.message : undefined);
+    }
+};
 
 export const BULK_TASK_FIELDS = ['startDate', 'dueDate', 'parentId'] as const;
 export const SCHEDULE_TASK_FIELDS = ['startDate', 'dueDate'] as const;
@@ -88,6 +112,20 @@ export const taskMutationAffectsScheduling = (changedFields: Iterable<string>): 
 
 const TASK_PATCH_MAX_RETRIES = 1;
 
+export const withoutUntrustedTaskAck = <T extends Awaited<ReturnType<typeof apiClient.updateTaskFields>>>(result: T) => ({
+    ...result,
+    completeness: undefined,
+    invalidatedEntityIds: undefined,
+    deletedEntityIds: undefined,
+    failure: undefined,
+    entity: undefined,
+    revision: undefined,
+    lockVersion: undefined,
+    taskId: undefined,
+    parentId: undefined,
+    siblingPosition: undefined
+});
+
 const canonicalFieldName = localTaskFieldForMutationField;
 
 const sameCanonicalValue = (field: string, expected: unknown, actual: unknown): boolean => {
@@ -118,7 +156,7 @@ export const responseMatchesIntendedFields = (
     fields: TaskFields,
     entity: NonNullable<Awaited<ReturnType<typeof apiClient.updateTaskFields>>['entity']>
 ): boolean => responseContainsIntendedFields(fields, entity) && Object.entries(fields)
-    .filter(([field]) => field !== 'lock_version')
+    .filter(([field]) => field !== 'lock_version' && field !== 'date_placement_mode')
     .every(([field, expected]) => {
         const canonicalField = canonicalFieldName(field);
         if (!Object.prototype.hasOwnProperty.call(entity, canonicalField)) return false;
@@ -138,7 +176,7 @@ export const responseContainsIntendedFields = (
     fields: TaskFields,
     entity: NonNullable<Awaited<ReturnType<typeof apiClient.updateTaskFields>>['entity']>
 ): boolean => Object.entries(fields)
-    .filter(([field]) => field !== 'lock_version')
+    .filter(([field]) => field !== 'lock_version' && field !== 'date_placement_mode')
     .every(([field]) => {
         const canonicalField = canonicalFieldName(field);
         if (!Object.prototype.hasOwnProperty.call(entity, canonicalField)) return false;
@@ -150,6 +188,21 @@ export const responseContainsIntendedFields = (
             ))
         );
     });
+
+export const hasCanonicalTaskAck = (taskId: string, fields: TaskFields,
+    result: Awaited<ReturnType<typeof apiClient.updateTaskFields>>, baseRevision?: number): boolean => {
+    const entity = result.entity;
+    const revision = result.revision ?? result.lockVersion ?? entity?.lockVersion;
+    return result.status === 'ok' && entity?.id === taskId &&
+        Number.isSafeInteger(revision) && (revision as number) >= 0 &&
+        (baseRevision === undefined || (revision as number) >= baseRevision) &&
+        (entity.lockVersion === undefined || entity.lockVersion === revision) &&
+        (result.lockVersion === undefined || result.lockVersion === revision) &&
+        (result.revision === undefined || result.revision === revision) &&
+        (!Object.prototype.hasOwnProperty.call(fields, 'lock_version') ||
+            (typeof fields.lock_version === 'number' && (revision as number) >= fields.lock_version)) &&
+        responseContainsIntendedFields(fields, entity);
+};
 
 const blankableId = (value: string | number | null | undefined): string | number =>
     value === null || value === undefined || value === '' ? '' : value;
@@ -235,8 +288,17 @@ const executeTaskPatch = async (
             const result = datePlacementMode === DatePlacementMode.CalendarDays
                 ? await apiClient.updateTaskFields(taskId, attemptFields, operationId, datePlacementMode)
                 : await apiClient.updateTaskFields(taskId, attemptFields, operationId);
-            if (attempt > 0 && result.status === 'conflict' && result.entity && responseMatchesIntendedFields(attemptFields, result.entity)) {
+            if (result.status === 'protocol_error') return withoutUntrustedTaskAck(result);
+            if (attempt > 0 && result.status === 'conflict' &&
+                hasCanonicalTaskAck(taskId, attemptFields, { ...result, status: 'ok' }) &&
+                result.entity && responseMatchesIntendedFields(attemptFields, result.entity)) {
                 return { ...result, status: 'ok' };
+            }
+            if (result.status === 'ok' && !hasCanonicalTaskAck(taskId, attemptFields, result)) {
+                // Treat an incomplete acknowledgement as an unknown outcome. The
+                // bulk saver will reconcile against a fresh remote snapshot.
+                return withoutUntrustedTaskAck({ ...result, status: 'protocol_error',
+                    error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') });
             }
             if (classifyMutationResult(result).kind !== 'transient' || attempt >= TASK_PATCH_MAX_RETRIES) {
                 return result;
@@ -258,7 +320,22 @@ const executeTaskPatch = async (
 export const taskMutationService = {
     // The bulk save loop owns the queue for this method so it can order
     // dependency batches; do not add a second per-task queue here.
-    updateTask: (task: Parameters<typeof apiClient.updateTask>[0], operationId?: string, fields?: TaskFields) => apiClient.updateTask(task, operationId, fields),
+    updateTask: async (task: Parameters<typeof apiClient.updateTask>[0], operationId?: string, fields?: TaskFields) => {
+        const requestedFields = fields ?? {
+            start_date: formatDateOnly(task.startDate),
+            due_date: formatDateOnly(task.dueDate),
+            parent_issue_id: task.parentId ? Number(task.parentId) : null
+        };
+        const result = await apiClient.updateTask(task, operationId, fields);
+        if (result.status === 'protocol_error') return withoutUntrustedTaskAck(result);
+        const revision = result.revision ?? result.lockVersion ?? result.entity?.lockVersion;
+        if (result.status === 'ok' && (!hasCanonicalTaskAck(task.id, requestedFields, result, task.lockVersion) ||
+            !Number.isSafeInteger(revision) || (revision as number) < task.lockVersion)) {
+            return withoutUntrustedTaskAck({ ...result, status: 'protocol_error' as const,
+                error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') });
+        }
+        return result;
+    },
 
     saveBaseline: (payload: NonNullable<Parameters<typeof apiClient.saveBaseline>[0]>) => {
         const scope = payload.scope ?? 'filtered';
@@ -291,24 +368,47 @@ export const taskMutationService = {
     ) => {
         return enqueueScheduleMutationOperation(
             [...new Set([...changes.map(change => change.taskId), ...(resolution?.taskIds ?? [])])],
-            (context) => {
+            async (context) => {
                 const operationId = context?.operationId ?? `schedule:${Date.now()}`;
-                return resolution ? apiClient.scheduleMutation(changes, operationId, resolution) : apiClient.scheduleMutation(changes, operationId);
+                const result = resolution
+                    ? await apiClient.scheduleMutation(changes, operationId, resolution)
+                    : await apiClient.scheduleMutation(changes, operationId);
+                const requested = changes.map(change => ({
+                    taskId: change.taskId,
+                    baseRevision: change.baseRevision,
+                    fields: {
+                        ...(Object.prototype.hasOwnProperty.call(change, 'startDate') ? { start_date: change.startDate } : {}),
+                        ...(Object.prototype.hasOwnProperty.call(change, 'dueDate') ? { due_date: change.dueDate } : {})
+                    }
+                }));
+                if (result.status === 'ok' && changes.length > 0 && !isCompleteScheduleMutationAck(result, requested)) {
+                    return { ...result, status: 'protocol_error' as const };
+                }
+                return result;
             },
             [...new Set([...changes.map(change => change.taskId), ...(resolution?.taskIds ?? [])])].map(taskResourceKey)
         );
     },
 
-    createRelation: (fromId: string, toId: string, type: string, delay?: number): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
-        enqueueMutationOperation([fromId, toId], (context) => apiClient.createRelation(fromId, toId, type, delay, context?.operationId), undefined, [taskResourceKey(fromId), taskResourceKey(toId)])
+    createRelation: (fromId: string, toId: string, type: string, delay?: number, executionGuard?: RelationExecutionGuard): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
+        enqueueMutationOperation([fromId, toId], (context) => {
+            runRelationExecutionGuard(executionGuard);
+            return apiClient.createRelation(fromId, toId, type, delay, context?.operationId);
+        }, undefined, [taskResourceKey(fromId), taskResourceKey(toId)])
     ),
 
-    updateRelation: (relationId: string, type: string, delay?: number, endpointIds: string[] = []): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
-        enqueueMutationOperation([relationId, ...endpointIds], (context) => apiClient.updateRelation(relationId, type, delay, context?.operationId), undefined, [relationResourceKey(relationId), ...endpointIds.map(taskResourceKey)])
+    updateRelation: (relationId: string, type: string, delay?: number, endpointIds: string[] = [], expected?: ExpectedRelation, executionGuard?: RelationExecutionGuard): Promise<Relation & MutationMetadata & { status: 'ok' }> => (
+        enqueueMutationOperation([relationId, ...endpointIds], (context) => {
+            runRelationExecutionGuard(executionGuard);
+            return apiClient.updateRelation(relationId, type, delay, context?.operationId, expected);
+        }, undefined, [relationResourceKey(relationId), ...endpointIds.map(taskResourceKey)])
     ),
 
-    deleteRelation: (relationId: string, endpointIds: string[] = []): Promise<MutationMetadata & { status: 'ok' }> => (
-        enqueueMutationOperation([relationId, ...endpointIds], (context) => apiClient.deleteRelation(relationId, context?.operationId), undefined, [relationResourceKey(relationId), ...endpointIds.map(taskResourceKey)])
+    deleteRelation: (relationId: string, endpointIds: string[] = [], expected?: ExpectedRelation, executionGuard?: RelationExecutionGuard): Promise<MutationMetadata & { status: 'ok' }> => (
+        enqueueMutationOperation([relationId, ...endpointIds], (context) => {
+            runRelationExecutionGuard(executionGuard);
+            return apiClient.deleteRelation(relationId, context?.operationId, expected);
+        }, undefined, [relationResourceKey(relationId), ...endpointIds.map(taskResourceKey)])
     ),
 
     deleteTask: (taskId: string): Promise<MutationMetadata & { status: 'ok' }> => (

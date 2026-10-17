@@ -52,6 +52,10 @@ Available edits depend on the issue's Redmine permissions and workflow. See [Per
 2. Select **Save** to commit pending changes.
 3. Select **Cancel** to discard all unsaved task changes and reload server values. This is not a per-issue or per-field undo.
 
+::: info Development version: dependency drafts
+The development version also includes pending dependency changes in **Save** and **Cancel**. These actions appear as icon-only buttons; the **Save** tooltip shows separate task and dependency counts. See [Dependencies](/en/features/dependencies#manual-save) for how these changes are staged and for cases that cannot be saved together. This behavior is not part of the documented v0.18.0 release.
+:::
+
 With auto-save on, changes are sent immediately, so **Cancel** is not shown. To reverse a saved change, edit the values in Redmine's issue edit screen.
 
 If a grouped date update conflicts, the whole change group remains unsaved and drafts are retained. Both automatic and manual saving use the [save-conflict resolution steps](/en/troubleshooting/#a-save-conflict-appears).

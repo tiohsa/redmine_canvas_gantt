@@ -3,8 +3,8 @@ import { useTaskStore } from '../stores/TaskStore';
 import { i18n } from '../utils/i18n';
 import { LayoutEngine } from '../engines/LayoutEngine';
 import { taskMutationService } from '../services/taskMutationService';
-import { hasPendingRelationConsistencyChanges } from '../stores/taskStore/draftIntent';
 import { RelationType } from '../types/constraints';
+import { projectEffectiveRelations } from '../stores/taskStore/relationDrafts';
 import { useUIStore } from '../stores/UIStore';
 import { useBaselineStore } from '../stores/BaselineStore';
 import type { DraftRelation, Relation } from '../types';
@@ -70,7 +70,13 @@ export const HtmlOverlay: React.FC = () => {
     const selectedTaskId = useTaskStore(state => state.selectedTaskId);
     const contextMenu = useTaskStore(state => state.contextMenu);
     const tasks = useTaskStore(state => state.tasks);
-    const relations = useTaskStore(state => state.relations);
+    const serverRelations = useTaskStore(state => state.relations);
+    const pendingRelationChanges = useTaskStore(state => state.pendingRelationChanges);
+    const relations = React.useMemo(
+        () => projectEffectiveRelations(serverRelations, pendingRelationChanges),
+        [pendingRelationChanges, serverRelations]
+    );
+    const autoSave = useTaskStore(state => state.autoSave);
     const selectedRelationId = useTaskStore(state => state.selectedRelationId);
     const draftRelation = useTaskStore(state => state.draftRelation);
     const permissions = useTaskStore(state => state.permissions);
@@ -148,11 +154,26 @@ export const HtmlOverlay: React.FC = () => {
         };
     }, []);
 
-    const activePersistedRelation = React.useMemo(
+    const selectedRelation = React.useMemo(
         () => selectedRelationId ? relations.find((relation) => relation.id === selectedRelationId) ?? null : null,
         [relations, selectedRelationId]
     );
-    const activeRelation = activePersistedRelation ?? draftRelation;
+    const activeRelation = selectedRelation ?? draftRelation;
+    const activePendingRelationChange = React.useMemo(() => {
+        if (!selectedRelation || draftRelation) return null;
+        return Object.values(pendingRelationChanges).find((change) => (
+            change.relationId === selectedRelation.id || `local:${change.draftId}` === selectedRelation.id
+        )) ?? null;
+    }, [draftRelation, pendingRelationChanges, selectedRelation]);
+    const pendingRelationLabel = activePendingRelationChange
+        ? activePendingRelationChange.status === 'unknown'
+            ? (i18n.t('label_relation_result_unknown') ?? '')
+            : activePendingRelationChange.status === 'failed'
+                ? (i18n.t('label_relation_save_failed') ?? '')
+                : activePendingRelationChange.status === 'saving'
+                    ? (i18n.t('label_relation_save_in_progress') ?? '')
+                    : (i18n.t('label_relation_change_pending') ?? '')
+        : null;
 
     const getTaskLabel = React.useCallback((taskId: string) => {
         const task = taskById.get(taskId);
@@ -177,8 +198,8 @@ export const HtmlOverlay: React.FC = () => {
         const editableView = toEditableRelationView(activeRelation);
         return {
             relation: activeRelation,
-            relationId: activePersistedRelation?.id ?? null,
-            isDraft: !activePersistedRelation,
+            relationId: selectedRelation?.id ?? null,
+            isDraft: !!draftRelation,
             direction: editableView.direction,
             initialType: editableView.uiType,
             initialDelay: editableView.delay,
@@ -186,7 +207,7 @@ export const HtmlOverlay: React.FC = () => {
             from: getTaskLabel(editableView.fromId),
             to: getTaskLabel(editableView.toId)
         };
-    }, [activePersistedRelation, activeRelation, draftRelation, getTaskLabel, showDueDateOnly, showStartDateOnly, taskById]);
+    }, [activeRelation, draftRelation, getTaskLabel, selectedRelation, showDueDateOnly, showStartDateOnly, taskById]);
 
     const relationAnchor = React.useMemo(() => {
         if (!activeRelation) return null;
@@ -286,9 +307,16 @@ export const HtmlOverlay: React.FC = () => {
     }, [hitTestTask, setDragDraftState, toLocalPoint]);
 
     const handleCreateRelation = React.useCallback(async (relation: DraftRelation, rawType: string, delay?: number) => {
-        const { autoSave, localTaskPatches } = useTaskStore.getState();
-        if (!autoSave && hasPendingRelationConsistencyChanges(localTaskPatches, [relation.from, relation.to])) {
-            throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
+        const state = useTaskStore.getState();
+        if (!state.autoSave) {
+            if (state.autoSaveTransition === 'enabling') {
+                throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
+            }
+            const accepted = state.stageRelationCreate({ from: relation.from, to: relation.to, type: rawType, ...(delay !== undefined ? { delay } : {}) });
+            if (!accepted) throw new Error(i18n.t('label_relation_edit_blocked') || 'Dependency changes cannot be kept pending right now. Check that saving has finished and that you have permission to edit, then try again.');
+            clearRelationSelection();
+            useUIStore.getState().addNotification(i18n.t('label_relation_change_pending') ?? '', 'success');
+            return;
         }
         const createdRelation = await taskMutationService.createRelation(relation.from, relation.to, rawType, delay);
         addRelation(toRelationState(createdRelation));
@@ -298,12 +326,28 @@ export const HtmlOverlay: React.FC = () => {
     }, [addRelation, clearRelationSelection]);
 
     const handleUpdateRelation = React.useCallback(async (relationId: string, rawType: string, delay?: number) => {
-        const currentRelation = useTaskStore.getState().relations.find(relation => relation.id === relationId);
-        const endpointIds = currentRelation ? [currentRelation.from, currentRelation.to] : [];
-        const { autoSave, localTaskPatches } = useTaskStore.getState();
-        if (!autoSave && hasPendingRelationConsistencyChanges(localTaskPatches, endpointIds)) {
-            throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
+        const currentRelation = projectEffectiveRelations(
+            useTaskStore.getState().relations,
+            useTaskStore.getState().pendingRelationChanges
+        ).find(relation => relation.id === relationId);
+        if (!currentRelation) throw new Error(i18n.t('label_relation_save_blocked') ?? '');
+        const { autoSave } = useTaskStore.getState();
+        if (!autoSave) {
+            if (useTaskStore.getState().autoSaveTransition === 'enabling') {
+                throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
+            }
+            const accepted = useTaskStore.getState().stageRelationUpdate(relationId, {
+                from: currentRelation.from,
+                to: currentRelation.to,
+                type: rawType,
+                ...(delay !== undefined ? { delay } : {})
+            });
+            if (!accepted) throw new Error(i18n.t('label_relation_edit_blocked') || 'Dependency changes cannot be kept pending right now. Check that saving has finished and that you have permission to edit, then try again.');
+            clearRelationSelection();
+            useUIStore.getState().addNotification(i18n.t('label_relation_change_pending') ?? '', 'success');
+            return;
         }
+        const endpointIds = currentRelation ? [currentRelation.from, currentRelation.to] : [];
         const updatedRelation = await taskMutationService.updateRelation(relationId, rawType, delay, endpointIds);
         replaceRelation(toRelationState(updatedRelation));
         useTaskStore.getState().refreshForMutationMetadata(updatedRelation);
@@ -312,7 +356,22 @@ export const HtmlOverlay: React.FC = () => {
     }, [clearRelationSelection, replaceRelation]);
 
     const handleRemoveRelation = React.useCallback(async (relationId: string) => {
-        const currentRelation = useTaskStore.getState().relations.find(relation => relation.id === relationId);
+        const currentRelation = projectEffectiveRelations(
+            useTaskStore.getState().relations,
+            useTaskStore.getState().pendingRelationChanges
+        ).find(relation => relation.id === relationId);
+        if (!currentRelation) return;
+        if (!useTaskStore.getState().autoSave) {
+            if (useTaskStore.getState().autoSaveTransition === 'enabling') {
+                throw new Error(i18n.t('label_relation_save_pending_task_changes') || 'There are unsaved task changes. Save the task changes before modifying the relation.');
+            }
+            const accepted = useTaskStore.getState().stageRelationDelete(relationId);
+            if (!accepted) throw new Error(i18n.t('label_relation_edit_blocked') || 'Dependency changes cannot be kept pending right now. Check that saving has finished and that you have permission to edit, then try again.');
+            clearRelationSelection();
+            setContextMenu(null);
+            useUIStore.getState().addNotification(i18n.t('label_relation_change_pending') ?? '', 'success');
+            return;
+        }
         const endpointIds = currentRelation ? [currentRelation.from, currentRelation.to] : [];
         const metadata = await taskMutationService.deleteRelation(relationId, endpointIds);
         removeRelation(relationId);
@@ -353,15 +412,7 @@ export const HtmlOverlay: React.FC = () => {
 
         const relationDelay = defaultRelationType === RelationType.Precedes ? autoDelay.delay : undefined;
 
-        if (autoApplyDefaultRelation) {
-            void handleCreateRelation({ from: relationFromId, to: relationToId, type: defaultRelationType }, defaultRelationType, relationDelay).catch((error: unknown) => {
-                const message = error instanceof Error ? error.message : (i18n.t('label_relation_add_failed') || 'Failed to create relation');
-                useUIStore.getState().addNotification(message, 'error');
-            });
-            return;
-        }
-
-        setDraftRelation({
+        const nextDraft: DraftRelation = {
             from: relationFromId,
             to: relationToId,
             type: defaultRelationType,
@@ -371,7 +422,15 @@ export const HtmlOverlay: React.FC = () => {
                 x: (start.x + pointer.x) / 2,
                 y: (start.y + pointer.y) / 2
             }
-        });
+        };
+        if (!autoApplyDefaultRelation || !useTaskStore.getState().autoSave) setDraftRelation(nextDraft);
+
+        if (autoApplyDefaultRelation) {
+            void handleCreateRelation(nextDraft, defaultRelationType, relationDelay).catch((error: unknown) => {
+                const message = error instanceof Error ? error.message : (i18n.t('label_relation_add_failed') || 'Failed to create relation');
+                useUIStore.getState().addNotification(message, 'error');
+            });
+        }
     }, [autoApplyDefaultRelation, autoCalculateDelay, defaultRelationType, handleCreateRelation, handleMouseMove, relations, setDraftRelation, taskById]);
 
     const startDraft = React.useCallback((taskId: string, x: number, y: number, startSide: 'left' | 'right') => {
@@ -760,6 +819,10 @@ export const HtmlOverlay: React.FC = () => {
                     taskById={taskById}
                     relations={relations}
                     position={relationPosition ?? { x: 8, y: 8 }}
+                    manualSave={!autoSave}
+                    pendingLabel={pendingRelationLabel}
+                    pendingError={activePendingRelationChange?.error}
+                    isUnknown={activePendingRelationChange?.status === 'unknown'}
                     onClose={clearRelationSelection}
                     onCreate={handleCreateRelation}
                     onUpdate={handleUpdateRelation}

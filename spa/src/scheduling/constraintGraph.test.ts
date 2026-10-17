@@ -4,6 +4,7 @@ import { RelationType } from '../types/constraints';
 import {
     addWorkingDays,
     buildSchedulingEdges,
+    calculateLinkedDownstreamUpdates,
     deriveSchedulingStates,
     detectConstraintCycleTaskIds,
     recalculateDownstreamTasks,
@@ -32,6 +33,27 @@ const buildTask = (overrides: Partial<Task>): Task => ({
 });
 
 describe('constraintGraph', () => {
+    it.each(['constraint', 'linked'] as const)('defers derived-parent dependency scheduling to Redmine in %s mode', mode => {
+        const tasks = [
+            buildTask({ id: 'source', startDate: MONDAY, dueDate: WEDNESDAY }),
+            buildTask({ id: 'parent', datesDerived: true, startDate: MONDAY, dueDate: TUESDAY }),
+            buildTask({ id: 'after-parent', startDate: TUESDAY, dueDate: WEDNESDAY }),
+            buildTask({ id: 'ordinary', startDate: WEDNESDAY, dueDate: THURSDAY })
+        ];
+        const relations: Relation[] = [
+            { id: 'to-parent', from: 'source', to: 'parent', type: RelationType.Precedes },
+            { id: 'from-parent', from: 'parent', to: 'after-parent', type: RelationType.Precedes },
+            { id: 'ordinary-edge', from: 'source', to: 'ordinary', type: RelationType.Precedes }
+        ];
+        const updates = mode === 'constraint'
+            ? recalculateDownstreamTasks(tasks, relations, 'source')
+            : calculateLinkedDownstreamUpdates(tasks, relations, 'source', TUESDAY, WEDNESDAY).updates;
+
+        expect([...updates.keys()]).toEqual(['ordinary']);
+        expect(recalculateDownstreamTasks(tasks, relations, 'parent').size).toBe(0);
+        expect(calculateLinkedDownstreamUpdates(tasks, relations, 'parent', TUESDAY, WEDNESDAY).updates.size).toBe(0);
+    });
+
     it('skips Sunday when Redmine non-working weekdays are [6, 7]', () => {
         const originalConfig = window.RedmineCanvasGantt;
         window.RedmineCanvasGantt = {

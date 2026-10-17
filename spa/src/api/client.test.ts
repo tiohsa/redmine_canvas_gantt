@@ -103,7 +103,7 @@ describe('apiClient.fetchData', () => {
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
             ok: true,
             json: async () => ({ tasks: [
-                { id: 1, has_physical_children: true },
+                { id: 1, has_physical_children: true, dates_derived: true },
                 { id: 2, has_physical_children: false },
                 { id: 3, parent_id: 2, has_physical_children: false },
                 { id: 4 }
@@ -113,6 +113,7 @@ describe('apiClient.fetchData', () => {
         const result = await apiClient.fetchData();
 
         expect(result.tasks.map(task => task.hasPhysicalChildren)).toEqual([true, false, false, false]);
+        expect(result.tasks.map(task => task.datesDerived)).toEqual([true, false, false, false]);
     });
 
     afterEach(() => {
@@ -322,6 +323,179 @@ describe('apiClient.getSubtaskTrackers', () => {
         const requestUrl = new URL(String(fetchMock.mock.calls[0][0]), window.location.origin);
         expect(requestUrl.searchParams.getAll('operation_issue_ids[]')).toEqual(['42']);
         expect(requestUrl.searchParams.get('parent_issue_id')).toBe('42');
+    });
+});
+
+describe('apiClient baseline parsing', () => {
+    const validBaselineHeaders = {
+        snapshot_id: 'baseline-1',
+        project_id: 1,
+        captured_at: '2026-04-01T00:00:00.000Z',
+        tasks_by_issue_id: {}
+    };
+
+    const useApi = (path: 'data' | 'baseline', payload: unknown) => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => path === 'data' ? payload : { baseline: payload, warnings: ['server warning'] }
+        }));
+    };
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('keeps a missing baseline absent and leaves server warnings untouched', async () => {
+        useApi('data', { tasks: [], warnings: ['server warning'] });
+
+        const result = await apiClient.fetchData();
+
+        expect(result.baseline).toBeNull();
+        expect(result.warnings).toEqual(['server warning']);
+    });
+
+    it.each([
+        ['snapshot_id', ' '],
+        ['project_id', null],
+        ['captured_at', ''],
+        ['tasks_by_issue_id', null]
+    ])('emits one localized incomplete warning when %s is invalid', async (field, invalidValue) => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            i18n: { label_baseline_incomplete: 'localized incomplete' }
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                tasks: [],
+                warnings: ['server warning'],
+                baseline: { ...validBaselineHeaders, [field]: invalidValue }
+            })
+        }));
+
+        const result = await apiClient.fetchData();
+
+        expect(result.baseline).toBeNull();
+        expect(result.warnings).toEqual(['server warning', 'localized incomplete']);
+    });
+
+    it('emits only one localized incomplete warning when several required headers are invalid', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            i18n: { label_baseline_incomplete: 'localized incomplete' }
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                tasks: [],
+                warnings: ['server warning'],
+                baseline: { snapshot_id: ' ', project_id: null, captured_at: '', tasks_by_issue_id: null }
+            })
+        }));
+
+        const result = await apiClient.fetchData();
+
+        expect(result.baseline).toBeNull();
+        expect(result.warnings).toEqual(['server warning', 'localized incomplete']);
+    });
+
+    it('preserves task parsing, warning order, ID fallback, and last-wins behavior through fetchData', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            i18n: { label_baseline_invalid_task: 'localized issue %{id}' }
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                tasks: [],
+                warnings: ['server warning'],
+                baseline: {
+                    ...validBaselineHeaders,
+                    tasks_by_issue_id: {
+                        malformed: null,
+                        'invalid-id': { issue_id: [], baseline_start_date: '2026-04-02' },
+                        'fallback-missing': { baseline_start_date: 'bad-date' },
+                        'fallback-null': { issue_id: null, baseline_start_date: null, baseline_due_date: null },
+                        'both-invalid': { issue_id: 'actual-id', baseline_start_date: 'bad-start', baseline_due_date: 'bad-due' },
+                        'array-entry': [],
+                        'duplicate-first': { issue_id: 'duplicate', baseline_start_date: '2026-04-03', baseline_due_date: null },
+                        'duplicate-last': { issue_id: 'duplicate', baseline_start_date: 123456789, baseline_due_date: 987654321 }
+                    }
+                }
+            })
+        }));
+
+        const result = await apiClient.fetchData();
+
+        expect(result.warnings).toEqual([
+            'server warning',
+            'localized issue malformed',
+            'localized issue invalid-id',
+            'localized issue fallback-missing',
+            'localized issue actual-id',
+            'localized issue actual-id'
+        ]);
+        expect(result.baseline?.tasksByIssueId).toEqual({
+            'fallback-missing': {
+                issueId: 'fallback-missing', baselineStartDate: null, baselineDueDate: null
+            },
+            'fallback-null': {
+                issueId: 'fallback-null', baselineStartDate: null, baselineDueDate: null
+            },
+            'actual-id': {
+                issueId: 'actual-id', baselineStartDate: null, baselineDueDate: null
+            },
+            'array-entry': {
+                issueId: 'array-entry', baselineStartDate: null, baselineDueDate: null
+            },
+            duplicate: {
+                issueId: 'duplicate', baselineStartDate: 123456789, baselineDueDate: 987654321
+            }
+        });
+    });
+
+    it('keeps missing and null dates quiet while warning independently for invalid dates on saveBaseline', async () => {
+        useApi('baseline', {
+            ...validBaselineHeaders,
+            tasks_by_issue_id: {
+                missing: {},
+                nulls: { baseline_start_date: null, baseline_due_date: null },
+                one_invalid: { baseline_start_date: 'not-a-date' },
+                both_invalid: { issue_id: 42, baseline_start_date: 'not-a-date', baseline_due_date: 'also-bad' }
+            }
+        });
+
+        const result = await apiClient.saveBaseline();
+
+        expect(result.warnings).toEqual([
+            'server warning',
+            'Baseline task state for issue one_invalid was skipped because its data is invalid.',
+            'Baseline task state for issue 42 was skipped because its data is invalid.',
+            'Baseline task state for issue 42 was skipped because its data is invalid.'
+        ]);
+        expect(result.baseline?.tasksByIssueId).toEqual({
+            missing: { issueId: 'missing', baselineStartDate: null, baselineDueDate: null },
+            nulls: { issueId: 'nulls', baselineStartDate: null, baselineDueDate: null },
+            one_invalid: { issueId: 'one_invalid', baselineStartDate: null, baselineDueDate: null },
+            '42': { issueId: '42', baselineStartDate: null, baselineDueDate: null }
+        });
     });
 });
 
@@ -723,6 +897,62 @@ describe('apiClient.updateRelation', () => {
         }));
         expect(rel).toEqual({ status: 'ok', id: '3', from: '10', to: '11', type: 'blocks', delay: undefined });
     });
+
+    it('sends the optional expected relation snapshot with PATCH', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key'
+        };
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ relation: { id: 3, from: 10, to: 11, type: 'blocks', delay: null } })
+        });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.updateRelation('3', 'blocks', undefined, 'mutation:1', {
+            from: '10', to: '11', type: 'precedes', delay: 2
+        });
+
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({
+            relation: { relation_type: 'blocks' },
+            expected_relation: { from: '10', to: '11', type: 'precedes', delay: 2 },
+            client_operation_id: 'mutation:1'
+        });
+    });
+});
+
+describe('apiClient.deleteRelation', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        delete window.RedmineCanvasGantt;
+    });
+
+    it('sends the optional expected relation snapshot with DELETE', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token',
+            apiKey: 'key'
+        };
+        const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+        vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+        await apiClient.deleteRelation('3', 'mutation:2', {
+            from: '10', to: '11', type: 'precedes', delay: 2
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith('/canvas_gantt/relations/3.json?canvas_project_id=1', expect.objectContaining({
+            method: 'DELETE'
+        }));
+        expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({
+            expected_relation: { from: '10', to: '11', type: 'precedes', delay: 2 },
+            client_operation_id: 'mutation:2'
+        });
+    });
 });
 
 describe('apiClient.saveBaseline', () => {
@@ -1032,6 +1262,37 @@ describe('mutation error classification', () => {
         expect(result.entity).toBeUndefined();
     });
 
+    it('does not pass deletion metadata through an HTTP mutation protocol error', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                status: 'unrecognized',
+                deleted_entity_ids: ['42'],
+                invalidated_entity_ids: ['43'],
+                completeness: 'complete',
+                failure: { kind: 'not_found', resource_role: 'target', resource_type: 'task', resource_id: '42' },
+                entity: { id: '42', subject: 'untrusted', lock_version: 99 },
+                revision: 99
+            })
+        }) as unknown as typeof fetch);
+
+        const result = await apiClient.updateTaskFields('42', { subject: 'draft' });
+
+        expect(result.status).toBe('protocol_error');
+        expect(result.entity).toBeUndefined();
+        expect(result.revision).toBeUndefined();
+        expect(result.deletedEntityIds).toBeUndefined();
+        expect(result.invalidatedEntityIds).toBeUndefined();
+        expect(result.failure).toBeUndefined();
+    });
+
     it('normalizes schedule conflict scope from the server contract', async () => {
         window.RedmineCanvasGantt = {
             projectId: 1,
@@ -1144,13 +1405,13 @@ describe('mutation error classification', () => {
             status: 200,
             json: async () => ({
                 status: 'ok',
-                entity: { id: 42, subject: 'Saved', lock_version: 4, has_physical_children: true }
+                entity: { id: 42, subject: 'Saved', lock_version: 4, has_physical_children: true, dates_derived: true }
             })
         }) as unknown as typeof fetch);
 
         const result = await apiClient.updateTaskFields('42', { subject: 'Saved' });
 
-        expect(result.entity).toEqual({ id: '42', subject: 'Saved', lockVersion: 4, hasPhysicalChildren: true });
+        expect(result.entity).toEqual({ id: '42', subject: 'Saved', lockVersion: 4, hasPhysicalChildren: true, datesDerived: true });
         expect(result.entity).not.toHaveProperty('editable');
         expect(result.entity).not.toHaveProperty('rowIndex');
         expect(result.entity).not.toHaveProperty('hasChildren');
@@ -1232,6 +1493,40 @@ describe('mutation error classification', () => {
 
         await expect(apiClient.updateTaskFields('42', { subject: 'draft' })).resolves.toMatchObject({
             status: 'protocol_error'
+        });
+    });
+
+    it('rejects unknown schedule status strings', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: 'future_status', entities: [], revisions: {} })
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.scheduleMutation([], 'schedule:future-status')).resolves.toMatchObject({ status: 'protocol_error' });
+    });
+
+    it('uses the HTTP fallback when a mutation response body cannot be decoded', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 503,
+            json: async () => { throw new SyntaxError('invalid JSON'); }
+        }) as unknown as typeof fetch);
+
+        await expect(apiClient.scheduleMutation([], 'schedule:malformed')).resolves.toMatchObject({
+            status: 'transient_error', operationId: '', entities: [], revisions: {}
         });
     });
 });

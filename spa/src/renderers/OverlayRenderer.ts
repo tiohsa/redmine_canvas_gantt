@@ -23,9 +23,11 @@ export type OverlayRenderState = {
     selectedTaskId: string | null;
     selectedRelationId: string | null;
     draftRelation: DraftRelation | null;
+    pendingRelationIds?: ReadonlySet<string>;
     showStartDateOnly?: boolean;
     showDueDateOnly?: boolean;
     today?: CalendarDate;
+    showProgressLine?: boolean;
 };
 
 export class OverlayRenderer {
@@ -45,9 +47,11 @@ export class OverlayRenderer {
         selectedTaskId,
         selectedRelationId,
         draftRelation,
+        pendingRelationIds,
         showStartDateOnly = true,
         showDueDateOnly = true,
-        today = todayCalendarDate()
+        today = todayCalendarDate(),
+        showProgressLine = useUIStore.getState().showProgressLine
     }: OverlayRenderState) {
         const ctx = this.canvas.getContext('2d');
         if (!ctx) return;
@@ -77,7 +81,8 @@ export class OverlayRenderer {
                 draftRelation,
                 zoomLevel,
                 selectedRelationId,
-                { showStartDateOnly, showDueDateOnly }
+                { showStartDateOnly, showDueDateOnly },
+                pendingRelationIds
             );
         }
 
@@ -90,15 +95,15 @@ export class OverlayRenderer {
         }
 
         // Draw Inazuma line (Progress Line)
-        this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel, today);
+        if (showProgressLine) {
+            this.drawProgressLine(ctx, viewport, visibleTasks, zoomLevel, today);
+        }
 
         // Draw "Today" line
         this.drawTodayLine(ctx, viewport, width, height, today);
     }
 
     private drawProgressLine(ctx: CanvasRenderingContext2D, viewport: Viewport, tasks: Task[], zoomLevel: ZoomLevel, todayStart: CalendarDate = todayCalendarDate()) {
-        const { showProgressLine } = useUIStore.getState();
-        if (!showProgressLine) return;
 
         // Tasks are already ordered by rowIndex (TaskStore layout).
         // Include tasks even if dates are missing (they will snap to Today line)
@@ -198,7 +203,8 @@ export class OverlayRenderer {
         displaySettings: { showStartDateOnly: boolean; showDueDateOnly: boolean } = {
             showStartDateOnly: true,
             showDueDateOnly: true
-        }
+        },
+        pendingRelationIds: ReadonlySet<string> = new Set()
     ) {
         const visibleTasks = filterTasksVisibleByDate(tasks, displaySettings);
         const context = buildRelationRenderContext(visibleTasks, viewport, zoomLevel);
@@ -212,13 +218,14 @@ export class OverlayRenderer {
             }
 
             const isDraft = relation.id === '__draft__';
+            const isPending = isDraft || pendingRelationIds.has(relation.id);
             const isSelected = isDraft || relation.id === selectedRelationId;
             ctx.save();
             ctx.strokeStyle = isSelected ? designTokens.brandPrimary : designTokens.dependency;
             ctx.lineWidth = isSelected ? 3 : 1.5;
             ctx.lineJoin = 'round';
             ctx.lineCap = 'round';
-            if (isDraft) {
+            if (isPending) {
                 ctx.setLineDash([6, 4]);
             }
 

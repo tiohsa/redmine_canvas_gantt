@@ -6,15 +6,36 @@ import {
 } from '../stores/taskStore/taskPersistence';
 import {
     PERSISTABLE_TASK_FIELDS,
+    RelationExecutionGuardError,
+    hasCanonicalTaskAck,
     taskMutationAffectsScheduling,
     taskMutationFields,
     taskMutationService
 } from './taskMutationService';
 import { DatePlacementMode } from '../types/constraints';
+import { parseDateOnly } from '../utils/dateOnly';
 
 describe('taskMutationService mutation boundary', () => {
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it.each([
+        ['wrong entity id', { id: 'other', subject: 'Draft', lockVersion: 2 }, 2, undefined],
+        ['missing canonical field', { id: 'task', lockVersion: 2 }, 2, undefined],
+        ['revision disagreement', { id: 'task', subject: 'Draft', lockVersion: 3 }, 2, undefined],
+        ['stale revision', { id: 'task', subject: 'Draft', lockVersion: 1 }, 1, 2],
+        ['unsafe revision', { id: 'task', subject: 'Draft', lockVersion: Number.MAX_SAFE_INTEGER + 1 }, Number.MAX_SAFE_INTEGER + 1, undefined]
+    ])('rejects a task acknowledgement with %s', (_reason, entity, revision, baseRevision) => {
+        expect(hasCanonicalTaskAck('task', { subject: 'Draft' }, {
+            status: 'ok', entity, revision, lockVersion: revision
+        }, baseRevision)).toBe(false);
+    });
+
+    it('accepts present canonical fields after server normalization', () => {
+        expect(hasCanonicalTaskAck('task', { subject: 'draft' }, {
+            status: 'ok', entity: { id: 'task', subject: 'Draft', lockVersion: 3 }, revision: 3
+        }, 2)).toBe(true);
     });
 
     it('serializes every persistable task field through one registry', () => {
@@ -92,7 +113,8 @@ describe('taskMutationService mutation boundary', () => {
     it('keeps the captured date placement mode across transient retries', async () => {
         const updateTaskFields = vi.spyOn(apiClient, 'updateTaskFields')
             .mockResolvedValueOnce({ status: 'transient_error', error: 'temporary failure' })
-            .mockResolvedValueOnce({ status: 'ok', lockVersion: 2 });
+            .mockResolvedValueOnce({ status: 'ok', revision: 2, lockVersion: 2,
+                entity: { id: 'captured-mode-task', dueDate: parseDateOnly('2026-01-10')!, lockVersion: 2 } });
 
         await taskMutationService.updateTaskFields(
             'captured-mode-task',
@@ -105,9 +127,42 @@ describe('taskMutationService mutation boundary', () => {
         expect(updateTaskFields.mock.calls.every(([, , , mode]) => mode === DatePlacementMode.CalendarDays)).toBe(true);
     });
 
+    it('does not report an incomplete task acknowledgement as success', async () => {
+        const updateTaskFields = vi.spyOn(apiClient, 'updateTaskFields').mockResolvedValue({ status: 'ok' });
+        const onSuccess = vi.fn();
+        const result = await taskMutationService.updateTaskFields('missing-ack-task', { subject: 'Draft' }, { onSuccess });
+
+        expect(result.status).toBe('protocol_error');
+        expect(result.entity).toBeUndefined();
+        expect(onSuccess).not.toHaveBeenCalled();
+        expect(updateTaskFields).toHaveBeenCalledTimes(1);
+    });
+
+    it('sanitizes protocol-error metadata from a non-decoder mutation boundary', async () => {
+        vi.spyOn(apiClient, 'updateTaskFields').mockResolvedValue({
+            status: 'protocol_error', error: 'Malformed response',
+            completeness: 'complete', invalidatedEntityIds: ['other'], deletedEntityIds: ['unsafe'],
+            failure: { kind: 'not_found', resourceRole: 'target', resourceType: 'task', resourceId: 'unsafe' },
+            entity: { id: 'unsafe', subject: 'Untrusted', lockVersion: 99 }, revision: 99,
+            lockVersion: 99, taskId: 'unsafe', parentId: 'unsafe-parent', siblingPosition: 'tail'
+        });
+
+        const result = await taskMutationService.updateTaskFields('sanitized-task', { subject: 'Draft' });
+
+        expect(result.status).toBe('protocol_error');
+        expect(result.error).toBe('Malformed response');
+        expect(result).toMatchObject({
+            completeness: undefined, invalidatedEntityIds: undefined, deletedEntityIds: undefined, failure: undefined,
+            entity: undefined, revision: undefined, lockVersion: undefined, taskId: undefined,
+            parentId: undefined, siblingPosition: undefined
+        });
+    });
+
     it('forwards mixed task modes in one schedule operation without selecting a request mode', async () => {
         const scheduleMutation = vi.spyOn(apiClient, 'scheduleMutation').mockResolvedValue({
-            status: 'ok', operationId: 'schedule:mixed', entities: [], revisions: {}
+            status: 'ok', operationId: 'schedule:mixed',
+            entities: [{ id: 'A', dueDate: undefined, lockVersion: 2 }, { id: 'B', dueDate: undefined, lockVersion: 4 }],
+            revisions: { A: 2, B: 4 }
         });
         const changes = [
             { taskId: 'A', baseRevision: 1, dueDate: null, datePlacementMode: DatePlacementMode.CalendarDays },
@@ -117,6 +172,23 @@ describe('taskMutationService mutation boundary', () => {
         await taskMutationService.scheduleMutation(changes);
 
         expect(scheduleMutation).toHaveBeenCalledExactlyOnceWith(changes, expect.any(String));
+    });
+
+    it('records an incomplete schedule acknowledgement as a protocol failure', async () => {
+        vi.spyOn(apiClient, 'scheduleMutation').mockResolvedValue({
+            status: 'ok', operationId: 'schedule:incomplete', entities: [], revisions: {}
+        });
+        const startedAt = Date.now();
+
+        const result = await taskMutationService.scheduleMutation([
+            { taskId: 'incomplete-schedule-ack', baseRevision: 1, dueDate: 11 }
+        ]);
+
+        expect(result.status).toBe('protocol_error');
+        expect(getMutationOperationRecords().filter(record => record.startedAt >= startedAt &&
+            record.entityIds.includes('incomplete-schedule-ack'))).toEqual([
+            expect.objectContaining({ status: 'failed', outcome: 'terminal' })
+        ]);
     });
 
     it('bounds retries for a thrown non-bulk mutation error', async () => {
@@ -253,6 +325,52 @@ describe('taskMutationService mutation boundary', () => {
             .filter(candidate => candidate.entityIds.includes('10') && candidate.entityIds.includes('11'))
             .at(-1);
         expect(record).toMatchObject({ status: 'conflict', outcome: 'conflict' });
+    });
+
+    it('passes expected relation snapshots through update and delete mutations', async () => {
+        vi.spyOn(apiClient, 'updateRelation').mockResolvedValue({
+            status: 'ok', id: '3', from: '10', to: '11', type: 'blocks'
+        });
+        vi.spyOn(apiClient, 'deleteRelation').mockResolvedValue({ status: 'ok' });
+        const expected = { from: '10', to: '11', type: 'precedes', delay: 2 };
+
+        await taskMutationService.updateRelation('3', 'blocks', undefined, ['10', '11'], expected);
+        await taskMutationService.deleteRelation('3', ['10', '11'], expected);
+
+        expect(apiClient.updateRelation).toHaveBeenCalledWith('3', 'blocks', undefined, expect.any(String), expected);
+        expect(apiClient.deleteRelation).toHaveBeenCalledWith('3', expect.any(String), expected);
+    });
+
+    it('rechecks relation view scope after queued writes drain and does not send a blocked request', async () => {
+        let releaseFirst!: () => void;
+        const firstRequest = new Promise<void>(resolve => { releaseFirst = resolve; });
+        let calls = 0;
+        const updateRelation = vi.spyOn(apiClient, 'updateRelation').mockImplementation(async () => {
+            calls += 1;
+            if (calls === 1) await firstRequest;
+            return { status: 'ok', id: '3', from: '10', to: '11', type: 'blocks' };
+        });
+        const expected = { from: '10', to: '11', type: 'precedes', delay: 2 };
+        const first = taskMutationService.updateRelation('3', 'blocks', undefined, ['10', '11'], expected);
+        await vi.waitFor(() => expect(updateRelation).toHaveBeenCalledTimes(1));
+
+        const guard = vi.fn(() => { throw new Error('The current view changed'); });
+        const second = taskMutationService.updateRelation('3', 'relates', undefined, ['10', '11'], expected, guard);
+        await Promise.resolve();
+        expect(guard).not.toHaveBeenCalled();
+
+        releaseFirst();
+        await first;
+        const error = await second.then(() => undefined, failure => failure);
+        expect(error).toBeInstanceOf(RelationExecutionGuardError);
+        expect(error).toMatchObject({
+            name: 'RelationExecutionGuardError',
+            status: 'conflict',
+            knownUnsent: true,
+            message: 'The current view changed'
+        });
+        expect(guard).toHaveBeenCalledTimes(1);
+        expect(updateRelation).toHaveBeenCalledTimes(1);
     });
 
     it('records resolved bulk subtask row failures as failed domain operations', async () => {

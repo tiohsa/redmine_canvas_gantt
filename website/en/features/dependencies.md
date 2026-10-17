@@ -2,6 +2,38 @@
 
 Dependencies appear as lines between issues on the timeline. `precedes` / `follows` are used as scheduling constraints; reference-only `relates` and blocking relations have different behavior.
 
+## Manual save in the development version {#manual-save}
+
+In the documented v0.18.0 release, creating, editing, or deleting a dependency sends the change to Redmine immediately, even when task auto-save is off. The development version changes this when **Auto save** is off:
+
+- Create, edit, and delete operations stay as local drafts. The relation editor's primary action is **Keep changes pending**; it stages the edit without sending an API request. This also applies when **Auto apply default relation** is on.
+- Staged dependencies are shown as pending in the editor, and new or updated links use a dashed line.
+- Staged precedence relations also take part in local constraint checks, linked moves, and critical-path calculations according to the current scheduling settings. Relations staged for deletion are excluded from these local calculations.
+- Compact icon-only **Save** and **Cancel** buttons appear for task drafts, dependency drafts, or both. The **Save** tooltip shows separate task and dependency counts. A review alert opens the right-side panel for failed or unknown dependency saves. **Cancel** discards the unsaved task and dependency drafts together, closes the dependency editor, and discards its input.
+- With **Auto save** on, dependency changes continue to be sent immediately.
+
+If another dependency change cannot be kept pending while a save is in progress, an error appears and the editor retains your input. With **Auto apply default relation** on, the relation you attempted to create also remains in the editor. Try again after saving finishes; the edit is not retried automatically.
+
+In manual save mode, definitive rejections such as permission errors, missing targets, conflicts, or validation errors leave the dependency draft marked as **Failed**. Review the server's error message, make any necessary corrections, and retry.
+
+The combined save is a sequence of server requests, not one database transaction. Canvas Gantt saves task changes first and stops before dependency writes if any task save fails. It then refreshes and revalidates the dependencies before sending their changes. A task save or an earlier dependency request can complete while a later request fails. Completed work stays saved, while unresolved dependency changes stay pending. **Cancel** only discards those remaining drafts; it cannot undo changes already saved.
+
+Within the task phase, dependency-ordered tasks are saved in order; independent tasks may be saved concurrently, up to eight at a time. Dependency changes are sent one at a time after task saves finish.
+
+In the development version, if a task PATCH response is incomplete or cannot be trusted, Canvas Gantt refreshes the task before deciding whether the save completed. A refreshed canonical task that confirms the requested fields is accepted as saved; if the result cannot be confirmed, the edit stays pending as a conflict for review. The PATCH is not sent again automatically. This task-save behavior is not part of the documented v0.18.0 release.
+
+In the development version, unresolved task mutation results are retained by edit generation. A later unsaved edit does not inherit an earlier conflict, and settling one generation leaves other unresolved results available for review. Conflict resolution applies to the generations and local intent captured when the action starts; edits made afterward remain pending. This behavior is not part of the documented v0.18.0 release.
+
+In the development version, conflict resolution validates the refreshed task ID and revision, and adopts it only when the task's lock version matches that revision. It does not adopt a response older than the current canonical task. If an outcome or edit within the captured generation range changes while resolution is in progress, the operation stops and keeps the drafts and unresolved results. If the view changes after a PATCH is sent, its response is not applied to the old view; when the task, draft, generation, and unresolved outcome still belong to that retry, the result is retained as unknown. This behavior is not part of the documented v0.18.0 release.
+
+In the development version, an unknown create or update stays visible as an unresolved draft, but its desired values are excluded from the confirmed scheduling graph, critical path, and dependency ordering. An unknown deletion keeps the existing relation in displayed links and local calculations until its outcome is confirmed.
+
+If a dependency request times out or returns an ambiguous server error, its result is marked **Unknown** and is never retried automatically. The right-side conflict and review panel opens automatically. After closing it, use **Review dependencies** at the top right to reopen it. If task conflicts are also present, the shared **Resolve conflicting changes** button reopens the panel for both. It lists unresolved dependency changes individually with their endpoints, status, and error, including deletions whose links are no longer shown. Before resolving an unknown result, Canvas Gantt refreshes the server relations and checks them against the intended change. Choose **Mark as applied** only when the server state matches; choose **Retry after review** only when it does not match and the original state is still current. Failed changes can also be retried from the panel with **Retry failed dependency saves**. This retry uses the combined save flow, so other pending task or dependency drafts may be included. If the refreshed state has changed in another way, or cannot be checked, leave the operation unresolved and review the dependency in Redmine. **Cancel** discards remaining drafts but cannot undo changes already saved.
+
+For an unknown create, update, or deletion, both endpoint issues must be included in the refreshed server data before the result can be resolved or retried. If a filter excludes either issue, keep the change unresolved and adjust the filter to include both issues before checking again.
+
+Some combined changes cannot be applied safely in this sequence. For example, if moving a successor earlier requires deleting or changing its existing predecessor relation first, the development version refuses the combined save before writing either change. Save the relation change first, then edit and save the dates. These development behaviors are not included in v0.18.0.
+
 ## Create a dependency
 
 1. Drag from a dependency handle near either end of the predecessor task bar.

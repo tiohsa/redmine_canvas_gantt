@@ -57,7 +57,7 @@ test('critical path can be disabled, persists by project, and leaves scheduling 
       calculateCriticalPathEnabled: true,
       visibleColumns: ['id', 'subject', 'notification', 'startDate', 'dueDate'],
       sidebarWidth: 650,
-      autoSave: false,
+      autoSave: true,
     }),
     onDataRequest: (_data, requestCount) => dataRequests.push(requestCount),
     onUpdateRelation: (id, payload) => updatedRelations.push({ id, payload }),

@@ -307,9 +307,10 @@ RSpec.describe RedmineCanvasGantt::DataPayloadBuilder do
 
       # The payload contains only the parent; its physical child is filtered out.
       allow(issue1).to receive(:rgt).and_return(4)
+      allow(issue1).to receive(:dates_derived?).and_return(true)
       expect(issue1).not_to receive(:children)
       expect(builder.build_tasks([issue1]).first[:has_physical_children]).to eq(true)
-      expect(builder.build_task_state(issue1)).to include(has_physical_children: true)
+      expect(builder.build_task_state(issue1)).to include(has_physical_children: true, dates_derived: true)
       expect(builder.build_task_state(issue1)).not_to have_key(:display_order)
       expect(builder.build_task_state(issue1)).not_to have_key(:has_children)
     end

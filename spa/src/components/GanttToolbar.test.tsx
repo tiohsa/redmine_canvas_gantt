@@ -2,6 +2,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { GanttToolbar } from './GanttToolbar';
+import { HtmlOverlay } from './HtmlOverlay';
 import { AutoScheduleMoveMode, RelationType } from '../types/constraints';
 import { useTaskStore } from '../stores/TaskStore';
 import { useUIStore } from '../stores/UIStore';
@@ -13,6 +14,8 @@ import '../stores/preferencesWatcher';
 import { resetCanvasGanttTestState } from '../test/testSetup';
 import { setVisibleColumnsForTest } from '../test/columnTestHelpers';
 import type { CustomFieldMeta } from '../types/editMeta';
+import type { Task } from '../types';
+import { createReadContext } from '../stores/taskStore/stateContract';
 
 vi.mock('../utils/navigation', () => ({
     navigateToRedminePath: vi.fn()
@@ -36,6 +39,7 @@ describe('GanttToolbar shortcuts', () => {
     const exportRef: React.RefObject<GanttExportHandle | null> = {
         current: {
             exportPng: async () => undefined,
+            exportFullPng: async () => undefined,
             exportCsv: async () => undefined
         }
     };
@@ -80,13 +84,122 @@ describe('GanttToolbar shortcuts', () => {
     };
 
     it.each([
-        ['変更を保存', '変更を破棄'], ['Save changes', 'Discard changes']
-    ])('renders translated manual-save tooltips: %s', (save, discard) => {
-        getCanvasGanttConfig().i18n = { label_save_changes: save, label_discard_changes: discard };
+        ['変更を保存', '変更を破棄', '保存', 'キャンセル'],
+        ['Save changes', 'Discard changes', 'Save', 'Cancel']
+    ])('renders translated manual-save tooltips and icon labels: %s', (save, discard, saveAction, cancelAction) => {
+        getCanvasGanttConfig().i18n = {
+            label_save_changes: save,
+            label_discard_changes: discard,
+            button_save: saveAction,
+            button_cancel: cancelAction
+        };
         useTaskStore.setState({ modifiedTaskIds: new Set(['1']), autoSave: false });
         render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
         expect(screen.getByTitle(save)).toBeInTheDocument();
         expect(screen.getByTitle(discard)).toBeInTheDocument();
+        expect(screen.getByTestId('manual-save-button')).toHaveAccessibleName(saveAction);
+        expect(screen.getByTestId('discard-manual-changes-button')).toHaveAccessibleName(cancelAction);
+        expect(screen.getByTestId('manual-save-button').textContent).toBe('');
+        expect(screen.getByTestId('discard-manual-changes-button').textContent).toBe('');
+    });
+
+    it('closes the dependency editor when Cancel is activated without a mousedown', async () => {
+        const tasks: Task[] = ['1', '2'].map((id, rowIndex) => ({
+            id, subject: `Task ${id}`, projectId: '1', ratioDone: 0, statusId: 1,
+            lockVersion: 0, editable: true, hasChildren: false, rowIndex,
+            startDate: Date.UTC(2026, 0, 5 + rowIndex), dueDate: Date.UTC(2026, 0, 5 + rowIndex)
+        }));
+        useTaskStore.setState({ autoSave: false, permissions: { editable: true, viewable: true, baselineEditable: true } });
+        useTaskStore.getState().setTasks(tasks);
+        useTaskStore.getState().updateTask('1', { subject: 'Unsaved' });
+        useTaskStore.getState().setDraftRelation({ from: '1', to: '2', type: RelationType.Relates, anchor: { x: 100, y: 80 } });
+        const data = {
+            tasks, relations: [], versions: [], statuses: [], customFields: [],
+            filterOptions: { projects: [], assignees: [] },
+            project: { id: '1', name: 'Project' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        };
+        const context = createReadContext({ generation: 1, projectId: '1', query: {}, scope: {}, purpose: 'refresh' });
+        let finishRefresh!: () => void;
+        const refresh = vi.spyOn(useTaskStore.getState(), 'refreshData').mockImplementationOnce(() => new Promise(resolve => {
+            finishRefresh = () => {
+                useTaskStore.getState().applyApiData(data, context);
+                resolve({ status: 'applied', context });
+            };
+        }));
+        try {
+            render(<>
+                <GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />
+                <HtmlOverlay />
+            </>);
+            expect(screen.getByTestId('relation-editor')).toBeInTheDocument();
+            const cancel = screen.getByTestId('discard-manual-changes-button');
+            cancel.focus();
+            expect(cancel).toHaveFocus();
+            fireEvent.click(cancel, { detail: 0 });
+
+            expect(refresh).toHaveBeenCalledTimes(1);
+            expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+            expect(useTaskStore.getState().draftRelation).toBeNull();
+            expect(useTaskStore.getState().selectedRelationId).toBeNull();
+            expect(useTaskStore.getState().hasPendingChanges()).toBe(false);
+            await act(async () => { finishRefresh(); });
+            expect(screen.queryByTestId('relation-editor')).not.toBeInTheDocument();
+        } finally {
+            refresh.mockRestore();
+        }
+    });
+
+    it('shows save counts without a duplicate dependency review trigger', () => {
+        getCanvasGanttConfig().i18n = {
+            label_save_changes_with_counts: 'Save (tasks: %{tasks} / dependencies: %{relations})',
+            button_save: 'Save',
+            label_relation_review: 'Review dependency changes',
+            label_relation_save_failed: 'A dependency change failed to save.',
+            label_relation_unknown_review: 'Unknown dependency changes',
+            label_relation_unknown_assume_applied: 'Confirm applied',
+            label_relation_unknown_retry: 'Retry dependency change'
+        };
+        useTaskStore.setState({
+            modifiedTaskIds: new Set(['1']),
+            autoSave: false,
+            pendingRelationChanges: {
+                'relation:1': {
+                    draftId: 'relation:1',
+                    operation: 'delete',
+                    relationId: 'rel-1',
+                    original: { id: 'rel-1', from: '1', to: '2', type: RelationType.Precedes },
+                    generation: 1,
+                    status: 'failed',
+                    error: 'Delete failed'
+                },
+                'relation:2': {
+                    draftId: 'relation:2',
+                    operation: 'create',
+                    desired: { from: '1', to: '3', type: RelationType.Relates },
+                    generation: 2,
+                    status: 'pending'
+                },
+                'relation:3': {
+                    draftId: 'relation:3',
+                    operation: 'delete',
+                    relationId: 'rel-3',
+                    original: { id: 'rel-3', from: '2', to: '3', type: RelationType.Precedes },
+                    generation: 3,
+                    status: 'unknown',
+                    error: 'Response was lost'
+                }
+            }
+        });
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={exportRef} />);
+
+        expect(screen.getByTestId('manual-save-button')).toHaveTextContent('');
+        expect(screen.getByTestId('manual-save-button')).toHaveAccessibleName('Save');
+        expect(screen.getByTestId('manual-save-button')).toHaveAttribute('title', 'Save (tasks: 1 / dependencies: 3)');
+        expect(screen.queryByRole('button', { name: /Review dependency changes/ })).not.toBeInTheDocument();
+        expect(screen.queryByTestId('pending-relation-failure')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('relation-unknown-assume-applied-relation:3')).not.toBeInTheDocument();
     });
 
     it('opens filter input with Ctrl+F and cancels with Escape', async () => {
@@ -904,6 +1017,7 @@ describe('GanttToolbar shortcuts', () => {
         const localExportRef: React.RefObject<GanttExportHandle | null> = {
             current: {
                 exportPng: async () => undefined,
+                exportFullPng: async () => undefined,
                 exportCsv: csvExport
             }
         };
@@ -916,6 +1030,37 @@ describe('GanttToolbar shortcuts', () => {
         await waitFor(() => {
             expect(csvExport).toHaveBeenCalledTimes(1);
         });
+    });
+
+    it('disables both PNG exports and ignores duplicate generation while full PNG is running', async () => {
+        let resolveExport!: () => void;
+        const fullPngExport = vi.fn(() => new Promise<void>((resolve) => { resolveExport = resolve; }));
+        const localExportRef: React.RefObject<GanttExportHandle | null> = {
+            current: {
+                exportPng: vi.fn().mockResolvedValue(undefined),
+                exportFullPng: fullPngExport,
+                exportCsv: vi.fn().mockResolvedValue(undefined)
+            }
+        };
+
+        render(<GanttToolbar zoomLevel={1} onZoomChange={() => {}} exportRef={localExportRef} />);
+        fireEvent.click(screen.getByTestId('export-menu-button'));
+
+        const fullPngButton = screen.getByRole('button', { name: 'Export full PNG' });
+        const pngButton = screen.getByRole('button', { name: 'Export PNG' });
+        fireEvent.click(fullPngButton);
+
+        expect(fullPngButton).toBeDisabled();
+        expect(pngButton).toBeDisabled();
+        fireEvent.click(fullPngButton);
+        fireEvent.click(pngButton);
+        expect(fullPngExport).toHaveBeenCalledTimes(1);
+
+        await act(async () => resolveExport());
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Export full PNG' })).not.toBeInTheDocument());
+        fireEvent.click(screen.getByTestId('export-menu-button'));
+        expect(screen.getByRole('button', { name: 'Export full PNG' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Export PNG' })).toBeEnabled();
     });
 
     it('shows notification column in the column menu and includes it in reset flow', () => {

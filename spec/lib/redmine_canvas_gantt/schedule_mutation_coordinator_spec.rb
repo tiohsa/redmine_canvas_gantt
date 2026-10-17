@@ -14,7 +14,8 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
           id: issue.id,
           start_date: issue.start_date&.iso8601,
           due_date: issue.due_date&.iso8601,
-          lock_version: issue.lock_version
+          lock_version: issue.lock_version,
+          **(issue.respond_to?(:dates_derived?) && issue.dates_derived? ? { dates_derived: true } : {})
         }
       end
       allow(builder).to receive(:build_task_states) do |issues|
@@ -730,6 +731,44 @@ RSpec.describe RedmineCanvasGantt::ScheduleMutationCoordinator, type: :model do
     expect(result.status).to eq(:ok)
     expect(result.entities.map { |entity| entity[:id] }).to include(grandparent.id, parent.id, child.id)
     expect(result.revisions).to include(grandparent.id, parent.id, child.id)
+  ensure
+    Setting.parent_issue_dates = previous_value if previous_value
+  end
+
+  it 'returns unchanged visible derived ancestors so partial child graphs can settle their projections' do
+    previous_value = Setting.parent_issue_dates
+    Setting.parent_issue_dates = 'derived'
+
+    parent = build_schedule_issue(
+      'Derived parent with an unchanged range',
+      start_date: nil,
+      due_date: nil
+    )
+    sibling = build_schedule_issue(
+      'Sibling defining the parent range',
+      start_date: Date.new(2027, 1, 1),
+      due_date: Date.new(2027, 1, 10),
+      parent: parent
+    )
+    child = build_schedule_issue(
+      'Visible child within sibling range',
+      start_date: Date.new(2027, 1, 4),
+      due_date: Date.new(2027, 1, 6),
+      parent: parent
+    )
+    [parent, sibling, child].each(&:reload)
+    parent_revision = parent.lock_version
+
+    result = coordinator.call(
+      operation_id: 'schedule:unchanged-derived-ancestor',
+      base_revisions: { child.id => child.lock_version },
+      changes: [{ task_id: child.id, start_date: '2027-01-05', due_date: '2027-01-07' }]
+    )
+
+    parent_entity = result.entities.find { |entity| entity[:id] == parent.id }
+    expect(result.status).to eq(:ok)
+    expect(parent.reload.lock_version).to eq(parent_revision)
+    expect(parent_entity).to include(dates_derived: true, start_date: '2027-01-01', due_date: '2027-01-10')
   ensure
     Setting.parent_issue_dates = previous_value if previous_value
   end

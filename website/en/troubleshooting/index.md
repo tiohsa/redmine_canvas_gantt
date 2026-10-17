@@ -15,6 +15,7 @@ Permission to view Canvas Gantt does not grant issue actions. Check the standard
 
 - If auto-save is off, use the save action after editing. Do not leave the page before saving pending changes.
 - Check the target issue's edit permission, validation errors, and messages returned by Redmine. See [Permissions](/en/administration/permissions) for the required permission.
+- In the development version, if you see “The latest task data could not be refreshed,” any changes confirmed as saved are retained. Once the latest state can be refreshed, review and save any pending dependency changes. You do not need to enter confirmed saved date changes again.
 - With a business calendar configured, selecting a non-working date can move the start date forward to the next working day and the due date backward to the previous working day.
 - Setting the start date to **Today** on a non-working day can move it to the next working day. Then setting the due date to **Today** fails because it is before the current start date. Check the start date in the list and choose a due date on or after it. To place dates on non-working days, change Date placement to **Allow any calendar day**.
 - If the conflict panel lists issues, review the differences using the steps below.

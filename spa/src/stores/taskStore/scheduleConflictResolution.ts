@@ -7,6 +7,7 @@ import { applyLocalPatches, hasLocalMutationIntent, mergeServerEntity, settleLoc
 import { settleBarOperationTaskOwnership } from './barOperations';
 import { DatePlacementMode } from '../../types/constraints';
 import { i18n } from '../../utils/i18n';
+import { clearScheduleConflictOwnership, projectTaskConflict } from './taskConflictRecords';
 
 export type ScheduleConflictReview = ScheduleResolutionContext & {
     /** Ownership only. Canonical tasks and draft intent stay in the existing stores. */
@@ -109,11 +110,20 @@ export async function prepareScheduleConflict(get: Get, set: Set, id: string): P
         result.resolutionContext!.taskIds.forEach(key => {
             const conflict = taskConflicts[key];
             if (conflict) generations[key] ??= conflict.generation ?? state.editGenerations[key] ?? 0;
+            // Ancestor previews have no write intent or conflict of their own.
+            // Capture their pre-request ownership so applying the reviewed
+            // child schedule settles these previews without clearing newer edits.
+            if (before.allTasks.find(task => task.id === key)?.datesDerived &&
+                (before.localTaskPatches[key] ?? []).some(patch => dates.some(field =>
+                    field in patch.projection && !(field in patch.mutationIntent)))) {
+                generations[key] ??= before.editGenerations[key] ?? 0;
+            }
         });
         const review: ScheduleConflictReview = { ...result.resolutionContext!, generations, revisions: result.revisions };
         review.taskIds.forEach(key => {
-            if (taskConflicts[key]) taskConflicts[key] = { ...taskConflicts[key], scheduleReview: review,
-                scheduleChoice: undefined, remoteEntity: snapshot.entitiesById[key], remoteRevision: result.revisions[key], remoteAvailability: 'known' };
+            if (taskConflicts[key]) taskConflicts[key] = projectTaskConflict(key, { ...taskConflicts[key], scheduleReview: review,
+                scheduleChoice: undefined, remoteEntity: snapshot.entitiesById[key], remoteRevision: result.revisions[key], remoteAvailability: 'known' })
+                ?? taskConflicts[key];
         });
         return { serverTaskSnapshot: snapshot, taskConflicts };
     });
@@ -187,7 +197,18 @@ export async function applyScheduleConflict(get: Get, set: Set, derive: Derive, 
                 if (!patches[key].length) delete patches[key];
                 if (hasLocalMutationIntent(patches[key])) modified.add(key); else modified.delete(key);
                 // Non-date intent remains a draft, under the normal save contract.
-                delete conflicts[key];
+                const conflict = conflicts[key];
+                if (conflict) {
+                    const generationHasRemainingIntent = (patches[key] ?? []).some(patch =>
+                        patch.generation === generation && Object.keys(patch.mutationIntent).length > 0);
+                    const remainingConflict = clearScheduleConflictOwnership(
+                        conflict,
+                        generation,
+                        choice === 'remote' || !generationHasRemainingIntent
+                    );
+                    if (remainingConflict) conflicts[key] = remainingConflict as typeof conflict;
+                    else delete conflicts[key];
+                }
                 if (!hasLocalMutationIntent((patches[key] ?? []).filter(patch => patch.generation <= generation))) {
                     ownership = settleBarOperationTaskOwnership(ownership.barOperations, ownership.activeBarOperationId,
                         key, { mode: 'through', generation });

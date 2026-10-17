@@ -253,7 +253,25 @@ module RedmineCanvasGantt
               id = issue.id.to_i
               id if resolution || planned_id_set.include?(id) || issue.lock_version.to_i > initial_revisions.fetch(id, issue.lock_version.to_i)
             end
-            changed_id_set = changed_ids.to_set
+            # A client projection can differ from Redmine when it has only a
+            # partial child graph. Return visible derived ancestors even when
+            # Redmine's canonical dates and revision did not change, so the
+            # client can settle that projection against the authoritative row.
+            canonical_by_id = canonical.to_h { |issue| [issue.id.to_i, issue] }
+            derived_ancestor_ids = Set.new
+            planned_issues.each do |planned_issue|
+              parent_id = planned_issue.parent_id&.to_i
+              seen_ancestor_ids = Set.new
+              while parent_id && seen_ancestor_ids.add?(parent_id)
+                ancestor = canonical_by_id[parent_id]
+                break unless ancestor
+
+                derived_ancestor_ids.add(parent_id) if ancestor.respond_to?(:dates_derived?) && ancestor.dates_derived?
+                parent_id = ancestor.parent_id&.to_i
+              end
+            end
+            response_id_set = changed_ids.to_set | derived_ancestor_ids
+            changed_id_set = response_id_set
             canonical = canonical.select { |issue| changed_id_set.include?(issue.id.to_i) }
             transaction_result = Result.new(
               status: :ok,

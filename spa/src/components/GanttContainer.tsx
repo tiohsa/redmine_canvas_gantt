@@ -23,6 +23,7 @@ import { useInitialGanttData } from './gantt/useInitialGanttData';
 import { useScrollSync } from './gantt/useScrollSync';
 import { exportTasksAsCsv } from '../export/csv';
 import { exportSnapshotAsPng } from '../export/png';
+import { exportFullRangePng } from '../export/fullPng';
 import { todayCalendarDate } from '../utils/dateOnly';
 import type { GanttExportHandle, GanttExportSnapshot } from '../export/types';
 import type { TimelineHeaderHandle } from './TimelineHeader';
@@ -30,6 +31,7 @@ import { i18n } from '../utils/i18n';
 import { useBaselineStore } from '../stores/BaselineStore';
 import { designTokens } from '../styles/designTokens';
 import { resizeCanvasForDpr } from '../utils/canvasDpr';
+import { projectEffectiveRelations } from '../stores/taskStore/relationDrafts';
 
 import { ONE_DAY_MS, MAX_SCROLL_AREA_PX, BOTTOM_PADDING_PX, SIDEBAR_RESIZE_HANDLE_TOTAL_WIDTH, SIDEBAR_RESIZE_CURSOR, WORKLOAD_SIDEBAR_MIN_WIDTH } from '../constants';
 
@@ -60,6 +62,7 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
     const viewport = useTaskStore(state => state.viewport);
     const tasks = useTaskStore(state => state.tasks);
     const relations = useTaskStore(state => state.relations);
+    const pendingRelationChanges = useTaskStore(state => state.pendingRelationChanges);
     const selectedTaskId = useTaskStore(state => state.selectedTaskId);
     const selectedRelationId = useTaskStore(state => state.selectedRelationId);
     const draftRelation = useTaskStore(state => state.draftRelation);
@@ -91,6 +94,19 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
     const [isWorkloadResizing, setIsWorkloadResizing] = useState(false);
 
     const tasksMaxDue = useMemo(() => getMaxFiniteDueDate(tasks), [tasks]);
+    const effectiveRelations = useMemo(
+        () => projectEffectiveRelations(relations, pendingRelationChanges),
+        [pendingRelationChanges, relations]
+    );
+    const pendingRelationIds = useMemo(() => new Set(
+        Object.values(pendingRelationChanges).flatMap((change) => {
+            if (change.operation === 'delete') {
+                return change.status === 'unknown' && change.relationId ? [change.relationId] : [];
+            }
+            if (change.operation === 'create') return [`local:${change.draftId}`];
+            return change.relationId ? [change.relationId] : [];
+        })
+    ), [pendingRelationChanges]);
     const workloadTopWeight = Math.max(1, Math.round((1 - workloadPaneRatio) * 100));
     const workloadBottomWeight = Math.max(1, Math.round(workloadPaneRatio * 100));
 
@@ -199,7 +215,8 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
     const overlayRenderState = useMemo<OverlayRenderState>(() => ({
         viewport,
         tasks,
-        relations,
+        relations: effectiveRelations,
+        pendingRelationIds,
         rowCount,
         zoomLevel,
         selectedTaskId,
@@ -209,7 +226,8 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         showDueDateOnly
     }), [
         draftRelation,
-        relations,
+        effectiveRelations,
+        pendingRelationIds,
         rowCount,
         selectedRelationId,
         selectedTaskId,
@@ -337,10 +355,33 @@ export const GanttContainer = React.forwardRef<GanttExportHandle>((_, ref) => {
         exportPng: async () => {
             await exportSnapshotAsPng(captureSnapshot());
         },
+        exportFullPng: async () => {
+            if (!rightPaneVisible) {
+                throw new Error(i18n.t('label_export_unavailable') || 'Export is unavailable in the current layout');
+            }
+            await exportFullRangePng({
+                viewport,
+                zoomLevel,
+                tasks,
+                relations: effectiveRelations,
+                pendingRelationIds,
+                rowCount,
+                layoutRows,
+                baselineSnapshot,
+                showBaseline,
+                showTaskTitles,
+                showTaskBarDates,
+                showPointsOrphans,
+                showStartDateOnly,
+                showDueDateOnly,
+                showProgressLine,
+                today: todayCalendarDate()
+            });
+        },
         exportCsv: async () => {
             exportTasksAsCsv(tasks, relations, customFields);
         }
-    }), [captureSnapshot, customFields, relations, tasks]);
+    }), [baselineSnapshot, captureSnapshot, customFields, effectiveRelations, layoutRows, pendingRelationIds, relations, rightPaneVisible, rowCount, showBaseline, showDueDateOnly, showPointsOrphans, showProgressLine, showStartDateOnly, showTaskBarDates, showTaskTitles, tasks, viewport, zoomLevel]);
 
     const workloadSplitRows = `minmax(${WORKLOAD_MIN_PANE_PX}px, ${workloadTopWeight}fr) ${WORKLOAD_SPLIT_HANDLE_HEIGHT}px minmax(${WORKLOAD_MIN_PANE_PX}px, ${workloadBottomWeight}fr)`;
     const collapsedSplitRows = 'minmax(0, 1fr) 0px 0px';

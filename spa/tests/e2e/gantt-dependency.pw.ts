@@ -93,11 +93,17 @@ const selectRelation = async (page: Page, relationId: string) => {
   }, relationId);
 };
 
+const saveRelationAndPendingChanges = async (page: Page) => {
+  await page.getByTestId('relation-save-button').click();
+  const manualSaveButton = page.getByTestId('manual-save-button');
+  if (await manualSaveButton.isVisible()) await manualSaveButton.click();
+};
+
 test('creates dependency between visible member project issues', async ({ page }) => {
   const created: unknown[] = [];
   await setupMockApp(page, {
     mockData: { ...p2DependencyData, relations: [] },
-    preferences: viewportPreferences,
+    preferences: { ...viewportPreferences, autoSave: true },
     onCreateRelation: (payload) => created.push(payload),
   });
   await page.goto('/');
@@ -105,7 +111,7 @@ test('creates dependency between visible member project issues', async ({ page }
 
   await openDraftRelation(page);
   await expect(page.getByTestId('relation-editor')).toBeVisible();
-  await page.getByTestId('relation-save-button').click();
+  await saveRelationAndPendingChanges(page);
 
   await expect.poll(() => created.length).toBe(1);
   const payload = created[0] as { relation?: { issue_from_id?: string; issue_to_id?: string; relation_type?: string } };
@@ -116,12 +122,14 @@ test('creates dependency between visible member project issues', async ({ page }
   });
 });
 
-test('requires a manual-save project change to be saved before creating a dependency', async ({ page }) => {
+test('saves manual project edits before creating a dependency', async ({ page }) => {
   const created: unknown[] = [];
+  const writeOrder: string[] = [];
   await setupMockApp(page, {
     mockData: { ...p2DependencyData, relations: [] },
     preferences: { ...viewportPreferences, autoSave: false },
-    onCreateRelation: (payload) => created.push(payload),
+    onPatchTask: () => writeOrder.push('task'),
+    onCreateRelation: (payload) => { writeOrder.push('relation'); created.push(payload); },
   });
   await page.goto('/');
   await page.getByTestId('cell-401-subject').waitFor({ state: 'visible' });
@@ -140,15 +148,11 @@ test('requires a manual-save project change to be saved before creating a depend
     });
   });
   await page.getByTestId('relation-save-button').click();
-  await expect(page.getByTestId('relation-error')).toHaveText('There are unsaved task changes. Save the task changes before modifying the relation.');
+  await expect(page.getByTestId('manual-save-button')).toBeVisible();
   expect(created).toHaveLength(0);
-
-  await page.evaluate(async () => {
-    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
-    await useTaskStore.getState().saveChanges();
-  });
-  await page.getByTestId('relation-save-button').click();
+  await page.getByTestId('manual-save-button').click();
   await expect.poll(() => created.length).toBe(1);
+  expect(writeOrder).toEqual(['task', 'relation']);
 });
 
 test('updates and deletes a visible dependency relation', async ({ page }) => {
@@ -156,7 +160,7 @@ test('updates and deletes a visible dependency relation', async ({ page }) => {
   const deleted: string[] = [];
   await setupMockApp(page, {
     mockData: p2DependencyData,
-    preferences: viewportPreferences,
+    preferences: { ...viewportPreferences, autoSave: true },
     onUpdateRelation: (id) => updated.push(id),
     onDeleteRelation: (id) => deleted.push(id),
   });
@@ -166,12 +170,14 @@ test('updates and deletes a visible dependency relation', async ({ page }) => {
   await selectRelation(page, '77');
   await expect(page.getByTestId('relation-editor')).toBeVisible();
   await page.getByTestId('relation-type-select').selectOption('relates');
-  await page.getByTestId('relation-save-button').click();
+  await saveRelationAndPendingChanges(page);
   await expect.poll(() => updated).toContain('77');
 
   await openContextMenu(page, 401);
   await expect(page.getByText('Remove dependency')).toBeVisible();
   await page.getByTestId('remove-relation-77').click();
+  const manualSaveButton = page.getByTestId('manual-save-button');
+  if (await manualSaveButton.isVisible()) await manualSaveButton.click();
   await expect.poll(() => deleted).toContain('77');
 });
 

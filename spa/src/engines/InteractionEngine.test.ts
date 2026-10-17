@@ -487,8 +487,19 @@ describe('InteractionEngine task updates', () => {
         let persistedTask: Task | undefined;
         vi.mocked(apiClient.scheduleMutation).mockImplementation(async (changes) => {
             const change = changes.find(candidate => candidate.taskId === task1.id);
-            if (change) persistedTask = { ...(change.task as Task), lockVersion: 1 };
-            return { status: 'ok', operationId: 'test', entities: [], revisions: { [task1.id]: 1 } };
+            if (change) {
+                persistedTask = {
+                    ...(change.task as Task),
+                    ...(Object.prototype.hasOwnProperty.call(change, 'startDate') ? { startDate: change.startDate ?? undefined } : {}),
+                    ...(Object.prototype.hasOwnProperty.call(change, 'dueDate') ? { dueDate: change.dueDate ?? undefined } : {}),
+                    lockVersion: 2
+                };
+            }
+            return {
+                status: 'ok', operationId: 'test',
+                entities: persistedTask ? [{ id: task1.id, startDate: persistedTask.startDate, dueDate: persistedTask.dueDate, lockVersion: 2 }] : [],
+                revisions: { [task1.id]: 2 }
+            };
         });
         vi.mocked(apiClient.fetchData).mockImplementation(async () => ({
             tasks: [persistedTask ?? task1, task2],
@@ -514,7 +525,7 @@ describe('InteractionEngine task updates', () => {
         expect(reloadedTask).toMatchObject({
             startDate: persistedTask?.startDate,
             dueDate: persistedTask?.dueDate,
-            lockVersion: 1
+            lockVersion: 2
         });
         expect(useTaskStore.getState().modifiedTaskIds.has(task1.id)).toBe(false);
 
@@ -1344,7 +1355,7 @@ describe('InteractionEngine relation selection', () => {
         container.remove();
     });
 
-    it('selects a visible relation when clicking near its route', () => {
+    it.each([false, true])('selects a visible relation when clicking near its route (pending=%s)', (pending) => {
         const DAY_MS = 24 * 60 * 60 * 1000;
         setViewport({ scale: 1 / DAY_MS, rowHeight: 36 });
         const container = createContainer();
@@ -1352,12 +1363,18 @@ describe('InteractionEngine relation selection', () => {
 
         const task1 = baseTask({ id: '1', rowIndex: 0, startDate: 0, dueDate: DAY_MS });
         const task2 = baseTask({ id: '2', rowIndex: 1, startDate: DAY_MS * 4, dueDate: DAY_MS * 5 });
-        const relation: Relation = { id: 'r1', from: '1', to: '2', type: 'precedes' };
+        const relation: Relation = { id: pending ? 'local:selection-draft' : 'r1', from: '1', to: '2', type: 'precedes' };
 
         useTaskStore.setState({
             allTasks: [task1, task2],
             tasks: [task1, task2],
-            relations: [relation],
+            relations: pending ? [] : [relation],
+            pendingRelationChanges: pending ? {
+                'selection-draft': {
+                    draftId: 'selection-draft', operation: 'create', generation: 1, status: 'pending',
+                    desired: { from: '1', to: '2', type: 'precedes' }
+                }
+            } : {},
             layoutRows: [],
             rowCount: 2,
             selectedTaskId: null,
@@ -1377,7 +1394,8 @@ describe('InteractionEngine relation selection', () => {
             bubbles: true
         }));
 
-        expect(useTaskStore.getState().selectedRelationId).toBe('r1');
+        expect(useTaskStore.getState().selectedRelationId).toBe(relation.id);
+        useTaskStore.setState({ pendingRelationChanges: {} });
 
         engine.detach();
         container.remove();

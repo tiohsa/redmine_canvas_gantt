@@ -49,11 +49,27 @@ import { AutoScheduleMoveMode, DatePlacementMode, type DatePlacementMode as Date
 import { configureBusinessCalendar, normalizeTaskDateInterval } from '../utils/businessCalendar';
 import { fromLocalDate, parseDateOnly, toCalendarDate, toTimelineDate, todayCalendarDate } from '../utils/dateOnly';
 import { apiClient } from '../api/client';
-import type { MutationMetadata } from '../api/client';
+import type { ExpectedRelation, MutationMetadata } from '../api/client';
 import { setConfirmedProjectScope, type ConfirmedProjectScope } from '../api/projectScopeContext';
 import { classifyMutationSourceDisposition } from '../api/mutationOutcome';
 import type { MutationRemoteAvailability } from '../api/mutationOutcome';
-import { buildTaskMutationDelta, BULK_TASK_FIELDS, PERSISTABLE_TASK_FIELDS, taskMutationFields, taskMutationService, type TaskFields } from '../services/taskMutationService';
+import { buildTaskMutationDelta, BULK_TASK_FIELDS, PERSISTABLE_TASK_FIELDS, RelationExecutionGuardError, taskMutationFields, taskMutationService, type TaskFields } from '../services/taskMutationService';
+import {
+    countPendingRelationChanges,
+    getPendingRelationChange as selectPendingRelationChange,
+    hasPendingRelationChanges,
+    normalizeRelationCreate,
+    normalizeRelationDelete,
+    normalizeRelationUpdate,
+    orderedRelationChanges,
+    projectEffectiveRelations,
+    relationChangeTarget,
+    sameRelationTarget,
+    validateRelationDrafts,
+    type PendingRelationChange,
+    type RelationDraftMap,
+    type RelationTarget
+} from './taskStore/relationDrafts';
 import {
     applyLocalPatches,
     settleLocalPatchFields,
@@ -71,7 +87,8 @@ import {
     type ReadContext,
     type ServerSnapshot
 } from './taskStore/stateContract';
-import { selectConflictRemote, type SelectedConflictRemote } from './taskStore/conflictRemote';
+import { isValidConflictRemote, selectConflictRemote, type SelectedConflictRemote } from './taskStore/conflictRemote';
+import { projectTaskConflict, settleTaskConflictOutcomes, upsertUnresolvedTaskMutation, type UnresolvedTaskMutation } from './taskStore/taskConflictRecords';
 import { applyScheduleConflict, prepareScheduleConflict, scheduleConflictIds, selectScheduleConflict, type ScheduleConflictReview } from './taskStore/scheduleConflictResolution';
 import {
     readIssueQueryParamsFromUrl,
@@ -98,6 +115,8 @@ type ApiData = NonNullable<
     Awaited<ReturnType<typeof import('../api/client').apiClient.fetchData>>
 >;
 
+export type { UnresolvedTaskMutation } from './taskStore/taskConflictRecords';
+
 export type TaskConflictRecord = {
     taskId: string;
     message: string;
@@ -109,6 +128,7 @@ export type TaskConflictRecord = {
     scheduleOperation?: Record<string, number>;
     scheduleReview?: ScheduleConflictReview;
     scheduleChoice?: 'local' | 'remote';
+    unresolvedMutations?: Record<string, UnresolvedTaskMutation>;
 };
 
 const terminalTaskDeletionPatch = (
@@ -209,6 +229,8 @@ export interface TaskState {
     allTasks: Task[];
     tasks: Task[];
     relations: Relation[];
+    pendingRelationChanges: RelationDraftMap;
+    relationEditGeneration: number;
     schedulingStates: Record<string, SchedulingStateInfo>;
     criticalPathMetrics: Record<string, CriticalPathTaskMetrics>;
     criticalPathProjectFinish?: number;
@@ -295,6 +317,15 @@ export interface TaskState {
     addRelation: (relation: Relation) => void;
     replaceRelation: (relation: Relation) => void;
     removeRelation: (relationId: string) => void;
+    stageRelationCreate: (desired: RelationTarget) => boolean;
+    stageRelationUpdate: (relationId: string, desired: RelationTarget) => boolean;
+    stageRelationDelete: (relationId: string) => boolean;
+    discardPendingRelationChanges: () => void;
+    getEffectiveRelations: () => Relation[];
+    getPendingRelationChange: (relationId: string) => PendingRelationChange | undefined;
+    pendingRelationCount: () => number;
+    hasPendingChanges: () => boolean;
+    resolveUnknownRelationChange: (draftId: string, resolution: 'assume_applied' | 'retry') => Promise<boolean>;
     selectTask: (id: string | null) => void;
     selectRelation: (id: string | null) => void;
     setDraftRelation: (relation: DraftRelation | null) => void;
@@ -316,7 +347,7 @@ export interface TaskState {
     removeTask: (id: string) => void;
     markTaskTombstone: (id: string, source?: EntityTombstone['source'], operationId?: string) => void;
     clearTaskTombstone: (id: string) => void;
-    registerTaskConflict: (id: string, message: string, generation?: number, remoteEntity?: PersistedTaskState, remoteRevision?: number, remoteAvailability?: MutationRemoteAvailability) => void;
+    registerTaskConflict: (id: string, message: string, generation?: number, remoteEntity?: PersistedTaskState, remoteRevision?: number, remoteAvailability?: MutationRemoteAvailability, outcome?: 'conflict' | 'unknown' | 'schedule') => void;
     resolveTaskConflict: (id: string, resolution: 'remote' | 'local' | 'dismiss') => Promise<void>;
     prepareScheduleConflict: (id: string) => Promise<void>;
     applyScheduleConflict: (id: string, acceptAdjustments?: boolean) => Promise<void>;
@@ -345,6 +376,7 @@ export interface TaskState {
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
     refreshData: () => Promise<ReadApplyOutcome>;
+    getActiveReadContext: () => ReadContext | null;
     loadInitialData: (params: InitialDataParams) => Promise<void>;
     loadSavedQueries: (force?: boolean) => Promise<void>;
     applySavedQuery: (queryId: number) => Promise<void>;
@@ -357,6 +389,32 @@ export interface TaskState {
     saveChanges: () => Promise<Map<string, string>>;
     discardChanges: () => Promise<void>;
 }
+
+const canRegisterTaskConflict = (state: TaskState, taskId: string, generation?: number): boolean => {
+    if (generation !== undefined) {
+        const reviewRecords = Object.values(state.taskConflicts).filter(conflict => (
+            conflict.scheduleReview?.taskIds.includes(taskId) || conflict.scheduleOperation?.[taskId] !== undefined
+        ));
+        const reviewGenerations = reviewRecords.flatMap(conflict => [
+            conflict.scheduleReview?.generations[taskId], conflict.scheduleOperation?.[taskId]
+        ]).filter((value): value is number => typeof value === 'number');
+        // A read-only intermediary can become conflicted during schedule
+        // review despite having no local patch. The captured review generation
+        // owns that task only while the result is at least as new as the review.
+        const scheduleReviewOwnsGeneration = reviewRecords.some(conflict => {
+            const review = conflict.scheduleReview;
+            const capturedGeneration = review?.generations[taskId] ?? state.editGenerations[taskId] ?? 0;
+            return review?.taskIds.includes(taskId) && generation >= capturedGeneration;
+        });
+        if (!hasLocalPatchOwnership(state.localTaskPatches[taskId], taskId, generation) && !scheduleReviewOwnsGeneration) return false;
+        // Each exact local patch owns its own outcome. A newer patch does not
+        // invalidate an older mutation result that is still unresolved.
+        const scheduleOwnerGeneration = Math.max(-1, ...reviewGenerations);
+        if (!hasLocalPatchOwnership(state.localTaskPatches[taskId], taskId, generation) &&
+            !(scheduleReviewOwnsGeneration && generation >= scheduleOwnerGeneration)) return false;
+    }
+    return true;
+};
 
 const preferences = loadPreferences();
 const initialUrlState = readIssueQueryParamsFromUrl();
@@ -414,7 +472,10 @@ const initialQueryContext = resolvedStateToQueryContext(initialUrlState);
 
 const resolveLayoutState = (state: LayoutState, overrides: Partial<LayoutState> = {}): LayoutState => ({
     allTasks: overrides.allTasks ?? state.allTasks,
-    relations: overrides.relations ?? state.relations,
+    relations: overrides.relations ?? projectEffectiveRelations(
+        state.relations,
+        (state as LayoutState & { pendingRelationChanges?: RelationDraftMap }).pendingRelationChanges ?? {}
+    ),
     versions: overrides.versions ?? state.versions,
     filterOptions: overrides.filterOptions ?? state.filterOptions ?? { projects: [], assignees: [] },
     groupByProject: overrides.groupByProject ?? state.groupByProject,
@@ -518,12 +579,16 @@ const buildDerivedTaskState = (
     overrides: Partial<LayoutState> & {
         allTasks?: Task[];
         relations?: Relation[];
+        relationChanges?: RelationDraftMap;
         derivedInvalidation?: DerivedInvalidation;
         schedulingSummary?: DerivedSchedulingSummary;
     } = {}
 ): DerivedTaskState => {
     const allTasks = overrides.allTasks ?? state.allTasks;
-    const relations = overrides.relations ?? state.relations;
+    const relations = projectEffectiveRelations(
+        overrides.relations ?? state.relations,
+        overrides.relationChanges ?? state.pendingRelationChanges ?? {}
+    );
     const invalidation = overrides.derivedInvalidation;
     // Header and fallback version ranges depend on dates, including collapsed
     // tasks. Reuse the existing layout builder so their aggregation rules stay
@@ -646,6 +711,34 @@ const toDerivedTaskStatePatch = (derived: DerivedTaskState): DerivedTaskStatePat
     criticalPathProjectFinish: derived.criticalPathProjectFinish
 });
 
+const relationDraftDerivedPatch = (state: TaskState, relationChanges: RelationDraftMap): Partial<TaskState> => {
+    const previousRelations = projectEffectiveRelations(state.relations, state.pendingRelationChanges);
+    const nextRelations = projectEffectiveRelations(state.relations, relationChanges);
+    if (state.organizeByDependency) {
+        return toDerivedTaskStatePatch(buildDerivedTaskState(state, {
+            relations: nextRelations,
+            relationChanges
+        }));
+    }
+
+    const previousById = new Map(previousRelations.map(relation => [relation.id, relation]));
+    const nextById = new Map(nextRelations.map(relation => [relation.id, relation]));
+    const changedIds = new Set([...previousById.keys(), ...nextById.keys()]);
+    const changesConstraintGraph = [...changedIds].some((id) => {
+        const previous = previousById.get(id);
+        const next = nextById.get(id);
+        if (previous && next && previous.from === next.from && previous.to === next.to && previous.type === next.type &&
+            (previous.delay ?? 0) === (next.delay ?? 0)) return false;
+        return [previous, next].some(relation => relation?.type === 'precedes' || relation?.type === 'follows');
+    });
+    if (!changesConstraintGraph) return {};
+    return toDerivedTaskStatePatch(buildDerivedTaskState(state, {
+        relations: nextRelations,
+        relationChanges,
+        derivedInvalidation: 'schedule'
+    }));
+};
+
 type ApiDataPatchResult = {
     patch: Partial<TaskState>;
     querySyncState: SharedQuerySyncState;
@@ -750,6 +843,7 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
         columnsExplicitInQuery: useUIStore.getState().columnsExplicitInQuery
     };
 
+    const draftRelation = state.draftRelation;
     return {
         querySyncState,
         patch: {
@@ -765,10 +859,15 @@ const buildApiDataPatch = (data: ApiData, state: TaskState, readContext?: ReadCo
             customFields,
             taskStatuses: data.statuses ?? [],
             permissions: data.permissions ?? DEFAULT_PERMISSIONS,
-            selectedRelationId: state.selectedRelationId && relations.some(relation => relation.id === state.selectedRelationId)
+            selectedRelationId: preservesDirtyScope && state.selectedRelationId &&
+                projectEffectiveRelations(relations, state.pendingRelationChanges).some(relation => relation.id === state.selectedRelationId)
                 ? state.selectedRelationId
                 : null,
-            draftRelation: null,
+            draftRelation: !state.autoSave && preservesDirtyScope && draftRelation &&
+                derived.tasks.some(task => task.id === draftRelation.from) &&
+                derived.tasks.some(task => task.id === draftRelation.to)
+                ? draftRelation
+                : null,
             projectExpansion,
             versionExpansion,
             taskExpansion,
@@ -922,7 +1021,11 @@ const resolveCascadingScheduleUpdates = (
             : new Set<string>();
         for (const taskId of dependencySeeds) {
             const task = workingTasks.find((candidate) => candidate.id === taskId);
-            if (!task || !Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) continue;
+            // Redmine owns scheduling for date-derived parents. The client task
+            // graph may omit siblings, so using a projected parent range here
+            // could create incorrect downstream edits before the server runs
+            // its complete callback graph.
+            if (!task || task.datesDerived || !Number.isFinite(task.startDate) || !Number.isFinite(task.dueDate)) continue;
             const result = TaskLogicService.checkDependencies(
                 workingTasks,
                 relations,
@@ -994,12 +1097,13 @@ const normalizeTaskDateUpdates = (
 };
 
 const buildRelationChange = (state: TaskState, relation: Relation, nextRelations: Relation[]) => {
+    const effectiveRelations = projectEffectiveRelations(nextRelations, state.pendingRelationChanges);
     let nextTasks = state.allTasks;
     const originTaskId = relation.type === 'follows' ? relation.to : relation.from;
     const originTask = nextTasks.find((task) => task.id === originTaskId);
     const dependentUpdates = TaskLogicService.checkDependencies(
         nextTasks,
-        nextRelations,
+        effectiveRelations,
         originTaskId,
         originTask?.startDate ?? Number.NaN,
         originTask?.dueDate ?? Number.NaN,
@@ -1012,7 +1116,7 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
 
     const cascadingUpdates = resolveCascadingScheduleUpdates(
         nextTasks,
-        nextRelations,
+        effectiveRelations,
         [originTaskId, ...dependentUpdates.updates.keys()]
     );
     if (cascadingUpdates.error) {
@@ -1032,16 +1136,20 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
             Object.entries(fields).filter(([key]) => key !== 'lockVersion' && key !== 'id')
         ) as Partial<Task>;
         if (Object.keys(meaningfulFields).length === 0) return;
+        const task = nextTasks.find((candidate) => candidate.id === taskId);
+        const mutationIntent = task?.datesDerived
+            ? Object.fromEntries(Object.entries(meaningfulFields).filter(([key]) => key !== 'startDate' && key !== 'dueDate')) as Partial<Task>
+            : meaningfulFields;
         const generation = (editGenerations[taskId] ?? 0) + 1;
         editGenerations[taskId] = generation;
-        modifiedTaskIds.add(taskId);
+        if (Object.keys(mutationIntent).length > 0) modifiedTaskIds.add(taskId);
         const operationId = `relation-cascade:${relation.id || 'new'}:${taskId}:${generation}`;
         localTaskPatches[taskId] = [
             ...(localTaskPatches[taskId] ?? []).filter(patch => patch.operationId !== operationId),
             {
                 entityId: taskId,
                 projection: meaningfulFields,
-                mutationIntent: meaningfulFields,
+                mutationIntent,
                 generation,
                 operationId
             }
@@ -1053,7 +1161,7 @@ const buildRelationChange = (state: TaskState, relation: Relation, nextRelations
         modifiedTaskIds,
         editGenerations,
         localTaskPatches,
-        derived: buildDerivedTaskState(state, { relations: nextRelations, allTasks: nextTasks })
+        derived: buildDerivedTaskState(state, { relations: effectiveRelations, allTasks: nextTasks })
     };
 };
 
@@ -1263,6 +1371,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
     allTasks: [],
     tasks: [],
     relations: [],
+    pendingRelationChanges: {},
+    relationEditGeneration: 0,
     schedulingStates: {},
     criticalPathMetrics: {},
     criticalPathProjectFinish: undefined,
@@ -1338,7 +1448,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (state.autoSave || state.autoSaveTransition === 'enabling') {
             return autoSaveEnableOperation ?? Promise.resolve();
         }
-        if (state.modifiedTaskIds.size === 0) {
+        if (state.modifiedTaskIds.size === 0 && !hasPendingRelationChanges(state.pendingRelationChanges)) {
             set({ autoSave: true });
             return;
         }
@@ -1347,7 +1457,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const operation = (async () => {
             try {
                 const failures = await get().saveChanges();
-                if (failures.size === 0 && get().modifiedTaskIds.size === 0 && get().autoSaveTransition === 'enabling') {
+                if (failures.size === 0 && get().modifiedTaskIds.size === 0 && !hasPendingRelationChanges(get().pendingRelationChanges) && get().autoSaveTransition === 'enabling') {
                     set({ autoSave: true });
                 }
             } catch (error) {
@@ -1392,7 +1502,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         };
     }),
     setRelations: (relations) => set((state) => {
-        const derived = buildDerivedTaskState(state, { relations });
+        const derived = buildDerivedTaskState(state, { relations, relationChanges: state.pendingRelationChanges });
         return {
             relations,
             selectedRelationId: state.selectedRelationId && relations.some(relation => relation.id === state.selectedRelationId)
@@ -1422,7 +1532,11 @@ export const useTaskStore = create<TaskState>((set, get) => {
         }
         return {
             calculateCriticalPathEnabled: true,
-            ...buildCriticalPathSummary(state.allTasks, state.relations, true)
+            ...buildCriticalPathSummary(
+                state.allTasks,
+                projectEffectiveRelations(state.relations, state.pendingRelationChanges),
+                true
+            )
         };
     }),
     setPermissions: (permissions) => set(() => ({ permissions })),
@@ -1628,6 +1742,155 @@ export const useTaskStore = create<TaskState>((set, get) => {
             localTaskPatches: relationChange.localTaskPatches
         };
     }),
+    stageRelationCreate: (desired) => {
+        let accepted = false;
+        set((state) => {
+            if (state.autoSave || state.autoSaveTransition === 'enabling' || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
+            if (Object.values(state.pendingRelationChanges).some(change => change.status === 'unknown' &&
+                [change.original, change.desired].some(target => target && target.from === desired.from && target.to === desired.to && target.type === desired.type))) return state;
+            const generation = state.relationEditGeneration + 1;
+            const pendingRelationChanges = normalizeRelationCreate(
+                state.pendingRelationChanges,
+                state.relations,
+                relationChangeTarget(desired),
+                generation
+            );
+            accepted = projectEffectiveRelations(state.relations, pendingRelationChanges).some(relation => sameRelationTarget(relation, desired));
+            if (!accepted || pendingRelationChanges === state.pendingRelationChanges) return state;
+            return {
+                pendingRelationChanges,
+                relationEditGeneration: generation,
+                draftRelation: null,
+                ...relationDraftDerivedPatch(state, pendingRelationChanges)
+            };
+        });
+        return accepted;
+    },
+    stageRelationUpdate: (relationId, desired) => {
+        let accepted = false;
+        set((state) => {
+            if (state.autoSave || state.autoSaveTransition === 'enabling' || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
+            if (selectPendingRelationChange(state.pendingRelationChanges, relationId)?.status === 'unknown') return state;
+            const generation = state.relationEditGeneration + 1;
+            const pendingRelationChanges = normalizeRelationUpdate(
+                state.pendingRelationChanges,
+                state.relations,
+                relationId,
+                relationChangeTarget(desired),
+                generation
+            );
+            accepted = projectEffectiveRelations(state.relations, pendingRelationChanges).some(relation => relation.id === relationId && sameRelationTarget(relation, desired));
+            if (!accepted || pendingRelationChanges === state.pendingRelationChanges) return state;
+            return {
+                pendingRelationChanges,
+                relationEditGeneration: generation,
+                ...relationDraftDerivedPatch(state, pendingRelationChanges)
+            };
+        });
+        return accepted;
+    },
+    stageRelationDelete: (relationId) => {
+        let accepted = false;
+        set((state) => {
+            if (state.autoSave || state.autoSaveTransition === 'enabling' || !state.permissions.editable || Object.values(state.pendingRelationChanges).some(change => change.status === 'saving')) return state;
+            if (selectPendingRelationChange(state.pendingRelationChanges, relationId)?.status === 'unknown') return state;
+            const generation = state.relationEditGeneration + 1;
+            const pendingRelationChanges = normalizeRelationDelete(
+                state.pendingRelationChanges,
+                state.relations,
+                relationId,
+                generation
+            );
+            accepted = !projectEffectiveRelations(state.relations, pendingRelationChanges).some(relation => relation.id === relationId);
+            if (!accepted || pendingRelationChanges === state.pendingRelationChanges) return state;
+            return {
+                pendingRelationChanges,
+                relationEditGeneration: generation,
+                selectedRelationId: state.selectedRelationId === relationId ? null : state.selectedRelationId,
+                ...relationDraftDerivedPatch(state, pendingRelationChanges)
+            };
+        });
+        return accepted;
+    },
+    discardPendingRelationChanges: () => set((state) => {
+        if (!hasPendingRelationChanges(state.pendingRelationChanges)) return state;
+        return {
+            pendingRelationChanges: {},
+            relationEditGeneration: state.relationEditGeneration + 1,
+            ...relationDraftDerivedPatch(state, {})
+        };
+    }),
+    getEffectiveRelations: () => projectEffectiveRelations(get().relations, get().pendingRelationChanges),
+    getPendingRelationChange: (relationId) => selectPendingRelationChange(get().pendingRelationChanges, relationId),
+    pendingRelationCount: () => countPendingRelationChanges(get().pendingRelationChanges),
+    hasPendingChanges: () => get().modifiedTaskIds.size > 0 || hasPendingRelationChanges(get().pendingRelationChanges),
+    resolveUnknownRelationChange: async (draftId, resolution) => {
+        const initial = get().pendingRelationChanges[draftId];
+        if (!initial || initial.status !== 'unknown') return false;
+        const viewIdentity = currentViewIdentity();
+        let refreshedContext: ReadContext;
+        try {
+            const outcome = await get().refreshData();
+            if (outcome.status !== 'applied' || currentViewIdentity() !== viewIdentity) return false;
+            refreshedContext = outcome.context;
+        } catch {
+            return false;
+        }
+        const current = get().pendingRelationChanges[draftId];
+        if (!current || current.generation !== initial.generation || current.status !== 'unknown') return false;
+        const serverRelations = get().relations;
+        const refreshedTaskSnapshot = get().serverTaskSnapshot;
+        const endpointIds = new Set([
+            current.original?.from, current.original?.to, current.desired?.from, current.desired?.to
+        ].filter((id): id is string => Boolean(id)));
+        if (refreshedTaskSnapshot.context !== refreshedContext || endpointIds.size < 2 ||
+            [...endpointIds].some(id => !refreshedTaskSnapshot.entitiesById[id])) return false;
+        const matching = current.operation === 'delete'
+            ? !serverRelations.some(relation => relation.id === current.relationId)
+            : current.operation === 'create'
+                ? serverRelations.some(relation => current.desired && (
+                    relation.from === current.desired.from && relation.to === current.desired.to &&
+                    relation.type === current.desired.type && (relation.delay ?? 0) === (current.desired.delay ?? 0)
+                ))
+                : serverRelations.some(relation => relation.id === current.relationId && current.desired && (
+                    relation.from === current.desired.from && relation.to === current.desired.to &&
+                    relation.type === current.desired.type && (relation.delay ?? 0) === (current.desired.delay ?? 0)
+                ));
+        if (resolution === 'assume_applied') {
+            if (!matching) return false;
+            set((state) => {
+                const next = { ...state.pendingRelationChanges };
+                delete next[draftId];
+                const derived = buildDerivedTaskState(state, { relations: state.relations, relationChanges: next });
+                return {
+                    pendingRelationChanges: next,
+                    relationEditGeneration: state.relationEditGeneration + 1,
+                    ...toDerivedTaskStatePatch(derived)
+                };
+            });
+            return true;
+        }
+        if (matching) return false;
+        const expectedStillCurrent = current.operation === 'create'
+            ? !serverRelations.some(relation => current.desired && relation.from === current.desired.from && relation.to === current.desired.to && relation.type === current.desired.type)
+            : serverRelations.some(relation => relation.id === current.relationId && current.original && (
+                relation.from === current.original.from && relation.to === current.original.to && relation.type === current.original.type &&
+                (relation.delay ?? 0) === (current.original.delay ?? 0)
+            ));
+        if (!expectedStillCurrent) {
+            set((state) => ({ pendingRelationChanges: {
+                ...state.pendingRelationChanges,
+                [draftId]: { ...current, status: 'failed', error: i18n.t('label_relation_change_conflict') || i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked' }
+            } }));
+            return false;
+        }
+        set((state) => ({ pendingRelationChanges: {
+            ...state.pendingRelationChanges,
+            [draftId]: { ...current, status: 'pending', error: undefined }
+        } }));
+        const failures = await get().saveChanges();
+        return !failures.has(`relation:${draftId}`) && !get().pendingRelationChanges[draftId];
+    },
     selectTask: (id) => set({
         selectedTaskId: id,
         selectedRelationId: null,
@@ -1737,7 +2000,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             validatePersistedResult: (result) => result.parentId === targetTaskId,
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure,
-            onConflict: (taskId, message, operationGeneration, remoteEntity, remoteRevision) => get().registerTaskConflict(taskId, message, operationGeneration, remoteEntity, remoteRevision),
+            onConflict: (taskId, message, operationGeneration, remoteEntity, remoteRevision) => get().registerTaskConflict(taskId, message, operationGeneration, remoteEntity, remoteRevision, remoteEntity ? 'known' : 'unavailable', 'conflict'),
             onNotFound: (taskId, _operationGeneration, operationId) => get().markTaskTombstone(taskId, 'server', operationId),
             onMutationMetadata: (taskId, metadata) => get().applyTaskMutationMetadata(taskId, metadata)
         });
@@ -1792,7 +2055,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             validatePersistedResult: (result) => result.parentId === undefined,
             missingSourceResult: buildParentMoveFailure(),
             failedResult: buildParentMoveFailure,
-            onConflict: (taskId, message, operationGeneration, remoteEntity, remoteRevision) => get().registerTaskConflict(taskId, message, operationGeneration, remoteEntity, remoteRevision),
+            onConflict: (taskId, message, operationGeneration, remoteEntity, remoteRevision) => get().registerTaskConflict(taskId, message, operationGeneration, remoteEntity, remoteRevision, remoteEntity ? 'known' : 'unavailable', 'conflict'),
             onNotFound: (taskId, _operationGeneration, operationId) => get().markTaskTombstone(taskId, 'server', operationId),
             onMutationMetadata: (taskId, metadata) => get().applyTaskMutationMetadata(taskId, metadata)
         });
@@ -1858,7 +2121,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
     rollbackBarOperation: (operationId) => set((state) => {
         const rollback = buildBarOperationRollback(state, operationId);
         if (!rollback) return state;
-        const schedulingSummary = buildDerivedSchedulingSummary(rollback.allTasks, state.relations, state.calculateCriticalPathEnabled);
+        const effectiveRelations = projectEffectiveRelations(state.relations, state.pendingRelationChanges);
+        const schedulingSummary = buildDerivedSchedulingSummary(rollback.allTasks, effectiveRelations, state.calculateCriticalPathEnabled);
         const changedFields = new Set<string>();
         const previousTasksById = new Map(state.allTasks.map(task => [task.id, task]));
         rollback.allTasks.forEach((task) => {
@@ -1887,13 +2151,32 @@ export const useTaskStore = create<TaskState>((set, get) => {
             return state;
         }
 
+        const hasDerivedDateEdit = task.datesDerived && (
+            hasOwnField(updates, 'startDate') || hasOwnField(updates, 'dueDate') ||
+            hasOwnField(mutationIntent, 'startDate') || hasOwnField(mutationIntent, 'dueDate')
+        );
+        if (hasDerivedDateEdit) {
+            useUIStore.getState().addNotification(
+                i18n.t('label_dates_derived_from_children') || 'Dates for this task are derived from its children.',
+                'error'
+            );
+        }
+
         invalidateDataRequests();
 
         const capturedDatePlacementMode = datePlacementMode ?? useUIStore.getState().datePlacementMode;
-        const canonicalUpdates = normalizeTaskDateUpdates(task, updates, capturedDatePlacementMode);
-        const canonicalMutationIntent = normalizeTaskDateUpdates(task, mutationIntent, capturedDatePlacementMode);
+        const requestedUpdates = task.datesDerived
+            ? Object.fromEntries(Object.entries(updates).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
+            : updates;
+        const requestedMutationIntent = task.datesDerived
+            ? Object.fromEntries(Object.entries(mutationIntent).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
+            : mutationIntent;
+        const canonicalUpdates = normalizeTaskDateUpdates(task, requestedUpdates, capturedDatePlacementMode);
+        const canonicalMutationIntent = normalizeTaskDateUpdates(task, requestedMutationIntent, capturedDatePlacementMode);
+        if (Object.keys(canonicalUpdates).length === 0 && Object.keys(canonicalMutationIntent).length === 0) return state;
         const updatedTask = { ...task, ...canonicalUpdates };
         TaskLogicService.validateDates(updatedTask).forEach(warn => console.warn(warn));
+        const effectiveRelations = projectEffectiveRelations(state.relations, state.pendingRelationChanges);
 
         let currentTasks = state.allTasks.map(t => t.id === id ? updatedTask : t);
         const pendingUpdates = new Map<string, Partial<Task>>();
@@ -1902,7 +2185,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (!isContextChange && (hasOwnField(canonicalUpdates, 'startDate') || hasOwnField(canonicalUpdates, 'dueDate'))) {
             const depResult = TaskLogicService.checkDependencies(
                 state.allTasks,
-                state.relations,
+                effectiveRelations,
                 id,
                 updatedTask.startDate!,
                 updatedTask.dueDate!,
@@ -1924,10 +2207,16 @@ export const useTaskStore = create<TaskState>((set, get) => {
             });
         }
 
-        if (!isContextChange) {
+        const hasScheduleSeed = hasOwnField(canonicalUpdates, 'startDate') ||
+            hasOwnField(canonicalUpdates, 'dueDate') || pendingUpdates.size > 0;
+        // A non-date edit must not create a derived parent's projection with
+        // no schedule operation to settle it. Keep existing manual-parent
+        // recalculation behavior unchanged.
+        const parentDatesAreDerived = state.allTasks.find(candidate => candidate.id === task.parentId)?.datesDerived;
+        if (!isContextChange && (hasScheduleSeed || !parentDatesAreDerived)) {
             const cascadingUpdates = resolveCascadingScheduleUpdates(
                 currentTasks,
-                state.relations,
+                effectiveRelations,
                 [id, ...pendingUpdates.keys()],
                 useUIStore.getState().autoScheduleMoveMode !== AutoScheduleMoveMode.Off
             );
@@ -2006,7 +2295,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
             if (Object.keys(persistenceIntent).length > 0) newModifiedIds.add(taskId);
         };
         patchFor(id, canonicalUpdates, canonicalMutationIntent, capturedDatePlacementMode);
-        pendingUpdates.forEach((fields, taskId) => patchFor(taskId, fields, fields));
+        pendingUpdates.forEach((fields, taskId) => {
+            const affectedTask = state.allTasks.find(candidate => candidate.id === taskId);
+            const mutationIntent = affectedTask?.datesDerived
+                ? Object.fromEntries(Object.entries(fields).filter(([field]) => field !== 'startDate' && field !== 'dueDate')) as Partial<Task>
+                : fields;
+            patchFor(taskId, fields, mutationIntent);
+        });
 
         const changedFields = new Set([...Object.keys(canonicalUpdates), ...[...pendingUpdates.values()].flatMap(patch => Object.keys(patch))]);
         const requiresLayout = taskFieldsAffectLayout(state, changedFields, {
@@ -2019,7 +2314,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         });
         const hasSchedulingChanges = ['startDate', 'dueDate', 'projectId'].some(field => changedFields.has(field));
         const nextSchedulingSummary = hasSchedulingChanges
-            ? buildDerivedSchedulingSummary(finalTasks, state.relations, state.calculateCriticalPathEnabled)
+            ? buildDerivedSchedulingSummary(finalTasks, effectiveRelations, state.calculateCriticalPathEnabled)
             : {
                 schedulingStates: state.schedulingStates,
                 criticalPathMetrics: state.criticalPathMetrics,
@@ -2116,7 +2411,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const modifiedTaskIds = new Set(state.modifiedTaskIds);
         if (!hasLocalMutationIntent(localTaskPatches[id])) modifiedTaskIds.delete(id);
         const taskConflicts = { ...state.taskConflicts };
-        delete taskConflicts[id];
+        const conflict = taskConflicts[id];
+        if (conflict) {
+            const unresolvedMutations = { ...(conflict.unresolvedMutations ?? {}) };
+            delete unresolvedMutations[String(operationGeneration)];
+            const projected = projectTaskConflict(id, { ...conflict, unresolvedMutations });
+            if (projected) taskConflicts[id] = projected;
+            else delete taskConflicts[id];
+        }
         const serverTask = state.serverTaskSnapshot.entitiesById[id] ?? currentTask;
         const canonicalTask = {
             ...serverTask,
@@ -2181,6 +2483,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     }),
 
     applyTaskMutationMetadata: (taskId, metadata) => {
+        if ((metadata as typeof metadata & { status?: string }).status === 'protocol_error') return;
         const invalidatedIds = new Set(metadata.invalidatedEntityIds ?? []);
         const deletedIds = new Set(metadata.deletedEntityIds ?? []);
         const needsRefresh = [...invalidatedIds].some(id => id !== taskId);
@@ -2260,12 +2563,38 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return { taskTombstones };
     }),
 
-    registerTaskConflict: (id, message, generation = get().editGenerations[id], remoteEntity, remoteRevision, remoteAvailability = remoteEntity ? 'known' : 'needs_refresh') => set((state) => ({
-        taskConflicts: {
-            ...state.taskConflicts,
-            [id]: { taskId: id, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability }
+    registerTaskConflict: (id, message, generation = get().editGenerations[id], remoteEntity, remoteRevision, remoteAvailability = remoteEntity ? 'known' : 'needs_refresh', outcome: 'conflict' | 'unknown' | 'schedule' = 'conflict') => set((state) => {
+        if (!canRegisterTaskConflict(state, id, generation)) return state;
+        const existing = state.taskConflicts[id];
+        if (outcome === 'schedule' || generation === undefined || !hasLocalPatchOwnership(state.localTaskPatches[id], id, generation)) {
+            const projected = existing?.unresolvedMutations
+                ? projectTaskConflict(id, { ...existing, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability })
+                : undefined;
+            return {
+                taskConflicts: {
+                    ...state.taskConflicts,
+                    [id]: projected ?? { ...existing, taskId: id, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability }
+                }
+            };
         }
-    })),
+        const detectedAt = Date.now();
+        const unresolvedOutcome: UnresolvedTaskMutation = {
+            generation,
+            message,
+            detectedAt,
+            remoteAvailability,
+            ...(remoteEntity ? { remoteEntity } : {}),
+            ...(remoteRevision !== undefined ? { remoteRevision } : {}),
+            outcome
+        };
+        const projected = upsertUnresolvedTaskMutation(id, existing, unresolvedOutcome);
+        return {
+            taskConflicts: {
+                ...state.taskConflicts,
+                [id]: projected!
+            }
+        };
+    }),
 
     prepareScheduleConflict: async id => {
         // Explicit re-review also refreshes the shared business calendar and
@@ -2308,6 +2637,36 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 retryGeneration,
                 ...(beforeRetry.localTaskPatches[id] ?? []).map(patch => patch.generation)
             );
+            const retryOutcomeGenerations = Object.keys(conflictRecord.unresolvedMutations ?? {})
+                .map(Number).filter(generation => generation <= maxRetryGeneration);
+            const retryOwnedPatches = (beforeRetry.localTaskPatches[id] ?? [])
+                .filter(patch => patch.generation <= maxRetryGeneration);
+            const capturedOutcomes = conflictRecord.unresolvedMutations ?? {};
+            const capturedScopedOutcomes = Object.fromEntries(Object.entries(capturedOutcomes)
+                .filter(([generation]) => Number(generation) <= maxRetryGeneration));
+            const viewIdentityAtRetry = currentViewIdentity();
+            let retryReadContext = beforeRetry.activeReadContext;
+            const retryIsCurrent = (allowNewerEdits = false) => {
+                const state = get();
+                const currentConflict = state.taskConflicts[id];
+                const currentScopedOutcomes = Object.fromEntries(Object.entries(currentConflict?.unresolvedMutations ?? {})
+                    .filter(([generation]) => Number(generation) <= maxRetryGeneration));
+                const ownsOutcomes = Object.keys(currentScopedOutcomes).length === Object.keys(capturedScopedOutcomes).length &&
+                    Object.entries(capturedScopedOutcomes).every(([generation, outcome]) =>
+                        currentScopedOutcomes[generation] === outcome);
+                const currentScopedPatches = (state.localTaskPatches[id] ?? [])
+                    .filter(patch => patch.generation <= maxRetryGeneration);
+                const ownsPatches = currentScopedPatches.length === retryOwnedPatches.length &&
+                    retryOwnedPatches.every((patch, index) => currentScopedPatches[index] === patch);
+                const ownsLegacyConflict = Object.keys(capturedOutcomes).length > 0 || currentConflict === conflictRecord;
+                const editGenerationUnchanged = state.editGenerations[id] === beforeRetry.editGenerations[id];
+                const onlyLaterEditsAdded = allowNewerEdits && state.editGenerations[id] >= beforeRetry.editGenerations[id] &&
+                    ownsPatches;
+                const current = ownsPatches && (editGenerationUnchanged || onlyLaterEditsAdded) &&
+                    currentViewIdentity() === viewIdentityAtRetry &&
+                    state.activeReadContext === retryReadContext && ownsOutcomes && ownsLegacyConflict;
+                return current;
+            };
             const retryFieldNames = Object.keys(retryFields);
             const hasPersistedRetryFields = retryFieldNames.length > 0;
             const canRetryFieldsDirectly = retryTask && hasPersistedRetryFields && Object.keys(buildTaskPatchFieldsPayload(retryTask, retryFields)).length > 0;
@@ -2315,44 +2674,98 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 conflictRecord, beforeRetry.serverTaskSnapshot, beforeRetry.activeReadContext, beforeRetry.dataReadStatus
             );
             if (canRetryFieldsDirectly && !confirmedRemote) {
-                const viewIdentityAtRetry = currentViewIdentity();
-                const retryIsCurrent = () => get().taskConflicts[id] === conflictRecord &&
-                    currentViewIdentity() === viewIdentityAtRetry &&
-                    get().editGenerations[id] === beforeRetry.editGenerations[id];
                 try {
                     const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: beforeRetry.selectedStatusIds } });
                     if (!retryIsCurrent() || get().dataReadStatus !== 'ready') return;
                     const entity = resyncData.tasks.find(task => task.id === id);
                     if (!entity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
-                    confirmedRemote = { entity, revision: entity.lockVersion };
+                    const candidate = { entity, revision: entity.lockVersion };
+                    const latestRevision = get().serverTaskSnapshot.revisions[id] ?? 0;
+                    if (!isValidConflictRemote(id, candidate) || candidate.revision < latestRevision) return;
+                    confirmedRemote = candidate;
                     get().applyApiData(resyncData);
+                    retryReadContext = get().activeReadContext;
                 } catch (error) {
                     if (!retryIsCurrent() || get().dataReadStatus === 'loading') return;
                     const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
                     get().registerTaskConflict(id, conflictRecord.message || message, conflictRecord.generation,
-                        undefined, conflictRecord.remoteRevision, 'unavailable');
+                        undefined, conflictRecord.remoteRevision, 'unavailable', 'unknown');
                     useUIStore.getState().addNotification(message, 'error');
                     return;
                 }
             }
-            set((state) => {
-                if (!state.taskConflicts[id]) return state;
-                const taskConflicts = { ...state.taskConflicts };
-                delete taskConflicts[id];
-                return { taskConflicts };
-            });
+            if (!(canRetryFieldsDirectly && confirmedRemote)) {
+                set((state) => {
+                    const conflict = state.taskConflicts[id];
+                    if (!conflict) return state;
+                    const remaining = settleTaskConflictOutcomes(id, conflict, retryOutcomeGenerations);
+                    const taskConflicts = { ...state.taskConflicts };
+                    if (remaining) taskConflicts[id] = remaining;
+                    else delete taskConflicts[id];
+                    return { taskConflicts };
+                });
+            }
             if (canRetryFieldsDirectly && confirmedRemote) {
+                let retryRequestSent = false;
+                const retainOwnedRetryOutcomeAsUnknown = () => set(state => {
+                    const current = state.taskConflicts[id];
+                    if (!current) return state;
+                    let updated = current;
+                    for (const [generation, captured] of Object.entries(capturedScopedOutcomes)) {
+                        const patchStillOwned = retryOwnedPatches.some(patch => (
+                            patch.entityId === id && String(patch.generation) === generation &&
+                            (state.localTaskPatches[id] ?? []).includes(patch)
+                        ));
+                        if (!patchStillOwned || current.unresolvedMutations?.[generation] !== captured) continue;
+                        updated = upsertUnresolvedTaskMutation(id, updated, {
+                            ...captured,
+                            message: i18n.t('label_conflict_review_again') || 'The retry result needs review.',
+                            detectedAt: Date.now(),
+                            outcome: 'unknown',
+                            remoteAvailability: 'needs_refresh',
+                            remoteEntity: undefined,
+                            remoteRevision: undefined
+                        }) ?? updated;
+                    }
+                    if (Object.keys(capturedScopedOutcomes).length === 0 && current === conflictRecord &&
+                        retryOwnedPatches.some(patch => patch.entityId === id &&
+                            (state.localTaskPatches[id] ?? []).includes(patch))) {
+                        updated = upsertUnresolvedTaskMutation(id, updated, {
+                            generation: retryGeneration,
+                            message: i18n.t('label_conflict_review_again') || 'The retry result needs review.',
+                            detectedAt: Date.now(),
+                            outcome: 'unknown',
+                            remoteAvailability: 'needs_refresh'
+                        }) ?? updated;
+                    }
+                    return updated === current ? state : { taskConflicts: { ...state.taskConflicts, [id]: updated } };
+                });
                 try {
+                    if (!retryIsCurrent() || !isValidConflictRemote(id, confirmedRemote) ||
+                        confirmedRemote.revision < (get().serverTaskSnapshot.revisions[id] ?? 0)) return;
                     // Pin the confirmed revision across queue waits and transport retries.
                     const retryBaseRevision = confirmedRemote.revision;
                     get().applyTaskMutationMetadata(id, confirmedRemote);
+                    let retryCallbackValidated = false;
                     const result = await taskMutationService.updateTaskFields(id, () => {
+                        if (!retryIsCurrent() || (!retryCallbackValidated && (
+                            retryBaseRevision < (get().serverTaskSnapshot.revisions[id] ?? 0) ||
+                            !isValidConflictRemote(id, confirmedRemote)
+                        ))) {
+                            throw new Error(i18n.t('label_conflict_review_again') || 'The reviewed edit changed. Review the conflict again.');
+                        }
+                        retryCallbackValidated = true;
                         const latestTask = get().allTasks.find(task => task.id === id) ?? retryTask;
+                        retryRequestSent = true;
                         return {
                             ...buildTaskPatchFieldsPayload(latestTask, retryFields),
                             lock_version: retryBaseRevision
                         };
                     }, undefined, retryDatePlacementMode);
+                    if (!retryIsCurrent(true)) {
+                        if (retryRequestSent) retainOwnedRetryOutcomeAsUnknown();
+                        return;
+                    }
                     get().applyTaskMutationMetadata(id, result);
                     if (result.status === 'ok') {
                         const committedGenerations = [...new Set((get().localTaskPatches[id] ?? [])
@@ -2380,7 +2793,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         return;
                     }
                     if (result.status === 'conflict') {
-                        get().registerTaskConflict(id, result.error || (i18n.t('label_conflict') || 'Conflict'), retryGeneration, result.entity, result.revision ?? result.entity?.lockVersion);
+                        get().registerTaskConflict(id, result.error || (i18n.t('label_conflict') || 'Conflict'), retryGeneration, result.entity, result.revision ?? result.entity?.lockVersion, result.entity ? 'known' : 'needs_refresh', 'conflict');
+                        return;
+                    }
+                    if (result.status === 'protocol_error') {
+                        get().registerTaskConflict(id, result.error || (i18n.t('label_failed_to_save') || 'Failed to save'), retryGeneration,
+                            undefined, undefined, 'needs_refresh', 'unknown');
                         return;
                     }
                     get().registerTaskConflict(
@@ -2394,13 +2812,38 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     );
                     return;
                 } catch (error) {
+                    if (!retryIsCurrent(true)) {
+                        if (retryRequestSent) retainOwnedRetryOutcomeAsUnknown();
+                        return;
+                    }
                     const message = error instanceof Error ? error.message : (i18n.t('label_failed_to_save') || 'Failed to save');
-                    get().registerTaskConflict(id, message, retryGeneration);
+                    if (retryRequestSent) retainOwnedRetryOutcomeAsUnknown();
                     useUIStore.getState().addNotification(message, 'error');
                     return;
                 }
             }
+            const fallbackReadContext = get().activeReadContext;
             const failures = await get().saveChanges();
+            const readContextAfterFallback = get().activeReadContext;
+            const fallbackReadContextMatches = fallbackReadContext === readContextAfterFallback || Boolean(
+                fallbackReadContext && readContextAfterFallback &&
+                fallbackReadContext.projectId === readContextAfterFallback.projectId &&
+                fallbackReadContext.queryIdentity === readContextAfterFallback.queryIdentity &&
+                fallbackReadContext.scopeIdentity === readContextAfterFallback.scopeIdentity
+            );
+            if (failures.has(id) && retryOutcomeGenerations.length > 0 && currentViewIdentity() === viewIdentityAtRetry && fallbackReadContextMatches) {
+                set(state => {
+                    let conflict: TaskConflictRecord | undefined = state.taskConflicts[id];
+                    const taskConflicts = { ...state.taskConflicts };
+                    retryOutcomeGenerations.forEach(generation => {
+                        const previousOutcome = capturedOutcomes[String(generation)];
+                        if (!previousOutcome || conflict?.unresolvedMutations?.[String(generation)]) return;
+                        conflict = upsertUnresolvedTaskMutation(id, conflict, previousOutcome);
+                    });
+                    if (conflict) taskConflicts[id] = conflict;
+                    return { taskConflicts };
+                });
+            }
             if (!failures.has(id) && conflictGeneration !== undefined) {
                 get().settleBarOperationTask(id, conflictGeneration);
             }
@@ -2410,6 +2853,27 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const initialState = get();
         const initialConflict = initialState.taskConflicts[id];
         if (!initialConflict) return;
+        const resolutionGeneration = initialConflict.generation ?? Math.max(
+            initialState.editGenerations[id] ?? 0,
+            ...(initialState.localTaskPatches[id] ?? []).map(patch => patch.generation)
+        );
+        const initialOutcomes = Object.fromEntries(Object.entries(initialConflict.unresolvedMutations ?? {})
+            .filter(([generation]) => Number(generation) <= resolutionGeneration));
+        const initialPatches = (initialState.localTaskPatches[id] ?? [])
+            .filter(patch => patch.generation <= resolutionGeneration);
+        let expectedReadContext = initialState.activeReadContext;
+        const ownsResolution = (state: TaskState) => {
+            const current = state.taskConflicts[id];
+            if (!current || state.activeReadContext !== expectedReadContext) return false;
+            const currentOutcomes = Object.fromEntries(Object.entries(current.unresolvedMutations ?? {})
+                .filter(([generation]) => Number(generation) <= resolutionGeneration));
+            if (Object.keys(initialOutcomes).length === 0 && current !== initialConflict) return false;
+            const outcomeOwnership = Object.keys(currentOutcomes).length === Object.keys(initialOutcomes).length &&
+                Object.entries(initialOutcomes).every(([generation, outcome]) => currentOutcomes[generation] === outcome);
+            const currentPatches = (state.localTaskPatches[id] ?? []).filter(patch => patch.generation <= resolutionGeneration);
+            return outcomeOwnership && currentPatches.length === initialPatches.length &&
+                initialPatches.every((patch, index) => currentPatches[index] === patch);
+        };
         const viewIdentityAtResolution = currentViewIdentity();
         invalidateDataRequests();
         let selectedRemote: SelectedConflictRemote | undefined = initialConflict && selectConflictRemote(
@@ -2418,32 +2882,35 @@ export const useTaskStore = create<TaskState>((set, get) => {
         if (!selectedRemote) {
             try {
                 const resyncData = await fetchMutationResyncData({ query: { selectedStatusIds: get().selectedStatusIds } });
-                if (get().taskConflicts[id] !== initialConflict ||
+                if (!ownsResolution(get()) ||
                     currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus !== 'ready') return;
                 const remoteEntity = resyncData.tasks.find(task => task.id === id);
                 if (!remoteEntity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
+                const candidate = { entity: remoteEntity, revision: remoteEntity.lockVersion };
+                const latestRevision = get().serverTaskSnapshot.revisions[id] ?? 0;
+                if (!isValidConflictRemote(id, candidate) || candidate.revision < latestRevision) return;
                 get().applyApiData(resyncData);
-                selectedRemote = { entity: remoteEntity, revision: remoteEntity.lockVersion };
+                expectedReadContext = get().activeReadContext;
+                selectedRemote = candidate;
             } catch (error) {
-                if (get().taskConflicts[id] !== initialConflict ||
+                if (!ownsResolution(get()) ||
                     currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus === 'loading') return;
                 const message = error instanceof Error ? error.message : (i18n.t('label_conflict') || 'Conflict');
-                const conflict = get().taskConflicts[id];
-                get().registerTaskConflict(id, conflict?.message || message, conflict?.generation, undefined, conflict?.remoteRevision, 'unavailable');
                 useUIStore.getState().addNotification(message, 'error');
                 return;
             }
         }
 
         set((state) => {
-            const recordedConflictGeneration = state.taskConflicts[id]?.generation;
-            const conflictGeneration = recordedConflictGeneration ?? state.editGenerations[id] ?? 0;
+            const conflictGeneration = resolutionGeneration;
             const conflictRecord = state.taskConflicts[id];
-            if (!conflictRecord || (initialConflict && conflictRecord !== initialConflict)) return state;
-            const remoteChoice = selectConflictRemote(
-                conflictRecord, state.serverTaskSnapshot, state.activeReadContext, state.dataReadStatus
-            ) ?? selectedRemote;
-            if (!remoteChoice) return state;
+            if (!conflictRecord || currentViewIdentity() !== viewIdentityAtResolution || !ownsResolution(state)) return state;
+            const remoteChoice = Object.keys(initialOutcomes).length === 0
+                ? selectConflictRemote(conflictRecord, state.serverTaskSnapshot, state.activeReadContext, state.dataReadStatus) ?? selectedRemote
+                : selectedRemote;
+            if (!remoteChoice || !isValidConflictRemote(id, remoteChoice)) return state;
+            const latestRevision = state.serverTaskSnapshot.revisions[id] ?? 0;
+            if (remoteChoice.revision < latestRevision) return state;
             const currentTask = state.allTasks.find(task => task.id === id)
                 ?? state.serverTaskSnapshot.entitiesById[id];
             if (!currentTask) return state;
@@ -2455,9 +2922,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
             // A newer canonical revision must never be replaced by an older conflict response.
             if (serverTaskSnapshot.revisions[id] > remoteChoice.revision) return state;
             const canonicalTask = serverTaskSnapshot.entitiesById[id];
-            const laterPatches = recordedConflictGeneration !== undefined
-                ? (state.localTaskPatches[id] ?? []).filter(patch => patch.generation > conflictGeneration)
-                : [];
+            const laterPatches = (state.localTaskPatches[id] ?? []).filter(patch => patch.generation > conflictGeneration);
             const resolvedTask = laterPatches.length > 0
                 ? applyLocalPatches(canonicalTask, laterPatches)
                 : canonicalTask;
@@ -2474,7 +2939,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
             const taskTombstones = { ...state.taskTombstones };
             delete taskTombstones[id];
             const taskConflicts = { ...state.taskConflicts };
-            delete taskConflicts[id];
+            const remainingConflict = settleTaskConflictOutcomes(id, conflictRecord, Object.keys(initialOutcomes).map(Number));
+            if (remainingConflict) taskConflicts[id] = remainingConflict;
+            else delete taskConflicts[id];
             const settlement = settleBarOperationTaskOwnership(
                 state.barOperations,
                 state.activeBarOperationId,
@@ -2923,6 +3390,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return nextState;
     }),
         refreshData: async () => refreshCurrentData('refresh'),
+        getActiveReadContext: () => activeReadContext,
 
     loadInitialData: async (params) => {
         const generation = ++dataRequestGeneration;
@@ -3015,10 +3483,26 @@ export const useTaskStore = create<TaskState>((set, get) => {
     saveChanges: async () => {
         if (saveChangesOperation) return saveChangesOperation;
 
+        let committedTaskCount = 0;
+        let committedRelationCount = 0;
+        let relationWorkCaptured = false;
+        const partialSaveMessage = () => i18n.t('label_relation_save_partial', {
+            task_count: committedTaskCount,
+            relation_count: committedRelationCount
+        }) || 'label_relation_save_partial';
+
         const operation = (async () => {
             while (true) {
                 const snapshot = get();
-                if (snapshot.modifiedTaskIds.size === 0) return new Map<string, string>();
+                if (snapshot.modifiedTaskIds.size === 0 && !hasPendingRelationChanges(snapshot.pendingRelationChanges)) return new Map<string, string>();
+                relationWorkCaptured = relationWorkCaptured || hasPendingRelationChanges(snapshot.pendingRelationChanges);
+                const relationViewIdentity = currentViewIdentity();
+                const relationScopeProjectIds = snapshot.confirmedProjectScope
+                    ? new Set(snapshot.confirmedProjectScope.effectiveProjectIds)
+                    : undefined;
+                const relationScopeIdentity = snapshot.confirmedProjectScope
+                    ? [...snapshot.confirmedProjectScope.effectiveProjectIds].sort().join(',')
+                    : '';
 
                 const snapshotGenerations = { ...snapshot.editGenerations };
                 const snapshotTaskIds = new Set(snapshot.modifiedTaskIds);
@@ -3067,9 +3551,55 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         }
                     }
                 });
+                const relationSnapshot = Object.fromEntries(Object.entries(snapshot.pendingRelationChanges).map(([key, value]) => [key, { ...value }]));
+                const relationOperations = orderedRelationChanges(relationSnapshot);
+                const relationValidation = hasPendingRelationChanges(relationSnapshot)
+                    ? validateRelationDrafts(
+                        snapshot.allTasks,
+                        snapshot.relations,
+                        relationSnapshot,
+                        snapshotMutationFields,
+                        relationScopeProjectIds
+                    )
+                    : null;
+                const conflictedRelation = Object.values(relationSnapshot).find((change) => {
+                    const endpoints = new Set([change.original?.from, change.original?.to, change.desired?.from, change.desired?.to].filter((id): id is string => Boolean(id)));
+                    return [...endpoints].some(taskId => snapshot.taskConflicts[taskId] || Object.values(snapshot.taskConflicts).some(conflict => (
+                        conflict.scheduleOperation?.[taskId] !== undefined || conflict.scheduleReview?.taskIds.includes(taskId)
+                    )));
+                });
+                const relationConflictValidation = conflictedRelation
+                    ? { draftId: conflictedRelation.draftId, error: i18n.t('label_unresolved_task_conflict') || 'label_unresolved_task_conflict' }
+                    : null;
+                if (relationValidation || relationConflictValidation) {
+                    const validation = relationValidation ?? relationConflictValidation!;
+                    set((state) => {
+                        const current = state.pendingRelationChanges[validation.draftId];
+                        if (!current) return state;
+                        return { pendingRelationChanges: {
+                            ...state.pendingRelationChanges,
+                            [validation.draftId]: { ...current, status: current.status === 'unknown' ? 'unknown' : 'failed', error: validation.error }
+                        } };
+                    });
+                    return new Map([[`relation:${validation.draftId}`, validation.error]]);
+                }
+                if (relationOperations.length > 0) {
+                    set((state) => {
+                        const pendingRelationChanges = { ...state.pendingRelationChanges };
+                        relationOperations.forEach((operation) => {
+                            const current = pendingRelationChanges[operation.draftId];
+                            if (current?.generation === operation.generation) {
+                                pendingRelationChanges[operation.draftId] = { ...current, status: 'saving', error: undefined };
+                            }
+                        });
+                        return { pendingRelationChanges };
+                    });
+                }
                 const terminalBarFailureTaskGenerations = new Map<string, number>();
-                const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number; remoteAvailability: MutationRemoteAvailability }>();
+                const conflictMessages = new Map<string, { message: string; generation: number; remoteEntity?: PersistedTaskState; remoteRevision?: number; remoteAvailability: MutationRemoteAvailability; outcome?: 'conflict' | 'unknown' }>();
                 const savedLockVersions = new Map<string, number>();
+                const successfulMutationTaskIds = new Set<string>();
+                const canonicalDerivedDateTaskIds = new Set<string>();
                 const mutationMetadataRecords: Array<{ taskId: string; metadata: MutationMetadata }> = [];
                 let mutationMetadataNeedsRefresh = false;
                 const hasScheduleMutation = Object.values(snapshotMutationScheduling).some(Boolean);
@@ -3089,6 +3619,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         );
                     },
                     (taskId, result) => {
+                        // A protocol error has unknown persistence outcome.
+                        // Its DTO metadata cannot affect tombstones, baselines,
+                        // revisions, or invalidation handling at this boundary.
+                        if (result.status === 'protocol_error') return;
+                        if (result.status === 'ok' && result.entity?.datesDerived === true) {
+                            canonicalDerivedDateTaskIds.add(taskId);
+                        }
                         const invalidatedEntityIds = result.invalidatedEntityIds ?? [];
                         const deletedEntityIds = result.deletedEntityIds ?? [];
                         const sourceDisposition = classifyMutationSourceDisposition(result);
@@ -3122,9 +3659,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                                     : result
                             });
                         }
-                        if (result.status === 'ok') {
-                            get().settleBarOperationTaskThrough(taskId, snapshotGenerations[taskId] ?? 0);
-                        } else if (result.status === 'validation_error' || result.status === 'forbidden' || sourceDisposition !== 'not_applicable') {
+                        if (result.status === 'ok') successfulMutationTaskIds.add(taskId);
+                        if (result.status !== 'ok' && (result.status === 'validation_error' || result.status === 'forbidden' || sourceDisposition !== 'not_applicable')) {
                             const operationGeneration = snapshotGenerations[taskId] ?? 0;
                             const hasBarOperation = Object.values(get().barOperations).some((operation) => (
                                 operation.entityGenerations[taskId] === operationGeneration
@@ -3134,7 +3670,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             }
                         }
                     },
-                    (taskId, message, remoteEntity, remoteRevision) => {
+                    (taskId, message, remoteEntity, remoteRevision, outcome) => {
                         if (remoteEntity) {
                             mutationMetadataRecords.push({
                                 taskId,
@@ -3149,7 +3685,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             generation: snapshotGenerations[taskId] ?? 0,
                             remoteEntity,
                             remoteRevision,
-                            remoteAvailability: remoteEntity ? 'known' : 'unavailable'
+                            remoteAvailability: remoteEntity ? 'known' : 'unavailable',
+                            outcome
                         });
                     },
                     (taskId) => {
@@ -3180,8 +3717,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     snapshotMutationDatePlacementModes
                 );
                 const { failures, savedTaskIds, settledFieldsByTask } = saveResult;
+                committedTaskCount += savedTaskIds.size;
 
-                if (savedLockVersions.size > 0 || mutationMetadataRecords.length > 0) {
+                if (savedLockVersions.size > 0 || mutationMetadataRecords.length > 0 || savedTaskIds.size > 0 || successfulMutationTaskIds.size > 0) {
                     set((state) => {
                         const currentTaskById = new Map(state.allTasks.map((task) => [task.id, task]));
                         const entitiesById = { ...state.serverTaskSnapshot.entitiesById };
@@ -3234,6 +3772,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         });
 
                         const settledTaskById = new Map<string, Task>();
+                        const canonicalDateSettlementIds = new Set([...canonicalDerivedDateTaskIds].filter((taskId) => (
+                            (state.editGenerations[taskId] ?? 0) === (snapshotGenerations[taskId] ?? 0)
+                        )));
                         affectedTaskIds.forEach((taskId) => {
                             if (deletedTaskIds.has(taskId)) return;
                             const currentTask = currentTaskById.get(taskId);
@@ -3241,11 +3782,17 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             if (!canonicalTask) return;
 
                             const patches = state.localTaskPatches[taskId] ?? [];
-                            const patchesToApply = savedLockVersions.has(taskId)
+                            const shouldSettle = savedLockVersions.has(taskId) || canonicalDateSettlementIds.has(taskId);
+                            const settledFields = new Set(settledFieldsByTask.get(taskId) ?? []);
+                            if (canonicalDateSettlementIds.has(taskId)) {
+                                settledFields.add('startDate');
+                                settledFields.add('dueDate');
+                            }
+                            const patchesToApply = shouldSettle
                                 ? settleLocalPatchFields(
                                     patches,
                                     snapshotGenerations[taskId] ?? 0,
-                                    settledFieldsByTask.get(taskId) ?? []
+                                    settledFields
                                 )
                                 : patches;
                             settledTaskById.set(taskId, applyLocalPatches(canonicalTask, patchesToApply));
@@ -3266,9 +3813,52 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         let taskTombstones = state.taskTombstones;
                         let barOperations = state.barOperations;
                         let activeBarOperationId = state.activeBarOperationId;
-                        if (deletedTaskIds.size > 0) {
+                        if (savedTaskIds.size > 0) {
                             localTaskPatches = { ...state.localTaskPatches };
                             modifiedTaskIds = new Set(state.modifiedTaskIds);
+                            snapshotTaskIds.forEach((taskId) => {
+                                if (!savedTaskIds.has(taskId)) return;
+                                const remainingPatches = settleLocalPatchFields(
+                                    localTaskPatches[taskId] ?? [],
+                                    snapshotGenerations[taskId] ?? 0,
+                                    settledFieldsByTask.get(taskId) ?? []
+                                );
+                                if (remainingPatches.length > 0) {
+                                    localTaskPatches[taskId] = remainingPatches;
+                                } else {
+                                    delete localTaskPatches[taskId];
+                                }
+                                if (hasLocalMutationIntent(remainingPatches)) {
+                                    modifiedTaskIds.add(taskId);
+                                } else {
+                                    modifiedTaskIds.delete(taskId);
+                                }
+
+                            });
+                        }
+                        canonicalDateSettlementIds.forEach((taskId) => {
+                            if (localTaskPatches === state.localTaskPatches) localTaskPatches = { ...state.localTaskPatches };
+                            const remainingPatches = settleLocalPatchFields(
+                                localTaskPatches[taskId] ?? [],
+                                snapshotGenerations[taskId] ?? 0,
+                                ['startDate', 'dueDate']
+                            );
+                            if (remainingPatches.length > 0) localTaskPatches[taskId] = remainingPatches;
+                            else delete localTaskPatches[taskId];
+                        });
+                        successfulMutationTaskIds.forEach((taskId) => {
+                            const settlement = settleBarOperationTaskOwnership(
+                                barOperations,
+                                activeBarOperationId,
+                                taskId,
+                                { mode: 'through', generation: snapshotGenerations[taskId] ?? 0 }
+                            );
+                            barOperations = settlement.barOperations;
+                            activeBarOperationId = settlement.activeBarOperationId;
+                        });
+                        if (deletedTaskIds.size > 0) {
+                            if (localTaskPatches === state.localTaskPatches) localTaskPatches = { ...state.localTaskPatches };
+                            if (modifiedTaskIds === state.modifiedTaskIds) modifiedTaskIds = new Set(state.modifiedTaskIds);
                             taskConflicts = { ...state.taskConflicts };
                             taskTombstones = { ...state.taskTombstones };
                             deletedTaskIds.forEach((taskId) => {
@@ -3302,6 +3892,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                             ...(derived ? toDerivedTaskStatePatch(derived) : {}),
                             ...(deletedTaskIds.size > 0
                                 ? { localTaskPatches, modifiedTaskIds, taskConflicts, taskTombstones, barOperations, activeBarOperationId }
+                                : savedTaskIds.size > 0 || successfulMutationTaskIds.size > 0 || canonicalDateSettlementIds.size > 0
+                                    ? { localTaskPatches, modifiedTaskIds, barOperations, activeBarOperationId }
                                 : {}),
                             serverTaskSnapshot: {
                                 ...state.serverTaskSnapshot,
@@ -3312,64 +3904,67 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     });
                 }
 
-                set((state) => {
-                    const modifiedTaskIds = new Set(state.modifiedTaskIds);
-                    const localTaskPatches = { ...state.localTaskPatches };
-                    snapshotTaskIds.forEach((taskId) => {
-                        if (!savedTaskIds.has(taskId)) return;
-                        const savedGeneration = snapshotGenerations[taskId] ?? 0;
-                        const remainingPatches = settleLocalPatchFields(
-                            localTaskPatches[taskId] ?? [],
-                            savedGeneration,
-                            settledFieldsByTask.get(taskId) ?? []
-                        );
-                        if (remainingPatches.length > 0) {
-                            localTaskPatches[taskId] = remainingPatches;
-                        } else {
-                            delete localTaskPatches[taskId];
-                        }
-                        if (hasLocalMutationIntent(remainingPatches)) {
-                            modifiedTaskIds.add(taskId);
-                        } else {
-                            modifiedTaskIds.delete(taskId);
-                        }
-                    });
-                    return { modifiedTaskIds, localTaskPatches };
-                });
-
                 const requiresResync = saveResult.savedTaskIds.size > 0 && [...saveResult.savedTaskIds].some(taskId => (
                     (snapshot.localTaskPatches[taskId] ?? []).some(patch => (
                         BULK_TASK_FIELDS.some(field => field in patch.mutationIntent)
                     ))
                 ));
-                if (saveResult.batchStatus !== 'preflight_failure' && hasScheduleMutation && requiresResync) {
+                const requiresPostTaskRefresh = mutationMetadataNeedsRefresh || (
+                    saveResult.batchStatus !== 'preflight_failure' && hasScheduleMutation && requiresResync
+                );
+                let postCommitRefreshIssue: 'failed' | 'superseded' | undefined;
+                if (requiresPostTaskRefresh) {
                     try {
-                        await get().refreshData();
-                    } catch (error) {
-                        // A failed conflict resync is already represented as a
-                        // terminal conflict. Do not replace that actionable
-                        // result with a second refresh exception; the local
-                        // patch must remain available for manual resolution.
-                        if (conflictMessages.size === 0) throw error;
+                        const refreshOutcome = await get().refreshData();
+                        if (refreshOutcome.status !== 'applied' &&
+                            (savedTaskIds.size > 0 || successfulMutationTaskIds.size > 0)) postCommitRefreshIssue = 'superseded';
+                    } catch {
+                        if (savedTaskIds.size > 0 || successfulMutationTaskIds.size > 0) postCommitRefreshIssue = 'failed';
                     }
-                }
-                if (mutationMetadataNeedsRefresh) {
-                    queueMicrotask(() => {
-                        void get().refreshData().catch((error) => console.error('Failed to refresh invalidated tasks', error));
-                    });
                 }
                 if (conflictMessages.size > 0) {
                     set((state) => {
                         const taskConflicts = { ...state.taskConflicts };
-                        conflictMessages.forEach(({ message, generation, remoteEntity, remoteRevision, remoteAvailability }, taskId) => {
-                            taskConflicts[taskId] = { taskId, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability,
+                        conflictMessages.forEach(({ message, generation, remoteEntity, remoteRevision, remoteAvailability, outcome }, taskId) => {
+                            if (!canRegisterTaskConflict(state, taskId, generation)) return;
+                            const previousConflict = taskConflicts[taskId];
+                            const detectedAt = Date.now();
+                            const base = { ...previousConflict, taskId, message, detectedAt, generation, remoteEntity, remoteRevision, remoteAvailability,
+                                ...(previousConflict?.scheduleOperation ? { scheduleOperation: previousConflict.scheduleOperation } : {}),
                                 ...(snapshotMutationScheduling[taskId] ? { scheduleOperation: Object.fromEntries(
                                     Object.keys(snapshotMutationScheduling).filter(key => snapshotMutationScheduling[key])
                                         .map(key => [key, snapshotGenerations[key] ?? 0])
                                 ) } : {}) };
+                            if (outcome && generation !== undefined && hasLocalPatchOwnership(state.localTaskPatches[taskId], taskId, generation)) {
+                                taskConflicts[taskId] = upsertUnresolvedTaskMutation(taskId, base, {
+                                    generation, message, detectedAt, remoteAvailability, remoteEntity, remoteRevision, outcome
+                                })!;
+                            } else if (previousConflict?.unresolvedMutations) {
+                                taskConflicts[taskId] = projectTaskConflict(taskId, base)!;
+                            } else {
+                                taskConflicts[taskId] = base;
+                            }
                         });
                         return { taskConflicts };
                     });
+                }
+                if (postCommitRefreshIssue) {
+                    const message = i18n.t(postCommitRefreshIssue === 'failed'
+                        ? 'label_post_commit_refresh_failed'
+                        : 'label_post_commit_refresh_superseded') || 'Saved changes could not be refreshed.';
+                    if (relationOperations.length > 0) {
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = { ...current, status: 'pending', error: message };
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                    }
+                    failures.set('refresh', message);
                 }
                 terminalBarFailureTaskGenerations.forEach((operationGeneration, taskId) => {
                     const operation = Object.values(get().barOperations).find((candidate) => (
@@ -3378,29 +3973,371 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     if (operation) get().rollbackBarOperation(operation.operationId);
                 });
                 if (failures.size > 0) {
+                    if (relationOperations.length > 0) {
+                        const blockedMessage = postCommitRefreshIssue
+                            ? failures.get('refresh')!
+                            : i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = { ...current, status: 'pending', error: blockedMessage };
+                                    failures.set(`relation:${operation.draftId}`, blockedMessage);
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                    }
                     const [failedTaskId, failedReason] = failures.entries().next().value as [string, string];
-                    useUIStore.getState().addNotification(
-                        `${i18n.t('label_failed_to_save') || 'Failed to save'} (#${failedTaskId}: ${failedReason})`,
-                        'error'
-                    );
+                    const failureMessage = failedTaskId === 'refresh'
+                        ? failedReason
+                        : failedTaskId.startsWith('relation:')
+                        ? failedReason
+                        : `${i18n.t('label_failed_to_save') || 'Failed to save'} (#${failedTaskId}: ${failedReason})`;
+                    let notificationMessage = relationWorkCaptured && (committedTaskCount > 0 || committedRelationCount > 0)
+                        ? `${partialSaveMessage()} ${failureMessage}`
+                        : failureMessage;
+                    if (postCommitRefreshIssue && failedTaskId !== 'refresh') notificationMessage = `${notificationMessage} ${failures.get('refresh')}`;
+                    useUIStore.getState().addNotification(notificationMessage, 'error');
                     return failures;
                 }
 
-                if (get().modifiedTaskIds.size === 0) return failures;
+                if (relationOperations.length > 0 && get().modifiedTaskIds.size > 0) {
+                    set((state) => {
+                        const pendingRelationChanges = { ...state.pendingRelationChanges };
+                        relationOperations.forEach((operation) => {
+                            const current = pendingRelationChanges[operation.draftId];
+                            if (current?.generation === operation.generation && current.status === 'saving') {
+                                pendingRelationChanges[operation.draftId] = { ...current, status: 'pending' };
+                            }
+                        });
+                        return { pendingRelationChanges };
+                    });
+                    continue;
+                }
+
+                if (relationOperations.length > 0) {
+                    const hasRelationSaveScope = () => currentViewIdentity() === relationViewIdentity &&
+                        (get().confirmedProjectScope
+                            ? [...get().confirmedProjectScope!.effectiveProjectIds].sort().join(',')
+                            : '') === relationScopeIdentity;
+                    if (!hasRelationSaveScope()) {
+                        const message = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = { ...current, status: 'pending', error: message };
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                        return new Map([['relations', message]]);
+                    }
+                    let refreshOutcome: ReadApplyOutcome;
+                    try {
+                        refreshOutcome = await get().refreshData();
+                    } catch {
+                        refreshOutcome = { status: 'superseded' } as ReadApplyOutcome;
+                    }
+                    if (refreshOutcome.status !== 'applied' || !hasRelationSaveScope()) {
+                        const message = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = { ...current, status: 'pending', error: message };
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                        if (committedTaskCount > 0 || committedRelationCount > 0) {
+                            useUIStore.getState().addNotification(`${partialSaveMessage()} ${message}`, 'warning');
+                        }
+                        return new Map([['relations', message]]);
+                    }
+
+                    // Edits can arrive while refresh is in flight. Persist them
+                    // first, then validate drafts against their confirmed state.
+                    if (get().modifiedTaskIds.size > 0) {
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = { ...current, status: 'pending' };
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                        continue;
+                    }
+
+                    const currentState = get();
+                    const revalidationChanges = Object.fromEntries(Object.entries(currentState.pendingRelationChanges).map(([key, value]) => [
+                        key,
+                        value.status === 'saving' ? { ...value, status: 'pending' as const } : value
+                    ]));
+                    const authoritativeTasks = currentState.allTasks.map(task => ({
+                        ...task,
+                        ...(currentState.serverTaskSnapshot.entitiesById[task.id] ?? {})
+                    }));
+                    const revalidation = validateRelationDrafts(
+                        authoritativeTasks,
+                        currentState.relations,
+                        revalidationChanges,
+                        {},
+                        relationScopeProjectIds
+                    );
+                    if (revalidation) {
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = {
+                                        ...current,
+                                        status: current.draftId === revalidation.draftId ? 'failed' : 'pending',
+                                        error: current.draftId === revalidation.draftId ? revalidation.error : undefined
+                                    };
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                        if (committedTaskCount > 0 || committedRelationCount > 0) {
+                            useUIStore.getState().addNotification(`${partialSaveMessage()} ${revalidation.error}`, 'warning');
+                        }
+                        return new Map([[`relation:${revalidation.draftId}`, revalidation.error]]);
+                    }
+
+                    const relationFailures = new Map<string, string>();
+                    let failedOperationId: string | null = null;
+                    const relationEndpointIds = new Set(relationOperations.flatMap(operation => [
+                        operation.original?.from, operation.original?.to,
+                        operation.desired?.from, operation.desired?.to
+                    ]).filter((id): id is string => Boolean(id)));
+                    const hasNewerEndpointEdits = () => [...relationEndpointIds].some(taskId =>
+                        get().modifiedTaskIds.has(taskId) &&
+                        (get().editGenerations[taskId] ?? 0) > (snapshotGenerations[taskId] ?? 0)
+                    );
+                    const committedRelationsBeforeBatch = committedRelationCount;
+                    for (let operationIndex = 0; operationIndex < relationOperations.length; operationIndex += 1) {
+                        const operation = relationOperations[operationIndex];
+                        const current = get().pendingRelationChanges[operation.draftId];
+                        if (!current || current.generation !== operation.generation || current.status !== 'saving') continue;
+                        if (!hasRelationSaveScope() || hasNewerEndpointEdits()) {
+                            const message = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                            set((state) => {
+                                const pendingRelationChanges = { ...state.pendingRelationChanges };
+                                relationOperations.slice(operationIndex).forEach((later) => {
+                                    const active = pendingRelationChanges[later.draftId];
+                                    if (active?.generation === later.generation && active.status === 'saving') {
+                                        pendingRelationChanges[later.draftId] = { ...active, status: 'pending', error: message };
+                                    }
+                                });
+                                return { pendingRelationChanges };
+                            });
+                            relationFailures.set(`relation:${operation.draftId}`, message);
+                            break;
+                        }
+                        try {
+                            const executionGuard = () => {
+                                if (!hasRelationSaveScope() || hasNewerEndpointEdits()) {
+                                    throw new RelationExecutionGuardError(i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked');
+                                }
+                            };
+                            let savedRelation: Relation | null = null;
+                            if (operation.operation === 'create' && operation.desired) {
+                                savedRelation = await taskMutationService.createRelation(
+                                    operation.desired.from,
+                                    operation.desired.to,
+                                    operation.desired.type,
+                                    operation.desired.delay,
+                                    executionGuard
+                                );
+                            } else if (operation.operation === 'update' && operation.relationId && operation.desired && operation.original) {
+                                const expected: ExpectedRelation = {
+                                    from: operation.original.from,
+                                    to: operation.original.to,
+                                    type: operation.original.type,
+                                    ...(operation.original.delay === undefined ? {} : { delay: operation.original.delay })
+                                };
+                                savedRelation = await taskMutationService.updateRelation(
+                                    operation.relationId,
+                                    operation.desired.type,
+                                    operation.desired.delay,
+                                    [operation.original.from, operation.original.to, operation.desired.from, operation.desired.to],
+                                    expected,
+                                    executionGuard
+                                );
+                            } else if (operation.operation === 'delete' && operation.relationId && operation.original) {
+                                const expected: ExpectedRelation = {
+                                    from: operation.original.from,
+                                    to: operation.original.to,
+                                    type: operation.original.type,
+                                    ...(operation.original.delay === undefined ? {} : { delay: operation.original.delay })
+                                };
+                                await taskMutationService.deleteRelation(
+                                    operation.relationId,
+                                    [operation.original.from, operation.original.to],
+                                    expected,
+                                    executionGuard
+                                );
+                            }
+
+                            const relationViewStillCurrent = hasRelationSaveScope();
+                            set((state) => {
+                                const pendingRelationChanges = { ...state.pendingRelationChanges };
+                                const active = pendingRelationChanges[operation.draftId];
+                                if (active?.generation === operation.generation) delete pendingRelationChanges[operation.draftId];
+                                const relations = !relationViewStillCurrent
+                                    ? state.relations
+                                    : operation.operation === 'delete' && operation.relationId
+                                    ? state.relations.filter(relation => relation.id !== operation.relationId)
+                                    : savedRelation
+                                        ? [...state.relations.filter(relation => relation.id !== savedRelation!.id), savedRelation]
+                                        : state.relations;
+                                const derived = buildDerivedTaskState(state, { relations, relationChanges: pendingRelationChanges });
+                                return {
+                                    relations,
+                                    pendingRelationChanges,
+                                    relationEditGeneration: state.relationEditGeneration + 1,
+                                    ...toDerivedTaskStatePatch(derived)
+                                };
+                            });
+                            committedRelationCount += 1;
+                            if (!relationViewStillCurrent) {
+                                queueMicrotask(() => { void get().refreshData().catch(() => undefined); });
+                            }
+                            if (hasNewerEndpointEdits()) {
+                                const message = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                                set((state) => {
+                                    const pendingRelationChanges = { ...state.pendingRelationChanges };
+                                    relationOperations.slice(operationIndex + 1).forEach((later) => {
+                                        const active = pendingRelationChanges[later.draftId];
+                                        if (active?.generation === later.generation && active.status === 'saving') {
+                                            pendingRelationChanges[later.draftId] = { ...active, status: 'pending', error: message };
+                                        }
+                                    });
+                                    return { pendingRelationChanges };
+                                });
+                                relationFailures.set(`relation:${operation.draftId}`, message);
+                                break;
+                            }
+                        } catch (error) {
+                            const errorRecord = error && typeof error === 'object' ? error as { status?: unknown; statusCode?: unknown; httpStatus?: unknown; name?: unknown; knownUnsent?: unknown } : null;
+                            const responseStatus = typeof errorRecord?.status === 'number'
+                                ? errorRecord.status
+                                : typeof errorRecord?.httpStatus === 'number'
+                                    ? errorRecord.httpStatus
+                                    : typeof errorRecord?.statusCode === 'number' ? errorRecord.statusCode : undefined;
+                            const unknown = errorRecord?.knownUnsent !== true && (
+                                responseStatus === undefined || responseStatus === 408 || responseStatus >= 500 ||
+                                errorRecord?.name === 'AbortError' || error instanceof TypeError
+                            );
+                            const message = unknown
+                                ? (i18n.t('label_relation_result_unknown') || 'label_relation_result_unknown')
+                                : (error instanceof Error ? error.message : (i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked'));
+                            set((state) => {
+                                const pendingRelationChanges = { ...state.pendingRelationChanges };
+                                const active = pendingRelationChanges[operation.draftId];
+                                if (active?.generation === operation.generation) {
+                                    pendingRelationChanges[operation.draftId] = { ...active, status: unknown ? 'unknown' : 'failed', error: message };
+                                }
+                                for (const later of relationOperations.slice(operationIndex + 1)) {
+                                    const next = pendingRelationChanges[later.draftId];
+                                    if (next?.generation === later.generation && next.status === 'saving') {
+                                        pendingRelationChanges[later.draftId] = { ...next, status: 'pending', error: undefined };
+                                    }
+                                }
+                                return {
+                                    pendingRelationChanges,
+                                    ...relationDraftDerivedPatch(state, pendingRelationChanges)
+                                };
+                            });
+                            failedOperationId = operation.draftId;
+                            relationFailures.set(`relation:${operation.draftId}`, message);
+                            break;
+                        }
+                    }
+                    let relationRefreshError: string | null = null;
+                    if (committedRelationCount > committedRelationsBeforeBatch) {
+                        try {
+                            const reconcileOutcome = await get().refreshData();
+                            if (reconcileOutcome.status !== 'applied') {
+                                relationRefreshError = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                            }
+                        } catch {
+                            relationRefreshError = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                        }
+                    }
+                    if (relationFailures.size > 0) {
+                        const first = relationFailures.values().next().value as string;
+                        const failure = relationRefreshError ? `${first} ${relationRefreshError}` : first;
+                        useUIStore.getState().addNotification(
+                            committedTaskCount > 0 || committedRelationCount > 0
+                                ? `${partialSaveMessage()} ${failure}`
+                                : failure,
+                            'error'
+                        );
+                        return relationFailures;
+                    }
+                    if (failedOperationId) return relationFailures;
+                    if (relationRefreshError) {
+                        useUIStore.getState().addNotification(`${partialSaveMessage()} ${relationRefreshError}`, 'warning');
+                        return new Map([['relations', relationRefreshError]]);
+                    }
+                }
+
+                const remainingSaveableRelations = orderedRelationChanges(get().pendingRelationChanges).length > 0;
+                if (get().modifiedTaskIds.size === 0 && !remainingSaveableRelations) return failures;
             }
-        })();
+        })().catch((error) => {
+            if (relationWorkCaptured && (committedTaskCount > 0 || committedRelationCount > 0) && hasPendingRelationChanges(get().pendingRelationChanges)) {
+                useUIStore.getState().addNotification(partialSaveMessage(), 'warning');
+            }
+            throw error;
+        });
 
         saveChangesOperation = operation;
         try {
             return await operation;
         } finally {
+            set((state) => {
+                const pendingRelationChanges = { ...state.pendingRelationChanges };
+                let changed = false;
+                Object.values(pendingRelationChanges).forEach((change) => {
+                    if (change.status === 'saving') {
+                        pendingRelationChanges[change.draftId] = {
+                            ...change,
+                            status: 'pending',
+                            error: change.error ?? (i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked')
+                        };
+                        changed = true;
+                    }
+                });
+                return changed ? { pendingRelationChanges } : state;
+            });
             if (saveChangesOperation === operation) saveChangesOperation = null;
         }
     },
 
     discardChanges: async () => {
         const state = get();
-        set({ localTaskPatches: {}, modifiedTaskIds: new Set(), barOperations: {}, activeBarOperationId: null });
+        set({
+            selectedRelationId: null,
+            draftRelation: null,
+            localTaskPatches: {},
+            modifiedTaskIds: new Set(),
+            pendingRelationChanges: {},
+            relationEditGeneration: state.relationEditGeneration + 1,
+            barOperations: {},
+            activeBarOperationId: null,
+            ...toDerivedTaskStatePatch(buildDerivedTaskState(state, { relations: state.relations, relationChanges: {} }))
+        });
         await state.refreshData();
     }
 });

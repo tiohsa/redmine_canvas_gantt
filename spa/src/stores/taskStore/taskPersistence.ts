@@ -7,6 +7,7 @@ import {
 import { i18n } from '../../utils/i18n';
 import type { TaskLayoutSnapshot } from './types';
 import type { MutationMetadata, MutationStatus } from '../../api/client';
+import { isCompleteScheduleMutationAck } from '../../api/mutationDecoders';
 import {
     classifyMutationError,
     classifyMutationResult,
@@ -17,8 +18,9 @@ import { DatePlacementMode, type DatePlacementMode as DatePlacementModeValue } f
 import {
     localTaskFieldForMutationField,
     partitionTaskMutationFields,
-    responseContainsIntendedFields,
     responseMatchesIntendedFields,
+    hasCanonicalTaskAck,
+    withoutUntrustedTaskAck,
     type TaskFields
 } from '../../services/taskMutationService';
 
@@ -106,7 +108,9 @@ export const mutationLifecycleMetrics = {
     failed: 0,
     active: 0,
     maxActive: 0,
-    maxPendingKeys: 0
+    maxPendingKeys: 0,
+    reconciliationSucceeded: 0,
+    reconciliationUnresolved: 0
 };
 
 export const resetMutationLifecycleMetrics = () => {
@@ -116,6 +120,8 @@ export const resetMutationLifecycleMetrics = () => {
     mutationLifecycleMetrics.active = 0;
     mutationLifecycleMetrics.maxActive = 0;
     mutationLifecycleMetrics.maxPendingKeys = 0;
+    mutationLifecycleMetrics.reconciliationSucceeded = 0;
+    mutationLifecycleMetrics.reconciliationUnresolved = 0;
 };
 
 const acquireMutationSlot = async (): Promise<void> => {
@@ -321,7 +327,7 @@ export const saveModifiedTasks = async (
     fetchData: (params: FetchDataParams) => Promise<FetchDataResult>,
     onTaskSaved?: (taskId: string, lockVersion?: number) => void,
     onTaskResult?: (taskId: string, result: UpdateTaskFieldsResult) => void,
-    onConflict?: (taskId: string, message: string, remoteEntity?: PersistedTaskState, remoteRevision?: number) => void,
+    onConflict?: (taskId: string, message: string, remoteEntity?: PersistedTaskState, remoteRevision?: number, outcome?: 'conflict' | 'unknown') => void,
     shouldAbortRemaining?: (taskId: string) => boolean,
     mutationGenerations: Record<string, number> = {},
     mutationFields: Record<string, TaskFields> = {},
@@ -446,6 +452,49 @@ export const saveModifiedTasks = async (
                         };
                     }
                 }
+            }
+        }
+        const canonicalAckIsComplete = isCompleteScheduleMutationAck(scheduleResult, scheduleChanges.map(change => ({
+            taskId: change.taskId,
+            baseRevision: change.baseRevision,
+            fields: change.mutationFields ?? change.fields
+        })));
+        if ((scheduleResult.status === 'ok' && !canonicalAckIsComplete) || scheduleResult.status === 'protocol_error') {
+            // A malformed or incomplete acknowledgement may follow a commit.
+            // Reconcile once from a fresh read and never replay this request.
+            try {
+                const refreshed = await fetchData({ query: { selectedStatusIds } });
+                const refreshedById = new Map(refreshed.tasks.map(task => [task.id, task]));
+                const canonical = scheduleChanges.map(change => refreshedById.get(change.taskId));
+                const allIntentsVisible = scheduleChanges.every((change, index) => {
+                    const task = canonical[index];
+                    return Boolean(task && Number.isSafeInteger(task.lockVersion) && task.lockVersion >= change.baseRevision &&
+                        responseMatchesIntendedFields(change.mutationFields ?? change.fields, task as unknown as PersistedTaskState));
+                });
+                if (allIntentsVisible) {
+                    const entities = canonical as Task[];
+                    scheduleResult = {
+                        status: 'ok', entities: entities as unknown as PersistedTaskState[],
+                        revisions: Object.fromEntries(entities.map(entity => [entity.id, entity.lockVersion!]))
+                    };
+                } else {
+                    scheduleResult = {
+                        status: 'conflict',
+                        errors: [i18n.t('label_schedule_outcome_unknown') || 'The schedule mutation outcome is unknown.'],
+                        entities: canonical.filter((task): task is Task => Boolean(task)) as unknown as PersistedTaskState[],
+                        revisions: Object.fromEntries(scheduleChanges.flatMap(change => {
+                            const task = refreshedById.get(change.taskId);
+                            return task && Number.isSafeInteger(task.lockVersion) ? [[change.taskId, task.lockVersion] as const] : [];
+                        })),
+                        conflicts: scheduleChanges.map(change => ({ taskId: change.taskId }))
+                    };
+                }
+            } catch {
+                scheduleResult = {
+                    status: 'conflict',
+                    errors: [i18n.t('label_schedule_outcome_unknown') || 'The schedule mutation outcome is unknown.'],
+                    conflicts: scheduleChanges.map(change => ({ taskId: change.taskId }))
+                };
             }
         }
         const entitiesById = new Map((scheduleResult.entities ?? []).map(entity => [entity.id, entity]));
@@ -614,7 +663,7 @@ export const saveModifiedTasks = async (
     });
     const attemptCounts = new Map<string, number>();
     const conflictMessages = new Map<string, string>();
-    const conflictCandidates = new Map<string, { intent: MutationIntent; message: string; entity?: PersistedTaskState; revision?: number }>();
+    const conflictCandidates = new Map<string, { intent: MutationIntent; message: string; entity?: PersistedTaskState; revision?: number; outcome: 'conflict' | 'unknown' }>();
     const failureMessage = i18n.t('label_failed_to_save') || 'Failed to save task';
     const unknownErrorMessage = i18n.t('label_unknown_error') || 'Unknown error';
     const conflictMessage = i18n.t('label_conflict') || 'Conflict';
@@ -715,10 +764,18 @@ export const saveModifiedTasks = async (
             try {
                 const result = await enqueueTaskWrite(
                     taskId,
-                    (context) => {
+                    async (context) => {
                         unsentTaskIds.delete(taskId);
                         const fields = residualMutationFields[taskId]!;
-                        return updateTask(task, context?.operationId, fields);
+                        const result = await updateTask(task, context?.operationId, fields);
+                        if (result.status === 'protocol_error') {
+                            return withoutUntrustedTaskAck(result);
+                        }
+                        if (result.status === 'ok' && !hasCanonicalTaskAck(taskId, fields, result, baseRevisions[taskId] ?? task.lockVersion)) {
+                            return withoutUntrustedTaskAck({ ...result, status: 'protocol_error' as const,
+                                error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') });
+                        }
+                        return result;
                     },
                     {
                         onResult: (savedResult) => {
@@ -784,21 +841,18 @@ export const saveModifiedTasks = async (
                 if (typeof result.lockVersion === 'number') {
                     mutableTaskById.set(taskId, { ...task, lockVersion: result.lockVersion });
                 }
-            } else if (outcome === 'conflict') {
+            } else if (outcome === 'conflict' || result.status === 'protocol_error') {
                 const candidate = {
                     intent,
                     message: result.error || conflictMessage,
-                    entity: result.entity,
-                    revision: result.revision ?? result.entity?.lockVersion
+                    entity: result.status === 'protocol_error' ? undefined : result.entity,
+                    revision: result.status === 'protocol_error' ? undefined : result.revision ?? result.lockVersion ?? result.entity?.lockVersion,
+                    outcome: result.status === 'protocol_error' ? 'unknown' as const : 'conflict' as const
                 };
                 conflictCandidates.set(taskId, candidate);
-                if (result.entity && responseContainsIntendedFields(intent.fields, result.entity)) {
-                    if (!responseMatchesIntendedFields(intent.fields, result.entity)) {
-                        failures.set(taskId, candidate.message);
-                        terminalFailureTaskIds.add(taskId);
-                        onConflict?.(taskId, candidate.message, result.entity, candidate.revision);
-                        continue;
-                    }
+                const conflictAckIsComplete = result.status === 'conflict' && result.entity &&
+                    hasCanonicalTaskAck(taskId, intent.fields, { ...result, status: 'ok' }, baseRevisions[taskId] ?? task.lockVersion);
+                if (conflictAckIsComplete && responseMatchesIntendedFields(intent.fields, result.entity!)) {
                     failures.delete(taskId);
                     settledTaskIds.add(taskId);
                     savedTaskIds.add(taskId);
@@ -811,6 +865,11 @@ export const saveModifiedTasks = async (
                     });
                     addSettledFields(taskId, Object.keys(residualMutationFields[taskId] ?? {}));
                     onTaskSaved?.(taskId, candidate.revision);
+                } else if (conflictAckIsComplete) {
+                    pendingTaskIds.delete(taskId);
+                    terminalFailureTaskIds.add(taskId);
+                    failures.set(taskId, candidate.message);
+                    onConflict?.(taskId, candidate.message, result.entity, candidate.revision, candidate.outcome);
                 } else {
                     failures.set(taskId, candidate.message);
                     conflictMessages.set(taskId, candidate.message);
@@ -836,10 +895,11 @@ export const saveModifiedTasks = async (
             } catch (error) {
                 const message = error instanceof Error ? error.message : unknownErrorMessage;
                 [...new Set(conflictTaskIds)].forEach((taskId) => {
+                    mutationLifecycleMetrics.reconciliationUnresolved += 1;
                     pendingTaskIds.delete(taskId);
                     terminalFailureTaskIds.add(taskId);
                     failures.set(taskId, message);
-                    onConflict?.(taskId, i18n.t('label_remote_unavailable_message', { message }) || `${message} (remote unavailable)`, undefined, undefined);
+                    onConflict?.(taskId, i18n.t('label_remote_unavailable_message', { message }) || `${message} (remote unavailable)`, undefined, undefined, 'unknown');
                 });
                 hasProcessedTask = true;
                 continue;
@@ -849,23 +909,28 @@ export const saveModifiedTasks = async (
             [...new Set(conflictTaskIds)].forEach((taskId) => {
                 const localTask = mutableTaskById.get(taskId);
                 const candidate = conflictCandidates.get(taskId);
-                const candidateEntityIsComplete = Boolean(candidate?.entity && responseContainsIntendedFields(candidate.intent.fields, candidate.entity));
-                const latestTask = candidateEntityIsComplete ? candidate?.entity : latestTaskById.get(taskId);
+                const latestTask = latestTaskById.get(taskId);
                 const canonicalRemote = latestTask
-                    ? { entity: latestTask, revision: candidateEntityIsComplete
-                        ? (candidate?.revision ?? latestTask.lockVersion)
-                        : latestTask.lockVersion }
+                    ? { entity: latestTask, revision: latestTask.lockVersion }
                     : undefined;
-                if (!localTask || !canonicalRemote || !candidate) {
+                const remoteRevision = canonicalRemote?.revision;
+                const baseRevision = baseRevisions[taskId];
+                const canonicalRemoteIsValid = Boolean(canonicalRemote && canonicalRemote.entity.id === taskId &&
+                    Number.isSafeInteger(remoteRevision) && remoteRevision! >= 0 &&
+                    remoteRevision! >= (baseRevision ?? localTask?.lockVersion ?? 0) &&
+                    (canonicalRemote.entity.lockVersion === undefined || canonicalRemote.entity.lockVersion === remoteRevision));
+                if (!localTask || !canonicalRemote || !candidate || !canonicalRemoteIsValid) {
+                    mutationLifecycleMetrics.reconciliationUnresolved += 1;
                     pendingTaskIds.delete(taskId);
                     terminalFailureTaskIds.add(taskId);
                     const message = conflictMessages.get(taskId) || conflictMessage;
                     failures.set(taskId, message);
-                    onConflict?.(taskId, i18n.t('label_remote_unavailable_message', { message }) || `${message} (remote unavailable)`, undefined, undefined);
+                    onConflict?.(taskId, i18n.t('label_remote_unavailable_message', { message }) || `${message} (remote unavailable)`, undefined, undefined, 'unknown');
                     return;
                 }
 
                 if (responseMatchesIntendedFields(candidate.intent.fields, canonicalRemote.entity)) {
+                    mutationLifecycleMetrics.reconciliationSucceeded += 1;
                     pendingTaskIds.delete(taskId);
                     failures.delete(taskId);
                     settledTaskIds.add(taskId);
@@ -883,10 +948,11 @@ export const saveModifiedTasks = async (
                 }
 
                 pendingTaskIds.delete(taskId);
+                mutationLifecycleMetrics.reconciliationUnresolved += 1;
                 terminalFailureTaskIds.add(taskId);
                 const message = conflictMessages.get(taskId) || conflictMessage;
                 failures.set(taskId, message);
-                onConflict?.(taskId, message, canonicalRemote.entity, canonicalRemote.revision);
+                    onConflict?.(taskId, message, canonicalRemote.entity, canonicalRemote.revision, candidate?.outcome ?? 'unknown');
             });
         }
 

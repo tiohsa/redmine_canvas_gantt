@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../types';
 import type { TaskFields } from '../../services/taskMutationService';
-import { enqueueMutationOperation, getMutationOperationRecords, getPendingMutationQueueSize, saveModifiedTasks } from './taskPersistence';
+import { enqueueMutationOperation, getMutationOperationRecords, getPendingMutationQueueSize, mutationLifecycleMetrics, saveModifiedTasks } from './taskPersistence';
 import { DatePlacementMode } from '../../types/constraints';
 
 const buildTask = (overrides: Partial<Task>): Task => ({
@@ -27,6 +27,115 @@ const schedulingIntent = (taskIds: Array<string | Task>): Record<string, boolean
 );
 
 describe('saveModifiedTasks', () => {
+    it('reconciles an incomplete task acknowledgement with a fresh remote snapshot without resending', async () => {
+        const task = buildTask({ id: 'task-ack', subject: 'new', lockVersion: 1 });
+        const updateTask = vi.fn().mockResolvedValue({
+            status: 'protocol_error' as const,
+            completeness: 'complete' as const,
+            invalidatedEntityIds: ['other-task'],
+            deletedEntityIds: [task.id],
+            failure: { kind: 'not_found' as const, resourceRole: 'target' as const, resourceType: 'task' as const, resourceId: task.id },
+            entity: { id: 'wrong-task', subject: 'new', lockVersion: 99 },
+            revision: 99,
+            lockVersion: 99
+        });
+        const fetchData = vi.fn().mockResolvedValue({ tasks: [{ ...task, subject: 'new', lockVersion: 2 }] });
+        const onTaskSaved = vi.fn();
+        const onTaskResult = vi.fn();
+        const failedBefore = mutationLifecycleMetrics.failed;
+        const reconciledBefore = mutationLifecycleMetrics.reconciliationSucceeded;
+        const result = await saveModifiedTasks(
+            [task], [], new Set([task.id]), [], updateTask, fetchData, onTaskSaved, onTaskResult,
+            undefined, undefined, undefined, { [task.id]: { subject: 'new' } }
+        );
+
+        expect(updateTask).toHaveBeenCalledTimes(1);
+        expect(fetchData).toHaveBeenCalledTimes(1);
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toEqual(new Set([task.id]));
+        expect(onTaskSaved).toHaveBeenCalledWith(task.id, 2);
+        expect(onTaskResult).toHaveBeenCalledWith(task.id, expect.objectContaining({
+            status: 'protocol_error', entity: undefined, revision: undefined, lockVersion: undefined,
+            completeness: undefined, invalidatedEntityIds: undefined, deletedEntityIds: undefined, failure: undefined
+        }));
+        expect(mutationLifecycleMetrics.failed).toBe(failedBefore + 1);
+        expect(mutationLifecycleMetrics.reconciliationSucceeded).toBe(reconciledBefore + 1);
+    });
+
+    it.each([
+        ['remote still has base value', async (task: Task) => ({ tasks: [{ ...task, subject: 'old', lockVersion: 1 }] })],
+        ['remote revision is stale', async (task: Task) => ({ tasks: [{ ...task, subject: 'new', lockVersion: 0 }] })],
+        ['remote read is unavailable', async (): Promise<{ tasks: Task[] }> => { throw new Error('offline'); }]
+    ])('retains an unconfirmed patch when %s', async (_case, fetchResult) => {
+        const task = buildTask({ id: 'unknown-task', subject: 'new', lockVersion: 1 });
+        const updateTask = vi.fn().mockResolvedValue({ status: 'protocol_error' as const, error: 'invalid ack' });
+        const onConflict = vi.fn();
+        const result = await saveModifiedTasks(
+            [task], [], new Set([task.id]), [], updateTask, vi.fn().mockImplementation(() => fetchResult(task)),
+            undefined, undefined, onConflict, undefined, undefined, { [task.id]: { subject: 'new' } },
+            undefined, undefined, undefined, { [task.id]: 1 }
+        );
+
+        expect(updateTask).toHaveBeenCalledTimes(1);
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.settledFieldsByTask.size).toBe(0);
+        expect(result.failures.has(task.id)).toBe(true);
+        expect(onConflict).toHaveBeenCalled();
+    });
+
+    it('commits an incomplete acknowledgement only after fresh remote data confirms the requested value', async () => {
+        const task = buildTask({ id: 'incomplete-ack', dueDate: 11, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({ status: 'ok', entities: [], revisions: {} });
+        const onTaskSaved = vi.fn();
+        const result = await saveModifiedTasks(
+            [task], [], new Set([task.id]), [], vi.fn(),
+            vi.fn().mockResolvedValue({ tasks: [{ ...task, dueDate: 11, lockVersion: 2 }] }),
+            onTaskSaved, undefined, undefined, undefined, undefined,
+            { [task.id]: { due_date: 11 } }, undefined, { [task.id]: true }, scheduleMutation,
+            { [task.id]: 1 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(1);
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toEqual(new Set([task.id]));
+        expect(onTaskSaved).toHaveBeenCalledWith(task.id, 2);
+    });
+
+    it('accepts the server canonical date when it normalizes the requested schedule date', async () => {
+        const task = buildTask({ id: 'normalized-date', dueDate: 10, lockVersion: 1 });
+        const canonical = { id: task.id, dueDate: 12, lockVersion: 2 };
+        const onTaskResult = vi.fn();
+        const result = await saveModifiedTasks(
+            [task], [], new Set([task.id]), [], vi.fn(), vi.fn(),
+            undefined, onTaskResult, undefined, undefined, undefined,
+            { [task.id]: { due_date: 11 } }, undefined, { [task.id]: true },
+            vi.fn().mockResolvedValue({ status: 'ok', entities: [canonical], revisions: { [task.id]: 2 } }),
+            { [task.id]: 1 }
+        );
+
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toEqual(new Set([task.id]));
+        expect(onTaskResult).toHaveBeenCalledWith(task.id, expect.objectContaining({ status: 'ok', entity: canonical }));
+    });
+
+    it('does not resend an unconfirmed schedule mutation when a fresh read still shows the base value', async () => {
+        const task = buildTask({ id: 'unknown-ack', dueDate: 10, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({ status: 'protocol_error', entities: [], revisions: {} });
+        const onConflict = vi.fn();
+        const result = await saveModifiedTasks(
+            [task], [], new Set([task.id]), [], vi.fn(),
+            vi.fn().mockResolvedValue({ tasks: [{ ...task }] }),
+            undefined, undefined, onConflict, undefined, undefined,
+            { [task.id]: { due_date: 11 } }, undefined, { [task.id]: true }, scheduleMutation,
+            { [task.id]: 1 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(1);
+        expect(result.failures.has(task.id)).toBe(true);
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(onConflict).toHaveBeenCalledWith(task.id, expect.any(String), expect.objectContaining({ id: task.id }), 1);
+    });
+
     it('keeps the schedule mutation mode through a response-loss retry', async () => {
         const task = buildTask({ id: 'retry-mode', dueDate: 11, lockVersion: 1 });
         const scheduleMutation = vi.fn()
@@ -64,18 +173,24 @@ describe('saveModifiedTasks', () => {
             buildTask({ id: 'A', subject: 'old subject', dueDate: 11, lockVersion: 1 }),
             buildTask({ id: 'B', subject: 'old B', lockVersion: 5 })
         ];
-        const updateTask = vi.fn().mockImplementation(async (task: Task, _operationId?: string, fields?: TaskFields) => ({
-            status: 'ok' as const,
-            lockVersion: task.id === 'B' ? 7 : 3,
-            entity: { id: task.id, subject: fields?.subject, lockVersion: task.id === 'B' ? 7 : 3 }
-        }));
-        const scheduleMutation = vi.fn().mockResolvedValue({
-            status: 'ok' as const,
-            entities: [
-                { id: 'A', dueDate: 11, lockVersion: 2 },
-                { id: 'B', subject: 'old B', lockVersion: 6 }
-            ],
-            revisions: { A: 2, B: 6 }
+        const updateTask = vi.fn();
+        const order: string[] = [];
+        const scheduleMutation = vi.fn();
+        scheduleMutation.mockImplementation(async () => {
+            order.push('schedule');
+            return {
+                status: 'ok' as const,
+                entities: [{ id: 'A', dueDate: 11, lockVersion: 2 }, { id: 'B', subject: 'old B', lockVersion: 6 }],
+                revisions: { A: 2, B: 6 }
+            };
+        });
+        updateTask.mockImplementation(async (task: Task, _operationId?: string, fields?: TaskFields) => {
+            order.push(`residual:${task.id}`);
+            return {
+                status: 'ok' as const,
+                lockVersion: task.id === 'B' ? 7 : 3,
+                entity: { id: task.id, subject: fields?.subject, lockVersion: task.id === 'B' ? 7 : 3 }
+            };
         });
 
         const result = await saveModifiedTasks(
@@ -109,6 +224,30 @@ describe('saveModifiedTasks', () => {
         expect(result.failures).toEqual(new Map());
         expect(result.savedTaskIds).toEqual(new Set(['A', 'B']));
         expect(result.settledFieldsByTask.get('A')).toEqual(new Set(['dueDate', 'subject']));
+        expect(order).toEqual(['schedule', 'residual:A', 'residual:B']);
+    });
+
+    it('does not send a same-save residual PATCH when the schedule mutation fails', async () => {
+        const task = buildTask({ id: 'A', subject: 'old', dueDate: 11, lockVersion: 1 });
+        const updateTask = vi.fn();
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const, errors: ['stale schedule'], entities: [], revisions: {}
+        });
+        const onConflict = vi.fn();
+
+        const result = await saveModifiedTasks(
+            [task], [], new Set([task.id]), [], updateTask,
+            vi.fn().mockResolvedValue({ tasks: [task] }),
+            undefined, undefined, onConflict, undefined, undefined,
+            { [task.id]: { due_date: 12, subject: 'local subject' } },
+            undefined, { [task.id]: true }, scheduleMutation, { [task.id]: 1 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(1);
+        expect(updateTask).not.toHaveBeenCalled();
+        expect(result.failures.has(task.id)).toBe(true);
+        expect(result.settledFieldsByTask.size).toBe(0);
+        expect(onConflict).toHaveBeenCalledTimes(1);
     });
 
     it('publishes only the stale schedule entity as an external conflict', async () => {
@@ -718,7 +857,7 @@ describe('saveModifiedTasks', () => {
         const updateTask = vi.fn().mockImplementation(async (task: Task) => (
             task.id === 'A'
                 ? { status: 'validation_error' as const, error: 'invalid A' }
-                : { status: 'ok' as const, lockVersion: 2 }
+                : { status: 'ok' as const, entity: { id: task.id, statusId: 2, lockVersion: 2 }, lockVersion: 2 }
         ));
 
         const result = await saveModifiedTasks(
@@ -789,7 +928,11 @@ describe('saveModifiedTasks', () => {
 
     it('does not preflight a cycle when all modified intents are ordinary', async () => {
         const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
-        const updateTask = vi.fn().mockResolvedValue({ status: 'ok' as const, lockVersion: 2 });
+        const updateTask = vi.fn().mockImplementation(async (task: Task, _operationId?: string, fields?: TaskFields) => ({
+            status: 'ok' as const,
+            entity: { id: task.id, subject: fields?.subject as string | undefined, statusId: fields?.status_id as number | undefined, lockVersion: 2 },
+            lockVersion: 2
+        }));
 
         const result = await saveModifiedTasks(
             tasks,
@@ -1132,7 +1275,7 @@ describe('saveModifiedTasks', () => {
 
         expect(fetchData).not.toHaveBeenCalled();
         expect(result.savedTaskIds).toEqual(new Set());
-        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock', remote, 2);
+        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock', remote, 2, 'conflict');
     });
 
     it('falls back to one resync when a 409 entity omits an owned field', async () => {
@@ -1254,7 +1397,7 @@ describe('saveModifiedTasks', () => {
         expect(result.savedTaskIds).toEqual(new Set());
         expect(result.unsentTaskIds).toEqual(new Set());
         expect(result.failures.get('A')).toBe('resync unavailable');
-        expect(onConflict).toHaveBeenCalledWith('A', 'resync unavailable (remote unavailable)', undefined, undefined);
+        expect(onConflict).toHaveBeenCalledWith('A', 'resync unavailable (remote unavailable)', undefined, undefined, 'unknown');
     });
 
     it('does not treat a conflict response outside the current scope as success', async () => {
@@ -1283,7 +1426,7 @@ describe('saveModifiedTasks', () => {
         expect(fetchData).toHaveBeenCalledTimes(1);
         expect(result.savedTaskIds).toEqual(new Set());
         expect(result.failures.get('A')).toBe('stale lock');
-        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock (remote unavailable)', undefined, undefined);
+        expect(onConflict).toHaveBeenCalledWith('A', 'stale lock (remote unavailable)', undefined, undefined, 'unknown');
     });
 
     it('records multiple differing conflicts in one resync without retrying with newer lock versions', async () => {
@@ -1319,8 +1462,8 @@ describe('saveModifiedTasks', () => {
             ['B', 'B stale lock']
         ]));
         expect(result.savedTaskIds).toEqual(new Set());
-        expect(onConflict).toHaveBeenCalledWith('A', 'A stale lock', remoteA, 2);
-        expect(onConflict).toHaveBeenCalledWith('B', 'B stale lock', remoteB, 4);
+        expect(onConflict).toHaveBeenCalledWith('A', 'A stale lock', remoteA, 2, 'conflict');
+        expect(onConflict).toHaveBeenCalledWith('B', 'B stale lock', remoteB, 4, 'conflict');
     });
 
     it('blocks a successor after a not-found predecessor', async () => {
