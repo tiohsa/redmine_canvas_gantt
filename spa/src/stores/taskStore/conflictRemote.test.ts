@@ -15,6 +15,9 @@ describe('conflict remote validation', () => {
             expect(isValidConflictRemote('42', { entity: task('42', revision), revision })).toBe(false);
         }
         expect(isValidConflictRemote('42', { entity: task('42', 2), revision: 3 })).toBe(false);
+        expect(isValidConflictRemote('42', {
+            entity: { ...task('42', 2), lockVersion: undefined as unknown as number }, revision: 2
+        })).toBe(false);
     });
 
     it('selects a valid known response and refuses a stale response over a newer snapshot', () => {

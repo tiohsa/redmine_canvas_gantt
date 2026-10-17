@@ -2708,13 +2708,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
             if (canRetryFieldsDirectly && confirmedRemote) {
                 let retryRequestSent = false;
                 const retainOwnedRetryOutcomeAsUnknown = () => set(state => {
-                    if (currentViewIdentity() !== viewIdentityAtRetry || state.activeReadContext !== retryReadContext) return state;
                     const current = state.taskConflicts[id];
                     if (!current) return state;
                     let updated = current;
                     for (const [generation, captured] of Object.entries(capturedScopedOutcomes)) {
                         const patchStillOwned = retryOwnedPatches.some(patch => (
-                            String(patch.generation) === generation && (state.localTaskPatches[id] ?? []).includes(patch)
+                            patch.entityId === id && String(patch.generation) === generation &&
+                            (state.localTaskPatches[id] ?? []).includes(patch)
                         ));
                         if (!patchStillOwned || current.unresolvedMutations?.[generation] !== captured) continue;
                         updated = upsertUnresolvedTaskMutation(id, updated, {
@@ -2728,7 +2728,8 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         }) ?? updated;
                     }
                     if (Object.keys(capturedScopedOutcomes).length === 0 && current === conflictRecord &&
-                        retryOwnedPatches.some(patch => (state.localTaskPatches[id] ?? []).includes(patch))) {
+                        retryOwnedPatches.some(patch => patch.entityId === id &&
+                            (state.localTaskPatches[id] ?? []).includes(patch))) {
                         updated = upsertUnresolvedTaskMutation(id, updated, {
                             generation: retryGeneration,
                             message: i18n.t('label_conflict_review_again') || 'The retry result needs review.',

@@ -3449,6 +3449,27 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.taskConflicts['task-1']).toBeDefined();
     });
 
+    it.each(['remote', 'local'] as const)('rejects a stored candidate without lockVersion during %s resolution', async resolution => {
+        const original = buildTask({ id: 'task-1', subject: 'base', lockVersion: 1 });
+        const context = createReadContext({ generation: 1, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh' });
+        useTaskStore.getState().applyApiData(buildApiData([original]), context);
+        useTaskStore.getState().updateTask('task-1', { subject: 'local' });
+        useTaskStore.getState().registerTaskConflict(
+            'task-1', 'conflict', 1,
+            { ...original, subject: 'invalid', lockVersion: undefined } as unknown as Task,
+            2
+        );
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([]));
+
+        await useTaskStore.getState().resolveTaskConflict('task-1', resolution);
+
+        const state = useTaskStore.getState();
+        expect(apiClient.updateTaskFields).not.toHaveBeenCalled();
+        expect(state.serverTaskSnapshot.entitiesById['task-1']?.subject).toBe('base');
+        expect(state.localTaskPatches['task-1']).toHaveLength(1);
+        expect(state.taskConflicts['task-1']).toBeDefined();
+    });
+
     it('cleans the settled bar operation when conflict resolution adopts the remote task (non-schedule fields)', async () => {
         const localTask = buildTask({ id: 'task-1', ratioDone: 20 });
         const remoteTask = buildTask({ id: 'task-1', ratioDone: 50, lockVersion: 2 });
@@ -4598,7 +4619,12 @@ describe('TaskStore asynchronous state ownership', () => {
         expect(state.taskConflicts['task-1']).toBeDefined();
     });
 
-    it.each(['remote', 'local'] as const)('rejects an invalid fresh-read candidate before applying its data (%s)', async resolution => {
+    it.each([
+        ['missing lock version', 'remote', undefined],
+        ['missing lock version', 'local', undefined],
+        ['NaN lock version', 'remote', Number.NaN],
+        ['NaN lock version', 'local', Number.NaN]
+    ] as const)('rejects a fresh-read candidate with %s during %s resolution', async (_case, resolution, lockVersion) => {
         const original = buildTask({ id: 'task-1', subject: 'base', lockVersion: 1 });
         const context = createReadContext({ generation: 1, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh' });
         useTaskStore.getState().applyApiData(buildApiData([original]), context);
@@ -4606,7 +4632,7 @@ describe('TaskStore asynchronous state ownership', () => {
         useTaskStore.getState().registerTaskConflict('task-1', 'conflict', 1);
         vi.mocked(apiClient.fetchData)
             .mockResolvedValueOnce(buildApiData([
-                buildTask({ id: 'task-1', subject: 'invalid remote', lockVersion: Number.NaN })
+                { ...original, subject: 'invalid remote', lockVersion } as unknown as Task
             ]))
             .mockResolvedValue(buildApiData([original]));
 
@@ -4642,6 +4668,125 @@ describe('TaskStore asynchronous state ownership', () => {
             '2': { outcome: 'unknown', message: 'late outcome' }
         });
         expect(useTaskStore.getState().localTaskPatches['task-1']).toHaveLength(2);
+    });
+
+    it.each(['protocol_error', 'ok'] as const)('retains a sent retry as unknown after a query change (%s)', async outcome => {
+        const original = buildTask({ id: 'task-1', subject: 'base', lockVersion: 1 });
+        const context = createReadContext({ generation: 1, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh' });
+        useTaskStore.getState().applyApiData(buildApiData([original]), context);
+        useTaskStore.getState().updateTask('task-1', { subject: 'local edit' });
+        const generation = useTaskStore.getState().editGenerations['task-1'];
+        useTaskStore.getState().registerTaskConflict(
+            'task-1', 'conflict', generation, { ...original, subject: 'remote', lockVersion: 2 }, 2
+        );
+        const request = deferred<Awaited<ReturnType<typeof apiClient.updateTaskFields>>>();
+        vi.mocked(apiClient.updateTaskFields).mockReturnValueOnce(request.promise);
+
+        const retry = useTaskStore.getState().resolveTaskConflict('task-1', 'local');
+        await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([{ ...original, subject: 'new view', lockVersion: 4 }]));
+        useTaskStore.getState().setSelectedAssigneeIds([99]);
+        request.resolve(outcome === 'ok'
+            ? buildMutationAck('task-1', { subject: 'local edit' }, 3)
+            : { status: 'protocol_error', error: 'ambiguous response' });
+        await retry;
+        await vi.waitFor(() => expect(useTaskStore.getState().activeReadContext?.queryIdentity).toContain('selectedAssigneeIds'));
+
+        const state = useTaskStore.getState();
+        expect(state.selectedAssigneeIds).toEqual([99]);
+        expect(state.localTaskPatches['task-1']).toHaveLength(1);
+        expect(state.serverTaskSnapshot.revisions['task-1']).not.toBe(3);
+        expect(state.taskConflicts['task-1']?.unresolvedMutations?.[String(generation)]).toMatchObject({
+            outcome: 'unknown', remoteAvailability: 'needs_refresh'
+        });
+        expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a later generation outcome when an earlier sent retry becomes unknown after a view change', async () => {
+        const original = buildTask({ id: 'task-1', subject: 'base', lockVersion: 1 });
+        useTaskStore.getState().applyApiData(buildApiData([original]));
+        useTaskStore.getState().updateTask('task-1', { subject: 'first local' });
+        const firstGeneration = useTaskStore.getState().editGenerations['task-1'];
+        useTaskStore.getState().registerTaskConflict(
+            'task-1', 'first conflict', firstGeneration, { ...original, lockVersion: 2 }, 2
+        );
+        const request = deferred<Awaited<ReturnType<typeof apiClient.updateTaskFields>>>();
+        vi.mocked(apiClient.updateTaskFields).mockReturnValueOnce(request.promise);
+
+        const retry = useTaskStore.getState().resolveTaskConflict('task-1', 'local');
+        await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
+        useTaskStore.getState().updateTask('task-1', { statusId: 2 });
+        const laterGeneration = useTaskStore.getState().editGenerations['task-1'];
+        useTaskStore.getState().registerTaskConflict(
+            'task-1', 'later outcome', laterGeneration, undefined, undefined, 'needs_refresh', 'unknown'
+        );
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([original]));
+        useTaskStore.getState().setSelectedAssigneeIds([99]);
+        request.resolve({ status: 'protocol_error', error: 'ambiguous response' });
+        await retry;
+
+        const state = useTaskStore.getState();
+        expect(state.taskConflicts['task-1']?.unresolvedMutations).toMatchObject({
+            [firstGeneration]: { outcome: 'unknown', remoteAvailability: 'needs_refresh' },
+            [laterGeneration]: { outcome: 'unknown', message: 'later outcome' }
+        });
+        expect(state.localTaskPatches['task-1']).toHaveLength(2);
+        expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not send a queued retry or mark it unknown after the view changes', async () => {
+        const original = buildTask({ id: 'task-1', subject: 'base', lockVersion: 1 });
+        useTaskStore.getState().applyApiData(buildApiData([original]));
+        useTaskStore.getState().updateTask('task-1', { subject: 'local edit' });
+        const generation = useTaskStore.getState().editGenerations['task-1'];
+        useTaskStore.getState().registerTaskConflict(
+            'task-1', 'conflict', generation, { ...original, lockVersion: 2 }, 2
+        );
+        const firstRequest = deferred<Awaited<ReturnType<typeof apiClient.updateTaskFields>>>();
+        vi.mocked(apiClient.updateTaskFields).mockReturnValueOnce(firstRequest.promise);
+
+        const firstMutation = taskMutationService.updateTaskFields('task-1', () => ({ subject: 'earlier write' }));
+        const retry = useTaskStore.getState().resolveTaskConflict('task-1', 'local');
+        await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
+        vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([original]));
+        useTaskStore.getState().setSelectedAssigneeIds([99]);
+        firstRequest.resolve(buildMutationAck('task-1', { subject: 'earlier write' }, 2));
+        await firstMutation;
+        await retry;
+
+        expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1);
+        expect(useTaskStore.getState().localTaskPatches['task-1']).toHaveLength(1);
+        expect(useTaskStore.getState().taskConflicts['task-1']?.unresolvedMutations?.[String(generation)])
+            .toMatchObject({ outcome: 'conflict' });
+    });
+
+    it.each(['removed', 'replaced'] as const)('does not restore an unknown outcome after the retried patch is %s', async change => {
+        const original = buildTask({ id: 'task-1', subject: 'base', lockVersion: 1 });
+        const context = createReadContext({ generation: 1, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh' });
+        useTaskStore.getState().applyApiData(buildApiData([original]), context);
+        useTaskStore.getState().updateTask('task-1', { subject: 'local edit' });
+        const generation = useTaskStore.getState().editGenerations['task-1'];
+        useTaskStore.getState().registerTaskConflict(
+            'task-1', 'conflict', generation, { ...original, lockVersion: 2 }, 2
+        );
+        const request = deferred<Awaited<ReturnType<typeof apiClient.updateTaskFields>>>();
+        vi.mocked(apiClient.updateTaskFields).mockReturnValueOnce(request.promise);
+
+        const retry = useTaskStore.getState().resolveTaskConflict('task-1', 'local');
+        await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
+        const originalPatch = useTaskStore.getState().localTaskPatches['task-1']![0];
+        useTaskStore.setState(state => ({
+            localTaskPatches: {
+                ...state.localTaskPatches,
+                'task-1': change === 'removed' ? [] : [{ ...originalPatch, mutationIntent: { subject: 'replacement' } }]
+            }
+        }));
+        request.resolve({ status: 'protocol_error', error: 'ambiguous response' });
+        await retry;
+
+        const state = useTaskStore.getState();
+        expect(state.localTaskPatches['task-1']).toHaveLength(change === 'removed' ? 0 : 1);
+        expect(state.taskConflicts['task-1']?.unresolvedMutations?.[String(generation)]).toMatchObject({ outcome: 'conflict' });
     });
 });
 

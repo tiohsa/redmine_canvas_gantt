@@ -14,7 +14,7 @@ export type SelectedConflictRemote = { entity: PersistedTaskState; revision: num
 export const isValidConflictRemote = (taskId: string, candidate: SelectedConflictRemote): boolean => (
     candidate.entity.id === taskId &&
     Number.isSafeInteger(candidate.revision) && candidate.revision >= 0 &&
-    (candidate.entity.lockVersion === undefined || candidate.entity.lockVersion === candidate.revision)
+    Number.isSafeInteger(candidate.entity.lockVersion) && candidate.entity.lockVersion === candidate.revision
 );
 
 /** Select the same confirmed server value for comparison and both conflict resolutions. */
