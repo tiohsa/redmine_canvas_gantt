@@ -173,18 +173,24 @@ describe('saveModifiedTasks', () => {
             buildTask({ id: 'A', subject: 'old subject', dueDate: 11, lockVersion: 1 }),
             buildTask({ id: 'B', subject: 'old B', lockVersion: 5 })
         ];
-        const updateTask = vi.fn().mockImplementation(async (task: Task, _operationId?: string, fields?: TaskFields) => ({
-            status: 'ok' as const,
-            lockVersion: task.id === 'B' ? 7 : 3,
-            entity: { id: task.id, subject: fields?.subject, lockVersion: task.id === 'B' ? 7 : 3 }
-        }));
-        const scheduleMutation = vi.fn().mockResolvedValue({
-            status: 'ok' as const,
-            entities: [
-                { id: 'A', dueDate: 11, lockVersion: 2 },
-                { id: 'B', subject: 'old B', lockVersion: 6 }
-            ],
-            revisions: { A: 2, B: 6 }
+        const updateTask = vi.fn();
+        const order: string[] = [];
+        const scheduleMutation = vi.fn();
+        scheduleMutation.mockImplementation(async () => {
+            order.push('schedule');
+            return {
+                status: 'ok' as const,
+                entities: [{ id: 'A', dueDate: 11, lockVersion: 2 }, { id: 'B', subject: 'old B', lockVersion: 6 }],
+                revisions: { A: 2, B: 6 }
+            };
+        });
+        updateTask.mockImplementation(async (task: Task, _operationId?: string, fields?: TaskFields) => {
+            order.push(`residual:${task.id}`);
+            return {
+                status: 'ok' as const,
+                lockVersion: task.id === 'B' ? 7 : 3,
+                entity: { id: task.id, subject: fields?.subject, lockVersion: task.id === 'B' ? 7 : 3 }
+            };
         });
 
         const result = await saveModifiedTasks(
@@ -218,6 +224,30 @@ describe('saveModifiedTasks', () => {
         expect(result.failures).toEqual(new Map());
         expect(result.savedTaskIds).toEqual(new Set(['A', 'B']));
         expect(result.settledFieldsByTask.get('A')).toEqual(new Set(['dueDate', 'subject']));
+        expect(order).toEqual(['schedule', 'residual:A', 'residual:B']);
+    });
+
+    it('does not send a same-save residual PATCH when the schedule mutation fails', async () => {
+        const task = buildTask({ id: 'A', subject: 'old', dueDate: 11, lockVersion: 1 });
+        const updateTask = vi.fn();
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'conflict' as const, errors: ['stale schedule'], entities: [], revisions: {}
+        });
+        const onConflict = vi.fn();
+
+        const result = await saveModifiedTasks(
+            [task], [], new Set([task.id]), [], updateTask,
+            vi.fn().mockResolvedValue({ tasks: [task] }),
+            undefined, undefined, onConflict, undefined, undefined,
+            { [task.id]: { due_date: 12, subject: 'local subject' } },
+            undefined, { [task.id]: true }, scheduleMutation, { [task.id]: 1 }
+        );
+
+        expect(scheduleMutation).toHaveBeenCalledTimes(1);
+        expect(updateTask).not.toHaveBeenCalled();
+        expect(result.failures.has(task.id)).toBe(true);
+        expect(result.settledFieldsByTask.size).toBe(0);
+        expect(onConflict).toHaveBeenCalledTimes(1);
     });
 
     it('publishes only the stale schedule entity as an external conflict', async () => {

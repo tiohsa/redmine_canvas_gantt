@@ -87,7 +87,7 @@ import {
     type ReadContext,
     type ServerSnapshot
 } from './taskStore/stateContract';
-import { selectConflictRemote, type SelectedConflictRemote } from './taskStore/conflictRemote';
+import { isValidConflictRemote, selectConflictRemote, type SelectedConflictRemote } from './taskStore/conflictRemote';
 import { projectTaskConflict, settleTaskConflictOutcomes, upsertUnresolvedTaskMutation, type UnresolvedTaskMutation } from './taskStore/taskConflictRecords';
 import { applyScheduleConflict, prepareScheduleConflict, scheduleConflictIds, selectScheduleConflict, type ScheduleConflictReview } from './taskStore/scheduleConflictResolution';
 import {
@@ -2639,25 +2639,33 @@ export const useTaskStore = create<TaskState>((set, get) => {
             );
             const retryOutcomeGenerations = Object.keys(conflictRecord.unresolvedMutations ?? {})
                 .map(Number).filter(generation => generation <= maxRetryGeneration);
-            const retryGenerationScope = [...new Set((beforeRetry.localTaskPatches[id] ?? [])
-                .filter(patch => patch.generation <= maxRetryGeneration).map(patch => patch.generation))];
             const retryOwnedPatches = (beforeRetry.localTaskPatches[id] ?? [])
                 .filter(patch => patch.generation <= maxRetryGeneration);
             const capturedOutcomes = conflictRecord.unresolvedMutations ?? {};
+            const capturedScopedOutcomes = Object.fromEntries(Object.entries(capturedOutcomes)
+                .filter(([generation]) => Number(generation) <= maxRetryGeneration));
             const viewIdentityAtRetry = currentViewIdentity();
             let retryReadContext = beforeRetry.activeReadContext;
             const retryIsCurrent = (allowNewerEdits = false) => {
                 const state = get();
                 const currentConflict = state.taskConflicts[id];
-                const ownsOutcomes = retryGenerationScope.every(generation =>
-                    currentConflict?.unresolvedMutations?.[String(generation)] === capturedOutcomes[String(generation)]);
+                const currentScopedOutcomes = Object.fromEntries(Object.entries(currentConflict?.unresolvedMutations ?? {})
+                    .filter(([generation]) => Number(generation) <= maxRetryGeneration));
+                const ownsOutcomes = Object.keys(currentScopedOutcomes).length === Object.keys(capturedScopedOutcomes).length &&
+                    Object.entries(capturedScopedOutcomes).every(([generation, outcome]) =>
+                        currentScopedOutcomes[generation] === outcome);
+                const currentScopedPatches = (state.localTaskPatches[id] ?? [])
+                    .filter(patch => patch.generation <= maxRetryGeneration);
+                const ownsPatches = currentScopedPatches.length === retryOwnedPatches.length &&
+                    retryOwnedPatches.every((patch, index) => currentScopedPatches[index] === patch);
                 const ownsLegacyConflict = Object.keys(capturedOutcomes).length > 0 || currentConflict === conflictRecord;
                 const editGenerationUnchanged = state.editGenerations[id] === beforeRetry.editGenerations[id];
                 const onlyLaterEditsAdded = allowNewerEdits && state.editGenerations[id] >= beforeRetry.editGenerations[id] &&
-                    retryOwnedPatches.every(patch => (state.localTaskPatches[id] ?? []).includes(patch));
-                return (editGenerationUnchanged || onlyLaterEditsAdded) &&
+                    ownsPatches;
+                const current = ownsPatches && (editGenerationUnchanged || onlyLaterEditsAdded) &&
                     currentViewIdentity() === viewIdentityAtRetry &&
                     state.activeReadContext === retryReadContext && ownsOutcomes && ownsLegacyConflict;
+                return current;
             };
             const retryFieldNames = Object.keys(retryFields);
             const hasPersistedRetryFields = retryFieldNames.length > 0;
@@ -2671,7 +2679,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     if (!retryIsCurrent() || get().dataReadStatus !== 'ready') return;
                     const entity = resyncData.tasks.find(task => task.id === id);
                     if (!entity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
-                    confirmedRemote = { entity, revision: entity.lockVersion };
+                    const candidate = { entity, revision: entity.lockVersion };
+                    const latestRevision = get().serverTaskSnapshot.revisions[id] ?? 0;
+                    if (!isValidConflictRemote(id, candidate) || candidate.revision < latestRevision) return;
+                    confirmedRemote = candidate;
                     get().applyApiData(resyncData);
                     retryReadContext = get().activeReadContext;
                 } catch (error) {
@@ -2695,20 +2706,65 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 });
             }
             if (canRetryFieldsDirectly && confirmedRemote) {
+                let retryRequestSent = false;
+                const retainOwnedRetryOutcomeAsUnknown = () => set(state => {
+                    if (currentViewIdentity() !== viewIdentityAtRetry || state.activeReadContext !== retryReadContext) return state;
+                    const current = state.taskConflicts[id];
+                    if (!current) return state;
+                    let updated = current;
+                    for (const [generation, captured] of Object.entries(capturedScopedOutcomes)) {
+                        const patchStillOwned = retryOwnedPatches.some(patch => (
+                            String(patch.generation) === generation && (state.localTaskPatches[id] ?? []).includes(patch)
+                        ));
+                        if (!patchStillOwned || current.unresolvedMutations?.[generation] !== captured) continue;
+                        updated = upsertUnresolvedTaskMutation(id, updated, {
+                            ...captured,
+                            message: i18n.t('label_conflict_review_again') || 'The retry result needs review.',
+                            detectedAt: Date.now(),
+                            outcome: 'unknown',
+                            remoteAvailability: 'needs_refresh',
+                            remoteEntity: undefined,
+                            remoteRevision: undefined
+                        }) ?? updated;
+                    }
+                    if (Object.keys(capturedScopedOutcomes).length === 0 && current === conflictRecord &&
+                        retryOwnedPatches.some(patch => (state.localTaskPatches[id] ?? []).includes(patch))) {
+                        updated = upsertUnresolvedTaskMutation(id, updated, {
+                            generation: retryGeneration,
+                            message: i18n.t('label_conflict_review_again') || 'The retry result needs review.',
+                            detectedAt: Date.now(),
+                            outcome: 'unknown',
+                            remoteAvailability: 'needs_refresh'
+                        }) ?? updated;
+                    }
+                    return updated === current ? state : { taskConflicts: { ...state.taskConflicts, [id]: updated } };
+                });
                 try {
-                    if (!retryIsCurrent()) return;
+                    if (!retryIsCurrent() || !isValidConflictRemote(id, confirmedRemote) ||
+                        confirmedRemote.revision < (get().serverTaskSnapshot.revisions[id] ?? 0)) return;
                     // Pin the confirmed revision across queue waits and transport retries.
                     const retryBaseRevision = confirmedRemote.revision;
                     get().applyTaskMutationMetadata(id, confirmedRemote);
+                    let retryCallbackValidated = false;
                     const result = await taskMutationService.updateTaskFields(id, () => {
-                        if (!retryIsCurrent()) throw new Error(i18n.t('label_conflict_review_again') || 'The reviewed edit changed. Review the conflict again.');
+                        if (!retryIsCurrent() || (!retryCallbackValidated && (
+                            retryBaseRevision < (get().serverTaskSnapshot.revisions[id] ?? 0) ||
+                            !isValidConflictRemote(id, confirmedRemote)
+                        ))) {
+                            throw new Error(i18n.t('label_conflict_review_again') || 'The reviewed edit changed. Review the conflict again.');
+                        }
+                        retryCallbackValidated = true;
                         const latestTask = get().allTasks.find(task => task.id === id) ?? retryTask;
+                        retryRequestSent = true;
                         return {
                             ...buildTaskPatchFieldsPayload(latestTask, retryFields),
                             lock_version: retryBaseRevision
                         };
                     }, undefined, retryDatePlacementMode);
-                    if (!retryIsCurrent(true)) return;
+                    if (!retryIsCurrent(true)) {
+                        if (retryRequestSent) retainOwnedRetryOutcomeAsUnknown();
+                        return;
+                    }
                     get().applyTaskMutationMetadata(id, result);
                     if (result.status === 'ok') {
                         const committedGenerations = [...new Set((get().localTaskPatches[id] ?? [])
@@ -2755,9 +2811,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     );
                     return;
                 } catch (error) {
-                    if (!retryIsCurrent(true)) return;
+                    if (!retryIsCurrent(true)) {
+                        if (retryRequestSent) retainOwnedRetryOutcomeAsUnknown();
+                        return;
+                    }
                     const message = error instanceof Error ? error.message : (i18n.t('label_failed_to_save') || 'Failed to save');
-                    get().registerTaskConflict(id, message, retryGeneration, undefined, undefined, 'unavailable', 'unknown');
+                    if (retryRequestSent) retainOwnedRetryOutcomeAsUnknown();
                     useUIStore.getState().addNotification(message, 'error');
                     return;
                 }
@@ -2797,14 +2856,22 @@ export const useTaskStore = create<TaskState>((set, get) => {
             initialState.editGenerations[id] ?? 0,
             ...(initialState.localTaskPatches[id] ?? []).map(patch => patch.generation)
         );
-        const initialOutcomes = { ...(initialConflict.unresolvedMutations ?? {}) };
+        const initialOutcomes = Object.fromEntries(Object.entries(initialConflict.unresolvedMutations ?? {})
+            .filter(([generation]) => Number(generation) <= resolutionGeneration));
+        const initialPatches = (initialState.localTaskPatches[id] ?? [])
+            .filter(patch => patch.generation <= resolutionGeneration);
         let expectedReadContext = initialState.activeReadContext;
         const ownsResolution = (state: TaskState) => {
             const current = state.taskConflicts[id];
             if (!current || state.activeReadContext !== expectedReadContext) return false;
-            if (Object.keys(initialOutcomes).length === 0) return current === initialConflict;
-            return Object.entries(initialOutcomes).every(([generation, outcome]) =>
-                current.unresolvedMutations?.[generation] === outcome);
+            const currentOutcomes = Object.fromEntries(Object.entries(current.unresolvedMutations ?? {})
+                .filter(([generation]) => Number(generation) <= resolutionGeneration));
+            if (Object.keys(initialOutcomes).length === 0 && current !== initialConflict) return false;
+            const outcomeOwnership = Object.keys(currentOutcomes).length === Object.keys(initialOutcomes).length &&
+                Object.entries(initialOutcomes).every(([generation, outcome]) => currentOutcomes[generation] === outcome);
+            const currentPatches = (state.localTaskPatches[id] ?? []).filter(patch => patch.generation <= resolutionGeneration);
+            return outcomeOwnership && currentPatches.length === initialPatches.length &&
+                initialPatches.every((patch, index) => currentPatches[index] === patch);
         };
         const viewIdentityAtResolution = currentViewIdentity();
         invalidateDataRequests();
@@ -2818,9 +2885,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus !== 'ready') return;
                 const remoteEntity = resyncData.tasks.find(task => task.id === id);
                 if (!remoteEntity) throw new Error(i18n.t('label_task_not_found') || 'Task no longer exists');
+                const candidate = { entity: remoteEntity, revision: remoteEntity.lockVersion };
+                const latestRevision = get().serverTaskSnapshot.revisions[id] ?? 0;
+                if (!isValidConflictRemote(id, candidate) || candidate.revision < latestRevision) return;
                 get().applyApiData(resyncData);
                 expectedReadContext = get().activeReadContext;
-                selectedRemote = { entity: remoteEntity, revision: remoteEntity.lockVersion };
+                selectedRemote = candidate;
             } catch (error) {
                 if (!ownsResolution(get()) ||
                     currentViewIdentity() !== viewIdentityAtResolution || get().dataReadStatus === 'loading') return;
@@ -2833,11 +2903,13 @@ export const useTaskStore = create<TaskState>((set, get) => {
         set((state) => {
             const conflictGeneration = resolutionGeneration;
             const conflictRecord = state.taskConflicts[id];
-            if (!conflictRecord || !ownsResolution(state)) return state;
+            if (!conflictRecord || currentViewIdentity() !== viewIdentityAtResolution || !ownsResolution(state)) return state;
             const remoteChoice = Object.keys(initialOutcomes).length === 0
                 ? selectConflictRemote(conflictRecord, state.serverTaskSnapshot, state.activeReadContext, state.dataReadStatus) ?? selectedRemote
                 : selectedRemote;
-            if (!remoteChoice) return state;
+            if (!remoteChoice || !isValidConflictRemote(id, remoteChoice)) return state;
+            const latestRevision = state.serverTaskSnapshot.revisions[id] ?? 0;
+            if (remoteChoice.revision < latestRevision) return state;
             const currentTask = state.allTasks.find(task => task.id === id)
                 ?? state.serverTaskSnapshot.entitiesById[id];
             if (!currentTask) return state;
