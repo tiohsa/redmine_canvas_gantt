@@ -334,6 +334,118 @@ describe('TaskStore canonical mutation reconciliation', () => {
         expect(useTaskStore.getState().localTaskPatches[original.id]).toHaveLength(1);
     });
 
+    it('does not apply persistence metadata carried by a protocol error at the store boundary', () => {
+        const original = buildTask({ id: 'untrusted-metadata', subject: 'Persisted', lockVersion: 1 });
+        useTaskStore.getState().applyApiData(buildApiData([original]));
+
+        useTaskStore.getState().applyTaskMutationMetadata(original.id, {
+            status: 'protocol_error', deletedEntityIds: [original.id], invalidatedEntityIds: ['other'],
+            completeness: 'complete', revision: 99, entity: { id: original.id, subject: 'Untrusted', lockVersion: 99 }
+        } as never);
+
+        const state = useTaskStore.getState();
+        expect(state.taskTombstones[original.id]).toBeUndefined();
+        expect(state.allTasks).toContainEqual(original);
+        expect(state.serverTaskSnapshot.entitiesById[original.id]).toMatchObject({ subject: 'Persisted', lockVersion: 1 });
+        expect(state.serverTaskSnapshot.revisions[original.id]).toBe(1);
+    });
+
+    it('preserves an older unresolved generation when a newer generation commits', () => {
+        const original = buildTask({ id: 'multi-generation-conflict', subject: 'Persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { subject: 'generation one' });
+        const generationOne = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().registerTaskConflict(original.id, 'Generation one outcome unknown', generationOne,
+            undefined, undefined, 'unavailable');
+
+        useTaskStore.getState().updateTask(original.id, { subject: 'generation two' });
+        const generationTwo = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().registerTaskConflict(original.id, 'Generation two conflict', generationTwo,
+            { id: original.id, subject: 'remote', lockVersion: 2 }, 2, 'known');
+        useTaskStore.getState().commitTaskOperation(original.id, generationTwo, 2);
+
+        const state = useTaskStore.getState();
+        expect(state.taskConflicts[original.id]).toMatchObject({ generation: generationOne, message: 'Generation two conflict' });
+        expect(state.localTaskPatches[original.id]).toEqual(expect.arrayContaining([
+            expect.objectContaining({ generation: generationOne })
+        ]));
+        expect(state.modifiedTaskIds.has(original.id)).toBe(true);
+
+        useTaskStore.getState().commitTaskOperation(original.id, generationOne, 3);
+        expect(useTaskStore.getState().taskConflicts[original.id]).toBeUndefined();
+    });
+
+    it('reassigns a conflict to a later local generation and clears it after both generations settle', () => {
+        const original = buildTask({ id: 'reassigned-conflict', subject: 'Persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { subject: 'generation one' });
+        const generationOne = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().registerTaskConflict(original.id, 'Generation one unknown', generationOne,
+            undefined, undefined, 'unavailable');
+        useTaskStore.getState().updateTask(original.id, { subject: 'generation two' });
+        const generationTwo = useTaskStore.getState().editGenerations[original.id];
+
+        useTaskStore.getState().commitTaskOperation(original.id, generationOne, 2);
+        expect(useTaskStore.getState().taskConflicts[original.id]).toMatchObject({
+            generation: generationTwo,
+            remoteAvailability: 'needs_refresh'
+        });
+        useTaskStore.getState().commitTaskOperation(original.id, generationTwo, 3);
+        expect(useTaskStore.getState().taskConflicts[original.id]).toBeUndefined();
+    });
+
+    it('keeps a newer generation conflict and its remote snapshot when an older patch commits', () => {
+        const original = buildTask({ id: 'newer-conflict-owner', subject: 'Persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { subject: 'generation one' });
+        const generationOne = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().updateTask(original.id, { subject: 'generation two' });
+        const generationTwo = useTaskStore.getState().editGenerations[original.id];
+        const remote = { id: original.id, subject: 'remote', lockVersion: 2 };
+        useTaskStore.getState().registerTaskConflict(original.id, 'Generation two conflict', generationTwo, remote, 2, 'known');
+
+        useTaskStore.getState().commitTaskOperation(original.id, generationOne, 2);
+
+        expect(useTaskStore.getState().taskConflicts[original.id]).toMatchObject({
+            generation: generationTwo, message: 'Generation two conflict', remoteEntity: remote, remoteRevision: 2,
+            remoteAvailability: 'known'
+        });
+        useTaskStore.getState().commitTaskOperation(original.id, generationTwo, 3);
+        expect(useTaskStore.getState().taskConflicts[original.id]).toBeUndefined();
+    });
+
+    it('ignores an old conflict result after its generation and all newer intent have settled', () => {
+        const original = buildTask({ id: 'settled-old-result', subject: 'Persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { subject: 'generation one' });
+        const generationOne = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().commitTaskOperation(original.id, generationOne, 2);
+        useTaskStore.getState().updateTask(original.id, { subject: 'generation two' });
+        const generationTwo = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().commitTaskOperation(original.id, generationTwo, 3);
+
+        useTaskStore.getState().registerTaskConflict(original.id, 'Late generation one conflict', generationOne);
+
+        expect(useTaskStore.getState().taskConflicts[original.id]).toBeUndefined();
+    });
+
+    it('does not let an older conflict result replace a newer generation conflict', () => {
+        const original = buildTask({ id: 'conflict-generation-order', subject: 'Persisted', lockVersion: 1 });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { subject: 'generation one' });
+        const generationOne = useTaskStore.getState().editGenerations[original.id];
+        useTaskStore.getState().updateTask(original.id, { subject: 'generation two' });
+        const generationTwo = useTaskStore.getState().editGenerations[original.id];
+
+        useTaskStore.getState().registerTaskConflict(original.id, 'New conflict', generationTwo,
+            { id: original.id, subject: 'remote', lockVersion: 2 }, 2, 'known');
+        const newerConflict = useTaskStore.getState().taskConflicts[original.id];
+        useTaskStore.getState().registerTaskConflict(original.id, 'Old unknown result', generationOne,
+            undefined, undefined, 'unavailable');
+
+        expect(useTaskStore.getState().taskConflicts[original.id]).toBe(newerConflict);
+    });
+
     it('keeps a projection-only local change out of modified task ownership', () => {
         const original = buildTask({ id: 'projection-only', subject: 'persisted', statusId: 1 });
         useTaskStore.getState().setTasks([original]);

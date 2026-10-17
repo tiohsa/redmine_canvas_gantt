@@ -65,6 +65,7 @@ export class InlineEditService {
                             return;
                         }
                         if (completedResult.status === 'conflict' || completedResult.status === 'protocol_error') {
+                            if (!ownsOperation()) return;
                             useTaskStore.getState().registerTaskConflict(
                                 taskId,
                                 completedResult.error || (i18n.t('label_conflict') || 'Conflict'),

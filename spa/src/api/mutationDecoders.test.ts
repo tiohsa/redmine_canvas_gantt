@@ -81,6 +81,48 @@ describe('mutation response decoders', () => {
             { status: 200, ok: true }).status).toBe('ok');
     });
 
+    it('drops every persistence-affecting metadata field from protocol errors', () => {
+        const result = parseMutationTaskResult({
+            status: 'unknown_status',
+            error: 'Malformed response',
+            task_id: '1',
+            parent_id: '2',
+            sibling_position: 'tail',
+            revision: 99,
+            lock_version: 99,
+            entity: { id: '1', subject: 'untrusted', start_date: 'bad-date', lock_version: 99 },
+            invalidated_entity_ids: ['2'],
+            deleted_entity_ids: ['1'],
+            completeness: 'complete',
+            failure: { kind: 'not_found', resource_role: 'target', resource_type: 'task', resource_id: '1' }
+        }, { status: 200, ok: true });
+
+        expect(result).toEqual({
+            status: 'protocol_error',
+            lockVersion: undefined,
+            taskId: undefined,
+            parentId: undefined,
+            siblingPosition: undefined,
+            error: 'Malformed response'
+        });
+    });
+
+    it('also drops metadata when an otherwise successful response has an invalid canonical date', () => {
+        const result = parseMutationTaskResult({
+            status: 'ok', error: 'Malformed canonical date',
+            entity: { id: '1', subject: 'Untrusted', start_date: 'bad-date', lock_version: 99 },
+            revision: 99, deleted_entity_ids: ['1'], invalidated_entity_ids: ['2'], completeness: 'complete'
+        }, { status: 200, ok: true });
+
+        expect(result.status).toBe('protocol_error');
+        expect(result.deletedEntityIds).toBeUndefined();
+        expect(result.invalidatedEntityIds).toBeUndefined();
+        expect(result.completeness).toBeUndefined();
+        expect(result.entity).toBeUndefined();
+        expect(result.revision).toBeUndefined();
+        expect(result.error).toBe('Malformed canonical date');
+    });
+
     it.each([
         ['missing entity', { entities: [], revisions: {} }],
         ['missing owned date', { entities: [{ id: '1', lockVersion: 2 }], revisions: { '1': 2 } }],

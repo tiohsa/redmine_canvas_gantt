@@ -161,7 +161,7 @@ export const parseMutationTaskResult = (value: unknown, http: MutationHttpContex
     const protocolError = status === 'protocol_error';
     return {
         status,
-        ...parseMutationMetadata(data),
+        ...(!protocolError ? parseMutationMetadata(data) : {}),
         ...(!protocolError && entity ? { entity } : {}),
         ...(!protocolError && revision !== undefined ? { revision } : {}),
         lockVersion: protocolError ? undefined : typeof data.lock_version === 'number' ? data.lock_version : entity?.lockVersion,

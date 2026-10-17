@@ -386,6 +386,30 @@ export interface TaskState {
     discardChanges: () => Promise<void>;
 }
 
+const canRegisterTaskConflict = (state: TaskState, taskId: string, generation?: number): boolean => {
+    const existing = state.taskConflicts[taskId];
+    if (generation !== undefined) {
+        const reviewRecords = Object.values(state.taskConflicts).filter(conflict => (
+            conflict.scheduleReview?.taskIds.includes(taskId) || conflict.scheduleOperation?.[taskId] !== undefined
+        ));
+        const reviewGenerations = reviewRecords.flatMap(conflict => [
+            conflict.scheduleReview?.generations[taskId], conflict.scheduleOperation?.[taskId]
+        ]).filter((value): value is number => typeof value === 'number');
+        // A read-only intermediary can become conflicted during schedule
+        // review despite having no local patch. The captured review generation
+        // owns that task only while the result is at least as new as the review.
+        const scheduleReviewOwnsGeneration = reviewRecords.some(conflict => {
+            const review = conflict.scheduleReview;
+            const capturedGeneration = review?.generations[taskId] ?? state.editGenerations[taskId] ?? 0;
+            return review?.taskIds.includes(taskId) && generation >= capturedGeneration;
+        });
+        if (!hasLocalPatchOwnership(state.localTaskPatches[taskId], taskId, generation) && !scheduleReviewOwnsGeneration) return false;
+        const latestKnownGeneration = Math.max(existing?.generation ?? -1, ...reviewGenerations);
+        if (latestKnownGeneration > generation) return false;
+    }
+    return true;
+};
+
 const preferences = loadPreferences();
 const initialUrlState = readIssueQueryParamsFromUrl();
 const oneYearAgo = new Date();
@@ -2381,7 +2405,27 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const modifiedTaskIds = new Set(state.modifiedTaskIds);
         if (!hasLocalMutationIntent(localTaskPatches[id])) modifiedTaskIds.delete(id);
         const taskConflicts = { ...state.taskConflicts };
-        delete taskConflicts[id];
+        const conflict = taskConflicts[id];
+        const remainingPatches = localTaskPatches[id] ?? [];
+        if (!hasLocalMutationIntent(remainingPatches)) {
+            delete taskConflicts[id];
+        } else if (conflict && !remainingPatches.some(patch => (
+            patch.generation === conflict.generation && Object.keys(patch.mutationIntent).length > 0
+        ))) {
+            // The single task conflict represents all unresolved local intent.
+            // Reassign its ownership to a still-pending generation so settling
+            // any one generation cannot strand the conflict permanently.
+            const remainingGeneration = Math.max(...remainingPatches
+                .filter(patch => Object.keys(patch.mutationIntent).length > 0)
+                .map(patch => patch.generation));
+            taskConflicts[id] = {
+                ...conflict,
+                generation: remainingGeneration,
+                remoteEntity: undefined,
+                remoteRevision: undefined,
+                remoteAvailability: 'needs_refresh'
+            };
+        }
         const serverTask = state.serverTaskSnapshot.entitiesById[id] ?? currentTask;
         const canonicalTask = {
             ...serverTask,
@@ -2446,6 +2490,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
     }),
 
     applyTaskMutationMetadata: (taskId, metadata) => {
+        if ((metadata as typeof metadata & { status?: string }).status === 'protocol_error') return;
         const invalidatedIds = new Set(metadata.invalidatedEntityIds ?? []);
         const deletedIds = new Set(metadata.deletedEntityIds ?? []);
         const needsRefresh = [...invalidatedIds].some(id => id !== taskId);
@@ -2525,12 +2570,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return { taskTombstones };
     }),
 
-    registerTaskConflict: (id, message, generation = get().editGenerations[id], remoteEntity, remoteRevision, remoteAvailability = remoteEntity ? 'known' : 'needs_refresh') => set((state) => ({
-        taskConflicts: {
-            ...state.taskConflicts,
-            [id]: { taskId: id, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability }
-        }
-    })),
+    registerTaskConflict: (id, message, generation = get().editGenerations[id], remoteEntity, remoteRevision, remoteAvailability = remoteEntity ? 'known' : 'needs_refresh') => set((state) => {
+        if (!canRegisterTaskConflict(state, id, generation)) return state;
+        return {
+            taskConflicts: {
+                ...state.taskConflicts,
+                [id]: { taskId: id, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability }
+            }
+        };
+    }),
 
     prepareScheduleConflict: async id => {
         // Explicit re-review also refreshes the shared business calendar and
@@ -3417,6 +3465,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         );
                     },
                     (taskId, result) => {
+                        // A protocol error has unknown persistence outcome.
+                        // Its DTO metadata cannot affect tombstones, baselines,
+                        // revisions, or invalidation handling at this boundary.
+                        if (result.status === 'protocol_error') return;
                         if (result.status === 'ok' && result.entity?.datesDerived === true) {
                             canonicalDerivedDateTaskIds.add(taskId);
                         }
@@ -3719,7 +3771,10 @@ export const useTaskStore = create<TaskState>((set, get) => {
                     set((state) => {
                         const taskConflicts = { ...state.taskConflicts };
                         conflictMessages.forEach(({ message, generation, remoteEntity, remoteRevision, remoteAvailability }, taskId) => {
+                            if (!canRegisterTaskConflict(state, taskId, generation)) return;
+                            const previousConflict = taskConflicts[taskId];
                             taskConflicts[taskId] = { taskId, message, detectedAt: Date.now(), generation, remoteEntity, remoteRevision, remoteAvailability,
+                                ...(previousConflict?.scheduleOperation ? { scheduleOperation: previousConflict.scheduleOperation } : {}),
                                 ...(snapshotMutationScheduling[taskId] ? { scheduleOperation: Object.fromEntries(
                                     Object.keys(snapshotMutationScheduling).filter(key => snapshotMutationScheduling[key])
                                         .map(key => [key, snapshotGenerations[key] ?? 0])

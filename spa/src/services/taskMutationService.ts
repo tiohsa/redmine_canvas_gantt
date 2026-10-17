@@ -112,8 +112,12 @@ export const taskMutationAffectsScheduling = (changedFields: Iterable<string>): 
 
 const TASK_PATCH_MAX_RETRIES = 1;
 
-const withoutUntrustedTaskAck = <T extends Awaited<ReturnType<typeof apiClient.updateTaskFields>>>(result: T) => ({
+export const withoutUntrustedTaskAck = <T extends Awaited<ReturnType<typeof apiClient.updateTaskFields>>>(result: T) => ({
     ...result,
+    completeness: undefined,
+    invalidatedEntityIds: undefined,
+    deletedEntityIds: undefined,
+    failure: undefined,
     entity: undefined,
     revision: undefined,
     lockVersion: undefined,
@@ -293,8 +297,8 @@ const executeTaskPatch = async (
             if (result.status === 'ok' && !hasCanonicalTaskAck(taskId, attemptFields, result)) {
                 // Treat an incomplete acknowledgement as an unknown outcome. The
                 // bulk saver will reconcile against a fresh remote snapshot.
-                return { ...result, status: 'protocol_error', entity: undefined, revision: undefined, lockVersion: undefined,
-                    error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') };
+                return withoutUntrustedTaskAck({ ...result, status: 'protocol_error',
+                    error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') });
             }
             if (classifyMutationResult(result).kind !== 'transient' || attempt >= TASK_PATCH_MAX_RETRIES) {
                 return result;
@@ -327,8 +331,8 @@ export const taskMutationService = {
         const revision = result.revision ?? result.lockVersion ?? result.entity?.lockVersion;
         if (result.status === 'ok' && (!hasCanonicalTaskAck(task.id, requestedFields, result, task.lockVersion) ||
             !Number.isSafeInteger(revision) || (revision as number) < task.lockVersion)) {
-            return { ...result, status: 'protocol_error' as const, entity: undefined, revision: undefined, lockVersion: undefined,
-                error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') };
+            return withoutUntrustedTaskAck({ ...result, status: 'protocol_error' as const,
+                error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') });
         }
         return result;
     },

@@ -20,6 +20,7 @@ import {
     partitionTaskMutationFields,
     responseMatchesIntendedFields,
     hasCanonicalTaskAck,
+    withoutUntrustedTaskAck,
     type TaskFields
 } from '../../services/taskMutationService';
 
@@ -768,12 +769,11 @@ export const saveModifiedTasks = async (
                         const fields = residualMutationFields[taskId]!;
                         const result = await updateTask(task, context?.operationId, fields);
                         if (result.status === 'protocol_error') {
-                            return { ...result, entity: undefined, revision: undefined, lockVersion: undefined,
-                                taskId: undefined, parentId: undefined, siblingPosition: undefined };
+                            return withoutUntrustedTaskAck(result);
                         }
                         if (result.status === 'ok' && !hasCanonicalTaskAck(taskId, fields, result, baseRevisions[taskId] ?? task.lockVersion)) {
-                            return { ...result, status: 'protocol_error' as const, entity: undefined, revision: undefined,
-                                lockVersion: undefined, error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') };
+                            return withoutUntrustedTaskAck({ ...result, status: 'protocol_error' as const,
+                                error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') });
                         }
                         return result;
                     },

@@ -130,6 +130,93 @@ describe('InlineEditService', () => {
         expect(state.serverTaskSnapshot.revisions[initialTask.id]).toBe(4);
     });
 
+    it('keeps an unknown inline mutation unresolved when the refresh view filters the task out', async () => {
+        const initialTask = buildTask({ projectId: 'p1' });
+        const queryContext = { ...useTaskStore.getState().queryContext };
+        useTaskStore.setState({ allTasks: [initialTask], tasks: [initialTask], queryContext });
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({
+            status: 'protocol_error', error: 'Malformed acknowledgement', deletedEntityIds: [initialTask.id]
+        });
+        vi.mocked(apiClient.fetchData).mockResolvedValue({
+            tasks: [], relations: [], versions: [], filterOptions: { projects: [], assignees: [] }, statuses: [], customFields: [],
+            queryContext: { ...queryContext }, project: { id: 'p1', name: 'P1' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        } as never);
+
+        await expect(InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: { subject: 'Pending subject' },
+            rollbackTaskUpdates: { subject: initialTask.subject },
+            fields: { subject: 'Pending subject' }
+        })).rejects.toThrow('Malformed acknowledgement');
+
+        const state = useTaskStore.getState();
+        expect(state.taskTombstones[initialTask.id]).toBeUndefined();
+        expect(state.localTaskPatches[initialTask.id]).toBeDefined();
+        expect(state.modifiedTaskIds.has(initialTask.id)).toBe(true);
+        expect(state.taskConflicts[initialTask.id]).toMatchObject({ remoteAvailability: 'unavailable' });
+    });
+
+    it('does not apply an inline protocol-error refresh after the view changes while it is pending', async () => {
+        const initialTask = buildTask({ projectId: 'p1', lockVersion: 1 });
+        const queryContext = { ...useTaskStore.getState().queryContext };
+        const makeData = (tasks: Task[], context = queryContext) => ({
+            tasks, relations: [], versions: [], filterOptions: { projects: [], assignees: [] }, statuses: [], customFields: [],
+            queryContext: { ...context }, project: { id: 'p1', name: 'P1' },
+            permissions: { editable: true, viewable: true, baselineEditable: true }
+        });
+        useTaskStore.getState().applyApiData(makeData([initialTask]) as never);
+        vi.mocked(apiClient.updateTaskFields).mockResolvedValue({ status: 'protocol_error', error: 'Unknown outcome' });
+        const oldRead = deferred<Awaited<ReturnType<typeof apiClient.fetchData>>>();
+        const newViewTask = buildTask({ projectId: 'p1', subject: 'Current view', lockVersion: 4 });
+        vi.mocked(apiClient.fetchData).mockReturnValueOnce(oldRead.promise)
+            .mockResolvedValueOnce(makeData([newViewTask]) as never);
+
+        const saving = InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: { subject: 'Pending subject' },
+            rollbackTaskUpdates: { subject: initialTask.subject },
+            fields: { subject: 'Pending subject' }
+        });
+        await vi.waitFor(() => expect(apiClient.fetchData).toHaveBeenCalledTimes(1));
+        await useTaskStore.getState().setSelectedAssigneeIds([99]);
+        oldRead.resolve(makeData([{ ...initialTask, subject: 'Old view response', lockVersion: 5 }]) as never);
+        await expect(saving).rejects.toThrow('Unknown outcome');
+
+        const state = useTaskStore.getState();
+        expect(state.serverTaskSnapshot.entitiesById[initialTask.id]?.subject).toBe('Current view');
+        expect(state.serverTaskSnapshot.revisions[initialTask.id]).toBe(4);
+        expect(state.localTaskPatches[initialTask.id]).toBeDefined();
+        expect(state.taskConflicts[initialTask.id]).toMatchObject({ remoteAvailability: 'needs_refresh' });
+    });
+
+    it('keeps a newer conflict when an older deferred inline mutation completes', async () => {
+        const initialTask = buildTask({ lockVersion: 1 });
+        useTaskStore.setState({ allTasks: [initialTask], tasks: [initialTask] });
+        const mutation = deferred<{ status: 'protocol_error'; error: string }>();
+        vi.mocked(apiClient.updateTaskFields).mockReturnValue(mutation.promise as never);
+        vi.mocked(apiClient.fetchData).mockRejectedValue(new Error('offline'));
+
+        const saving = InlineEditService.saveTaskFields({
+            taskId: initialTask.id,
+            optimisticTaskUpdates: { subject: 'Generation one' },
+            rollbackTaskUpdates: { subject: initialTask.subject },
+            fields: { subject: 'Generation one' }
+        });
+        await vi.waitFor(() => expect(apiClient.updateTaskFields).toHaveBeenCalledTimes(1));
+        useTaskStore.getState().updateTask(initialTask.id, { subject: 'Generation two' });
+        const generationTwo = useTaskStore.getState().editGenerations[initialTask.id];
+        useTaskStore.getState().registerTaskConflict(initialTask.id, 'Newer generation conflict', generationTwo,
+            { id: initialTask.id, subject: 'Remote generation two', lockVersion: 2 }, 2, 'known');
+        const newerConflict = useTaskStore.getState().taskConflicts[initialTask.id];
+        mutation.resolve({ status: 'protocol_error', error: 'Old unknown result' });
+
+        await expect(saving).rejects.toThrow('Old unknown result');
+
+        expect(useTaskStore.getState().taskConflicts[initialTask.id]).toBe(newerConflict);
+        expect(useTaskStore.getState().localTaskPatches[initialTask.id]).toHaveLength(2);
+    });
+
     it('stores project preview materialization as projection but saves only explicit project intent', async () => {
         const initialTask = buildTask({
             projectId: '1',

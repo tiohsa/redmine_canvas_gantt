@@ -138,6 +138,26 @@ describe('taskMutationService mutation boundary', () => {
         expect(updateTaskFields).toHaveBeenCalledTimes(1);
     });
 
+    it('sanitizes protocol-error metadata from a non-decoder mutation boundary', async () => {
+        vi.spyOn(apiClient, 'updateTaskFields').mockResolvedValue({
+            status: 'protocol_error', error: 'Malformed response',
+            completeness: 'complete', invalidatedEntityIds: ['other'], deletedEntityIds: ['unsafe'],
+            failure: { kind: 'not_found', resourceRole: 'target', resourceType: 'task', resourceId: 'unsafe' },
+            entity: { id: 'unsafe', subject: 'Untrusted', lockVersion: 99 }, revision: 99,
+            lockVersion: 99, taskId: 'unsafe', parentId: 'unsafe-parent', siblingPosition: 'tail'
+        });
+
+        const result = await taskMutationService.updateTaskFields('sanitized-task', { subject: 'Draft' });
+
+        expect(result.status).toBe('protocol_error');
+        expect(result.error).toBe('Malformed response');
+        expect(result).toMatchObject({
+            completeness: undefined, invalidatedEntityIds: undefined, deletedEntityIds: undefined, failure: undefined,
+            entity: undefined, revision: undefined, lockVersion: undefined, taskId: undefined,
+            parentId: undefined, siblingPosition: undefined
+        });
+    });
+
     it('forwards mixed task modes in one schedule operation without selecting a request mode', async () => {
         const scheduleMutation = vi.spyOn(apiClient, 'scheduleMutation').mockResolvedValue({
             status: 'ok', operationId: 'schedule:mixed',

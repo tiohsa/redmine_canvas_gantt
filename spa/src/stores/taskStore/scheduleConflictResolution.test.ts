@@ -220,7 +220,10 @@ describe('schedule conflict group resolution', () => {
         let finish!: (value: Awaited<ReturnType<typeof taskMutationService.scheduleMutation>>) => void;
         api.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
         const selecting = useTaskStore.getState().resolveTaskConflict('A', 'remote');
-        useTaskStore.getState().registerTaskConflict('A', 'New conflict', 2, { ...task('A', 4, 5), lockVersion: 3 }, 3);
+        useTaskStore.getState().updateTask('A', { subject: 'New local edit' });
+        const newerGeneration = useTaskStore.getState().editGenerations.A;
+        useTaskStore.getState().registerTaskConflict('A', 'New conflict', newerGeneration,
+            { ...task('A', 4, 5), lockVersion: 3 }, 3);
         const newer = useTaskStore.getState().taskConflicts.A;
         finish(await implementation([], { taskIds: ['A', 'B'], preview: true }));
         await selecting;

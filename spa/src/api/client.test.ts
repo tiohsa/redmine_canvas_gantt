@@ -1262,6 +1262,37 @@ describe('mutation error classification', () => {
         expect(result.entity).toBeUndefined();
     });
 
+    it('does not pass deletion metadata through an HTTP mutation protocol error', async () => {
+        window.RedmineCanvasGantt = {
+            projectId: 1,
+            apiBase: '/projects/1/canvas_gantt',
+            redmineBase: '',
+            authToken: 'token'
+        };
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({
+                status: 'unrecognized',
+                deleted_entity_ids: ['42'],
+                invalidated_entity_ids: ['43'],
+                completeness: 'complete',
+                failure: { kind: 'not_found', resource_role: 'target', resource_type: 'task', resource_id: '42' },
+                entity: { id: '42', subject: 'untrusted', lock_version: 99 },
+                revision: 99
+            })
+        }) as unknown as typeof fetch);
+
+        const result = await apiClient.updateTaskFields('42', { subject: 'draft' });
+
+        expect(result.status).toBe('protocol_error');
+        expect(result.entity).toBeUndefined();
+        expect(result.revision).toBeUndefined();
+        expect(result.deletedEntityIds).toBeUndefined();
+        expect(result.invalidatedEntityIds).toBeUndefined();
+        expect(result.failure).toBeUndefined();
+    });
+
     it('normalizes schedule conflict scope from the server contract', async () => {
         window.RedmineCanvasGantt = {
             projectId: 1,

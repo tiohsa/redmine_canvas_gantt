@@ -31,6 +31,10 @@ describe('saveModifiedTasks', () => {
         const task = buildTask({ id: 'task-ack', subject: 'new', lockVersion: 1 });
         const updateTask = vi.fn().mockResolvedValue({
             status: 'protocol_error' as const,
+            completeness: 'complete' as const,
+            invalidatedEntityIds: ['other-task'],
+            deletedEntityIds: [task.id],
+            failure: { kind: 'not_found' as const, resourceRole: 'target' as const, resourceType: 'task' as const, resourceId: task.id },
             entity: { id: 'wrong-task', subject: 'new', lockVersion: 99 },
             revision: 99,
             lockVersion: 99
@@ -51,7 +55,8 @@ describe('saveModifiedTasks', () => {
         expect(result.savedTaskIds).toEqual(new Set([task.id]));
         expect(onTaskSaved).toHaveBeenCalledWith(task.id, 2);
         expect(onTaskResult).toHaveBeenCalledWith(task.id, expect.objectContaining({
-            status: 'protocol_error', entity: undefined, revision: undefined, lockVersion: undefined
+            status: 'protocol_error', entity: undefined, revision: undefined, lockVersion: undefined,
+            completeness: undefined, invalidatedEntityIds: undefined, deletedEntityIds: undefined, failure: undefined
         }));
         expect(mutationLifecycleMetrics.failed).toBe(failedBefore + 1);
         expect(mutationLifecycleMetrics.reconciliationSucceeded).toBe(reconciledBefore + 1);
