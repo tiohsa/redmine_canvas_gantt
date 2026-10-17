@@ -138,25 +138,36 @@ type MutationHttpContext = { status: number; ok: boolean };
 
 export const parseMutationTaskResult = (value: unknown, http: MutationHttpContext): UpdateTaskResult => {
     const data = asRecord(value) ?? {};
+    const rawEntity = asRecord(data.entity);
     const entity = parseMutationEntity(data.entity);
     const revision = typeof data.revision === 'number' ? data.revision : entity?.lockVersion;
     const rawStatus = data.status;
+    const hasInvalidCanonicalDate = ['start_date', 'due_date'].some(key => {
+        if (!rawEntity || !Object.prototype.hasOwnProperty.call(rawEntity, key)) return false;
+        const date = rawEntity[key];
+        return date !== null && (typeof date !== 'string' || parseDateOnly(date) === null);
+    });
     const status: MutationStatus = http.status === 409
         ? 'conflict'
+        : !http.ok
+            ? mutationStatusForHttp(http.status)
+        : rawStatus === 'ok' && hasInvalidCanonicalDate
+            ? 'protocol_error'
         : typeof rawStatus === 'string' && ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error'].includes(rawStatus)
             ? rawStatus as MutationStatus
             : typeof rawStatus === 'string'
                 ? 'protocol_error'
-                : http.ok ? 'ok' : mutationStatusForHttp(http.status);
+                : http.ok ? 'protocol_error' : mutationStatusForHttp(http.status);
+    const protocolError = status === 'protocol_error';
     return {
         status,
         ...parseMutationMetadata(data),
-        ...(entity ? { entity } : {}),
-        ...(revision !== undefined ? { revision } : {}),
-        lockVersion: typeof data.lock_version === 'number' ? data.lock_version : entity?.lockVersion,
-        taskId: data.task_id ? String(data.task_id) : entity?.id,
-        parentId: data.parent_id === null ? undefined : (data.parent_id ? String(data.parent_id) : entity?.parentId),
-        siblingPosition: data.sibling_position === 'tail' ? 'tail' : undefined,
+        ...(!protocolError && entity ? { entity } : {}),
+        ...(!protocolError && revision !== undefined ? { revision } : {}),
+        lockVersion: protocolError ? undefined : typeof data.lock_version === 'number' ? data.lock_version : entity?.lockVersion,
+        taskId: protocolError ? undefined : data.task_id ? String(data.task_id) : entity?.id,
+        parentId: protocolError ? undefined : data.parent_id === null ? undefined : (data.parent_id ? String(data.parent_id) : entity?.parentId),
+        siblingPosition: !protocolError && data.sibling_position === 'tail' ? 'tail' : undefined,
         error: typeof data.error === 'string' ? data.error : undefined
     };
 };
@@ -196,6 +207,8 @@ export const parseScheduleMutationResult = (value: unknown, http: MutationHttpCo
     const knownStatuses = ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error'];
     const status: MutationStatus = http.status === 409
         ? 'conflict'
+        : !http.ok
+            ? mutationStatusForHttp(http.status)
         : typeof rawStatus === 'string'
             ? knownStatuses.includes(rawStatus)
                 ? rawStatus === 'ok' && !canonicalDatesValid ? 'protocol_error' : rawStatus as MutationStatus

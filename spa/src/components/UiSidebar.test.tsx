@@ -905,10 +905,16 @@ describe('UiSidebar', () => {
 
         useTaskStore.getState().setTasks([task]);
 
-        const fetchMock = vi.fn(async () => ({
-            ok: true,
-            json: async () => ({ lock_version: 2, task_id: taskId })
-        }));
+        const fetchMock = vi.fn(async (_input, init?: RequestInit) => {
+            const fields = (JSON.parse(String(init?.body)) as { task?: Record<string, unknown> }).task ?? {};
+            return {
+                ok: true,
+                json: async () => ({
+                    status: 'ok', task_id: Number(taskId), revision: 2, lock_version: 2,
+                    entity: { id: Number(taskId), lock_version: 2, start_date: fields.start_date }
+                })
+            };
+        });
         vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
 
         render(<UiSidebar />);
@@ -1158,10 +1164,20 @@ describe('UiSidebar', () => {
         };
         useTaskStore.getState().setTasks([task]);
 
-        vi.stubGlobal('fetch', vi.fn(async () => ({
-            ok: true,
-            json: async () => ({ lock_version: 2, task_id: taskId })
-        })) as unknown as typeof fetch);
+        vi.stubGlobal('fetch', vi.fn(async (_input, init?: RequestInit) => {
+            const fields = (JSON.parse(String(init?.body)) as { task?: Record<string, unknown> }).task ?? {};
+            return {
+                ok: true,
+                json: async () => ({
+                    status: 'ok', task_id: Number(taskId), revision: 2, lock_version: 2,
+                    entity: {
+                        id: Number(taskId), lock_version: 2,
+                        assigned_to_id: fields.assigned_to_id === '' ? null : fields.assigned_to_id,
+                        assigned_to_name: fields.assigned_to_id === '' ? null : 'Bob Brown'
+                    }
+                })
+            };
+        }) as unknown as typeof fetch);
 
         render(<UiSidebar />);
 
@@ -1290,10 +1306,20 @@ describe('UiSidebar', () => {
         };
         useTaskStore.getState().setTasks([task]);
 
-        vi.stubGlobal('fetch', vi.fn(async () => ({
-            ok: true,
-            json: async () => ({ lock_version: 2, task_id: taskId })
-        })) as unknown as typeof fetch);
+        vi.stubGlobal('fetch', vi.fn(async (_input, init?: RequestInit) => {
+            const fields = (JSON.parse(String(init?.body)) as { task?: Record<string, unknown> }).task ?? {};
+            return {
+                ok: true,
+                json: async () => ({
+                    status: 'ok', task_id: Number(taskId), revision: 2, lock_version: 2,
+                    entity: {
+                        id: Number(taskId), lock_version: 2,
+                        assigned_to_id: fields.assigned_to_id === '' ? null : fields.assigned_to_id,
+                        assigned_to_name: fields.assigned_to_id === '' ? null : 'Bob Brown'
+                    }
+                })
+            };
+        }) as unknown as typeof fetch);
 
         render(<UiSidebar />);
 

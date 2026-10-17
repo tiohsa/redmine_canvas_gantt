@@ -7,15 +7,35 @@ import {
 import {
     PERSISTABLE_TASK_FIELDS,
     RelationExecutionGuardError,
+    hasCanonicalTaskAck,
     taskMutationAffectsScheduling,
     taskMutationFields,
     taskMutationService
 } from './taskMutationService';
 import { DatePlacementMode } from '../types/constraints';
+import { parseDateOnly } from '../utils/dateOnly';
 
 describe('taskMutationService mutation boundary', () => {
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it.each([
+        ['wrong entity id', { id: 'other', subject: 'Draft', lockVersion: 2 }, 2, undefined],
+        ['missing canonical field', { id: 'task', lockVersion: 2 }, 2, undefined],
+        ['revision disagreement', { id: 'task', subject: 'Draft', lockVersion: 3 }, 2, undefined],
+        ['stale revision', { id: 'task', subject: 'Draft', lockVersion: 1 }, 1, 2],
+        ['unsafe revision', { id: 'task', subject: 'Draft', lockVersion: Number.MAX_SAFE_INTEGER + 1 }, Number.MAX_SAFE_INTEGER + 1, undefined]
+    ])('rejects a task acknowledgement with %s', (_reason, entity, revision, baseRevision) => {
+        expect(hasCanonicalTaskAck('task', { subject: 'Draft' }, {
+            status: 'ok', entity, revision, lockVersion: revision
+        }, baseRevision)).toBe(false);
+    });
+
+    it('accepts present canonical fields after server normalization', () => {
+        expect(hasCanonicalTaskAck('task', { subject: 'draft' }, {
+            status: 'ok', entity: { id: 'task', subject: 'Draft', lockVersion: 3 }, revision: 3
+        }, 2)).toBe(true);
     });
 
     it('serializes every persistable task field through one registry', () => {
@@ -93,7 +113,8 @@ describe('taskMutationService mutation boundary', () => {
     it('keeps the captured date placement mode across transient retries', async () => {
         const updateTaskFields = vi.spyOn(apiClient, 'updateTaskFields')
             .mockResolvedValueOnce({ status: 'transient_error', error: 'temporary failure' })
-            .mockResolvedValueOnce({ status: 'ok', lockVersion: 2 });
+            .mockResolvedValueOnce({ status: 'ok', revision: 2, lockVersion: 2,
+                entity: { id: 'captured-mode-task', dueDate: parseDateOnly('2026-01-10')!, lockVersion: 2 } });
 
         await taskMutationService.updateTaskFields(
             'captured-mode-task',
@@ -104,6 +125,17 @@ describe('taskMutationService mutation boundary', () => {
 
         expect(updateTaskFields.mock.calls).toHaveLength(2);
         expect(updateTaskFields.mock.calls.every(([, , , mode]) => mode === DatePlacementMode.CalendarDays)).toBe(true);
+    });
+
+    it('does not report an incomplete task acknowledgement as success', async () => {
+        const updateTaskFields = vi.spyOn(apiClient, 'updateTaskFields').mockResolvedValue({ status: 'ok' });
+        const onSuccess = vi.fn();
+        const result = await taskMutationService.updateTaskFields('missing-ack-task', { subject: 'Draft' }, { onSuccess });
+
+        expect(result.status).toBe('protocol_error');
+        expect(result.entity).toBeUndefined();
+        expect(onSuccess).not.toHaveBeenCalled();
+        expect(updateTaskFields).toHaveBeenCalledTimes(1);
     });
 
     it('forwards mixed task modes in one schedule operation without selecting a request mode', async () => {

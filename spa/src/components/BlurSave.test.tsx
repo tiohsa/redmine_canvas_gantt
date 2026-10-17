@@ -112,10 +112,8 @@ describe('UiSidebar Blur-to-Save', () => {
                 return {
                     ok: true,
                     json: async () => ({
-                        lock_version: 2,
-                        ...(typeof taskFields.done_ratio === 'number'
-                            ? { entity: { id: Number(taskId), lock_version: 2, ratio_done: taskFields.done_ratio } }
-                            : {})
+                        status: 'ok', task_id: Number(taskId), revision: 2, lock_version: 2,
+                        entity: { id: Number(taskId), lock_version: 2, ratio_done: taskFields.done_ratio }
                     })
                 } as unknown as Response;
             }

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Task } from '../../types';
 import type { TaskFields } from '../../services/taskMutationService';
-import { enqueueMutationOperation, getMutationOperationRecords, getPendingMutationQueueSize, saveModifiedTasks } from './taskPersistence';
+import { enqueueMutationOperation, getMutationOperationRecords, getPendingMutationQueueSize, mutationLifecycleMetrics, saveModifiedTasks } from './taskPersistence';
 import { DatePlacementMode } from '../../types/constraints';
 
 const buildTask = (overrides: Partial<Task>): Task => ({
@@ -27,6 +27,57 @@ const schedulingIntent = (taskIds: Array<string | Task>): Record<string, boolean
 );
 
 describe('saveModifiedTasks', () => {
+    it('reconciles an incomplete task acknowledgement with a fresh remote snapshot without resending', async () => {
+        const task = buildTask({ id: 'task-ack', subject: 'new', lockVersion: 1 });
+        const updateTask = vi.fn().mockResolvedValue({
+            status: 'protocol_error' as const,
+            entity: { id: 'wrong-task', subject: 'new', lockVersion: 99 },
+            revision: 99,
+            lockVersion: 99
+        });
+        const fetchData = vi.fn().mockResolvedValue({ tasks: [{ ...task, subject: 'new', lockVersion: 2 }] });
+        const onTaskSaved = vi.fn();
+        const onTaskResult = vi.fn();
+        const failedBefore = mutationLifecycleMetrics.failed;
+        const reconciledBefore = mutationLifecycleMetrics.reconciliationSucceeded;
+        const result = await saveModifiedTasks(
+            [task], [], new Set([task.id]), [], updateTask, fetchData, onTaskSaved, onTaskResult,
+            undefined, undefined, undefined, { [task.id]: { subject: 'new' } }
+        );
+
+        expect(updateTask).toHaveBeenCalledTimes(1);
+        expect(fetchData).toHaveBeenCalledTimes(1);
+        expect(result.failures).toEqual(new Map());
+        expect(result.savedTaskIds).toEqual(new Set([task.id]));
+        expect(onTaskSaved).toHaveBeenCalledWith(task.id, 2);
+        expect(onTaskResult).toHaveBeenCalledWith(task.id, expect.objectContaining({
+            status: 'protocol_error', entity: undefined, revision: undefined, lockVersion: undefined
+        }));
+        expect(mutationLifecycleMetrics.failed).toBe(failedBefore + 1);
+        expect(mutationLifecycleMetrics.reconciliationSucceeded).toBe(reconciledBefore + 1);
+    });
+
+    it.each([
+        ['remote still has base value', async (task: Task) => ({ tasks: [{ ...task, subject: 'old', lockVersion: 1 }] })],
+        ['remote revision is stale', async (task: Task) => ({ tasks: [{ ...task, subject: 'new', lockVersion: 0 }] })],
+        ['remote read is unavailable', async (): Promise<{ tasks: Task[] }> => { throw new Error('offline'); }]
+    ])('retains an unconfirmed patch when %s', async (_case, fetchResult) => {
+        const task = buildTask({ id: 'unknown-task', subject: 'new', lockVersion: 1 });
+        const updateTask = vi.fn().mockResolvedValue({ status: 'protocol_error' as const, error: 'invalid ack' });
+        const onConflict = vi.fn();
+        const result = await saveModifiedTasks(
+            [task], [], new Set([task.id]), [], updateTask, vi.fn().mockImplementation(() => fetchResult(task)),
+            undefined, undefined, onConflict, undefined, undefined, { [task.id]: { subject: 'new' } },
+            undefined, undefined, undefined, { [task.id]: 1 }
+        );
+
+        expect(updateTask).toHaveBeenCalledTimes(1);
+        expect(result.savedTaskIds).toEqual(new Set());
+        expect(result.settledFieldsByTask.size).toBe(0);
+        expect(result.failures.has(task.id)).toBe(true);
+        expect(onConflict).toHaveBeenCalled();
+    });
+
     it('commits an incomplete acknowledgement only after fresh remote data confirms the requested value', async () => {
         const task = buildTask({ id: 'incomplete-ack', dueDate: 11, lockVersion: 1 });
         const scheduleMutation = vi.fn().mockResolvedValue({ status: 'ok', entities: [], revisions: {} });
@@ -771,7 +822,7 @@ describe('saveModifiedTasks', () => {
         const updateTask = vi.fn().mockImplementation(async (task: Task) => (
             task.id === 'A'
                 ? { status: 'validation_error' as const, error: 'invalid A' }
-                : { status: 'ok' as const, lockVersion: 2 }
+                : { status: 'ok' as const, entity: { id: task.id, statusId: 2, lockVersion: 2 }, lockVersion: 2 }
         ));
 
         const result = await saveModifiedTasks(
@@ -842,7 +893,11 @@ describe('saveModifiedTasks', () => {
 
     it('does not preflight a cycle when all modified intents are ordinary', async () => {
         const tasks = [buildTask({ id: 'A' }), buildTask({ id: 'B' })];
-        const updateTask = vi.fn().mockResolvedValue({ status: 'ok' as const, lockVersion: 2 });
+        const updateTask = vi.fn().mockImplementation(async (task: Task, _operationId?: string, fields?: TaskFields) => ({
+            status: 'ok' as const,
+            entity: { id: task.id, subject: fields?.subject as string | undefined, statusId: fields?.status_id as number | undefined, lockVersion: 2 },
+            lockVersion: 2
+        }));
 
         const result = await saveModifiedTasks(
             tasks,

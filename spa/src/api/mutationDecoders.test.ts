@@ -3,6 +3,11 @@ import { isCompleteScheduleMutationAck, parseMutationEntity, parseMutationTaskRe
 import { parseDateOnly } from '../utils/dateOnly';
 
 describe('mutation response decoders', () => {
+    it('does not infer task success from HTTP 2xx or elevate HTTP failures', () => {
+        expect(parseMutationTaskResult({}, { status: 200, ok: true }).status).toBe('protocol_error');
+        expect(parseMutationTaskResult({ status: 'ok' }, { status: 503, ok: false }).status).toBe('transient_error');
+        expect(parseScheduleMutationResult({ status: 'ok' }, { status: 503, ok: false }).status).toBe('transient_error');
+    });
     it('preserves task status precedence and nullable entity field presence', () => {
         const result = parseMutationTaskResult({
             status: 'unknown_status',
@@ -12,12 +17,9 @@ describe('mutation response decoders', () => {
         }, { status: 200, ok: true });
 
         expect(result.status).toBe('protocol_error');
-        expect(result.taskId).toBe('42');
-        expect(result.revision).toBe(7);
-        expect(result.entity).toHaveProperty('startDate', undefined);
-        expect(result.entity).toHaveProperty('dueDate', undefined);
-        expect(result.entity).toHaveProperty('parentId', undefined);
-        expect(result.entity).not.toHaveProperty('projectId');
+        expect(result.taskId).toBeUndefined();
+        expect(result.revision).toBeUndefined();
+        expect(result.entity).toBeUndefined();
 
         expect(parseMutationTaskResult({ status: 'ok' }, { status: 409, ok: false }).status).toBe('conflict');
     });
@@ -65,6 +67,18 @@ describe('mutation response decoders', () => {
         const entity = parseMutationEntity({ id: '1', start_date: 'bad-date', due_date: '2027-01-01' });
         expect(entity).toHaveProperty('startDate', undefined);
         expect(entity?.dueDate).toBe(parseDateOnly('2027-01-01'));
+    });
+
+    it('rejects invalid dates in a successful canonical task acknowledgement', () => {
+        for (const field of ['start_date', 'due_date']) {
+            const result = parseMutationTaskResult({ status: 'ok', entity: { id: '1', [field]: 'bad-date' }, revision: 99 },
+                { status: 200, ok: true });
+            expect(result.status).toBe('protocol_error');
+            expect(result.entity).toBeUndefined();
+            expect(result.revision).toBeUndefined();
+        }
+        expect(parseMutationTaskResult({ status: 'ok', entity: { id: '1', start_date: null, due_date: '2027-01-01' } },
+            { status: 200, ok: true }).status).toBe('ok');
     });
 
     it.each([

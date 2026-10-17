@@ -8,6 +8,7 @@ import { classifyMutationError, classifyMutationResult } from '../api/mutationOu
 import { formatDateOnly, parseDateOnly } from '../utils/dateOnly';
 import { useUIStore } from '../stores/UIStore';
 import { DatePlacementMode } from '../types/constraints';
+import { i18n } from '../utils/i18n';
 
 export type TaskFields = Record<string, unknown>;
 type TaskFieldsFactory = TaskFields | (() => TaskFields);
@@ -111,6 +112,16 @@ export const taskMutationAffectsScheduling = (changedFields: Iterable<string>): 
 
 const TASK_PATCH_MAX_RETRIES = 1;
 
+const withoutUntrustedTaskAck = <T extends Awaited<ReturnType<typeof apiClient.updateTaskFields>>>(result: T) => ({
+    ...result,
+    entity: undefined,
+    revision: undefined,
+    lockVersion: undefined,
+    taskId: undefined,
+    parentId: undefined,
+    siblingPosition: undefined
+});
+
 const canonicalFieldName = localTaskFieldForMutationField;
 
 const sameCanonicalValue = (field: string, expected: unknown, actual: unknown): boolean => {
@@ -141,7 +152,7 @@ export const responseMatchesIntendedFields = (
     fields: TaskFields,
     entity: NonNullable<Awaited<ReturnType<typeof apiClient.updateTaskFields>>['entity']>
 ): boolean => responseContainsIntendedFields(fields, entity) && Object.entries(fields)
-    .filter(([field]) => field !== 'lock_version')
+    .filter(([field]) => field !== 'lock_version' && field !== 'date_placement_mode')
     .every(([field, expected]) => {
         const canonicalField = canonicalFieldName(field);
         if (!Object.prototype.hasOwnProperty.call(entity, canonicalField)) return false;
@@ -161,7 +172,7 @@ export const responseContainsIntendedFields = (
     fields: TaskFields,
     entity: NonNullable<Awaited<ReturnType<typeof apiClient.updateTaskFields>>['entity']>
 ): boolean => Object.entries(fields)
-    .filter(([field]) => field !== 'lock_version')
+    .filter(([field]) => field !== 'lock_version' && field !== 'date_placement_mode')
     .every(([field]) => {
         const canonicalField = canonicalFieldName(field);
         if (!Object.prototype.hasOwnProperty.call(entity, canonicalField)) return false;
@@ -173,6 +184,21 @@ export const responseContainsIntendedFields = (
             ))
         );
     });
+
+export const hasCanonicalTaskAck = (taskId: string, fields: TaskFields,
+    result: Awaited<ReturnType<typeof apiClient.updateTaskFields>>, baseRevision?: number): boolean => {
+    const entity = result.entity;
+    const revision = result.revision ?? result.lockVersion ?? entity?.lockVersion;
+    return result.status === 'ok' && entity?.id === taskId &&
+        Number.isSafeInteger(revision) && (revision as number) >= 0 &&
+        (baseRevision === undefined || (revision as number) >= baseRevision) &&
+        (entity.lockVersion === undefined || entity.lockVersion === revision) &&
+        (result.lockVersion === undefined || result.lockVersion === revision) &&
+        (result.revision === undefined || result.revision === revision) &&
+        (!Object.prototype.hasOwnProperty.call(fields, 'lock_version') ||
+            (typeof fields.lock_version === 'number' && (revision as number) >= fields.lock_version)) &&
+        responseContainsIntendedFields(fields, entity);
+};
 
 const blankableId = (value: string | number | null | undefined): string | number =>
     value === null || value === undefined || value === '' ? '' : value;
@@ -258,8 +284,17 @@ const executeTaskPatch = async (
             const result = datePlacementMode === DatePlacementMode.CalendarDays
                 ? await apiClient.updateTaskFields(taskId, attemptFields, operationId, datePlacementMode)
                 : await apiClient.updateTaskFields(taskId, attemptFields, operationId);
-            if (attempt > 0 && result.status === 'conflict' && result.entity && responseMatchesIntendedFields(attemptFields, result.entity)) {
+            if (result.status === 'protocol_error') return withoutUntrustedTaskAck(result);
+            if (attempt > 0 && result.status === 'conflict' &&
+                hasCanonicalTaskAck(taskId, attemptFields, { ...result, status: 'ok' }) &&
+                result.entity && responseMatchesIntendedFields(attemptFields, result.entity)) {
                 return { ...result, status: 'ok' };
+            }
+            if (result.status === 'ok' && !hasCanonicalTaskAck(taskId, attemptFields, result)) {
+                // Treat an incomplete acknowledgement as an unknown outcome. The
+                // bulk saver will reconcile against a fresh remote snapshot.
+                return { ...result, status: 'protocol_error', entity: undefined, revision: undefined, lockVersion: undefined,
+                    error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') };
             }
             if (classifyMutationResult(result).kind !== 'transient' || attempt >= TASK_PATCH_MAX_RETRIES) {
                 return result;
@@ -281,7 +316,22 @@ const executeTaskPatch = async (
 export const taskMutationService = {
     // The bulk save loop owns the queue for this method so it can order
     // dependency batches; do not add a second per-task queue here.
-    updateTask: (task: Parameters<typeof apiClient.updateTask>[0], operationId?: string, fields?: TaskFields) => apiClient.updateTask(task, operationId, fields),
+    updateTask: async (task: Parameters<typeof apiClient.updateTask>[0], operationId?: string, fields?: TaskFields) => {
+        const requestedFields = fields ?? {
+            start_date: formatDateOnly(task.startDate),
+            due_date: formatDateOnly(task.dueDate),
+            parent_issue_id: task.parentId ? Number(task.parentId) : null
+        };
+        const result = await apiClient.updateTask(task, operationId, fields);
+        if (result.status === 'protocol_error') return withoutUntrustedTaskAck(result);
+        const revision = result.revision ?? result.lockVersion ?? result.entity?.lockVersion;
+        if (result.status === 'ok' && (!hasCanonicalTaskAck(task.id, requestedFields, result, task.lockVersion) ||
+            !Number.isSafeInteger(revision) || (revision as number) < task.lockVersion)) {
+            return { ...result, status: 'protocol_error' as const, entity: undefined, revision: undefined, lockVersion: undefined,
+                error: result.error || (i18n.t('label_failed_to_save') || 'Failed to save') };
+        }
+        return result;
+    },
 
     saveBaseline: (payload: NonNullable<Parameters<typeof apiClient.saveBaseline>[0]>) => {
         const scope = payload.scope ?? 'filtered';

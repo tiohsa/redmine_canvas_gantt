@@ -372,6 +372,7 @@ export interface TaskState {
     focusTask: (taskId: string) => { status: 'ok' | 'filtered_out' | 'missing' };
     setSortConfig: (key: string | null) => void;
     refreshData: () => Promise<ReadApplyOutcome>;
+    getActiveReadContext: () => ReadContext | null;
     loadInitialData: (params: InitialDataParams) => Promise<void>;
     loadSavedQueries: (force?: boolean) => Promise<void>;
     applySavedQuery: (queryId: number) => Promise<void>;
@@ -3187,6 +3188,7 @@ export const useTaskStore = create<TaskState>((set, get) => {
         return nextState;
     }),
         refreshData: async () => refreshCurrentData('refresh'),
+        getActiveReadContext: () => activeReadContext,
 
     loadInitialData: async (params) => {
         const generation = ++dataRequestGeneration;
