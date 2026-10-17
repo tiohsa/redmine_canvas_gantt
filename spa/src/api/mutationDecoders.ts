@@ -177,6 +177,15 @@ export const parseScheduleMutationConflict = (value: unknown): ScheduleMutationC
 export const parseScheduleMutationResult = (value: unknown, http: MutationHttpContext): ScheduleMutationResult => {
     const data = asRecord(value) ?? {};
     const rawEntities = Array.isArray(data.entities) ? data.entities : [];
+    const canonicalDatesValid = rawEntities.every(value => {
+        const entity = asRecord(value);
+        if (!entity) return true;
+        return (['start_date', 'due_date'] as const).every(field => {
+            if (!Object.prototype.hasOwnProperty.call(entity, field)) return true;
+            const date = entity[field];
+            return date === null || (typeof date === 'string' && parseDateOnly(date) !== null);
+        });
+    });
     const entities = rawEntities.map(parseMutationEntity).filter((entity): entity is PersistedTaskState => Boolean(entity));
     const rawRevisions = asRecord(data.revisions) ?? {};
     const revisions = Object.entries(rawRevisions).reduce<Record<string, number>>((result, [id, revision]) => {
@@ -184,11 +193,15 @@ export const parseScheduleMutationResult = (value: unknown, http: MutationHttpCo
         return result;
     }, {});
     const rawStatus = data.status;
+    const knownStatuses = ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error'];
     const status: MutationStatus = http.status === 409
         ? 'conflict'
-        : typeof rawStatus === 'string' && ['ok', 'error', 'validation_error', 'conflict', 'forbidden', 'not_found', 'transient_error'].includes(rawStatus)
-            ? rawStatus as MutationStatus
-            : http.ok ? 'ok' : mutationStatusForHttp(http.status);
+        : typeof rawStatus === 'string'
+            ? knownStatuses.includes(rawStatus)
+                ? rawStatus === 'ok' && !canonicalDatesValid ? 'protocol_error' : rawStatus as MutationStatus
+                : 'protocol_error'
+            : rawStatus === undefined && http.ok ? 'protocol_error'
+                : rawStatus === undefined ? mutationStatusForHttp(http.status) : 'protocol_error';
     const errors = Array.isArray(data.errors) ? data.errors.filter((error): error is string => typeof error === 'string') : undefined;
     const conflict = parseScheduleMutationConflict(data.conflict);
     const conflicts = Array.isArray(data.conflicts)
@@ -228,4 +241,29 @@ export const parseScheduleMutationResult = (value: unknown, http: MutationHttpCo
         } : {}),
         ...parseMutationMetadata(data)
     };
+};
+
+/** Validate the canonical acknowledgement for every requested schedule task. */
+export const isCompleteScheduleMutationAck = (
+    result: Pick<ScheduleMutationResult, 'entities' | 'revisions'> | { entities?: PersistedTaskState[]; revisions?: Record<string, number> },
+    changes: Array<{ taskId: string; baseRevision: number; fields: Record<string, unknown> }>
+): boolean => {
+    const entities = new Map((result.entities ?? []).map(entity => [entity.id, entity]));
+    return changes.every(change => {
+        const entity = entities.get(change.taskId);
+        if (!entity) return false;
+        for (const field of Object.keys(change.fields)) {
+            const canonicalField = field === 'start_date' ? 'startDate' : field === 'due_date' ? 'dueDate' : null;
+            if (!canonicalField || !Object.prototype.hasOwnProperty.call(entity, canonicalField)) return false;
+            const value = entity[canonicalField];
+            if (value !== undefined && value !== null && (typeof value !== 'number' || !Number.isSafeInteger(value))) return false;
+        }
+        const entityRevision = entity.lockVersion;
+        const responseRevision = result.revisions?.[change.taskId];
+        const revision = responseRevision ?? entityRevision;
+        return Number.isSafeInteger(revision) && revision! >= change.baseRevision &&
+            (entityRevision === undefined || Number.isSafeInteger(entityRevision)) &&
+            (responseRevision === undefined || Number.isSafeInteger(responseRevision)) &&
+            (entityRevision === undefined || responseRevision === undefined || entityRevision === responseRevision);
+    });
 };

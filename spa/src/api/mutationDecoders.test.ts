@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseMutationEntity, parseMutationTaskResult, parseScheduleMutationResult } from './mutationDecoders';
+import { isCompleteScheduleMutationAck, parseMutationEntity, parseMutationTaskResult, parseScheduleMutationResult } from './mutationDecoders';
 import { parseDateOnly } from '../utils/dateOnly';
 
 describe('mutation response decoders', () => {
@@ -22,7 +22,7 @@ describe('mutation response decoders', () => {
         expect(parseMutationTaskResult({ status: 'ok' }, { status: 409, ok: false }).status).toBe('conflict');
     });
 
-    it('keeps schedule fallback status behavior and date-only adjustment decoding', () => {
+    it('rejects unknown schedule statuses and decodes date-only adjustments', () => {
         const result = parseScheduleMutationResult({
             status: 'unknown_status',
             operation_id: 'schedule:1',
@@ -40,7 +40,7 @@ describe('mutation response decoders', () => {
             }
         }, { status: 200, ok: true });
 
-        expect(result.status).toBe('ok');
+        expect(result.status).toBe('protocol_error');
         expect(result.revisions).toEqual({ 42: 4 });
         expect(result.entities[0]?.startDate).toBe(parseDateOnly('2027-01-08'));
         expect(result.adjustments).toEqual([{
@@ -54,6 +54,10 @@ describe('mutation response decoders', () => {
             { id: '9', from: '42', to: '43', type: 'precedes', delay: 0 }
         ] });
         expect(parseScheduleMutationResult({}, { status: 409, ok: false }).status).toBe('conflict');
+        expect(parseScheduleMutationResult({}, { status: 200, ok: true }).status).toBe('protocol_error');
+        expect(parseScheduleMutationResult({ status: 'new_status' }, { status: 200, ok: true }).status).toBe('protocol_error');
+        expect(parseScheduleMutationResult({ status: 'ok', entities: [{ id: 42, due_date: 'bad-date' }] },
+            { status: 200, ok: true }).status).toBe('protocol_error');
     });
 
     it('requires a non-null entity id and string date values', () => {
@@ -61,5 +65,16 @@ describe('mutation response decoders', () => {
         const entity = parseMutationEntity({ id: '1', start_date: 'bad-date', due_date: '2027-01-01' });
         expect(entity).toHaveProperty('startDate', undefined);
         expect(entity?.dueDate).toBe(parseDateOnly('2027-01-01'));
+    });
+
+    it.each([
+        ['missing entity', { entities: [], revisions: {} }],
+        ['missing owned date', { entities: [{ id: '1', lockVersion: 2 }], revisions: { '1': 2 } }],
+        ['missing revision', { entities: [{ id: '1', dueDate: 2 }], revisions: {} }],
+        ['mismatched revision', { entities: [{ id: '1', dueDate: 2, lockVersion: 2 }], revisions: { '1': 3 } }]
+    ])('rejects schedule acknowledgement with %s', (_reason, result) => {
+        expect(isCompleteScheduleMutationAck(result, [
+            { taskId: '1', baseRevision: 1, fields: { due_date: 2 } }
+        ])).toBe(false);
     });
 });

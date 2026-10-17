@@ -29,6 +29,8 @@ ja:
     label_request_failed: "リクエストに失敗しました（HTTP %{status}）"
     label_schedule_result_missing: "スケジュール更新の結果を取得できませんでした。"
     label_schedule_outcome_unknown: "スケジュール更新の結果が不明です。"
+    label_post_commit_refresh_failed: "最新のチケット情報を再取得できませんでした。保存が確認された変更は保持されています。"
+    label_post_commit_refresh_superseded: "後続のデータ読み込みに置き換えられたため、再取得結果を適用できませんでした。保存が確認された変更は保持されています。"
     label_schedule_save_failed: "スケジュールの保存に失敗しました"
     label_remote_unavailable_message: "%{message}（サーバーの最新データを取得できません）"
     label_export_canvas_failed: "画像出力の初期化に失敗しました"

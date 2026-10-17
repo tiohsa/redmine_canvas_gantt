@@ -29,6 +29,8 @@ en:
     label_request_failed: "Request failed (HTTP %{status})"
     label_schedule_result_missing: "Schedule mutation did not return a result."
     label_schedule_outcome_unknown: "The schedule mutation outcome is unknown."
+    label_post_commit_refresh_failed: "The latest task data could not be refreshed. Any confirmed saved changes are retained."
+    label_post_commit_refresh_superseded: "The refresh result was superseded by a later data request. Any confirmed saved changes are retained."
     label_schedule_save_failed: "Failed to save schedule"
     label_remote_unavailable_message: "%{message} (remote unavailable)"
     label_export_canvas_failed: "Failed to initialize export canvas"

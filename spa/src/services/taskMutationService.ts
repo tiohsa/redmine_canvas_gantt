@@ -1,5 +1,6 @@
 import type { Relation } from '../types';
 import { apiClient } from '../api/client';
+import { isCompleteScheduleMutationAck } from '../api/mutationDecoders';
 import type { ExpectedRelation } from '../api/client';
 import type { MutationMetadata, ScheduleMutationChange, ScheduleResolutionRequest } from '../api/client';
 import { baselineProjectResourceKey, enqueueMutationOperation, enqueueScheduleMutationOperation, relationResourceKey, taskResourceKey, type MutationLifecycle } from '../stores/taskStore/taskPersistence';
@@ -313,9 +314,23 @@ export const taskMutationService = {
     ) => {
         return enqueueScheduleMutationOperation(
             [...new Set([...changes.map(change => change.taskId), ...(resolution?.taskIds ?? [])])],
-            (context) => {
+            async (context) => {
                 const operationId = context?.operationId ?? `schedule:${Date.now()}`;
-                return resolution ? apiClient.scheduleMutation(changes, operationId, resolution) : apiClient.scheduleMutation(changes, operationId);
+                const result = resolution
+                    ? await apiClient.scheduleMutation(changes, operationId, resolution)
+                    : await apiClient.scheduleMutation(changes, operationId);
+                const requested = changes.map(change => ({
+                    taskId: change.taskId,
+                    baseRevision: change.baseRevision,
+                    fields: {
+                        ...(Object.prototype.hasOwnProperty.call(change, 'startDate') ? { start_date: change.startDate } : {}),
+                        ...(Object.prototype.hasOwnProperty.call(change, 'dueDate') ? { due_date: change.dueDate } : {})
+                    }
+                }));
+                if (result.status === 'ok' && changes.length > 0 && !isCompleteScheduleMutationAck(result, requested)) {
+                    return { ...result, status: 'protocol_error' as const };
+                }
+                return result;
             },
             [...new Set([...changes.map(change => change.taskId), ...(resolution?.taskIds ?? [])])].map(taskResourceKey)
         );

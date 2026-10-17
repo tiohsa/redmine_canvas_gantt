@@ -63,6 +63,18 @@ describe('relation draft normalization', () => {
         expect(getPendingRelationChange(unknown, relation.id)?.status).toBe('unknown');
     });
 
+    it('does not project unknown creates or updates into the confirmed relation graph', () => {
+        const create = normalizeRelationCreate({}, [], { from: '1', to: '2', type: 'precedes' }, 1);
+        const createId = Object.keys(create)[0];
+        const unknownCreate = { ...create, [createId]: { ...create[createId], status: 'unknown' as const } };
+        expect(projectEffectiveRelations([], unknownCreate)).toEqual([]);
+
+        const update = normalizeRelationUpdate({}, [relation], relation.id, { ...relation, delay: 3 }, 2);
+        const updateId = Object.keys(update)[0];
+        const unknownUpdate = { ...update, [updateId]: { ...update[updateId], status: 'unknown' as const } };
+        expect(projectEffectiveRelations([relation], unknownUpdate)).toEqual([relation]);
+    });
+
     it('rejects dependency cycles and date saves that require a relation removal first', () => {
         const create = normalizeRelationCreate({}, [relation], { from: '2', to: '1', type: 'precedes' }, 1);
         expect(validateRelationDrafts(tasks, [relation], create)).not.toBeNull();

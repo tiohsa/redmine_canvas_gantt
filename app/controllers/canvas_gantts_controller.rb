@@ -31,6 +31,8 @@ class CanvasGanttsController < ApplicationController
     label_request_failed: :label_request_failed,
     label_schedule_result_missing: :label_schedule_result_missing,
     label_schedule_outcome_unknown: :label_schedule_outcome_unknown,
+    label_post_commit_refresh_failed: :label_post_commit_refresh_failed,
+    label_post_commit_refresh_superseded: :label_post_commit_refresh_superseded,
     label_schedule_save_failed: :label_schedule_save_failed,
     label_remote_unavailable_message: :label_remote_unavailable_message,
     label_export_canvas_failed: :label_export_canvas_failed,

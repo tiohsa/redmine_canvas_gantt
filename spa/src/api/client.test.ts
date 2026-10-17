@@ -1465,7 +1465,7 @@ describe('mutation error classification', () => {
         });
     });
 
-    it('keeps the schedule decoder fallback for unknown status strings', async () => {
+    it('rejects unknown schedule status strings', async () => {
         window.RedmineCanvasGantt = {
             projectId: 1,
             apiBase: '/projects/1/canvas_gantt',
@@ -1478,7 +1478,7 @@ describe('mutation error classification', () => {
             json: async () => ({ status: 'future_status', entities: [], revisions: {} })
         }) as unknown as typeof fetch);
 
-        await expect(apiClient.scheduleMutation([], 'schedule:future-status')).resolves.toMatchObject({ status: 'ok' });
+        await expect(apiClient.scheduleMutation([], 'schedule:future-status')).resolves.toMatchObject({ status: 'protocol_error' });
     });
 
     it('uses the HTTP fallback when a mutation response body cannot be decoded', async () => {

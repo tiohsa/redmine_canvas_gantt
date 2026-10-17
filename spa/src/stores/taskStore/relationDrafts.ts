@@ -197,6 +197,10 @@ export const projectEffectiveRelations = (relations: Relation[], changes: Relati
             } else {
                 byId.delete(change.relationId);
             }
+        } else if (change.status === 'unknown') {
+            // Unknown create/update intent is reviewable local state, not a
+            // confirmed edge for scheduling or critical-path calculations.
+            continue;
         } else if (change.operation === 'update' && change.relationId && change.desired) {
             byId.set(change.relationId, { id: change.relationId, ...change.desired });
         } else if (change.operation === 'create' && change.desired) {

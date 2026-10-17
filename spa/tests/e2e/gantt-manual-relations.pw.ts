@@ -113,6 +113,56 @@ test('saves ticket changes before staged relation creation', async ({ page }) =>
   expect(writes).toEqual(['task', 'relation']);
 });
 
+test('keeps a committed task change and pending relation draft when the post-save refresh fails', async ({ page }) => {
+  await waitForInitialRender(page);
+  await setManualMode(page);
+  const relationWrites: unknown[] = [];
+  await page.route('**/canvas_gantt/data.json**', async (route) => {
+    // The first request loaded the page. Fail the resync triggered after the
+    // task PATCH so the UI exercises the post-commit refresh path.
+    await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Refresh unavailable' }) });
+  });
+  await page.route('**/canvas_gantt/tasks/201.json**', async (route) => {
+    if (route.request().method() !== 'PATCH') return route.fallback();
+    const patch = route.request().postDataJSON() as { task?: { subject?: string } };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        entity: { id: 201, subject: patch.task?.subject, lock_version: 2 },
+        revision: 2,
+        invalidated_entity_ids: [101],
+      }),
+    });
+  });
+  await page.route('**/canvas_gantt/relations.json**', async (route) => {
+    if (route.request().method() === 'POST') relationWrites.push(route.request().postDataJSON());
+    await route.fallback();
+  });
+  await page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    const store = useTaskStore.getState();
+    store.updateTask('201', { subject: 'Committed before refresh failed' });
+    store.stageRelationCreate({ from: '101', to: '201', type: 'relates' });
+    const config = (window as typeof window & { RedmineCanvasGantt?: { i18n: Record<string, string> } }).RedmineCanvasGantt;
+    if (config) config.i18n.label_post_commit_refresh_failed = 'Saved changes could not be refreshed.';
+  });
+
+  await page.getByTestId('manual-save-button').click();
+  await expect(page.getByText(/Saved changes could not be refreshed\./)).toBeVisible();
+  await expect.poll(async () => page.evaluate(async () => {
+    const { useTaskStore } = await import('/src/stores/TaskStore.ts');
+    const store = useTaskStore.getState();
+    return {
+      subject: store.allTasks.find(task => task.id === '201')?.subject,
+      pending: Object.values(store.pendingRelationChanges).map(change => change.status),
+      dirty: [...store.modifiedTaskIds],
+    };
+  })).toEqual({ subject: 'Committed before refresh failed', pending: ['pending'], dirty: [] });
+  expect(relationWrites).toHaveLength(0);
+});
+
 test('does not write relations when the ticket save fails', async ({ page }) => {
   await waitForInitialRender(page);
   await setManualMode(page);
@@ -273,10 +323,12 @@ test('keeps manual Save compact as task and relation counts grow, with review ch
   });
 
   const saveButton = page.getByTestId('manual-save-button');
-  await expect(saveButton).toHaveText('Save');
+  await expect(saveButton).toHaveAccessibleName('Save');
+  await expect(saveButton).toHaveText('');
   const initialBox = await saveButton.boundingBox();
   const initialTitle = await saveButton.getAttribute('title');
   expect(initialBox).toBeTruthy();
+  expect(initialBox!.width).toBe(32);
   expect(initialTitle).toContain('1');
   await expect(page.getByTestId(/relation-unknown-(assume-applied|retry)-/)).toHaveCount(0);
   await expect(page.getByTestId(/relation-failed-retry-/)).toHaveCount(0);

@@ -487,8 +487,19 @@ describe('InteractionEngine task updates', () => {
         let persistedTask: Task | undefined;
         vi.mocked(apiClient.scheduleMutation).mockImplementation(async (changes) => {
             const change = changes.find(candidate => candidate.taskId === task1.id);
-            if (change) persistedTask = { ...(change.task as Task), lockVersion: 1 };
-            return { status: 'ok', operationId: 'test', entities: [], revisions: { [task1.id]: 1 } };
+            if (change) {
+                persistedTask = {
+                    ...(change.task as Task),
+                    ...(Object.prototype.hasOwnProperty.call(change, 'startDate') ? { startDate: change.startDate ?? undefined } : {}),
+                    ...(Object.prototype.hasOwnProperty.call(change, 'dueDate') ? { dueDate: change.dueDate ?? undefined } : {}),
+                    lockVersion: 2
+                };
+            }
+            return {
+                status: 'ok', operationId: 'test',
+                entities: persistedTask ? [{ id: task1.id, startDate: persistedTask.startDate, dueDate: persistedTask.dueDate, lockVersion: 2 }] : [],
+                revisions: { [task1.id]: 2 }
+            };
         });
         vi.mocked(apiClient.fetchData).mockImplementation(async () => ({
             tasks: [persistedTask ?? task1, task2],
@@ -514,7 +525,7 @@ describe('InteractionEngine task updates', () => {
         expect(reloadedTask).toMatchObject({
             startDate: persistedTask?.startDate,
             dueDate: persistedTask?.dueDate,
-            lockVersion: 1
+            lockVersion: 2
         });
         expect(useTaskStore.getState().modifiedTaskIds.has(task1.id)).toBe(false);
 

@@ -108,7 +108,9 @@ describe('taskMutationService mutation boundary', () => {
 
     it('forwards mixed task modes in one schedule operation without selecting a request mode', async () => {
         const scheduleMutation = vi.spyOn(apiClient, 'scheduleMutation').mockResolvedValue({
-            status: 'ok', operationId: 'schedule:mixed', entities: [], revisions: {}
+            status: 'ok', operationId: 'schedule:mixed',
+            entities: [{ id: 'A', dueDate: undefined, lockVersion: 2 }, { id: 'B', dueDate: undefined, lockVersion: 4 }],
+            revisions: { A: 2, B: 4 }
         });
         const changes = [
             { taskId: 'A', baseRevision: 1, dueDate: null, datePlacementMode: DatePlacementMode.CalendarDays },
@@ -118,6 +120,23 @@ describe('taskMutationService mutation boundary', () => {
         await taskMutationService.scheduleMutation(changes);
 
         expect(scheduleMutation).toHaveBeenCalledExactlyOnceWith(changes, expect.any(String));
+    });
+
+    it('records an incomplete schedule acknowledgement as a protocol failure', async () => {
+        vi.spyOn(apiClient, 'scheduleMutation').mockResolvedValue({
+            status: 'ok', operationId: 'schedule:incomplete', entities: [], revisions: {}
+        });
+        const startedAt = Date.now();
+
+        const result = await taskMutationService.scheduleMutation([
+            { taskId: 'incomplete-schedule-ack', baseRevision: 1, dueDate: 11 }
+        ]);
+
+        expect(result.status).toBe('protocol_error');
+        expect(getMutationOperationRecords().filter(record => record.startedAt >= startedAt &&
+            record.entityIds.includes('incomplete-schedule-ack'))).toEqual([
+            expect.objectContaining({ status: 'failed', outcome: 'terminal' })
+        ]);
     });
 
     it('bounds retries for a thrown non-bulk mutation error', async () => {

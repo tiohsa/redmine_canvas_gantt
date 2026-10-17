@@ -7,6 +7,7 @@ import {
 import { i18n } from '../../utils/i18n';
 import type { TaskLayoutSnapshot } from './types';
 import type { MutationMetadata, MutationStatus } from '../../api/client';
+import { isCompleteScheduleMutationAck } from '../../api/mutationDecoders';
 import {
     classifyMutationError,
     classifyMutationResult,
@@ -446,6 +447,49 @@ export const saveModifiedTasks = async (
                         };
                     }
                 }
+            }
+        }
+        const canonicalAckIsComplete = isCompleteScheduleMutationAck(scheduleResult, scheduleChanges.map(change => ({
+            taskId: change.taskId,
+            baseRevision: change.baseRevision,
+            fields: change.mutationFields ?? change.fields
+        })));
+        if ((scheduleResult.status === 'ok' && !canonicalAckIsComplete) || scheduleResult.status === 'protocol_error') {
+            // A malformed or incomplete acknowledgement may follow a commit.
+            // Reconcile once from a fresh read and never replay this request.
+            try {
+                const refreshed = await fetchData({ query: { selectedStatusIds } });
+                const refreshedById = new Map(refreshed.tasks.map(task => [task.id, task]));
+                const canonical = scheduleChanges.map(change => refreshedById.get(change.taskId));
+                const allIntentsVisible = scheduleChanges.every((change, index) => {
+                    const task = canonical[index];
+                    return Boolean(task && Number.isSafeInteger(task.lockVersion) && task.lockVersion >= change.baseRevision &&
+                        responseMatchesIntendedFields(change.mutationFields ?? change.fields, task as unknown as PersistedTaskState));
+                });
+                if (allIntentsVisible) {
+                    const entities = canonical as Task[];
+                    scheduleResult = {
+                        status: 'ok', entities: entities as unknown as PersistedTaskState[],
+                        revisions: Object.fromEntries(entities.map(entity => [entity.id, entity.lockVersion!]))
+                    };
+                } else {
+                    scheduleResult = {
+                        status: 'conflict',
+                        errors: [i18n.t('label_schedule_outcome_unknown') || 'The schedule mutation outcome is unknown.'],
+                        entities: canonical.filter((task): task is Task => Boolean(task)) as unknown as PersistedTaskState[],
+                        revisions: Object.fromEntries(scheduleChanges.flatMap(change => {
+                            const task = refreshedById.get(change.taskId);
+                            return task && Number.isSafeInteger(task.lockVersion) ? [[change.taskId, task.lockVersion] as const] : [];
+                        })),
+                        conflicts: scheduleChanges.map(change => ({ taskId: change.taskId }))
+                    };
+                }
+            } catch {
+                scheduleResult = {
+                    status: 'conflict',
+                    errors: [i18n.t('label_schedule_outcome_unknown') || 'The schedule mutation outcome is unknown.'],
+                    conflicts: scheduleChanges.map(change => ({ taskId: change.taskId }))
+                };
             }
         }
         const entitiesById = new Map((scheduleResult.entities ?? []).map(entity => [entity.id, entity]));

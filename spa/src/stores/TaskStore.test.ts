@@ -5124,7 +5124,7 @@ describe('TaskStore saveChanges ordering', () => {
         }
     });
 
-    it('keeps a successful task settlement when an invalidation refresh fails', async () => {
+    it('keeps a successful task settlement and reports an invalidation refresh failure', async () => {
         const original = buildTask({ id: 'saved-before-refresh', subject: 'Before', lockVersion: 1 });
         useTaskStore.getState().setTasks([original]);
         useTaskStore.getState().updateTask(original.id, { subject: 'After' });
@@ -5135,20 +5135,60 @@ describe('TaskStore saveChanges ordering', () => {
             invalidatedEntityIds: ['related-task']
         });
         vi.mocked(apiClient.fetchData).mockRejectedValue(new Error('temporary refresh failure'));
-        const logError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const failures = await useTaskStore.getState().saveChanges();
+
+        const state = useTaskStore.getState();
+        expect(failures.get('refresh')).toBeTruthy();
+        expect(state.allTasks.find(task => task.id === original.id)?.subject).toBe('Canonical');
+        expect(state.serverTaskSnapshot.revisions[original.id]).toBe(2);
+        expect(state.modifiedTaskIds).toEqual(new Set());
+        expect(state.localTaskPatches[original.id]).toBeUndefined();
+    });
+
+    it('preserves task failures alongside a post-commit refresh failure', async () => {
+        const first = buildTask({ id: 'saved-before-refresh', subject: 'Before' });
+        const second = buildTask({ id: 'failed-save', subject: 'Before' });
+        useTaskStore.getState().setTasks([first, second]);
+        useTaskStore.getState().updateTask(first.id, { subject: 'Saved' });
+        useTaskStore.getState().updateTask(second.id, { subject: 'Rejected' });
+        vi.mocked(apiClient.updateTask).mockImplementation(async task => task.id === first.id
+            ? { status: 'ok', lockVersion: 2, entity: { id: first.id, subject: 'Saved', lockVersion: 2 }, invalidatedEntityIds: ['other'] }
+            : { status: 'forbidden', error: 'Rejected by Redmine' });
+        vi.mocked(apiClient.fetchData).mockRejectedValue(new Error('refresh unavailable'));
+
+        const failures = await useTaskStore.getState().saveChanges();
+
+        expect(failures.get(second.id)).toBe('Rejected by Redmine');
+        expect(failures.get('refresh')).toBeTruthy();
+        expect(useTaskStore.getState().allTasks.find(task => task.id === first.id)?.subject).toBe('Saved');
+        expect(useTaskStore.getState().localTaskPatches[first.id]).toBeUndefined();
+        expect(addNotification).toHaveBeenCalledWith(expect.stringContaining('Rejected by Redmine'), 'error');
+    });
+
+    it.each(['base', 'unavailable'] as const)('retains an unconfirmed schedule patch after fresh read %s and blocks a second send', async (remoteState) => {
+        const original = buildTask({ id: 'unknown-schedule', dueDate: TUESDAY, lockVersion: 1 });
+        const scheduleMutation = vi.fn().mockResolvedValue({ status: 'protocol_error', entities: [], revisions: {} });
+        Object.defineProperty(apiClient, 'scheduleMutation', { value: scheduleMutation, configurable: true, writable: true });
+        if (remoteState === 'base') vi.mocked(apiClient.fetchData).mockResolvedValue(buildApiData([original]));
+        else vi.mocked(apiClient.fetchData).mockRejectedValue(new Error('remote unavailable'));
+        useTaskStore.setState({ autoSave: false });
+        useTaskStore.getState().setTasks([original]);
+        useTaskStore.getState().updateTask(original.id, { dueDate: WEDNESDAY });
 
         try {
-            const failures = await useTaskStore.getState().saveChanges();
+            const firstFailures = await useTaskStore.getState().saveChanges();
+            expect(firstFailures.has(original.id)).toBe(true);
+            expect(useTaskStore.getState().localTaskPatches[original.id]).toHaveLength(1);
+            expect(useTaskStore.getState().taskConflicts[original.id]).toMatchObject({
+                remoteAvailability: remoteState === 'base' ? 'known' : 'unavailable'
+            });
 
-            const state = useTaskStore.getState();
-            expect(failures).toEqual(new Map());
-            expect(state.allTasks.find(task => task.id === original.id)?.subject).toBe('Canonical');
-            expect(state.serverTaskSnapshot.revisions[original.id]).toBe(2);
-            expect(state.modifiedTaskIds).toEqual(new Set());
-            expect(state.localTaskPatches[original.id]).toBeUndefined();
-            expect(logError).toHaveBeenCalledWith('Failed to refresh saved tasks after mutation', expect.any(Error));
+            const secondFailures = await useTaskStore.getState().saveChanges();
+            expect(secondFailures.has(original.id)).toBe(true);
+            expect(scheduleMutation).toHaveBeenCalledTimes(1);
+            expect(useTaskStore.getState().localTaskPatches[original.id]).toHaveLength(1);
         } finally {
-            logError.mockRestore();
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
         }
     });
 
@@ -6171,6 +6211,41 @@ describe('TaskStore relation draft persistence', () => {
         expect(useTaskStore.getState().pendingRelationChanges[draftId]).toBeUndefined();
     });
 
+    it.each(['failed', 'superseded'] as const)('keeps relation drafts unsent when a committed schedule refresh is %s', async (refreshState) => {
+        const { from, to } = initialize();
+        useTaskStore.getState().setAutoSave(false);
+        useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'relates' });
+        const draftId = Object.keys(useTaskStore.getState().pendingRelationChanges)[0];
+        const nextDueDate = (from.dueDate ?? 0) + 1;
+        useTaskStore.getState().updateTask(from.id, { dueDate: nextDueDate });
+        const scheduleMutation = vi.fn().mockResolvedValue({
+            status: 'ok', entities: [{ id: from.id, dueDate: nextDueDate, lockVersion: from.lockVersion + 1 }],
+            revisions: { [from.id]: from.lockVersion + 1 }
+        });
+        (apiClient as unknown as { scheduleMutation: typeof apiClient.scheduleMutation }).scheduleMutation = scheduleMutation;
+        const createRelation = vi.spyOn(taskMutationService, 'createRelation').mockResolvedValue({} as Awaited<ReturnType<typeof taskMutationService.createRelation>>);
+        if (refreshState === 'failed') {
+            vi.mocked(useTaskStore.getState().refreshData).mockRejectedValue(new Error('refresh failed'));
+        } else {
+            vi.mocked(useTaskStore.getState().refreshData).mockResolvedValue({
+                status: 'superseded',
+                context: createReadContext({ generation: 2, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh' })
+            });
+        }
+
+        try {
+            const failures = await useTaskStore.getState().saveChanges();
+            const state = useTaskStore.getState();
+            expect(failures.get('refresh')).toBeTruthy();
+            expect(state.localTaskPatches[from.id]).toBeUndefined();
+            expect(state.pendingRelationChanges[draftId]).toMatchObject({ status: 'pending', error: expect.any(String) });
+            expect(createRelation).not.toHaveBeenCalled();
+        } finally {
+            delete (apiClient as unknown as { scheduleMutation?: unknown }).scheduleMutation;
+            createRelation.mockRestore();
+        }
+    });
+
     it('keeps an unknown deletion unresolved when the relation remains in the refreshed snapshot', async () => {
         const { from, to, relation, draftId } = stageUnknownDelete();
         refreshWithSnapshot(buildApiData([from, to], [relation]));
@@ -6179,6 +6254,67 @@ describe('TaskStore relation draft persistence', () => {
 
         expect(resolved).toBe(false);
         expect(useTaskStore.getState().pendingRelationChanges[draftId]).toMatchObject({ status: 'unknown', original: relation });
+    });
+
+    it.each([
+        ['create', 'assume_applied'], ['create', 'retry'],
+        ['update', 'assume_applied'], ['update', 'retry']
+    ] as const)('keeps unknown %s unresolved when a refreshed view filters an endpoint during %s', async (operation, resolution) => {
+        const { from, to } = initialize();
+        const relation: Relation = { id: 'relation-1', from: from.id, to: to.id, type: 'relates' };
+        useTaskStore.getState().setAutoSave(false);
+        useTaskStore.getState().setRelations(operation === 'update' ? [relation] : []);
+        if (operation === 'create') {
+            useTaskStore.getState().stageRelationCreate({ from: from.id, to: to.id, type: 'blocks' });
+        } else {
+            useTaskStore.getState().stageRelationUpdate(relation.id, { from: from.id, to: to.id, type: 'blocks' });
+        }
+        const draftId = Object.keys(useTaskStore.getState().pendingRelationChanges)[0];
+        useTaskStore.setState(state => ({
+            pendingRelationChanges: {
+                ...state.pendingRelationChanges,
+                [draftId]: { ...state.pendingRelationChanges[draftId], status: 'unknown' }
+            }
+        }));
+        refreshWithSnapshot(buildApiData([to], operation === 'update' ? [relation] : []));
+        const createRelation = vi.spyOn(taskMutationService, 'createRelation');
+        const updateRelation = vi.spyOn(taskMutationService, 'updateRelation');
+
+        try {
+            expect(await useTaskStore.getState().resolveUnknownRelationChange(draftId, resolution)).toBe(false);
+            expect(useTaskStore.getState().pendingRelationChanges[draftId]).toMatchObject({ status: 'unknown' });
+            expect(createRelation).not.toHaveBeenCalled();
+            expect(updateRelation).not.toHaveBeenCalled();
+        } finally {
+            createRelation.mockRestore();
+            updateRelation.mockRestore();
+        }
+    });
+
+    it('keeps unknown relation updates out of scheduling and critical-path projections', () => {
+        useTaskStore.setState({ calculateCriticalPathEnabled: true });
+        const { from, to } = initialize();
+        const relation: Relation = { id: 'relation-1', from: from.id, to: to.id, type: 'precedes', delay: 0 };
+        useTaskStore.getState().applyApiData(buildApiData([from, to], [relation]));
+        const confirmed = useTaskStore.getState();
+        useTaskStore.getState().setAutoSave(false);
+        useTaskStore.getState().stageRelationUpdate(relation.id, { ...relation, delay: 4 });
+        const draftId = Object.keys(useTaskStore.getState().pendingRelationChanges)[0];
+        useTaskStore.setState(state => ({
+            pendingRelationChanges: {
+                ...state.pendingRelationChanges,
+                [draftId]: { ...state.pendingRelationChanges[draftId], status: 'unknown' }
+            }
+        }));
+
+        const context = createReadContext({ generation: 3, projectId: 'p1', query: {}, scope: {}, purpose: 'refresh' });
+        useTaskStore.getState().applyApiData(buildApiData([from, to], [relation]), context);
+        const afterRefresh = useTaskStore.getState();
+        expect(afterRefresh.getEffectiveRelations()).toEqual([relation]);
+        expect(afterRefresh.schedulingStates).toEqual(confirmed.schedulingStates);
+        expect(afterRefresh.criticalPathMetrics).toEqual(confirmed.criticalPathMetrics);
+        expect(afterRefresh.criticalPathProjectFinish).toBe(confirmed.criticalPathProjectFinish);
+        expect(afterRefresh.pendingRelationChanges[draftId]).toMatchObject({ status: 'unknown' });
     });
 
     it('preserves the view guard while refreshing an unknown relation deletion', async () => {

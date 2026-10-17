@@ -1808,13 +1808,12 @@ export const useTaskStore = create<TaskState>((set, get) => {
         const current = get().pendingRelationChanges[draftId];
         if (!current || current.generation !== initial.generation || current.status !== 'unknown') return false;
         const serverRelations = get().relations;
-        if (current.operation === 'delete') {
-            const refreshedTaskSnapshot = get().serverTaskSnapshot;
-            const original = current.original;
-            if (refreshedTaskSnapshot.context !== refreshedContext || !original ||
-                !refreshedTaskSnapshot.entitiesById[original.from] ||
-                !refreshedTaskSnapshot.entitiesById[original.to]) return false;
-        }
+        const refreshedTaskSnapshot = get().serverTaskSnapshot;
+        const endpointIds = new Set([
+            current.original?.from, current.original?.to, current.desired?.from, current.desired?.to
+        ].filter((id): id is string => Boolean(id)));
+        if (refreshedTaskSnapshot.context !== refreshedContext || endpointIds.size < 2 ||
+            [...endpointIds].some(id => !refreshedTaskSnapshot.entitiesById[id])) return false;
         const matching = current.operation === 'delete'
             ? !serverRelations.some(relation => relation.id === current.relationId)
             : current.operation === 'create'
@@ -3704,16 +3703,14 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 const requiresPostTaskRefresh = mutationMetadataNeedsRefresh || (
                     saveResult.batchStatus !== 'preflight_failure' && hasScheduleMutation && requiresResync
                 );
+                let postCommitRefreshIssue: 'failed' | 'superseded' | undefined;
                 if (requiresPostTaskRefresh) {
                     try {
-                        await get().refreshData();
-                    } catch (error) {
-                        // A failed conflict resync is already represented as a
-                        // terminal conflict. Do not replace that actionable
-                        // result with a second refresh exception; the local
-                        // patch must remain available for manual resolution.
-                        if (conflictMessages.size === 0 && hasScheduleMutation && requiresResync) throw error;
-                        console.error('Failed to refresh saved tasks after mutation', error);
+                        const refreshOutcome = await get().refreshData();
+                        if (refreshOutcome.status !== 'applied' &&
+                            (savedTaskIds.size > 0 || successfulMutationTaskIds.size > 0)) postCommitRefreshIssue = 'superseded';
+                    } catch {
+                        if (savedTaskIds.size > 0 || successfulMutationTaskIds.size > 0) postCommitRefreshIssue = 'failed';
                     }
                 }
                 if (conflictMessages.size > 0) {
@@ -3729,6 +3726,24 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         return { taskConflicts };
                     });
                 }
+                if (postCommitRefreshIssue) {
+                    const message = i18n.t(postCommitRefreshIssue === 'failed'
+                        ? 'label_post_commit_refresh_failed'
+                        : 'label_post_commit_refresh_superseded') || 'Saved changes could not be refreshed.';
+                    if (relationOperations.length > 0) {
+                        set((state) => {
+                            const pendingRelationChanges = { ...state.pendingRelationChanges };
+                            relationOperations.forEach((operation) => {
+                                const current = pendingRelationChanges[operation.draftId];
+                                if (current?.generation === operation.generation && current.status === 'saving') {
+                                    pendingRelationChanges[operation.draftId] = { ...current, status: 'pending', error: message };
+                                }
+                            });
+                            return { pendingRelationChanges };
+                        });
+                    }
+                    failures.set('refresh', message);
+                }
                 terminalBarFailureTaskGenerations.forEach((operationGeneration, taskId) => {
                     const operation = Object.values(get().barOperations).find((candidate) => (
                         candidate.entityGenerations[taskId] === operationGeneration
@@ -3737,7 +3752,9 @@ export const useTaskStore = create<TaskState>((set, get) => {
                 });
                 if (failures.size > 0) {
                     if (relationOperations.length > 0) {
-                        const blockedMessage = i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
+                        const blockedMessage = postCommitRefreshIssue
+                            ? failures.get('refresh')!
+                            : i18n.t('label_relation_save_blocked') || 'label_relation_save_blocked';
                         set((state) => {
                             const pendingRelationChanges = { ...state.pendingRelationChanges };
                             relationOperations.forEach((operation) => {
@@ -3751,12 +3768,15 @@ export const useTaskStore = create<TaskState>((set, get) => {
                         });
                     }
                     const [failedTaskId, failedReason] = failures.entries().next().value as [string, string];
-                    const failureMessage = failedTaskId.startsWith('relation:')
+                    const failureMessage = failedTaskId === 'refresh'
+                        ? failedReason
+                        : failedTaskId.startsWith('relation:')
                         ? failedReason
                         : `${i18n.t('label_failed_to_save') || 'Failed to save'} (#${failedTaskId}: ${failedReason})`;
-                    const notificationMessage = relationWorkCaptured && (committedTaskCount > 0 || committedRelationCount > 0)
+                    let notificationMessage = relationWorkCaptured && (committedTaskCount > 0 || committedRelationCount > 0)
                         ? `${partialSaveMessage()} ${failureMessage}`
                         : failureMessage;
+                    if (postCommitRefreshIssue && failedTaskId !== 'refresh') notificationMessage = `${notificationMessage} ${failures.get('refresh')}`;
                     useUIStore.getState().addNotification(notificationMessage, 'error');
                     return failures;
                 }
